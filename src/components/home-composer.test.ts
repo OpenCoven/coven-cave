@@ -184,7 +184,7 @@ assert.match(
 assert.match(source, /readOnly=\{!draftRestored\}/);
 assert.match(
   source,
-  /useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS\)/,
+  /useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS, \{\s*enabled: draftRestored,/,
   "Home keeps debounced draft persistence",
 );
 assert.match(

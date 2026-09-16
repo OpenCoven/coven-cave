@@ -4,6 +4,7 @@ import "@/styles/settings-phone.css";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PairingStepsList } from "@/components/pairing-steps-list";
+import { SettingsDeviceAccess } from "@/components/settings-device-access";
 import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -51,6 +52,7 @@ type MobileHandoffCardState = {
   appInviteUrl: string | null;
   qrSvg: string | null;
   lastSeenAt: number | null;
+  pairingMode?: "device-approval";
 };
 
 type ReachabilitySettingKey = keyof DesktopReachabilityConfig;
@@ -772,6 +774,7 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                 appInviteUrl: result.appInviteUrl ?? null,
                 qrSvg: result.qrSvg ?? null,
                 lastSeenAt: result.lastSeenAt ?? null,
+                pairingMode: result.pairingMode,
               }
             : null,
         );
@@ -1136,7 +1139,9 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                 )}
               </div>
               <p>
-                {pairingSessionOnly
+                {handoff?.pairingMode === "device-approval"
+                  ? "Scan to request access, then compare the request code and allow this device below."
+                  : pairingSessionOnly
                   ? "Scan with your iPhone camera. This connection ends when Cave closes."
                   : "Scan with your iPhone camera — Cave opens already paired."}
               </p>
@@ -1302,8 +1307,9 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
             <div>
               <h3>Why there’s no password</h3>
               <p>
-                Your device <em>is</em> the credential — an allowlisted tailnet device, not merely
-                anything on the tailnet. The mobile API never leaves it, so there’s no token to copy.
+                Tailscale keeps the connection private. With device approval enabled,
+                an allowed device also holds its own credential, stored by the browser
+                or in the app’s Keychain. Tailnet membership alone never grants access.
               </p>
             </div>
           </section>
@@ -1311,6 +1317,9 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
         </div>
       </div>
 
+      <SettingsDeviceAccess onPolicyChange={() => {
+        if (mobileModeEnabled) void reconcileMobileMode(true, { force: true });
+      }} />
       <MobileWriteAccessCard />
     </section>
   );

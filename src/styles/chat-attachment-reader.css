@@ -1,0 +1,95 @@
+.chat-attachment-lightbox--document {
+  width: min(96rem, calc(100vw - var(--space-8)));
+  height: calc(100dvh - var(--space-8));
+  max-height: calc(100dvh - var(--space-8));
+  background: var(--bg-panel);
+}
+
+@media (max-width: 1023px) {
+  .chat-attachment-backdrop {
+    /* Clear the mobile navigation (150), but not the picker layer (200). */
+    z-index: 160;
+  }
+}
+
+.chat-attachment-reader {
+  min-height: 0;
+  flex: 1;
+}
+
+.chat-attachment-reader .document-reader {
+  --document-reader-accent: var(--text-primary);
+  background: var(--bg-panel);
+}
+
+.chat-attachment-reader .document-reader__toc {
+  border-right-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.chat-attachment-reader .document-reader__scroll {
+  padding: var(--space-6);
+  background: var(--bg-base);
+}
+
+.chat-attachment-reader .document-reader__toolbar {
+  width: min(100%, var(--document-reader-prose-measure));
+  padding-bottom: var(--space-3);
+}
+
+.chat-attachment-reader .document-reader__preferences-trigger,
+.chat-attachment-reader .document-reader__contents-trigger {
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.chat-attachment-reader .document-reader__column {
+  min-height: 100%;
+  padding: var(--space-10) var(--space-8) var(--space-12);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: var(--bg-raised);
+}
+
+.chat-attachment-reader .document-reader__title {
+  margin-bottom: var(--space-5);
+}
+
+.chat-attachment-reader .document-reader__column a {
+  text-decoration: underline;
+}
+
+.chat-attachment-reader .document-reader__heading {
+  position: relative;
+}
+
+.chat-attachment-reader .document-reader__heading::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--space-4));
+  width: var(--ring-width);
+  border-radius: var(--radius-pill);
+  background: color-mix(
+    in oklch,
+    var(--document-reader-accent) 52%,
+    transparent
+  );
+  content: "";
+}
+
+.chat-attachment-reader .document-reader__column p,
+.chat-attachment-reader .document-reader__column li,
+.chat-attachment-reader .document-reader__column blockquote {
+  color: var(--text-primary);
+}
+
+@container document-reader (max-width: 30rem) {
+  .chat-attachment-reader .document-reader__scroll {
+    padding: var(--space-2);
+  }
+
+  .chat-attachment-reader .document-reader__column {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
+}

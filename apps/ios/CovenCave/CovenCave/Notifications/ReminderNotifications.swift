@@ -1,29 +1,14 @@
 import Foundation
 import UserNotifications
 
-/// Schedules on-device notifications for upcoming reminders so the phone buzzes
-/// when one is due — even when the desktop is asleep or off the tailnet. Today
-/// the phone only *lists* reminders; this makes them actionable away from the desk.
-///
-/// Idempotent: each `sync` clears our previously-scheduled reminders and re-adds
-/// the current upcoming set, so edits/completions on the desktop are reflected on
-/// the next refresh. We own only identifiers prefixed with `idPrefix`, so other
-/// notifications (if any are ever added) are left untouched.
+/// Removes local alerts left by the retired reminders surface. Backend
+/// reminders and chat notifications are never changed by this migration.
 @MainActor
 enum ReminderNotifications {
-    private static let idPrefix = "cave.reminder."
-    /// iOS keeps at most 64 pending requests per app; stay comfortably under.
-    private static let maxScheduled = 60
+    private nonisolated static let idPrefix = "cave.reminder."
 
     nonisolated static func deepLinkURL(taskId: String? = nil) -> URL? {
-        if let taskId = taskId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !taskId.isEmpty {
-            return ProjectNavigationIntent(
-                entity: .task(id: taskId),
-                destination: .tasks
-            ).url
-        }
-        return ProjectNavigationIntent(destination: .tasks).url
+        nil
     }
 
     nonisolated static func deepLinkURL(for reminder: Reminder) -> URL? {
@@ -33,73 +18,44 @@ enum ReminderNotifications {
                 destination: .chats
             ).url
         }
-        if let taskId = reminder.link?.resolvedTaskID {
-            return deepLinkURL(taskId: taskId)
-        }
-        return deepLinkURL()
+        return nil
     }
 
-    /// Ask once. Safe to call repeatedly — the system only prompts while the
-    /// status is undetermined; afterwards this is a cheap no-op.
+    nonisolated static func isRetiredRequest(identifier: String) -> Bool {
+        identifier.hasPrefix(idPrefix)
+    }
+
+    /// Legacy callers may still request reconciliation; only chat owns new
+    /// notification permission prompts.
     static func requestAuthorizationIfNeeded() async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .notDetermined else { return }
-        _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-    }
-
-    /// Reschedule local notifications to match `reminders`. Only pending reminders
-    /// with a future fire time are scheduled; the soonest `maxScheduled` win.
-    static func sync(_ reminders: [Reminder]) async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .authorized
-                || settings.authorizationStatus == .provisional else {
-            await clear()
-            return
-        }
-
         await clear()
-
-        let now = Date()
-        let upcoming = reminders
-            .filter { $0.status == "pending" }
-            .compactMap { r -> (Reminder, Date)? in
-                guard let iso = r.fireAt, let date = caveParseISO(iso), date > now else { return nil }
-                return (r, date)
-            }
-            .sorted { $0.1 < $1.1 }
-            .prefix(maxScheduled)
-
-        for (reminder, fireDate) in upcoming {
-            let content = UNMutableNotificationContent()
-            content.title = "Reminder"
-            content.body = reminder.title
-            content.sound = .default
-            if let url = deepLinkURL(for: reminder) {
-                content.userInfo = ["deepLink": url.absoluteString]
-            }
-            let comps = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute, .second], from: fireDate)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-            let request = UNNotificationRequest(
-                identifier: idPrefix + reminder.id, content: content, trigger: trigger)
-            try? await center.add(request)
-        }
     }
 
-    /// Remove every notification we scheduled that is still pending.
+    /// Kept for legacy reminder mutations, but never schedules new alerts.
+    static func sync(_: [Reminder]) async {
+        await clear()
+    }
+
+    /// Clear only alerts issued by the retired reminder scheduler.
     static func clear() async {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
-        let ours = pending.map(\.identifier).filter { $0.hasPrefix(idPrefix) }
+        let ours = pending.map(\.identifier).filter { isRetiredRequest(identifier: $0) }
         center.removePendingNotificationRequests(withIdentifiers: ours)
+        let delivered = await center.deliveredNotifications()
+        let retired = delivered.map(\.request.identifier).filter { isRetiredRequest(identifier: $0) }
+        center.removeDeliveredNotifications(withIdentifiers: retired)
     }
 }
 
 /// Bridges notification taps (and foreground presentation) back to the app's
 /// deep-link router. Set as the notification-center delegate at launch.
 final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    override init() {
+        super.init()
+        Task { await ReminderNotifications.clear() }
+    }
+
     @MainActor private var pendingOpen: URL?
     @MainActor var onOpen: ((URL) -> Void)? {
         didSet {
@@ -119,15 +75,18 @@ final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
         onOpen(url)
     }
 
-    /// Show reminder banners even while the app is in the foreground.
+    /// A reminder already being delivered during migration stays silent.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        guard !ReminderNotifications.isRetiredRequest(identifier: notification.request.identifier) else {
+            return []
+        }
+        return [.banner, .sound]
     }
 
-    /// A tapped reminder re-enters the linked chat/task when one is known.
+    /// Taps use the shared router, which also rejects retired destinations.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse

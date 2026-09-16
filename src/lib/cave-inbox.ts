@@ -80,6 +80,10 @@ export type InboxItem = {
    * without brittle title matching. See `task-archive-nudge.ts`.
    */
   auto?: string | null;
+  /** Stable event fingerprint for producers that update one parent-owned item. */
+  autoRevision?: string | null;
+  /** Explicit execution requests are not acknowledged by quiet parent saves. */
+  autoRequest?: { runId: string; iteration?: number; revision: string };
   /**
    * When the user acknowledged this notification (bell "Mark all read",
    * opening the item). Absent/null = unread — so every pre-upgrade fired item

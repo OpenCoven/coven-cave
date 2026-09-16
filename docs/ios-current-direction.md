@@ -2,7 +2,7 @@
 
 Status: **canonical active direction**
 
-Last reconciled: 2026-09-04
+Last reconciled: 2026-09-12
 
 This page is the only iOS priority queue. Dated specifications, implementation
 plans, audits, handoff exports, and rebuild notes remain useful historical
@@ -14,16 +14,11 @@ Current authorities or Current priorities.
 1. [`coven-design-language.md`](coven-design-language.md) - tokens,
    accessibility, motion, copy, and interaction quality.
 2. This document - current native iOS product shape and priority order.
-3. [`specs/2026-09-04-ios-project-workspaces-direction.md`](specs/2026-09-04-ios-project-workspaces-direction.md)
-   - global Recent Chats, visible Project workspaces, local scope, object-owned
-   navigation, migration, and authority boundaries.
-4. [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
+3. [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
    - project-bound creation, persistence, retry, forwarding, voice, import, and
-   offline replay invariants. Its clauses requiring shell-project switching
-   before New Chat, global Familiar routing, thread opens, or task opens are
-   superseded by authority #3; #5297 must amend those clauses while preserving
-   explicit binding and fail-closed eligibility.
-5. [`design-handoff/IMPLEMENTATION-STATUS.md`](design-handoff/IMPLEMENTATION-STATUS.md)
+   offline replay invariants. Project choice belongs to a conversation, not
+   the application shell.
+4. [`design-handoff/IMPLEMENTATION-STATUS.md`](design-handoff/IMPLEMENTATION-STATUS.md)
    - evidence of what actually landed and what was deliberately not adopted.
 
 When these disagree with an older iOS note or plan, the order above wins.
@@ -31,40 +26,43 @@ When these disagree with an older iOS note or plan, the order above wins.
 The dated
 [`superpowers/specs/2026-08-03-ios-chat-familiars-first-design.md`](superpowers/specs/2026-08-03-ios-chat-familiars-first-design.md)
 remains implementation lineage for the current app. Its one-familiar-row Chats
-default is superseded by the project-workspaces direction. Pin, mute, archive,
+default is superseded by the chat-only direction. Pin, mute, archive,
 rename, duplicate, export, bulk delete, unread, session selection, exact
 Familiar identity, and one-visible-conversation behavior remain requirements
 until intentionally migrated by the active program.
 
 ## Current product direction
 
-- Chats opens to global Recent conversations. A conversation is the resumable
-  object; Familiar and Project identity stay visible on each row.
-- Projects are visible, directly navigable workspaces. A Project page groups
-  truthful existing chats, tasks, Familiars, and verified attention items
-  without becoming a new authority or database.
-- Chats, Tasks, Search, Familiars, and Needs You own explicit local scope.
-  Opening an object does not silently rescope unrelated surfaces.
-- A project explicitly confirmed after migration may become a visible default
-  for new work where it is current and unambiguous. The old persisted project
-  value is a display hint only because its operator/automatic provenance was
-  not stored. Neither value defines shell identity.
+- Native iOS is **chat-only**: conversations, chat search, familiar selection
+  within chat, permissions, and configuration that enables or customizes chat.
+- Chats opens to global conversations, including direct and group chats and
+  sessions started on other devices. Hydrated sessions appear once, not once
+  as a local thread and again as a server row. Pins, archive visibility, and
+  title/familiar search organize the list without a global project filter.
+- The drawer contains Chats, recent conversations, New chat, Search chats, and
+  Settings. There is no Tasks, Automations, Projects, Needs You, standalone
+  Familiar hub, workspace browser, global search, or terminal destination.
+- Familiar identity remains authoritative and visible in conversations and
+  participant selection; it is not an invitation to an operational hub.
+- A registered project is an exact conversation-level execution/access
+  binding. New chat can select eligible access locally; it never changes the
+  application's scope. Opening existing history preserves that chat's root,
+  session identity, participants, draft, and queued targets.
 - Cached history may remain readable while membership or authority data is
   loading, stale, degraded, disconnected, or unavailable. New sends and
   protected mutations remain fail-closed until exact current binding and grant
   data is known.
-- Unassigned is an explicit recovery-only collection, never a normal writable
-  project or new-work default.
-- Familiars remain first-class identity and operational hubs. Familiar
-  continuity, revision, embodiment, provenance, and authoritative IDs must not
-  be reconstructed from display name, prompt, avatar, or model.
-- The drawer remains the sole primary navigation surface. Its active program
-  adds a bounded Projects section and one All Projects destination; it does not
-  restore a bottom tab bar.
+- Unassigned remains a recovery-only classification inside history, never a
+  writable project, new-chat default, or separate workspace destination.
+- Familiar continuity, revision, embodiment, provenance, and authoritative IDs
+  must not be reconstructed from display name, prompt, avatar, or model.
+- Settings round trips and access-catalog refreshes do not remount Chats or
+  destroy its selection. iPhone launches to the list unless an explicit chat
+  intent is present; iPad keeps its list/detail layout.
 - The native iOS Terminal, PTY transport, xterm WebView, terminal composer,
   slash-command route, generated bundle, and tests remain retired. Desktop and
   web terminal surfaces are unaffected.
-- Chats, Tasks, and Settings retain one editorial title language while keeping
+- Chats and Settings retain one editorial title language while keeping
   the controls and navigation behavior specific to each destination.
 - Chats continues to protect conversation context at accessibility sizes and
   uses a floating Search/New Chat dock that compacts in landscape and caps its
@@ -72,9 +70,9 @@ until intentionally migrated by the active program.
   quality requirements.
 - Chats names the visible conversation count for its current organization and
   scope, and offers only truthful shortcuts when the list is sparse.
-- Settings continues to present Community as one icon row and Connection status
-  plus re-check as one row. Legal links keep the same concise icon-shelf
-  pattern.
+- Settings contains appearance, permissions, connection, security, chat
+  notifications/export, and legal information. Promotional/community browsing
+  is outside the mobile chat surface.
 - The open drawer preserves spatial context by presenting the live destination
   as a rounded, offset page.
 - Theme values come from `ChromePalette`; Dynamic Type, VoiceOver, Reduce
@@ -83,41 +81,29 @@ until intentionally migrated by the active program.
 
 ## Active program
 
-OpenCoven/coven-cave#5290 replaces ambient project mode with Project workspaces
-and global feeds. Its phase gates are authoritative:
+`cave-iusli` owns this chat-only implementation. The maintainer explicitly
+approved replacing the workspace roadmap, recorded on
+[#5290](https://github.com/OpenCoven/coven-cave/issues/5290#issuecomment-5644986219).
+This supersedes the product expansion in #5290, including project workspaces,
+Tasks, Needs You, and operational Familiar hubs. `cave-quv9h`'s native
+Automations destination conflicts with this boundary and must not be added.
 
-1. **Direction and baseline**
-   - #5291 ratifies information architecture and authority boundaries.
-   - #5292 captures pre-change Release physical-device evidence and budgets.
-2. **Fast state foundation**
-   - #5293 builds the immutable, disposable Cave read projection and removes
-     project-keyed destination remounts.
-   - #5294 migrates current rows/counts to the projection and makes Search
-     cancellable.
-3. **Global Chats and Project workspaces**
-   - #5295 makes global Recent Chats the default.
-   - #5296 adds the bounded drawer Projects section, All Projects, and project
-     workspace pages.
-   - #5297 replaces ambient scope with surface-local filters and exact
-     object-owned navigation while preserving fail-closed writes.
-4. **OpenCoven integration and closeout**
-   - #5298 integrates cross-project Familiar and verifiable Needs You views.
-   - #5299 closes physical-device, accessibility, migration, rollback, and R4
-     authority gates.
-
-Later phases remain blocked until their listed dependencies have merged and
-their Beads/worktrees satisfy the repository lifecycle.
+The dated project-workspaces specification remains historical evidence, not a
+second active roadmap. Its useful requirements for exact object ownership,
+cached reads, fail-closed writes, migration, accessibility, and physical-device
+performance remain applicable. Superseding that roadmap does not constitute
+passing its device baselines, authorization exercises, or release gates.
 
 ## Current priorities
 
-1. Complete #5291 and #5292 without beginning implementation behind either
-   phase gate.
+1. Complete the chat-only shell and conversation list on `cave-iusli`, retiring
+   non-chat navigation and external entrypoints rather than hiding them.
 2. Preserve reliability, pairing, honest failure states, draft durability,
-   queued-target immutability, and existing task/chat/project contracts.
-3. Build one projection and one canonical project browser; do not create
-   per-view caches or parallel workspace implementations.
-4. Remove hidden global-rescope side effects only in the R4 integration phase,
-   with upgrade, deep-link, offline replay, and real authorization evidence.
+   queued-target immutability, and exact chat/project authorization contracts.
+3. Use one disposable list projection for local/server deduplication, counts,
+   sorting, and chat search; do not scan full transcripts to organize every row.
+4. Keep New chat/import choice local and revalidate participants and access
+   before creation. Reject retired task links without loading task surfaces.
 5. Improve information density only with truthful operator context; do not
    invent attention, activity, status, progress, membership, or backend
    capability.
@@ -129,8 +115,8 @@ their Beads/worktrees satisfy the repository lifecycle.
 - No desktop/web redesign in this program.
 - No new project, chat, session, task, Familiar, or attention authority.
 - No chat project-binding move.
-- No project creation, deletion, re-rooting, access administration, or Git
-  management UI.
+- No project browser, project creation/deletion/re-rooting, or Git management UI.
+  Permissions needed for chat remain available.
 - No inferred urgency or model-generated Needs You eligibility.
 - No simulator timing represented as physical-device percentile evidence.
 - No release or TestFlight publication authorization.
@@ -143,6 +129,6 @@ their Beads/worktrees satisfy the repository lifecycle.
   old plan merely because they remain in the file.
 - A historical document becomes active again only when this page names it under
   Current priorities and a current Bead defines the remaining work.
-- Contradictory terminal, bottom-tab, ambient-project, familiars-first default,
-  unified-recents-without-project-binding, or tokenless-auth plans are
+- Contradictory workspace expansion, terminal, bottom-tab, ambient-project,
+  familiars-first default, unified-recents-without-project-binding, or tokenless-auth plans are
   explicitly superseded.

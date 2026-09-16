@@ -7,9 +7,13 @@
 // `run_attempt` while preserving the job's ORIGINAL timestamps. Consequently:
 //
 //   - head_sha must be compared with the PR/workflow head SHA;
+//   - run_id and run_attempt must identify this workflow attempt;
 //   - started_at must be compared with the current attempt's run_started_at;
-//   - every matrix leg must be retained by its exact job name; and
-//   - the run's frozen base SHA must still equal the live base ref.
+//   - every matrix leg must be retained by its exact job name.
+//
+// The workflow separately requires every selected job to succeed. Base SHAs
+// remain diagnostics: non-strict branch protection does not require main to
+// stop advancing while this exact PR head is validated.
 //
 // This script uses only Node builtins because the build gate runs it before a
 // dependency install on documentation-only changes.
@@ -85,23 +89,27 @@ function sortedEvidenceJobs(jobs) {
 
 export function staleEvidence(
   jobs,
-  { expectedHeadSha, attemptStartedAt, runBaseRef, runBaseSha, liveBaseSha },
+  { expectedHeadSha, expectedRunId, expectedRunAttempt, attemptStartedAt },
 ) {
   const stale = [];
   const attemptStartedAtMs = timestamp(attemptStartedAt);
   const evidence = sortedEvidenceJobs(jobs);
-
-  if (runBaseSha !== liveBaseSha) {
-    stale.push(
-      `base ${runBaseRef} moved: run recorded ${runBaseSha}, live ref is ${liveBaseSha}`,
-    );
-  }
 
   if (evidence.length === 0) {
     stale.push("no successful upstream evidence jobs were returned by the Actions API");
   }
 
   for (const [name, job] of evidence) {
+    if (job.run_id !== expectedRunId) {
+      stale.push(
+        `${name} reported run ${job.run_id ?? "unknown"}; expected workflow run ${expectedRunId}`,
+      );
+    }
+    if (job.run_attempt !== expectedRunAttempt) {
+      stale.push(
+        `${name} reported attempt ${job.run_attempt ?? "unknown"}; expected current attempt ${expectedRunAttempt}`,
+      );
+    }
     if (job.head_sha !== expectedHeadSha) {
       stale.push(
         `${name} reported head ${job.head_sha ?? "unknown"}; expected workflow head ${expectedHeadSha}`,
@@ -131,6 +139,8 @@ function parseArgs(argv) {
   const known = new Set([
     "--expected-head-sha",
     "--attempt-started-at",
+    "--run-id",
+    "--run-attempt",
     "--run-base-ref",
     "--run-base-sha",
     "--live-base-sha",
@@ -161,6 +171,8 @@ export function main(argv = process.argv) {
   const args = parsedArgs.args;
   const expectedHeadSha = args.get("--expected-head-sha");
   const attemptStartedAt = args.get("--attempt-started-at");
+  const expectedRunId = Number(args.get("--run-id"));
+  const expectedRunAttempt = Number(args.get("--run-attempt"));
   const runBaseRef = args.get("--run-base-ref");
   const runBaseSha = args.get("--run-base-sha");
   const liveBaseSha = args.get("--live-base-sha");
@@ -171,6 +183,14 @@ export function main(argv = process.argv) {
   }
   if (timestamp(attemptStartedAt) === null) {
     usageError("--attempt-started-at must be a valid timestamp");
+    return;
+  }
+  if (!Number.isSafeInteger(expectedRunId) || expectedRunId <= 0) {
+    usageError("--run-id must be a positive safe integer");
+    return;
+  }
+  if (!Number.isSafeInteger(expectedRunAttempt) || expectedRunAttempt <= 0) {
+    usageError("--run-attempt must be a positive safe integer");
     return;
   }
   if (!runBaseRef) {
@@ -202,18 +222,21 @@ export function main(argv = process.argv) {
 
   const context = {
     expectedHeadSha,
+    expectedRunId,
+    expectedRunAttempt,
     attemptStartedAt,
-    runBaseRef,
-    runBaseSha,
-    liveBaseSha,
   };
   const stale = staleEvidence(jobs, context);
 
   console.log("## Frontend build evidence");
   console.log(`- Expected workflow head: ${expectedHeadSha}`);
+  console.log(`- Workflow run: ${expectedRunId}, attempt ${expectedRunAttempt}`);
   console.log(`- Current attempt started: ${attemptStartedAt}`);
   console.log(`- Run base: ${runBaseRef}@${runBaseSha}`);
   console.log(`- Live base: ${runBaseRef}@${liveBaseSha}`);
+  if (runBaseSha !== liveBaseSha) {
+    console.log("- Base drift is informational under non-strict branch protection; head and attempt evidence remain required.");
+  }
   console.log("");
   console.log("Successful upstream jobs:");
   for (const line of evidenceSummaryLines(jobs)) console.log(line);
@@ -221,7 +244,7 @@ export function main(argv = process.argv) {
   if (stale.length > 0) {
     console.error("Refusing carried-forward or stale upstream evidence (cave-38aud):");
     for (const line of stale) console.error(`- ${line}`);
-    console.error("Re-run the whole workflow run (not only failed jobs) after the base is current.");
+    console.error("Re-run the whole workflow run for the current head (not only failed jobs).");
     process.exitCode = 1;
   }
 }

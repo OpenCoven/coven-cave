@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Back and Forward step in-surface navigation one level at a time.
 //
-// Chat's scope strip (Sessions / Projects / Canvas / Familiar) used to be plain
-// component state, so Back from Canvas left the whole surface instead of
+// Chat's scope strip (Sessions / Projects / Familiar) used to be plain
+// component state, so Back from Familiar left the whole surface instead of
 // returning to Projects. These specs pin the traversal, the button enabled
 // states — the shell renders both controls as `disabled={!canGo*}`, which is how
 // the Forward regression stayed invisible — and the truncation rule.
@@ -48,8 +48,8 @@ test.describe("scope strip history", () => {
 
     await scopeTab(page, "Projects").click();
     await expectTab(page, "Projects");
-    await scopeTab(page, "Canvas").click();
-    await expectTab(page, "Canvas");
+    await scopeTab(page, "Familiar").click();
+    await expectTab(page, "Familiar");
 
     await backButton(page).click();
     await expectTab(page, "Projects");
@@ -59,7 +59,7 @@ test.describe("scope strip history", () => {
     await forwardButton(page).click();
     await expectTab(page, "Projects");
     await forwardButton(page).click();
-    await expectTab(page, "Canvas");
+    await expectTab(page, "Familiar");
   });
 
   test("Forward enables after a Back", async ({ page }) => {
@@ -79,11 +79,12 @@ test.describe("scope strip history", () => {
   test("a new pick from a rewound position drops the forward trail", async ({ page }) => {
     await gotoChat(page);
     await scopeTab(page, "Projects").click();
-    await scopeTab(page, "Canvas").click();
+    await scopeTab(page, "Familiar").click();
     await backButton(page).click();
     await expectTab(page, "Projects");
 
-    await scopeTab(page, "Familiar").click();
+    await scopeTab(page, "Sessions").click();
+    await expectTab(page, "Sessions");
     await expect(forwardButton(page)).toBeDisabled();
 
     await backButton(page).click();

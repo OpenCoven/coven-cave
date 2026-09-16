@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -24,7 +25,8 @@ function section(source, heading, nextHeading) {
 const skill = read(".agents/skills/branch-curator/SKILL.md");
 const proof = read(".agents/skills/branch-curator/references/deletion-proof.md");
 const agents = read("AGENTS.md");
-const workflow = read("docs/workflows/beads-familiars.md");
+const workflow = read("docs/workflows/github-work-tracking.md");
+const hygiene = read("WORKTREE_HYGIENE.md");
 const automaticDesign = read(
   "docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md",
 );
@@ -51,6 +53,180 @@ function runDocumentedReflogParser(contents) {
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 }
+
+const issueFixture = {
+  number: 5399,
+  title: "Scoped branch curation",
+  body: "Preserve ownership and require fresh proof.",
+  state: "open",
+  html_url: "https://github.com/OpenCoven/coven-cave/issues/5399",
+  updated_at: "2026-09-14T12:00:00Z",
+  assignees: [{ login: "owner" }],
+  comments: 0,
+};
+const commentFixture = {
+  id: 1,
+  body: "Owner disposition for the exact candidate.",
+  user: { login: "owner" },
+  updated_at: "2026-09-14T12:00:00Z",
+};
+
+function runDocumentedIssueEvidence({
+  issue = issueFixture,
+  pages = [[]],
+  issueJson = JSON.stringify(issue),
+  issueStatus = 0,
+  commentStatus = 0,
+  issueNumber = "5399",
+} = {}) {
+  const producer = skill.match(/read_issue_evidence\(\) \{[\s\S]*?\n\}/);
+  assert.ok(producer, "missing documented issue ownership producer");
+  return spawnSync("bash", ["-c", `
+audited_gh_repo=OpenCoven/coven-cave
+${producer[0]}
+gh() {
+  case "$*" in
+    "api --hostname github.com repos/OpenCoven/coven-cave/issues/5399")
+      printf '%s' "$ISSUE_JSON"
+      return "$ISSUE_STATUS"
+      ;;
+    "api --hostname github.com --paginate --slurp -X GET repos/OpenCoven/coven-cave/issues/5399/comments -f per_page=100")
+      printf '%s' "$COMMENT_PAGES"
+      return "$COMMENT_STATUS"
+      ;;
+    *) printf '%s\\n' 'unexpected or unscoped GitHub query' >&2; return 97 ;;
+  esac
+}
+read_issue_evidence "$1"
+`, "issue-evidence", issueNumber], {
+    encoding: "utf8",
+    timeout: 10_000,
+    env: {
+      ...process.env,
+      GH_REPO: "unrelated/quiet",
+      ISSUE_JSON: issueJson,
+      ISSUE_STATUS: String(issueStatus),
+      COMMENT_PAGES: JSON.stringify(pages),
+      COMMENT_STATUS: String(commentStatus),
+    },
+  });
+}
+
+for (const [name, input] of [
+  ["empty comments", {}],
+  ["all 101 owner comments", {
+    issue: { ...issueFixture, comments: 101 },
+    pages: [
+      Array.from({ length: 100 }, (_, index) => ({ ...commentFixture, id: index + 1 })),
+      [{ ...commentFixture, id: 101 }],
+    ],
+  }],
+  ["closed unassigned history", {
+    issue: { ...issueFixture, state: "closed", assignees: [] },
+  }],
+]) {
+  test(`documented GitHub ownership producer retains evidence: ${name}`, () => {
+    const result = runDocumentedIssueEvidence(input);
+    assert.equal(result.status, 0, result.stderr);
+    const evidence = JSON.parse(result.stdout);
+    assert.deepEqual(evidence.issue, input.issue ?? issueFixture);
+    assert.deepEqual(evidence.comments, (input.pages ?? [[]]).flat());
+    assert.deepEqual(Object.keys(evidence).sort(), ["comments", "issue"],
+      "valid issue JSON must not manufacture owner clearance or a lease");
+  });
+}
+
+for (const [name, input] of [
+  ["failed issue producer with valid output", { issueStatus: 1 }],
+  ["failed comments producer with valid output", { commentStatus: 1 }],
+  ["malformed issue JSON", { issueJson: "{" }],
+  ["missing issue", { issue: null }],
+  ["wrong issue number", { issue: { ...issueFixture, number: 1 } }],
+  ["pull request instead of issue", { issue: { ...issueFixture, pull_request: {} } }],
+  ["unknown issue state", { issue: { ...issueFixture, state: "unknown" } }],
+  ["missing assignee envelope", { issue: { ...issueFixture, assignees: null } }],
+  ["missing pages", { pages: [] }],
+  ["wrong page envelope", { pages: {} }],
+  ["truncated or changed comment count", {
+    issue: { ...issueFixture, comments: 2 },
+    pages: [[commentFixture]],
+  }],
+  ["duplicated comment page", {
+    issue: { ...issueFixture, comments: 2 },
+    pages: [[commentFixture], [commentFixture]],
+  }],
+  ["missing comment author", {
+    issue: { ...issueFixture, comments: 1 },
+    pages: [[{ ...commentFixture, user: null }]],
+  }],
+  ["invalid issue reference", { issueNumber: "5399;false" }],
+]) {
+  test(`documented GitHub ownership producer fails closed: ${name}`, () => {
+    const result = runDocumentedIssueEvidence(input);
+    assert.equal(result.signal, null, result.stderr);
+    assert.notEqual(result.status, 0, `${name} was accepted`);
+    assert.equal(result.stdout, "", "failed evidence must not look like an empty ownership result");
+  });
+}
+
+test("curation shell fragments retain Bash syntax", () => {
+  for (const [name, source] of [["skill", skill], ["deletion proof", proof]]) {
+    const blocks = [...source.matchAll(/```bash\n([\s\S]*?)\n```/g)];
+    assert.ok(blocks.length > 0, `${name} has no shell fragments`);
+    const parsed = spawnSync("bash", ["-n"], {
+      input: blocks.map((match) => match[1]).join("\n"),
+      encoding: "utf8",
+    });
+    assert.equal(parsed.status, 0, `${name}: ${parsed.stderr}`);
+  }
+});
+
+test("GitHub ownership replaces routine Beads recipes, not safety evidence", () => {
+  for (const [name, source] of [["skill", skill], ["proof", proof], ["hygiene", hygiene]]) {
+    assert.ok(source.includes("docs/workflows/github-work-tracking.md"),
+      `${name} must reference the canonical guide`);
+    assert.doesNotMatch(source, /\bbd\s+(?:prime|ready|show|list|create|update|close|sync)\b/);
+    assert.doesNotMatch(source, /\bpnpm\s+beads:/);
+    assert.doesNotMatch(source, /\bdolt\s+(?:push|pull|fetch)\b/);
+    assert.match(normalizeWhitespace(source), /not atomic execution leases/);
+  }
+  assert.match(skill, /__dolt_remote_info__/);
+  assert.match(skill, /refs\/dolt\/data/);
+  assert.match(skill, /Preserve legacy records and original owners without querying or\s+refreshing Beads/);
+  assert.match(skill, /Never reassign or close\s+candidate-owning issues to ease cleanup/);
+  assert.match(skill, /Commits, pushes, PR creation, and deletion need\s+current authority/);
+  assert.match(skill, /Stay inside granted filesystem and evidence-access\s+boundaries; preserve inaccessible paths/);
+  assert.match(normalizeWhitespace(skill),
+    /candidate branch\/path references in titles, bodies, and comments/);
+  assert.match(skill, /Truncated, inaccessible, or missing\s+coverage is unknown/);
+  assert.match(skill, /test "\$\{#candidate_issue_numbers\[@\]\}" -gt 0 \|\|/);
+  assert.match(skill, /PRESERVE - candidate issue ownership unknown/);
+  assert.match(skill, /PRESERVE - candidate issue evidence unavailable'; continue 2/);
+  assert.match(skill, /valid JSON is not owner clearance/);
+  assert.match(skill, /Re-read every candidate issue and its comments under the selected lease before\s+each mutation/);
+  assert.match(skill, /Neither an empty\s+assignee list nor issue closure proves runtime inactivity/);
+  assert.match(proof, /Do not manufacture legacy lifecycle metadata/);
+  assert.match(proof, /Every legacy ownership reference has a\s+current, owner-backed disposition/);
+});
+
+test("hygiene distinguishes local reports from retired lifecycle mutations", () => {
+  assert.match(hygiene, /Current weekly mode adds the read-only remote-hygiene audit, not a lifecycle\s+patrol/);
+  assert.match(hygiene, /Older checkouts or scheduled copies may still invoke Beads-backed probes/);
+  assert.match(hygiene, /current CLI refuses both `park --apply`\s+and `unpark --apply` before any Git query or tracker operation/);
+  assert.match(hygiene, /`scripts\/worktree-sweep\.sh` is a no-side-effect exit-2 tombstone/);
+  const recipes = [...hygiene.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+    .map((match) => match[1]).join("\n");
+  assert.doesNotMatch(recipes, /(?:park|unpark)[^\n]*--apply/);
+  assert.doesNotMatch(recipes, /worktree-sweep\.sh|\bbeads:/);
+  assert.match(recipes, /^node scripts\/worktree-hygiene\.mjs thin --branch \S+ --apply$/m);
+  for (const action of ["park", "unpark"]) {
+    assert.match(recipes, new RegExp(
+      `^node scripts/worktree-hygiene\\.mjs ${action} --branch \\S+$`, "m",
+    ), `${action} must retain its supported read-only preview`);
+  }
+  assert.match(hygiene, /Never force-remove\s+a worktree, bypass its guard, or override another owner's lock/);
+  assert.match(hygiene, /Unknown ownership or access means preserve/);
+});
 
 test("normative reflog parser accepts only the canonical message-less creation record", () => {
   const zero = "0".repeat(40);
@@ -98,8 +274,8 @@ test("Branch Curator separates automatic and maintainer-authorized cleanup", () 
   assert.ok(
     profiles.includes(`Before
 classifying anything as \`DELETE\`, choose exactly one profile and record it in
-the owning Bead. Never silently fall from the automatic profile into the manual
-profile.`),
+the curation issue. Never silently fall from the automatic profile into the
+manual profile.`),
   );
   assert.ok(
     automatic.includes(`Unattended retirement requires the full repository-wide maintenance gate. It
@@ -112,7 +288,7 @@ refs.`),
   assert.ok(
     manual.includes(`A current maintainer may explicitly authorize a bounded manual cleanup in the
 current task. Record the instruction, repository, exact candidate set,
-local-only or local-and-remote scope, Bead, session, branch, worktree, and
+local-only or local-and-remote scope, issue, session, branch, worktree, and
 audited default-branch OID before mutation. Historical, standing, inferred, or
 unbounded permission is insufficient, and local cleanup authority does not
 imply remote deletion.`),
@@ -120,8 +296,9 @@ imply remote deletion.`),
   assert.match(manual, /does not\s+imply remote deletion/);
   assert.ok(
     manual.includes(`It still must acquire and
-retain the local maintenance lease, rerun every Beads, GitHub, process,
-worktree, ref, recency, archive, and recovery check immediately before each
+retain the local maintenance lease, rerun every GitHub issue/comment ownership,
+legacy disposition, PR, workflow, process, worktree, ref, recency, archive, and
+recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
 \`worktree-guard\`.`),
@@ -140,24 +317,22 @@ and authorization; never retry the refused removal in the current batch.`;
   assert.ok(proof.includes(guardFixContract));
 });
 
-test("worktree refusal docs require a future exception and confine the fallback", () => {
+test("operator entrypoints use the canonical GitHub creation and budget contract", () => {
   for (const [name, source] of [["AGENTS.md", agents], ["CLAUDE.md", read("CLAUDE.md")]]) {
-    const exitTwoStart = source.indexOf("Exit 2");
-    const exitOneStart = source.indexOf("Exit 1", exitTwoStart);
-    assert.notEqual(exitTwoStart, -1, `${name} must document exit 2`);
-    assert.notEqual(exitOneStart, -1, `${name} must document exit 1`);
-    const exitTwo = source.slice(exitTwoStart, exitOneStart);
-    const exitOne = source.slice(exitOneStart);
-    assert.match(exitTwo, /refused by (?:the )?admission gate/i);
-    assert.match(exitTwo, /--exception-reason "why this exception is needed"/);
-    assert.match(exitTwo, /--exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT'/);
-    assert.match(exitTwo, /replace\s+`REPLACE-WITH-FUTURE-UTC-ISO-INSTANT`/i);
-    assert.doesNotMatch(exitTwo, /git worktree add -b/);
-    assert.doesNotMatch(exitTwo, /2026-08-10T00:00:00Z/);
-    assert.match(exitOne, /lifecycle inventory is incomplete/i);
-    assert.match(exitOne, /exception cannot rescue/i);
-    assert.match(exitOne, /git worktree add -b/);
+    assert.ok(source.includes("docs/workflows/github-work-tracking.md"),
+      `${name} must link the canonical tracker/worktree procedure`);
+    assert.doesNotMatch(source, /\bpnpm\s+beads:worktrees/);
+    assert.doesNotMatch(source, /\bbd\s+(?:prime|ready|create|update|close|sync)\b/);
   }
+  assert.match(workflow, /28 registered worktrees/);
+  assert.match(workflow, /including its primary worktree/);
+  assert.match(workflow, /obtain an attributed, scoped exception on the issue before creating another/);
+  assert.match(workflow, /git worktree add --no-track -b <branch> \.worktrees\/<slug> origin\/main/);
+  assert.ok(workflow.indexOf("git fetch origin main") < workflow.indexOf("git worktree add --no-track"));
+  assert.match(skill, /Exceeding the budget never authorizes deletion/);
+  assert.match(skill, /owner, reason, exact path, and expiry on the issue before creation/);
+  assert.match(skill, /Raw Git does not enforce that budget/);
+  assert.match(skill, /Do not run the retired Beads-managed creator or manufacture lifecycle metadata/);
 });
 
 test("normative proof scopes remote deletion and uses exact expected OIDs", () => {
@@ -290,7 +465,8 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
     assert.match(transaction, /lease\s+ownership/,
       `${name} transaction does not reverify lease ownership`);
     for (const [evidenceClass, evidencePattern] of [
-      ["Beads", /Beads/],
+      ["GitHub issue/comment ownership", /GitHub\s+issue\/comment ownership/],
+      ["legacy disposition", /legacy disposition/],
       ["GitHub PR and workflow", /GitHub\s+PR and\s+workflow/],
       ["process", /process/],
       ["worktree", /worktree/],
@@ -429,33 +605,34 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
   assert.match(remoteTransaction, /remote_absence_status[\s\S]*-eq 2/);
 });
 
-test("operator docs preserve automatic gating and protected main", () => {
-  assert.ok(
-    normalizeWhitespace(agents).includes(
-      "Run `pnpm beads:worktrees` before closing PR-backed work. Record each local worktree as removed and verified or intentionally preserved with an owner and reason; `retire-after-gate` is a classification, not automatic deletion authority. Automatic retirement requires the full maintenance gate. Explicit maintainer authorization in the current task may activate Branch Curator's bounded manual deletion proof.",
-    ),
-    "AGENTS.md does not preserve the exact automatic-versus-manual deletion boundary",
-  );
-  assert.ok(
-    normalizeWhitespace(workflow).includes(
-      "`retire-after-gate` — old, clean, landed work is cleanup-ready. Automatic retirement still requires the full repository-wide maintenance gate; explicit maintainer authorization in the current task may instead activate Branch Curator's bounded manual deletion proof.",
-    ),
-    "familiar workflow does not preserve the exact retire-after-gate boundary",
-  );
+test("operator docs preserve automatic gating, manual proof, and protected main", () => {
+  for (const source of [agents, workflow, hygiene]) {
+    assert.match(normalizeWhitespace(source),
+      /removed and verified,? or intentionally preserved with an owner and reason/);
+    assert.ok(source.includes("branch-curator/SKILL.md"));
+  }
+  assert.match(workflow, /explicit scope, exact current OIDs, clean state,\s+retention on a verified remote ref/);
+  assert.match(workflow, /evidence that no live owner needs the\s+unit/);
+  assert.match(workflow, /missing legacy maintenance planes are not made safe by changing trackers/);
+  assert.match(workflow, /No GitHub issue comment replaces a runtime exclusion lock/);
+  assert.match(skill, /Legacy `retire-after-gate` is a classification, not authorization/);
+  assert.match(skill, /missing metadata or a retired probe means uncertainty, not an unowned unit/);
+  assert.match(hygiene, /current bounded authorization, the local maintenance lease/);
+  assert.match(hygiene, /unattended retirement still\s+requires the full maintenance gate/);
   assert.ok(
     normalizeWhitespace(automaticDesign).includes(
       "The separately specified [manual maintainer-authorized cleanup profile](2026-08-01-maintainer-authorized-branch-cleanup-design.md) does not enable automatic apply mode or remote deletion by automation. It is a bounded operator path with fresh proof and exact expected-OID mutations.",
     ),
     "automatic-retirement design does not link the bounded manual profile",
   );
-  assert.match(agents, /Do not push directly to `main`/);
+  assert.match(agents, /(?:Do not|Never) push directly to `main`/);
 });
 
 test("evals cover every new authorization and race boundary", () => {
   const byId = new Map(evals.map((entry) => [entry.id, entry]));
   assert.deepEqual(
     evals.map((entry) => entry.id),
-    Array.from({ length: 59 }, (_, index) => index + 1),
+    Array.from({ length: 62 }, (_, index) => index + 1),
   );
   for (const id of [43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]) {
     assert.ok(byId.has(id), `missing branch-curator eval ${id}`);
@@ -491,9 +668,11 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(eval39.expected_output, /Commit age is not remote-ref recency/);
 
   assert.match(byId.get(43).expected_output, /28-worktree budget/i);
-  assert.match(byId.get(43).expected_output, /exception that would be admitted/i);
-  assert.match(byId.get(43).expected_output, /never be retired/i);
-  assert.match(byId.get(43).expected_output, /does not delete any existing work/i);
+  assert.match(byId.get(43).expected_output, /issue-recorded owner\/reason\/expiry\/path exception/i);
+  assert.match(byId.get(43).expected_output, /git worktree add --no-track/i);
+  assert.match(byId.get(43).expected_output, /raw Git does not enforce the budget/i);
+  assert.match(byId.get(43).expected_output, /Does not[\s\S]*promise automatic retirement/i);
+  assert.match(byId.get(43).expected_output, /or delete any existing work/i);
   assert.match(byId.get(44).expected_output, /cleanup-ready patrol unit/i);
   assert.match(byId.get(44).expected_output, /reports any remote ref as a proposal rather than deleting it/i);
   assert.match(byId.get(45).expected_output, /gate-incomplete/i);
@@ -520,7 +699,7 @@ test("evals cover every new authorization and race boundary", () => {
   );
   assert.match(
     eval53.prompt,
-    /no active process, session, claim, non-closed Bead, open-or-draft PR, or active workflow/,
+    /no active process, session, claim, unresolved issue or legacy ownership, open-or-draft PR, or active workflow/,
   );
   assert.match(
     eval53.prompt,
@@ -537,10 +716,10 @@ test("evals cover every new authorization and race boundary", () => {
   );
   assert.match(eval53.expected_output, /fresh explicit remote scope/i);
   assert.match(byId.get(54).expected_output, /current task/i);
-  assert.match(byId.get(55).prompt, /one untracked file and an active Bead claim/i);
+  assert.match(byId.get(55).prompt, /one untracked file and a current GitHub owner comment/i);
   assert.match(
     byId.get(55).expected_output,
-    /dirty path and active Bead claim remain unconditional live-work blockers/i,
+    /dirty path and current owner remain unconditional live-work blockers/i,
   );
   assert.match(byId.get(56).expected_output, /expected OID/i);
   assert.match(byId.get(57).expected_output, /worktree-guard/i);
@@ -550,4 +729,44 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(byId.get(59).expected_output, /:refs\/heads\/feature\/cave-remote/);
   assert.match(byId.get(59).expected_output, /destination or OID drift/i);
   assert.match(byId.get(59).expected_output, /status 2/i);
+  assert.match(byId.get(60).expected_output, /ownership unknown/i);
+  assert.match(byId.get(60).expected_output, /without running Beads/i);
+  assert.match(byId.get(60).expected_output, /does not prove an idle owner or authorize takeover/i);
+  assert.match(byId.get(61).expected_output, /not atomic execution leases/i);
+  assert.match(byId.get(61).expected_output, /local maintenance lease/i);
+  assert.match(byId.get(62).expected_output, /Rejects incomplete pagination/i);
+  assert.match(byId.get(62).expected_output, /does not convert a successful API exit into owner clearance/i);
 });
+
+for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge", "unknown", "wrong-type", "admin-symlink", "shared-lock"]) {
+  test(`documented MERGE_RR admin proof: ${state}`, {
+    skip: process.platform === "win32" && ["symlink", "dangling", "admin-symlink"].includes(state),
+  }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curator-rerere-"));
+    const admin = path.join(dir, "admin");
+    fs.mkdirSync(admin);
+    const rr = path.join(admin, "MERGE_RR");
+    if (state === "directory") fs.mkdirSync(rr);
+    else if (state === "symlink" || state === "dangling") {
+      const target = path.join(dir, "empty");
+      if (state === "symlink") fs.writeFileSync(target, "");
+      fs.symlinkSync(target, rr);
+    } else {
+      fs.writeFileSync(rr, state === "nonempty" ? "pending" : "");
+      if (state === "wrong-type") fs.mkdirSync(path.join(admin, "config.worktree"));
+      if (state === "admin-symlink") fs.symlinkSync(rr, path.join(admin, "config.worktree"));
+      if (state === "shared-lock") fs.writeFileSync(path.join(admin, "sharedindex.example.lock"), "");
+      if (state === "unknown") fs.writeFileSync(path.join(admin, "UNKNOWN_RECOVERY"), "");
+      if (state === "lock") fs.writeFileSync(`${rr}.lock`, "");
+      if (state === "merge") fs.writeFileSync(path.join(admin, "MERGE_HEAD"), "");
+    }
+    const start = proof.indexOf("worktree_admin_safe=1");
+    const end = proof.indexOf("\n```", start);
+    assert.ok(start >= 0 && end > start);
+    const result = spawnSync("bash", ["-c",
+      `worktree_git_dir=$1\nprimary_checkout=$2\nfor candidate in one; do\n${proof.slice(start, end)}\nprintf 'SAFE\\n'\ndone`,
+      "admin-proof", admin, fileURLToPath(new URL("..", import.meta.url))], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), state === "empty" ? "SAFE" : "PRESERVE - worktree admin recovery state");
+  });
+}

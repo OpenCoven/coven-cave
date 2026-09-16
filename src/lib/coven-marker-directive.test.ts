@@ -7,8 +7,36 @@ import { isRenderablePreviewUrl, slicePreviewBlocks } from "./preview-blocks.ts"
 import { extractSkillMarkers } from "./skill-blocks.ts";
 import { sliceSpecBlocks } from "./spec-blocks.ts";
 import { extractArtifactBlocks } from "./canvas-artifacts.ts";
+import { sliceApproveBlocks, formatApproveAnswers } from "./approve-blocks.ts";
 
 const directive = buildCovenMarkersDirective();
+
+const exampleQuestion = directive.match(/<coven:approve\s[^>]*\/>/)?.[0];
+assert.ok(exampleQuestion, "directive teaches a real production questions marker");
+const questionRequest = sliceApproveBlocks(exampleQuestion)
+  .find((piece) => piece.kind === "approve")?.request;
+assert.deepEqual(questionRequest, {
+  kind: "questions",
+  questions: [{
+    id: "release-channel",
+    prompt: "Which release channel?",
+    options: ["Stable", "Beta"],
+    allowOther: false,
+  }],
+});
+assert.equal(
+  formatApproveAnswers(questionRequest, { "release-channel": "Beta" }),
+  "Which release channel? → Beta",
+);
+assert.match(directive, /2–6 pipe-separated options/);
+assert.match(directive, /at most 3 questions per card; overflow opens another card/);
+assert.match(directive, /Other free-text input is available by default/);
+assert.match(directive, /Selecting an answer does not send it/);
+assert.match(directive, /human explicitly pressing "Send answers".*next user message/);
+assert.match(directive, /no automatic send, countdown, or automatic approval/);
+assert.match(directive, /no execution authority.*command and plan approval variants are unsupported/);
+assert.match(directive, /Never request credentials, passwords, API keys, tokens, or other secrets through these inputs/);
+assert.doesNotMatch(directive, /stag(?:e|es|ing).*answers/i);
 
 // ── Shape: a stable, self-contained prompt block (cave-kj6j) ─────────────────
 assert.match(directive, /^<coven_cards>\n/);

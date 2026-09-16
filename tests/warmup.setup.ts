@@ -111,6 +111,12 @@ async function boot(page: Page) {
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: [REPO_SESSION] } }),
   );
+  await page.route("**/api/flows/runs**", (route) =>
+    route.fulfill({ json: { ok: true, runs: [{
+      id: "warmup-flow", flowId: "warmup", flowName: "Warmup Flow run",
+      status: "succeeded", source: "cave", steps: [], startedAt: ISO,
+    }] } }),
+  );
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: [REPO_PROJECT] } }),
   );
@@ -214,6 +220,15 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await expect(reopen).toBeVisible({ timeout: CHUNK_TIMEOUT });
   await reopen.click();
   await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: CHUNK_TIMEOUT });
+
+  // `flow-executions-dialog` — the Chat toolbar and Flow notification links
+  // share this lazy chunk. Compile it before the ownership journey opens it.
+  await page.goto("/?mode=chat&flowRun=warmup-flow", { waitUntil: "domcontentloaded" });
+  const flowRuns = page.getByRole("dialog", { name: "Flow runs" });
+  await expect(flowRuns).toBeVisible({ timeout: CHUNK_TIMEOUT });
+  await expect(flowRuns).toContainText("Warmup Flow run", { timeout: CHUNK_TIMEOUT });
+  await page.keyboard.press("Escape");
+  await expect(flowRuns).toBeHidden();
 
   // `settings-about` — the narrow About regression is often the first test to
   // visit /settings on its shard. Compile that route here so it does not spend

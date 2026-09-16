@@ -46,9 +46,11 @@
   align-items: flex-end;
   justify-content: center;
   pointer-events: none;
+  container-name: thread-signal-overlay;
+  container-type: inline-size;
 }
 .cave-thread-signal-overlay > * {
-  width: min(100%, 720px);
+  width: min(100%, 60rem);
   max-height: 100%;
   margin: 0;
   overflow-y: auto;
@@ -384,6 +386,44 @@
 @container thread-signal (min-width: 300px) {
   .tsc-tiles {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container thread-signal-overlay (min-width: 48rem) {
+  .cave-thread-signal-overlay > .tsc-card {
+    display: grid;
+    grid-template-areas:
+      "head head"
+      "tiles section"
+      "why queue"
+      "foot foot";
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+
+  .cave-thread-signal-overlay .tsc-head {
+    grid-area: head;
+  }
+
+  .cave-thread-signal-overlay .tsc-tiles {
+    grid-area: tiles;
+  }
+
+  .cave-thread-signal-overlay .tsc-why {
+    grid-area: why;
+  }
+
+  .cave-thread-signal-overlay .tsc-sec {
+    grid-area: section;
+    align-self: end;
+  }
+
+  .cave-thread-signal-overlay .tsc-queue {
+    grid-area: queue;
+  }
+
+  .cave-thread-signal-overlay .tsc-foot {
+    grid-area: foot;
   }
 }
 

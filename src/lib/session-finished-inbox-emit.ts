@@ -1,6 +1,7 @@
 import { createItem, loadInbox, type InboxItem } from "@/lib/cave-inbox";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
-import { loadState } from "@/lib/cave-config";
+import { flowSessionReferenceFor } from "@/lib/flow-session";
+import { loadFlowSessionState } from "@/lib/server/flow-store";
 import { broadcastCreated } from "@/lib/inbox-scheduler";
 import {
   hasUnresolvedSessionFinishedItem,
@@ -41,7 +42,9 @@ export async function emitSessionFinishedItem(input: {
     ) {
       return null;
     }
-    const [{ items }, state] = await Promise.all([loadInbox(), loadState()]);
+    const state = await loadFlowSessionState(false);
+    if (flowSessionReferenceFor(state.sessionFlow, input.sessionId)) return null;
+    const { items } = await loadInbox();
     if (hasUnresolvedSessionFinishedItem(items, input.sessionId)) return null;
     // The cave-state title is authoritative (auto-rename and manual renames
     // both write sessionTitles); fall back to the neutral default.

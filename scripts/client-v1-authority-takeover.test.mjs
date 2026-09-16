@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -22,9 +25,61 @@ import {
   inspectCapturedBoundRequest,
   inspectCapturedPlaintextRequest,
 } from "./client-v1-authority-takeover.mjs";
+import * as authorityTakeover from "./client-v1-authority-takeover.mjs";
 
 const PAIRING_SECRET = base64UrlEncode(new Uint8Array(32).fill(0x31));
 const BEARER = "coven_test_bearer";
+
+test("authority takeover scratch data uses the supplied temp root", async () => {
+  assert.equal(
+    typeof authorityTakeover.createAuthorityTakeoverScratchRoot,
+    "function",
+  );
+  const parent = await mkdtemp(
+    path.join(tmpdir(), "cave-authority-takeover-parent-"),
+  );
+  const previousTempEnvironment = Object.fromEntries(
+    ["TEMP", "TMP", "TMPDIR"].map((name) => [name, process.env[name]]),
+  );
+  try {
+    const canonicalParent = await realpath(parent);
+    for (const name of Object.keys(previousTempEnvironment)) {
+      process.env[name] = canonicalParent;
+    }
+    const root = await authorityTakeover.createAuthorityTakeoverScratchRoot();
+    try {
+      assert.equal(root, await realpath(root));
+      assert.equal(path.dirname(root), canonicalParent);
+      assert.match(
+        path.basename(root),
+        /^cave-client-v1-conformance-/u,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  } finally {
+    for (const [name, value] of Object.entries(previousTempEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("authority takeover proof allocates scratch through the temp-root helper", async () => {
+  const source = await readFile(
+    new URL("./client-v1-authority-takeover.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /const scratchRoot = await createAuthorityTakeoverScratchRoot\(\);/u,
+  );
+  assert.doesNotMatch(
+    source,
+    /mkdtemp\(\s*path\.join\(\s*repositoryRoot,\s*["']\.scratch-client-v1-authority-takeover-/u,
+  );
+});
 
 test("takeover credential kinds include pairing-secret and bearer", () => {
   assert.deepEqual(

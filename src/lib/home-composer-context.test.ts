@@ -9,6 +9,19 @@ vi.mock("@/lib/icon", () => ({
 
 import { HomeFromTaskRow } from "@/components/home/home-from-task";
 import { resolveHomeTaskHandoff } from "@/lib/home-task-handoff";
+import { homeSubmitLabel } from "@/components/home/home-destinations";
+
+describe("Home submit action", () => {
+  it.each([
+    ["chat", null, "Hello", "Send message"],
+    ["chat", "omnigent:fleet", "Hello", "Start Omnigent run"],
+    ["chat", "omnigent:fleet", "  ", "Send message"],
+    ["board", null, "Task", "Create task"],
+    ["board", "omnigent:fleet", "Task", "Create task"],
+  ])("names %s / %s consistently with dispatch", (destination, host, prompt, label) => {
+    expect(homeSubmitLabel(destination, host, prompt)).toBe(label);
+  });
+});
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 

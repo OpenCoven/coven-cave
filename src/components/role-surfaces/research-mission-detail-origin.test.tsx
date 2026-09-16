@@ -10,7 +10,7 @@
 // is invisible to any source-text assertion.
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("./research-artifact-actions", () => ({
   ResearchArtifactActions: () => null,
@@ -18,6 +18,11 @@ vi.mock("./research-artifact-actions", () => ({
 }));
 vi.mock("./research-evidence-ledger", () => ({
   ResearchEvidenceLedger: () => null,
+}));
+vi.mock("@/components/flow-executions-dialog", () => ({
+  FlowExecutionsDialog: ({ initialSessionId }) => createElement("div", {
+    "data-transcript-session": initialSessionId,
+  }, "Read-only Flow transcript"),
 }));
 
 import { LiveRegionProvider } from "@/components/ui/live-region";
@@ -67,7 +72,7 @@ function textOf(node: unknown): string {
   return "";
 }
 
-async function mount(missionValue: Record<string, unknown>, onOpenSession: (id: string) => void) {
+async function mount(missionValue: Record<string, unknown>, onOpenSession: (id: string) => void, showEvidence = false) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(createElement(
@@ -75,7 +80,7 @@ async function mount(missionValue: Record<string, unknown>, onOpenSession: (id: 
       null,
       createElement(ResearchMissionDetail, {
         mission: missionValue,
-        showEvidence: false,
+        showEvidence,
         onOpenSession,
         onOpenUrl: () => {},
         onShowResources: () => {},
@@ -95,6 +100,7 @@ function buttonsLabelled(renderer: ReactTestRenderer, label: string) {
 }
 
 describe("Research Desk projects a chat-invoked run back into its conversation", () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -116,12 +122,13 @@ describe("Research Desk projects a chat-invoked run back into its conversation",
 
     // The executor session stays separately reachable — the two affordances are
     // different destinations, not a rename of one.
-    const sessionButtons = buttonsLabelled(renderer, "Open session");
+    const sessionButtons = buttonsLabelled(renderer, "View transcript");
     expect(sessionButtons).toHaveLength(1);
     await act(async () => {
       sessionButtons[0].props.onClick();
     });
-    expect(opened).toEqual([ORIGIN_SESSION_ID, EXECUTOR_SESSION_ID]);
+    expect(opened).toEqual([ORIGIN_SESSION_ID]);
+    expect(renderer.root.findByProps({ "data-transcript-session": EXECUTOR_SESSION_ID })).toBeTruthy();
     await act(async () => renderer.unmount());
   });
 
@@ -132,7 +139,7 @@ describe("Research Desk projects a chat-invoked run back into its conversation",
       const opened: string[] = [];
       const renderer = await mount(value, (id) => opened.push(id));
       expect(buttonsLabelled(renderer, "Open the chat that started this")).toHaveLength(0);
-      expect(buttonsLabelled(renderer, "Open session")).toHaveLength(1);
+      expect(buttonsLabelled(renderer, "View transcript")).toHaveLength(1);
       await act(async () => renderer.unmount());
     }
   });
@@ -148,5 +155,34 @@ describe("Research Desk projects a chat-invoked run back into its conversation",
     const deskRenderer = await mount(mission({ origin: { surface: "research-desk" } }), () => {});
     expect(textOf(deskRenderer.toJSON())).toContain("Started from the Research Desk");
     await act(async () => deskRenderer.unmount());
+  });
+
+  test("the evidence-rail discussion creates a separate chat for the returned owner", async () => {
+    const onOpenSession = vi.fn();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      ok: true, sessionId: "new-discussion", familiarId: "actual-owner",
+    })));
+    vi.stubGlobal("fetch", fetcher);
+    const renderer = await mount(mission(), onOpenSession, true);
+    const button = renderer.root.findAllByType("button").find((node) => textOf(node).includes("Discuss this run in chat"));
+    await act(async () => button.props.onClick());
+    expect(fetcher).toHaveBeenCalledWith("/api/flows/discussion", expect.objectContaining({
+      body: JSON.stringify({ sessionId: EXECUTOR_SESSION_ID }),
+    }));
+    expect(onOpenSession).toHaveBeenCalledExactlyOnceWith("new-discussion", "actual-owner");
+    await act(async () => renderer.unmount());
+  });
+
+  test("the evidence-rail discussion failure is actionable without navigating", async () => {
+    const onOpenSession = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ok: false, error: "Retry when the familiar is available",
+    }), { status: 503 })));
+    const renderer = await mount(mission(), onOpenSession, true);
+    const button = renderer.root.findAllByType("button").find((node) => textOf(node).includes("Discuss this run in chat"));
+    await act(async () => button.props.onClick());
+    expect(onOpenSession).not.toHaveBeenCalled();
+    expect(textOf(renderer.toJSON())).toContain("Retry when the familiar is available");
+    await act(async () => renderer.unmount());
   });
 });

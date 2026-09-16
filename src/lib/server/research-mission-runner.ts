@@ -176,6 +176,8 @@ export type ResearchMissionRunnerDeps = {
       projectRoot: string | null;
       addDirs?: string[];
       offlinePolicy?: "queue" | "reject";
+      missionId?: string;
+      iteration?: number;
       /** Mission-selected runtime; overrides the familiar's Coven binding. */
       harness?: string;
       model?: string;
@@ -999,6 +1001,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     projectRoot: string;
     addDirs: string[];
     offlinePolicy: "reject";
+    missionId: string;
+    iteration: number;
     harness?: string;
     model?: string;
     publishSessionOwner: (
@@ -1008,6 +1012,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     ) => Promise<() => Promise<void>>;
   } => ({
     projectRoot,
+    missionId,
+    iteration,
     addDirs: missionWorkspace === projectRoot ? [] : [missionWorkspace],
     ...(runtime?.harness ? { harness: runtime.harness } : {}),
     ...(runtime?.model ? { model: runtime.model } : {}),
@@ -2302,7 +2308,15 @@ export function makeProductionResearchMissionRunner() {
     createWorkspace: createResearchMissionWorkspace,
     removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
-    saveMission: saveResearchMission,
+    saveMission: async (mission) => {
+      await saveResearchMission(mission);
+      try {
+        const { emitResearchMissionAttention } = await import("./flow-attention.ts");
+        await emitResearchMissionAttention(mission);
+      } catch (error) {
+        console.warn("[research-missions] Could not deliver mission attention:", error);
+      }
+    },
     finalizeTerminalRun: finalizeResearchRunGenerationWithinMissionLock,
     loadSessionOwner: loadResearchMissionSessionOwner,
     recordSessionOwner: recordResearchMissionSessionOwner,
@@ -2315,6 +2329,8 @@ export function makeProductionResearchMissionRunner() {
         addDirs: options.addDirs,
         trustedLocalResearch: true,
         offlinePolicy: options.offlinePolicy,
+        missionId: options.missionId,
+        iteration: options.iteration,
         harness: options.harness,
         model: options.model,
         publishSessionOwner: options.publishSessionOwner,

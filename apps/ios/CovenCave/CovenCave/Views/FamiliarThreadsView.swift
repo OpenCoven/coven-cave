@@ -153,7 +153,6 @@ struct FamiliarThreadsView: View {
         .refreshable { await app.loadSessions() }
         // Re-appearance is not: reuse a list fetched moments ago (cave-ioswipe.5).
         .task { await app.loadSessionsIfStale() }
-        .onAppear { app.markFamiliarViewed([familiar.id], in: projectContext) }
         .safeAreaInset(edge: .bottom) {
             if selectMode {
                 HStack {
@@ -326,11 +325,7 @@ struct FamiliarThreadsView: View {
             return nil
         }
     }
-    private var hasLocalThreads: Bool { !app.projectDirectThreads(for: familiar.id).isEmpty }
-    private var canStartChatsInContext: Bool {
-        if case .project = projectContext { return true }
-        return false
-    }
+    private var hasLocalThreads: Bool { !localThreads.isEmpty }
     private var allLocalSelected: Bool {
         !visibleLocalThreads.isEmpty && Set(visibleLocalThreads.map(\.id)).isSubset(of: selectedIds)
     }
@@ -453,19 +448,6 @@ struct FamiliarThreadsView: View {
     }
 
     private func startNewChat() {
-        guard canStartChatsInContext else {
-            app.showToast(
-                "Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.",
-                systemImage: "folder.badge.questionmark",
-                style: .warning
-            )
-            return
-        }
-        if app.projectContext?.id != projectContext.id {
-            guard app.requestOpenDestination(.chats, projectId: projectContext.projectId) else {
-                return
-            }
-        }
         showNewChat = true
     }
 
@@ -473,48 +455,83 @@ struct FamiliarThreadsView: View {
         ContentUnavailableView {
             Label("No chats with \(familiar.displayName)", systemImage: "bubble.left")
         } description: {
-            if canStartChatsInContext {
-                Text("Start a conversation — it'll appear here and stay separate from your other chats.")
-            } else {
-                Text("Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.")
-            }
+            Text("Start a separate conversation with this familiar. Choose its access in New chat.")
         } actions: {
-            if canStartChatsInContext {
-                Button("New chat", action: startNewChat)
-                    .buttonStyle(.borderedProminent)
-            }
+            Button("New chat", action: startNewChat)
+                .buttonStyle(.borderedProminent)
         }
     }
 }
 
 /// A server-side session not yet materialised on this device — tapping it pulls
 /// the conversation down. Mirrors `ThreadRow`'s layout with a synced-elsewhere hint.
-private struct ServerSessionRow: View {
+struct ServerSessionRow: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SessionRow
+    private var familiar: Familiar? { session.familiarId.flatMap(app.familiar) }
 
     var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(familiar: session.familiarId.flatMap(app.familiar),
-                       url: session.familiarId.flatMap(app.familiar).flatMap { app.client?.avatarURL(for: $0) },
-                       size: 48)
+        HStack(alignment: .top, spacing: 12) {
+            AvatarView(familiar: familiar,
+                       url: familiar.flatMap { app.client?.avatarURL(for: $0) },
+                       size: 48, showStatus: true)
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(session.title.isEmpty ? "Untitled chat" : session.title)
-                        .font(.headline).lineLimit(1)
-                    Spacer()
-                    if let date = caveParseISO(session.updatedAt) {
-                        Text(date, format: .relative(presentation: .numeric))
-                            .font(.caption).foregroundStyle(.tertiary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        title
+                        Spacer(minLength: 8)
+                        relativeTime
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        title
+                        relativeTime
                     }
                 }
-                Label("Synced from another device", systemImage: "desktopcomputer")
+                if let familiar {
+                    Text(familiar.displayName)
+                        .font(.caption)
+                        .foregroundStyle(chrome.textSecondary)
+                }
+                Label("On another device", systemImage: "desktopcomputer")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
         }
-        .padding(.vertical, 2)
+        .frame(minHeight: 44)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var title: some View {
+        HStack(spacing: 6) {
+            Text(session.title.isEmpty ? "Untitled chat" : session.title)
+                .font(.headline)
+                .foregroundStyle(chrome.textPrimary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .layoutPriority(1)
+            if session.pinned == true {
+                Image(systemName: "pin.fill").foregroundStyle(chrome.accent)
+                    .accessibilityLabel("Pinned")
+            }
+            if session.archivedAt != nil {
+                Image(systemName: "archivebox").foregroundStyle(.secondary)
+                    .accessibilityLabel("Archived")
+            }
+        }
+        .font(.caption2)
+    }
+
+    @ViewBuilder
+    private var relativeTime: some View {
+        if let date = caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) {
+            Text(date, format: .relative(presentation: .numeric))
+                .font(.caption)
+                .foregroundStyle(chrome.textSecondary)
+                .lineLimit(1)
+        }
     }
 }

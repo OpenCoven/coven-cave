@@ -1246,11 +1246,13 @@ function buildActionModal(request: SelfHealRequest): ActionModalData {
  */
 function ActionModal({
   data,
+  error,
   onConfirm,
   onTrace,
   onClose,
 }: {
   data: ActionModalData;
+  error?: string | null;
   onConfirm: () => void;
   onTrace: (request: SelfHealRequest) => void;
   onClose: () => void;
@@ -1276,6 +1278,7 @@ function ActionModal({
         </>
       }
     >
+      {error ? <div className="fa-error-band" role="alert">{error}</div> : null}
       <div className={`fa-modal-action fa-modal-action--${data.request.severity}`}>
         <span className={`fa-modal-action__icon fa-modal-action__icon--${data.kind}`} aria-hidden>
           <Icon name={data.icon} width={22} />
@@ -1909,6 +1912,7 @@ export function FamiliarAnalyticsContent({
   const [selectedDay, setSelectedDay] = useState<PulseDay | null>(null);
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const [actionModal, setActionModal] = useState<ActionModalData | null>(null);
+  const [chatLaunchError, setChatLaunchError] = useState<string | null>(null);
   // cave-fy1q phase 3: surface the first-run funnel while this install has
   // both stamps. Sampled after mount — localStorage isn't SSR-safe.
   const [timeToFirstReply, setTimeToFirstReply] = useState<string | null>(null);
@@ -1992,6 +1996,7 @@ export function FamiliarAnalyticsContent({
 
   // ── Actions ──────────────────────────────────────────────────────────────
   const openAction = useCallback((request: SelfHealRequest) => {
+    setChatLaunchError(null);
     setBoardOpen(false);
     setActionModal(buildActionModal(request));
   }, []);
@@ -2011,12 +2016,19 @@ export function FamiliarAnalyticsContent({
   // the cave's real self-heal path (shared with the thread-signals queue).
   const confirmAction = useCallback(() => {
     if (!actionModal) return;
-    requestAgentsNewChat({
+    const result = requestAgentsNewChat({
+      destination: "right-panel",
       familiarId: model.familiarId,
+      sourceSessionId: actionModal.request.traceSessionId,
       initialPrompt: `${actionModal.prompt}\n\nAnalytics source: /dashboard/familiars/${encodeURIComponent(model.familiarId)}/analytics`,
       origin: "chat" as const,
     });
-    announce(`Opening a thread to ${actionModal.title.toLowerCase()}.`);
+    setChatLaunchError(result.ok ? null : result.error);
+    if (!result.ok) {
+      announce(result.error, "assertive");
+      return;
+    }
+    announce(`Requested a Chat panel thread to ${actionModal.title.toLowerCase()}.`);
     setActionModal(null);
     setBoardOpen(false);
   }, [actionModal, announce, model.familiarId]);
@@ -2025,12 +2037,17 @@ export function FamiliarAnalyticsContent({
   // brief — the same "Rite of Binding" flow as the Studio Contract tab.
   const reviewContract = useCallback(() => {
     if (!model.contractReport) return;
-    requestAgentsNewChat({
+    const result = requestAgentsNewChat({
+      destination: "right-panel",
       familiarId: model.familiarId,
       initialPrompt: `${buildRehabilitationBrief(familiarName, model.contractReport)}\n\nAnalytics source: /dashboard/familiars/${encodeURIComponent(model.familiarId)}/analytics`,
       origin: "chat" as const,
     });
-    announce(`Opening a review thread to repair ${familiarName}'s contract.`);
+    setChatLaunchError(result.ok ? null : result.error);
+    announce(
+      result.ok ? `Requested a Chat panel thread to repair ${familiarName}'s contract.` : result.error,
+      result.ok ? "polite" : "assertive",
+    );
   }, [announce, familiarName, model.contractReport, model.familiarId]);
 
   const handleSelectDay = useCallback((day: PulseDay) => {
@@ -2073,6 +2090,9 @@ export function FamiliarAnalyticsContent({
 
   return (
     <div className="fa-frame">
+      {chatLaunchError ? (
+        <div className="fa-error-band" role="alert">{chatLaunchError}</div>
+      ) : null}
       <FamiliarAnalyticsDock
         model={model}
         confidence={windowConfidence}
@@ -2480,6 +2500,7 @@ export function FamiliarAnalyticsContent({
       {actionModal ? (
         <ActionModal
           data={actionModal}
+          error={chatLaunchError}
           onConfirm={confirmAction}
           onTrace={traceRequest}
           onClose={() => setActionModal(null)}

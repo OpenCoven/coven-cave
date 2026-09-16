@@ -139,8 +139,8 @@ test("desk tab composes the mission workspace and keeps action wiring", () => {
   // Load errors surface with a retry, outside any hidden panel.
   assert.match(deskTab, /research-desk__error" role="alert"/);
   assert.match(deskTab, /void research\.load\(\)/);
-  // Sessions open against the active familiar.
-  assert.match(deskTab, /context\.openSession\(sessionId, context\.activeFamiliar\.id\)/);
+  // Discussions use their returned owner; origin links retain the current owner.
+  assert.match(deskTab, /context\.openSession\(sessionId, ownerId \?\? context\.activeFamiliar\.id\)/);
 });
 
 test("prompt tab composes the composer + quick saves and follows starts to the desk", () => {
@@ -258,7 +258,7 @@ test("archived missions collapse below the priority groups", () => {
 test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(list, /aria-current=\{selected/);
   assert.match(detail, /aria-label="Research progress"/);
-  assert.match(detail, /Open session/);
+  assert.match(detail, /View transcript/);
   // The ledger's Grimoire-open affordance now rides the shared artifact
   // actions component (research-artifact-actions.tsx) instead of a local
   // "Open in Grimoire" button.

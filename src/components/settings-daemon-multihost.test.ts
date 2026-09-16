@@ -14,7 +14,7 @@ const daemonCss = existsSync(daemonCssUrl) ? readFileSync(daemonCssUrl, "utf8") 
 // ── Claude Design daemon control sheet ───────────────────────────────────────
 assert.match(
   shellEntry,
-  /import \{ DaemonSection \} from "\.\/settings-daemon"/,
+  /const DaemonSection = dynamic\(\(\) => import\("\.\/settings-daemon"\)/,
   "SettingsShell should delegate the daemon control sheet to a focused component",
 );
 assert.match(

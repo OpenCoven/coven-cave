@@ -4,6 +4,13 @@ import Observation
 /// A message as shown in the thread UI. For group threads, assistant messages
 /// carry the `familiarId` that produced them so we can attribute + colour them.
 struct DisplayMessage: Identifiable, Codable, Hashable {
+    /// An absent context is legacy; a captured nil root is unknown provenance
+    /// and must not inherit a project recovered later from server metadata.
+    struct QueuedContext: Codable, Hashable {
+        let projectRoot: String?
+        let sessionIds: [String: String]
+    }
+
     /// `system` carries inline slash-command output (help, `/daemon`,
     /// results) — rendered as a centred note, never sent to a familiar.
     enum Role: String, Codable { case user, assistant, system }
@@ -55,6 +62,7 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// live thread membership would skip an original target or send to a new
     /// one the user never selected. Optional for pre-migration snapshots.
     var queuedTargetFamiliarIds: [String]?
+    var queuedContext: QueuedContext?
     /// Per-send response controls. Optional so snapshots written before the
     /// controls shipped remain decodable and replay with current defaults.
     var reasoningEffort: ChatThinkingEffort?
@@ -261,6 +269,7 @@ struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var archived: Bool?
     var pinned: Bool?
     var muted: Bool?
+    var flowSessionIds: [String]? = nil
 }
 
 /// A conversation thread. One familiar = a direct chat; several = a group.
@@ -299,6 +308,10 @@ final class ChatThread: Identifiable, Hashable {
     var archived: Bool = false
     var pinned: Bool = false
     var muted: Bool = false
+    /// Exact execution sessions remain hidden after a direct transcript read,
+    /// including while offline. Rebinding to a different session does not hide it.
+    var flowSessionIds: Set<String> = []
+    var isFlowRun: Bool { sessionIds.values.contains { flowSessionIds.contains($0) } }
     /// Set when a pre-session send is rejected for project provenance so the
     /// UI can repair the thread without discarding the draft or transcript.
     var needsProjectSelection: Bool = false
@@ -319,7 +332,18 @@ final class ChatThread: Identifiable, Hashable {
         self.familiarIds = familiarIds
         self.sessionIds = sessionIds
         self.projectRoot = projectRoot
-        self.messages = messages
+        self.messages = messages.map { message in
+            guard message.isQueued else { return message }
+            var migrated = message
+            if migrated.queuedContext == nil {
+                migrated.queuedContext = .init(projectRoot: projectRoot, sessionIds: sessionIds)
+            }
+            if migrated.queuedTargetFamiliarIds == nil {
+                migrated.queuedTargetFamiliarIds = message.queuedRunIdsByFamiliarId
+                    .map { Array($0.keys).sorted() } ?? familiarIds
+            }
+            return migrated
+        }
         self.pendingModelOverride = pendingModelOverride
         self.updatedAt = Date()
         rebuildTranscript()  // didSet doesn't fire during init
@@ -334,6 +358,7 @@ final class ChatThread: Identifiable, Hashable {
         self.archived = s.archived ?? false
         self.pinned = s.pinned ?? false
         self.muted = s.muted ?? false
+        self.flowSessionIds = Set(s.flowSessionIds ?? [])
     }
 
     var snapshot: ThreadSnapshot {
@@ -341,7 +366,8 @@ final class ChatThread: Identifiable, Hashable {
                        sessionIds: sessionIds, projectRoot: projectRoot,
                        messages: messages,
                        pendingModelOverride: pendingModelOverride,
-                       updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted)
+                       updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted,
+                       flowSessionIds: flowSessionIds.isEmpty ? nil : flowSessionIds.sorted())
     }
 
     /// Send a user message and stream replies from every familiar in the thread.
@@ -383,6 +409,7 @@ final class ChatThread: Identifiable, Hashable {
             queuedRunIdsByFamiliarId: deliveryRunIds,
             queuedAttemptedFamiliarIds: familiarIds,
             queuedTargetFamiliarIds: familiarIds,
+            queuedContext: .init(projectRoot: projectRoot, sessionIds: sessionIds),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
@@ -489,6 +516,7 @@ final class ChatThread: Identifiable, Hashable {
             role: .user, familiarId: nil, text: trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
             queuedTargetFamiliarIds: familiarIds,
+            queuedContext: .init(projectRoot: projectRoot, sessionIds: sessionIds),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
@@ -509,6 +537,8 @@ final class ChatThread: Identifiable, Hashable {
     func replayQueued(client: CaveClient,
                       onConnectionFailure: ((Error) -> Void)? = nil,
                       dispatchLeaseIsCurrent: @escaping () -> Bool,
+                      targetAccessIsCurrent: @escaping (String?, String) -> Bool,
+                      onAccessRefused: @escaping (String?) -> Void,
                       persistBeforeDispatch: @escaping () async -> Bool,
                       persistAfterRollback: @escaping () async -> Bool,
                       onChange: @escaping () -> Void) async {
@@ -520,7 +550,13 @@ final class ChatThread: Identifiable, Hashable {
             let targets = queuedMessage.queuedTargetFamiliarIds
                 ?? queuedMessage.queuedRunIdsByFamiliarId.map { Array($0.keys).sorted() }
                 ?? familiarIds
-            guard requireSendProvenance(to: targets) else { return }
+            guard !targets.isEmpty,
+                  let queuedContext = queuedMessage.queuedContext,
+                  let queuedProjectRoot = queuedContext.projectRoot,
+                  queuedProjectRoot == projectRoot else {
+                onAccessRefused(nil)
+                return
+            }
             let queuedId = queuedMessage.id
             let prompt = queuedMessage.sendPrompt ?? queuedMessage.text
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
@@ -529,7 +565,29 @@ final class ChatThread: Identifiable, Hashable {
             let modelControls = queuedMessage.modelControls ?? [:]
             var completed = Set(queuedMessage.queuedCompletedFamiliarIds ?? [])
             for familiarId in targets where !completed.contains(familiarId) {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, dispatchLeaseIsCurrent() else { return }
+                let queuedSessionId = queuedContext.sessionIds[familiarId] ?? sessionIds[familiarId]
+                var targetWasRefused = false
+                let mayDispatchTarget: () -> Bool = {
+                    guard dispatchLeaseIsCurrent() else { return false }
+                    guard self.projectRoot == queuedProjectRoot,
+                          self.sessionIds[familiarId] == queuedSessionId else {
+                        targetWasRefused = true
+                        onAccessRefused(nil)
+                        return false
+                    }
+                    guard targetAccessIsCurrent(queuedProjectRoot, familiarId) else {
+                        targetWasRefused = true
+                        onAccessRefused(familiarId)
+                        return false
+                    }
+                    return true
+                }
+                guard mayDispatchTarget() else { continue }
+                guard requireSendProvenance(to: [familiarId]) else {
+                    onAccessRefused(familiarId)
+                    continue
+                }
                 // A sibling from the original concurrent fan-out can still be
                 // streaming when another leg proves offline and queues their
                 // shared user bubble. Never start a second request for it.
@@ -695,7 +753,7 @@ final class ChatThread: Identifiable, Hashable {
                 // Cancellation after the checkpoint but before `stream` begins
                 // proves this leg never left the phone. Roll its boundary back so
                 // an endpoint re-pair can safely deliver it to the replacement.
-                guard !Task.isCancelled, dispatchLeaseIsCurrent() else {
+                guard !Task.isCancelled, dispatchLeaseIsCurrent(), mayDispatchTarget() else {
                     mutate(queuedId) {
                         var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
                         attemptedIds.remove(familiarId)
@@ -719,6 +777,7 @@ final class ChatThread: Identifiable, Hashable {
                     // the superseded endpoint/flush id.
                     _ = await persistAfterRollback()
                     onChange()
+                    if !Task.isCancelled, dispatchLeaseIsCurrent() { continue }
                     return
                 }
 
@@ -734,12 +793,17 @@ final class ChatThread: Identifiable, Hashable {
                     modelOverride: queuedMessage.modelOverride,
                     modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
                     runId: runId,
-                    liveDispatchLeaseIsCurrent: dispatchLeaseIsCurrent,
+                    liveDispatchLeaseIsCurrent: mayDispatchTarget,
                     persistAfterProvablyUnsentRollback: persistAfterRollback,
                     client: client,
                     onChange: onChange,
                     onConnectionFailure: onConnectionFailure
                 )
+                // A pre-POST target refusal must not hold back permitted siblings.
+                if streamOutcome == .queued, targetWasRefused,
+                   !Task.isCancelled, dispatchLeaseIsCurrent() {
+                    continue
+                }
                 // A provably-unsent reconnect failure removes its placeholder
                 // and leaves the durable queue bit set. Stop without spinning;
                 // the next supervisor success resumes this familiar only.
@@ -753,6 +817,7 @@ final class ChatThread: Identifiable, Hashable {
                 updatedAt = Date()
                 onChange()
             }
+            guard targets.allSatisfy({ completed.contains($0) }) else { return }
             mutate(queuedId) {
                 $0.queued = false
                 $0.queuedDispatchInFlight = nil
@@ -760,6 +825,7 @@ final class ChatThread: Identifiable, Hashable {
                 $0.queuedRunIdsByFamiliarId = nil
                 $0.queuedAttemptedFamiliarIds = nil
                 $0.queuedTargetFamiliarIds = nil
+                $0.queuedContext = nil
             }
             updatedAt = Date()
             onChange()
@@ -1384,12 +1450,17 @@ final class ChatThread: Identifiable, Hashable {
     /// reply on screen stayed. Nil is the honest state: the server has never
     /// named THIS reply to us, so a delete goes through the transcript matcher
     /// like any other unnamed message.
+    @discardableResult
     func retry(_ messageId: String, client: CaveClient,
+               liveDispatchLeaseIsCurrent: @escaping () -> Bool,
+               persistAfterRefusal: @escaping () async -> Bool,
+               onRefusal: @escaping () -> Void,
                onConnectionFailure: ((Error) -> Void)? = nil,
-               onChange: @escaping () -> Void) {
+               onChange: @escaping () -> Void) -> Task<Void, Never>? {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .assistant,
-              let familiarId = messages[idx].familiarId else { return }
+              !messages[idx].streaming,
+              let familiarId = messages[idx].familiarId else { return nil }
         let source = messages[..<idx].last(where: { $0.role == .user })
         let prompt = source?.sendPrompt ?? source?.text ?? ""
         let retryModel = source?.retryModel(for: familiarId)
@@ -1397,23 +1468,56 @@ final class ChatThread: Identifiable, Hashable {
             retryModel: retryModel,
             originalScope: source?.modelOverrideScope
         )
-        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard requireSendProvenance(to: [familiarId]) else { return }
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard requireSendProvenance(to: [familiarId]) else { return nil }
+        let binding = ChatDispatchBinding(thread: self, familiarIds: [familiarId])
+        let previousReply = messages[idx]
         mutate(messageId) {
             $0.serverTurnId = nil
             $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil
         }
+        let retryPlaceholder = messages[idx]
         updatedAt = Date()
         onChange()
-        Task { await self.stream(familiarId: familiarId, prompt: prompt,
-                                 into: messageId,
-                                 reasoningEffort: source?.reasoningEffort,
-                                 responseSpeed: source?.responseSpeed,
-                                 modelControls: source?.modelControls ?? [:],
-                                 modelOverride: modelBinding.modelOverride,
-                                 modelOverrideScope: modelBinding.scope,
-                                 client: client, onChange: onChange,
-                                 onConnectionFailure: onConnectionFailure) }
+        return Task {
+            var refusedBeforeDispatch = Task.isCancelled
+            let mayDispatch = {
+                guard !Task.isCancelled,
+                      binding.matches(self, includingSessions: true),
+                      liveDispatchLeaseIsCurrent() else {
+                    refusedBeforeDispatch = true
+                    return false
+                }
+                return true
+            }
+            if !refusedBeforeDispatch {
+                await self.stream(
+                    familiarId: familiarId,
+                    prompt: prompt,
+                    into: messageId,
+                    reasoningEffort: source?.reasoningEffort,
+                    responseSpeed: source?.responseSpeed,
+                    modelControls: source?.modelControls ?? [:],
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
+                    liveDispatchLeaseIsCurrent: mayDispatch,
+                    client: client,
+                    onChange: onChange,
+                    onConnectionFailure: onConnectionFailure
+                )
+            }
+            // A failed authority preflight proves no POST started. Do not
+            // restore on ambiguous transport failures or overwrite a newer edit.
+            guard refusedBeforeDispatch else { return }
+            if let current = messages.firstIndex(where: { $0.id == messageId }),
+               messages[current] == retryPlaceholder {
+                messages[current] = previousReply
+                updatedAt = Date()
+                onChange()
+                _ = await persistAfterRefusal()
+            }
+            onRefusal()
+        }
     }
 
     /// Append an inline system note (slash-command output) and return its id so
@@ -1767,6 +1871,7 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private func canSend(to familiarIds: [String]) -> Bool {
+        guard !isFlowRun else { return false }
         if normalizedProjectRoot != nil { return true }
         return familiarIds.allSatisfy {
             guard let sessionID = sessionIds[$0] else { return false }
@@ -1793,6 +1898,7 @@ final class ChatThread: Identifiable, Hashable {
         modelOverride: String? = nil,
         modelOverrideScope: ChatModelOverrideScope? = nil
     ) -> CaveClient.SendBody? {
+        guard !isFlowRun else { return nil }
         let rawSessionID = sessionIds[familiarId]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let sessionID = rawSessionID?.isEmpty == false ? rawSessionID : nil
@@ -2648,6 +2754,7 @@ final class ChatThread: Identifiable, Hashable {
             $0.queuedRunIdsByFamiliarId = nil
             $0.queuedAttemptedFamiliarIds = nil
             $0.queuedTargetFamiliarIds = nil
+            $0.queuedContext = nil
         }
     }
 

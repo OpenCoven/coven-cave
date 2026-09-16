@@ -473,16 +473,10 @@ export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
  * the one a fresh profile gets — these resolve to nothing exactly like an
  * undefined token.
  *
- * --destructive is the live one worth naming: 12 definitions in themes.css,
- * all inside six palettes' blocks (ghosty, claymorphism, claude, codex,
- * pastel-dreams, snow). Referenced unconditionally across the four Research
- * surfaces, so every failed/error colour there is unpainted on the default
- * palette and on tide / ember / slate / contrast / solstice.
+ * No theme-scoped-only references remain. Keep the empty bank so new
+ * references still fail the gate instead of silently inheriting old allowance.
  */
-export const BANKED_THEME_SCOPED_ONLY = new Map([
-  ["--destructive", 19],
-  ["--shadow-popover", 9],
-]);
+export const BANKED_THEME_SCOPED_ONLY = new Map();
 
 /**
  * Sites where the token name itself is computed. Counted per file so a new one
@@ -501,7 +495,7 @@ export const BANKED_DYNAMIC_SITES = new Map([
   ["src/components/grimoire-graph-view.tsx", 1],
   // Appearance settings write the user's chosen palette, font and radius onto
   // <html> by name; the names are the settings keys.
-  ["src/components/settings-shell.tsx", 5],
+  ["src/components/settings-appearance.tsx", 5],
   // Clears the appearance overrides above, by the same key list.
   ["src/lib/appearance-restore.ts", 1],
   // Canvas inspector applies a user-edited property to the selected element.

@@ -26,16 +26,14 @@ import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
 import { researchEngineStatus } from "./researcher-status";
-import { reviewDeckStatus } from "./review-deck";
 import {
   CODE_SURFACE_ID,
   INDEXER_SURFACE_ID,
-  MESSENGER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
-  REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
 } from "./ids";
 
 function RoomFallback() {
@@ -48,10 +46,6 @@ function RoomFallback() {
 
 const ResearcherSurface = dynamic(
   () => import("./researcher-surface").then((m) => m.ResearcherSurface),
-  { ssr: false, loading: RoomFallback },
-);
-const MessengerSurface = dynamic(
-  () => import("./messenger-surface").then((m) => m.MessengerSurface),
   { ssr: false, loading: RoomFallback },
 );
 const IndexerSurface = dynamic(
@@ -70,12 +64,12 @@ const NavigatorSurface = dynamic(
   () => import("./navigator-surface").then((m) => m.NavigatorSurface),
   { ssr: false, loading: RoomFallback },
 );
-const ReviewerSurface = dynamic(
-  () => import("./reviewer-surface").then((m) => m.ReviewerSurface),
-  { ssr: false, loading: RoomFallback },
-);
 const CodeRoom = dynamic(
   () => import("./code-room").then((m) => m.CodeRoom),
+  { ssr: false, loading: RoomFallback },
+);
+const XCommsSurface = dynamic(
+  () => import("./x-comms-surface").then((m) => m.XCommsSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -163,58 +157,38 @@ registerRoleSurface({
   render: (context) => <CodeRoom context={context} />,
 });
 
+/**
+ * X Comms — the X account room, with demo planning and live publishing.
+ *
+ * Gated on `xPublishEnabled` for the same reason every other X surface is
+ * (`x-surface-gating.test.ts`): the capability mirrors a server-side rule, and
+ * a room offering an approval an ungated familiar could never act on would be
+ * a promise the Cave cannot keep.
+ */
 registerRoleSurface({
-  id: MESSENGER_SURFACE_ID,
+  id: X_COMMS_SURFACE_ID,
   role: "messenger",
-  title: "Comms Operations",
-  iconName: "ph:paper-plane-tilt",
-  description: "Outbound and inbound communication across channels",
-  accentHue: 210,
-  priority: 20,
-  shouldDisplay: () => true,
-  getContributions(context) {
-    const state = readRoleSurfaceState<{ drafts?: Array<{ status?: string }> }>(
-      context.activeFamiliar.id,
-      MESSENGER_SURFACE_ID,
-    );
-    const pending = (state?.drafts ?? []).filter((d) => d.status === "needs-approval").length;
+  title: "X Comms",
+  iconName: "ph:x-logo-bold",
+  description: "Plan drafts and publish confirmed posts to X",
+  accentHue: 38,
+  priority: 18,
+  shouldDisplay: (context) => context.activeFamiliar?.xPublishEnabled === true,
+  getContributions() {
     return {
-      commands: [
-        {
-          id: "messenger.toggle-drawer",
-          title: "Toggle delivery queue",
-          hint: "⌘⇧D",
-          run: (ctx) => toggleDrawer(ctx, MESSENGER_SURFACE_ID),
-        },
-      ],
-      toolbarActions: [
-        {
-          id: "messenger.drawer",
-          title: "Delivery queue",
-          iconName: "ph:list",
-          run: (ctx) => toggleDrawer(ctx, MESSENGER_SURFACE_ID),
-        },
-      ],
-      keyboardShortcuts: [
-        {
-          id: "messenger.drawer.kbd",
-          combo: "mod+shift+d",
-          description: "Toggle the delivery queue drawer",
-          run: (ctx) => toggleDrawer(ctx, MESSENGER_SURFACE_ID),
-        },
-      ],
-      notifications: daemonNotices(context),
       statusIndicators: [
         {
-          id: "messenger.approvals",
-          label: pending > 0 ? `${pending} awaiting approval` : "approvals clear",
-          tone: pending > 0 ? "warn" : "ok",
-          detail: "Drafts requiring approval before any external send",
+          id: "x-comms.demo",
+          label: "demo planning",
+          tone: "warn",
+          detail:
+            "Demo approvals and slots stay local. Use Live publishing to publish to X with confirmation.",
         },
       ],
-    };
+      notifications: [],
+    } satisfies RoleSurfaceContribution;
   },
-  render: (context) => <MessengerSurface context={context} />,
+  render: (context) => <XCommsSurface context={context} />,
 });
 
 registerRoleSurface({
@@ -400,69 +374,6 @@ registerRoleSurface({
     };
   },
   render: (context) => <NavigatorSurface context={context} />,
-});
-
-registerRoleSurface({
-  id: REVIEWER_SURFACE_ID,
-  role: "reviewer",
-  aliases: ["review"],
-  title: "Review Deck",
-  iconName: "ph:git-diff",
-  description: "Review queue, working-tree diffs, and pull-request context",
-  accentHue: 0,
-  priority: 26,
-  shouldDisplay: () => true,
-  getContributions(context) {
-    const state = readRoleSurfaceState<{ lastCounts?: { queue: number; pullRequests: number } | null }>(
-      context.activeFamiliar.id,
-      REVIEWER_SURFACE_ID,
-    );
-    const counts = state?.lastCounts ?? null;
-    const status = counts ? reviewDeckStatus(counts) : null;
-    return {
-      commands: [
-        {
-          id: "reviewer.toggle-drawer",
-          title: "Toggle checkpoints",
-          hint: "⌘⇧D",
-          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
-        },
-      ],
-      toolbarActions: [
-        {
-          id: "reviewer.drawer",
-          title: "Checkpoints",
-          iconName: "ph:list",
-          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
-        },
-      ],
-      keyboardShortcuts: [
-        {
-          id: "reviewer.drawer.kbd",
-          combo: "mod+shift+d",
-          description: "Toggle the checkpoints drawer",
-          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
-        },
-      ],
-      notifications: daemonNotices(context),
-      statusIndicators: [
-        status == null
-          ? {
-              id: "reviewer.queue",
-              label: "queue unread",
-              tone: "muted" as const,
-              detail: "Queue counts appear after the Review Deck's first pass over the sessions",
-            }
-          : {
-              id: "reviewer.queue",
-              label: status.label,
-              tone: status.tone,
-              detail: "Sessions carrying a PR, working changes, or a branch",
-            },
-      ],
-    };
-  },
-  render: (context) => <ReviewerSurface context={context} />,
 });
 
 registerRoleSurface({

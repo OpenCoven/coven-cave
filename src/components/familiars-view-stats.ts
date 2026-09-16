@@ -1,8 +1,9 @@
 import { ritualStreak } from "@/lib/familiar-renown";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-export type CanonicalMemoryAvailability = "ready" | "unavailable";
+/** Whether the memory-file scan answered. Named for the question it asks, not
+ *  for the store it used to also cover — the canonical vault is gone. */
+export type MemoryAvailability = "ready" | "unavailable";
 
 export type FamiliarFileMemoryStat = {
   familiarId?: string;
@@ -13,7 +14,7 @@ export type FamiliarFileMemoryStat = {
 
 export type FamiliarCardStats = {
   memoryCount: number;
-  memoryAvailability: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   latestMemory: { title: string; updatedAt: string } | null;
   lastSessionAt: string | null;
   /** Every non-archived session attributed to the familiar. */
@@ -47,10 +48,8 @@ function sessionStartAt(session: SessionRow): string | null {
 export function buildFamiliarCardStats(args: {
   familiars: Familiar[];
   sessions: SessionRow[];
-  covenEntries: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
   fileEntries?: FamiliarFileMemoryStat[];
-  fileMemoryAvailability?: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   now?: number;
 }): Map<string, FamiliarCardStats> {
   const now = args.now ?? Date.now();
@@ -68,13 +67,6 @@ export function buildFamiliarCardStats(args: {
     sessionsByFamiliar.set(fid, bucket);
   }
 
-  const memoriesByFamiliar = new Map<string, CanonicalMemorySummary[]>();
-  for (const entry of args.covenEntries) {
-    const bucket = memoriesByFamiliar.get(entry.familiarId) ?? [];
-    bucket.push(entry);
-    memoriesByFamiliar.set(entry.familiarId, bucket);
-  }
-
   const fileMemoriesByFamiliar = new Map<string, FamiliarFileMemoryStat[]>();
   for (const entry of args.fileEntries ?? []) {
     if (!entry.familiarId) continue;
@@ -83,17 +75,12 @@ export function buildFamiliarCardStats(args: {
     fileMemoriesByFamiliar.set(entry.familiarId, bucket);
   }
 
-  const fileMemoryTracked = args.fileMemoryAvailability !== undefined;
-
   const result = new Map<string, FamiliarCardStats>();
   for (const familiar of args.familiars) {
     const sessions = sessionsByFamiliar.get(familiar.id) ?? [];
-    const memories = memoriesByFamiliar.get(familiar.id) ?? [];
     const fileMemories = fileMemoriesByFamiliar.get(familiar.id) ?? [];
-    const hasDurableMemory = memories.length + fileMemories.length > 0;
-    const allTrackedMemorySourcesReady =
-      args.memoryAvailability === "ready"
-      && (!fileMemoryTracked || args.fileMemoryAvailability === "ready");
+    const hasDurableMemory = fileMemories.length > 0;
+    const allTrackedMemorySourcesReady = args.memoryAvailability === "ready";
 
     let lastSessionAt: string | null = null;
     let lastSessionMs = -Infinity;
@@ -122,14 +109,6 @@ export function buildFamiliarCardStats(args: {
 
     let latestMemory: FamiliarCardStats["latestMemory"] = null;
     let latestMs = -Infinity;
-    for (const entry of memories) {
-      const ms = Date.parse(entry.updatedAt);
-      if (!Number.isFinite(ms)) continue;
-      if (ms > latestMs) {
-        latestMs = ms;
-        latestMemory = { title: entry.title, updatedAt: entry.updatedAt };
-      }
-    }
     for (const entry of fileMemories) {
       const ms = Date.parse(entry.modified);
       if (!Number.isFinite(ms)) continue;
@@ -140,7 +119,7 @@ export function buildFamiliarCardStats(args: {
     }
 
     result.set(familiar.id, {
-      memoryCount: memories.length + fileMemories.length,
+      memoryCount: fileMemories.length,
       memoryAvailability:
         hasDurableMemory || allTrackedMemorySourcesReady ? "ready" : "unavailable",
       latestMemory,

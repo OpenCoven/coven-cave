@@ -18,6 +18,14 @@ test("readModeParam accepts generic role-surface deep links", () => {
   withSearch("?mode=surface%3Aresearcher-desk", () => {
     assert.equal(readModeParam(), "surface:researcher-desk");
   });
+
+});
+
+test("Canvas deep links resolve to the gallery as primary or split page", () => {
+  withSearch("?mode=canvas&split=canvas", () => {
+    assert.equal(readModeParam(), "canvas");
+    assert.equal(readSplitPageParam(), "canvas");
+  });
 });
 
 test("readModeParam still rejects empty and unknown modes", () => {

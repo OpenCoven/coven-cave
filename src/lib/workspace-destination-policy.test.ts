@@ -7,7 +7,8 @@ import {
   sidebarDestinations,
   statusContextPolicy,
 } from "./workspace-destination-policy.ts";
-import { WORKSPACE_NAV_ITEMS } from "./workspace-navigation.ts";
+import { PRIMARY_WORKSPACE_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from "./workspace-navigation.ts";
+import { sidebarRowState } from "./sidebar-nav-state.ts";
 import { WORKSPACE_CANONICAL_PAGE_DEFINITIONS } from "./workspace-page-registry.ts";
 
 const policySource = readFileSync(new URL("./workspace-destination-policy.ts", import.meta.url), "utf8");
@@ -23,7 +24,7 @@ test("palette destinations expose only visible canonical destinations", () => {
   const destinations = paletteDestinations();
   assert.deepEqual(
     destinations.map(({ id }) => id),
-    ["chat", "home", "inbox", "board", "salem", "browser", "marketplace", "grimoire"],
+    ["chat", "home", "inbox", "board", "salem", "browser", "canvas", "marketplace", "grimoire"],
   );
   assert.ok(destinations.every(({ id, canonicalId, palette }) => id === canonicalId && palette !== "hidden"));
   assert.equal(new Set(destinations.map(({ id }) => id)).size, destinations.length);
@@ -69,6 +70,21 @@ test("the sidebar is one flat list with Chat directly under Home", () => {
       `${definition.id} should stay reachable from the palette`,
     );
   }
+});
+
+test("Explore places Canvas immediately before Marketplace without a primary duplicate", () => {
+  const destinations = sidebarDestinations();
+  assert.deepEqual(
+    destinations.filter(({ nav }) => nav === "quiet").map(({ id }) => id),
+    ["canvas", "marketplace", "grimoire"],
+  );
+  assert.equal(destinations.filter(({ id }) => id === "canvas").length, 1);
+  assert.equal(destinations.find(({ id }) => id === "canvas")?.canonicalId, "canvas");
+  assert.equal(sidebarRowState("canvas", "canvas"), "active");
+  assert.equal(sidebarRowState("chat", "canvas"), "idle");
+  assert.equal(sidebarRowState("canvas", "chat", ["canvas"]), "split");
+  assert.equal(PRIMARY_WORKSPACE_NAV_ITEMS.some(({ id }) => id === "canvas"), false,
+    "Canvas remains in the mobile drawer rather than duplicating a primary tab");
 });
 
 test("aliases do not create duplicate visible canonical destinations", () => {

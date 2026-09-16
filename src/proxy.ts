@@ -40,6 +40,11 @@ import {
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
 import { isValidResearchMediaTicketRequest } from "./lib/research-media-ticket.ts";
+import {
+  DEVICE_GRANT_HEADER,
+  DEVICE_PAIRING_PAGE_HEADER,
+  hasDeviceAccessStamp,
+} from "./lib/device-access-markers.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -318,6 +323,15 @@ function nextWithInternalAuthMarkers(
 }
 
 export async function proxy(req: NextRequest) {
+  const deviceAccessSecret = process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET;
+  const deviceAuthenticated = hasDeviceAccessStamp(
+    req.headers.get(DEVICE_GRANT_HEADER), deviceAccessSecret,
+  );
+  if (req.nextUrl.pathname === "/connect" && hasDeviceAccessStamp(
+    req.headers.get(DEVICE_PAIRING_PAGE_HEADER), deviceAccessSecret,
+  )) {
+    return NextResponse.next();
+  }
   const mobileAccessToken = configuredMobileAccessToken();
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const sidecarTokenMatches = (supplied: string | null | undefined) => {
@@ -363,7 +377,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(400, "invalid client v1 path");
   }
   const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
-  const mobileRes = clientV1Ingress
+  const mobileRes = clientV1Ingress || deviceAuthenticated
     ? null
     : await mobileAccessGate(
       req,
@@ -385,15 +399,16 @@ export async function proxy(req: NextRequest) {
   // 127.0.0.1. The token equality check below is the only thing
   // legitimately optional in browser-dev mode.
   const requestHost = req.headers.get("host");
-  // Accept the Origin/Referer against the configured-port origin (nextUrl,
-  // which the Serve/forwarded-host path relies on) AND the port the browser
-  // actually reached us on (from Host). The latter is what unbreaks a server
-  // that fell back to a free port — see expectedRequestOrigins (cave-5sg).
-  const expectedOrigins = expectedRequestOrigins(
-    req.nextUrl.origin,
-    req.nextUrl.protocol,
-    requestHost,
-  );
+  // Next constructs nextUrl from the loopback backend, not Serve's origin.
+  // Only the raw gateway's grant stamp makes the verified forwarding host
+  // authoritative; unstamped traffic retains the existing local origin gate.
+  const expectedOrigins = deviceAuthenticated
+    ? [`https://${req.headers.get("x-forwarded-host")}`]
+    : expectedRequestOrigins(
+      req.nextUrl.origin,
+      req.nextUrl.protocol,
+      requestHost,
+    );
   // The mobile-access marker classifies MOBILE INGRESS, not merely "a valid
   // mobile credential was presented". A trusted local peer is this machine's
   // desktop app or a local browser; a mobile invite cookie riding along
@@ -401,9 +416,9 @@ export async function proxy(req: NextRequest) {
   // auto-sent access cookie) must not reclassify it as a phone — that marker
   // makes isLocalOrigin() 403 every desktop-only route (research missions,
   // links, automations) for a genuinely local user.
-  const mobileAccessVerified = mobileAccessToken
+  const mobileAccessVerified = deviceAuthenticated || (mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
-    : false;
+    : false);
   const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified;
   // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
   // mobile access credential, so a remote-looking (Tailscale Serve) Host is

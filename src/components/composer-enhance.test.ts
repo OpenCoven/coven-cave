@@ -245,8 +245,8 @@ assert.match(
 );
 assert.match(
   chat,
-  /mode: activeProjectRoot \? "code" : "chat"/,
-  "chat optimizes for code when a project is active",
+  /mode: preparedPromptEnhancement\.mode/,
+  "chat uses the command-aware mode; ordinary project chat retains code behavior",
 );
 assert.match(
   chat,

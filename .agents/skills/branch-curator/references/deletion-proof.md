@@ -8,6 +8,12 @@ per-candidate loop; `PRESERVE` guards exit to the documented candidate-loop
 depth. Bare inner-loop `continue` statements only skip the current enumeration
 entry.
 
+Use [GitHub work tracking](../../../../docs/workflows/github-work-tracking.md)
+for the curation issue and its evidence record. Do not query, claim, close, or
+sync Beads. Preserve historical refs and unresolved legacy ownership; missing
+records are uncertainty, not clearance. GitHub assignment and comments are not
+atomic execution leases and cannot replace the exclusion required below.
+
 ## Select and record the execution profile
 
 The recorded profile and candidate scope are immutable batch inputs. Gate and
@@ -36,6 +42,11 @@ case "$cleanup_profile" in
 esac
 ```
 
+Record the current instruction, exact candidate set, owner, session, scope, and
+audited OIDs on the curation issue when authorized. Re-read issue and comment
+evidence before each transaction using the parent skill's fail-closed producer.
+Do not manufacture legacy lifecycle metadata to qualify a unit.
+
 Automatic retirement requires a freshly held full maintenance gate, stays
 local-only, and never deletes remote refs. Manual cleanup requires explicit
 current-maintainer authorization for this current task and a currently held
@@ -51,8 +62,10 @@ proof below remains mandatory. Authorization never replaces safety evidence.
 
 ## Automatic local-retirement profile
 
-The lifecycle apply command may use this profile only for a cleanup-ready unit
-under the complete repository maintenance transaction. It may remove one clean
+This legacy contract is not permission to invoke a retired patrol. Changing
+trackers does not implement the missing maintenance planes. Automatic
+retirement may use this profile only for a cleanup-ready unit under the
+complete repository maintenance transaction. It may remove one clean
 worktree without force and compare-delete one exact local ref. It must run all
 ownership, recency, recovery-root, exact-tip, and postcondition proofs below.
 It must not execute the remote-ref mutation block; an existing remote ref
@@ -63,8 +76,9 @@ becomes a proposal.
 Delete only when all of these remain true under the gate:
 
 1. The branch is neither protected nor tool-owned.
-2. No live worktree, writer, claim, session, non-closed task, PR, or workflow
-   owns it.
+2. No live worktree, writer, claim, session, unresolved GitHub issue or execution
+   record, PR, or workflow owns it. Every legacy ownership reference has a
+   current, owner-backed disposition; incomplete coverage preserves the unit.
 3. Configuration-independent inspection finds no staged, unstaged, untracked,
    ignored, submodule, assume-unchanged, or skip-worktree state.
 4. The local ref is not symbolic.
@@ -72,7 +86,7 @@ Delete only when all of these remain true under the gate:
 6. Every local and remote tip is redundant on the freshly fetched default
    branch or exactly matches the recorded head of a merged PR.
 7. Every recovery OID is reachable from that default branch or from an
-   owner-authorized retained remote archive recorded in Beads.
+   owner-authorized retained remote archive recorded on the GitHub issue.
 
 ## Capture and prove exact tips
 
@@ -683,7 +697,15 @@ test "$worktree_recovery_safe" -eq 1 ||
 
 Prove `ORIG_HEAD` and every first-field OID in `FETCH_HEAD`. Treat operation
 state, locked worktrees, and unknown top-level admin entries as live or
-uncertain:
+uncertain. The sole rerere exception is a readable, non-symbolic, zero-byte
+regular `MERGE_RR` file: Git's [rerere implementation](https://github.com/git/git/blob/master/rerere.c)
+writes a list of pending conflict paths and can leave an empty list after
+resolution. A nonempty file, directory, symlink (including dangling), unreadable
+file, or `MERGE_RR.lock` remains protected. Empty residue never overrides an
+unmerged index, operation marker, lock, ownership, recency, or retention check.
+Do not delete or rewrite the file to qualify a candidate. The strict guard
+checks this state before retention probes and again before its allow result;
+the complete recovery-OID and unknown-admin proof below remains mandatory.
 
 ```bash
 emit_plain_oids() {
@@ -717,6 +739,9 @@ EOF
 worktree_admin_safe=1
 while IFS= read -r -d '' admin_entry; do
   admin_name=${admin_entry##*/}
+  case "$admin_name" in
+    *.lock) worktree_admin_safe=0; break ;;
+  esac
   test ! -L "$admin_entry" ||
     { worktree_admin_safe=0; break; }
   case "$admin_name" in
@@ -725,6 +750,10 @@ while IFS= read -r -d '' admin_entry; do
       ;;
     logs|refs)
       test -d "$admin_entry" || { worktree_admin_safe=0; break; }
+      ;;
+    MERGE_RR)
+      node "$primary_checkout/scripts/worktree-rerere-state.mjs" "$admin_entry" ||
+        { worktree_admin_safe=0; break; }
       ;;
     ORIG_HEAD)
       test -f "$admin_entry" || { worktree_admin_safe=0; break; }
@@ -756,8 +785,9 @@ branch ref or `logs/HEAD` alone covers it.
 
 Each mutation below is a separate transaction boundary. Immediately before
 each one, the parent loop must freshly reverify the selected profile exclusion
-and its current gate or lease ownership, then rerun every applicable Beads,
-GitHub PR and workflow, process, worktree, ref/OID/destination, recency,
+and its current gate or lease ownership, then rerun every applicable GitHub
+issue/comment ownership and legacy disposition, GitHub PR and workflow,
+process, worktree, ref/OID/destination, recency,
 archive, and recovery/admin proof. Requery and refetch the exact default and
 candidate remote refs, recapture the applicable tips, require them to equal the
 audited OIDs, and rerun the selected guarded redundancy proof. An OID-only
@@ -774,8 +804,9 @@ Protected `main` remains unchanged throughout.
 Immediately before removing a worktree, freshly revalidate the selected profile
 authority as current, task-bounded, candidate-exact, and scope-exact. Freshly
 reverify the selected profile exclusion and gate or lease ownership. Rerun the
-applicable Beads, GitHub PR and workflow, process, worktree, ref, OID, and
-destination, recency, archive, and recovery and admin evidence. Detect newly
+applicable GitHub issue/comment ownership and legacy disposition, GitHub PR and
+workflow, process, worktree, ref, OID, and destination, recency, archive, and
+recovery and admin evidence. Detect newly
 appearing ownership, activity, registration, refs, or destination drift. Any
 query, proof, or recheck failure stops this candidate and all later
 transactions for it.
@@ -894,9 +925,10 @@ fi
 Require the prior worktree path and registry absence to remain verified.
 Freshly revalidate the selected profile authority as current, task-bounded,
 candidate-exact, and scope-exact. Freshly reverify the selected profile
-exclusion and gate or lease ownership, then rerun the applicable Beads, GitHub
-PR and workflow, process, worktree, ref, OID, and destination, recency, archive,
-and recovery and admin evidence against the remaining state. Reject newly
+exclusion and gate or lease ownership, then rerun the applicable GitHub
+issue/comment ownership and legacy disposition, GitHub PR and workflow,
+process, worktree, ref, OID, and destination, recency, archive, and recovery and
+admin evidence against the remaining state. Reject newly
 appearing ownership, activity, worktree registration, refs, or destination
 drift. Any query, proof, or recheck failure stops this candidate and all later
 transactions for it.
@@ -939,9 +971,10 @@ to remain verified. Freshly revalidate the selected profile authority as
 current, task-bounded, candidate-exact, and scope-exact. Freshly revalidate the
 exact remote authorization as current-task, candidate-exact, and
 remote-scope-exact. Freshly reverify the selected profile exclusion and gate or
-lease ownership, then rerun the applicable Beads, GitHub PR and workflow,
-process, worktree, ref, OID, and destination, recency, archive, and recovery and
-admin evidence against the remaining remote state. Reject newly appearing
+lease ownership, then rerun the applicable GitHub issue/comment ownership and
+legacy disposition, GitHub PR and workflow, process, worktree, ref, OID, and
+destination, recency, archive, and recovery and admin evidence against the
+remaining remote state. Reject newly appearing
 ownership, activity, worktree registration, refs, or destination drift. Any
 query, proof, or recheck failure stops this candidate and all later
 transactions for it. Automatic and manual-local-only profiles skip this

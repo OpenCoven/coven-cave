@@ -1,6 +1,6 @@
 /**
- * In-chat archive nudge — the "final nudge" surfaced inline at the end of a
- * chat transcript when the linked task has reached the end of its execution
+ * In-chat archive nudge — persistent guidance above the composer
+ * when the linked task has reached the end of its execution
  * lifecycle (card lifecycle → `completed`) and the chat is ready to archive.
  *
  * The toast variant (see {@link ./task-archive-nudge}) lives in the global
@@ -79,6 +79,8 @@ export type ChatArchiveNudgeInputs = {
   sessionArchived: boolean;
   /** Whether the user has dismissed the nudge for this session. */
   dismissed: boolean;
+  /** Active work must settle before suggesting that the chat be put away. */
+  sessionBusy?: boolean;
 };
 
 /**
@@ -87,6 +89,7 @@ export type ChatArchiveNudgeInputs = {
  * session is still active, and the user hasn't already dismissed it.
  */
 export function shouldShowChatArchiveNudge(inputs: ChatArchiveNudgeInputs): boolean {
+  if (inputs.sessionBusy) return false;
   if (inputs.sessionArchived) return false;
   if (inputs.dismissed) return false;
   if (!inputs.taskLifecycle) return false;

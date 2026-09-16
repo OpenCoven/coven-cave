@@ -53,6 +53,15 @@ enum VoiceTransportPlanner {
 }
 
 enum VoiceCallCopy {
+    static var authorityChanged: VoiceCallErrorCopy {
+        VoiceCallErrorCopy(
+            title: "Voice call ended",
+            message: "Chat access or the desktop connection changed. Close this call and start a new one when access is available.",
+            recovery: .dismiss,
+            offersOnDeviceFallback: false
+        )
+    }
+
     static func modeLabel(_ mode: VoiceCallMode) -> String {
         switch mode {
         case .realtime: "Live voice"

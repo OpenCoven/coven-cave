@@ -57,6 +57,8 @@ export type ChatTurnLifecycle =
 
 export type Turn = {
   id: string;
+  /** null until a streamed turn is saved; absent for canonical history IDs. */
+  persistedTurnId?: string | null;
   parentId?: string | null;
   role: "user" | "assistant" | "system";
   text: string;

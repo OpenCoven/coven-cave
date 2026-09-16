@@ -107,8 +107,9 @@ test.describe("mobile command center pages", () => {
     await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");
 
-    // The dock is sticky and its surface is still settling at this point —
-    // wait for the composer geometry to hold still before measuring it.
+    // New chat keeps its composer in flow; short phones scroll it into view.
+    // Existing conversations still use the sticky dock.
+    await page.locator(".cave-composer-dock").first().scrollIntoViewIfNeeded();
     await waitForComposerSettled(page);
 
     await expectNoHorizontalOverflow(page, "Chat detail");

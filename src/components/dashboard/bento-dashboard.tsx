@@ -21,10 +21,9 @@ import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profi
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import {
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type FamiliarFileMemoryStat,
+  type MemoryAvailability,
 } from "@/components/familiars-view-stats";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useHeatTip } from "@/components/ui/heat-tip";
 import { formatHeatTip } from "@/lib/heat-tip";
@@ -51,6 +50,8 @@ import {
 
 // ─── Client-fetched data (same source APIs as the rest of the cave) ───────────
 
+type AttentionLoadStatus = "loading" | "ready" | "error";
+
 type BentoData = {
   cards: Card[];
   familiars: Familiar[];
@@ -58,8 +59,8 @@ type BentoData = {
   githubComplete: boolean | null;
   inbox: InboxItem[];
   sessions: SessionRow[];
-  memory: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memory: FamiliarFileMemoryStat[];
+  memoryAvailability: MemoryAvailability;
   projects: number | null;
 };
 
@@ -121,7 +122,12 @@ async function getGitHubActivity(): Promise<{
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-export function BentoDashboard({ model: initialModel }: { model: DashboardModel }) {
+export function BentoDashboard({ model: initialModel }: { model?: DashboardModel }) {
+  const [emptyModel] = useState(() => buildDashboardModel([], new Date()));
+  const [attentionStatus, setAttentionStatus] = useState<{
+    cards: AttentionLoadStatus;
+    inbox: AttentionLoadStatus;
+  }>({ cards: "loading", inbox: initialModel ? "ready" : "loading" });
   useMinuteTick(); // keeps feed times and the footer freshness stamp honest
   const profile = useUserProfile();
   const [data, setData] = useState<BentoData>(EMPTY);
@@ -145,17 +151,28 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
       setReady((r) => new Set(r).add(key));
       setLastUpdated(new Date());
     };
-    void getJson<{ cards: Card[] }>("/api/board").then((r) => put("cards", r?.cards ?? []));
+    const attentionResult = <K extends "cards" | "inbox">(key: K, value: BentoData[K] | null) => {
+      if (!aliveRef.current) return;
+      // Failed refreshes retain the last successful snapshot, including server seeds.
+      if (value !== null) put(key, value);
+      setAttentionStatus((previous) => ({ ...previous, [key]: value === null ? "error" : "ready" }));
+    };
+    void getJson<{ ok?: boolean; cards?: Card[] }>("/api/board").then((r) =>
+      attentionResult("cards", r?.ok !== false && Array.isArray(r?.cards) ? r.cards : null),
+    );
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
     // Needs-attention derives from this list — keep the last known good copy
     // on a failed poll rather than flashing "all clear".
-    void getJson<{ items: InboxItem[] }>("/api/inbox").then((r) => {
-      if (r?.items) put("inbox", r.items);
-    });
+    void getJson<{ ok?: boolean; items?: InboxItem[] }>("/api/inbox").then((r) =>
+      attentionResult("inbox", r?.ok !== false && Array.isArray(r?.items) ? r.items : null),
+    );
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
-    void loadCanonicalMemoryList().then((memory) => {
-      if (memory.state === "ready") {
-        put("memory", memory.entries);
+    // Familiar memory counts came from the canonical vault, which now lives in
+    // the dedicated memory application. The MEMORY.md scan is the remaining
+    // source, so the stat keeps meaning something instead of going blank.
+    void getJson<{ ok?: boolean; entries?: FamiliarFileMemoryStat[] }>("/api/memory").then((r) => {
+      if (r?.ok && Array.isArray(r.entries)) {
+        put("memory", r.entries);
         put("memoryAvailability", "ready");
       } else {
         put("memoryAvailability", "unavailable");
@@ -210,9 +227,12 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
   // the fresh inbox so needs-attention stays live.
   const inboxReady = ready.has("inbox");
   const model = useMemo(
-    () => (inboxReady ? buildDashboardModel(data.inbox, new Date()) : initialModel),
-    [inboxReady, data.inbox, initialModel],
+    () => (inboxReady ? buildDashboardModel(data.inbox, new Date()) : (initialModel ?? emptyModel)),
+    [inboxReady, data.inbox, initialModel, emptyModel],
   );
+  const attentionComplete = attentionStatus.cards === "ready" && attentionStatus.inbox === "ready";
+  const attentionFailed = attentionStatus.cards === "error" || attentionStatus.inbox === "error";
+  const cardsComplete = attentionStatus.cards === "ready";
   const nowMs = model.date.getTime();
 
   // ── UI state (from the design's DCLogic) ──
@@ -253,7 +273,7 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
     () => buildFamiliarCardStats({
       familiars: data.familiars,
       sessions: data.sessions,
-      covenEntries: data.memory,
+      fileEntries: data.memory,
       memoryAvailability: data.memoryAvailability,
       now: nowMs,
     }),
@@ -486,18 +506,24 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
               <div className="bd-label">board</div>
               <div className="bd-board-grid">
                 <div className="bd-board-col">
-                  <div className="bd-board-col-title bd-board-col-title--accent">needs you ({board.needsYou.length})</div>
-                  {board.needsYou.length === 0 ? <div className="bd-empty">all clear</div> : null}
+                  <div className="bd-board-col-title bd-board-col-title--accent">needs you ({attentionComplete ? board.needsYou.length : "—"})</div>
+                  {!attentionComplete ? (
+                    <div className="bd-empty" role="status">
+                      {attentionFailed ? (
+                        <>Attention updates unavailable. Open <a className="focus-ring-inset" href="/?mode=board">Tasks</a> or <a className="focus-ring-inset" href="/?mode=inbox">Rituals</a> to check.</>
+                      ) : "Loading attention…"}
+                    </div>
+                  ) : board.needsYou.length === 0 ? <div className="bd-empty">all clear</div> : null}
                   {board.needsYou.map((e) => boardCard(e))}
                 </div>
                 <div className="bd-board-col">
-                  <div className="bd-board-col-title">in flight ({board.inFlight.length})</div>
-                  {board.inFlight.length === 0 ? <div className="bd-empty">nothing running</div> : null}
+                  <div className="bd-board-col-title">in flight ({cardsComplete ? board.inFlight.length : "—"})</div>
+                  {board.inFlight.length === 0 ? <div className="bd-empty">{cardsComplete ? "nothing running" : attentionStatus.cards === "error" ? "Task updates unavailable" : "Loading tasks…"}</div> : null}
                   {board.inFlight.map((e) => boardCard(e))}
                 </div>
                 <div className="bd-board-col">
-                  <div className="bd-board-col-title">done ({board.done.length})</div>
-                  {board.done.length === 0 ? <div className="bd-empty">no wins yet</div> : null}
+                  <div className="bd-board-col-title">done ({cardsComplete ? board.done.length : "—"})</div>
+                  {board.done.length === 0 ? <div className="bd-empty">{cardsComplete ? "no wins yet" : attentionStatus.cards === "error" ? "Task updates unavailable" : "Loading tasks…"}</div> : null}
                   {board.done.map((e) => boardCard(e, true))}
                 </div>
               </div>

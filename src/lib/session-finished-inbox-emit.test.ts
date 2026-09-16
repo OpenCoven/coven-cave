@@ -3,12 +3,12 @@
 // against a throwaway COVEN_HOME/COVEN_CAVE_HOME so the real inbox is never
 // touched.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 
-const tmpHome = mkdtempSync(path.join(os.tmpdir(), "cave-fgey-emit-"));
+const tmpHome = path.resolve(`.session-finished-emit-test-${process.pid}`);
+mkdirSync(tmpHome, { recursive: true });
 // The store gate (withCaveHomeReconciledStore) scans covenHome() for legacy
 // cave-*.json entries, so both env vars must move before import.
 process.env.COVEN_HOME = path.join(tmpHome, ".coven");
@@ -18,6 +18,7 @@ process.env.COVEN_CAVE_HOME = path.join(tmpHome, "cave");
 const { emitSessionFinishedItem } = await import("./session-finished-inbox-emit.ts");
 const { dismissItem, loadInbox } = await import("./cave-inbox.ts");
 const { setSessionTitle } = await import("./cave-config.ts");
+const { recordFlowRun } = await import("./server/flow-store.ts");
 
 after(() => {
   rmSync(tmpHome, { recursive: true, force: true });
@@ -124,5 +125,29 @@ describe("emitSessionFinishedItem", () => {
       durationMs: 30_000,
     });
     assert.equal(none, null);
+  });
+
+  it("never emits generic completion for an owned Flow or Research execution", async () => {
+    for (const missionId of [undefined, "research-quiet"]) {
+      const sessionId = missionId ?? "flow-quiet";
+      await recordFlowRun({
+        flowId: "background-flow",
+        sessionId,
+        missionId,
+        iteration: missionId ? 1 : undefined,
+        status: "running",
+        startedAt: new Date().toISOString(),
+        source: "cave",
+        steps: [],
+      });
+      const item = await emitSessionFinishedItem({
+        familiarId: "fam-a",
+        familiarName: "Nyx",
+        sessionId,
+        watchedByUser: false,
+        durationMs: 10 * 60_000,
+      });
+      assert.equal(item, null, "background completions belong to the parent, never Chat");
+    }
   });
 });

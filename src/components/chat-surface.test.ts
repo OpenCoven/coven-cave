@@ -68,8 +68,8 @@ assert.doesNotMatch(
 // sidepanel; chat settings now live inside the Familiar surface.
 assert.match(
   chatSurface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
-  "ChatSurface scope union should carry the promoted familiar tab and canvas",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar";/,
+  "ChatSurface scopes keep Familiar while Canvas lives in Explore",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -177,10 +177,13 @@ assert.doesNotMatch(
   "ChatSurface should not foreground trace terminology in the primary tabs",
 );
 
-assert.match(
+// The daemon-backed canonical landing resources went with the vault. What the
+// memory view loads now is the filesystem scan, through the shared resource —
+// asserted immediately below, which is the half that still exists.
+assert.doesNotMatch(
   agentsMemoryView,
-  /loadCanonicalMemoryList\(\)[\s\S]*loadCanonicalMemoryOverview\(\)/,
-  "Familiars memory should load daemon-backed canonical landing resources",
+  /loadCanonicalMemoryList|loadCanonicalMemoryOverview/,
+  "the retired vault loaders are gone",
 );
 
 assert.match(
@@ -253,12 +256,11 @@ assert.doesNotMatch(
 
 // The inspector sidepanel is retired: its Familiar section is a first-class
 // chat scope tab, Analytics/Automations are gone from chat,
-// and the code rail is the only right sidepanel. Canvas (saved sketches) sits
-// between Projects and Familiar; chat settings live inside Familiar.
+// and the code rail is the only right sidepanel. Chat settings live inside Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},/,
-  "the Familiar tab is the final primary scope after Canvas",
+  /\{ id: "projects", label: "Projects" \},\s*\{ id: "familiar", label: "Familiar" \},/,
+  "the Familiar tab is the final primary scope after Projects",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -276,7 +278,7 @@ assert.match(
 assert.match(
   chatSurface,
   /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
-  "the familiar scope renders the scope-aware view with the canonical selection callback",
+  "the familiar scope renders the scope-aware view with its selection callback",
 );
 
 assert.match(

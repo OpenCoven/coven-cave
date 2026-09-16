@@ -4,13 +4,36 @@ import { readFile } from "node:fs/promises";
 
 const cards = await readFile(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const readerStyles = await readFile(new URL("../styles/chat-attachment-reader.css", import.meta.url), "utf8");
 
 assert.match(cards, /export function formatAttachmentBytes/, "attachment byte formatting has a dedicated presentation boundary");
 assert.match(cards, /if \(size == null\) return "unknown"/, "unknown attachment sizes retain their existing label");
 assert.match(cards, /const units = \["KB", "MB", "GB"\]/, "attachment byte formatting retains GB support");
 assert.match(cards, /createPortal\([\s\S]*document\.body/, "attachment preview portals outside transcript containing blocks");
-assert.match(cards, /useFocusTrap\(true, dialogRef, \{ onEscape: onClose \}\)/, "attachment preview preserves keyboard focus trapping and Escape dismissal");
+assert.match(cards, /useFocusTrap\(true, dialogRef, \{[\s\S]*?onEscape: onClose,[\s\S]*?portalLayers,[\s\S]*?portalRootId: portalLayerRootId/, "attachment preview includes reader popovers in keyboard focus containment");
+assert.match(cards, /<FocusTrapPortalLayersContext.Provider value=\{portalLayers\}>[\s\S]*?<PortalLayerRootContext.Provider value=\{portalLayerRootId\}>[\s\S]*?<PortalLayerDepthContext.Provider value=\{ownerLayerDepth \+ 1\}>[\s\S]*?<DocumentReader/, "reader menus share the lightbox portal registry and nesting identity");
 assert.match(cards, /aria-modal="true"/, "attachment preview remains a modal dialog");
+assert.match(cards, /export function isMarkdownAttachment/, "Markdown preview detection has a dedicated boundary");
+assert.match(cards, /mimeType === "text\/markdown"/, "Markdown MIME attachments use the document preview");
+const markdownExtensionSource = cards.match(/const MARKDOWN_ATTACHMENT_EXTENSION = \/(.+)\/i;/)?.[1];
+assert.ok(markdownExtensionSource, "Markdown filenames share one extension pattern");
+const markdownExtension = new RegExp(markdownExtensionSource, "i");
+for (const name of ["plan.md", "plan.mdown", "plan.markdown", "PLAN.MARKDOWN"]) {
+  assert.ok(markdownExtension.test(name), `${name} uses the document preview without MIME metadata`);
+  assert.equal(name.replace(markdownExtension, "").toLowerCase(), "plan", `${name} has an extension-free fallback title`);
+}
+for (const name of ["plan.txt", "plan.markdown.txt", "markdown"]) {
+  assert.equal(markdownExtension.test(name), false, `${name} keeps its non-Markdown fallback`);
+}
+assert.match(cards, /MARKDOWN_ATTACHMENT_EXTENSION\.test\(attachment\.name\)/, "detection uses the shared Markdown extensions");
+assert.match(cards, /name\.replace\(MARKDOWN_ATTACHMENT_EXTENSION, ""\)/, "fallback titles strip the same Markdown extensions");
+assert.match(cards, /parseMarkdownReaderDocument\(attachment\.text, attachmentTitle\(attachment\.name\)\)/, "Markdown attachments flow through the shared reader parser");
+assert.match(cards, /<DocumentReader[\s\S]*?navigation="rail"[\s\S]*?collapsibleSections=\{false\}/, "Markdown attachments use the Research-style shared document reader");
+assert.match(cards, /<MarkdownReaderBlock block=\{block\} blockKey=\{key\} \/>/, "Markdown attachment blocks use the shared safe renderer");
+assert.match(cards, /import "@\/styles\/chat-attachment-reader\.css"/, "the dialog-gated reader styling stays component-scoped");
+assert.match(readerStyles, /\.chat-attachment-reader \.document-reader\s*\{[^}]*--document-reader-accent:\s*var\(--text-primary\)/, "reader labels and selected contents use a text token rather than the default surface accent");
+assert.match(readerStyles, /@media \(max-width: 1023px\)[\s\S]*?\.chat-attachment-backdrop\s*\{[\s\S]*?z-index:\s*160;/, "the full-height attachment dialog clears mobile navigation without covering pickers");
+assert.match(readerStyles, /\.document-reader__column a\s*\{\s*text-decoration:\s*underline;/, "reader links remain identifiable without decorative color");
 assert.match(cards, /export function AttachmentList/, "attachment chips have a dedicated presentation component");
 assert.match(cards, /export function InlineImageAttachments/, "familiar-produced images have an inline presentation component");
 assert.match(cards, /export function AttachmentThumb/, "staged attachments have a chip-sized preview component");

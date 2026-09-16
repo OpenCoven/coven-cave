@@ -50,6 +50,7 @@ import {
   type OpenWorkFilter,
 } from "@/components/home/dashboard-open-work";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 /** Hard caps that keep the no-scroll board inside the pane — the overflow
  *  stays reachable through each band's trailing "All in …" tile. */
@@ -157,6 +158,7 @@ export function ChatNewDashboard({
   /** Effective model for the board-head meta row (quiet text, not a badge). */
   modelId?: string | null;
 }) {
+  const keys = useKeySymbols();
   const [nowMs] = useState(() => Date.now());
 
   // Time-of-day greeting for the board eyebrow. Sampled after mount,
@@ -340,8 +342,8 @@ export function ChatNewDashboard({
               {/* Chat.dc.html 2b: the eyebrow names the session and its
                   familiar; the time-of-day greeting rides after it. */}
               <p className="home-dash__eyebrow">
-                <span className="home-dash__eyebrow-dot" aria-hidden />
-                {`New session · ${familiar.display_name}${greeting ? ` · ${greeting}` : ""}`}
+                <Icon name="ph:chat-circle-dots" width={14} aria-hidden />
+                {`New chat · ${familiar.display_name}${greeting ? ` · ${greeting}` : ""}`}
               </p>
               {/* One serif line — the surface's single identity moment. It
                   states what the page is FOR rather than counting what is
@@ -356,7 +358,7 @@ export function ChatNewDashboard({
                   reading of what to do next. */}
               <p className="home-dash__lede">
                 {bands.length > 0
-                  ? "Describe the work below, or start from something you already ran."
+                  ? "Write a message, or pick up existing work below."
                   : "Describe the work below and we\u2019ll begin."}
               </p>
               {/* Identity meta — the roster's familiar.harness beside the
@@ -382,21 +384,23 @@ export function ChatNewDashboard({
                 {onSaveDefaults ? (
                   <button
                     type="button"
-                    className="home-dash__save-default"
+                    className="home-dash__save-default focus-ring"
                     onClick={onSaveDefaults}
                     disabled={defaultsSaved}
                     title={
                       defaultsSaved
-                        ? "New sessions already start in this project"
-                        : "Start new sessions in this project"
+                        ? "New chats already start in this project"
+                        : "Start new chats in this project"
                     }
                   >
                     <Icon name="ph:sliders-horizontal" width={12} height={12} aria-hidden />
-                    {defaultsSaved ? "Saved as default" : "Save as default"}
+                    {defaultsSaved ? "Default project saved" : "Use project by default"}
                   </button>
                 ) : null}
                 <span className="home-dash__start-hint">
-                  <kbd>⏎</kbd> start
+                  <kbd>{keys.enter}</kbd> send
+                  <span aria-hidden>·</span>
+                  <kbd>{keys.shift}+{keys.enter}</kbd> new line
                 </span>
               </div>
             </div>
@@ -405,9 +409,13 @@ export function ChatNewDashboard({
           {/* Chat.dc.html 2b: everything below is a launcher over work that
               already exists — one band per source, each a strip of tiles. */}
           {bands.length > 0 ? (
-            <ChatStartFromBands bands={bands} />
+            <ChatStartFromBands
+              bands={bands}
+              label="Pick up existing work"
+              note="Resume a chat, open a task, or start a follow-up."
+            />
           ) : (
-            <p className="home-dash__work-empty">No open work — start something below.</p>
+            <p className="home-dash__work-empty">Your new chat starts with a message above.</p>
           )}
 
         </div>

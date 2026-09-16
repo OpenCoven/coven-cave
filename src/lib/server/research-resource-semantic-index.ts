@@ -1073,8 +1073,15 @@ export async function rebuildResearchResourceSemanticIndex(
       if (quarantinePath) {
         await renameWithRetry(file, quarantinePath);
         for (const suffix of ["-wal", "-shm"]) {
-          if (existsSync(/* turbopackIgnore: true */ `${file}${suffix}`)) {
-            await renameWithRetry(`${file}${suffix}`, `${quarantinePath}${suffix}`);
+          const sidecar = `${file}${suffix}`;
+          if (existsSync(/* turbopackIgnore: true */ sidecar)) {
+            try {
+              await renameWithRetry(sidecar, `${quarantinePath}${suffix}`);
+            } catch (error) {
+              // A closing SQLite connection can remove its sidecars after the check.
+              const code = error && typeof error === "object" && "code" in error ? error.code : null;
+              if (code !== "ENOENT" || existsSync(/* turbopackIgnore: true */ sidecar)) throw error;
+            }
           }
         }
         syncDirectory(path.dirname(file));

@@ -1,5 +1,7 @@
 import { COVEN_IDENTITY_CANON_HEADER } from "./coven-identity-canon.ts";
 import { relativeTime } from "./daily-report.ts";
+import { redact } from "./redact.ts";
+import { REDACTED_SECRET, redactSecretText, scanAuthorizationCredential } from "./secret-redaction.ts";
 
 type SessionLike = {
   id: string;
@@ -121,20 +123,24 @@ const SUBJECT_HEADING_RE = /^#{1,6}\s+\S/;
 const SUBJECT_QUALIFIED_RE = /^[A-Z][^\n]*\s·\s\S/;
 
 export function promptSubjectLine(prompt: string | null | undefined): string | null {
-  if (typeof prompt !== "string") return null;
+  const source = normalizeGeneratedTitleSource(prompt);
+  if (!source) return null;
   // A blank line is the separator, so a prompt without one names nothing.
-  const parts = prompt.replace(/\r\n/g, "\n").split("\n\n");
+  const parts = source.split("\n\n");
   if (parts.length < 2) return null;
   const first = parts[0].trim();
   const body = parts.slice(1).join("\n\n").trim();
   if (!first || !body) return null;
   // One line only — a wrapped paragraph before the first blank line is prose.
   if (first.includes("\n")) return null;
-  if (first.length > MAX_SUBJECT_LINE_LENGTH) return null;
-  // Sentence punctuation means it is a sentence, not a heading.
-  if (/[.!?]/.test(first)) return null;
   if (!SUBJECT_HEADING_RE.test(first) && !SUBJECT_QUALIFIED_RE.test(first)) return null;
-  const heading = first.replace(/^#{1,6}\s+/, "").trim();
+  // Explicit subjects share source safety, not the generic summary/filler
+  // policy: their deliberate wording and longer 72-unit ceiling are retained.
+  const heading = cleanGeneratedTitleText(first);
+  const headingPrefixLength = first.match(/^#{1,6}\s+/)?.[0].length ?? 0;
+  if (heading.length + headingPrefixLength > MAX_SUBJECT_LINE_LENGTH) return null;
+  // Sentence punctuation means it is a sentence, not a heading.
+  if (/[.!?]/.test(heading)) return null;
   return heading.length >= 3 ? heading : null;
 }
 
@@ -149,11 +155,11 @@ export function chatTitleFromPrompt(prompt: string | null | undefined): string |
   // instruction that follows it.
   const subject = promptSubjectLine(prompt);
   if (subject) return subject;
-  const normalized = normalizeChatTitle(prompt);
+  const normalized = typeof prompt === "string" ? cleanGeneratedTitleText(prompt) : null;
   if (!normalized) return null;
-  const cleaned = cleanPromptForTitle(normalized);
+  const cleaned = cleanPromptForTitle(normalized).normalize("NFC");
   if (cleaned.length <= MAX_PROMPT_TITLE_LENGTH) return cleaned;
-  const slice = cleaned.slice(0, MAX_PROMPT_TITLE_LENGTH - 1);
+  const slice = sliceAtGraphemeBoundary(cleaned, MAX_PROMPT_TITLE_LENGTH - 1);
   const lastSpace = slice.lastIndexOf(" ");
   const trimmed = lastSpace >= MAX_PROMPT_TITLE_LENGTH * 0.6 ? slice.slice(0, lastSpace) : slice;
   return `${trimmed.trimEnd()}…`;
@@ -219,7 +225,7 @@ function appendTruncationEllipsis(text: string): string {
 
 function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
-  const slice = text.slice(0, maxLen - 1);
+  const slice = sliceAtGraphemeBoundary(text, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
   if (lastSpace < 0) return null;
   return appendTruncationEllipsis(slice.slice(0, lastSpace));
@@ -234,11 +240,209 @@ function stripLineMarkdown(text: string): string {
     .replace(/[ \t]+#{1,6}[ \t]*$/gm, "");
 }
 
+const TITLE_GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function sliceAtGraphemeBoundary(text: string, maxUnits: number): string {
+  let end = 0;
+  for (const { index, segment } of TITLE_GRAPHEMES.segment(text)) {
+    if (index + segment.length > maxUnits) break;
+    end = index + segment.length;
+  }
+  return text.slice(0, end);
+}
+
+// Keep joiners/variation selectors used by real graphemes; remove C0/C1
+// controls (except layout whitespace), bidi controls and zero-width clutter.
+const UNSAFE_TITLE_CONTROLS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/gu;
+const HIDDEN_TITLE_BLOCK_RE = /<!--[\s\S]*?(?:-->|$)|<(\/?)(FAMILIAR_CONTRACT|KNOWLEDGE_VAULT|INSTRUCTIONS|system(?:[-_]reminder)?|identity|runtime|canon|thinking|think|reasoning|analysis|tool(?:s|[-_]call|[-_]result|[-_]use|[-_]response)?)(?=[\s/>])/gi;
+const PRIVATE_KEY_BLOCK_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z]+ )?PRIVATE KEY-----|$)/g;
+// Generic inline HTML (<b>, <code>, <span class="…">, …) — drop the tag but
+// keep its text. Requires a tag-name-shaped run right after '<'/'</', so a
+// Markdown autolink (<https://…>, <user@example.com>) never matches: ':' and
+// '@' break the run before any '>' or attribute whitespace is reached.
+function stripInlineHtmlTags(text: string): string {
+  const chunks: string[] = [];
+  let copiedThrough = 0;
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== "<") continue;
+    let cursor = start + 1;
+    if (text[cursor] === "/") cursor++;
+    if (!/[A-Za-z]/.test(text[cursor] ?? "")) continue;
+    while (cursor < text.length && /[A-Za-z0-9-]/.test(text[cursor])) cursor++;
+    if (!/[\s/<>]/.test(text[cursor] ?? "")) continue;
+    // Consume malformed nested tags together: stripping only the inner tag
+    // could manufacture a new tag and leave a split credential unrecognized.
+    let depth = 1;
+    let quote: string | null = null;
+    for (; cursor < text.length; cursor++) {
+      const char = text[cursor];
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === "<") {
+        depth++;
+      } else if (char === ">" && --depth === 0) {
+        cursor++;
+        break;
+      }
+    }
+    chunks.push(text.slice(copiedThrough, start));
+    copiedThrough = cursor;
+    start = cursor - 1;
+  }
+  chunks.push(text.slice(copiedThrough));
+  return chunks.join("");
+}
+
+function stripHiddenTitleSources(text: string): string {
+  const visible: string[] = [];
+  const stack: string[] = [];
+  let cursor = 0;
+  HIDDEN_TITLE_BLOCK_RE.lastIndex = 0;
+  for (let match; (match = HIDDEN_TITLE_BLOCK_RE.exec(text));) {
+    let end = HIDDEN_TITLE_BLOCK_RE.lastIndex;
+    let selfClosing = false;
+    if (match[2]) {
+      // Scan attributes once, respecting quotes. A '<' or '>' inside a quoted
+      // attribute must not expose the body of a hidden reasoning/tool block.
+      let quote: string | null = null;
+      for (; end < text.length; end++) {
+        const char = text[end];
+        if (quote) {
+          if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === ">") {
+          selfClosing = text[end - 1] === "/";
+          end++;
+          break;
+        }
+      }
+      HIDDEN_TITLE_BLOCK_RE.lastIndex = end;
+    }
+    if (stack.length === 0) visible.push(text.slice(cursor, match.index));
+    if (match[2]) {
+      const tag = match[2].toLowerCase();
+      if (match[1]) {
+        if (stack.at(-1) === tag) stack.pop();
+      } else if (!selfClosing) {
+        stack.push(tag);
+      }
+    }
+    cursor = end;
+  }
+  if (stack.length === 0) visible.push(text.slice(cursor));
+  let source = visible.join("").trim();
+  // The canon/runtime builders wrap the prior prompt with this boundary.
+  // No boundary means a preamble-only/unfinished source, not visible prose.
+  while (CANON_TITLE_LEAK_RE.test(source) || RUNTIME_SCOPE_TITLE_LEAK_RE.test(source)) {
+    const boundary = /\n[ \t]*Current user message:[ \t]*\n/.exec(source);
+    if (!boundary) return "";
+    source = source.slice(boundary.index + boundary[0].length).trim();
+  }
+  return source.replace(/^Current user message:[ \t]*\n/, "").trim();
+}
+
+function redactTitleAssignments(text: string): string {
+  const assignments = /((?:\b[a-z][a-z0-9+.-]*:\/\/|[/?#])[^\s<>"'`]+)|(?:"[^"\n]+"|'[^'\n]+'|\b[A-Za-z][\w.-]*)[ \t]*[:=][ \t]*/gi;
+  const chunks: string[] = [];
+  let copiedThrough = 0;
+  for (let match; (match = assignments.exec(text));) {
+    if (match[1]) continue;
+    // A plain heading such as "Session: restore state" is not an assignment.
+    // Quoted JSON keys and explicit credential headers still use colons.
+    if (match[0].trimEnd().endsWith(":") &&
+        !/^["']/.test(match[0]) &&
+        !/^(?:authorization|proxy-authorization|password|passwd|api[_-]?key|client[_-]?secret)\s*:/i.test(match[0])) continue;
+    let end = assignments.lastIndex;
+    while (/\s/.test(text[end] ?? "") && end < text.length) end++;
+    const first = text[end];
+    if (first === "[" || first === "{" || first === '"' || first === "'") {
+      // Preserve a whole assignment value while checking it with the shared
+      // redactor. Otherwise Markdown treats a secret array as a shortcut link,
+      // exposing everything after its first quoted item.
+      const stack: string[] = [];
+      let quote: string | null = null;
+      for (; end < text.length; end++) {
+        const char = text[end];
+        if (quote) {
+          if (char === "\\") end++;
+          else if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === "[" || char === "{") {
+          stack.push(char === "[" ? "]" : "}");
+        } else if (char === stack.at(-1)) {
+          stack.pop();
+        }
+        if (!quote && stack.length === 0) {
+          end++;
+          break;
+        }
+      }
+    } else {
+      const authorizationEnd = /^(?:proxy-)?authorization\s*[:=]/i.test(match[0])
+        ? scanAuthorizationCredential(text, end)
+        : undefined;
+      const authorization = /^(?:Basic|Bearer)[ \t]+[^\s,;]+/i.exec(text.slice(end));
+      if (authorizationEnd !== undefined) end = authorizationEnd;
+      else if (authorization) end += authorization[0].length;
+      else while (end < text.length && !/[\s,;]/.test(text[end])) end++;
+    }
+    const candidate = text.slice(match.index, end);
+    assignments.lastIndex = end;
+    if (!redactSecretText(candidate).includes(REDACTED_SECRET)) continue;
+    chunks.push(text.slice(copiedThrough, match.index), " ");
+    copiedThrough = end;
+  }
+  return chunks.length ? chunks.join("") + text.slice(copiedThrough) : text;
+}
+
+function redactKnownTitleTokens(text: string): string {
+  return redact(text).text
+    .replace(/\b(?:github_pat_|gh[pousr]_|rk-)[A-Za-z0-9_-]{20,}\b/g, " ")
+    .replace(/\[REDACTED:[a-z_]+\]/gi, " ");
+}
+
+function redactGeneratedTitleSecrets(text: string): string {
+  let source = text.replace(PRIVATE_KEY_BLOCK_RE, " ");
+  // Discard whole credential-bearing URLs, not just the password: usernames,
+  // hosts, paths and fragments need not become sidebar metadata either.
+  source = source.replace(/(?:\b[a-z][a-z0-9+.-]*:\/\/|[/?#])[^\s<>"'`]+/gi, (candidate) => {
+    const urlText = candidate.replace(/[)\]},.;!?]+$/, "");
+    try {
+      const url = new URL(urlText, "https://title.invalid");
+      const parameters = [...url.searchParams, ...new URLSearchParams(url.hash.slice(1))];
+      const sensitive = url.username || url.password || parameters.some(([key, value]) =>
+        value && (key.toLowerCase() === "key" || redactSecretText(`${key}=${JSON.stringify(value)}`).includes(REDACTED_SECRET)),
+      ) || redactKnownTitleTokens(urlText) !== urlText;
+      return sensitive ? ` ${candidate.slice(urlText.length)}` : candidate;
+    } catch {
+      // Malformed userinfo URLs must not escape the URL parser's failure path.
+      return /^[^/]*\/\/[^/\s]*@/.test(urlText) ? " " : candidate;
+    }
+  });
+  source = redactTitleAssignments(source);
+  source = source.replace(/\bBearer[ \t]+[A-Za-z0-9._~+/=-]+/gi, (credential) =>
+    Object.keys(redact(credential).redactions).length > 0
+      || redactSecretText(credential).includes(REDACTED_SECRET) ? " " : credential,
+  );
+  return redactKnownTitleTokens(source);
+}
+
 function normalizeGeneratedTitleSource(input: unknown): string | null {
   if (typeof input !== "string") return null;
-  const source = input.trim();
-  if (!source) return null;
-  return source;
+  const source = input
+    .replace(/\r\n?/g, "\n")
+    .replace(UNSAFE_TITLE_CONTROLS_RE, "")
+    .normalize("NFC");
+  // Flatten remaining inline HTML before either redaction pass: a secret can
+  // otherwise be split across a tag boundary (e.g. "sk-<b>proj</b>-…") and
+  // never match a contiguous-token pattern.
+  return redactTitleAssignments(
+    stripInlineHtmlTags(stripHiddenTitleSources(source)).replace(PRIVATE_KEY_BLOCK_RE, " "),
+  ).trim() || null;
 }
 
 function isCommonMarkEscapablePunctuation(char: string): boolean {
@@ -269,14 +473,14 @@ function unescapeCommonMarkPunctuation(text: string): string {
 
 function flattenMarkdownLabel(label: string): string {
   let result = "";
-  for (let i = 0; i < label.length && result.length < MAX_CHAT_TITLE_LENGTH; i++) {
+  for (let i = 0; i < label.length; i++) {
     if (
       label[i] === "\\" &&
       i + 1 < label.length &&
       isCommonMarkEscapablePunctuation(label[i + 1])
     ) {
       const escaped = label[++i];
-      result += result.length + 2 <= MAX_CHAT_TITLE_LENGTH ? `\\${escaped}` : escaped;
+      result += `\\${escaped}`;
     } else if (label[i] === "[" || label[i] === "]") {
       if (result && !/\s/u.test(result[result.length - 1])) result += " ";
     } else {
@@ -290,16 +494,16 @@ function flattenMarkdownLabel(label: string): string {
  * Linear normalizer for inline Markdown image and link syntax.
  * Walks the input once: `![alt](dest)` → alt text, `[label](dest)` → label.
  * For malformed / unclosed constructs emits the safe human label text without
- * backtracking. Destination content is always discarded, while visible output
- * is bounded to the pre-existing generated-title source limit.
+ * backtracking. Destination content is always discarded. Labels remain whole
+ * until the post-Markdown secret check; truncating here can expose a fragment
+ * of a credential whose prefix was interrupted by inline Markdown.
  */
 function normalizeMarkdownInlineLinks(s: string): string {
   const len = s.length;
   if (len === 0) return s;
   let result = "";
   const append = (value: string) => {
-    const remaining = MAX_CHAT_TITLE_LENGTH - result.length;
-    if (remaining > 0) result += value.slice(0, remaining);
+    result += value;
   };
   let i = 0;
   while (i < len) {
@@ -310,14 +514,12 @@ function normalizeMarkdownInlineLinks(s: string): string {
     ) {
       append(s.slice(i, i + 2));
       i += 2;
-      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
     const isImage = s[i] === "!" && i + 1 < len && s[i + 1] === "[";
     const bracketPos = isImage ? i + 1 : i;
     if (s[bracketPos] !== "[") {
       append(s[i++]);
-      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
     const labelStart = bracketPos + 1;
@@ -350,7 +552,6 @@ function normalizeMarkdownInlineLinks(s: string): string {
     if (labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
       append(s.slice(i, labelEnd + 1));
       i = labelEnd + 1;
-      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
     // Scan the destination exactly once with a depth counter. This handles
@@ -424,21 +625,11 @@ function stripUnmatchedLeadingDelimiter(text: string): string {
   return s;
 }
 
-/**
- * Shared formatter for all auto-generated titles (first-exchange naming,
- * periodic auto-rename, sparkle generation). Deterministic offline contract:
- * normalizes markdown links to their label, removes other markdown and edge
- * emoji, strips answer-heading boilerplate, conversational filler, and
- * question/request lead-ins, removes trailing sentence-ending punctuation,
- * capitalizes, caps at MAX_SUMMARY_TITLE_WORDS words, and clamps at
- * MAX_SUMMARY_TITLE_LENGTH chars at a word boundary (ellipsis only when cut).
- * Returns null when nothing useful remains (< 2 chars after cleanup) or when a
- * single over-length token has no word boundary to cut at cleanly.
- */
-function formatGeneratedTitle(text: string): string | null {
+/** Full-source safety and Markdown cleanup, shared with explicit brief subjects. */
+function cleanGeneratedTitleText(text: string): string {
   // Remove reference definitions and blockquote prefixes before line structure
   // is collapsed. Nested blockquotes are consumed as one prefix.
-  let s = stripLineMarkdown(text);
+  let s = stripLineMarkdown(normalizeGeneratedTitleSource(text) ?? "");
   // Normalize markdown images and links linearly (no backtracking regex).
   // ![alt](dest) → alt text; [label](dest) → label; destination discarded.
   s = normalizeMarkdownInlineLinks(s);
@@ -476,7 +667,19 @@ function formatGeneratedTitle(text: string): string | null {
   // Underscore emphasis _text_: only when markers are not adjacent to
   // alphanumeric chars on the outside (preserves snake_case, C_CONSTANT, etc.).
   s = s.replace(/(?<![A-Za-z0-9])_([^_\n]+)_(?![A-Za-z0-9])/g, "$1");
-  s = s.replace(/\s+/g, " ").trim();
+  // Redact whole sources AFTER rejoining Markdown and before ANY length cap.
+  // Earlier token redaction can remove a recognizable prefix but leave an
+  // unrecognizable secret suffix on the other side of an inline marker.
+  return redactGeneratedTitleSecrets(s.normalize("NFC")).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Offline summary formatter: strip edge emoji, boilerplate and request framing,
+ * then cap at seven words / 40 UTF-16 units on whole grapheme/word boundaries.
+ * Explicit prompt subjects bypass this policy, but not source safety.
+ */
+function formatGeneratedTitle(text: string): string | null {
+  let s = cleanGeneratedTitleText(text);
   // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
   // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
   // and "Fix parser 🎉." are both fully cleaned.
@@ -506,7 +709,7 @@ function formatGeneratedTitle(text: string): string | null {
   // Allow two-character acronyms such as "AI"; single chars are not meaningful.
   if (s.length < 2) return null;
   // Capitalize.
-  s = s.charAt(0).toUpperCase() + s.slice(1);
+  s = (s.charAt(0).toUpperCase() + s.slice(1)).normalize("NFC");
   // Cap at the word limit and make the omission visible. The ellipsis remains
   // attached to the final retained word, so it does not increase word count.
   const words = s.split(/\s+/);
@@ -531,8 +734,9 @@ function formatGeneratedTitle(text: string): string | null {
  *  genuine summary of a long ask ("# Retry policy options"). Null when the
  *  reply doesn't open with a usable heading. */
 export function titleFromAssistantReply(assistantText: string | null | undefined): string | null {
-  if (typeof assistantText !== "string") return null;
-  const lines = assistantText
+  const source = normalizeGeneratedTitleSource(assistantText);
+  if (!source) return null;
+  const lines = source
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/^(?:>\s*)+/, ""))
     .filter(Boolean)
@@ -563,7 +767,7 @@ export function chatSummaryTitle(input: {
   if (subject) return subject;
   const normalized = normalizeGeneratedTitleSource(input.userText);
   const prepared = normalized
-    ? normalizeMarkdownInlineLinks(stripLineMarkdown(normalized))
+    ? cleanGeneratedTitleText(normalized)
     : null;
   const cleaned = prepared ? cleanPromptForTitle(prepared) : null;
   // Short prompts: apply shared formatter and return directly when they fit.

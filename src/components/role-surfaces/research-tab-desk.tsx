@@ -10,7 +10,7 @@
  *   /deep               — Prompt tab with the deep loop ("autoresearch")
  *   /save               — Resources tab
  *   /find <query>       — live-filters the runs rail by the remainder
- *   /chat               — opens the selected mission's latest session
+ *   /chat               — discusses the selected mission's latest execution
  *                         (offered only when that session actually exists)
  * There is no /task — no board-create destination is reachable from here.
  *
@@ -27,10 +27,12 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SearchInput } from "@/components/ui/search-input";
 import { caveResearchTopicDiscovery } from "@/lib/feature-flags";
 import { Icon } from "@/lib/icon";
+import { useFlowDiscussion } from "@/lib/flow-discussion";
 import {
   filterResearchMissionsByText,
   researchMissionScopeCounts,
@@ -105,14 +107,19 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   // rails for reading, this keeps the queue while widening the run.
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const rail = useResearchPane(RAIL_PANE);
-  const canonicalRun = useResearchRunGateway(research.selected?.id ?? null, familiarId);
+  const canonicalRun = useResearchRunGateway(
+    research.selected?.id ?? null,
+    familiarId,
+    research.selected,
+  );
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
   const selectedSessionId = research.selected?.iterations.at(-1)?.sessionId;
-  const openMissionSession = (sessionId: string) => {
-    context.openSession(sessionId, context.activeFamiliar.id);
-  };
+  const discussion = useFlowDiscussion(
+    (sessionId, ownerId) => context.openSession(sessionId, ownerId),
+    `${familiarId}:${research.selected?.id ?? ""}`,
+  );
 
   // Rebuilt per render (cheap, tiny list) so every closure sees live context.
   const commands: DeskCommand[] = [
@@ -140,7 +147,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
       cmd: "/chat",
       label: "Discuss selected run in chat",
       hint: research.selected?.title ?? "",
-      run: () => openMissionSession(selectedSessionId),
+      run: () => void discussion.discuss(selectedSessionId),
     }] : []),
   ];
 
@@ -284,6 +291,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
                   key={command.cmd}
                   type="button"
                   role="menuitem"
+                  disabled={command.cmd === "/chat" && discussion.busy}
                   className="research-desk-querybar__command"
                   onClick={() => runCommand(command)}
                 >
@@ -320,6 +328,9 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
         </div>
       </div>
 
+      {discussion.error ? (
+        <ErrorState compact live={false} headline="Couldn’t open discussion" subtitle={discussion.error} />
+      ) : null}
       <div
         className="research-desk__workspace"
         data-focus-mode={focusMode}
@@ -375,26 +386,33 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             </div>
           ) : null}
           <ResearchMissionDetail
-            mission={research.selected}
+            mission={canonicalRun.missionDetail}
             canonicalRun={canonicalRun.eventState}
+            runProjections={canonicalRun.projections}
+            runProjectionSource={canonicalRun.projectionSource}
+            runGatewayStatus={canonicalRun.status}
+            runGatewayError={canonicalRun.error ?? canonicalRun.projectionError}
+            onRetryRunGateway={canonicalRun.retry}
+            missionDetailAvailable={canonicalRun.missionDetailAvailable}
+            missionActionsAvailable={canonicalRun.missionActionsAvailable}
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}
             railWidth={rail.width}
             railSeparatorProps={focusMode ? undefined : rail.separatorProps}
-            onOpenSession={(sessionId) => {
-              context.openSession(sessionId, context.activeFamiliar.id);
+            onOpenSession={(sessionId, ownerId) => {
+              context.openSession(sessionId, ownerId ?? context.activeFamiliar.id);
             }}
             onOpenUrl={context.openUrl}
             onShowResources={() => onNavigate("resources")}
-            onAction={(input) => research.selected
-              ? research.act(research.selected.id, input)
+            onAction={(input) => canonicalRun.missionDetail
+              ? research.act(canonicalRun.missionDetail.id, input)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onSchedule={(rrule) => research.selected
-              ? research.schedule(research.selected.id, rrule)
+            onSchedule={(rrule) => canonicalRun.missionDetail
+              ? research.schedule(canonicalRun.missionDetail.id, rrule)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onAutomationAction={(automationId, action) => research.selected
-              ? research.controlAutomation(research.selected.id, automationId, action)
+            onAutomationAction={(automationId, action) => canonicalRun.missionDetail
+              ? research.controlAutomation(canonicalRun.missionDetail.id, automationId, action)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
           />
         </main>

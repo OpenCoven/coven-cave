@@ -25,11 +25,15 @@ import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
+import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
+import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
@@ -58,13 +62,10 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 // Phone (or scripts/mobile-tailscale.sh — same state file) provisioned, so
 // paired phones survive dev-server restarts and a still-configured Tailscale
 // Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
-// provision.ts, inlined because the standalone server.mjs cannot import from
-// src/.
-// The port contract, inlined for the same reason as everything else in this
-// block: `build:server` runs esbuild with `--bundle=false`, so any import here
-// must still resolve at runtime from wherever server.mjs is unpacked — and the
-// packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
-// source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
+// provision.ts. These existing standalone copies remain pinned by their
+// contract tests; new relative server imports are bundled into server.mjs.
+// scripts/ports.mjs is the port authority and port-contract.test.mjs detects
+// drift in this copy.
 const CAVE_DEV_PORT = 3000;
 const CAVE_PRODUCTION_PORT = 3020;
 
@@ -273,13 +274,15 @@ function clientV1DiscoveryFile(): string {
   return join(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
 }
 
-// Windows ownership, inlined for the same reason as everything else in this
-// block: `build:server` runs esbuild with `--bundle=false`, so server.mjs
-// cannot import src/lib/server/client-v1/path-ownership.ts. That module is the
-// authority; the PowerShell below is a verbatim copy of its script and
-// discovery.test.ts fails if the two ever drift.
+// Existing standalone ownership copy. path-ownership.ts remains the authority;
+// discovery.test.ts pins this script so packaging changes cannot weaken it.
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
+const WINDOWS_OWNER_RIGHTS_SID = "S-1-3-4";
+const WINDOWS_WRITABLE_RIGHTS_MASK = 0x500d_0156;
+const WINDOWS_ACL_PROBE_TIMEOUT_MS = 12_000;
+const WINDOWS_ACL_PROBE_MAX_ATTEMPTS = 2;
+const WINDOWS_ACL_PUBLICATION_BUDGET_MS = 24_000;
 
 // The unverified-ownership waiver, inlined from path-ownership.ts for the same
 // reason as the script below. See that module for why it is shaped this way;
@@ -373,22 +376,51 @@ function sharedOwnershipRefusal(
 
 const WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
-$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+[Console]::Error.WriteLine('acl-probe:start')
+# Cmdlets are off limits in this script. Whichever cmdlet came first (the
+# provider item lookup in one release, the object constructor in the next)
+# never returned in the stripped probe environment: command discovery is what
+# stalls, not the work. Direct .NET member calls, language keywords and
+# operators do not wait on it.
+$path = $env:COVEN_CAVE_CLIENT_V1_ACL_PATH
+$isDirectory = [System.IO.Directory]::Exists($path)
+if ($isDirectory) {
+  $item = [System.IO.DirectoryInfo]::new($path)
+} elseif ([System.IO.File]::Exists($path)) {
+  $item = [System.IO.FileInfo]::new($path)
+} else {
+  throw 'ACL path does not exist.'
+}
+[Console]::Error.WriteLine('acl-probe:item')
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
-$admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
+$system = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_SYSTEM_SID}')
+$admins = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_ADMINISTRATORS_SID}')
+$ownerRights = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_OWNER_RIGHTS_SID}')
+$writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
+[Console]::Error.WriteLine('acl-probe:identity')
 
 function Read-State {
   param($target)
+  [Console]::Error.WriteLine('acl-probe:read-state')
   $acl = $target.GetAccessControl('Access,Owner')
-  $aces = @($acl.Access | ForEach-Object {
-    [pscustomobject]@{
-      sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-      type = [string]$_.AccessControlType
+  [Console]::Error.WriteLine('acl-probe:acl')
+  # Keep account-name lookup out of the security boundary: orphaned or remote
+  # principals can make IdentityReference.Translate block on Windows.
+  $aces = @()
+  foreach ($entry in @($acl.GetAccessRules(
+    $true,
+    $true,
+    [System.Security.Principal.SecurityIdentifier]
+  ))) {
+    $aces += [pscustomobject]@{
+      sid = $entry.IdentityReference.Value
+      type = [string]$entry.AccessControlType
+      rights = [uint32]$entry.FileSystemRights
     }
-  })
-  [pscustomobject]@{
+  }
+  [Console]::Error.WriteLine('acl-probe:rules')
+  return [pscustomobject]@{
     owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     protected = [bool]$acl.AreAccessRulesProtected
     aces = $aces
@@ -401,39 +433,93 @@ function Test-Exclusive {
   if ($state.owner -ne $me.Value) { return $false }
   foreach ($ace in $state.aces) {
     if ($ace.type -ne 'Allow') { return $false }
-    if ($trusted -notcontains $ace.sid) { return $false }
+    if ($trusted -contains $ace.sid) { continue }
+    if ($ace.sid -eq $ownerRights.Value -and
+        (([uint32]$ace.rights -band $writableRights) -eq 0)) { continue }
+    return $false
   }
   return $true
 }
 
+function Format-JsonString {
+  param([string]$value)
+  $builder = [System.Text.StringBuilder]::new()
+  [void]$builder.Append('"')
+  foreach ($char in $value.ToCharArray()) {
+    $code = [int]$char
+    if ($char -eq '"') { [void]$builder.Append('\\"') }
+    elseif ($char -eq '\\') { [void]$builder.Append('\\\\') }
+    elseif ($code -lt 32) { [void]$builder.Append(('\\u{0:x4}' -f $code)) }
+    else { [void]$builder.Append($char) }
+  }
+  [void]$builder.Append('"')
+  return $builder.ToString()
+}
+
+function Format-JsonBool {
+  param([bool]$value)
+  if ($value) { return 'true' } else { return 'false' }
+}
+
 $state = Read-State $item
+[Console]::Error.WriteLine('acl-probe:initial-state')
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
-  $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
-    ForEach-Object { $_.sid } | Select-Object -Unique)
+[Console]::Error.WriteLine('acl-probe:repair')
+  foreach ($ace in $state.aces) {
+    if ($trusted -contains $ace.sid) { continue }
+    if ($ace.sid -eq $ownerRights.Value -and
+        (([uint32]$ace.rights -band $writableRights) -eq 0)) { continue }
+    if ($removed -notcontains $ace.sid) { $removed += $ace.sid }
+  }
   $acl = $item.GetAccessControl('Access')
-  $acl.SetOwner($me)
+  if ($state.owner -ne $me.Value) {
+    $acl.SetOwner($me)
+  }
   $acl.SetAccessRuleProtection($true, $false)
-  foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
-  $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
+  # Enumerate the explicit post-protection rules in the same SID-native form.
+  foreach ($rule in @($acl.GetAccessRules(
+    $true,
+    $false,
+    [System.Security.Principal.SecurityIdentifier]
+  ))) {
+    if (
+      $rule.IdentityReference.Value -eq $ownerRights.Value -and
+      [string]$rule.AccessControlType -eq 'Allow' -and
+      (([uint32]$rule.FileSystemRights -band $writableRights) -eq 0)
+    ) {
+      continue
+    }
+    [void]$acl.RemoveAccessRuleSpecific($rule)
+  }
+  $inheritance = if ($isDirectory) { 'ContainerInherit, ObjectInherit' } else { 'None' }
   foreach ($sid in @($me, $system, $admins)) {
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-      $sid, 'FullControl', $inheritance, 'None', 'Allow')))
+    $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+      $sid, 'FullControl', $inheritance, 'None', 'Allow'))
   }
   $item.SetAccessControl($acl)
+[Console]::Error.WriteLine('acl-probe:repair-written')
   $repaired = $true
   $state = Read-State $item
 }
 
-[pscustomobject]@{
-  self = $me.Value
-  owner = $state.owner
-  protected = $state.protected
-  repaired = $repaired
-  removed = @($removed)
-  aces = $state.aces
-} | ConvertTo-Json -Compress -Depth 4
+[Console]::Error.WriteLine('acl-probe:complete')
+$aceJson = @()
+foreach ($ace in $state.aces) {
+  $aceJson += ('{"sid":' + (Format-JsonString $ace.sid) +
+    ',"type":' + (Format-JsonString $ace.type) +
+    ',"rights":' + ([uint32]$ace.rights).ToString([System.Globalization.CultureInfo]::InvariantCulture) + '}')
+}
+$removedJson = @()
+foreach ($sid in $removed) { $removedJson += (Format-JsonString $sid) }
+# Written straight to stdout so nothing travels the output pipeline at all.
+[Console]::Out.WriteLine('{"self":' + (Format-JsonString $me.Value) +
+  ',"owner":' + (Format-JsonString $state.owner) +
+  ',"protected":' + (Format-JsonBool $state.protected) +
+  ',"repaired":' + (Format-JsonBool $repaired) +
+  ',"removed":[' + ($removedJson -join ',') + ']' +
+  ',"aces":[' + ($aceJson -join ',') + ']}')
 `;
 
 const standaloneVerifiedWindowsPaths = new Set<string>();
@@ -444,7 +530,82 @@ const standaloneVerifiedWindowsPaths = new Set<string>();
 // would then read.
 const standaloneWaivedWindowsPaths = new Set<string>();
 
-function assertStandaloneWindowsExclusive(path: string, label: string): void {
+type StandaloneDiscoveryPublicationFailure =
+  | "root-owner-unverified"
+  | "root-owner-shared"
+  | "target-owner-unverified"
+  | "target-owner-shared"
+  | "root-not-directory"
+  | "root-symlink"
+  | "target-not-file"
+  | "endpoint-invalid"
+  | "authority-init";
+
+// Keep diagnostic attribution separate from raw exception text and causes.
+const standaloneDiscoveryPublicationFailures =
+  new WeakMap<object, StandaloneDiscoveryPublicationFailure>();
+const standaloneDiscoveryAclProbeTimeoutStages = new WeakMap<object, string>();
+
+function discoveryPublicationFailure(
+  category: StandaloneDiscoveryPublicationFailure,
+  error: Error,
+): Error {
+  standaloneDiscoveryPublicationFailures.set(error, category);
+  const cause = error.cause;
+  const timeoutStage =
+    cause && typeof cause === "object" ? windowsAclProbeTimeoutStages.get(cause) : undefined;
+  if (timeoutStage) standaloneDiscoveryAclProbeTimeoutStages.set(error, timeoutStage);
+  return error;
+}
+
+function standaloneWindowsAclProbeTimedOut(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const failure = error as { code?: unknown; killed?: unknown; signal?: unknown };
+  return failure.code === "ETIMEDOUT"
+    || (failure.killed === true && failure.signal === "SIGTERM");
+}
+
+const WINDOWS_ACL_PROBE_STAGES = new Set([
+  "start",
+  "item",
+  "identity",
+  "read-state",
+  "acl",
+  "rules",
+  "initial-state",
+  "repair",
+  "repair-written",
+  "complete",
+]);
+const windowsAclProbeTimeoutStages = new WeakMap<object, string>();
+
+function sanitizedWindowsAclProbeTimeout(error: unknown): NodeJS.ErrnoException {
+  const stderr =
+    error && typeof error === "object" && "stderr" in error
+      ? Buffer.isBuffer(error.stderr)
+        ? error.stderr.toString("utf8")
+        : typeof error.stderr === "string"
+          ? error.stderr
+          : ""
+      : "";
+  let stage = "launch";
+  for (const match of stderr.matchAll(/^acl-probe:([a-z-]+)\r?$/gmu)) {
+    if (WINDOWS_ACL_PROBE_STAGES.has(match[1]!)) stage = match[1]!;
+  }
+  const sanitized = Object.assign(new Error(`Windows ACL probe timed out at ${stage}.`), {
+    code: "ETIMEDOUT",
+    killed: true,
+    signal: "SIGTERM",
+  });
+  windowsAclProbeTimeoutStages.set(sanitized, stage);
+  return sanitized;
+}
+
+function assertStandaloneWindowsExclusive(
+  path: string,
+  label: "root" | "target",
+  deadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS,
+): void {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   if (standaloneWaivedWindowsPaths.has(path)) return;
   const subject = `Client v1 discovery ${label}`;
@@ -473,30 +634,52 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
     protected: boolean;
     repaired: boolean;
     removed: string[];
-    aces: { sid: string; type: string }[];
+    aces: { sid: string; type: string; rights: number }[];
   };
   try {
-    report = JSON.parse(execFileSync(
-      join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-NoLogo",
-        "-InputFormat",
-        "None",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        WINDOWS_ACL_SCRIPT,
-      ],
-      {
-        env: probeEnv,
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 60_000,
-        maxBuffer: 1024 * 1024,
-      },
-    ));
+    let rawReport: string | undefined;
+    for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const remaining = Math.floor(deadline - performance.now());
+        if (remaining <= 0) {
+          throw Object.assign(new Error("the ACL publication probe budget was exhausted"), {
+            code: "ETIMEDOUT",
+          });
+        }
+        rawReport = execFileSync(
+          join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-NoLogo",
+            "-InputFormat",
+            "None",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            WINDOWS_ACL_SCRIPT,
+          ],
+          {
+            env: probeEnv,
+            encoding: "utf8",
+            windowsHide: true,
+            timeout: Math.min(WINDOWS_ACL_PROBE_TIMEOUT_MS, remaining),
+            maxBuffer: 1024 * 1024,
+          },
+        );
+        break;
+      } catch (error) {
+        const timedOut = standaloneWindowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
+          if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
+          throw error;
+        }
+      }
+    }
+    if (rawReport === undefined) {
+      throw new Error("the ACL probe attempt bound was exhausted");
+    }
+    report = JSON.parse(rawReport);
     // `aces` carries the whole access decision, so a shape this cannot read has
     // to be an error rather than a default: an absent or non-array `aces` reads
     // downstream as "no principal has access" and would therefore admit the
@@ -512,6 +695,13 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
       || typeof report.repaired !== "boolean"
       || !Array.isArray(report.aces)
       || !Array.isArray(report.removed)
+      || report.aces.some((ace) =>
+        !ace
+        || typeof ace !== "object"
+        || !Number.isInteger(ace.rights)
+        || ace.rights < 0
+        || ace.rights > 0xffff_ffff
+      )
     ) {
       throw new Error("the ACL probe returned a malformed report");
     }
@@ -519,10 +709,10 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
     // The ONE condition the waiver covers: the host cannot answer the
     // question. Everything below this point had an answer.
     if (!waiver.granted) {
-      throw new Error(
+      throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
         unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
         { cause },
-      );
+      ));
     }
     standaloneWaivedWindowsPaths.add(path);
     console.warn(
@@ -538,13 +728,26 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
   }
   if (!report.protected) findings.push("its DACL still inherits from the parent");
   const foreign = report.aces
-    .filter((ace) => ace.type !== "Allow" || !trusted.has(ace.sid))
+    .filter((ace) =>
+      ace.type !== "Allow"
+      || (
+        !trusted.has(ace.sid)
+        && !(
+          ace.sid === WINDOWS_OWNER_RIGHTS_SID
+          && Number.isInteger(ace.rights)
+          && ((ace.rights as number) & WINDOWS_WRITABLE_RIGHTS_MASK) === 0
+        )
+      )
+    )
     .map((ace) => `${ace.type}:${ace.sid}`);
   if (foreign.length > 0) {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
-    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
+    throw discoveryPublicationFailure(
+      `${label}-owner-shared`,
+      new Error(sharedOwnershipRefusal(subject, path, findings, waiver)),
+    );
   }
   if (report.repaired) {
     console.warn(
@@ -559,7 +762,8 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
 function requireStandaloneOwner(
   path: string,
   metadata: NonNullable<ReturnType<typeof lstatSync>>,
-  label: string,
+  label: "root" | "target",
+  windowsAclProbeDeadline?: number,
 ): void {
   // The uid comparison alone was inert on win32 — `process.getuid` is undefined
   // there and `lstat` reports uid 0 for every path — so the discovery record
@@ -567,26 +771,32 @@ function requireStandaloneOwner(
   // that can answer neither question is refused rather than waved through.
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
-      throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+      throw discoveryPublicationFailure(
+        `${label}-owner-shared`,
+        new Error(`Client v1 discovery ${label} must be owned by the current user.`),
+      );
     }
     return;
   }
   if (process.platform !== "win32") {
-    throw new Error(
+    throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
       `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: `
       + `this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`,
-    );
+    ));
   }
-  assertStandaloneWindowsExclusive(path, label);
+  assertStandaloneWindowsExclusive(path, label, windowsAclProbeDeadline);
 }
 
-function assertStandaloneDiscoveryTarget(path: string): void {
+function assertStandaloneDiscoveryTarget(path: string, windowsAclProbeDeadline?: number): void {
   try {
     const metadata = lstatSync(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
+      throw discoveryPublicationFailure(
+        "target-not-file",
+        new Error(`Client v1 discovery target must be a regular file: ${path}.`),
+      );
     }
-    requireStandaloneOwner(path, metadata, "target");
+    requireStandaloneOwner(path, metadata, "target", windowsAclProbeDeadline);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
@@ -594,20 +804,35 @@ function assertStandaloneDiscoveryTarget(path: string): void {
 }
 
 function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
+  const windowsAclProbeDeadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const rootMetadata = lstatSync(root);
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
-    throw new Error("Client v1 discovery root must be a real directory.");
+    throw discoveryPublicationFailure(
+      rootMetadata.isSymbolicLink() ? "root-symlink" : "root-not-directory",
+      new Error("Client v1 discovery root must be a real directory."),
+    );
   }
-  requireStandaloneOwner(root, rootMetadata, "root");
+  requireStandaloneOwner(root, rootMetadata, "root", windowsAclProbeDeadline);
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
-    throw new Error("Client v1 discovery root must not resolve through a symlink.");
+    throw discoveryPublicationFailure(
+      "root-symlink",
+      new Error("Client v1 discovery root must not resolve through a symlink."),
+    );
   }
   chmodSync(root, 0o700);
 
-  const url = new URL(endpoint);
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch (cause) {
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.", { cause }),
+    );
+  }
   const loopback = url.hostname === "127.0.0.1"
     || url.hostname === "localhost"
     || url.hostname === "[::1]";
@@ -622,11 +847,14 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     || url.hash
     || /%(?:2f|5c)/i.test(endpoint)
   ) {
-    throw new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.");
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL."),
+    );
   }
 
   const path = clientV1DiscoveryFile();
-  assertStandaloneDiscoveryTarget(path);
+  assertStandaloneDiscoveryTarget(path, windowsAclProbeDeadline);
   let record:
     | {
       version: 1;
@@ -659,11 +887,17 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     };
   } else {
     if (CLIENT_V1_AUTHORITY_BOOTSTRAP === undefined) {
-      throw new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        new Error("Client v1 HPKE authority initialization failed."),
+      );
     }
     if ("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP) {
-      throw clientV1AuthorityInitializationError
-        ?? new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        clientV1AuthorityInitializationError
+          ?? new Error("Client v1 HPKE authority initialization failed."),
+      );
     }
     const bootstrap = CLIENT_V1_AUTHORITY_BOOTSTRAP;
     record = {
@@ -691,7 +925,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    assertStandaloneDiscoveryTarget(path);
+    assertStandaloneDiscoveryTarget(path, windowsAclProbeDeadline);
     renameSync(temporaryPath, path);
     ownsTemporaryPath = false;
     chmodSync(path, 0o600);
@@ -1812,6 +2046,29 @@ const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 const wss = new WebSocketServer({ noServer: true });
+const remotePtyClients = new Set<WebSocket>();
+const deviceAccessSecret = randomUUID();
+process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
+// NOT awaited. Hardening the device-access store spawns a PowerShell ACL probe
+// per file on Windows, and when those stall the server never reaches listen() —
+// the packaged-server probe then reports "did not answer within 90000 ms"
+// (cave-9jt60). Device pairing is one feature; it does not get to decide
+// whether the server exists. It fails closed on its own instead.
+const deferredDeviceAccess = deferDeviceAccessStore(() => createDeviceAccessStore());
+const deviceAccessStore = deferredDeviceAccess.store;
+const deviceAccess = createDeviceAccessGateway({
+  store: deviceAccessStore,
+  isDirectLoopback: isDirectLoopbackRequest,
+  sidecarToken: SIDECAR_TOKEN,
+  packaged: process.env.COVEN_CAVE_BUNDLE === "1",
+  stampSecret: deviceAccessSecret,
+  onAuthenticated(req, device) {
+    req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${device.peer.nodeId}`;
+  },
+  onPolicyChanged() {
+    for (const client of remotePtyClients) client.terminate();
+  },
+});
 
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
@@ -1828,10 +2085,32 @@ const server = createServer((req, res) => {
   if (tailnetNodeId) {
     req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
-  void handle(req, res);
+  void deviceAccess.handle(req, res).then((handled) => {
+    if (!handled) return handle(req, res);
+  }).catch((error: unknown) => {
+    console.error("[device-access] Request handling failed:", error);
+    res.destroy(error instanceof Error ? error : undefined);
+  });
 });
 
-server.on("upgrade", (req, socket, head) => {
+server.on("close", () => {
+  void deviceAccess.close().then(() => deviceAccessStore.close()).catch((error: unknown) => {
+    console.error("[device-access] Shutdown failed:", error);
+  });
+});
+
+server.on("upgrade", async (req, socket, head) => {
+  try {
+    if (await deviceAccess.blocksUpgrade(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+  } catch (error) {
+    console.error("[device-access] Upgrade refused:", error);
+    socket.destroy();
+    return;
+  }
   let pathname: string;
   let query: UpgradeQuery;
   try {
@@ -1922,6 +2201,10 @@ server.on("upgrade", (req, socket, head) => {
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    if (!isDirectLoopbackRequest(req)) {
+      remotePtyClients.add(ws);
+      ws.once("close", () => { remotePtyClients.delete(ws); });
+    }
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });
@@ -1958,9 +2241,17 @@ server.headersTimeout = 80_000;
  */
 function reportClientV1DiscoveryUnavailable(error: unknown): void {
   clientV1DiscoveryPublished = false;
-  const detail = error instanceof Error ? error.message : String(error);
+  const category = typeof error === "object" && error !== null
+    ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other"
+    : "disabled-other";
   console.error("[cave] ─────────────── CLIENT V1 DISABLED ───────────────");
-  console.error(`[cave] ${detail}`);
+  console.error(`[cave] client-v1 discovery publication refused: ${category}`);
+  const timeoutStage = typeof error === "object" && error !== null
+    ? standaloneDiscoveryAclProbeTimeoutStages.get(error)
+    : undefined;
+  if (timeoutStage) {
+    console.error(`[cave] Windows ACL probe timed out at stage: ${timeoutStage}`);
+  }
   console.error(
     "[cave] The client v1 discovery record was NOT published, so paired clients"
     + " cannot find this server and every client v1 request stays refused."

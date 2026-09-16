@@ -32,10 +32,18 @@ assert.match(bento, /\/api\/board/, "board panel pulls the live board");
 assert.match(bento, /\/api\/familiars/, "roster pulls the familiar list");
 assert.match(bento, /\/api\/inbox/, "needs-you pulls the live inbox");
 assert.match(bento, /\/api\/sessions\/list/, "stats/heatmap/carousel pull sessions");
+// The canonical vault supplied this and now lives in the dedicated memory
+// application. The panel's contract is unchanged — real data, not the design's
+// fixtures — so it reads the MEMORY.md scan rather than reporting a flat zero.
 assert.match(
   bento,
-  /loadCanonicalMemoryList\(\)/,
-  "familiar card stats pull coven memory through the shared canonical loader",
+  /\/api\/memory/,
+  "familiar card stats pull live memory-file counts",
+);
+assert.doesNotMatch(
+  bento,
+  /loadCanonicalMemoryList|canonical-memory/,
+  "the retired vault loader is gone",
 );
 assert.match(bento, /\/api\/projects/, "the projects stat pulls the project registry");
 assert.match(bento, /\/api\/github\/activity/, "github rail pulls activity");
@@ -48,8 +56,8 @@ assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared paus
 assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
   bento,
-  /inboxReady \? buildDashboardModel\(data\.inbox, new Date\(\)\) : initialModel/,
-  "the server model is only the first-paint seed — polls rebuild it from the fresh inbox",
+  /inboxReady \? buildDashboardModel\(data\.inbox, new Date\(\)\) : \(initialModel \?\? emptyModel\)/,
+  "polls replace the optional server seed or empty embedded model with the fresh inbox",
 );
 
 // Pure helpers drive every panel — no inline derivation drift.

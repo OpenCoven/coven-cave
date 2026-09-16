@@ -47,7 +47,7 @@ assert.match(
 );
 assert.match(
   dash,
-  /<ChatStartFromBands bands=\{bands\} \/>/,
+  /<ChatStartFromBands\s+bands=\{bands\}/,
   "the board's body IS the shared Start-from band launcher (Chat.dc.html 2b)",
 );
 assert.doesNotMatch(
@@ -123,13 +123,27 @@ assert.match(
 // An element can never match its own @container query — a `.home-dash__board`
 // rule inside a tier is silently dead (shipped once: the 430px tier's padding
 // shrink never applied). Tiers may restyle descendants only.
-for (const [, tier] of css.matchAll(/@container[^{]*\{([\s\S]*?)\n\}/g)) {
+for (const [, tier] of css.matchAll(/@container \([^{]*\{([\s\S]*?)\n\}/g)) {
   assert.doesNotMatch(
     tier,
     /\.home-dash__board\s*[{,]/,
     "fit tiers must not target .home-dash__board itself — it is the query container",
   );
 }
+assert.match(css, /container: chat-entry \/ inline-size/, "pane width has an explicit outer container");
+assert.doesNotMatch(
+  css,
+  /\.home-dash__composer\s*\{[^}]*position:\s*absolute/,
+  "the inline composer must stay in flow so it cannot cover the launcher",
+);
+assert.doesNotMatch(
+  css,
+  /\.home-dash__composer-trail\s*\{[^}]*display:\s*none/,
+  "short panes must not remove project defaults",
+);
+assert.match(dash, /label="Pick up existing work"/, "dashboard describes its actual navigation");
+assert.match(dash, /note="Resume a chat, open a task, or start a follow-up\."/);
+assert.doesNotMatch(dash, /No open work — start something below/, "empty-state direction must match composer placement");
 assert.match(
   css,
   /\.home-dash__board-inner \{[\s\S]{0,220}?padding: var\(--space-5\) 0/,

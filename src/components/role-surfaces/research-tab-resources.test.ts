@@ -83,7 +83,12 @@ test("remove is a two-step inline confirm wired to durable resources with compat
   assert.match(source, /This can’t be undone/);
   assert.match(source, /Delete resource/);
   assert.match(source, /Remove save/);
-  assert.match(source, /\{confirmingRemove \?/);
+  // The confirm is hoisted out of the footer JSX so the redesigned GitHub
+  // modal can host the same control in its own action bar rather than
+  // reimplementing a second, divergent delete path.
+  assert.match(source, /const removeControl = openLink \? \(\s*confirmingRemove \? \(/);
+  assert.match(source, /removeSlot=\{removeControl\}/);
+  assert.match(source, /addToRunSlot=\{addToRunControl\}/);
   assert.match(source, />\s*Keep\s*<\/Button>/);
   assert.match(source, /setConfirmingRemove\(true\)/);
   assert.match(source, /resource \? await local\.remove\(resource\.id\) : await remove\(openLink\.id\)/);

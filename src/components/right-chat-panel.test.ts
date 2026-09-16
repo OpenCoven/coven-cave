@@ -337,8 +337,8 @@ assert.match(source, /sessionsError && !hasResolvedRouter/, "a sessions-roster e
 // of four hand-duplicated headers.
 assert.equal(
   (source.match(/<RightChatPanelFrame\b/g) ?? []).length,
-  4,
-  "loading, the familiars error, the no-active-familiar chooser, and the sessions error all share one Close-carrying frame",
+  5,
+  "loading, roster errors, the chooser, and an unavailable launch actor all share one Close-carrying frame",
 );
 assert.ok(
   (source.match(/aria-label="Close Chat panel"/g) ?? []).length >= 2,

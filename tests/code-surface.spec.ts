@@ -420,6 +420,36 @@ async function mockWorkScheduler(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("code surface (Coding familiar's room)", () => {
+  test("session header controls stay visible and fit narrower panes", async ({ page }, testInfo) => {
+    await base(page);
+    await page.route("**/api/inbox**", (route) =>
+      route.fulfill({ json: { ok: true, items: [], unreadCount: 0 } }),
+    );
+    await page.goto("/?mode=code&session=s-new", { waitUntil: "domcontentloaded" });
+    const header = page.getByTestId("code-workbench-header");
+    await expect(header).toBeVisible({ timeout: 30_000 });
+    await page.mouse.move(0, 0);
+    await header.screenshot({ path: testInfo.outputPath("code-session-header.png") });
+    for (const width of [1280, 1024, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.keyboard.press("Escape");
+      for (const name of [/Session inspector/, /Keyboard shortcuts/, /^Open in Chat$/]) {
+        const control = header.getByRole("button", { name });
+        await expect(control).toBeVisible();
+        await expect(control).toHaveCSS("opacity", "1");
+        const headerBox = await header.boundingBox();
+        const box = await control.boundingBox();
+        expect(box!.x).toBeGreaterThanOrEqual(headerBox!.x);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(headerBox!.x + headerBox!.width + 1);
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      }
+    }
+    await page.screenshot({ path: testInfo.outputPath("code-session-header-narrow.png") });
+    await header.getByRole("button", { name: /Session inspector/ }).click();
+    await expect(page.getByRole("dialog", { name: "Session inspector" })).toBeVisible();
+  });
+
   test("review-first queue defaults to Reviewable, keeps rail/picker order aligned, and resets on reload", async ({
     page,
     isMobile,

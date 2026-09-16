@@ -41,6 +41,7 @@ type PullSummary = {
   headRef: string;
   baseRef: string;
   headSha: string;
+  baseSha: string;
   commits: number;
   additions: number;
   deletions: number;
@@ -166,6 +167,7 @@ async function fetchPullSummary(repo: string, number: number, token: string | nu
     headRef: typeof headRaw?.ref === "string" ? headRaw.ref : "",
     baseRef: typeof baseRaw?.ref === "string" ? baseRaw.ref : "",
     headSha: typeof headRaw?.sha === "string" ? headRaw.sha : "",
+    baseSha: typeof baseRaw?.sha === "string" ? baseRaw.sha : "",
     commits: num(p.commits),
     additions: num(p.additions),
     deletions: num(p.deletions),

@@ -6,10 +6,6 @@ const source = [
   readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8"),
 ].join("\n");
-const canonicalResources = readFileSync(
-  new URL("../lib/canonical-memory-resources.ts", import.meta.url),
-  "utf8",
-);
 const memoryRequestGate = readFileSync(
   new URL("../lib/memory-feed-request-gate.ts", import.meta.url),
   "utf8",
@@ -72,15 +68,14 @@ assert.match(
   /const memoryFeed = useMemo<MemoryFeed>\(/,
   "FamiliarsView builds a single memoized memory feed",
 );
+// Refresh coordinated two feeds and returned the canonical result. One feed
+// remains, so it returns nothing — but the ownership discipline is the part
+// that mattered and is unchanged: a forced refresh takes the gate, publishes
+// only while current, and releases it in a finally.
 assert.match(
   source,
-  /const refreshMemory = useCallback\(async \(\): Promise<CanonicalMemoryListLoad> => \{[\s\S]*const request = requestGate\.beginForce\(\);[\s\S]*readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*true,[\s\S]*refreshCanonicalMemory\(\)[\s\S]*requestGate\.isCurrent\(request\)[\s\S]*await fileRefresh;[\s\S]*return canonicalList;[\s\S]*requestGate\.finishForce\(request\)/,
-  "explicit Memory Refresh applies all three independently settled outcomes and returns the canonical result",
-);
-assert.match(
-  memoryRequestGate,
-  /backgroundRequestIds: Record<MemoryFeedRequestDomain, number>[\s\S]*files: 0,[\s\S]*canonical: 0,[\s\S]*startedDuringForce: activeForceEpoch !== null/,
-  "file and canonical backgrounds keep independent request IDs under current-token forced ownership",
+  /const refreshMemory = useCallback\(async \(\): Promise<void> => \{[\s\S]*const request = requestGate\.beginForce\(\);[\s\S]*readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*true,[\s\S]*requestGate\.isCurrent\(request\)[\s\S]*requestGate\.finishForce\(request\)/,
+  "explicit Memory Refresh is publication-gated and always releases the force token",
 );
 assert.match(
   memoryRequestGate,
@@ -94,17 +89,12 @@ assert.match(
 );
 assert.match(
   source,
-  /beginBackground\("files"\)[\s\S]*beginBackground\("canonical"\)/,
-  "each parent background poll enters its own request domain",
+  /beginBackground\("files"\)/,
+  "the parent background poll enters its own request domain",
 );
 assert.ok(
-  (source.match(/requestGate\.isCurrent\(request\)/g) ?? []).length >= 6,
+  (source.match(/requestGate\.isCurrent\(request\)/g) ?? []).length >= 2,
   "every async parent feed outcome is publication-gated",
-);
-assert.match(
-  canonicalResources,
-  /createCanonicalMemoryRefresher\([\s\S]*readList\(true\)[\s\S]*readOverview\(true\)/,
-  "the coordinated canonical refresh independently forces both landing resources",
 );
 assert.doesNotMatch(
   source,
@@ -126,84 +116,39 @@ assert.ok(
 );
 {
   const memView = readFileSync(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+  // The vault reader is gone from this view; only the file path model remains,
+  // which is why the pending-delete filter below is path-based at all.
   assert.doesNotMatch(
     memView,
-    /RawCovenEntry|normalizeCovenEntry/,
-    "the Task 7 reader must not retain a path-bearing canonical model",
+    /CanonicalMemoryReader|CanonicalMemorySummary|feed\.canonical/,
+    "the retired vault reader and its feed are gone from the memory view",
   );
-  assert.match(
-    memView,
-    /CanonicalMemorySummary/,
-    "the Task 7 reader consumes path-free canonical summaries",
-  );
-  assert.match(
-    memView,
-    /selectedRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader/,
-    "canonical selections dispatch through the canonical reader",
-  );
-  assert.doesNotMatch(
-    memView,
-    /fetch\(\s*["'`]\/api\/coven-memory["'`]/,
-    "the standalone reader must use shared canonical landing resources",
-  );
-  assert.match(
-    memView,
-    /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*force,\s*\)/,
-    "the standalone reader keeps loading file memory through the shared resource",
-  );
-  assert.doesNotMatch(
-    memView,
-    /agents:coven-memory/,
-    "reader deletes must not invalidate the retired generic resource",
-  );
-  assert.match(
-    memView,
-    /usePausablePoll\(\(\) => void load\(\), 30_000, \{ enabled: !feed \}\)/,
-    "FamiliarsMemoryView's own poll is disabled in parent-fed mode",
-  );
-  assert.match(
-    memView,
-    /if \(!feed\) void load\(\);/,
-    "FamiliarsMemoryView skips its initial self-fetch in parent-fed mode",
-  );
-  // The parent-fed file mirror must keep the pending-delete filter, or a parent
-  // poll landing inside the 4s undo window resurrects the optimistic file row.
   assert.match(
     memView,
     /feed\.files\.entries\.filter\(\s*\(entry\) => entry\.fullPath !== pendingDelete,\s*\)/,
     "the feed mirror filters the pending-delete path for file entries",
   );
-  assert.doesNotMatch(
-    memView,
-    /feed\.canonical\.entries\.filter\([\s\S]{0,120}(?:path|fullPath|contentPath)/,
-    "canonical summaries never participate in path-based pending deletion",
-  );
 }
 
 assert.match(
   source,
-  /buildFamiliarCardStats\(\{[\s\S]*familiars,[\s\S]*sessions,[\s\S]*covenEntries[\s\S]*\}\)/,
+  /buildFamiliarCardStats\(\{[\s\S]*familiars,[\s\S]*sessions,[\s\S]*fileEntries[\s\S]*\}\)/,
   "Per-card stats are derived from buildFamiliarCardStats",
 );
 assert.match(
   source,
-  /loadCanonicalMemoryList\(\)/,
-  "roster aggregates use the shared non-forced canonical list",
-);
-assert.match(
-  source,
-  /memoryAvailability:\s*canonicalMemoryAvailability/,
-  "canonical availability is threaded into familiar card stats",
+  /memoryAvailability:\s*fileMemoryState\.state === "ready"/,
+  "file-scan availability is threaded into familiar card stats",
 );
 assert.match(
   source,
   /stats\.memoryAvailability === "ready"\s*\?\s*compactCount\(stats\.memoryCount\)\s*:\s*"—"/,
-  "the roster never presents an unavailable canonical count as zero",
+  "the roster never presents an unavailable count as zero",
 );
 assert.match(
   source,
   /const renownAvailable = stats\.memoryAvailability === "ready"/,
-  "roster renown presentation checks canonical memory availability",
+  "roster renown presentation checks memory availability",
 );
 assert.match(
   source,
@@ -265,10 +210,13 @@ assert.match(
   "Detail layout mounts the rail + panel",
 );
 
+// The pending-navigation branch existed so a deep link to one vault memory
+// could hold the scope on its exact target. With the vault gone there is no
+// deep link, and the ordinary fallback is the whole rule.
 assert.match(
   source,
-  /const memoryFamiliar = pendingCanonicalMemorySelection[\s\S]*\? pendingMemoryFamiliar[\s\S]*: selectedFamiliar \?\? resolvedActiveFamiliar \?\? null/,
-  "normal memory scope keeps its active-familiar fallback while a pending navigation waits for its exact target",
+  /const memoryFamiliar = selectedFamiliar \?\? resolvedActiveFamiliar \?\? null/,
+  "memory scope falls back to the selected then the active familiar",
 );
 
 assert.match(
@@ -331,27 +279,11 @@ assert.match(
   "Header button switches to agent-memory mode",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /pendingCanonicalMemorySelection\?: PendingCanonicalMemorySelection \| null/,
-  "FamiliarsView accepts the typed mount-safe canonical selection",
+  /pendingCanonicalMemorySelection/,
+  "the vault's deep-link selection prop is retired",
 );
-assert.match(
-  source,
-  /if \(!pendingCanonicalMemorySelection\) return;[\s\S]*setSelectedFamiliarId\(pendingCanonicalMemorySelection\.familiarId\);[\s\S]*setViewMode\("agent-memory"\)/,
-  "a pending selection first chooses its familiar and opens agent-memory mode",
-);
-assert.match(
-  source,
-  /pendingCanonicalMemorySelection[\s\S]*<FamiliarMemoryOverlay[\s\S]*pendingCanonicalMemorySelection=\{pendingCanonicalMemorySelection\}[\s\S]*onCanonicalMemorySelectionApplied=\{onCanonicalMemorySelectionApplied\}/,
-  "the retained selection and acknowledgement cross the lazy overlay mount",
-);
-assert.match(
-  source,
-  /pendingCanonicalMemorySelection=\{pendingCanonicalMemorySelection\}[\s\S]*onCanonicalMemorySelectionApplied=\{onCanonicalMemorySelectionApplied\}[\s\S]*<FamiliarsMemoryView/,
-  "the overlay threads the typed handoff into the mounted memory view",
-);
-
 assert.doesNotMatch(
   source,
   /Memory across all agents/,

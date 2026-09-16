@@ -1,471 +1,164 @@
 # Coven Cave Agent Notes
 
+## Work continuity before starting
+
+Before creating, claiming, planning, resuming, or delegating multi-step work,
+load [work-continuity](.agents/skills/work-continuity/SKILL.md). If the skill
+dispatcher does not index it, read that exact file directly.
+
+Follow [the living procedure](docs/workflows/work-continuity.md): inspect
+authorized GitHub issues, Project items, PRs, and explicit execution references.
+Match outcome and target, preserve existing owners and original messages, and
+propose a continuation rather than starting competing work. Unknown coverage
+is not "no match"; a saved issue comment is not a delivered handoff.
+Skip broad discovery for ordinary independent one-turn answers.
+
+## GitHub Issues and Projects
+
+Use **GitHub Issues** as the development queue and the existing
+[Cave Project](https://github.com/orgs/OpenCoven/projects/9) for planning.
+[GitHub work tracking](docs/workflows/github-work-tracking.md) is the canonical
+guide for ownership, status, worktrees, handoff, and completion.
+
+Beads is retired from this workflow by issue #5399. Do not run `bd`, create
+or claim Beads, or sync Dolt to work on this repository. Preserve legacy data,
+IDs, owners, and citations as historical notes. Do not bulk-import old rows
+into GitHub or treat the passive `.beads/issues.jsonl` export as current work.
+
+Keep one issue per outcome. Record the acting familiar, scope, branch/worktree,
+evidence, blocker, and imperative next step on that issue. GitHub assignment
+and comments are not execution leases. Preserve human-authored dependencies
+and approval requirements.
+
+Use Project `Started` only while actively working. Waiting or blocked work is
+`Todo`, with the named blocker and next step on the issue. Use `Done` only
+after merge or explicit completion criteria. Do not leave an idle session
+marked active.
+
 ## Workflow-First Branch Hygiene
 
-- Treat `main` as the canonical project state. Before starting work, fetch and branch from current `origin/main`.
-- Use branches and worktrees only as short-lived PR transport for active implementation. Do not use branches as durable storage, coordination logs, or half-finished agent memory.
-- Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
-- Land an approved spec or plan on `main` through its own docs PR even when the implementation is deferred or abandoned. Bead citations must resolve on `main`; archive tags are recovery sources, not the canonical location of an approved design.
-- Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
-- Create managed worktrees through `pnpm beads:worktrees:create --bead cave-123
-  --branch fix/cave-123-example --owner kitty --purpose "Repair example"` so the
-  owning Bead records structured lifecycle metadata and budget admission. Do
-  **not** insert `--` before the flags: pnpm forwards it to the script, and the
-  parser rejects every unrecognised option including a bare `--`
-  (`worktree-lifecycle-create: unknown option: --`). `--bead`, `--branch`,
-  `--owner` and `--purpose` are all required; `--start-point` defaults to
-  `origin/main` and the worktree is placed under `.worktrees/`.
-- **The command has two distinct failure modes, and only one of them justifies
-  the fallback.** Telling them apart is the whole game, because the wrong choice
-  creates a worktree nothing can ever retire.
-  - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 28-worktree budget`, or `Bead … already owns a registered
-    worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
-    from this path is lifted by an attributed, expiring exception, and the
-    refusal itself now prints the exact rerun. The budget counts every
-    registered worktree in the checkout, not just yours, so a concurrent session
-    can block you and retiring your own units may not lift it:
+- Treat `main` as canonical. Fetch current `origin/main` before branching.
+- Use a short-lived, issue-owned worktree under `.worktrees/`. Follow the
+  [creation and budget contract](docs/workflows/github-work-tracking.md#worktrees).
+  Use `git worktree add --no-track`; do not create a Bead or forge legacy
+  lifecycle metadata to obtain a worktree.
+- Keep durable decisions in issues, approved specs/plans, and PRs, not branches
+  or session memory. Approved documents must resolve on `main` through a PR.
+- Keep the shared checkout and other sessions' edits untouched. Run
+  `pnpm wt:status` before interpreting dirtiness; a paused Git operation is
+  not proof of live editing or permission to abort it.
+- Make each PR scoped and locally verified. Do not commit, push, or merge
+  without clear authority from the current request.
+- Never push directly to `main`, use `gh pr merge --admin`, or change branch
+  protection. The maintainer's admin exemption is not an agent exemption.
+- Before closing PR-backed work, record the worktree as removed and verified,
+  or intentionally preserved with an owner and reason.
+- Use [branch-curator](.agents/skills/branch-curator/SKILL.md) for deletion.
+  Require exact OIDs, retained heads, clean state, no live owner, and explicit
+  scope. A merged squash PR is not retention; a pushed archive tag can be.
+  A local status label is not deletion authority; remote deletion remains proposal-only.
+- Preserve uncertain or dirty units, foreign locks, and inaccessible paths.
+  A chat approval does not expand filesystem access. De-registration is not
+  directory deletion, and neither is justified by missing ownership evidence.
+- Before release or TestFlight work, reconcile and verify from clean `main`.
 
-    ```bash
-    pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
-      --owner kitty --purpose "Repair example" \
-      --exception-owner kitty \
-      --exception-reason "why this exception is needed" \
-      --exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT' \
-      --exception-path /abs/path/to/.worktrees/cave-123-example
-    ```
-
-    All four `--exception-*` flags are required together. Replace
-    `REPLACE-WITH-FUTURE-UTC-ISO-INSTANT` with a canonical UTC ISO instant in the
-    future; every `--exception-path` must be absolute. The exception is recorded on the
-    Bead alongside the worktree, so the unit still lands with full lifecycle metadata
-    and stays retirable — this is a sanctioned path, not a bypass.
-  - **Exit 1 — errored because the lifecycle inventory is incomplete.** The command
-    could not build a **complete** inventory, which needs live GitHub queries. An
-    exception cannot rescue this: the inventory throws before admission is ever
-    assessed. **Almost every exit 1 is transient — retry before you conclude
-    otherwise.** Two failures dominate, and both clear on their own:
-    - GitHub's REST quota is exhausted (`API rate limit already exceeded`) —
-      `gh api rate_limit --jq .resources.core` tells you when to retry;
-    - a commit's PR association comes back malformed or absent (`commit
-      association connection is unavailable`, `pull request node returned
-      malformed fields or a mismatched head OID`) — usually a degraded or
-      throttled GitHub response rather than repository state. Observed
-      2026-08-06: a warning of exactly this shape vanished on a rerun minutes
-      later, once quota had recovered, with nothing else changed.
-
-    So the order is **check quota → rerun → only then fall back**. Genuinely
-    structural failures name the repository itself (`canonical repository
-    identity mismatch`, `canonical repository identity changed between pages`);
-    those do not improve with a retry. A malformed worktree record on a bead
-    (`Bead cave-… worktree metadata: …`) is structural too, but since
-    `cave-g9byt` it is charged only to the unit it names — so if one reaches
-    you, it claims the exact branch or path you asked for. Pick another branch
-    or have its owner repair it; do not hand-edit someone else's record.
-
-    One more structural exit 1, and the one most often mistaken for a flake:
-    `maintenance fence acquisition failed: coven-acquire-failed:
-    coven-version-unsupported`. That is a resolved Coven CLI below the `0.2.5`
-    maintenance floor (prereleases are refused whatever their numbers), and it
-    is **deterministic given PATH** — retrying changes nothing. The refusal now
-    prints the binary it chose, the version that binary reported, its raw
-    `--version` banner, the floor, and the `COVEN_BIN` override; read those
-    before concluding your toolchain is broken, because a supported install is
-    often already present further along the same PATH. See `cave-6bb4m`.
-
-    Reach for the fallback only after a retry failed:
-
-    ```bash
-    git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
-    ```
-
-    Know the trade: that worktree carries no lifecycle metadata, so
-    `pnpm beads:worktrees` will class it `uncertain` ("structured lifecycle
-    metadata backfill required") forever and `pnpm beads:worktrees:apply` can
-    never retire it. Retire it by hand through the archive-tag route in
-    [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing metadata onto the
-    Bead — that record is the evidence the retirement gate checks.
-- After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
-  disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
-  exits 2 with `missing maintenance planes: beads, github`. Cave now holds its
-  local writer-intent fence together with Coven's released 0.2.5 maintenance
-  protocol; the remaining Beads and GitHub planes are still unenforced. That is
-  not a local fault and a retry will not clear it, so
-  hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
-  the expected path until those land (`cave-wqa0b.3` and `cave-wqa0b.4`; the
-  residue they leave behind is `cave-xbc87`). Prove retention first: a
-  squash-merge leaves the branch commits on no remote ref, so a merged PR is not
-  retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
-  guarded; remote deletion remains proposal-only.
-- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
-  worktree as removed and verified or intentionally preserved with an owner and
-  reason; `retire-after-gate` is a classification, not automatic deletion
-  authority. Automatic retirement requires the full maintenance gate. Explicit
-  maintainer authorization in the current task may activate Branch Curator's
-  bounded manual deletion proof.
-- **A worktree whose directory sits outside your session's granted filesystem
-  roots is retired by de-registration, not by `git worktree remove`.** That
-  command deletes the target directory, so a sandboxed session cannot run it —
-  and a chat approval does not widen a filesystem boundary, so re-asking never
-  unblocks it. The registration lives at `.git/worktrees/<name>/` inside this
-  repository: after proving the head is retained, the owning session is dead,
-  and no bead owns the unit, remove that admin directory and run
-  `git worktree prune`. Full preconditions and the undo are in
-  [`CLAUDE.md`](CLAUDE.md). Report it as a de-registration — the orphaned
-  directory stays on disk.
-- Before you assume a dirty worktree is another session's live work, run
-  `pnpm wt:status`. It is network-free and sub-second, and it separates real
-  in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
-  a state that otherwise reads as ordinary dirtiness and gets stepped around
-  indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
-- **If a branch you pushed disappears from `origin`, there are exactly two
-  causes — neither of them lost your work.** Nothing local explains either, which
-  is why they are named here (`cave-iy3l7`).
-  1. **The PR merged.** `delete_branch_on_merge` is on, so GitHub drops the head
-     branch. A squash merge lands a *different* commit on `main`, so the branch's
-     own tip is then on no remote ref — retire the worktree through the
-     archive-tag route, and expect the guard to block until a tag exists.
-  2. **The 40-branch cap rolled it back.** `.github/workflows/branch-cap.yml`
-     deletes a *newly created* branch when the repository exceeds 40
-     (`scripts/enforce-branch-cap.mjs`). The deletion is **remote-only** — your
-     local branch and worktree still hold every commit — and the workflow run
-     now says so in its error and its run summary. Push again after freeing
-     capacity; a `retention/<branch>-<sha>` tag may already hold the head, and
-     tags are exempt from the cap.
-
-  Tell them apart with `gh pr list --head <branch> --state all`: a merged PR is
-  cause 1, no PR at all is cause 2. Check the headroom before it bites with
-  `git ls-remote --heads origin | wc -l` — the workflow warns from three
-  creations out, but only on the run page.
-- Do not push directly to `main`; use the protected PR path for repository changes.
-- Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
+Use the existing Git-only secret and attribution hooks. The guarded migration
+command is `bash scripts/install-git-hooks.sh --retire-beads`; never replace
+safety hooks with an empty path.
 
 ## Pull-request Review Standard
 
-When asked to review or assess a pull request, treat the request as **read-only**
-unless the user separately authorizes repairs. Review the exact current
-`headRefOid`: inspect the scoped diff and relevant code paths, check mergeability
-and conflicts, read every review thread (including paginated thread comments),
-and inspect the current check runs. Pending, missing, stale, cancelled, or
-failed checks are incomplete—not green. Report the exact head, evidence, and
-remaining blockers; never edit, push, merge, resolve threads, or change PR state
-as part of a review-only request.
+A review request is **read-only** unless repairs are separately authorized.
+Review the exact `headRefOid`, scoped diff, relevant code paths, mergeability,
+all review threads and paginated comments, and current check runs.
+Pending, missing, stale, cancelled, or failed checks are incomplete.
+Do not edit, push, merge, resolve threads, or change PR state during review.
+
+Use [branch-to-merge](.agents/skills/branch-to-merge/SKILL.md) when authorized
+to land work. Preserve exact-head merge guards and human contributor trailers.
 
 ## Design System (any UI work)
 
-[`docs/coven-design-language.md`](docs/coven-design-language.md) is the
-binding contract for tokens, density, elevation, motion, voice, and interface
-copy — read it before editing any surface, and walk its §9 shipping checklist
-before opening a UI PR. The live token reference renders at `/aesthetic`.
+Read [the design language](docs/coven-design-language.md) before editing a
+surface, and walk its section 9 shipping checklist before a UI PR.
+The live reference is `/aesthetic`.
 
-Implementing a **Claude Design handoff**? Read
-[`docs/design-handoff/IMPLEMENTATION-STATUS.md`](docs/design-handoff/IMPLEMENTATION-STATUS.md)
-first — it maps every frame to what landed it, lists what is still outstanding,
-and carries the import recipe. Its two load-bearing warnings: the zips in
-`~/Downloads` are stale snapshots that miss live frames entirely, and the
-prototype palette *is* our token set (`#9386d0` is `--accent-presence`), so a
-handoff never needs a hand-copied hex.
+For a Claude Design handoff, first read
+[implementation status](docs/design-handoff/IMPLEMENTATION-STATUS.md).
+Downloaded snapshots can miss live frames. The prototype palette is the
+existing token set, not a reason to copy hex values.
 
-Where the truth lives:
+| Contract | Canonical source |
+| --- | --- |
+| Surfaces, spacing, type, radii, motion, and focus | `src/styles/globals/foundations.css` |
+| Theme/mode values and palette roster | `src/styles/globals/themes.css`, `src/lib/theme-palettes.ts` |
+| Shared CSS and React primitives | `src/styles/globals/primitives.css`, `src/components/ui/` |
+| Phosphor icon names and generated subset | `src/lib/icon.tsx`, `scripts/generate-icon-subset.mjs` |
 
-- `src/styles/globals/foundations.css` — the annotated token contract
-  (surfaces, text tiers, borders, radii, 4px spacing grid, type scale, motion,
-  focus rings, icon sizes). `src/app/globals.css` is only an import facade.
-- `src/styles/globals/themes.css` — 12 palettes × 2 modes (`data-theme` ×
-  `data-mode` on `:root`). Every surface must survive all 42 combinations.
-- `src/styles/globals/primitives.css` — shared `.ui-*` classes; grep before
-  inventing a class.
-- `src/components/ui/` — React primitives (Button, EmptyState, ErrorState,
-  Skeleton, Modal, Popover, OverflowMenu, ViewHeader, SearchInput, …). Reuse
-  before writing new ones.
-- `src/lib/icon.tsx` — the `ph:`-prefixed Phosphor `ICON_NAMES` union. New
-  icon: add the name there, run `node scripts/generate-icon-subset.mjs`,
-  commit the regenerated subset (`icon-subset.test.ts` fails CI otherwise).
+`src/app/globals.css` is an import facade. New gated-surface CSS belongs in a
+component-imported sheet, not the global bundle. Reuse existing primitives.
 
-Hard rules, enforced by gates (not advisory):
+Use defined tokens, on-grid spacing, on-step radii, and semantic state tints.
+Run existing codemods before hand-fixing token literals. Keep the design ESLint
+gates, `src/lib/design-token-drift.test.ts`, and the undefined-token scan intact.
+Baselines ratchet down; a necessary exception needs an explicit justification.
+State tints derive from one solid token; use existing danger tokens.
 
-- **Tokens only** — no hardcoded colors, on-scale px font sizes, off-grid
-  spacing, or off-step radii in render code. `pnpm lint` runs the design
-  ESLint gate (`coven-design/no-raw-px-text`, `no-static-inline-style`,
-  `no-render-hex-color`) plus `pnpm codemod:design:check`;
-  `src/lib/design-token-drift.test.ts` (app test suite) keeps the CSS codemod
-  a no-op and ratchets judgment categories down-only — if you must add one,
-  raise the baseline in the same PR and justify it.
-- **The token you name must exist** — those gates all ask whether a raw
-  literal should have been a token; none asked whether the token a `var()`
-  names is defined anywhere. CSS resolves an undefined custom property to
-  nothing, so the declaration is dropped and the element silently inherits:
-  no error, no warning, nothing visible in a diff. `pnpm lint` runs
-  `pnpm check:tokens:defined`
-  (`scripts/design-system/token-reference-scan.mjs`) and
-  `src/lib/undefined-token-reference.test.ts` gates the same scan in the app
-  suite. It checks `var(--x)` in `src/**/*.css`, in Tailwind arbitrary values
-  (`rounded-[var(--radius-control)]`), and in inline styles, against every
-  definition in the CSS tree, every custom property set at runtime from
-  TS/TSX, the `next/font` `variable:` names, and Tailwind's installed default
-  theme. It also fails a token defined **only** inside a
-  `[data-theme]`/`[data-mode]` block, which is undefined on the default Coven
-  palette. Pre-existing cases are banked by name and exact count in that
-  script — banks only ever go DOWN, and a name that is not in one is a new
-  defect. Run `node scripts/design-system/token-reference-scan.mjs` for the
-  full report.
-- **Auto-fixers before hand-editing**: `node scripts/codemods/tokenize-css.mjs`
-  rewrites on-scale CSS literals to tokens; `pnpm codemod:design` does the
-  same for component TSX.
-- **State tints derive from one solid token** via the `color-mix` recipe
-  (solid text, ~14% fill, 30–45% border) — never a second hue. Danger alerts
-  ship pre-mixed as `--danger-bg` / `--danger-border` / `--danger-text`.
-- **A11y non-negotiables**: `.focus-ring` on interactive elements,
-  `useFocusTrap` + focus return for anything modal, `useAnnouncer()` on
-  mutations, a `prefers-reduced-motion` story for anything that moves, and
-  color never the only channel.
-- **Copy follows the doc's §10 contract** (vocabulary, action copy, field
-  semantics, placeholder grammar `Search <items>…` with the `…` character,
-  state copy). `scripts/ui-consistency.test.mjs` pins the §10 headings and
-  the doc's factual claims (palette counts, token values, cited paths).
+Interactive elements need focus rings. Modals need trapping and focus return.
+Mutations need `useAnnouncer()`, motion needs a reduced-motion alternative,
+and color cannot be the only signal. Copy follows the design document's
+section 10 vocabulary, action, placeholder, and state rules.
 
 ## Orchestration-Ready Tasks (any Board or Chart Room work)
 
-[`docs/orchestration-ready-tasks.md`](docs/orchestration-ready-tasks.md) is the
-shared task contract for every familiar, surface, and orchestrator; the design
-rationale is in
-[`docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md`](docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md).
+Read [the shared task contract](docs/orchestration-ready-tasks.md).
+A blocked task carries unresolved dependencies, one named primary blocker,
+and one imperative next step. Failed execution synthesizes an execution
+dependency rather than taking a weaker path into Blocked.
 
-The load-bearing rule: **a blocked task must carry unresolved dependencies, one
-named primary blocker, and one imperative next step.** Failure-blocked is the
-same contract — a failed run synthesizes an `execution` dependency rather than
-taking a weaker path into Blocked. Enforcement belongs in the `cave-board.ts`
-mutators, not route handlers, because Enhance calls `updateCard` directly.
-
-Two boundaries automation must not cross: `nextStep.requiresApproval` blocks
-dispatch outright, and human-authored dependencies or next steps are proposed
-against, never overwritten. Auto-application is gated on checks the Cave can
-verify itself — a model's self-reported confidence is not one of them.
+Enforce this in `cave-board.ts` mutators, not only routes.
+`nextStep.requiresApproval` blocks dispatch. Propose changes to human-authored
+dependencies and next steps; do not overwrite them. A model's self-reported
+confidence is not an application-verifiable admission condition.
 
 ## Starting The Tauri Desktop App
 
-Use the desktop shell when validating native-only surfaces such as the terminal,
-browser pane, window chrome, sidecar behavior, updater wiring, or Tauri
-permissions. Do not open Codex browser previews for this repo; use the native
-Tauri window, or the user's default browser for web-only checks.
-
-Preferred dev command:
+Use the native shell for native-only surfaces, permissions, sidecars, terminal,
+browser panes, and window behavior:
 
 ```bash
 bash scripts/dev-app.sh
 ```
 
-Run it in the foreground from your repo checkout or worktree and leave that
-terminal attached. Stop it with `Ctrl-C`. The wrapper:
+Keep the terminal attached. The wrapper selects `COVEN_CAVE_PORT`, then `PORT`,
+then port `3000`; it does not scan for a free port. It attaches only to an
+identified Cave server and refuses an unrelated holder. Choose an explicit
+different port when necessary.
 
-- resolves one dedicated loopback port from `COVEN_CAVE_PORT`, then `PORT`, then
-  the fixed dev default `3000`; it does not scan for a free port
-- starts the Next custom dev server on that port when needed
-- writes a temporary Tauri config so `devUrl` points at the actual port
-- runs `pnpm exec tauri dev` against the desktop shell
+Cargo compilation is progress, not a hang. The wrapper owns its child tree
+and stops it on exit; do not detach it while proving startup. Its origin
+watchdog and the in-app recovery overlay handle outages differently.
+Use the user's default browser for web-only work, not a Codex browser preview.
 
-Expected early output looks like:
-
-```text
-[dev:app] dedicated dev port 3000
-[dev:app] starting dev server on 3000
-Running BeforeDevCommand (`PORT=3000 pnpm dev`)
-> Ready on http://127.0.0.1:3000
-Running DevCommand (`cargo run --no-default-features --color always --`)
-```
-
-First launch may spend several minutes downloading and compiling Rust crates
-before the window appears. Treat Cargo `Compiling ...` lines as progress, not a
-hang. If the resolved port is already serving CovenCave, the wrapper should
-attach to it. If another or gated process owns it, the wrapper refuses by
-identity; a silent holder is left for the wrapper's own bind to report. Free
-the process or choose another explicit port:
-
-```bash
-COVEN_CAVE_PORT=3007 bash scripts/dev-app.sh
-```
-
-`PORT=3007` remains a fallback when `COVEN_CAVE_PORT` is unset.
-
-`pnpm dev:app` calls the same wrapper. Prefer the direct `bash` form in agent
-handoffs because its logs make the startup sequence and selected port obvious.
-Do not background the command when the goal is to verify the app started; a
-detached wrapper can exit without leaving useful Tauri logs.
-
-The wrapper owns everything it starts. `Ctrl-C`, `SIGTERM`, or any other exit
-tears down the Tauri process tree and the Next dev server underneath it, so an
-interrupted run never strands a process holding the port. It also watches the
-loopback origin: if the dev server stays unreachable for 30 s the wrapper shuts
-the window down rather than leaving it attached to a server that is not coming
-back. Override that window with `COVEN_CAVE_DEV_SERVER_GRACE_SECONDS`, or set it
-to `0` to disable the watchdog.
-
-Shorter outages — a Turbopack rebuild, a manual dev-server restart — are handled
-in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
-`ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
-soon as the server answers so no stale chunk ids survive the restart.
-
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
-
-## Agent Context Profiles
-
-The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
-
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
-
-## Session Completion
-
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
-
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   pnpm beads:sync
-   git push
-   git status
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
-
-**Critical rules:**
-- Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
-- If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
-
-<!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
-## Beads Issue Tracker
-
-Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.
-
-### Quick Reference
-
-```bash
-bd ready                # Find available work
-bd show <id>            # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>           # Complete work
-bd prime                # Refresh Beads context
-```
-
-### Rules
-
-- Use `bd` for all task tracking; do not create markdown TODO lists.
-- Run `bd prime` when Beads context is missing or stale. Codex 0.129.0+ can load Beads context automatically through native hooks; use `/hooks` to inspect or toggle them.
-- Keep persistent project memory in Beads via `bd remember`; do not create ad hoc memory files.
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
-<!-- END BEADS CODEX SETUP -->
-
-## Coven Familiar Beads Protocol
-
-- Run `bd prime` and `bd ready --json` before choosing familiar work in this repo.
-- Claim exactly one ready bead with `bd update <id> --claim` before editing code.
-- Keep GitHub and Linear as visibility layers: link PRs, checks, and Linear tickets through `external-ref`, labels, notes, or comments instead of duplicating the queue.
-- Record branch/worktree, session, familiar owner, and verification evidence in the bead before handoff.
-- Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
-- Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
-
-Create new Beads through the canonical wrapper so ownership is set exactly once:
-
-```bash
-pnpm beads:create --surface shared "Short title" \
-  --description "Why this exists and what needs to be done" \
-  --type task --priority 2
-```
-
-- Choose exactly one ownership surface: `ios`, `desktop`, or `shared`.
-- `surface:shared` covers API, backend, workflow, and other cross-platform work.
-- Narrower non-platform labels may coexist, but they do **not** satisfy ownership.
-- Do not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually in
-  `--labels`; canonical creation appends the single ownership label for you.
-- `pnpm beads:surfaces` is the non-mutating audit for raw-CLI or legacy rows
-  that introduce new missing/conflicting ownership labels.
-- Existing backlog rows are grandfathered only through
-  `config/beads-surface-grandfather.json`; do not backfill the old queue as
-  part of routine implementation work.
-
-### `in_progress` means actively worked *right now* (cave-1mxw4)
-
-Set the status honestly **at creation and at handoff**. Everything that is not
-being worked at this moment is `open`, `blocked`, or `deferred` — `bd` supports
-all three, plus `--defer <date>` to hide an issue from `bd ready` until then.
-
-This exists because a triage sweep found `in_progress` at 47 against 16 `open`,
-and most of it was not work in flight — it was four different states wearing one
-status, each of which had to be re-derived by grepping `main`, checking branches
-and reading PRs. That re-derivation is most of the cost of a sweep, and it
-recurs every time:
-
-| Actually | Should be | Example |
-| --- | --- | --- |
-| waiting on a human at the machine | `blocked` | a live-mic pass no agent can perform |
-| waiting on a decision never made | `blocked` | "design approval is required before implementation" |
-| waiting on a maintainer action an agent must not take | `blocked` | provisioning signing keys; anything needing credentials |
-| lost — no code, no branch, no PR | `open` (or closed) | reads "approved design, in progress"; is at zero |
-
-Practical rules:
-
-- **Name what a `blocked` bead waits on**, in a comment and — for maintainer
-  actions — in the title, so it is actionable at a glance rather than merely
-  accurate.
-- **Close finished work with evidence.** Roughly 28 beads were closeable in one
-  sweep purely because nobody flipped them after their PR merged.
-- **Do not bulk re-status on weak evidence.** "No live worktree" is not proof
-  someone has stopped — work happens from the primary checkout too. Re-status
-  only when the specific blocker or the specific remaining gap is verified, and
-  say which in the comment.
-- **Durable trackers are a legitimate exception.** A tracker that follows live
-  external state (an open-PR patrol) never completes but is continuously
-  active, so `in_progress` fits it.
-
-Retrofitting this by audit does not work on its own: 17 corrections in a single
-session still left the count at 47, because other sessions kept adding. The
-status has to be right when the bead is written.
+Read `CLAUDE.md` for long-running dev-server heap behavior. Prefer production
+builds for sustained verification. Do not symlink another worktree's
+`node_modules`; restore dependencies only when needed.
 
 ## Crediting Contributors
 
-When you re-land or build on someone else's work — a fork PR, an issue author's proposal, a co-author — **credit the human contributor with a working GitHub-linked trailer** so they show up in the contributors graph and on their profile:
+Credit human contributions with the GitHub-linked numeric no-reply form:
 
-```
+```text
 Co-authored-by: Full Name <ID+username@users.noreply.github.com>
 ```
 
-- Use the **numeric-id no-reply form**. Get the id with `gh api users/<login> --jq .id`.
-- **Never** use a machine or `.local` email (e.g. `name@Someones-Mac.local`) in a co-author trailer — it links to no account and gives **zero** credit.
-- When a squash-merge folds a contributor's PR into an internal branch, **preserve their `Co-authored-by:` line in the squash commit message** (pass an explicit commit message to the merge). A trailer that only lands as free text in the PR body does not count.
-- For substantial external contributions, also add the person to [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+Resolve the ID with `gh api users/<login> --jq .id`. Never use machine or
+`.local` emails. Preserve human trailers in the final squash message; a PR-body
+mention does not credit the commit. Add substantial external contributors to
+`CONTRIBUTORS.md`.
 
-This is about crediting **people**. Don't add trailers or footers that credit an AI model, assistant, vendor, or coding harness.
+Don't add trailers or footers that credit an AI model, assistant, vendor,
+or coding harness.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -10,7 +10,6 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
 import {
-  ChatCanvasView,
   ChatFamiliarView,
   GroupChatView,
   ProjectsView,
@@ -39,6 +38,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+import { CodeRailReopen } from "@/components/code-rail-reopen";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -71,9 +71,7 @@ const chatStorage = {
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
 // "familiar" is the active familiar's capability panel, promoted from the
 // retired inspector sidepanel to a first-class chat tab.
-// "canvas" is the gallery of sketches saved from chat artifacts — saves landed
-// in the canvas store with no surface after the standalone Canvas page retired.
-type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "canvas";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar";
 
 type Props = {
   familiars: Familiar[];
@@ -82,7 +80,6 @@ type Props = {
   activeFamiliarId: string | null;
   selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
-  localDaemonReady: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
@@ -127,7 +124,6 @@ export function ChatSurface({
   activeFamiliarId,
   selectedFamiliarIds,
   daemonRunning,
-  localDaemonReady,
   routerRef,
   sessionsLoaded,
   sessionsError,
@@ -224,7 +220,7 @@ export function ChatSurface({
     },
     [onSessionsDeleted],
   );
-  // The scope strip is a navigation level, not view state: Back from Canvas
+  // The scope strip is a navigation level, not view state: Back from Familiar
   // should land on Projects, not leave Chat entirely. `select` records an
   // entry (the tab strip itself); `show` lands without one, which is what
   // every cross-surface handoff below wants — those already push an entry on
@@ -239,7 +235,7 @@ export function ChatSurface({
     initial: initialScope,
   });
 
-  // The rail only exists on the conversation tab; Projects/Canvas/Familiar are
+  // The rail only exists on the conversation tab; Projects/Familiar are
   // full-width surfaces of their own.
   const railAvailable = !hideThreadRail && scope === "conversation";
   // Tell the title-bar button what to render. `available` is what keeps the
@@ -590,7 +586,6 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
-              { id: "canvas", label: "Canvas" },
               { id: "familiar", label: "Familiar" },
             ]}
           />
@@ -635,12 +630,6 @@ export function ChatSurface({
 
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} onSessionsDeleted={onSessionsDeleted} activeFamiliarId={activeFamiliarId} />
-        ) : scope === "canvas" ? (
-          // Saved-sketch gallery: everything "Save to Canvas" persisted from
-          // inline chat artifacts, browsable/reopenable/deletable in place.
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <ChatCanvasView familiarId={activeFamiliarId} />
-          </div>
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
           // skills, tools) — a purpose-built first-class chat tab, since it
@@ -654,7 +643,6 @@ export function ChatSurface({
                 familiarsLoaded={familiarsLoaded}
                 familiarsError={familiarsError}
                 daemonRunning={daemonRunning}
-                localDaemonReady={localDaemonReady}
                 onRetryFamiliars={onRetryFamiliars}
                 onCreateFamiliar={requestSummonFamiliar}
                 onOpenOnboarding={onOpenOnboarding}
@@ -743,22 +731,13 @@ export function ChatSurface({
           </Group>
         )}
       </div>
-      {/* Collapsed code rail: a transparent full-height edge target with one
-          hover/focus-revealed pull tab. It stays discoverable without leaving
-          a labeled chrome column beside the conversation. */}
-      {rail.available && !rail.open && !isMobile && !paneNarrow && (
-        <button
-          type="button"
-          aria-label="Show code rail"
-          title="Show code rail"
-          data-change-count={changeCount ?? "unknown"}
-          className="workspace-rail-reopen focus-ring"
-          onClick={rail.reopen}
-        >
-          <span className="workspace-rail-reopen__tab" aria-hidden>
-            <Icon name="ph:caret-left" width={10} aria-hidden />
-          </span>
-        </button>
+      {scope === "conversation" && rail.available && !rail.open && !isMobile && !paneNarrow && (
+        <CodeRailReopen
+          key={`${railController.effectiveProjectRoot}:${snapshot.sessionId}`}
+          changeCount={changeCount}
+          changeNonce={railController.changeNonce}
+          onOpen={railController.openChanges}
+        />
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
           a full-height right-edge slide-over sheet over the full-screen chat

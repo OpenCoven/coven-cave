@@ -146,7 +146,8 @@ async function waitForText(file, timeoutMs = 5_000) {
 
 try {
   const { saveConfig } = await import("@/lib/cave-config");
-  const { loadConversation } = await import("@/lib/cave-conversations");
+  const { loadConversation, listConversations } = await import("@/lib/cave-conversations");
+  const { resolveActivePath } = await import("@/lib/conversation-tree");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
@@ -156,10 +157,10 @@ try {
   await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
   const project = await createProject({ name: "OpenClaw route fixture", root: workspace });
   await grantProjectToFamiliar({ familiarId: "wren", projectId: project.id, source: "human", access: "write" });
-  const send = (prompt) => POST(new Request("http://localhost/api/chat/send", {
+  const send = (prompt, options = {}) => POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "wren", prompt, projectRoot: workspace }),
+    body: JSON.stringify({ familiarId: "wren", prompt, projectRoot: workspace, ...options }),
   }));
 
   process.env.OPENCLAW_TEST_MODE = "gateway-legacy";
@@ -196,6 +197,7 @@ try {
   const reasoningOnlySessionId = reasoningOnlyEvents.findLast((event) => event.kind === "done")?.sessionId;
   const reasoningOnlyConversation = await loadConversation(reasoningOnlySessionId);
   const reasoningOnlyTurn = reasoningOnlyConversation?.turns.at(-1);
+  assert.equal(reasoningOnlyEvents.findLast((event) => event.kind === "done")?.persistedTurnId, reasoningOnlyTurn?.id);
   assert.equal(reasoningOnlyTurn?.text, "Visible answer.");
   assert.equal(reasoningOnlyTurn?.reasoning, "private", "reload keeps the reasoning content without its control marker");
   assert.equal(
@@ -231,6 +233,28 @@ try {
   );
   assert.doesNotMatch(visibleMarkerTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
   assert.doesNotMatch(visibleMarkerTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+
+  const questionTurnId = visibleMarkerEvents.findLast((event) => event.kind === "done")?.persistedTurnId;
+  assert.equal(typeof questionTurnId, "string");
+  assert.equal(questionTurnId, visibleMarkerTurn.id);
+  process.env.OPENCLAW_TEST_MODE = "explicit-local";
+  process.env.OPENCLAW_EMBEDDED_LOCAL = "true";
+  const answerEvents = await readSse(await send("Which auth? → Cookies", {
+    sessionId: visibleMarkerSessionId,
+    parentTurnId: questionTurnId,
+    runId: "fresh-question-answer",
+  }));
+  assert.equal(answerEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const answeredConversation = await loadConversation(visibleMarkerSessionId);
+  const answeredPath = resolveActivePath(answeredConversation.turns, answeredConversation.activeLeafId);
+  assert.deepEqual(answeredPath.map((turn) => turn.role), ["user", "assistant", "user", "assistant"]);
+  assert.equal(answeredPath[1].id, questionTurnId);
+  assert.equal(answeredPath[2].parentId, questionTurnId);
+  assert.equal(answeredPath[2].text, "Which auth? → Cookies");
+  const answeredSummary = (await listConversations()).find((row) => row.sessionId === visibleMarkerSessionId);
+  assert.equal(answeredSummary?.attentionEvidence?.attentionAfterOperationId, "fresh-question-answer");
+  assert.ok(answeredSummary?.attentionEvidence?.attentionOperationLineage?.includes("fresh-question-answer"));
+  delete process.env.OPENCLAW_EMBEDDED_LOCAL;
 
   process.env.OPENCLAW_TEST_MODE = "malformed";
   await clearCalls();

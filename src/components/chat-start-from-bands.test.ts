@@ -23,7 +23,7 @@ test("both new-session surfaces render through this one component", () => {
       /import \{\s*ChatStartFromBands,[\s\S]{0,160}?\} from "@\/components\/chat-start-from-bands";/,
       `${name} imports the shared launcher`,
     );
-    assert.match(source, /<ChatStartFromBands bands=\{bands\}/, `${name} renders it`);
+    assert.match(source, /<ChatStartFromBands\s+bands=\{bands\}/, `${name} renders it`);
     assert.match(
       source,
       /const bands: StartFromBand\[\] = \[\];/,

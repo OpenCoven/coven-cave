@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { ActingFamiliarGate } from "@/components/acting-familiar-gate";
@@ -99,15 +99,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
-import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
-import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
-import {
-  acknowledgePendingCanonicalMemorySelection,
-  isLatestFamiliarRosterRequest,
-  reconcilePendingCanonicalRosterSettlement,
-  rejectPendingCanonicalMemorySelection,
-  type PendingCanonicalMemorySelection,
-} from "@/lib/canonical-memory";
+import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
@@ -163,6 +155,7 @@ import {
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
+  ChatCanvasView,
   MobileHandoffModal,
   NewReminderModal,
   OnboardingOverlay,
@@ -178,7 +171,7 @@ import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSAT
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
-import { RightChatPanel } from "@/components/right-chat-panel";
+import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -217,8 +210,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
-import { RunningActivityPopover } from "@/components/running-activity-popover";
-import type { RunningActivityItem } from "@/lib/running-activity";
+import { NeedsYouPopover } from "@/components/needs-you-popover";
+import { NEEDS_YOU_OPEN_EVENT } from "@/lib/needs-you-inbox";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -240,8 +233,12 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import {
+  AGENTS_NEW_RIGHT_CHAT_EVENT,
+  publishRightChatFailure,
   clearPendingAgentsNewChat,
+  hasIndependentRightChatProject,
   readPendingAgentsNewChat,
+  resolveRightChatProjectRoot,
   type AgentsNewChatRequest,
 } from "@/lib/agents-new-chat";
 import {
@@ -310,6 +307,10 @@ function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMod
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
+const FlowExecutionLink = lazy(() => import("./flow-execution-link").then((module) => ({
+  default: module.FlowExecutionLink,
+})));
+
 function requestedWorkspaceProjectId(
   projectRoot: string | null,
   projects: readonly CaveProject[],
@@ -320,20 +321,15 @@ function requestedWorkspaceProjectId(
 }
 
 export function Workspace() {
-  const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
-  const localDaemonReady = acceptedLocalDaemonHealthy &&
-    canonicalMemoryLocalAccessEligible({
-      platform: tauriPlatform,
-      hostname: typeof window === "undefined" ? null : window.location.hostname,
-    });
-  useCanonicalMemoryWarmup(localDaemonReady);
   useSurfaceWarmup();
   const { announce } = useAnnouncer();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   const [rightChatOpen, setRightChatOpen] = useState(false);
+  const [rightChatLaunchRequest, setRightChatLaunchRequest] = useState<RightChatLaunchRequest | null>(null);
+  const rightChatLaunchNonceRef = useRef(0);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -376,6 +372,8 @@ export function Workspace() {
     () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
     [familiars, archivedFamiliars],
   );
+  const visibleFamiliarsRef = useRef(visibleFamiliars);
+  visibleFamiliarsRef.current = visibleFamiliars;
   // false until the first /api/familiars fetch settles (success or error) —
   // lets the chat boot view hold a quiet frame instead of flashing the
   // "choose a familiar" empty-state copy while the roster is in flight.
@@ -622,6 +620,7 @@ export function Workspace() {
   const workspaceChatLaunchOwnerRef = useRef<{
     generation: number;
     kind: "live" | "persisted";
+    request?: AgentsNewChatRequest;
   } | null>(null);
   const workspaceMountedRef = useRef(true);
   const projectAccessGenerationRef = useRef({
@@ -674,6 +673,7 @@ export function Workspace() {
     return () => {
       workspaceMountedRef.current = false;
       workspaceChatRequestGenerationRef.current += 1;
+      publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "The workspace closed before opening the chat. Try again.");
       workspaceChatLaunchOwnerRef.current = null;
       homeActionAuthorityRef.current = null;
       homeActionRequestGenerationRef.current += 1;
@@ -736,16 +736,6 @@ export function Workspace() {
     window.addEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
     return () => window.removeEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
   }, []);
-  const [
-    pendingCanonicalMemorySelection,
-    setPendingCanonicalMemorySelection,
-  ] = useState<PendingCanonicalMemorySelection | null>(null);
-  const pendingCanonicalMemorySelectionRef =
-    useRef<PendingCanonicalMemorySelection | null>(null);
-  const [
-    rosterSettledPendingCanonicalMemorySelection,
-    setRosterSettledPendingCanonicalMemorySelection,
-  ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Back closes an overlay before it navigates. Opening records an entry;
   // Escape or the close button consumes it, so Back never reopens what the
@@ -1366,9 +1356,6 @@ export function Workspace() {
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (result.kind === "running") {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
-      setAcceptedLocalDaemonHealthy(result.targetMode === "local");
-    } else {
-      setAcceptedLocalDaemonHealthy(false);
     }
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
@@ -1613,6 +1600,8 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
+    const linkParams = new URLSearchParams(window.location.search);
+    const executionOwnerLink = linkParams.has("flowRun") || linkParams.has("flowSession") || linkParams.has("researchMission");
     const target = readModeParam();
     const splitTarget = readSplitPageParam();
     if (!target && !splitTarget) return;
@@ -1620,7 +1609,7 @@ export function Workspace() {
     const primary = target
       ? normalizeWorkspacePaneRequest("workspace-primary-link", target)
       : null;
-    if (primary && target) {
+    if (primary && target && !executionOwnerLink) {
       if (isWorkspaceMode(target) || isRoleSurfaceMode(target)) setMode(target);
       else {
         primaryPaneRequestRef.current = primary;
@@ -1753,8 +1742,6 @@ export function Workspace() {
         requestGeneration,
         loadFamiliarsReqRef.current,
       );
-    const pendingSelectionAtStart =
-      pendingCanonicalMemorySelectionRef.current;
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
@@ -1765,39 +1752,15 @@ export function Workspace() {
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         setFamiliarRosterLoadedSuccessfully(false);
-        setRosterSettledPendingCanonicalMemorySelection((settled) =>
-          reconcilePendingCanonicalRosterSettlement({
-            settled,
-            current: pendingCanonicalMemorySelectionRef.current,
-            startedFor: pendingSelectionAtStart,
-            succeeded: false,
-          })
-        );
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
       setFamiliarRosterLoadedSuccessfully(true);
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        reconcilePendingCanonicalRosterSettlement({
-          settled,
-          current: pendingCanonicalMemorySelectionRef.current,
-          startedFor: pendingSelectionAtStart,
-          succeeded: true,
-        })
-      );
     } catch (err) {
       if (!isCurrent()) return;
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
       setFamiliarRosterLoadedSuccessfully(false);
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        reconcilePendingCanonicalRosterSettlement({
-          settled,
-          current: pendingCanonicalMemorySelectionRef.current,
-          startedFor: pendingSelectionAtStart,
-          succeeded: false,
-        })
-      );
     } finally {
       if (isCurrent()) {
         setFamiliarsLoaded(true);
@@ -2799,7 +2762,22 @@ export function Workspace() {
     initialAttachments?: ChatAttachment[] | null,
     origin?: SessionOrigin,
     actorHasProjectAccess?: boolean,
+    destination?: AgentsNewChatRequest["destination"],
   ) => {
+    if (destination === "right-panel") {
+      if (!familiarId || actorHasProjectAccess !== true) {
+        const message = "Add a project this familiar can access before opening the Chat panel";
+        announce(message, "assertive");
+        pushToast(message);
+        return false;
+      }
+      setRightChatLaunchRequest({
+        familiarId, projectRoot, initialPrompt, initialControls, origin,
+        nonce: ++rightChatLaunchNonceRef.current,
+      });
+      shellRef.current?.openRightChat();
+      return true;
+    }
     if (
       actorHasProjectAccess === false
       || (actorHasProjectAccess === undefined && chatProjectBlockedRef.current)
@@ -2823,13 +2801,14 @@ export function Workspace() {
     });
     setMode("chat");
     return true;
-  }, []);
+  }, [announce, pushToast]);
 
   const resolveActorProjectAccess = useCallback(async (
     familiarId: string,
     projectId: string | null,
+    projectRoot?: string,
   ): Promise<boolean | null> => {
-    if (projectId !== null) return true;
+    if (projectId !== null && projectRoot === undefined) return true;
     try {
       const payload = await fetchProjectsFromCache(familiarId, { force: true });
       if (payload.ok === false || !Array.isArray(payload.projects)) {
@@ -2838,12 +2817,68 @@ export function Workspace() {
         }
         return null;
       }
-      return payload.projects.length > 0;
+      return projectId !== null
+        ? requestedWorkspaceProjectId(projectRoot ?? null, payload.projects) === projectId
+        : payload.projects.length > 0;
     } catch {
       if (workspaceMountedRef.current) announce("Project access is unavailable");
       return null;
     }
   }, [announce]);
+
+  const startIndependentRightChat = useCallback(async (
+    request: AgentsNewChatRequest,
+    generation: number,
+  ): Promise<boolean> => {
+    try {
+      const projectRoot = await resolveRightChatProjectRoot(request);
+      while (workspaceMountedRef.current && workspaceChatLaunchOwnerRef.current?.generation === generation) {
+        const authority = actingFamiliarAuthorityRef.current;
+        if (!authority.workspaceContextHydrated || authority.projectsLoading || authority.familiarRosterLoading) {
+          await waitForActingFamiliarContextChange(authority.contextKey);
+          continue;
+        }
+        if (!authority.projectsLoadedSuccessfully || authority.projectsError || !authority.familiarRosterLoadedSuccessfully) {
+          throw new Error(authority.projectsError ?? "Project or familiar authority is unavailable. Try again.");
+        }
+        const projectId = requestedWorkspaceProjectId(projectRoot, authority.registeredProjects);
+        if (!projectId) throw new Error("That project is no longer available.");
+        const familiarId = request.familiarId ?? activeIdRef.current;
+        if (!familiarId || !visibleFamiliarsRef.current.some((entry) => entry.id === familiarId)) {
+          throw new Error("Choose an available familiar for this fix thread.");
+        }
+        const accessGeneration = projectAccessGenerationRef.current.byProject.get(projectId) ?? 0;
+        // The main scope's crew proves nothing about this target. Force a
+        // fresh actor-scoped grant lookup against the target root instead.
+        const allowed = await resolveActorProjectAccess(familiarId, projectId, projectRoot);
+        if (!workspaceMountedRef.current || workspaceChatLaunchOwnerRef.current?.generation !== generation) return false;
+        if (
+          actingFamiliarAuthorityRef.current.contextKey !== authority.contextKey
+          || (projectAccessGenerationRef.current.byProject.get(projectId) ?? 0) !== accessGeneration
+        ) continue;
+        if (!visibleFamiliarsRef.current.some((entry) => entry.id === familiarId)) {
+          throw new Error("The requested familiar is no longer available.");
+        }
+        if (!allowed) {
+          throw new Error(allowed === null
+            ? "Project access is unavailable. Try again."
+            : "This familiar cannot access the fix thread's project. Grant access and try again.");
+        }
+        return startFamiliarChat(
+          familiarId, projectRoot, request.initialPrompt, request.initialControls,
+          null, request.origin, true, "right-panel",
+        );
+      }
+    } catch (error) {
+      if (workspaceMountedRef.current && workspaceChatLaunchOwnerRef.current?.generation === generation) {
+        const message = error instanceof Error ? error.message : "Couldn't open the Chat panel. Try again.";
+        publishRightChatFailure(request, message);
+        announce(message, "assertive");
+        pushToast(message);
+      }
+    }
+    return false;
+  }, [announce, pushToast, resolveActorProjectAccess, startFamiliarChat, waitForActingFamiliarContextChange]);
 
   const requestActingFamiliar = useCallback(async (
     actionLabel: string,
@@ -2914,10 +2949,15 @@ export function Workspace() {
 
   const startWorkspaceChat = useCallback((request: AgentsNewChatRequest = {}) => {
     shellRef.current?.dismissNavMobile();
+    const reportProblem = (message: string) => {
+      announce(message, "assertive");
+      if (request.destination === "right-panel") pushToast(message);
+    };
     clearPendingAgentsNewChat();
     setPendingAgentsNewChat(null);
     const generation = ++workspaceChatRequestGenerationRef.current;
-    workspaceChatLaunchOwnerRef.current = { generation, kind: "live" };
+    publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "Another chat request replaced this one. Try again.");
+    workspaceChatLaunchOwnerRef.current = { generation, kind: "live", request };
     const pendingActorRequest = actingFamiliarRequestRef.current;
     if (pendingActorRequest) {
       actingFamiliarRequestRef.current = null;
@@ -2926,6 +2966,10 @@ export function Workspace() {
     }
     void (async () => {
       try {
+        if (hasIndependentRightChatProject(request)) {
+          await startIndependentRightChat(request, generation);
+          return;
+        }
         while (workspaceChatLaunchOwnerRef.current?.generation === generation) {
         const authority = actingFamiliarAuthorityRef.current;
         if (!authority.workspaceContextHydrated) {
@@ -2943,7 +2987,7 @@ export function Workspace() {
               await waitForActingFamiliarContextChange(authority.contextKey);
               continue;
             }
-            announce(authority.projectsError ?? "Project registry is unavailable");
+            reportProblem(authority.projectsError ?? "Project registry is unavailable");
             return;
           }
           requestedProjectId = requestedWorkspaceProjectId(
@@ -2951,20 +2995,24 @@ export function Workspace() {
             authority.registeredProjects,
           );
           if (requestedProjectId === undefined) {
-            announce("That project is no longer available");
+            reportProblem("That project is no longer available");
             clearPendingAgentsNewChat();
             setPendingAgentsNewChat(null);
             return;
           }
         }
         if (requestedProjectId !== authority.selectedWorkspaceProjectId) {
+          if (request.destination === "right-panel") {
+            reportProblem("Select that project before opening the Chat panel");
+            return;
+          }
           selectWorkspaceProject(requestedProjectId);
           await waitForActingFamiliarContextChange(authority.contextKey);
           continue;
         }
         if (requestedProjectId === null && request.projectRoot === undefined) {
           setPendingAgentsNewChat(request);
-          announce("Choose a project before starting a chat");
+          reportProblem("Choose a project before starting a chat");
           return;
         }
         const authorityLoading =
@@ -2986,7 +3034,7 @@ export function Workspace() {
               || authority.projectCrewError !== null
             ));
         if (authorityFailed) {
-          announce(
+          reportProblem(
             authority.projectsError
             ?? authority.projectCrewError
             ?? "Familiar eligibility is unavailable",
@@ -3018,7 +3066,10 @@ export function Workspace() {
           }
           continue;
         }
-        if (actorHasProjectAccess === null) return;
+        if (actorHasProjectAccess === null) {
+          reportProblem("Project access is unavailable. Try again.");
+          return;
+        }
         const projectRoot =
           request.projectRoot !== undefined
             ? request.projectRoot
@@ -3031,9 +3082,12 @@ export function Workspace() {
           null,
           request.origin,
           actorHasProjectAccess,
+          request.destination,
         );
         return;
         }
+      } catch {
+        reportProblem("Couldn't open the chat. Try again.");
       } finally {
         if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
           workspaceChatLaunchOwnerRef.current = null;
@@ -3043,9 +3097,11 @@ export function Workspace() {
     })();
   }, [
     announce,
+    pushToast,
     resolveActorProjectAccess,
     selectWorkspaceProject,
     startFamiliarChat,
+    startIndependentRightChat,
     waitForActingFamiliarContextChange,
   ]);
 
@@ -3102,6 +3158,17 @@ export function Workspace() {
     };
   }, [startFamiliarChat, startWorkspaceChat]);
 
+  useEffect(() => {
+    const onRightChat = (event: Event) => {
+      const detail = (event as CustomEvent<AgentsNewChatRequest>).detail;
+      if (detail?.destination !== "right-panel") return;
+      event.preventDefault();
+      startWorkspaceChat(detail);
+    };
+    window.addEventListener(AGENTS_NEW_RIGHT_CHAT_EVENT, onRightChat);
+    return () => window.removeEventListener(AGENTS_NEW_RIGHT_CHAT_EVENT, onRightChat);
+  }, [startWorkspaceChat]);
+
   // Read a cross-page "new chat" handoff without clearing it. Ownerless actions
   // may arrive before actor authority has loaded, so the request remains durable
   // until the gate launches it or the user explicitly cancels the chooser.
@@ -3133,13 +3200,35 @@ export function Workspace() {
       || pendingAgentsNewChatAttemptRef.current
       || workspaceChatLaunchOwnerRef.current !== null
     ) return;
+    if (hasIndependentRightChatProject(pending)) {
+      const generation = ++workspaceChatRequestGenerationRef.current;
+      workspaceChatLaunchOwnerRef.current = { generation, kind: "persisted", request: pending };
+      pendingAgentsNewChatAttemptRef.current = true;
+      void startIndependentRightChat(pending, generation).then(() => {
+        if (workspaceChatLaunchOwnerRef.current?.generation !== generation) return;
+        // A terminal failure is reported by the launcher. Drop the stale
+        // handoff so a fresh request can retry without a reload/access event.
+        clearPendingAgentsNewChat();
+        setPendingAgentsNewChat(null);
+      }).finally(() => {
+        pendingAgentsNewChatAttemptRef.current = false;
+        if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
+          workspaceChatLaunchOwnerRef.current = null;
+        }
+      });
+      return;
+    }
+    const reportProblem = (message: string) => {
+      announce(message, "assertive");
+      if (pending.destination === "right-panel") pushToast(message);
+    };
     if (pending.projectRoot !== undefined) {
       if (
         pending.projectRoot !== null
         && (projectsLoading || !projectsLoadedSuccessfully)
       ) {
         if (projectsLoading) return;
-        announce(projectsError ?? "Project registry is unavailable");
+        reportProblem(projectsError ?? "Project registry is unavailable");
         return;
       }
       const requestedProjectId = requestedWorkspaceProjectId(
@@ -3147,18 +3236,22 @@ export function Workspace() {
         registeredProjects,
       );
       if (requestedProjectId === undefined) {
-        announce("That project is no longer available");
+        reportProblem("That project is no longer available");
         clearPendingAgentsNewChat();
         setPendingAgentsNewChat(null);
         return;
       }
       if (requestedProjectId !== selectedWorkspaceProjectId) {
+        if (pending.destination === "right-panel") {
+          reportProblem("Select that project before opening the Chat panel");
+          return;
+        }
         selectWorkspaceProject(requestedProjectId);
         return;
       }
     }
     if (pending.projectRoot === undefined && selectedWorkspaceProjectId === null) {
-      announce("Choose a project to continue the pending chat");
+      reportProblem("Choose a project to continue the pending chat");
       return;
     }
     const authorityLoading =
@@ -3177,7 +3270,7 @@ export function Workspace() {
           || projectCrewError !== null
         ));
     if (authorityFailed) {
-      announce(
+      reportProblem(
         projectsError
         ?? projectCrewError
         ?? "Familiar eligibility is unavailable",
@@ -3235,7 +3328,10 @@ export function Workspace() {
           retryAfterFinish = true;
           return;
         }
-        if (actorHasProjectAccess === null) return;
+        if (actorHasProjectAccess === null) {
+          reportProblem("Project access is unavailable. Try again.");
+          return;
+        }
         const projectRoot =
           pending.projectRoot !== undefined
             ? pending.projectRoot
@@ -3248,10 +3344,13 @@ export function Workspace() {
           null,
           pending.origin,
           actorHasProjectAccess,
+          pending.destination,
         );
         if (!launched) return;
         clearPendingAgentsNewChat();
         setPendingAgentsNewChat(null);
+      } catch {
+        reportProblem("Couldn't open the chat. Try again.");
       } finally {
         pendingAgentsNewChatAttemptRef.current = false;
         if (
@@ -3276,6 +3375,7 @@ export function Workspace() {
     familiarRosterLoading,
     pendingAgentsNewChat,
     pendingAgentsNewChatRetryEpoch,
+    pushToast,
     projectCrewError,
     projectCrewLoadedSuccessfully,
     projectCrewLoading,
@@ -3289,6 +3389,7 @@ export function Workspace() {
     selectedWorkspaceProjectId,
     selectWorkspaceProject,
     startFamiliarChat,
+    startIndependentRightChat,
     workspaceContextHydrated,
   ]);
 
@@ -3363,6 +3464,15 @@ export function Workspace() {
         const step = e.key === "ArrowUp" ? -1 : 1;
         const next = (idx === -1 ? 0 : (idx + step + familiars.length) % familiars.length);
         selectFamiliar(familiars[next].id);
+        return;
+      }
+
+      // ⇧⌘A → Needs you. The trigger's tooltip advertises this, and an
+      // advertised shortcut that does nothing is the same defect ⌘, above was
+      // wired to fix. The popover owns its open state and listens for the ask.
+      if (meta && e.shiftKey && !alt && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        window.dispatchEvent(new Event(NEEDS_YOU_OPEN_EVENT));
         return;
       }
 
@@ -3643,19 +3753,6 @@ export function Workspace() {
       })();
       return;
     }
-    if (intent.kind === "open-coven-memory") {
-      const selection = {
-        id: intent.id,
-        familiarId: intent.familiarId,
-      };
-      setRosterSettledPendingCanonicalMemorySelection(null);
-      pendingCanonicalMemorySelectionRef.current = selection;
-      setPendingCanonicalMemorySelection(selection);
-      void loadFamiliars();
-      setMode("agents");
-      shellRef.current?.dismissNavMobile();
-      return;
-    }
     if (intent.kind === "open-memory-file") {
       // Land on the Grimoire editor with the file selected. (The old
       // `#memory:` hash had no consumer anywhere — picking a memory result
@@ -3675,53 +3772,6 @@ export function Workspace() {
       return;
     }
   };
-
-  const acknowledgeCanonicalMemorySelection = useCallback(
-    (appliedId: string) => {
-      const expected = pendingCanonicalMemorySelection;
-      const current = pendingCanonicalMemorySelectionRef.current;
-      const next = acknowledgePendingCanonicalMemorySelection(
-        current,
-        expected,
-        appliedId,
-      );
-      if (next === current) return;
-      pendingCanonicalMemorySelectionRef.current = next;
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        settled === expected ? null : settled
-      );
-      setPendingCanonicalMemorySelection((selection) =>
-        acknowledgePendingCanonicalMemorySelection(
-          selection,
-          expected,
-          appliedId,
-        )
-      );
-    },
-    [pendingCanonicalMemorySelection],
-  );
-
-  const rejectUnavailableCanonicalMemorySelection = useCallback(
-    (expected: PendingCanonicalMemorySelection) => {
-      const current = pendingCanonicalMemorySelectionRef.current;
-      const next = rejectPendingCanonicalMemorySelection(
-        current,
-        expected,
-      );
-      if (next === current) return;
-      pendingCanonicalMemorySelectionRef.current = next;
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        settled === expected ? null : settled
-      );
-      setPendingCanonicalMemorySelection((selection) =>
-        rejectPendingCanonicalMemorySelection(selection, expected)
-      );
-      pushToast(
-        "Couldn't open memory — that familiar isn't available. Refresh Familiars and try again.",
-      );
-    },
-    [pushToast],
-  );
 
   // Map slash commands directly to local actions. Returns false for commands
   // this surface doesn't know so the chat composer can show its
@@ -4202,16 +4252,6 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         daemonRunning={daemonRunning}
-        localDaemonReady={localDaemonReady}
-        pendingRosterSettledSuccessfully={
-          rosterSettledPendingCanonicalMemorySelection ===
-          pendingCanonicalMemorySelection
-        }
-        pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
-        onCanonicalMemorySelectionApplied={acknowledgeCanonicalMemorySelection}
-        onCanonicalMemorySelectionUnavailable={
-          rejectUnavailableCanonicalMemorySelection
-        }
         responseNeeded={responseNeeded}
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
@@ -4237,7 +4277,6 @@ export function Workspace() {
         activeFamiliarId={activeId}
         selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
-        localDaemonReady={localDaemonReady}
         routerRef={routerRef}
         // The thread-rail suppression flag is deliberately NOT set any more.
         // It existed because the outer sidebar owned the project-grouped chat
@@ -4362,6 +4401,10 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
+    ) : mode === "canvas" ? (
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ChatCanvasView familiarId={activeId} />
+      </div>
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
       // modes still resolve here (deep links / navigate-mode) but land on
@@ -4522,7 +4565,6 @@ export function Workspace() {
         <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
           <RailInspector
             familiar={active}
-            localDaemonReady={localDaemonReady}
             onOpenFullView={() => setMode("agents")}
           />
         </WorkspacePanePage>
@@ -4611,6 +4653,8 @@ export function Workspace() {
   );
   const rightChat = (
     <RightChatPanel
+      launchRequest={rightChatLaunchRequest}
+      onFollowMainChat={() => setRightChatLaunchRequest(null)}
       open={rightChatOpen}
       familiars={familiars}
       activeFamiliar={active}
@@ -4640,6 +4684,17 @@ export function Workspace() {
   return (
     <FamiliarStudioProvider redirectToChat>
       <AutoMissionSupervisor />
+      <Suspense fallback={null}>
+        <FlowExecutionLink
+          familiars={visibleFamiliars}
+          familiarsLoaded={familiarsLoaded}
+          activeFamiliarId={activeId}
+          sessions={sessions}
+          onSelectFamiliar={setActiveId}
+          onNavigate={setMode}
+          onOpenSession={openFamiliarSession}
+        />
+      </Suspense>
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
           store (cave-backdrop.ts). In chat, a single-familiar scope with its
@@ -4725,33 +4780,28 @@ export function Workspace() {
             </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              // Running activity: the waveform trigger opens the live activity
-              // popover — chats, Board tasks, ritual runs, Flow and Workflow
-              // runs — with direct navigation per row (cave-21rp).
+              // Needs you: the bell opens the attention inbox — sessions that
+              // are blocked, failed or awaiting you, oldest wait first — with
+              // the running count demoted to footer text (cave-21rp; the
+              // design handoff's frame 2c — the frame is named in
+              // docs/design-handoff/IMPLEMENTATION-STATUS.md and in
+              // needs-you-popover.tsx, because spelling it here would put the
+              // two-word brand in a file that owes the one-word one).
+              //
+              // This slot used to hold RunningActivityPopover, which listed
+              // everything in flight. The handoff's diagnosis was that such a
+              // list is never empty, so its badge stopped being a signal and
+              // the popover stopped being a popover. Running work is still
+              // counted here, in the footer, where it reads as context rather
+              // than as a demand.
               runningStatus={
-                <RunningActivityPopover
+                <NeedsYouPopover
+                  sessions={sessions}
                   familiars={familiars}
-                  onOpenItem={(item: RunningActivityItem) => {
-                    switch (item.kind) {
-                      case "session":
-                        openFamiliarSession(item.targetId, item.familiarId);
-                        return;
-                      case "board-task":
-                        onPaletteIntent({ kind: "focus-card", cardId: item.targetId });
-                        return;
-                      case "automation":
-                        setMode("inbox");
-                        return;
-                      case "flow":
-                      case "workflow":
-                        // Flow/Workflow surfaces are retired; a run backed by a
-                        // live chat jumps to that chat, otherwise to Rituals.
-                        if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                        else setMode("inbox");
-                        return;
-                    }
-                  }}
-                  onViewAll={() => setMode("inbox")}
+                  onOpenSession={(sessionId, familiarId) =>
+                    openFamiliarSession(sessionId, familiarId)
+                  }
+                  onOpenSessions={showFamiliarChatList}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile

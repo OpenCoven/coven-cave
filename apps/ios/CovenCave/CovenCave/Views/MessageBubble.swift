@@ -6,8 +6,8 @@ struct MessageBubble: View {
     var isGroup: Bool
     var familiar: Familiar?
     var isLast: Bool = false
-    var onDelete: () -> Void
-    var onSuggestion: (String) -> Void = { _ in }
+    var onDelete: (() -> Void)?
+    var onSuggestion: ((String) -> Void)? = { _ in }
     var onOpenReader: ((String) -> Void)? = nil
     var onForward: ((DisplayMessage) -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
@@ -22,9 +22,12 @@ struct MessageBubble: View {
     /// group threads (mirrors the familiar name row). Defaults to "You" so a
     /// missing profile reads exactly as before.
     var operatorName: String = "You"
-    /// The operator's server avatar image URL for that same row; nil falls back
+    /// The operator's server avatar image source for that same row; nil falls back
     /// to name initials.
-    var operatorAvatarURL: URL? = nil
+    var operatorAvatarSource: CaveImageSource? = nil
+    /// Rich markdown rows report height settlement so ChatView can preserve
+    /// bottom-follow without treating WebKit measurement as a reader gesture.
+    var onContentHeightChange: (() -> Void)? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -64,7 +67,7 @@ struct MessageBubble: View {
                 UIPasteboard.general.string = parsed.visible
                 Haptics.tap()
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label("Copy message", systemImage: "doc.on.doc")
             }
         }
         if canOpenReader {
@@ -72,7 +75,7 @@ struct MessageBubble: View {
                 onOpenReader?(parsed.visible)
                 Haptics.tap()
             } label: {
-                Label("Open in Reader", systemImage: "text.page")
+                Label("Open in reader", systemImage: "text.page")
             }
         }
         if canReply {
@@ -90,16 +93,18 @@ struct MessageBubble: View {
                 onForward?(forwarded)
                 Haptics.tap()
             } label: {
-                Label("Forward to Familiar", systemImage: "arrowshape.turn.up.right")
+                Label("Forward to familiar", systemImage: "arrowshape.turn.up.right")
             }
         }
         if let onRetry {
             Button(action: onRetry) {
-                Label("Retry", systemImage: "arrow.clockwise")
+                Label(message.isError ? "Retry reply" : "Regenerate reply", systemImage: "arrow.clockwise")
             }
         }
-        Button(role: .destructive, action: onDelete) {
-            Label("Delete Message", systemImage: "trash")
+        if let onDelete {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete message", systemImage: "trash")
+            }
         }
     }
 
@@ -289,14 +294,14 @@ struct MessageBubble: View {
                 // red bubble. (Retry re-streams just this bubble's familiar.)
                 if !isUser, message.isError, let onRetry {
                     Button(action: onRetry) {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Label("Retry reply", systemImage: "arrow.clockwise")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .tint(.red)
                     .padding(.leading, 2)
-                    .accessibilityLabel("Retry sending this message")
+                    .accessibilityLabel("Retry generating this reply")
                 }
 
                 // Durable online sends remain replay-eligible until every
@@ -334,7 +339,7 @@ struct MessageBubble: View {
                     actionRow
                 }
 
-                if !isUser, isLast, !message.streaming, !projection.suggestions.isEmpty {
+                if !isUser, isLast, !message.streaming, !projection.suggestions.isEmpty, let onSuggestion {
                     SuggestionPills(suggestions: projection.suggestions, onTap: onSuggestion)
                 }
             }
@@ -342,11 +347,12 @@ struct MessageBubble: View {
             // Operator avatar sits at the trailing edge, mirroring the familiar
             // avatar on the leading edge for assistant bubbles.
             if isUser, isGroup {
-                AvatarView(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName)
+                AvatarView(familiar: nil, source: operatorAvatarSource, size: 28, fallbackName: operatorName)
             }
 
             if !isUser { Spacer(minLength: 48) }
         }
+        .accessibilityIdentifier("Message bubble \(message.id)")
     }
 
     @ViewBuilder private var responseControlStatus: some View {
@@ -487,12 +493,20 @@ struct MessageBubble: View {
                 }
             }
         } else if rendersMarkdown(projection) {
-            MarkdownWebView(markdown: projection.visible, height: $mdHeight,
-                            streaming: message.streaming && !isUser,
-                            theme: colorScheme == .light ? .light : .dark,
-                            accentHex: chrome.accentHex,
-                            onFailure: { markdownFailed = true })
-                .frame(height: max(mdHeight, 1))
+            let ready = mdHeight > 1
+            ZStack(alignment: .topLeading) {
+                MarkdownWebView(markdown: projection.visible, height: $mdHeight,
+                                streaming: message.streaming && !isUser,
+                                theme: colorScheme == .light ? .light : .dark,
+                                accentHex: chrome.accentHex,
+                                onFailure: { markdownFailed = true })
+                    .frame(height: max(mdHeight, 1))
+                    .opacity(ready ? 1 : 0)
+                    .accessibilityHidden(!ready)
+                if !ready {
+                    markdownLoadingPlaceholder(projection)
+                }
+            }
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .topTrailing) {
@@ -515,6 +529,10 @@ struct MessageBubble: View {
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming && !isUser { StreamingDot().padding(6) }
                 }
+                .onChange(of: mdHeight) { _, newHeight in
+                    guard newHeight > 1 else { return }
+                    onContentHeightChange?()
+                }
         } else {
             Text(projection.visible.isEmpty ? " " : projection.visible)
                 .textSelection(.enabled)
@@ -527,6 +545,15 @@ struct MessageBubble: View {
                     }
                 }
         }
+    }
+
+    private func markdownLoadingPlaceholder(_ projection: AssistantResponseProjection) -> some View {
+        Text(projection.visible)
+            .textSelection(.enabled)
+            .foregroundStyle(Color.primary)
+            .lineLimit(12)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(projection.visible)
     }
 
     private var bubbleShape: UnevenRoundedRectangle {
@@ -768,13 +795,16 @@ extension MessageBubble: Equatable {
             && lhs.familiar == rhs.familiar
             && lhs.isLast == rhs.isLast
             && lhs.operatorName == rhs.operatorName
-            && lhs.operatorAvatarURL == rhs.operatorAvatarURL
+            && lhs.operatorAvatarSource == rhs.operatorAvatarSource
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
+            && (lhs.onDelete == nil) == (rhs.onDelete == nil)
+            && (lhs.onSuggestion == nil) == (rhs.onSuggestion == nil)
             && (lhs.onRetry == nil) == (rhs.onRetry == nil)
             && (lhs.onReply == nil) == (rhs.onReply == nil)
             && (lhs.onRetryDelete == nil) == (rhs.onRetryDelete == nil)
             && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
             && (lhs.onForward == nil) == (rhs.onForward == nil)
+            && (lhs.onContentHeightChange == nil) == (rhs.onContentHeightChange == nil)
     }
 }

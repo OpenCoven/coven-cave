@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { clearFlowRuns, listFlowRuns, recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import { emitFlowRunAttention } from "@/lib/server/flow-attention";
 import {
   resolveRunSource,
   resolveWipe,
@@ -38,12 +39,18 @@ export async function POST(req: Request) {
   if (!body.status || !STATUSES.has(body.status)) {
     return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
+  if ((body.missionId !== undefined && (typeof body.missionId !== "string" || !body.missionId.trim() || body.missionId.trim() !== body.missionId)) ||
+      (body.iteration !== undefined && (!Number.isSafeInteger(body.iteration) || body.iteration < 1))) {
+    return NextResponse.json({ ok: false, error: "invalid mission provenance" }, { status: 400 });
+  }
   const steps = validateSteps<FlowRunStepRecord>(body.steps);
   if (!steps.ok) {
     return NextResponse.json({ ok: false, error: steps.error }, { status: 413 });
   }
   const run = await recordFlowRun({
     flowId: body.flowId,
+    missionId: body.missionId,
+    iteration: body.iteration,
     flowName: typeof body.flowName === "string" ? body.flowName : undefined,
     status: body.status,
     mode: typeof body.mode === "string" && MODES.has(body.mode) ? body.mode : undefined,
@@ -57,6 +64,7 @@ export async function POST(req: Request) {
     sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
     flowSnapshot: coerceFlowSnapshot(body.flowSnapshot),
   });
+  await emitFlowRunAttention(run);
   return NextResponse.json({ ok: true, run });
 }
 
@@ -91,6 +99,7 @@ export async function PATCH(req: Request) {
   if (typeof body.summary === "string") patch.summary = body.summary;
   if (body.redacted === true) patch.redacted = true;
   const run = await updateFlowRun(body.id, patch);
+  if (run) await emitFlowRunAttention(run);
   return NextResponse.json({ ok: Boolean(run), run: run ?? undefined });
 }
 

@@ -24,10 +24,13 @@ assert.match(
   /export function MemoryReaderModal[\s\S]*?<DocumentReader[\s\S]*?navigation="rail"/,
   "file fullscreen expand uses the persistent shared contents rail",
 );
-assert.match(
+// Expand used to fork by row kind — a canonical row opened the shared reader
+// by opaque ID, a file row the contents rail. One kind remains, so the fork is
+// gone and the file path above is the whole behaviour.
+assert.doesNotMatch(
   source,
-  /expandRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader[\s\S]*?memoryId=\{expandRow\.memoryId\}/,
-  "canonical fullscreen expand dispatches by opaque memory ID",
+  /expandRow\?\.kind === "canonical"|CanonicalMemoryReader/,
+  "the vault's expand branch and reader are retired",
 );
 
 // Responsive: panes gate on selection below the container breakpoint; reader has a Back button.
@@ -38,16 +41,11 @@ assert.match(source, /selectedRowId\s*\?\s*"flex"\s*:\s*"hidden @min-\[1024px\]\
 assert.match(
   source,
   /onBack=\{clearMemorySelection\}/,
-  "reader receives the shared back-to-list handler that also releases any pinned canonical landing",
+  "reader receives the shared back-to-list handler",
 );
 assert.match(
   source,
-  /selectedRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader/,
-  "selected canonical rows dispatch to the canonical reader",
-);
-assert.match(
-  source,
-  /row=\{selectedRow\?\.kind === "file" \? selectedRow : null\}/,
+  /row=\{selectedRow \?\? null\}/,
   "the path-bearing file reader receives file rows only",
 );
 

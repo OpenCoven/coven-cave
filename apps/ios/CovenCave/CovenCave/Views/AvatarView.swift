@@ -5,6 +5,7 @@ struct AvatarView: View {
     @Environment(\.chrome) private var chrome
     let familiar: Familiar?
     var url: URL?
+    var source: CaveImageSource? = nil
     var size: CGFloat = 44
     /// Show a presence dot (online/idle/busy/offline) in the bottom-trailing
     /// corner when the familiar reports a status. Opt-in so it only appears on
@@ -19,9 +20,9 @@ struct AvatarView: View {
         let color = Theme.color(for: familiar)
         ZStack {
             Circle().fill(color.opacity(0.22))
-            if let url {
+            if let source = source ?? url.map(CaveImageSource.remoteURL) {
                 CachedImageView(
-                    source: .remoteURL(url),
+                    source: source,
                     targetSize: CGSize(width: size, height: size)
                 ) { image in
                     Image(uiImage: image)

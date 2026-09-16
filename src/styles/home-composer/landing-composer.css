@@ -12,6 +12,7 @@
   gap: var(--space-4);
   overflow-y: auto;
   box-sizing: border-box;
+  container: home-entry / inline-size;
 
   /* Flat base — the soft radial accent washes read as out-of-focus color
      smears over the clean ground, so Home paints no ambient gradients. */
@@ -20,7 +21,7 @@
 }
 
 .shell-frame[data-settled] .home-composer-root {
-  transition: transform 120ms ease-out;
+  transition: transform var(--duration-fast) var(--ease-decelerate);
 }
 
 /* ── Viewport centering ──────────────────────────────────────────────────── */
@@ -60,7 +61,7 @@
 .home-hearth-card {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   max-width: min(900px, 100%);
   margin-inline: auto;
@@ -71,7 +72,7 @@
   background: transparent;
 }
 
-@media (max-width: 520px) {
+@container home-entry (max-width: 520px) {
   .home-hearth-card {
     padding: 0 var(--space-1);
     margin-block: var(--space-4) auto;
@@ -87,16 +88,16 @@
 .home-composer-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 0 0 var(--space-2);
   min-height: 15px;
   font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--accent-presence) 72%, var(--text-primary));
+  color: var(--text-muted);
   opacity: 0;
-  transition: opacity 400ms var(--ease-standard);
+  transition: opacity var(--duration-base) var(--ease-standard);
   justify-content: center;
 }
 
@@ -106,12 +107,12 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .home-hearth-card {
-    animation: home-cluster-settle 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    animation: home-cluster-settle var(--duration-base) var(--ease-decelerate);
   }
 }
 @keyframes home-cluster-settle {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Presence dot — the brand accent means "something is alive here". */
@@ -137,7 +138,7 @@
 .home-composer-headline {
   font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(26px, 3vw, 34px);
+  font-size: var(--text-display);
   line-height: 1.12;
   color: color-mix(in oklch, var(--text-primary) 92%, var(--text-muted));
   letter-spacing: -0.02em;
@@ -153,6 +154,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.home-composer-guidance {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  text-wrap: pretty;
 }
 
 .home-composer-card-wrap {
@@ -254,27 +263,6 @@
   font-size: var(--text-base);
   font-weight: 500;
   color: var(--text-primary);
-}
-
-.home-composer-card:focus-within {
-  border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
-}
-
-/* Reference parity (2026-07-22): persistent violet border + soft glow so the composer reads as
- * the page's hero surface matching the target mock. Focus deepens both. */
-.home-composer-card {
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 42%, var(--border-strong)) !important;
-  box-shadow:
-    0 18px 56px oklch(0 0 0 / 26%),
-    0 0 0 1px color-mix(in oklch, var(--accent-presence) 18%, transparent),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent) !important;
-}
-.home-composer-card:focus-within {
-  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-strong)) !important;
-  box-shadow:
-    0 18px 52px oklch(0 0 0 / 28%),
-    0 0 0 1px var(--ring-focus-soft),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent) !important;
 }
 
 .home-composer-toolbar {
@@ -439,7 +427,7 @@
   border-bottom: 2px solid transparent;
   border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: transparent;
-  color: color-mix(in oklch, var(--text-muted) 68%, transparent);
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;

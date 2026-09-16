@@ -60,6 +60,19 @@ assert.doesNotMatch(iosSlash, /name: "\/terminal"|name: "\/comux"/,
   "the retired iOS terminal commands stay out of the native catalog");
 assert.doesNotMatch(chatView, /\.openTerminal|selectedTab = \.terminal/,
   "chat command routing cannot reach the retired iOS terminal");
+assert.doesNotMatch(iosSlash, /case openBoard/, "the catalog cannot dispatch native task navigation");
+assert.doesNotMatch(chatView, /case \.openBoard|selectedTab = \.tasks/,
+  "typed legacy task commands cannot mount Tasks");
+assert.match(
+  iosSlash,
+  /name: "\/board", aliases: \["\/tasks", "\/task"\][\s\S]{0,220}availability: \.desktopOnly, action: \.desktopOnly\("Tasks"\)/,
+  "legacy task command names resolve to a desktop-only explanation",
+);
+assert.match(
+  chatView,
+  /case \.desktopOnly\(let surface\):[\s\S]{0,160}app\.showToast/,
+  "retired commands explain their desktop-only availability rather than sending a prompt",
+);
 
 // /model is native on iOS: it switches the chat model via the model-state API.
 assert.match(
@@ -98,7 +111,7 @@ assert.match(
   "switchModel should PATCH an existing session, or clear the familiar default before the first session",
 );
 
-for (const command of ["/auto", "/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
+for (const command of ["/board", "/auto", "/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,

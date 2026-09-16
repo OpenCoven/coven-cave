@@ -618,6 +618,7 @@ test("the supervisor carries one complete prompt argv and persists stdout as the
   assert.ok(!argv.includes("--allow-all-paths"), "writes stay confined to cwd + explicit grants");
 
   const conv = readConversation(sessionId);
+  assert.equal(conv.origin, "flow", "saving an execution must not mint an ordinary Chat");
   assert.deepEqual(conv.turns.map((turn) => turn.role), ["user", "assistant"]);
   assert.match(conv.turns[1].text, /@@research-control/);
   assert.match(conv.turns[1].text, /"decision":"complete"/);
@@ -1151,6 +1152,7 @@ setInterval(() => {}, 1000);
   });
   await started.done;
   const assistant = persisted.turns.find((turn) => turn.role === "assistant");
+  assert.equal(persisted.flowOutcome?.status, "failed", "timeout persists authoritative failure for poll retries");
   assert.equal(assistant.isError, true, "timeout wins over the child's cooperative zero exit");
   assert.match(assistant.text, /exceeded its execution timeout and was stopped/);
   assert.doesNotMatch(assistant.text, new RegExp(secretPrompt), "the timeout diagnostic never echoes the prompt");
@@ -1433,6 +1435,10 @@ test("the degraded fallback cancels by terminating the direct Copilot child", as
   assert.equal(await cancelCopilotFlowRun(started.sessionId), "terminated");
   await started.done;
   assert.equal(isCopilotFlowRunActive(started.sessionId), false);
+  const { loadConversation } = await import("../cave-conversations.ts");
+  const persisted = await loadConversation(started.sessionId);
+  assert.equal(persisted?.flowOutcome?.status, "cancelled");
+  assert.equal(persisted?.turns.find((turn) => turn.role === "assistant")?.cancelled, true);
   const stableSize = statSync(marker).size;
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(statSync(marker).size, stableSize, "direct fallback cancellation stops the immediate Copilot child");

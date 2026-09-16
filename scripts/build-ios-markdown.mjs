@@ -1,9 +1,9 @@
 // Bundles the native iOS app's markdown renderer into a single self-contained
-// HTML file (apps/ios/CovenCave/CovenCave/Resources/markdown.html) that the
-// SwiftUI MarkdownWebView loads. Uses the SAME @create-markdown + mermaid
-// packages as the desktop chat, so rendering matches.
+// HTML file and a lazy local diagram script in CovenCave/Resources. Uses the
+// SAME @create-markdown + mermaid packages as desktop, without making ordinary
+// messages load and parse the diagram engine.
 //
-// Run: node scripts/build-ios-markdown.mjs   (commit the generated markdown.html)
+// Run: node scripts/build-ios-markdown.mjs (generated resources are gitignored)
 
 import { build } from "esbuild";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -17,6 +17,7 @@ const outHtml = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.h
 // The CSS is also emitted standalone so the native full-screen zoom view
 // (ContentZoom.swift) can restyle a lifted table/diagram to match the chat.
 const outCss = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.css");
+const outMermaid = resolve(dirname(outHtml), "markdown-mermaid.js");
 
 const result = await build({
   entryPoints: [resolve(srcDir, "entry.mjs")],
@@ -29,6 +30,16 @@ const result = await build({
   legalComments: "none",
 });
 const js = result.outputFiles[0].text;
+const diagramResult = await build({
+  entryPoints: [resolve(srcDir, "mermaid.mjs")],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "safari16",
+  minify: true,
+  write: false,
+  legalComments: "none",
+});
 const css = readFileSync(resolve(srcDir, "markdown.css"), "utf8");
 
 const html = `<!doctype html>
@@ -45,3 +56,5 @@ writeFileSync(outHtml, html);
 console.log(`wrote ${outHtml} (${(html.length / 1024).toFixed(0)} KB)`);
 writeFileSync(outCss, css);
 console.log(`wrote ${outCss} (${(css.length / 1024).toFixed(0)} KB)`);
+writeFileSync(outMermaid, diagramResult.outputFiles[0].contents);
+console.log(`wrote ${outMermaid} (${(diagramResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, lazy)`);

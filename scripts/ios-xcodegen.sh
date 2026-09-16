@@ -56,7 +56,7 @@ fi
 # The generators can succeed while writing nothing useful; check the artifacts
 # themselves, not the exit code, since the exit code is what fooled us before.
 missing=()
-for resource in markdown.html markdown.css; do
+for resource in markdown.html markdown.css markdown-mermaid.js; do
   [ -s "$RESOURCES/$resource" ] || missing+=("$resource")
 done
 if [ ${#missing[@]} -gt 0 ]; then

@@ -65,22 +65,15 @@ const read = (rel) => readFileSync(path.join(process.cwd(), rel), "utf8");
     "inspector must not fetch the unscoped /api/memory list",
   );
 
-  // Canonical summaries carry their owner as familiarId. Never recover scope
-  // from a path or the removed legacy snake_case field.
-  assert.match(
-    src,
-    /\.filter\(\(entry\) => !familiar \|\| entry\.familiarId === familiar\.id\)/,
-    "canonical rows must scope by the canonical familiarId field",
-  );
+  // Canonical summaries carried their owner as familiarId and could never have
+  // scope recovered from a path — they had none. The vault moved to the
+  // dedicated memory application. The scoping rule that remains is the file
+  // side's, which is stricter and asserted above: files are scoped at the
+  // SOURCE so another familiar's files never reach this session.
   assert.doesNotMatch(
     src,
-    /(?:canonical|coven)[\s\S]{0,500}\.familiar_id/,
-    "canonical scope must not use the legacy familiar_id field",
-  );
-  assert.doesNotMatch(
-    src,
-    /(?:canonical|coven)[\s\S]{0,500}(?:path|fullPath)\.(?:includes|startsWith)/,
-    "canonical scope must never be inferred from a filesystem path",
+    /canonicalFiltered|CanonicalMemorySummary/,
+    "the retired canonical scope path is gone",
   );
 }
 

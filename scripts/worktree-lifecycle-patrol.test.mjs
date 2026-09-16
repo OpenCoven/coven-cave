@@ -1,3 +1,4 @@
+import "./lifecycle-fixture-env.mjs";
 import assert from "node:assert/strict";
 import {
   chmodSync,
@@ -1222,34 +1223,19 @@ try {
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
-  assert.equal(
-    packageJson.scripts["beads:worktrees:create"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
-  );
-  assert.equal(
-    packageJson.scripts["beads:worktrees:apply"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --apply",
-  );
-  assert.equal(
-    packageJson.scripts["beads:worktrees"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
-  );
-  assert.equal(
-    packageJson.scripts["beads:patrol:apply"],
-    "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
-    "normal apply patrol remains nonmutating until all gate planes are enforced",
+  assert.ok(
+    Object.keys(packageJson.scripts).every((name) => !name.startsWith("beads:")),
+    "legacy lifecycle coverage must not restore routine Beads entrypoints",
   );
   const agents = readFileSync(path.join(sourceRoot, "AGENTS.md"), "utf8");
   const claude = readFileSync(path.join(sourceRoot, "CLAUDE.md"), "utf8");
-  assert.match(agents, /After a PR merges, run `pnpm beads:worktrees`/);
-  assert.match(agents, /pnpm beads:worktrees:create/);
-  assert.match(agents, /pnpm beads:worktrees:apply/);
+  assert.match(agents, /docs\/workflows\/github-work-tracking\.md/);
   assert.match(agents, /remote deletion remains proposal-only/);
-  assert.match(claude, /normal completion uses the lifecycle patrol/);
+  assert.match(claude, /docs\/workflows\/github-work-tracking\.md/);
   assert.match(claude, /gate-incomplete, preserve the unit/);
   assert.match(
     claude,
-    /Never bypass\s+the worktree guard to force completion/,
+    /Do not[\s\S]*force-remove a dirty tree, clear a foreign lock/,
   );
   assert.doesNotMatch(
     claude,
@@ -3190,12 +3176,9 @@ exit 0
   );
   let patrolInvocation = 0;
   let lastPatrolInvocation = "";
-  // This file spawns the patrol ~140 times at ~4.5s apiece (measured: 5.15s
-  // mean over the first ten, 3.75s over the last ten — flat, not degrading), so
-  // it produces no output for roughly ten minutes. That silence is
-  // indistinguishable from a hang and has been mistaken for one. Emit a
-  // heartbeat per spawn — cheap, and it names the exact invocation to look at
-  // when something does wedge.
+  // Real Git inventory still makes these ~140 patrol spawns substantial even
+  // with host-profile discovery isolated. Keep a heartbeat naming the exact
+  // invocation so slow progress can be distinguished from a wedged child.
   const startedAt = Date.now();
   const heartbeat = (label) => {
     if (process.env.LIFECYCLE_TEST_QUIET) return;

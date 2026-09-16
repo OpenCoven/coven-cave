@@ -61,6 +61,10 @@ test("merged + clean worktree is SAFE-RETIRE", () => {
     git(dir, "branch", "feat/merged-clean", "main");
     git(dir, "worktree", "add", "-q", join(dir, "wt-a"), "feat/merged-clean");
     assert.equal(verdictByBranch(dir).get("feat/merged-clean"), "SAFE-RETIRE");
+    const display = run(dir);
+    assert.match(display, /local-state retirement candidate/);
+    assert.match(display, /local status is not deletion authority/);
+    assert.doesNotMatch(display, /safe to retire|safe to auto-retire/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -131,6 +135,8 @@ test("--prune emits remove commands only for the SAFE-RETIRE tree", () => {
     git(dir, "worktree", "add", "-q", "-b", "feat/live", join(dir, "wt-live"), "main");
     git(join(dir, "wt-live"), "commit", "-qm", "ahead", "--allow-empty");
     const out = run(dir, "--prune");
+    assert.match(out, /current authorization, owner\/runtime evidence, and remote retention/);
+    assert.match(out, /local status is not deletion authority/);
     assert.match(out, /git worktree remove '[^']*wt-safe'/);
     assert.match(out, /git branch -d 'feat\/safe'/);
     assert.doesNotMatch(out, /wt-live/);

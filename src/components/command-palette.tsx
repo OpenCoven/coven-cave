@@ -42,8 +42,6 @@ import {
 } from "@/lib/search-query";
 import { chipLabelFor, type SearchFilter, type SearchQueryState, type SearchScope } from "@/lib/search-filters";
 import { deriveImplicitScopes } from "@/lib/search-context";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);
@@ -70,11 +68,6 @@ type PaletteIntent =
   | { kind: "create-task"; title: string }
   | { kind: "open-memory-file"; path: string }
   | {
-      kind: "open-coven-memory";
-      id: string;
-      familiarId: string;
-    }
-  | {
       kind: "open-setting";
       section: SettingsIndexEntry["section"];
       group?: string;
@@ -90,22 +83,6 @@ type Card = {
   labels: string[];
   updatedAt?: string;
 };
-
-type CanonicalPaletteEntry = Pick<
-  CanonicalMemorySummary,
-  | "id"
-  | "familiarId"
-  | "title"
-  | "excerpt"
-  | "source"
-  | "verification"
-  | "relativeUpdatedAt"
->;
-
-type CanonicalPaletteState =
-  | { state: "loading"; entries: CanonicalPaletteEntry[] }
-  | { state: "ready"; entries: CanonicalPaletteEntry[] }
-  | { state: "error"; entries: CanonicalPaletteEntry[] };
 
 type FsMemoryEntry = {
   root: string;
@@ -152,7 +129,6 @@ type Row =
   | { id: string; kind: "familiar"; familiar: Familiar }
   | { id: string; kind: "session"; session: SessionRow; familiar: Familiar | null }
   | { id: string; kind: "card"; card: Card; familiar: Familiar | null }
-  | { id: string; kind: "coven-memory"; entry: CanonicalPaletteEntry; familiar: Familiar | null }
   | { id: string; kind: "fs-memory"; entry: FsMemoryEntry }
   | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent }
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
@@ -197,7 +173,6 @@ const RESULT_LIMITS = {
   familiar: 6,
   session: 6,
   card: 6,
-  covenMemory: 5,
   fsMemory: 8,
   command: 6,
   conversation: 6,
@@ -250,8 +225,6 @@ export function CommandPalette({
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
-  const [canonicalMemoryState, setCanonicalMemoryState] =
-    useState<CanonicalPaletteState>({ state: "loading", entries: [] });
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
   const [salemLoading, setSalemLoading] = useState(false);
   const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
@@ -282,7 +255,7 @@ export function CommandPalette({
   useEffect(() => {
     const { token, rest } = parseFamiliarToken(query);
     const text = rest.trim();
-    if (token !== null || text.startsWith("/") || text.length < 2) {
+    if (!open || token !== null || text.startsWith("/") || text.length < 2) {
       setContentHits([]);
       return;
     }
@@ -304,7 +277,7 @@ export function CommandPalette({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [open, query]);
 
   const updateQuery = (next: string) => {
     setQuery(next);
@@ -519,7 +492,6 @@ export function CommandPalette({
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
     let cancelled = false;
-    setCanonicalMemoryState({ state: "loading", entries: [] });
 
     const loadBoardCorpus = async () => {
       try {
@@ -529,21 +501,6 @@ export function CommandPalette({
         if (board.ok) setCards(board.cards ?? []);
       } catch {
         /* board search stays independently usable from its last snapshot */
-      }
-    };
-
-    const loadCanonicalCorpus = async () => {
-      try {
-        const canonical = await loadCanonicalMemoryList();
-        if (cancelled) return;
-        setCanonicalMemoryState(
-          canonical.state === "ready"
-            ? { state: "ready", entries: canonical.entries }
-            : { state: "error", entries: [] },
-        );
-      } catch {
-        if (cancelled) return;
-        setCanonicalMemoryState({ state: "error", entries: [] });
       }
     };
 
@@ -560,7 +517,6 @@ export function CommandPalette({
 
     void Promise.allSettled([
       loadBoardCorpus(),
-      loadCanonicalCorpus(),
       loadFileMemoryCorpus(),
     ]);
 
@@ -694,27 +650,6 @@ export function CommandPalette({
         kind: "card",
         card: c,
         familiar: c.familiarId ? familiarById.get(c.familiarId) ?? null : null,
-      }));
-
-    const covenMemoryRows: Row[] = canonicalMemoryState.entries
-      .filter((entry) => {
-        if (scoped && !scope!.has(entry.familiarId)) return false;
-        if (!q) return true;
-        return (
-          fz(entry.title) ||
-          entry.excerpt.toLowerCase().includes(q) ||
-          fz(entry.familiarId) ||
-          fz(entry.source.label) ||
-          fz(entry.verification.state) ||
-          fz(entry.relativeUpdatedAt)
-        );
-      })
-      .slice(0, RESULT_LIMITS.covenMemory)
-      .map((entry) => ({
-        id: `cm:${entry.id}`,
-        kind: "coven-memory",
-        entry,
-        familiar: null,
       }));
 
     // fs-memory, slash commands, and shortcuts are not familiar-scoped, so
@@ -915,7 +850,6 @@ export function CommandPalette({
           ...cardRows,
           ...projectRows,
           ...boardViewRows,
-          ...covenMemoryRows,
           ...fsMemoryRows,
           ...cmdRows,
           ...shortcutRows,
@@ -924,7 +858,6 @@ export function CommandPalette({
           ...familiarRows,
           ...sessionRows,
           ...cardRows,
-          ...covenMemoryRows,
           ...fsMemoryRows,
           ...settingRows,
           ...cmdRows,
@@ -946,7 +879,7 @@ export function CommandPalette({
     // Salem row is still rows[0], so unmatched queries keep their one-Enter
     // AI path.
     return [...localRows, ...salemRows];
-  }, [familiars, familiarById, sessions, cards, canonicalMemoryState.entries, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
+  }, [familiars, familiarById, sessions, cards, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
 
   const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
   const rows = useMemo(
@@ -1060,12 +993,6 @@ export function CommandPalette({
       onIntent({ kind: "open-board" });
       // Focus card after the view switches
       setTimeout(() => onIntent({ kind: "focus-card", cardId: row.card.id }), 0);
-    } else if (row.kind === "coven-memory") {
-      onIntent({
-        kind: "open-coven-memory",
-        id: row.entry.id,
-        familiarId: row.entry.familiarId,
-      });
     } else if (row.kind === "fs-memory") {
       onIntent({ kind: "open-memory-file", path: row.entry.fullPath });
     } else if (row.kind === "shortcut") {
@@ -1406,14 +1333,6 @@ export function CommandPalette({
             ? `${globalResults.length} result${globalResults.length === 1 ? "" : "s"} in global search`
             : resultSummary}
         </div>
-        {canonicalMemoryState.state === "error" ? (
-          <div
-            role="status"
-            className="border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
-          >
-            Familiar memories unavailable. Other local results are still available.
-          </div>
-        ) : null}
         <ul
           id="command-palette-listbox"
           role="listbox"
@@ -1525,21 +1444,6 @@ export function CommandPalette({
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">card</span> : null}
-                    </>
-                  ) : null}
-                  {row.kind === "coven-memory" ? (                    <>
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
-                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          {row.entry.familiarId} ·{" "}
-                          {row.entry.source.label} · {row.entry.verification.state} ·{" "}
-                          {row.entry.relativeUpdatedAt}
-                        </span>
-                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          {row.entry.excerpt}
-                        </span>
-                      </span>
-                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">memory</span> : null}
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (

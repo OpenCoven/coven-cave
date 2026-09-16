@@ -112,7 +112,7 @@ struct CaveConnection: Codable, Equatable {
         guard let host = defaults.string(forKey: storageKey),
               !host.isEmpty else { return nil }
         let connection = CaveConnection(host: host)
-        if accessToken != nil, accessTokenOrigin == nil,
+        if accessToken != nil, !isManagedDeviceCredential(accessToken), accessTokenOrigin == nil,
            let baseURL = connection.baseURL,
            let origin = credentialOrigin(for: baseURL) {
             KeychainStore.set(origin, forKey: tokenOriginKey)
@@ -133,6 +133,8 @@ struct CaveConnection: Codable, Equatable {
         UserDefaults.standard.removeObject(forKey: lastGoodKey)
         KeychainStore.remove(tokenKey)
         KeychainStore.remove(tokenOriginKey)
+        KeychainStore.remove(DeviceAccessStore.activeKey)
+        KeychainStore.remove(DeviceAccessStore.pendingKey)
     }
 
     static func clear(defaults: UserDefaults) {
@@ -140,6 +142,8 @@ struct CaveConnection: Codable, Equatable {
         defaults.removeObject(forKey: lastGoodKey)
         KeychainStore.remove(tokenKey)
         KeychainStore.remove(tokenOriginKey)
+        KeychainStore.remove(DeviceAccessStore.activeKey)
+        KeychainStore.remove(DeviceAccessStore.pendingKey)
     }
 
     /// The base URL that last answered a successful probe, per host
@@ -207,11 +211,20 @@ struct CaveConnection: Codable, Equatable {
     /// (COVEN_CAVE_ACCESS_TOKEN on the server). Kept in the Keychain — the
     /// host string above is not a secret, this is.
     static var accessToken: String? {
-        KeychainStore.string(forKey: tokenKey)
+        // A convenience snapshot only; dispatch uses the throwing read below.
+        (try? DeviceAccessStore.loadActive())?.credential ?? KeychainStore.string(forKey: tokenKey)
     }
 
     static var accessTokenOrigin: String? {
-        KeychainStore.string(forKey: tokenOriginKey)
+        (try? DeviceAccessStore.loadActive())?.origin ?? KeychainStore.string(forKey: tokenOriginKey)
+    }
+
+    static func isManagedDeviceCredential(_ token: String?) -> Bool {
+        token?.hasPrefix("cave-device-v1.") == true
+    }
+
+    static func shouldRefreshAccessToken(_ token: String?) -> Bool {
+        token != nil && !isManagedDeviceCredential(token)
     }
 
     static func credentialOrigin(for url: URL) -> String? {
@@ -244,11 +257,16 @@ struct CaveConnection: Codable, Equatable {
     }
 
     static func credentialForRequest(to url: URL) throws -> String? {
-        guard let token = accessToken else { return nil }
+        // Fail closed on an unreadable managed item, not back to a legacy token.
+        let managed = try DeviceAccessStore.loadActive()
+        guard let token = managed?.credential ?? KeychainStore.string(forKey: tokenKey) else { return nil }
+        if isManagedDeviceCredential(token), url.scheme?.lowercased() != "https" {
+            throw CaveError.insecureCredentialTransport
+        }
         guard isCredentialTransportSecure(url) else {
             throw CaveError.insecureCredentialTransport
         }
-        guard credentialOriginMatches(accessTokenOrigin, requestURL: url) else {
+        guard credentialOriginMatches(managed?.origin ?? accessTokenOrigin, requestURL: url) else {
             throw CaveError.credentialOriginMismatch
         }
         return token
@@ -266,6 +284,9 @@ struct CaveConnection: Codable, Equatable {
     }
 
     static func saveAccessToken(_ token: String?, for baseURL: URL? = nil) {
+        // Managed grants enter only through the checked, approved activation path.
+        precondition(!isManagedDeviceCredential(token))
+        KeychainStore.remove(DeviceAccessStore.activeKey)
         if let token, !token.isEmpty {
             KeychainStore.set(token, forKey: tokenKey)
             if let baseURL, let origin = credentialOrigin(for: baseURL) {

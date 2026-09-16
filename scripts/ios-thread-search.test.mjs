@@ -63,12 +63,12 @@ assert.match(
   "results should open the thread when tapped",
 );
 
-// What survives on the home is familiar filtering — the home is a familiar list.
-assert.match(home, /private var filteredFamiliars: \[Familiar\]/, "the home should filter familiars");
+// Global home search organizes conversations without scanning transcripts.
+assert.match(home, /ChatListSnapshot\([\s\S]*query: query/, "home searches the conversation projection");
 assert.match(
   home,
-  /filteredFamiliars\.isEmpty/,
-  "the home's search empty-state should consider matching familiars",
+  /snapshot\.entries\.isEmpty && !query\.isEmpty/,
+  "home search retains an honest empty state for matching conversations",
 );
 
 console.log("ios-thread-search.test.mjs: ok");

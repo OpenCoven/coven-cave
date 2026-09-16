@@ -17,6 +17,7 @@ struct ChatProjectPicker: View {
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?
     var onManageAccess: (() -> Void)?
+    var onSelection: ((ProjectInfo?) -> Void)?
 
     @State private var projects: [ProjectInfo] = []
     @State private var isLoading = false
@@ -83,6 +84,7 @@ struct ChatProjectPicker: View {
                     Label(errorMessage, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                     Button("Retry") { reloadToken += 1 }
+                        .frame(minHeight: 44)
                 }
             } else if projects.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -95,8 +97,10 @@ struct ChatProjectPicker: View {
                     .foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Button("Retry") { reloadToken += 1 }
+                            .frame(minHeight: 44)
                         if let onManageAccess {
                             Button("Project access", action: onManageAccess)
+                                .frame(minHeight: 44)
                         }
                     }
                 }
@@ -117,12 +121,17 @@ struct ChatProjectPicker: View {
                 get: { selectedRoot },
                 set: { root in
                     selectedRoot = root
-                    isResolved = root != nil
-                    if root != nil { onResolved?() }
+                    let project = projects.first { $0.root == root }
+                    isResolved = project != nil
+                    onSelection?(project)
+                    if isResolved { onResolved?() }
                 }
             )
         ) {
             Text("Choose a project").tag(String?.none)
+            if let selectedRoot, !projects.contains(where: { $0.root == selectedRoot }) {
+                Text("Selected project unavailable").tag(Optional(selectedRoot))
+            }
             ForEach(projects) { project in
                 Text(projectOptionLabel(project))
                     .tag(Optional(project.root))
@@ -130,6 +139,7 @@ struct ChatProjectPicker: View {
             }
         }
         .pickerStyle(.menu)
+        .frame(minHeight: 44)
         .accessibilityIdentifier("New chat project")
         .accessibilityHint("Chooses where this chat can work")
     }
@@ -211,14 +221,16 @@ struct ChatProjectPicker: View {
             }
             isLoading = false
             projects = loaded
-            selectedRoot = requiresExplicitSelection
-                ? nil
-                : ChatProjectSelection.resolvedRoot(
-                    current: selectedRoot,
+            // A refresh may invalidate a choice, but must never replace it.
+            if selectedRoot == nil, !requiresExplicitSelection {
+                selectedRoot = ChatProjectSelection.resolvedRoot(
+                    current: nil,
                     recent: recentRoots,
                     projects: loaded
                 )
-            isResolved = selectedRoot != nil
+                onSelection?(loaded.first { $0.root == selectedRoot })
+            }
+            isResolved = loaded.contains { $0.root == selectedRoot }
             resolvedLoadKey = identity.key
             if isResolved { onResolved?() }
         } catch is CancellationError {

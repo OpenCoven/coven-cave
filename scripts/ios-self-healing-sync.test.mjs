@@ -39,10 +39,19 @@ assert.match(
 // context + familiars + theme + profile) runs beside the remaining already-open
 // surfaces, and reconnect mirrors a failed cached project-context refresh back
 // to the relevant stale-data banners instead of issuing a duplicate load.
+const refreshLoadedSurfaces = model.slice(
+  model.indexOf("private func refreshLoadedSurfaces("),
+  model.indexOf("/// `quiet` probes"),
+);
 assert.match(
-  model,
-  /private func refreshLoadedSurfaces\(configurationGeneration: UInt64\) async \{[\s\S]*?connectionConfigurationLeaseIsCurrent\(configurationGeneration\)[\s\S]*?let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{[\s\S]*?await self\.loadCoreResources\([\s\S]*?mirroringProjectContextFailuresTo: mirroredProjectContextFailures,[\s\S]*?configurationGeneration: configurationGeneration[\s\S]*?\)[\s\S]*?\}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}/,
-  "reconnect should refresh remaining loaded surfaces while mirroring cached project-context failures once",
+  refreshLoadedSurfaces,
+  /connectionConfigurationLeaseIsCurrent\(configurationGeneration\)[\s\S]*mirroringProjectContextFailuresTo: mirroredProjectContextFailures,[\s\S]*if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}/,
+  "reconnect refreshes chat history and mirrors cached access failures once",
+);
+assert.doesNotMatch(
+  refreshLoadedSurfaces,
+  /loadTasks|loadReminders/,
+  "reconnect must not eagerly load retired non-chat surfaces",
 );
 assert.match(
   model,
@@ -127,8 +136,8 @@ assert.match(
 );
 assert.match(
   client,
-  /for attempt in 0\.\.\.retryDelays\.count[\s\S]*?session\.data\(for: req\)[\s\S]*?Task\.sleep/,
-  "resilient data loading should retry transient failures with bounded backoff",
+  /for attempt in 0\.\.\.retryDelays\.count[\s\S]*?session\.data\(for: req, delegate: DeviceAccessRedirectGuard\.shared\)[\s\S]*?Task\.sleep/,
+  "resilient data loading should preserve the credential redirect guard while retrying transient failures with bounded backoff",
 );
 assert.match(
   client,

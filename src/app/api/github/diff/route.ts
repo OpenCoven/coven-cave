@@ -21,6 +21,8 @@
 // routes do.
 import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
+import { GitHubRevisionError, readGitHubPullRevision } from "@/lib/server/github-review-revision";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -74,8 +76,12 @@ export async function GET(req: Request) {
   const token = resolveGitHubToken();
 
   try {
-    // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/files?per_page=100`, {
+    const revision = await readGitHubPullRevision(repo, number, token);
+    // GitHub's three-dot comparison uses the merge base, like a PR diff, but
+    // both requested endpoints are immutable even if the author pushes again.
+    // Commit SHAs resolve across the repository's fork network; unlike an
+    // owner:branch ref, this also avoids depending on a fork's current name.
+    const res = await fetch(`${GH}/repos/${repo}/compare/${revision.baseSha}...${revision.headSha}?per_page=1`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -86,15 +92,23 @@ export async function GET(req: Request) {
     if (res.status === 404) {
       return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
     }
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !Array.isArray(data)) {
+    const data = await res.json().catch(() => null) as {
+      base_commit?: { sha?: unknown };
+      merge_base_commit?: { sha?: unknown };
+      files?: Array<Record<string, unknown>>;
+    } | null;
+    const mergeBaseSha = sanitizeGithubObjectSha(
+      typeof data?.merge_base_commit?.sha === "string" ? data.merge_base_commit.sha : null,
+    );
+    if (!res.ok || !Array.isArray(data?.files) ||
+        data.base_commit?.sha !== revision.baseSha || !mergeBaseSha) {
       return NextResponse.json(
         { ok: false, error: `github error (${res.status})` },
         { status: res.status === 403 ? 403 : 502 },
       );
     }
 
-    const raw = data as Array<Record<string, unknown>>;
+    const raw = data.files;
     let truncated = raw.length > MAX_FILES;
     let budget = PATCH_BUDGET;
     const files: DiffFile[] = [];
@@ -126,16 +140,16 @@ export async function GET(req: Request) {
       });
     }
 
-    // `files.length` is what the caller can list; `total` is how many the first
-    // page carried. A UI that only knows the former reports "40 files" for a
-    // 63-file PR — an undercount that reads as complete. `total` is itself
-    // capped at per_page, so a caller that needs the true count past 100 files
-    // reads `changed_files` from /api/github/item?pull=1.
-    return NextResponse.json({ ok: true, truncated, total: raw.length, files });
+    // GitHub includes up to 300 comparison files on the first page regardless
+    // of commit pagination; the route's smaller cap always reports truncation.
+    return NextResponse.json({
+      ok: true, revision: { ...revision, mergeBaseSha },
+      truncated, total: raw.length, files,
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to load diff" },
-      { status: 502 },
+      { status: e instanceof GitHubRevisionError ? e.status : 502 },
     );
   }
 }

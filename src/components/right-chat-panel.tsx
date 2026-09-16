@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,11 @@ import {
 } from "@/lib/right-chat-session";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+
+export type RightChatLaunchRequest = AgentsNewChatRequest & { familiarId: string; nonce: number };
 
 /**
  * Shared frame for every loading/error/chooser state: a named `<aside>` plus
@@ -97,6 +101,8 @@ function RightChatPanelFrame({
 }
 
 type Props = {
+  launchRequest?: RightChatLaunchRequest | null;
+  onFollowMainChat?: () => void;
   open: boolean;
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
@@ -144,6 +150,78 @@ type Props = {
  * "kind" enum, multiple tab surfaces, or a bare arbitrary-content slot.
  */
 export function RightChatPanel(props: Props) {
+  const consumedLaunchRef = useRef<number | null>(null);
+  const launch = props.launchRequest;
+  const familiarId = launch?.familiarId ?? null;
+  const [roster, setRoster] = useState<{
+    familiarId: string | null; sessions: SessionRow[]; loaded: boolean; error: boolean;
+  }>({ familiarId: null, sessions: [], loaded: false, error: false });
+  const requestGeneration = useRef(0);
+  const refresh = useCallback(async () => {
+    if (!familiarId) return;
+    const generation = ++requestGeneration.current;
+    try {
+      const params = new URLSearchParams({ familiarId, classifyFamiliarWorkspace: "1" });
+      const response = await fetch(`/api/sessions/list?${params}`, { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
+      if (generation !== requestGeneration.current) return;
+      setRoster({ familiarId, sessions: json.sessions, loaded: true, error: false });
+    } catch {
+      if (generation !== requestGeneration.current) return;
+      setRoster((previous) => ({
+        familiarId,
+        sessions: previous.familiarId === familiarId ? previous.sessions : [],
+        loaded: true,
+        error: true,
+      }));
+    }
+  }, [familiarId]);
+  useEffect(() => {
+    if (!familiarId || !props.open) return;
+    void refresh();
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [familiarId, props.open, refresh]);
+  usePausablePoll(refresh, 4_000, { enabled: Boolean(familiarId && props.open) });
+
+  // A fix's actor is independent of the main surface's familiar filter. In
+  // particular ChatRouter.newChat calls onSetActiveFamiliar synchronously;
+  // forwarding that callback here would replace an already-open main chat.
+  if (!launch) return <RightChatPanelContent {...props} consumedLaunchRef={consumedLaunchRef} />;
+  const launchFamiliar = props.familiars.find((familiar) => familiar.id === familiarId) ?? null;
+  if (props.familiarsLoaded && !props.familiarsError && !launchFamiliar) {
+    return (
+      <RightChatPanelFrame open={props.open} onClose={props.onClose}>
+        <ErrorState compact headline="Familiar is unavailable" subtitle="Close the panel and choose an available familiar to try again." />
+      </RightChatPanelFrame>
+    );
+  }
+  const scoped = roster.familiarId === familiarId;
+  return (
+    <RightChatPanelContent
+      {...props}
+      consumedLaunchRef={consumedLaunchRef}
+      activeFamiliar={launchFamiliar}
+      sessions={scoped ? roster.sessions : []}
+      sessionsLoaded={scoped && roster.loaded}
+      sessionsError={scoped && roster.error}
+      sessionsScopeFamiliarId={familiarId}
+      onSetActiveFamiliar={() => {}}
+      onRetrySessions={() => void refresh()}
+      onSessionStarted={() => { void refresh(); props.onSessionStarted(); }}
+      onSessionsChanged={() => { void refresh(); props.onSessionsChanged(); }}
+      onSessionsDeleted={(ids) => {
+        setRoster((previous) => ({ ...previous, sessions: previous.sessions.filter((row) => !ids.includes(row.id)) }));
+        props.onSessionsDeleted(ids);
+        void refresh();
+      }}
+    />
+  );
+}
+
+function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<number | null> }) {
   const {
     open,
     familiars,
@@ -157,6 +235,7 @@ export function RightChatPanel(props: Props) {
     daemonRunning,
   } = props;
   const routerRef = useRef<ChatRouterHandle | null>(null);
+  const { consumedLaunchRef } = props;
   // Tracks which familiar's latest session has actually been RESOLVED (an
   // imperative openSession/newChat call issued and selectedSessionId set to
   // match), so a same-familiar close/reopen never clobbers a manual thread
@@ -455,6 +534,24 @@ export function RightChatPanel(props: Props) {
     if (!familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
     if (!sessionsScopeCurrent) return;
 
+    const launch = props.launchRequest;
+    if (launch && consumedLaunchRef.current !== launch.nonce) {
+      if (!open || !routerRef.current || launch.familiarId !== activeFamiliar.id) return;
+      consumedLaunchRef.current = launch.nonce;
+      resolvedFamiliarRef.current = activeFamiliar.id;
+      pendingRemovalRef.current = false;
+      routerRef.current.newChat(
+        launch.projectRoot ?? undefined,
+        launch.initialPrompt ?? undefined,
+        launch.familiarId,
+        launch.origin,
+        launch.initialControls ?? undefined,
+      );
+      setSelectedSessionId(null);
+      announce(`New chat with ${activeFamiliar.display_name} opened in the Chat panel`);
+      return;
+    }
+
     if (resolvedFamiliarRef.current !== activeFamiliar.id) {
       // First open, or a genuine familiar change: needs a fresh resolve.
       // Never touch the router or the selection while the panel is closed
@@ -488,7 +585,7 @@ export function RightChatPanel(props: Props) {
     if (replacement) routerRef.current?.openSession(replacement);
     else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
     setSelectedSessionId(replacement);
-  }, [activeFamiliar, announce, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded, sessionsScopeCurrent]);
+  }, [activeFamiliar, announce, consumedLaunchRef, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded, sessionsScopeCurrent, props.launchRequest]);
 
   // Blocks rendering — including ChatRouter's own mount — while the active
   // familiar's sessions scope hasn't been confirmed yet, for a familiar that
@@ -666,6 +763,17 @@ export function RightChatPanel(props: Props) {
         >
           <Icon name="ph:plus" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
+        {props.launchRequest && props.onFollowMainChat ? (
+          <button
+            type="button"
+            className="focus-ring right-chat__icon-button"
+            aria-label="Follow main chat"
+            title="Follow main chat"
+            onClick={() => { props.onFollowMainChat?.(); announce("Chat panel follows the main familiar"); }}
+          >
+            <Icon name="ph:arrow-left" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+          </button>
+        ) : null}
         <span className="right-chat__rail-spacer" aria-hidden />
         <button
           type="button"

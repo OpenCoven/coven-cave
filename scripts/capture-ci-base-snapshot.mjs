@@ -41,7 +41,8 @@ function validatedSnapshot(ref, sha) {
  * `pull_requests[].base.sha` can remain tied to an older base after the branch
  * moves. Only the base ref is retained; its live tip at selector start is the
  * snapshot. Later jobs receive this exact pair via `needs.paths.outputs` and
- * compare it with the then-live ref.
+ * report it alongside the then-live ref; base drift alone does not invalidate
+ * fresh head/attempt evidence under non-strict branch protection.
  */
 export function resolveRunBaseSnapshot(
   {

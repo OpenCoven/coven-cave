@@ -10,6 +10,17 @@ const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url)
 const css = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
 assert.match(
+  extractBraceBlock(css, ".cnav {"),
+  /--rail-pad:\s*var\(--space-1\);/,
+  "the docked and mobile session lists must own their inset without a shell-nav ancestor",
+);
+assert.match(
+  extractBraceBlock(css, ".cnav__thread.is-active::after {"),
+  /border-radius:\s*inherit;/,
+  "the full-width active backdrop must preserve the row's left and right corner radius",
+);
+
+assert.match(
   sidebar,
   /const attentionSessions = useMemo\(\s*\(\) =>\s*visibleSessions\s*\.filter\(\(session\) => session\.attention\.state !== "none" && !session\.archived_at\)\s*\.sort\(compareChatAttention\)/,
   "attentionSessions should derive from visible non-archived rows and sort by compareChatAttention",
@@ -35,11 +46,11 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /function resolveThreadAttention\([\s\S]*?const state: ChatAttentionState = archived \? "none" : session\.attention\.state;[\s\S]*?label: chatAttentionLabel\(state\),[\s\S]*?description: archived \? null : chatAttentionDescription\(session\.attention, now\),/,
-  "resolveThreadAttention should centralize the archived-suppression rule and derive label/description from the shared chat-attention helpers",
+  /function resolveThreadAttention\([\s\S]*?const state: ChatAttentionState = archived \? "none" : session\.attention\.state;[\s\S]*?const reason = archived \? null : session\.attention\.reason;[\s\S]*?kind: attentionLifecycle\(state, reason\),[\s\S]*?label: chatAttentionLabel\(state, reason\),[\s\S]*?description: archived \? null : chatAttentionDescription\(session\.attention, now\),/,
+  "resolveThreadAttention should centralize the archived-suppression rule and derive kind/label/description from the shared chat-attention helpers — the REASON travels with the state, or a gated session can never read Blocked",
 );
 const resolveThreadAttentionCallSites = sidebar.match(
-  /const \{ state: attentionState, label: attentionLabel, description: attentionDescription \} = resolveThreadAttention\(\s*session,\s*archived,\s*now,\s*\);/g,
+  /const \{ state: attentionState, kind: attentionKind, label: attentionLabel, description: attentionDescription \} = resolveThreadAttention\(\s*session,\s*archived,\s*now,\s*\);/g,
 ) ?? [];
 assert.equal(
   resolveThreadAttentionCallSites.length,
@@ -109,9 +120,23 @@ assert.match(css, /\.cnav__attention-dot\s*\{[\s\S]*?background:\s*var\(--color-
 assert.match(css, /data-attention="left-hanging"[\s\S]*color-mix\(in oklch, var\(--color-warning\) 7%, transparent\)/, "left-hanging should use the subtle warning tint");
 assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/, "awaiting-human should use the warning fill tint");
 assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, var\(--color-warning\) (3[0-9]|4[0-5])%, var\(--border-hairline\)\)/, "awaiting-human should derive its warning border from color-mix");
-assert.match(css, /data-attention="overdue-human"[\s\S]*background:\s*var\(--danger-bg\);/, "overdue-human should use the existing danger background token");
-assert.match(css, /data-attention="overdue-human"[\s\S]*border-color:\s*var\(--danger-border\);/, "overdue-human should use the existing danger border token");
-assert.match(css, /data-attention="overdue-human"[\s\S]*\.cnav__attention[\s\S]*color:\s*var\(--danger-text\);/, "overdue-human attention copy should use the danger text token");
+// An overdue wait is a LONGER WAIT, not an error (redesign handoff §5). It
+// used to carry a row-wide --danger-bg/--danger-border field plus --danger-text
+// copy, which made a session merely queued behind its reader render identically
+// to one that had actually failed — and fifteen at once read as an alarm wall.
+// It now shares awaiting-human's field outright, so the two cannot drift apart.
+assert.match(css, /data-attention="overdue-human"[\s\S]{0,400}?color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/, "overdue-human shares the awaiting warning fill, not a danger field");
+assert.match(css, /data-attention="overdue-human"[\s\S]{0,400}?color-mix\(in oklch, var\(--color-warning\) 38%, var\(--border-hairline\)\)/, "overdue-human shares the awaiting warning border");
+assert.match(css, /data-attention="overdue-human"\]\s*\.cnav__attention\s*\{[^}]*color:\s*var\(--status-awaiting\);/, "overdue-human attention copy stays in the waiting tone");
+// The guard the three assertions above lacked: red is reserved for failed, so
+// no attention-bearing row rule may reach for a danger token at all.
+assert.doesNotMatch(
+  css,
+  /\.cnav__thread[^{\n]*\[data-attention[^{]*\{[^}]*var\(--danger-(bg|border|text)\)/,
+  "attention rows must never use a danger token — red is reserved for failed",
+);
+// Blocked is the stronger waiting state and gets its own solid token.
+assert.match(css, /\[data-attention-kind="blocked"\]\s*\{[^}]*color-mix\(in oklch, var\(--status-blocked\) 14%, transparent\)/, "blocked rows carry the blocked fill");
 // cave-zs85n Task 6 gap-fix: attention must never repaint the RUNTIME tick.
 // Previously `.cnav__thread[data-attention="…"] .cnav__tick` selectors won
 // the cascade over the tick's own status colour (failed/paused/running/
@@ -185,8 +210,13 @@ for (const state of ["left-hanging", "awaiting-human", "overdue-human"]) {
 }
 assert.match(
   css,
-  /data-attention="overdue-human"[\s\S]*\.cnav__attention-tick[\s\S]*background:\s*var\(--danger-text\);/,
-  "overdue-human should escalate the attention tick to danger",
+  /data-attention="overdue-human"\]\s*\.cnav__attention-tick\s*\{[^}]*background:\s*var\(--status-awaiting\);/,
+  "the overdue tick stays in the waiting tone — the escalation it used to carry in hue now rides the relative time and the accessible description instead",
+);
+assert.match(
+  css,
+  /\[data-attention-kind="blocked"\]\s*\.cnav__attention-tick\s*\{[^}]*background:\s*var\(--status-blocked\);/,
+  "a blocked row's tick carries the blocked token, and must follow the overdue rule so it wins at equal specificity",
 );
 const attentionTickBlock = extractBraceBlock(css, ".cnav__attention-tick {");
 assert.doesNotMatch(attentionTickBlock, /animation|@keyframes|pulse/i, "the attention tick must never animate");
@@ -353,8 +383,8 @@ function sectionCount(section: ReturnType<typeof sectionByLabel>) {
 
 function sectionThreadTitles(section: ReturnType<typeof sectionByLabel>) {
   return section
-    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
-    .map((node) => textContent(node.children));
+    .findAll((node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title"))
+    .map((node) => textContent(node.findByProps({ className: "sr-only" }).children));
 }
 
 function attentionCueLabels(section: ReturnType<typeof sectionByLabel>) {
@@ -429,7 +459,7 @@ test("legacy sessions without attention render as neutral rows", async () => {
 
   expect(
     renderer.root.findAll(
-      (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === "Legacy chat",
+      (node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title") && node.props.title === "Legacy chat",
     ),
   ).toHaveLength(1);
   expect(sectionsByLabel(renderer).some((section) => section.props["aria-label"] === "Awaiting you")).toBe(false);
@@ -471,15 +501,19 @@ test("attention rows keep the visible state in the button name and move the deta
   const buttonText = textContent(button.children);
   expect(buttonText).toContain("Approve release");
   expect(buttonText).toContain(relativeTime(session.updated_at, new Date("2026-08-05T20:00:00.000Z"), "bare"));
-  expect(buttonText).toContain("Awaiting you");
+  // The fixture's attention reason is `approval` — a gate the run cannot pass
+  // without this person — so the visible state is Blocked, the stronger of the
+  // two waiting words. The section heading is a different thing and stays
+  // "Awaiting you": it groups what needs you, it does not name each state.
+  expect(buttonText).toContain("Blocked");
   expect(buttonText).not.toContain("approval");
   expect(buttonText).not.toContain("1 hour ago");
-  expect(buttonText.match(/Awaiting you/g) ?? []).toHaveLength(1);
+  expect(buttonText.match(/Blocked/g) ?? []).toHaveLength(1);
   expect(button.findAll((node) => typeof node.type === "string" && node.props.id === descriptionId)).toHaveLength(0);
 
   const describedNodes = renderer.root.findAll((node) => typeof node.type === "string" && node.props.id === descriptionId);
   expect(describedNodes).toHaveLength(1);
-  expect(textContent(describedNodes[0].children)).toBe("Awaiting you for approval since 1 hour ago.");
+  expect(textContent(describedNodes[0].children)).toBe("Blocked for approval since 1 hour ago.");
 
   await act(async () => renderer.unmount());
 });
@@ -529,7 +563,8 @@ test("pinned and full attention rows keep the same accessible description while 
     if (label === "Awaiting you") {
       expect(textContent(button.children)).toContain(relativeTime(session.updated_at, new Date("2026-08-05T20:00:00.000Z"), "bare"));
     }
-    expect(textContent(button.children)).toContain("Awaiting you");
+    // Same approval gate, so both row shapes must say Blocked identically.
+    expect(textContent(button.children)).toContain("Blocked");
     expect(textContent(button.children)).not.toContain("for approval");
     expect(textContent(button.children)).not.toContain("1 hour ago");
 
@@ -537,7 +572,7 @@ test("pinned and full attention rows keep the same accessible description while 
       (node) => typeof node.type === "string" && node.props.id === descriptionId,
     );
     expect(described).toHaveLength(1);
-    expect(textContent(described[0].children)).toBe("Awaiting you for approval since 1 hour ago.");
+    expect(textContent(described[0].children)).toBe("Blocked for approval since 1 hour ago.");
   }
 
   await act(async () => renderer.unmount());
@@ -705,7 +740,7 @@ test("attention show-more keeps the flat modifier, focus ring, and click handler
  *  renderer root) so duplicate titles across sections resolve unambiguously. */
 function rowContainerFor(scope: ReturnType<typeof sectionByLabel> | ReactTestRenderer["root"], title: string) {
   const titleNode = scope.find(
-    (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === title,
+    (node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title") && node.props.title === title,
   );
   let node = titleNode;
   while (
@@ -759,7 +794,10 @@ test("search drops the Awaiting you section but rows keep their visible label an
 
   const row = rowContainerFor(renderer.root, "Overdue search target");
   expect(row.props["data-attention"]).toBe("overdue-human");
-  expect(attentionCueLabels(row)).toEqual(["Still waiting"]);
+  // Overdue AND gated on approval: the elapsed time does not change the word,
+  // the gate does. data-attention still reports the underlying evidence.
+  expect(row.props["data-attention-kind"]).toBe("blocked");
+  expect(attentionCueLabels(row)).toEqual(["Blocked"]);
 
   const descriptionId = row.find(
     (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring",
@@ -817,7 +855,7 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   const pinnedRow = rowContainerFor(pinnedSection, railTitle);
   expect(pinnedRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(pinnedRow.props["data-attention"]).toBe("left-hanging");
-  expect(attentionCueLabels(pinnedRow)).toEqual(["Left hanging"]);
+  expect(attentionCueLabels(pinnedRow)).toEqual(["Awaiting you"]);
   expect(
     pinnedRow.findAll(
       (node) =>
@@ -840,7 +878,7 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   const awaitingRow = rowContainerFor(awaitingSection, railTitle);
   expect(awaitingRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(awaitingRow.props["data-attention"]).toBe("left-hanging");
-  expect(attentionCueLabels(awaitingRow)).toEqual(["Left hanging"]);
+  expect(attentionCueLabels(awaitingRow)).toEqual(["Awaiting you"]);
   expect(
     awaitingRow.findAll(
       (node) =>
@@ -918,12 +956,12 @@ test("a failed run with a PR badge keeps its danger runtime tick alongside a sep
     (node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick",
   );
   expect(attentionTicks).toHaveLength(1);
-  expect(attentionCueLabels(row)).toEqual(["Left hanging"]);
+  expect(attentionCueLabels(row)).toEqual(["Awaiting you"]);
 
   await act(async () => renderer.unmount());
 });
 
-test("a paused run with a branch glyph keeps its runtime tick alongside a separate danger attention tick when overdue", async () => {
+test("a paused run with a branch glyph keeps its runtime tick alongside a separate attention tick when overdue", async () => {
   let renderer!: ReactTestRenderer;
   const session = makeSession({
     id: "session-paused-branch",
@@ -973,7 +1011,10 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
     (node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick",
   );
   expect(attentionTicks).toHaveLength(1);
-  expect(attentionCueLabels(row)).toEqual(["Still waiting"]);
+  // overdue-human + an `approval` gate: Blocked. The tick stays a separate
+  // structural channel from the runtime tick either way — that separation is
+  // what this test guards, and it is unchanged.
+  expect(attentionCueLabels(row)).toEqual(["Blocked"]);
 
   await act(async () => renderer.unmount());
 });
@@ -1015,8 +1056,8 @@ test("the embedded chat list never surfaces archived sessions", async () => {
   ).toHaveLength(0);
 
   const titles = renderer.root
-    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
-    .map((node) => textContent(node.children));
+    .findAll((node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title"))
+    .map((node) => textContent(node.findByProps({ className: "sr-only" }).children));
   expect(titles).not.toContain("Archived but pinned");
 
   await act(async () => renderer.unmount());

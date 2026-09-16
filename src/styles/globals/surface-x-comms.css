@@ -1,0 +1,3432 @@
+/* X Comms — `X Comms v2.dc.html` (project "Comms Operations Console Redesign").
+ *
+ * Component-imported by `x-comms-surface.tsx` rather than added to the
+ * globals.css facade, so it ships with the dynamically-imported room chunk
+ * instead of the root bundle every route downloads (#3264 pattern, same as the
+ * surface-research-*.css family). The root first-load CSS runs at essentially
+ * zero headroom against BUNDLE_MAX_HOME_CSS_KB, and this sheet is large.
+ *
+ * The frame ships every value inline; everything here is on the type / space /
+ * radius scale instead, so the drift ratchets stay flat. Where the frame's
+ * number sits between two steps it snapped to the nearer one: its 10.5px
+ * micro-labels → --text-2xs, 11.5px → --text-xs, 12.5px → --text-sm, 15px post
+ * body → --text-lg, and its 2/6/10/14/22px gaps → the 4px grid. The frame also
+ * overrides --radius-card to 10px locally; that override is dropped, because
+ * the token is themed and pinning it here would make one room disagree with
+ * the other 41 theme combinations.
+ *
+ * State colour is the one place the frame's own vocabulary is kept: six states
+ * that must be told apart at a glance, each derived from ONE solid semantic
+ * token via the color-mix recipe (solid text, ~14% fill, 30–45% border) rather
+ * than a second hue.
+ */
+
+.x-comms {
+  /* Amber is the single accent: "needs you" and the primary action, nothing
+     else. Posted green and revoked/failed red are semantic, not brand. */
+  --x-accent: var(--color-warning);
+
+  /* The frame's warm off-white for serif headings. It ships there as a raw
+     oklch; here it is derived, so the warmth survives all 42 theme/mode
+     combinations instead of being one palette's constant. */
+  --x-cream: color-mix(in oklch, var(--text-primary) 92%, var(--color-warning) 8%);
+
+  --x-state-draft: var(--text-secondary);
+  --x-state-awaiting: var(--x-accent);
+  --x-state-scheduled: var(--x-accent);
+  --x-state-posted: var(--color-success);
+  --x-state-revoked: var(--color-danger);
+  --x-state-failed: var(--color-danger);
+
+  /* Density. The toggle changes rhythm, not type size — AA contrast holds at
+     both, and a smaller body would trade legibility for rows nobody asked for. */
+  --x-row-py: var(--space-2);
+  --x-card-px: var(--space-4);
+  --x-card-py: var(--space-3);
+  --x-gap: var(--space-3);
+
+  /* Width of the work queue, dragged between 240 and 360 by the operator. */
+  --x-queue-w: 280px;
+  --x-dispatch-w: 376px;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.x-comms[data-density="compact"] {
+  --x-row-py: var(--space-1);
+  --x-card-px: var(--space-3);
+  --x-card-py: var(--space-2);
+  --x-gap: var(--space-2);
+}
+
+/* ── Room shell ──────────────────────────────────────────────────────────── */
+
+/* The room lays its own columns out: the frame's queue is drag-resizable and
+   its dispatch rail is a fixed 376px, neither of which the shared 3-column
+   template expresses. */
+.x-comms .role-surface-columns {
+  grid-template-columns: var(--x-queue-w) minmax(0, 1fr) var(--x-dispatch-w);
+  grid-template-areas: "left canvas right";
+  gap: 0;
+  padding: 0;
+}
+
+.x-comms[data-rail="collapsed"] .role-surface-columns {
+  grid-template-columns: var(--x-queue-w) minmax(0, 1fr) 44px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.x-comms-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.x-comms-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.x-comms-title h2 {
+  margin: 0;
+  flex: none;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  color: var(--x-cream);
+}
+
+.x-comms-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-header-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* ── Banner ──────────────────────────────────────────────────────────────── */
+
+.x-comms-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--x-banner-border);
+  background: var(--x-banner-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.x-comms-banner-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--x-banner-tone);
+}
+
+.x-comms-banner strong {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.x-comms-banner-body {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.x-comms-banner-tail {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-muted);
+}
+
+/* ── Account pill + API budget ───────────────────────────────────────────── */
+
+.x-comms-account {
+  position: relative;
+  display: inline-flex;
+}
+
+.x-comms-account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 1px solid var(--x-account-border, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.x-comms-account-trigger:hover {
+  background: var(--bg-elevated);
+}
+
+.x-comms-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.x-comms-account-handle {
+  color: var(--text-primary);
+}
+
+.x-comms-account-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+.x-comms-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--x-quota-tone);
+}
+
+.x-comms-meter {
+  display: inline-block;
+  width: 44px;
+  height: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.x-comms-meter-fill {
+  display: block;
+  height: 100%;
+  width: var(--x-quota-pct);
+  background: var(--x-quota-tone);
+}
+
+.x-comms-popover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 40;
+  width: 340px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-align: left;
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-popover-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.x-comms-popover-head strong {
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--x-cream);
+}
+
+.x-comms-popover-head span {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.x-comms-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.x-comms-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-stat dt {
+  color: var(--text-muted);
+}
+
+.x-comms-stat dd {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+}
+
+.x-comms-stat dd[data-tone="quota"] {
+  color: var(--x-quota-tone);
+}
+
+.x-comms-budget-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.x-comms-budget-threshold {
+  position: absolute;
+  inset-block: -2px;
+  left: 80%;
+  width: 1px;
+  background: var(--x-accent);
+}
+
+.x-comms-budget-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-budget-scale span[data-warn] {
+  color: var(--x-accent);
+}
+
+.x-comms-note {
+  display: grid;
+  grid-template-columns: 8px auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+}
+
+.x-comms-note dt {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.x-comms-note dd {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.x-comms-note[data-tone="warn"] {
+  border-color: color-mix(in oklch, var(--x-accent) 35%, var(--border));
+  background: color-mix(in oklch, var(--x-accent) 7%, var(--bg-raised));
+}
+
+.x-comms-note[data-tone="danger"] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+/* ── Status dot ──────────────────────────────────────────────────────────── */
+
+/* One dot, two readings: filled for a settled state, a ring for one still in
+   motion. Shape carries the distinction as well as colour, so the six states
+   stay separable without relying on hue alone. */
+.x-comms-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--x-dot-tone);
+  background: transparent;
+}
+
+.x-comms-dot[data-filled="true"] {
+  background: var(--x-dot-tone);
+}
+
+.x-comms-dot[data-size="lg"] {
+  width: 6px;
+  height: 6px;
+}
+
+/* ── Work queue ──────────────────────────────────────────────────────────── */
+
+.x-comms-queue {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.x-comms-queue-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.x-comms-queue-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+
+.x-comms-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+/* The one group with a decision in it earns a tinted edge. */
+.x-comms-group[data-hot="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 40%, var(--border));
+}
+
+.x-comms-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.x-comms-group[data-open="false"] .x-comms-group-head {
+  border-bottom-color: transparent;
+}
+
+.x-comms-group-head:hover {
+  background: var(--bg-elevated);
+}
+
+.x-comms-group-head h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--x-cream);
+}
+
+.x-comms-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.x-comms-group-empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+.x-comms-rows {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.x-comms-row {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  overflow: hidden;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.x-comms-row[data-selected="true"] {
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg-elevated);
+}
+
+.x-comms-row-open {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  align-items: start;
+  width: 100%;
+  padding: var(--x-row-py) var(--space-2);
+  font-size: var(--text-base);
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.x-comms-row-open:hover {
+  background: var(--bg-hover);
+}
+
+.x-comms-row-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+/* Two lines then an ellipsis, with the full title on hover: an operator who
+   cannot read what they are approving is the defect this replaces. */
+.x-comms-row-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: var(--leading-tight);
+  min-width: 0;
+  font-weight: 500;
+}
+
+.x-comms-row[data-selected="true"] .x-comms-row-title {
+  font-weight: 600;
+}
+
+.x-comms-row-when {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-row-meta {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-row-meta span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-row-inline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  border-top: 1px solid var(--border);
+  background: var(--border);
+}
+
+.x-comms-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 28px;
+  border: 0;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-inline-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-inline-action[data-variant="approve"] {
+  background: color-mix(in oklch, var(--x-accent) 10%, var(--bg-raised));
+  color: var(--x-accent);
+}
+
+.x-comms-inline-action[data-variant="approve"]:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--x-accent) 20%, var(--bg-raised));
+}
+
+.x-comms-inline-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.x-comms-queue-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.x-comms-resize:hover,
+.x-comms-resize:focus-visible {
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+
+.x-comms-canvas {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-base);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.x-comms-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-gap);
+  flex: 1 1 auto;
+  padding: var(--space-4) var(--space-5);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.x-comms-doc-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.x-comms-doc-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.x-comms-doc-name h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: 0.005em;
+  color: var(--x-cream);
+  cursor: text;
+  border-radius: var(--radius-sm);
+}
+
+.x-comms-doc-name h3:hover {
+  background: var(--bg-raised);
+}
+
+.x-comms-rename {
+  margin: 0 calc(var(--space-1) * -1.5);
+  padding: 0 var(--space-1);
+  width: 100%;
+  max-width: 640px;
+  box-sizing: border-box;
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-sm);
+}
+
+.x-comms-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.x-comms-path-dir {
+  color: var(--text-secondary);
+}
+
+.x-comms-path-file {
+  color: var(--text-primary);
+}
+
+.x-comms-revisions-trigger {
+  height: 20px;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.x-comms-revisions-trigger:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.x-comms-revisions {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 40;
+  width: 340px;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-revisions-label {
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-revision {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+}
+
+.x-comms-revision[data-current="true"] {
+  background: var(--bg-hover);
+}
+
+.x-comms-revision-when {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-revision[data-current="true"] .x-comms-revision-when {
+  color: var(--text-secondary);
+}
+
+.x-comms-revision-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── The well ────────────────────────────────────────────────────────────── */
+
+/* Content-sized, not stretched: the frame's predecessor left a dead gap
+   between the text and the poll that made a finished draft read unfinished. */
+.x-comms-well {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.x-comms-well[data-fill="true"] {
+  flex: 1 1 auto;
+}
+
+.x-comms-well:focus-within {
+  border-color: color-mix(in oklch, var(--foreground) 24%, transparent);
+}
+
+.x-comms-well-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--x-card-py) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.x-comms-well-head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.x-comms-legend {
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  line-height: 1;
+  font-weight: 500;
+  color: var(--x-cream);
+}
+
+.x-comms-hint {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-target {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-target[data-invalid="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 55%, var(--border));
+}
+
+.x-comms-target-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-bare-input {
+  min-width: 0;
+  width: 100%;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.x-comms-bare-input::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-bare-input:focus-visible {
+  outline: none;
+}
+
+.x-comms-target-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--x-accent);
+}
+
+.x-comms-target-warning span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ── Posts ───────────────────────────────────────────────────────────────── */
+
+.x-comms-posts {
+  display: flex;
+  flex-direction: column;
+}
+
+.x-comms-posts[data-thread="true"] {
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.x-comms-post {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid transparent;
+}
+
+.x-comms-posts[data-thread="true"] .x-comms-post {
+  border-color: var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-posts[data-thread="true"] .x-comms-post[data-dragging="true"] {
+  border-color: var(--border-strong, var(--border));
+}
+
+.x-comms-post-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-2) 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.x-comms-post-n {
+  color: var(--text-secondary);
+}
+
+.x-comms-post-tools {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.x-comms-mini {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-mini:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-mini:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.x-comms-mini[data-icon="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+}
+
+.x-comms-mini[data-danger="true"]:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.x-comms-post-body {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+
+.x-comms-textarea {
+  width: 100%;
+  resize: none;
+  line-height: 22px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  box-sizing: border-box;
+}
+
+.x-comms-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-textarea:focus-visible {
+  outline: none;
+}
+
+.x-comms-post-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 34px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.x-comms-attach-group {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.x-comms-chip-button {
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-chip-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-chip-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.x-comms-chip-button[data-active="true"] {
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.x-comms-media-note {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* The counter is the one number an operator checks last; it only shouts at the
+   limit, and warns in the last 20. */
+.x-comms-counter {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-counter[data-state="near"] {
+  color: var(--x-accent);
+}
+
+.x-comms-counter[data-state="over"] {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 50%, var(--border));
+}
+
+/* ── Media ───────────────────────────────────────────────────────────────── */
+
+.x-comms-media-grid {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.x-comms-media-grid[data-cols="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.x-comms-media-grid[data-cols="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.x-comms-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  min-width: 0;
+}
+
+/* Missing alt text tints the whole attachment, not just its field: the block
+   is on the attachment, and the field alone is easy to scroll past. */
+.x-comms-media[data-needs-alt="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 45%, var(--border));
+}
+
+.x-comms-media-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.x-comms-media-dims {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 18px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-media-tools {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.x-comms-micro {
+  height: 20px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.x-comms-micro:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-micro[data-icon="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  padding: 0;
+}
+
+/* A dashed frame rather than a fake thumbnail: the file is not here yet, and
+   drawing a picture of one would be a claim the room cannot make. */
+.x-comms-media-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  aspect-ratio: var(--x-media-ratio, 16 / 9);
+  max-height: var(--x-media-max-h, 140px);
+  padding: var(--space-1);
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-align: center;
+  min-width: 0;
+}
+
+.x-comms-media-slot span:last-child {
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-alt-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.x-comms-alt-input {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.x-comms-alt-input[data-missing="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 55%, var(--border));
+}
+
+.x-comms-alt-input::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-alt-auto {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--x-accent);
+  white-space: nowrap;
+}
+
+/* ── Poll ────────────────────────────────────────────────────────────────── */
+
+.x-comms-poll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-poll-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.x-comms-poll-duration {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+}
+
+.x-comms-poll-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.x-comms-poll-option[data-dragging="true"] {
+  background: var(--bg-elevated);
+}
+
+.x-comms-grip {
+  display: inline-flex;
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.x-comms-poll-input {
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+}
+
+.x-comms-poll-input:focus {
+  border-color: var(--border-strong, var(--border));
+}
+
+.x-comms-poll-input[data-at-limit="true"] {
+  border-color: color-mix(in oklch, var(--color-danger) 55%, var(--border));
+}
+
+/* "21/25 chars" — spelled out, because a bare 21/25 next to a poll option
+   reads as a vote count. Dimmed until the option is focused so four of them
+   do not compete with the text. */
+.x-comms-poll-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  opacity: 0.55;
+}
+
+.x-comms-poll-count[data-active="true"] {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.x-comms-poll-count[data-at-limit="true"] {
+  color: var(--color-danger);
+  opacity: 1;
+}
+
+.x-comms-poll-add {
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 var(--space-2);
+  margin-left: var(--space-6);
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-poll-add:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.x-comms-poll-full {
+  margin-left: var(--space-6);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Generate ────────────────────────────────────────────────────────────── */
+
+.x-comms-generate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-generate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+}
+
+.x-comms-prompt {
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.x-comms-prompt::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-generate-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.x-comms-generate-hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-generate-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.x-comms-convert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* ── Article ─────────────────────────────────────────────────────────────── */
+
+.x-comms-article-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-article-title[data-missing="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 45%, var(--border));
+}
+
+.x-comms-article-title input {
+  min-width: 0;
+  width: 100%;
+  color: var(--x-cream);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+
+.x-comms-article-title input:focus-visible {
+  outline: none;
+}
+
+.x-comms-article-media {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.x-comms-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.x-comms-inline-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  min-width: 0;
+}
+
+.x-comms-inline-card[data-needs-alt="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 45%, var(--border));
+}
+
+.x-comms-inline-placed {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-inline-placed[data-placed="false"] {
+  color: var(--x-accent);
+}
+
+.x-comms-article-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 220px;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.x-comms-article-body textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 200px;
+  resize: none;
+  line-height: 24px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  box-sizing: border-box;
+}
+
+.x-comms-article-body textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-article-body textarea:focus-visible {
+  outline: none;
+}
+
+/* ── Notes + constraint footer ───────────────────────────────────────────── */
+
+/* The only field Trends may write to, and it never leaves the machine. */
+.x-comms-notes {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.x-comms-notes-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-notes input {
+  min-width: 0;
+  width: 100%;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.x-comms-notes input::placeholder {
+  color: var(--text-muted);
+}
+
+.x-comms-notes input:focus-visible {
+  outline: none;
+}
+
+.x-comms-constraints {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.x-comms-rule-list {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* A rule nobody can read is a rule that surprises you at the block. Each chip
+   says the rule, its dot says pass or fail, and its tooltip names the source. */
+.x-comms-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.x-comms-rule[data-passing="false"] {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 55%, var(--border));
+}
+
+.x-comms-rule-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--x-state-posted);
+}
+
+.x-comms-rule[data-passing="false"] .x-comms-rule-dot {
+  background: var(--color-danger);
+}
+
+.x-comms-constraint-tail {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.x-comms-slash {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-slash:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.x-comms-slash-value {
+  color: var(--text-muted);
+}
+
+.x-comms-menu {
+  position: fixed;
+  z-index: 40;
+  width: 280px;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.x-comms-menu-label {
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-menu-item {
+  display: grid;
+  grid-template-columns: 14px 64px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.x-comms-menu-item:hover,
+.x-comms-menu-item[aria-checked="true"] {
+  background: var(--bg-hover);
+}
+
+.x-comms-menu-check {
+  display: inline-flex;
+  opacity: 0;
+}
+
+.x-comms-menu-item[aria-checked="true"] .x-comms-menu-check {
+  opacity: 1;
+}
+
+.x-comms-menu-desc {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.x-comms-total {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+}
+
+.x-comms-total[data-over="true"] {
+  color: var(--color-danger);
+}
+
+/* ── Preview ─────────────────────────────────────────────────────────────── */
+
+.x-comms-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.x-comms-preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-preview-note {
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-preview-tail {
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+}
+
+.x-comms-preview-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6) var(--space-5);
+  background: var(--bg-sunken);
+}
+
+.x-comms-timeline {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.x-comms-tweet {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.x-comms-tweet:first-child {
+  border-top-color: transparent;
+}
+
+.x-comms-tweet-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.x-comms-tweet-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  font-weight: 600;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  flex: none;
+}
+
+.x-comms-tweet-thread-line {
+  flex: 1 1 auto;
+  width: 2px;
+  min-height: 12px;
+  background: var(--border-strong, var(--border));
+  border-radius: 1px;
+}
+
+.x-comms-tweet-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.x-comms-tweet-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--text-md);
+  min-width: 0;
+}
+
+.x-comms-tweet-head strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.x-comms-tweet-handle {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-tweet-counter {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-tweet-counter[data-over="true"] {
+  color: var(--color-danger);
+}
+
+.x-comms-tweet-text {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+
+.x-comms-tweet-media {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+/* Alt text is quoted inside the frame rather than hidden behind a hover: a
+   missing one blocks approval, so it has to be visible while reviewing. */
+.x-comms-tweet-media-cell {
+  display: flex;
+  align-items: flex-end;
+  aspect-ratio: var(--x-media-ratio, 16 / 9);
+  padding: var(--space-2);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.x-comms-tweet-media-cell[data-missing-alt="true"] {
+  color: var(--color-danger);
+}
+
+.x-comms-tweet-media-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-tweet-poll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.x-comms-tweet-poll-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-pill);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.x-comms-tweet-poll-option span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-tweet-poll-option span:last-child {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.x-comms-tweet-quote {
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.x-comms-tweet-actions {
+  display: flex;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-tweet-actions span {
+  flex: 1;
+}
+
+.x-comms-tweet-actions span:last-child {
+  flex: none;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.x-comms-dm {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-end;
+}
+
+.x-comms-dm-bubble {
+  margin: 0;
+  max-width: 85%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel) var(--radius-panel) var(--radius-sm) var(--radius-panel);
+  background: var(--bg-elevated);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+
+.x-comms-article-preview {
+  width: 100%;
+  max-width: 600px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.x-comms-article-preview h4 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+}
+
+.x-comms-article-preview p {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+
+.x-comms-article-byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+}
+
+.x-comms-figure {
+  margin: var(--space-1) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ── Dispatch rail ───────────────────────────────────────────────────────── */
+
+.x-comms-dispatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-gap);
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-3);
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  box-sizing: border-box;
+}
+
+/* Sticky so the four sections stay reachable while a long card scrolls. */
+.x-comms-tablist {
+  position: sticky;
+  top: calc(var(--space-3) * -1);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: calc(var(--space-3) * -1) calc(var(--space-3) * -1) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.x-comms-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.x-comms-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-tab[aria-selected="true"] {
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.x-comms-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.x-comms-badge {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--x-accent);
+}
+
+.x-comms-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  overflow: hidden;
+}
+
+/* The approval card's edge carries its state — the frame's complaint was that
+   approved and draft looked identical until you read the label. */
+.x-comms-card[data-state-tint="true"] {
+  border-color: color-mix(in oklch, var(--x-card-tone) 35%, var(--border));
+}
+
+.x-comms-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--x-card-py) var(--x-card-px);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.x-comms-card-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -3px 0 0 calc(var(--space-1) * -1.5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: none;
+}
+
+.x-comms-card-toggle:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.x-comms-card-icon {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.x-comms-card-icon[data-tone="state"] {
+  color: var(--x-card-tone);
+}
+
+.x-comms-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.x-comms-card-heading h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+}
+
+.x-comms-card-sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.x-comms-card-head-action {
+  margin-left: auto;
+  display: inline-flex;
+  flex: none;
+}
+
+.x-comms-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--x-card-py) var(--x-card-px);
+}
+
+/* Values wrap instead of truncating: an approver who cannot read the slot or
+   the approver's name is being asked to trust a label. */
+.x-comms-kv {
+  margin: var(--x-card-py) var(--x-card-px) 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-kv-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.x-comms-kv-row:last-child {
+  border-bottom-color: transparent;
+}
+
+.x-comms-kv-row dt {
+  color: var(--text-muted);
+  line-height: var(--leading-tight);
+}
+
+.x-comms-kv-row dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.x-comms-kv-row dd[data-tone="state"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--x-card-tone);
+}
+
+.x-comms-countdown {
+  display: block;
+  color: var(--text-muted);
+}
+
+.x-comms-countdown[data-soon="true"] {
+  color: var(--x-accent);
+}
+
+.x-comms-blocked {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+
+.x-comms-blocked[data-hard="true"] {
+  color: var(--color-danger);
+}
+
+/* Destructive actions ask inside the card rather than in a modal that covers
+   the thing being destroyed. */
+.x-comms-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-confirm-title {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.x-comms-confirm-body {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.x-comms-confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.x-comms-secondary-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 calc(var(--space-1) * -1.5);
+}
+
+.x-comms-text-button {
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.x-comms-text-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.x-comms-draft-note {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-discard {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.x-comms-discard:hover {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+}
+
+.x-comms-posted-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.x-comms-permalink {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ── Control card ────────────────────────────────────────────────────────── */
+
+.x-comms-claim {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+}
+
+.x-comms-gate {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-gate li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.x-comms-gate li:last-child {
+  border-bottom-color: transparent;
+}
+
+.x-comms-gate-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 76px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.x-comms-gate-stage[data-hot="true"] {
+  color: var(--x-accent);
+}
+
+.x-comms-gate-who {
+  color: var(--text-muted);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.x-comms-gate-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  min-width: 14px;
+  text-align: right;
+}
+
+.x-comms-gate-count[data-hot="true"] {
+  color: var(--x-accent);
+}
+
+.x-comms-facts {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--text-muted);
+}
+
+.x-comms-facts strong {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.x-comms-why {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+}
+
+/* ── Trends ──────────────────────────────────────────────────────────────── */
+
+.x-comms-trends {
+  list-style: none;
+  margin: var(--x-card-py) var(--x-card-px) 0;
+  padding: 0 var(--space-2);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-trends li {
+  border-bottom: 1px solid var(--border);
+}
+
+.x-comms-trends li:last-child {
+  border-bottom-color: transparent;
+}
+
+.x-comms-trend-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.x-comms-trend-topic {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.x-comms-trend-vol {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-trend-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 52px;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-trend-delta[data-up="true"] {
+  color: var(--text-secondary);
+}
+
+.x-comms-trend-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-2);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-trend-detail p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+}
+
+.x-comms-defs {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.x-comms-defs dt {
+  color: var(--text-muted);
+}
+
+.x-comms-defs dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.x-comms-insert-ref {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-insert-ref:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-timing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: auto;
+  margin: var(--space-2) var(--x-card-px) var(--x-card-py);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x-comms-timing:hover {
+  background: var(--bg-panel);
+}
+
+.x-comms-timing-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-timing-head span:last-child {
+  margin-left: auto;
+  display: inline-flex;
+}
+
+.x-comms-timing-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.x-comms-timing-value strong {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--x-cream);
+}
+
+.x-comms-timing-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding-top: var(--space-1);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-activity {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  align-items: end;
+  height: 36px;
+}
+
+.x-comms-activity span {
+  height: var(--x-bar-h);
+  background: var(--bg-hover);
+  border-radius: 1px;
+}
+
+.x-comms-activity span[data-peak="true"] {
+  background: var(--x-accent);
+}
+
+.x-comms-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Analytics ───────────────────────────────────────────────────────────── */
+
+.x-comms-spark {
+  margin: var(--x-card-py) var(--x-card-px) 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.x-comms-spark-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-spark-head span:last-child {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+
+.x-comms-spark svg {
+  width: 100%;
+  height: 56px;
+  display: block;
+}
+
+.x-comms-spark-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-spark-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.x-comms-spark-day span:first-child {
+  color: var(--text-secondary);
+}
+
+.x-comms-spark-day[data-latest="true"] span:first-child {
+  color: var(--x-accent);
+}
+
+.x-comms-metrics {
+  margin: var(--space-2) var(--x-card-px) var(--x-card-py);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--space-4);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.x-comms-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.x-comms-metric:nth-last-child(-n + 2) {
+  border-bottom-color: transparent;
+}
+
+.x-comms-metric dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-metric dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Collapsed rail ──────────────────────────────────────────────────────── */
+
+.x-comms-rail-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.x-comms-rail-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.x-comms-rail-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.x-comms-rail-tab[aria-pressed="true"] {
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.x-comms-rail-tab .x-comms-badge {
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--bg-panel);
+}
+
+/* Anchored to the columns box rather than the viewport: the room can carry one
+   banner or two, so a fixed top offset would be wrong half the time. */
+.x-comms[data-rail="collapsed"] .x-comms-dispatch {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 44px;
+  width: min(var(--x-dispatch-w), calc(100% - var(--x-queue-w) - 44px));
+  z-index: 35;
+  border-left: 1px solid var(--border-strong, var(--border));
+  box-shadow: var(--shadow-popover);
+}
+
+/* ── Agenda ──────────────────────────────────────────────────────────────── */
+
+.x-comms-agenda-counts {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-agenda-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.x-comms-agenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.x-comms-agenda li {
+  border-bottom: 1px solid var(--border);
+}
+
+.x-comms-agenda li:last-child {
+  border-bottom-color: transparent;
+}
+
+.x-comms-agenda-row {
+  display: grid;
+  grid-template-columns: 150px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.x-comms-agenda-row:hover {
+  background: var(--bg-elevated);
+}
+
+.x-comms-agenda-time {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms-agenda-time[data-future="true"] {
+  color: var(--text-secondary);
+}
+
+.x-comms-agenda-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-comms-agenda-note {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Slot picker ─────────────────────────────────────────────────────────── */
+
+.x-comms-heat {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 2px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.x-comms-heat-hours,
+.x-comms-heat-row {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.x-comms-heat-day {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.x-comms-heat-day[data-picked="true"] {
+  color: var(--text-secondary);
+}
+
+/* Intensity is a color-mix of the one accent against the sunken surface, so
+   the map stays inside the room's single-accent rule at every step. */
+.x-comms-cell {
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--x-accent) var(--x-cell-intensity), var(--bg-sunken));
+  cursor: pointer;
+}
+
+.x-comms-cell[data-band="true"] {
+  border-color: color-mix(in oklch, var(--x-accent) 50%, var(--border));
+}
+
+.x-comms-cell[aria-checked="true"] {
+  background: var(--x-accent);
+  border-color: var(--x-accent);
+}
+
+.x-comms-cell:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.x-comms-picked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.x-comms-picked-value {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.x-comms-picked-value span {
+  color: var(--text-muted);
+}
+
+.x-comms-picked-value strong {
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--x-cream);
+}
+
+.x-comms-picked-why {
+  margin-left: auto;
+  text-align: right;
+  color: var(--text-muted);
+  max-width: 60%;
+}
+
+.x-comms-dialog-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.x-comms-dialog-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+
+/* Every state change is undoable for eight seconds. The countdown is on the
+   button so the window is visible rather than something you have to feel. */
+.x-comms-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 36px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-toast-undo {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--x-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-toast-undo:hover {
+  background: var(--bg-hover);
+}
+
+.x-comms-toast-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.x-comms-toast-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Segmented ───────────────────────────────────────────────────────────── */
+
+/* The repo has no Segmented primitive and Tabs carries tab semantics this is
+   not — these are radio choices that change a value, not panels. */
+.x-comms-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  min-width: 0;
+}
+
+.x-comms-segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.x-comms-segmented[data-equal="true"] .x-comms-segment {
+  flex: 1 1 0;
+}
+
+.x-comms-segment:hover {
+  color: var(--text-primary);
+}
+
+.x-comms-segment[aria-checked="true"] {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes x-comms-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --duration-fast is already 0ms under the reduced-motion block in
+   foundations.css, which collapses the timing but still runs the transform.
+   Removing the animation outright is what actually holds the frame still. */
+@media (prefers-reduced-motion: reduce) {
+  .x-comms-popover,
+  .x-comms-revisions,
+  .x-comms-target,
+  .x-comms-generate,
+  .x-comms-confirm,
+  .x-comms-toast,
+  .x-comms-trend-detail,
+  .x-comms-timing-detail {
+    animation: none;
+  }
+}
+
+/* The thread's own "add post" affordance — same dashed language as the poll's
+   "+ add option", but flush with the cards rather than indented under a grip. */
+.x-comms-add-post {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.x-comms-add-post:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.x-comms-add-post:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.x-comms-article-inline-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: stretch;
+  min-width: 150px;
+}
+
+.x-comms-tweet-media[data-cols="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.x-comms-tweet-media[data-cols="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* One primary per state. The emphasised variant — Approve, Retry — is the
+   single place amber is used as a fill, so "the action that releases a write"
+   is visually unique in the room. */
+.x-comms-primary {
+  display: flex;
+}
+
+.x-comms-primary[data-emphasis="true"] .ui-btn {
+  color: var(--x-accent);
+  font-weight: 500;
+  background: color-mix(in oklch, var(--x-accent) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--x-accent) 45%, var(--border));
+}
+
+.x-comms-primary[data-emphasis="true"] .ui-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--x-accent) 20%, var(--bg-raised));
+}
+
+/* ── Slot dialog ─────────────────────────────────────────────────────────── */
+
+.x-comms-slot-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  width: min(640px, calc(100vw - var(--space-8)));
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
+}
+
+.x-comms-slot-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.x-comms-slot-head .x-comms-picked-value strong {
+  font-size: var(--text-lg);
+}
+
+.x-comms-slot-head .x-comms-mini {
+  margin-left: auto;
+}
+
+/* The scrim sits under the dialog and over the room, and closes on click —
+   the same gesture Escape performs. */
+.x-comms-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.x-comms-scrim[data-dim="true"] {
+  z-index: 44;
+  background: color-mix(in oklch, black 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .x-comms-slot-dialog {
+    animation: none;
+  }
+}
+
+/* The tone menu anchors to its trigger rather than the viewport, so it stays
+   attached when the composer scrolls under it. */
+.x-comms-tone {
+  position: relative;
+  display: inline-flex;
+}
+
+.x-comms-menu--anchored {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  right: 0;
+}
+
+/* ── Odds and ends the room needs ────────────────────────────────────────── */
+
+.x-comms-room {
+  min-height: 0;
+}
+
+.x-comms-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+}
+
+.x-comms-view-switch {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+}
+
+.x-comms-revisions-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The demo banner is the room's own disclaimer, not an account-state warning —
+   it is deliberately quieter than the danger/rate-limit tones. */
+.x-comms-banner[data-tone="demo"] {
+  --x-banner-border: color-mix(in oklch, var(--x-accent) 30%, var(--border));
+  --x-banner-bg: color-mix(in oklch, var(--x-accent) 6%, var(--bg-raised));
+  --x-banner-tone: var(--x-accent);
+}
+
+/* The rail's own empty note still reads as a card. */
+.x-comms-card.x-comms-group-empty {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Fixed-tone dots — a legend entry's colour is a constant, so it belongs here
+   rather than in a style object the lint gate would (rightly) reject. */
+.x-comms-dot[data-tone="posted"] { --x-dot-tone: var(--x-state-posted); }
+.x-comms-dot[data-tone="scheduled"] { --x-dot-tone: var(--x-state-scheduled); }
+.x-comms-dot[data-tone="accent"] { --x-dot-tone: var(--x-accent); }
+.x-comms-dot[data-tone="danger"] { --x-dot-tone: var(--color-danger); }
+
+/* Account-level banners. These are the states where approving still works and
+   nothing moves, so they say what holds and what drops rather than just that
+   something is wrong. */
+.x-comms-banner[data-tone="warn"] {
+  --x-banner-border: color-mix(in oklch, var(--x-accent) 40%, var(--border));
+  --x-banner-bg: color-mix(in oklch, var(--x-accent) 8%, var(--bg-raised));
+  --x-banner-tone: var(--x-accent);
+}
+
+.x-comms-banner[data-tone="danger"] {
+  --x-banner-border: var(--danger-border);
+  --x-banner-bg: var(--danger-bg);
+  --x-banner-tone: var(--color-danger);
+}
+
+.x-comms-banner-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The room chrome sets its drawer toggle in uppercase mono at --text-xs, which
+   is right for a generic "delivery queue" label and wrong for this one: the
+   Agenda's summary is a sentence with a time and a draft title in it, and
+   uppercasing it turns "Today 6:10 PM PT · Quote of @anthropicai" into a
+   shout that is materially harder to read at a glance. */
+.x-comms .role-surface-drawer-toggle {
+  gap: var(--space-3);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--x-cream);
+}
+
+/* A flex row so the three state counts can sit hard right, away from the
+   next-slot sentence they would otherwise run into. */
+.x-comms .role-surface-drawer-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms .role-surface-drawer-summary > .x-comms-agenda-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

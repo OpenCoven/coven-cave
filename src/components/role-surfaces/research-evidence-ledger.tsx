@@ -35,6 +35,8 @@ type Props = {
   triage?: boolean;
   /** Live runs mark the most recently arrived source so streaming reads. */
   highlightLatest?: boolean;
+  /** Preserve projection detail while suppressing mutations during lifecycle races. */
+  readOnly?: boolean;
 };
 
 const SOURCE_STATUSES: ResearchSourceRef["status"][] = [
@@ -63,6 +65,7 @@ export function ResearchEvidenceLedger({
   hint,
   triage = false,
   highlightLatest = false,
+  readOnly = false,
 }: Props) {
   const { announce } = useAnnouncer();
   const [title, setTitle] = useState("");
@@ -203,9 +206,9 @@ export function ResearchEvidenceLedger({
                   mission={mission}
                   artifact={artifact}
                   busy={busy}
-                  onPublish={settled ? publishArtifact : undefined}
+                  onPublish={settled && !readOnly ? publishArtifact : undefined}
                 />
-                {artifact.state !== "rejected" ? (
+                {!readOnly && artifact.state !== "rejected" ? (
                   <details className="research-artifact-reject">
                     <summary>Reject artifact</summary>
                     <input
@@ -245,36 +248,38 @@ export function ResearchEvidenceLedger({
         hidden={tab !== "sources"}
       >
         <h3 className="sr-only">Sources</h3>
-        <details className="research-source-attach-disclosure">
-          <summary>Attach source</summary>
-          <form className="research-source-attach" onSubmit={attach}>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Source title"
-              aria-label="Source title"
-            />
-            <input
-              value={url}
-              onChange={(event) => {
-                setUrl(event.target.value);
-                if (urlError) setUrlError(null);
-              }}
-              placeholder="https://…"
-              aria-label="Source URL"
-              aria-invalid={urlError ? true : undefined}
-              aria-describedby={urlError ? SOURCE_URL_ERROR_ID : undefined}
-            />
-            {urlError ? (
-              <p id={SOURCE_URL_ERROR_ID} role="alert" className="research-source-attach__error">
-                {urlError}
-              </p>
-            ) : null}
-            <Button type="submit" size="xs" variant="ghost" disabled={busy || !title.trim() || !url.trim()}>
-              Attach
-            </Button>
-          </form>
-        </details>
+        {!readOnly ? (
+          <details className="research-source-attach-disclosure">
+            <summary>Attach source</summary>
+            <form className="research-source-attach" onSubmit={attach}>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Source title"
+                aria-label="Source title"
+              />
+              <input
+                value={url}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  if (urlError) setUrlError(null);
+                }}
+                placeholder="https://…"
+                aria-label="Source URL"
+                aria-invalid={urlError ? true : undefined}
+                aria-describedby={urlError ? SOURCE_URL_ERROR_ID : undefined}
+              />
+              {urlError ? (
+                <p id={SOURCE_URL_ERROR_ID} role="alert" className="research-source-attach__error">
+                  {urlError}
+                </p>
+              ) : null}
+              <Button type="submit" size="xs" variant="ghost" disabled={busy || !title.trim() || !url.trim()}>
+                Attach
+              </Button>
+            </form>
+          </details>
+        ) : null}
         {mission.sources.length > 0 ? (
           <div className="research-source-filters" role="group" aria-label="Filter sources by status">
             <button
@@ -331,7 +336,7 @@ export function ResearchEvidenceLedger({
                 {/* Checkpoint triage: the verdicts the iteration is actually
                     waiting on, as one-tap buttons. The status control below
                     stays for revisiting any source at any time. */}
-                {triage && (source.status === "candidate" || source.status === "conflicting") ? (
+                {!readOnly && triage && (source.status === "candidate" || source.status === "conflicting") ? (
                   <div className="research-desk-delta__actions">
                     <Button
                       size="xs"
@@ -376,20 +381,22 @@ export function ResearchEvidenceLedger({
                     ) : null}
                   </div>
                 ) : null}
-                <label className="research-source-revise">
-                  <span className="sr-only">Status of {source.title}</span>
-                  <select
-                    value={source.status}
-                    disabled={busy}
-                    onChange={(event) => void act({
-                      action: "update-source",
-                      sourceId: source.id,
-                      patch: { status: event.target.value as ResearchSourceRef["status"] },
-                    })}
-                  >
-                    {SOURCE_STATUSES.map((status) => <option key={status}>{status}</option>)}
-                  </select>
-                </label>
+                {!readOnly ? (
+                  <label className="research-source-revise">
+                    <span className="sr-only">Status of {source.title}</span>
+                    <select
+                      value={source.status}
+                      disabled={busy}
+                      onChange={(event) => void act({
+                        action: "update-source",
+                        sourceId: source.id,
+                        patch: { status: event.target.value as ResearchSourceRef["status"] },
+                      })}
+                    >
+                      {SOURCE_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                    </select>
+                  </label>
+                ) : null}
                 {!source.url && source.localPath ? <span>{source.localPath}</span> : null}
               </li>
             ))}

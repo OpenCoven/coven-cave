@@ -2,15 +2,15 @@
  * relocated from Home to the brand-new chat view (Home went back to the quiet
  * hearth), then simplified: the context rail is retired (ChatView's composer
  * owns the project picker and prompt snippets) and what ships is a single
- * no-scroll board — greeting + filter tabs · capped open work · capped recent
- * threads. ChatView supplies the chrome above and the real composer below, so
+ * scrolling board — greeting, real composer, and capped existing work.
+ * ChatView supplies the chrome and composer, so
  * only the body ships. Everything is token-driven so the themes × dark/light
  * and the Appearance corner-radius setting all apply. */
 
 /* ── Embedded shell — fills the empty transcript ────────────────────────── */
 /* The dashboard renders inside the chat transcript (role="log") as the empty
    state of a brand-new chat. The transcript flexes so the embed stretches to
-   the pane's height; the board's content is capped, so nothing scrolls. The
+   the pane's height; the board scrolls when its content does not fit. The
    thread's centered reading measure is released — the board wants the pane. */
 .cave-chat-transcript:has(.home-dash--embed) {
   display: flex;
@@ -24,10 +24,9 @@
 .home-dash--embed {
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
   background: var(--bg-base);
   overflow: hidden;
+  container: chat-entry / inline-size;
 }
 
 /* ── Body: the board alone ──────────────────────────────────────────────── */
@@ -119,35 +118,10 @@
   font: 600 10.5px var(--font-jetbrains-mono), monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--accent-presence);
+  color: var(--text-muted);
+  flex-wrap: wrap;
 }
-.home-dash__eyebrow-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-presence);
-  box-shadow: 0 0 12px 1px color-mix(in oklch, var(--accent-presence) 65%, transparent);
-  animation: home-dash-glow 3s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .home-dash__eyebrow-dot {
-    animation: none;
-  }
-}
-@keyframes home-dash-glow {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-/* ── New-session hero ("Chat Session - Prototype.dc.html", cave-n3jg2) ──────
-   The composer is the threshold, so the heading stays quiet and structural
-   rather than becoming a second card above it. The gradient type is the one
-   expressive gesture on the page; everything around it uses the ordinary
-   elevation and spacing grammar. */
+/* The serif heading is the only expressive gesture; the composer owns focus. */
 .home-dash__board-head {
   position: relative;
   padding: var(--space-4) 0 var(--space-2);
@@ -161,22 +135,7 @@
   line-height: 1.08;
   letter-spacing: -0.02em;
   text-wrap: balance;
-  background: linear-gradient(
-    105deg,
-    var(--text-primary) 34%,
-    var(--accent-presence) 92%
-  );
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
-/* Windows High Contrast strips background images, which would leave the
-   headline transparent on transparent — hand the colour back. */
-@media (forced-colors: active) {
-  .home-dash__headline {
-    background: none;
-    color: CanvasText;
-  }
+  color: var(--text-primary);
 }
 
 /* The one line that names the two ways off this page. */
@@ -217,7 +176,7 @@
    It is ChatView's OWN composer handed down, so this only undoes the dock
    chrome — the docked element is a page-width band with a hairline top and a
    gradient that only reads correctly pinned to the bottom of the pane. */
-.home-dash__composer .cave-composer-dock {
+.home-dash--embed .home-dash__composer .cave-composer-dock {
   padding: 0;
   border-top: 0;
   background: none;
@@ -237,7 +196,7 @@
   -webkit-user-select: text;
 }
 
-/* The board clips (no-scroll design) and is a size container. Neither reaches
+/* The board scrolls and is a size container. Neither reaches
    the pickers: ui/popover portals to document.body, so it is neither clipped
    by the overflow nor trapped by container-type the way a fixed-position
    descendant would be. Nothing to undo here — noted because the reverse has
@@ -250,17 +209,17 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-3);
-  margin-top: 6px;
-  padding: 0 2px;
+  margin-top: var(--space-2);
 }
 
 .home-dash__save-default {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
+  gap: var(--space-2);
+  min-height: var(--space-8);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: transparent;
@@ -307,9 +266,8 @@
 
 /* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
-  padding: 22px 15px;
-  border: 1px dashed var(--border-hairline);
-  border-radius: var(--radius-card);
+  margin: 0;
+  padding: var(--space-3) 0;
   font-size: var(--text-sm);
   color: var(--text-muted);
   text-align: center;
@@ -339,8 +297,7 @@
 }
 
 @container (max-height: 540px) {
-  .home-dash__meta,
-  .home-dash__composer-trail {
+  .home-dash__meta {
     display: none;
   }
 
@@ -349,36 +306,42 @@
   }
 }
 
-@media (max-width: 640px) {
+@container chat-entry (max-width: 640px) {
   .home-dash__board {
     padding-inline: var(--space-4);
+  }
+
+  .home-dash__save-default {
+    min-height: var(--touch-target);
+  }
+
+  .home-dash__eyebrow {
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
   }
 }
 
 /* The regular mobile transcript reserves space for a composer dock rendered
-   after the scroller. New-chat routes render that same dock inside the
-   dashboard, so give the dashboard the full transcript and anchor its composer
-   inside that bounded surface. This keeps every control below the sticky
-   header and above the app tabs even when another context row is added above. */
+   after the scroller. New chat keeps its composer in flow before the launcher:
+   long drafts, attachments and extra context rows must push work down, not
+   cover it. The board owns scrolling when the whole stack does not fit. */
 @media (max-width: 767px) {
+  .home-dash--embed .home-dash__composer .cave-composer-dock {
+    /* Keyboard lift belongs to the bottom dock, not this in-flow composer. */
+    position: static;
+    transform: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    contain: none;
+    will-change: auto;
+  }
+
   .cave-chat-linear .cave-chat-transcript:has(.home-dash--embed) {
     padding-bottom: calc(var(--space-4) + var(--sai-bottom));
     scroll-padding-bottom: calc(var(--space-4) + var(--sai-bottom));
   }
+}
 
-  .home-dash--embed {
-    position: relative;
-  }
-
-  .home-dash--embed .home-dash__board-head,
-  .home-dash--embed .home-dash__work-empty {
-    display: none;
-  }
-
-  .home-dash--embed .home-dash__composer {
-    position: absolute;
-    inset-inline: var(--space-8);
-    bottom: 0;
-    z-index: 1;
-  }
+@media (hover: none) and (pointer: coarse) {
+  .home-dash__start-hint { display: none; }
 }

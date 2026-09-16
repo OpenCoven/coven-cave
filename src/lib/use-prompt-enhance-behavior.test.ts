@@ -3,6 +3,7 @@ import { createElement, useState } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePromptEnhance } from "./use-prompt-enhance";
+import { prepareChatPromptEnhancement, applyChatPromptEnhancement } from "./chat-prompt-enhance";
 
 const { announce } = vi.hoisted(() => ({ announce: vi.fn() }));
 vi.mock("@/components/ui/live-region", () => ({
@@ -25,8 +26,8 @@ describe("prompt enhancement generation", () => {
   let streams;
   let fetchMock;
 
-  function Probe({ context = null }) {
-    const [draft, setDraft] = useState(ORIGINAL);
+  function Probe({ context = null, overrideDraft = null }) {
+    const [draft, setDraft] = useState(overrideDraft === null ? ORIGINAL : `/improve ${ORIGINAL}`);
     editDraft = setDraft;
     const enhance = usePromptEnhance({
       draft,
@@ -36,7 +37,12 @@ describe("prompt enhancement generation", () => {
       context,
     });
     current = { draft, ...enhance };
-    return createElement("button", { onClick: () => enhance.enhance() }, "Enhance prompt");
+    return createElement("button", { onClick: () => {
+      if (overrideDraft !== null) {
+        setDraft(overrideDraft);
+        enhance.enhance("auto", overrideDraft);
+      } else enhance.enhance();
+    } }, "Enhance prompt");
   }
 
   beforeEach(() => {
@@ -98,6 +104,91 @@ describe("prompt enhancement generation", () => {
   }
 
   const stopRequests = () => fetchMock.mock.calls.filter(([url]) => url === "/api/chat/stop");
+
+  it("keeps a changed alias and uses the original prefix only after explicit Apply", async () => {
+    function CommandProbe() {
+      const [draft, setDraft] = useState(`/img ${ORIGINAL}`);
+      editDraft = setDraft;
+      const prepared = prepareChatPromptEnhancement(draft, false);
+      const enhance = usePromptEnhance({
+        draft, sourceDraft: prepared.draft, setDraft, familiarId: "cody",
+        mode: prepared.mode, context: null,
+        transformEnhanced: (text) => applyChatPromptEnhancement(prepared, text),
+      });
+      current = { draft, ...enhance };
+      return createElement("button", { onClick: () => enhance.enhance() }, "Enhance");
+    }
+    await act(async () => { renderer = create(createElement(CommandProbe)); });
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(streams).toHaveLength(1);
+    await act(async () => editDraft(`/image ${ORIGINAL}`));
+    await finish();
+    expect(current.state.phase).toBe("suggested");
+    expect(current.draft).toBe(`/image ${ORIGINAL}`);
+    await act(async () => current.apply());
+    expect(current.draft).toBe(`/img ${ENHANCED}`);
+    await act(async () => current.revert());
+    expect(current.draft).toBe(`/image ${ORIGINAL}`);
+  });
+
+
+  it("does not auto-apply, and reattaches the original prefix, when the slash command is deleted mid-run", async () => {
+    // Regression for PRRT_kwDOSsT04M6gfvmL: the reviewer's exact scenario was
+    // starting `/research foo` then deleting `/research ` while the stream
+    // runs. Removing the command also changes `prepared.mode` (research ->
+    // chat), which the existing context-fingerprint guard (see "discards
+    // generation when the selected context changes" above) already treats as
+    // a fingerprint change and cancels outright -- so the run is discarded,
+    // never silently auto-applied with a lost prefix.
+    function CommandProbe() {
+      const [draft, setDraft] = useState(`/research ${ORIGINAL}`);
+      editDraft = setDraft;
+      const prepared = prepareChatPromptEnhancement(draft, false);
+      const enhance = usePromptEnhance({
+        draft, sourceDraft: prepared.draft, setDraft, familiarId: "cody",
+        mode: prepared.mode, context: null,
+        transformEnhanced: (text) => applyChatPromptEnhancement(prepared, text),
+      });
+      current = { draft, ...enhance };
+      return createElement("button", { onClick: () => enhance.enhance() }, "Enhance");
+    }
+    await act(async () => { renderer = create(createElement(CommandProbe)); });
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(streams).toHaveLength(1);
+    // The user deletes the whole "/research " prefix while the stream runs.
+    await act(async () => editDraft(ORIGINAL));
+    expect(current.state.phase).toBe("idle");
+    expect(current.draft).toBe(ORIGINAL);
+    expect(streams[0].signal.aborted).toBe(true);
+    expect(stopRequests()).toHaveLength(1);
+    // A fresh Enhance on the now-plain draft starts its own clean run rather
+    // than resurrecting the discarded `/research` request.
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(streams).toHaveLength(2);
+    await finish(streams[1]);
+    expect(current.state).toMatchObject({ phase: "applied", original: ORIGINAL });
+    expect(current.draft).toBe(ENHANCED);
+    await act(async () => current.revert());
+    expect(current.draft).toBe(ORIGINAL);
+  });
+
+  it("auto-applies an override queued with the composer edit in the same event", async () => {
+    await act(async () => {
+      renderer = create(createElement(Probe, { overrideDraft: ORIGINAL }));
+    });
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(current.draft).toBe(ORIGINAL);
+    expect(streams).toHaveLength(1);
+    await finish();
+    expect(current.state).toMatchObject({ phase: "applied", original: ORIGINAL });
+    expect(current.draft).toBe(ENHANCED);
+    await act(async () => current.revert());
+    expect(current.draft).toBe(ORIGINAL);
+  });
 
   it("keeps a healthy 19-second cold start alive and applies the model rewrite", async () => {
     await begin();

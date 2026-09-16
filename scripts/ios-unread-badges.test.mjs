@@ -24,15 +24,19 @@ assert.match(model, /seedFamiliarViews\(nextFamiliars\.map\(\\\.id\), in: nil\)/
 assert.match(model, /loadFamiliarViews\(\)/, "init should load persisted views");
 assert.match(model, /cave-familiar-views\.json/, "views should persist to disk");
 
-// Opening a chat or a familiar's threads marks it read.
+assert.match(model, /var threadViews: \[String: Date\] = \[:\]/,
+  "read acknowledgements must have conversation-level identity");
+assert.match(model, /func markThreadViewed\(_ thread: ChatThread,/);
+assert.match(model, /projectContextDefaults\.set\(seen, forKey: Self\.threadViewKey\(thread\.id\)\)/,
+  "conversation read state must persist independently of familiar-wide migration baselines");
+
+// Opening one conversation must not acknowledge other conversations.
 const chat = await read("Views/ChatView.swift");
-assert.match(chat, /app\.markFamiliarViewed\(\s*thread\.familiarIds,\s*in: app\.projectContext\(for: thread\)\s*\)/, "opening a chat marks its familiars read in that thread's project context");
+assert.match(chat, /app\.markThreadViewed\(thread\)/, "opening a chat acknowledges only that conversation");
+assert.doesNotMatch(chat, /app\.markFamiliarViewed\(/);
 const threads = await read("Views/FamiliarThreadsView.swift");
-assert.match(
-  threads,
-  /app\.markFamiliarViewed\(\[familiar\.id\],\s*in: projectContext\)/,
-  "opening a familiar's threads marks it read in the explicit picker context",
-);
+assert.doesNotMatch(threads, /app\.markFamiliarViewed\(/,
+  "browsing the session picker is not reading every conversation");
 
 // The Chats row shows an accent unread dot.
 const home = await read("Views/ChatsHomeView.swift");
@@ -41,9 +45,11 @@ const home = await read("Views/ChatsHomeView.swift");
 // \s* between the calls so the rail's multi-line chain matches too.
 assert.match(
   home,
-  /if app\.projectHasUnread\(familiar\.id\) \{\s*Circle\(\)\s*\.fill\(chrome\.accent\)/,
-  "the familiar row avatar should show an accent unread dot",
+  /if hasUnread \{\s*Circle\(\)\s*\.fill\(accentColor\)/,
+  "the conversation row shows an accent unread dot",
 );
-assert.match(home, /if app\.projectHasUnread\(familiar\.id\) \{ parts\.append\("unread"\) \}/, "VoiceOver should announce unread");
+assert.match(home, /app\.seenBoundary\(for: thread\)/, "unread comes from the exact conversation context");
+assert.match(home, /app\.markThreadViewed\(thread, through: activityAt\)/);
+assert.match(home, /if hasUnread \{ parts\.append\("unread"\) \}/, "VoiceOver should announce unread");
 
 console.log("ios-unread-badges: ok");

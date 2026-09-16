@@ -1,10 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveCodeRail, type CodeRailSignals, type CodeRailState } from "./code-rail.ts";
+import { resolveCodeRail, codeRailChangeSignature, hasNewCodeRailChanges, type CodeRailSignals, type CodeRailState } from "./code-rail.ts";
 
 const base: CodeRailSignals = {
   hasRepo: false, changeCount: 0, terminalActive: false, pinned: false, dismissed: false,
 };
+
+test("inline chat opts into nudging without reopening or changing the selected tab", () => {
+  const prev: CodeRailState = { available: true, open: false, activeTab: "files", changeCount: 0 };
+  const next = resolveCodeRail({ ...base, hasRepo: true, dismissed: true, changeCount: 2, autoRevealChanges: false }, prev);
+  assert.equal(next.open, false);
+  assert.equal(next.activeTab, "files");
+  assert.equal(resolveCodeRail({ ...base, hasRepo: true, pinned: true, autoRevealChanges: false }, prev).open, true);
+});
+
+test("new-change signatures ignore first load and ordering, but detect edits at the same file count", () => {
+  const a = { path: "a.ts", status: "modified", insertions: 1 };
+  const b = { path: "b.ts", status: "added", insertions: 2 };
+  const original = codeRailChangeSignature([a, b]);
+  assert.equal(hasNewCodeRailChanges(null, original), false, "loading existing dirt is not new work");
+  assert.equal(hasNewCodeRailChanges(original, codeRailChangeSignature([b, a])), false, "unchanged polls/order do not pulse");
+  assert.equal(hasNewCodeRailChanges(original, codeRailChangeSignature([{ ...a, insertions: 3 }, b])), true);
+  assert.equal(hasNewCodeRailChanges(original, codeRailChangeSignature([{ ...a, path: "c.ts" }, b])), true);
+  assert.equal(hasNewCodeRailChanges(original, codeRailChangeSignature([])), false, "committing/clearing does not pulse");
+  assert.equal(hasNewCodeRailChanges("[]", original), true);
+  assert.equal(hasNewCodeRailChanges(
+    codeRailChangeSignature([{ ...a, changeVersion: "1:1:10" }]),
+    codeRailChangeSignature([{ ...a, changeVersion: "2:2:10" }]),
+  ), true, "same-size edits with identical diffstats are still new changes");
+});
 
 test("plain chat → not available, closed", () => {
   const r = resolveCodeRail(base, null);

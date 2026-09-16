@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+assert.match(source, /await stampChangedFiles\(files, \(filePath\) => resolveContainedFileMetadata\(repoRoot, filePath\)\)/, "metadata reads are awaited through the bounded, failure-isolated helper");
+
 
 assert.match(
   source,

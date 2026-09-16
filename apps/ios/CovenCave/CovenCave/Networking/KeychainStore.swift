@@ -36,6 +36,38 @@ enum KeychainStore {
         SecItemDelete(baseQuery(key) as CFDictionary)
     }
 
+    // New managed-device items only. Do not migrate legacy items or enable sync.
+    static func deviceAccessString(forKey key: String) throws -> String? {
+        var query = baseQuery(key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data,
+              let value = String(data: data, encoding: .utf8)
+        else { throw DeviceAccessError.storage }
+        return value
+    }
+
+    static func setDeviceAccess(_ value: String, forKey key: String) throws {
+        let query = baseQuery(key)
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrSynchronizable as String: false,
+        ]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            let add = query.merging(attributes) { _, new in new }
+            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else {
+                throw DeviceAccessError.storage
+            }
+        } else if status != errSecSuccess {
+            throw DeviceAccessError.storage
+        }
+    }
+
     private static func baseQuery(_ key: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

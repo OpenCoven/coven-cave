@@ -16,8 +16,8 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 
 assert.match(
   surface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
-  "chat surface keeps the Familiar scope and Canvas scope",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar";/,
+  "chat surface keeps the Familiar scope while Canvas lives in Explore",
 );
 assert.doesNotMatch(
   surface,
@@ -29,10 +29,14 @@ assert.doesNotMatch(
   /scope === "settings" \? \([\s\S]*?<ChatSettingsView \/>/,
   "the ChatSurface no longer owns the consolidated ChatSettingsView branch",
 );
-assert.match(
+// `localDaemonReady` existed only to gate the canonical vault, which could be
+// read on Cave's own host alone. The vault moved to the dedicated memory
+// application and the flag went with it, so the Familiar scope no longer
+// threads a readiness prop nothing consumes.
+assert.doesNotMatch(
   surface,
-  /<ChatFamiliarView[\s\S]*localDaemonReady=\{localDaemonReady\}/,
-  "the Familiar scope receives the daemon readiness needed by merged settings",
+  /localDaemonReady/,
+  "the retired daemon-readiness gate is not threaded into the Familiar scope",
 );
 
 // --- chat-settings-view: reads and writes the policy through /api/config ------

@@ -74,7 +74,7 @@ final class LaunchThreadIntentTests: XCTestCase {
         XCTAssertNil(app.pendingProjectNavigationIntent)
     }
 
-    func testWarmTaskDeepLinkOpensImmediatelyWhenTaskAndProjectAreHydrated() throws {
+    func testWarmTaskDeepLinkIsRejectedAsDesktopOnlyEvenWhenHydrated() throws {
         let app = makeApp()
         app.selectedTab = .settings
         let alpha = project("alpha", "Alpha")
@@ -105,10 +105,13 @@ final class LaunchThreadIntentTests: XCTestCase {
 
         app.handleDeepLink(url)
 
+        // Tasks has no native destination on chat-only iOS, so a task deep
+        // link is rejected outright — even when the task/project catalogs are
+        // already hydrated — rather than opening the card.
         XCTAssertEqual(app.deepLink, .tasks)
-        XCTAssertEqual(app.selectedTab, .tasks)
-        XCTAssertEqual(app.projectContext, .project(alpha))
-        XCTAssertEqual(app.cardToOpen?.id, target.id)
+        XCTAssertEqual(app.selectedTab, .settings)
+        XCTAssertNil(app.projectContext)
+        XCTAssertNil(app.cardToOpen)
         XCTAssertNil(app.pendingProjectNavigationIntent)
     }
 

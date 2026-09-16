@@ -12,7 +12,9 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { validateGitHubReviewBody } from "@/lib/github-review";
+import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-review";
+import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
+import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,7 +24,7 @@ const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Z
 const EVENTS = new Set(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
 
 export async function POST(req: Request) {
-  let body: { repo?: unknown; number?: unknown; event?: unknown; body?: unknown };
+  let body: { repo?: unknown; number?: unknown; event?: unknown; body?: unknown; headSha?: unknown; reviewedRevision?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -33,6 +35,16 @@ export async function POST(req: Request) {
   const number = Number.parseInt(String(body.number ?? ""), 10);
   const event = typeof body.event === "string" ? body.event.toUpperCase() : "";
   const reviewBody = validateGitHubReviewBody(body.body);
+  const headSha = sanitizeGithubObjectSha(typeof body.headSha === "string" ? body.headSha : null);
+  if (body.headSha !== undefined && !headSha) {
+    return NextResponse.json({ ok: false, error: "invalid head SHA" }, { status: 400 });
+  }
+  const reviewedRevision = parseGitHubDiffRevision(body.reviewedRevision);
+  if (body.reviewedRevision !== undefined && (!reviewedRevision ||
+      reviewedRevision.repo.toLowerCase() !== repo.toLowerCase() ||
+      reviewedRevision.number !== number || reviewedRevision.headSha !== headSha)) {
+    return NextResponse.json({ ok: false, error: "invalid reviewed revision" }, { status: 400 });
+  }
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -57,6 +69,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
     const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/reviews`, {
       method: "POST",
@@ -67,7 +80,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
       },
       cache: "no-store",
-      body: JSON.stringify({ event, ...(text ? { body: text } : {}) }),
+      body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
     });
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || !data) {
@@ -87,7 +100,7 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to submit review" },
-      { status: 502 },
+      { status: e instanceof GitHubRevisionError ? e.status : 502 },
     );
   }
 }

@@ -113,6 +113,7 @@ import {
 } from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
+import { isFlowSession, useFlowDiscussion } from "@/lib/flow-discussion";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
@@ -121,6 +122,10 @@ import {
 } from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
+import {
+  applyChatPromptEnhancement,
+  prepareChatPromptEnhancement,
+} from "@/lib/chat-prompt-enhance";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useSurfacePreference } from "@/lib/surface-preferences";
@@ -233,6 +238,8 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
+import { ChatApproveCard, type ApproveSubmissionResult } from "@/components/chat-approve-card";
+import { approveRequestKey, protectApproveMarkers, sliceApproveBlocks } from "@/lib/approve-blocks";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -410,6 +417,7 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
 // owner never comes back to consume it.
 const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
 const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the saved request can be identified.";
 
 type Props = {
   familiar: Familiar;
@@ -524,12 +532,6 @@ export type ChatViewHandle = {
 };
 
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
-
-function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
-  const origin = session?.origin as string | undefined;
-  const title = session?.title?.trim() ?? "";
-  return origin === "flow" || title.startsWith("Flow: ") || title.startsWith("Flow step: ");
-}
 
 async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
   const params = new URLSearchParams({ sessionId });
@@ -2080,7 +2082,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFamiliarsDetailTab("daily-notes");
     window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
   }, [setFamiliarsDetailTab, setFamiliarsSelectedId, setFamiliarsViewMode]);
-  const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
+  const flowBackedSession = isFlowSession(session) || origin === "flow";
+  const flowDiscussion = useFlowDiscussion((newSessionId) => {
+    onSessionsChanged?.();
+    onSessionStarted?.({ newSessionId, expectedSessionId: sessionId, composeInstance });
+  }, sessionId);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
@@ -3822,11 +3828,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
   // rewrite from this thread's familiar (rule engine as offline fallback) and
   // owns the race-safe apply/suggest/revert lifecycle.
+  const preparedPromptEnhancement = prepareChatPromptEnhancement(
+    input,
+    Boolean(activeProjectRoot),
+  );
+  const promptEnhancementCommandPrefix = preparedPromptEnhancement.commandPrefix;
+  const transformEnhancedPrompt = useCallback(
+    (enhanced: string) => applyChatPromptEnhancement(
+      { commandPrefix: promptEnhancementCommandPrefix },
+      enhanced,
+    ),
+    [promptEnhancementCommandPrefix],
+  );
   const promptEnhance = usePromptEnhance({
     draft: input,
+    sourceDraft: preparedPromptEnhancement.draft,
     setDraft: setInput,
+    transformEnhanced: transformEnhancedPrompt,
     familiarId: familiar.id,
-    mode: activeProjectRoot ? "code" : "chat",
+    mode: preparedPromptEnhancement.mode,
     context: {
       activeProject: activeProjectRoot
         ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
@@ -5161,6 +5181,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     opts?: ChatSendOptions,
     controlsOverride?: ChatSendControls,
     allowBusy = false,
+    submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
@@ -5177,6 +5198,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
+    // A card may become stale while the runtime binding is being saved.
+    if (submission && !submission.canSend()) return;
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if (!trimmed && outgoingAttachments.length === 0) return;
@@ -5397,6 +5420,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const assistantId = crypto.randomUUID();
     const assistantTurn: Turn = {
       id: assistantId,
+      persistedTurnId: null,
       parentId: userTurn.id,
       role: "assistant",
       text: "",
@@ -5444,6 +5468,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       },
       markPersistenceConfirmed: () => {
         attentionSettlement.markPersistenceConfirmed();
+        submission?.onPersisted();
       },
       reconcileCanonicalSessions: () => {
         attentionSettlement.reconcileNow();
@@ -5592,7 +5617,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // position, send the explicit parent so the server builds the new
           // turn off the right node rather than defaulting to the current
           // active leaf.
-          ...(opts?.parentTurnId !== undefined ? { parentTurnId: opts.parentTurnId } : {}),
+          ...(opts?.parentTurnId !== undefined ? {
+            parentTurnId: turnsRef.current.find((turn) => turn.id === opts.parentTurnId)?.persistedTurnId
+              ?? opts.parentTurnId,
+          } : {}),
         }),
         signal: controller.signal,
       });
@@ -6182,6 +6210,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
+    if (flowBackedSession) {
+      announce("Flow transcripts are read-only. Choose Discuss in Chat to continue.", "assertive");
+      return;
+    }
     if (historyState === "offline") {
       announce("Offline copies are read only. Reconnect before sending.", "assertive");
       return;
@@ -6315,6 +6347,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     announce("Mission denied — resuming.", "polite");
     void send(DENY_MISSION_MESSAGE);
   };
+  function approvalUnavailableReason(turnId: string): string | undefined {
+    if (historyState !== "loaded") return "Reconnect and load this chat before sending answers.";
+    if (busy || abortRef.current) return "Wait for the current response before sending answers.";
+    if (activePath.at(-1)?.id !== turnId) return "This request is from an earlier turn. Reply in the composer instead.";
+    if (turnsRef.current.find((turn) => turn.id === turnId)?.persistedTurnId === null) {
+      return APPROVAL_RELOAD_REQUIRED;
+    }
+    if (!projectLaunchReady) return projectLaunchMessage;
+    if (isOmnigentHostOptionId(runtimeHost)) return "Choose a chat host before sending answers in this conversation.";
+    return undefined;
+  }
+  async function sendApprovalAnswers(turnId: string, text: string): Promise<ApproveSubmissionResult> {
+    const unavailable = approvalUnavailableReason(turnId);
+    if (unavailable) return { ok: false, error: unavailable };
+    if (!text.trim()) return { ok: false, error: "Choose an option or enter an answer before sending." };
+    const originSessionId = currentSessionRef.current;
+    let persisted = false;
+    updateFollowing(true);
+    schedulePin();
+    // Send only these answers, without consuming the draft, attachments,
+    // quote target, slash commands, or pending composer edit branch.
+    await sendRaw(text, [], [], { parentTurnId: turnId }, undefined, false, {
+      canSend: () =>
+        currentSessionRef.current === originSessionId &&
+        !transcriptHandlersRef.current.approvalUnavailableReason(turnId),
+      onPersisted: () => { persisted = true; },
+    });
+    return persisted
+      ? { ok: true }
+      : { ok: false, error: "Answers were not confirmed. Check the chat error and use Retry if available." };
+  }
   const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
   transcriptHandlersRef.current = {
     siblingsFor,
@@ -6328,6 +6391,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     send,
     approveAutoMission,
     denyAutoMission,
+    sendApprovalAnswers,
+    approvalUnavailableReason,
   };
   transcriptHandlersRef.current.cancelSend = cancelSend;
 
@@ -6742,6 +6807,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   usage: ev.usage,
                   costUsd: ev.costUsd,
                   responseMetadata: ev.responseMetadata,
+                  persistedTurnId: ev.persistedTurnId ?? t.persistedTurnId,
                   progress: settleRunningProgress(t.progress, ev.isError ? "error" : "done"),
                 }
               : t,
@@ -7277,7 +7343,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
-  const offlineReadOnly = historyState === "offline";
+  const offlineReadOnly = historyState === "offline" || flowBackedSession;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -7287,7 +7353,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     taskArmed ||
     dictation.listening ||
     dropActive;
-  const showDockedComposer = shouldShowDockedComposer({
+  const showDockedComposer = !flowBackedSession && shouldShowDockedComposer({
     following,
     hasStagedInput: hasStagedComposerInput,
     releasedScrollDistance,
@@ -8186,6 +8252,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           aria-label="Conversation"
           aria-busy={busy || undefined}
         >
+          {flowBackedSession ? (
+            <div className="flex flex-wrap items-center gap-3 p-4 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+              <p>This is a read-only Flow execution, not a Chat conversation.</p>
+              {sessionId && onSessionStarted ? (
+                <Button size="sm" loading={flowDiscussion.busy} onClick={() => void flowDiscussion.discuss(sessionId)}>
+                  Discuss in Chat
+                </Button>
+              ) : null}
+              {flowDiscussion.error ? (
+                <ErrorState compact live={false} headline="Couldn’t open discussion" subtitle={flowDiscussion.error} />
+              ) : null}
+            </div>
+          ) : null}
           {turns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistorySkeleton />
@@ -8286,18 +8365,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
-          {!offlineReadOnly && shouldShowChatArchiveNudge({
-            taskLifecycle: linkedContext?.task?.lifecycle ?? null,
-            sessionArchived: Boolean(session?.archived_at),
-            dismissed: archiveNudgeDismissed,
-          }) ? (
-            <ChatArchiveNudge
-              taskTitle={linkedContext?.task?.title ?? ""}
-              onArchive={() => void setChatArchived(true)}
-              onDismiss={dismissArchiveNudge}
-              archiving={archiving}
-            />
-          ) : null}
           <div ref={tailRef} />
         </div>
 
@@ -8463,6 +8530,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
+      {!offlineReadOnly && shouldShowChatArchiveNudge({
+        taskLifecycle: linkedContext?.task?.lifecycle ?? null,
+        sessionArchived: Boolean(session?.archived_at),
+        dismissed: archiveNudgeDismissed,
+        sessionBusy: busy || autoMissionActive || voiceCallOpen || session?.status === "running",
+      }) ? (
+        <ChatArchiveNudge
+          taskTitle={linkedContext?.task?.title ?? ""}
+          onArchive={() => void setChatArchived(true)}
+          onDismiss={dismissArchiveNudge}
+          archiving={archiving}
+        />
+      ) : null}
       {inlineComposer ? null : showDockedComposer ? composerNode : null}
       {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
@@ -8712,6 +8792,32 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
   return out;
 }
 
+function splitSegmentsForApprove(
+  segments: MessageBubbleSegment[],
+  onSubmit: (text: string) => Promise<ApproveSubmissionResult>,
+  disabledReason?: string,
+  restoreMarkers: (text: string) => string = (text) => text,
+): MessageBubbleSegment[] {
+  return segments.flatMap((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceApproveBlocks(restoreMarkers(segment.text)).map((piece, pieceIndex): MessageBubbleSegment =>
+      piece.kind === "text"
+        ? { kind: "text", text: piece.text }
+        : {
+            kind: "block",
+            key: `approve-${segmentIndex}-${pieceIndex}-${approveRequestKey(piece.request)}`,
+            node: (
+              <ChatApproveCard
+                request={piece.request}
+                disabledReason={disabledReason}
+                onSubmit={({ text }) => onSubmit(text)}
+              />
+            ),
+          },
+    );
+  });
+}
+
 function splitSegmentsForPreviews(
   segments: MessageBubbleSegment[],
   onOpenPreview?: (url: string) => void,
@@ -8765,6 +8871,8 @@ type TranscriptHandlers = {
   send: (override?: string) => Promise<void>;
   approveAutoMission: () => void;
   denyAutoMission: () => void;
+  sendApprovalAnswers: (turnId: string, text: string) => Promise<ApproveSubmissionResult>;
+  approvalUnavailableReason: (turnId: string) => string | undefined;
 };
 
 /**
@@ -8791,8 +8899,7 @@ const TranscriptRows = memo(function TranscriptRows({
   foldOpen,
   onToggleFold,
   familiar,
-  // Presence input for regenerateFor (see doc comment); unused directly.
-  busy: _busy,
+  busy,
   readOnly,
   foundTurnId,
   feedbackContext,
@@ -8903,6 +9010,13 @@ const TranscriptRows = memo(function TranscriptRows({
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
           onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
+          approvalDisabledReason={readOnly
+            ? "Offline copies are read only. Reconnect before answering."
+            : busy
+              ? "Wait for the current response before sending answers."
+              : allTurns.at(-1)?.id !== t.id
+                ? "This request is from an earlier turn. Reply in the composer instead."
+                : t.persistedTurnId === null ? APPROVAL_RELOAD_REQUIRED : undefined}
           handlersRef={handlersRef}
           feedbackContext={readOnly ? undefined : feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
@@ -8974,6 +9088,13 @@ const TranscriptRows = memo(function TranscriptRows({
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
               onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
+              approvalDisabledReason={readOnly
+                ? "Offline copies are read only. Reconnect before answering."
+                : busy
+                  ? "Wait for the current response before sending answers."
+                  : allTurns.at(-1)?.id !== t.id
+                    ? "This request is from an earlier turn. Reply in the composer instead."
+                    : t.persistedTurnId === null ? APPROVAL_RELOAD_REQUIRED : undefined}
               handlersRef={handlersRef}
               feedbackContext={readOnly ? undefined : feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
@@ -9032,6 +9153,7 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onRequest,
+  approvalDisabledReason,
   handlersRef,
   feedbackContext,
   branchNav,
@@ -9040,6 +9162,7 @@ function TurnRowImpl({
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
+  approvalDisabledReason?: string;
   /** Stable latest-ref for stream controls; avoids a fresh Stop callback prop. */
   handlersRef: React.RefObject<TranscriptHandlers>;
   familiar: Familiar;
@@ -9284,14 +9407,22 @@ function TurnRowImpl({
     // artifact or GitHub card. The later splitters refine only the remaining
     // prose. MessageBubble still owns `visible` as the complete durable source;
     // this splitter output owns only the settled inline presentation.
+    // Keep prompt/option backticks opaque to sibling Markdown-based parsers
+    // without splitting image groups that span a question card.
+    const protectedQuestions = protectApproveMarkers(visibleWithGh);
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
-        splitSegmentsForImages(
-          splitSegmentsForPreviews(
-            splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
-            onOpenPreview,
-            onOpenUrl,
+        splitSegmentsForApprove(
+          splitSegmentsForImages(
+            splitSegmentsForPreviews(
+              splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+              onOpenPreview,
+              onOpenUrl,
+            ),
           ),
+          (text) => handlersRef.current.sendApprovalAnswers(turn.id, text),
+          approvalDisabledReason,
+          (text) => protectedQuestions.restore(text, true),
         ),
         artifactCtx,
       ),
@@ -10325,6 +10456,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&
     Boolean(prev.onRequest) === Boolean(next.onRequest) &&
+    prev.approvalDisabledReason === next.approvalDisabledReason &&
     // Branch nav: compare by index+total (the displayed position changes when
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.

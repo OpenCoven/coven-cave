@@ -7,6 +7,74 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-14
+
+> X Comms, and the iOS conversations rework — everything since v0.4.1.
+
+The three version numbers between this release and v0.4.1 were stamped and
+tagged but never published: v0.4.2 and v0.4.3 had their release runs cancelled,
+and a later attempt failed its authorization gate. Their work was never
+withdrawn — it stayed on `main` and ships here, under the next number after the
+last release anyone actually received. `scripts/check-version-continuity.mjs`
+now refuses a stamp that skips a published version, so the gap cannot silently
+reopen.
+
+### Added
+- **X Comms room.** A console for the one decision X publishing turns on: a
+  person releasing a single write, once, at a slot they chose. A work queue
+  grouped by what each draft needs, a composer for posts, threads, replies,
+  quotes, DMs and long-form Articles, a six-state approval card, a slot picker
+  drawn from follower activity, and an agenda of what is queued.
+
+  **It is demo-backed and says so.** Its drafts are seeded fixtures, and
+  Approve moves a local record and schedules a slot no dispatcher reads —
+  nothing reaches X. A banner above the room states this, and the live publish
+  path remains the X panel inside Comms Operations. The room appears only for a
+  familiar you have granted the X publish capability.
+
+### Changed
+- Replace native iOS workspace navigation with Conversations and Settings,
+  chat search, and familiar selection inside each conversation (#5379).
+- Remove Tasks, Reminders, and global project navigation from the native app,
+  including their widget and shortcut entrypoints. Project access remains an
+  explicit conversation-level binding.
+- Preserve cached history, conversation drafts and attachments, and per-thread
+  read state across navigation and reconnects.
+- Desktop now persists tailnet device approvals it manages.
+- Native chat lands on the latest message instead of a blank scroll position.
+- Session rail corners are symmetric again.
+- Deliver visual comparisons without depending on session-owned servers.
+- Update Next.js, Sharp, and Vitest patch dependencies.
+
+### Fixed
+- Preserve a protected read-only Windows `OWNER RIGHTS` ACL entry when validating
+  client v1 discovery paths, while continuing to refuse any such entry that can
+  write data, delete content, or rewrite ownership or permissions.
+- Reduce ordinary iOS chat renderer startup JavaScript from 3.6 MB to about
+  160 KB by loading the bundled diagram engine only for completed diagrams
+  (#5350). This is a payload reduction, not a measured device-latency percentage.
+- Release detached iOS message renderers and ignore callbacks after teardown
+  while preserving streamed-response recovery (#5324).
+- Recheck exact conversation access before sends, retries, and queued replay;
+  stop active voice when that authority is revoked, without auto-restarting it.
+- Keep cached conversations readable when live catalogs are unavailable.
+- Accept bounded App Store Connect key identifiers without assuming a fixed
+  ten-character length in the read-only TestFlight availability receipt.
+- Restore reliable chat prompt enhancement and make protocol conformance probes
+  portable across supported platforms.
+- Bounded discovery readiness failures are classified rather than swallowed (#5377).
+- Client v1 keeps SDK v0.0.1 compatibility (#5376).
+- iOS accepts an empty optional TestFlight inverse linkage, and binds TestFlight
+  beta details through build linkage.
+
+### Included source updates
+- Improve desktop Home and chat entry flows, title visibility, automatic
+  conversation naming, and Markdown attachment reading.
+- Separate Flow execution conversations from ordinary Chat and retain research,
+  image, and human-answer commands during chat enhancement.
+- Strengthen cross-thread continuity, standard-user discovery, research run
+  projections, and isolated workflow/runtime fixtures.
+
 ## [0.4.1] - 2026-09-09
 
 > Makes assistant responses easier to read in native iOS chat.

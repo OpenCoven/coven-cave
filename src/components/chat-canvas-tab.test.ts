@@ -1,9 +1,5 @@
 // @ts-nocheck
-// Chat → Canvas tab: the saved-sketch gallery. "Save to Canvas" in the inline
-// artifact viewer persists to /api/canvas, but after the standalone Canvas
-// page retired those saves had no surface. The tab closes the loop: the chat
-// scope tabs gain Canvas, backed by ChatCanvasView (fetch, toolbar search +
-// kind filter, sandboxed thumbnails, preview modal → CanvasEditor, delete).
+// Canvas navigation reuses the saved-sketch gallery without changing its store.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -12,25 +8,26 @@ import * as canvasGallery from "../lib/canvas-gallery.ts";
 const { formatArtifactWhen, mergeCanvasArtifactSnapshot, sortArtifactsForGallery } = canvasGallery;
 
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./chat-canvas-view.tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("./chat-artifact-viewer.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/chat-canvas.css", import.meta.url), "utf8");
 
-// ── Tab wiring in the chat surface ──────────────────────────────────────────
-assert.match(
+// ── Gallery destination wiring ──────────────────────────────────────────────
+assert.doesNotMatch(
   surface,
-  /"conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
-  "FamiliarsScope includes the canvas scope",
+  /\{ id: "canvas", label: "Canvas" \}/,
+  "Chat no longer duplicates the Canvas navigation entry",
+);
+assert.doesNotMatch(
+  surface,
+  /ChatCanvasView/,
+  "Chat no longer mounts its own gallery",
 );
 assert.match(
-  surface,
-  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \}/,
-  "Canvas is a first-class scope tab between Projects and Familiar",
-);
-assert.match(
-  surface,
-  /scope === "canvas"[\s\S]{0,400}?<ChatCanvasView familiarId=\{activeFamiliarId\}/,
-  "canvas scope renders ChatCanvasView with the active familiar (for Refine)",
+  workspace,
+  /mode === "canvas"[\s\S]{0,200}?<ChatCanvasView familiarId=\{activeId\}/,
+  "Canvas renders the existing gallery with the active familiar for Refine",
 );
 
 // ── Gallery behavior ────────────────────────────────────────────────────────

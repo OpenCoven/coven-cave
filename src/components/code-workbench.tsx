@@ -315,63 +315,68 @@ export function CodeWorkbench({
   return (
     <div className="code-room" data-testid="code-workbench">
       <div className="code-room__header" data-testid="code-workbench-header">
-        <CodeSessionPicker
-          queue={queue}
-          mode={queueMode}
-          selected={row}
-          onModeChange={onQueueModeChange}
-          onSelect={(id) => onSelectSession?.(id)}
-          onCreate={onNewSession}
-        />
-        <div className="code-room__facts">
-          {branch ? (
-            <span className="code-room__fact" title={workRoot}>
-              <Icon name="ph:git-branch" width={10} height={10} aria-hidden />
-              <span className="code-room__fact-value">{branch}</span>
-              {row.git?.isWorktree ? <span className="code-room__fact-note">worktree</span> : null}
+        <div className="code-room__identity">
+          <CodeSessionPicker
+            queue={queue}
+            mode={queueMode}
+            selected={row}
+            onModeChange={onQueueModeChange}
+            onSelect={(id) => onSelectSession?.(id)}
+            onCreate={onNewSession}
+          />
+          <div className="code-room__facts">
+            {branch ? (
+              <span className="code-room__fact" title={workRoot}>
+                <Icon name="ph:git-branch" width={10} height={10} aria-hidden />
+                <span className="code-room__fact-value">{branch}</span>
+                {row.git?.isWorktree ? <span className="code-room__fact-note">worktree</span> : null}
+              </span>
+            ) : null}
+            {diffstat ? <span className="code-room__fact">{diffstat}</span> : null}
+            {pr?.url ? (
+              <a
+                className="focus-ring code-room__fact code-room__fact--link"
+                href={pr.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Icon name="ph:git-pull-request" width={10} height={10} aria-hidden />
+                {pr.number != null ? `#${pr.number}` : "PR"}
+                {pr.state ? <span className="code-room__fact-note">{pr.state}</span> : null}
+              </a>
+            ) : null}
+            <span className="code-room__fact code-room__fact--muted">
+              {relativeTime(row.updated_at)}
             </span>
-          ) : null}
-          {diffstat ? <span className="code-room__fact">{diffstat}</span> : null}
-          {pr?.url ? (
-            <a
-              className="focus-ring code-room__fact code-room__fact--link"
-              href={pr.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Icon name="ph:git-pull-request" width={10} height={10} aria-hidden />
-              {pr.number != null ? `#${pr.number}` : "PR"}
-              {pr.state ? <span className="code-room__fact-note">{pr.state}</span> : null}
-            </a>
-          ) : null}
-          <span className="code-room__fact code-room__fact--muted">
-            {relativeTime(row.updated_at)}
-          </span>
+          </div>
         </div>
-        <span className="code-room__spacer" />
-        <button
-          ref={inspectorAnchor}
-          type="button"
-          className="focus-ring code-room__action"
-          aria-expanded={inspectorOpen}
-          aria-label="Session inspector — branch, worktree, environment"
-          title="Session inspector — branch, worktree, environment"
-          onClick={() => setInspectorOpen((open) => !open)}
-        >
-          <Icon name="ph:sliders-bold" width={12} height={12} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="focus-ring code-room__action"
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts"
-          onClick={() => setKeysOpen(true)}
-        >
-          <Icon name="ph:key-bold" width={12} height={12} aria-hidden />
-        </button>
-        <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
-          Open in Chat
-        </Button>
+        <div className="code-room__header-actions" role="group" aria-label="Session controls">
+          <button
+            ref={inspectorAnchor}
+            type="button"
+            className="focus-ring code-room__action"
+            aria-expanded={inspectorOpen}
+            aria-label="Session inspector — branch, worktree, environment"
+            title="Session inspector — branch, worktree, environment"
+            onClick={() => setInspectorOpen((open) => !open)}
+          >
+            <Icon name="ph:sliders-bold" width={12} height={12} aria-hidden />
+            Session
+          </button>
+          <button
+            type="button"
+            className="focus-ring code-room__action"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts"
+            onClick={() => setKeysOpen(true)}
+          >
+            <Icon name="ph:key-bold" width={12} height={12} aria-hidden />
+            Shortcuts
+          </button>
+          <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
+            Open in Chat
+          </Button>
+        </div>
         <Popover
           open={inspectorOpen}
           onOpenChange={setInspectorOpen}

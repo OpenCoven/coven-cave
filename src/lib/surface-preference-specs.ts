@@ -92,6 +92,7 @@ export const surfacePreferenceSpecs = {
     staleOnly: { key: "familiarMemory.staleOnly", defaultValue: false, parse: (value: unknown) => typeof value === "boolean" ? value : undefined } satisfies SurfacePreferenceSpec<boolean>,
   },
   marketplace: {
+    // "skills" remains parseable so the hub can migrate it to Yours + Skills.
     section: enumSpec("marketplace.section", "browse", ["browse", "crafts", "skills", "build"] as const),
     category: stringSpec("marketplace.category", "All"),
     kind: enumSpec("marketplace.kind", "all", ["all", "mcp", "api", "skill", "prompt", "craft", "knowledge-pack"] as const),

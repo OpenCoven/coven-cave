@@ -134,7 +134,7 @@ struct CaveClient {
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     /// Dedicated session for chat SSE streams. `timeoutIntervalForResource`
@@ -148,7 +148,7 @@ struct CaveClient {
         config.timeoutIntervalForRequest = 600
         config.timeoutIntervalForResource = 24 * 3600
         config.waitsForConnectivity = true
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     private var session: URLSession { Self.restSession }
@@ -217,7 +217,7 @@ struct CaveClient {
     ) async throws -> RequestResult {
         for attempt in 0...retryDelays.count {
             do {
-                let (data, response) = try await session.data(for: req)
+                let (data, response) = try await session.data(for: req, delegate: DeviceAccessRedirectGuard.shared)
                 return RequestResult(data: data, response: response)
             } catch {
                 guard attempt < retryDelays.count, isTransient(error) else { throw error }
@@ -320,6 +320,9 @@ struct CaveClient {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            if CaveConnection.isManagedDeviceCredential(token) {
+                req.setValue(try DeviceAccessClient.origin(for: baseURL), forHTTPHeaderField: "Origin")
+            }
         }
         if let body {
             req.httpBody = body
@@ -341,11 +344,13 @@ struct CaveClient {
     /// endpoint (503) or the credential can't refresh — callers treat nil as "keep
     /// using what we have".
     func refreshAccessToken() async -> String? {
+        guard CaveConnection.shouldRefreshAccessToken(CaveConnection.accessToken) else { return nil }
         guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
         guard let (data, resp) = try? await data(for: req),
               let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let decoded = try? JSONDecoder().decode(TokenRefreshResponse.self, from: data),
-              decoded.ok, let token = decoded.token, !token.isEmpty
+              decoded.ok, let token = decoded.token, !token.isEmpty,
+              CaveConnection.shouldRefreshAccessToken(token)
         else { return nil }
         return token
     }
@@ -615,13 +620,9 @@ struct CaveClient {
         }
     }
 
-    /// URL for the operator's server avatar image (`GET /api/profile/avatar`),
-    /// cache-busted by `updatedAt` so a new desktop upload invalidates the
-    /// image. A plain image load can't set an `Authorization` header, so when
-    /// the desktop enforces a mobile access token it is attached as a
-    /// `coven_access_token` query param — the same credential the server
-    /// accepts from the query string (server.ts). `nil` when unconfigured.
-    func operatorAvatarURL(updatedAt: String?) -> URL? {
+    /// Header-authenticated operator avatar, cache-busted by `updatedAt`.
+    /// Unavailable credentials fail closed to the initials fallback.
+    func operatorAvatarSource(updatedAt: String?) -> CaveImageSource? {
         guard let base = connection.baseURL,
               var comps = URLComponents(
                 url: base.appendingPathComponent("api/profile/avatar"),
@@ -631,11 +632,16 @@ struct CaveClient {
         if let updatedAt, !updatedAt.isEmpty {
             items.append(URLQueryItem(name: "v", value: updatedAt))
         }
-        if let token = try? CaveConnection.credentialForRequest(to: comps.url ?? base) {
-            items.append(URLQueryItem(name: "coven_access_token", value: token))
-        }
         if !items.isEmpty { comps.queryItems = items }
-        return comps.url
+        guard let url = comps.url else { return nil }
+        do {
+            if let token = try CaveConnection.credentialForRequest(to: url) {
+                return .authenticatedRemoteURL(url, bearerToken: token)
+            }
+            return .remoteURL(url)
+        } catch {
+            return nil
+        }
     }
 
     // MARK: - Sessions
@@ -1030,7 +1036,7 @@ struct CaveClient {
                     req.timeoutInterval = 600
 
                     onRequestStarted()
-                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {
                         let data = try await Self.readServerErrorBody(from: bytes)
@@ -1076,7 +1082,7 @@ struct CaveClient {
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
-                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
                     if (resp as? HTTPURLResponse)?.statusCode == 404 {
                         throw NoResumableRun()
                     }

@@ -42,28 +42,6 @@
         ],
         "matcher": "Bash"
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "bd prime --hook-json",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-session-exit-retirement.mjs\"",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
     ]
   },
   "permissions": {
@@ -77,9 +55,6 @@
       "Bash(pnpm codemod:design:check)",
       "Bash(pnpm check:tests-wired)",
       "Bash(pnpm exec tsc --noEmit *)",
-      "Bash(bd show *)",
-      "Bash(bd ready*)",
-      "Bash(bd list *)",
       "mcp__claude-design__read_file",
       "mcp__claude-design__list_files",
       "mcp__claude-design__list_projects"

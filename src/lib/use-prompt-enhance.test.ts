@@ -29,23 +29,33 @@ assert.match(
 );
 assert.match(
   source,
-  /const baseDraft = draftOverride \?\? draftRef\.current/,
-  "callers that transform a draft before Enhance can pass the exact text without waiting for a render",
+  /const baseDraft = draftOverride \?\? sourceDraftRef\.current \?\? draftRef\.current/,
+  "callers can enhance prepared text while the hook still tracks the full live draft",
 );
 assert.match(
   source,
-  /settleEnhance\(activeRequest\.baseDraft, draftRef\.current\)/,
-  "completion settles against the CURRENT draft, not the one captured at request time",
+  /originalDraft: draftOverride \?\? draftRef\.current,[\s\S]*?applyDraft: transformEnhancedRef\.current \?\? \(\(value\) => value\)/,
+  "each enhance request snapshots the full original draft and the apply transform it started with",
 );
 assert.match(
   source,
-  /phase: "suggested",[\s\S]*?enhanced: recommendation\.payload\.enhanced,[\s\S]*?offline,[\s\S]*?recommendation,/,
-  "a draft edited mid-flight downgrades the rewrite to a suggestion instead of overwriting",
+  /settleEnhance\(activeRequest\.originalDraft, draftRef\.current\)/,
+  "completion settles against the full composer input captured at request time",
 );
 assert.match(
   source,
-  /original: activeRequest\.baseDraft,[\s\S]*?offline,[\s\S]*?recommendation,/,
-  "the pre-enhance original only exists in the applied phase, so typing mid-flight has nothing to lose",
+  /const applied = activeRequest\.applyDraft\(recommendation\.payload\.enhanced\)/,
+  "completion computes the applied draft from the request-time transform snapshot",
+);
+assert.match(
+  source,
+  /phase: "suggested",[\s\S]*?enhanced: recommendation\.payload\.enhanced,[\s\S]*?applied,[\s\S]*?offline,[\s\S]*?recommendation,/,
+  "a draft edited mid-flight downgrades the rewrite to a suggestion while preserving the request-time apply target",
+);
+assert.match(
+  source,
+  /original: activeRequest\.originalDraft,[\s\S]*?offline,[\s\S]*?recommendation,/,
+  "the applied phase keeps the full pre-enhance composer value for a correct revert target",
 );
 assert.match(
   source,
@@ -95,7 +105,7 @@ assert.match(
     /isPromptEnhancementRecommendationCurrent\(\s*recommendation,\s*currentContextFingerprintRef\.current,\s*\)/,
   );
   const handled = completion.indexOf("handledRecommendationRef.current = recommendation.id");
-  const settle = completion.indexOf("settleEnhance(activeRequest.baseDraft, draftRef.current)");
+  const settle = completion.indexOf("settleEnhance(activeRequest.originalDraft, draftRef.current)");
   assert.ok(freshness >= 0, "completion rechecks the newest context fingerprint");
   assert.ok(
     freshness < handled && freshness < settle,
@@ -150,6 +160,11 @@ assert.doesNotMatch(
 );
 
 // ── Announcements ────────────────────────────────────────────────────────────
+assert.match(
+  source,
+  /setDraft\(previous\.applied\)/,
+  "manual Apply uses the captured request-time transformed draft, not the latest live prefix",
+);
 assert.match(
   source,
   /announce\(offline \? "Prompt enhanced offline\." : "Prompt enhanced\.", "polite"\)/,

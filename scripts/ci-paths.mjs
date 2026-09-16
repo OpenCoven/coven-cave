@@ -25,8 +25,9 @@ const CLIENT_V1_PATH =
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change
 // should not pay for lint, typecheck, and build. But that also meant the docs
 // index ratchet, which only fires when a doc is added or renamed, never ran on
-// the change it guards. This class gates one cheap builtins-only check instead.
-const DOCS_PATH = /^docs\//;
+// the change it guards. This class gates cheap builtins-only contracts instead,
+// including the continuity skill and the agent guides that load it.
+const DOCS_PATH = /^(?:docs\/|AGENTS\.md$|CLAUDE\.md$|\.agents\/skills\/work-continuity\/)/;
 
 export function classifyCiPaths(paths) {
   const normalized = paths

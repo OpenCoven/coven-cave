@@ -31,7 +31,18 @@ struct ConnectionView: View {
     @State private var liveCheck: LiveCheckState = .idle
     @State private var approvalFailed = false
     @State private var approvalUnavailable = false
+    @State private var devicePairing = DevicePairingModel()
+    @State private var pairingBaseURL: URL?
+    @State private var handoffBaseURL: URL?
+    @State private var accessOperation: AccessOperation?
+    @State private var restoredDevicePairing = false
     @FocusState private var focused: Bool
+
+    private struct AccessOperation: Equatable {
+        let id = UUID()
+        let origin: String
+        let create: Bool
+    }
 
     enum LiveCheckState: Equatable {
         case idle
@@ -75,14 +86,21 @@ struct ConnectionView: View {
                                 systemImage: diagnosis.systemImage
                             )
                         } else if case .needsAuth(let message) = app.connectionState {
-                            // The desktop is alive but token-gated — say how to
-                            // pair instead of the generic unreachable shrug.
-                            connectionRecoveryCallout(
-                                title: "Pairing needed",
-                                message: message,
-                                guidance: "Open Cave on your desktop and scan the latest QR code.",
-                                systemImage: "qrcode.viewfinder"
-                            )
+                            if devicePairing.legacyDesktop || !canRequestAccess {
+                                connectionRecoveryCallout(
+                                    title: "Pairing needed",
+                                    message: message,
+                                    guidance: "Open Cave on your desktop and scan the latest QR code.",
+                                    systemImage: "qrcode.viewfinder"
+                                )
+                            } else {
+                                connectionRecoveryCallout(
+                                    title: "Pairing needed",
+                                    message: message,
+                                    guidance: "Request access below and approve this device on the desktop.",
+                                    systemImage: "desktopcomputer"
+                                )
+                            }
                         }
                     }
 
@@ -101,6 +119,18 @@ struct ConnectionView: View {
             .toolbarVisibility(.hidden, for: .navigationBar)
             .onAppear {
                 host = app.connection?.host ?? ""
+                if !restoredDevicePairing {
+                    restoredDevicePairing = true
+                    if let origin = devicePairing.restore(),
+                       host.isEmpty || CaveConnection.accessToken == nil
+                        || CaveConnection(host: host).baseURL.flatMap(CaveConnection.credentialOrigin) == origin {
+                        host = origin
+                        pairingBaseURL = URL(string: origin)
+                        if devicePairing.pending?.device.status == .pending || devicePairing.pending?.device.status == .allowed {
+                            accessOperation = AccessOperation(origin: origin, create: false)
+                        }
+                    }
+                }
                 canPaste = UIPasteboard.general.hasStrings
                 if !host.isEmpty { manualEntry = true }
             }
@@ -110,6 +140,15 @@ struct ConnectionView: View {
                 if phase == .active { canPaste = UIPasteboard.general.hasStrings }
             }
             .onChange(of: host) { _, updatedHost in
+                let origin = CaveConnection(host: updatedHost).baseURL.flatMap(CaveConnection.credentialOrigin)
+                if handoffBaseURL.flatMap(CaveConnection.credentialOrigin) != origin {
+                    handoffBaseURL = nil
+                }
+                if accessOperation?.origin != origin { accessOperation = nil }
+                if devicePairing.pending?.origin != origin && accessOperation?.origin != origin && handoffBaseURL == nil {
+                    devicePairing.resetPresentation()
+                    pairingBaseURL = nil
+                }
                 if pendingManualInvite?.host != updatedHost {
                     pendingManualInvite = nil
                 }
@@ -126,6 +165,19 @@ struct ConnectionView: View {
             // construction); leaving the screen cancels it too.
             .task(id: host) {
                 await runLiveCheck()
+            }
+            .task(id: accessOperation) {
+                guard let operation = accessOperation else { return }
+                await runDevicePairing(operation)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { accessOperation = nil }
+            }
+            .onDisappear { accessOperation = nil }
+            .onChange(of: devicePairing.message) { _, message in
+                if let message {
+                    UIAccessibility.post(notification: .announcement, argument: message)
+                }
             }
             .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
                 Button("OK", role: .cancel) {}
@@ -237,7 +289,7 @@ struct ConnectionView: View {
         .controlSize(.large)
         .tint(.white)
         .foregroundStyle(Color(white: 0.08))
-        .disabled(busy || appLock.isAuthenticating)
+        .disabled(busy || devicePairing.isRunning || appLock.isAuthenticating)
         .accessibilityHint("Opens the camera to scan the QR code shown in Cave on your desktop")
     }
 
@@ -314,19 +366,59 @@ struct ConnectionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button(action: connect) {
-                Label(
-                    busy ? "Connecting…" : "Connect",
-                    systemImage: busy ? "arrow.triangle.2.circlepath" : "bolt.horizontal.circle.fill"
-                )
-                .font(.body.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+            if let message = devicePairing.message {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(chrome.textSecondary)
+                    if let pending = devicePairing.pending {
+                        Text("Verification code: \(pending.device.verificationCode)")
+                            .font(.callout.monospaced())
+                            .foregroundStyle(chrome.textPrimary)
+                            .textSelection(.enabled)
+                        Text("Match this code in the desktop's access request.")
+                            .font(.caption)
+                            .foregroundStyle(chrome.textMuted)
+                    }
+                }
+                .accessibilityElement(children: .combine)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!hostPresent || busy || appLock.isAuthenticating)
-            .shadow(color: chrome.accent.opacity(hostPresent && !busy ? 0.4 : 0), radius: 14, y: 5)
+
+            if devicePairing.isRunning {
+                HStack {
+                    ProgressView()
+                    Text("Awaiting desktop approval…")
+                        .font(.callout)
+                    Spacer()
+                    Button("Cancel", role: .cancel) { accessOperation = nil }
+                        .frame(minHeight: 44)
+                }
+            } else if canRequestAccess && !devicePairing.legacyDesktop {
+                Button(canResumeRequest ? "Resume request" : "Request access") {
+                    beginDevicePairing(create: !canResumeRequest)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(appLock.isAuthenticating)
+            }
+
+            if !canRequestAccess || devicePairing.legacyDesktop {
+                Button(action: connect) {
+                    Label(
+                        busy ? "Connecting…" : "Connect",
+                        systemImage: busy ? "arrow.triangle.2.circlepath" : "bolt.horizontal.circle.fill"
+                    )
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!hostPresent || busy || appLock.isAuthenticating)
+                .disabled(devicePairing.isRunning)
+                .shadow(color: chrome.accent.opacity(hostPresent && !busy ? 0.4 : 0), radius: 14, y: 5)
+            }
         }
         .padding(16)
         .glass(.raised, cornerRadius: 20)
@@ -355,7 +447,9 @@ struct ConnectionView: View {
             .foregroundStyle(Color.green)
         case .pairingRequired:
             Label(
-                "Desktop found — pairing needed. Connect will walk you through it.",
+                canRequestAccess
+                    ? "Desktop found — request access and approve this device on the desktop."
+                    : "Desktop found — pairing needed. Connect will walk you through it.",
                 systemImage: "qrcode.viewfinder"
             )
             .font(.caption.weight(.medium))
@@ -393,8 +487,13 @@ struct ConnectionView: View {
         guard !Task.isCancelled, !busy else { return }
         switch outcome {
         case .found(let url):
+            pairingBaseURL = nil
             liveCheck = .found(port: url.port)
         case .unauthorized:
+            pairingBaseURL = nil
+            liveCheck = .pairingRequired
+        case .pairingRequired(let url):
+            pairingBaseURL = url
             liveCheck = .pairingRequired
         case .credentialFailure(let message):
             liveCheck = .credentialBlocked(message)
@@ -405,6 +504,44 @@ struct ConnectionView: View {
 
     private var hostPresent: Bool {
         !host.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var canRequestAccess: Bool {
+        if devicePairing.pending != nil { return true }
+        return selectedManagedBaseURL != nil
+    }
+
+    private var selectedManagedBaseURL: URL? {
+        pairingBaseURL ?? handoffBaseURL
+            ?? (app.connection?.host == host ? app.managedPairingBaseURL : nil)
+    }
+
+    private var canResumeRequest: Bool {
+        devicePairing.pending?.device.status == .pending || devicePairing.pending?.device.status == .allowed
+    }
+
+    private func beginDevicePairing(create: Bool) {
+        focused = false
+        guard let url = selectedManagedBaseURL ?? CaveConnection(host: cleanHost(host)).baseURL else { return }
+        host = url.absoluteString
+        accessOperation = AccessOperation(origin: url.absoluteString, create: create)
+    }
+
+    private func runDevicePairing(_ operation: AccessOperation) async {
+        guard let url = URL(string: operation.origin) else { return }
+        guard let allowed = await devicePairing.run(
+            client: DeviceAccessClient(baseURL: url),
+            create: operation.create,
+            label: UIDevice.current.model
+        ), !Task.isCancelled, accessOperation == operation else { return }
+        let intent = PairingIntent(invite: CaveInvite(host: allowed.origin, token: allowed.credential))
+        let result = await configurePairing(intent)
+        guard !Task.isCancelled, accessOperation == operation else { return }
+        handleApprovalOutcome(result.outcome)
+        if app.connectionState == .connected, result.lease != nil {
+            Haptics.success()
+            UIAccessibility.post(notification: .announcement, argument: "Desktop access allowed.")
+        }
     }
 
     private func connectionRecoveryCallout(
@@ -446,6 +583,12 @@ struct ConnectionView: View {
     }
 
     private func connect() {
+        // A bare address at an approval gate must not configure an unapproved
+        // credential. Keep the existing button as a retry/discovery path.
+        if canRequestAccess && !devicePairing.legacyDesktop {
+            beginDevicePairing(create: !canResumeRequest)
+            return
+        }
         focused = false
         guard let parsedInvite = CaveInvite.parse(cleanHost(host)) else { return }
         let invite = CaveInvite(
@@ -492,6 +635,21 @@ struct ConnectionView: View {
     /// parser. A credential-carrying invite connects immediately (the
     /// seamless path); a bare host just fills the field for review.
     private func apply(_ input: String) {
+        if let baseURL = DeviceAccessClient.handoffOrigin(cleanHost(input)) {
+            accessOperation = nil
+            if devicePairing.pending?.origin != CaveConnection.credentialOrigin(for: baseURL) {
+                devicePairing.resetPresentation()
+            }
+            handoffBaseURL = baseURL
+            pairingBaseURL = baseURL
+            host = baseURL.absoluteString
+            pendingManualInvite = nil
+            manualEntry = true
+            focused = false
+            liveCheck = .pairingRequired
+            return
+        }
+        handoffBaseURL = nil
         guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
         host = invite.host
         if invite.token != nil {
@@ -527,6 +685,7 @@ struct ConnectionView: View {
     private func configurePairing(
         _ intent: PairingIntent
     ) async -> (outcome: AuthenticationOutcome, lease: AppModel.ConnectionDispatchLease?) {
+        guard !Task.isCancelled else { return (.denied, nil) }
         guard PairingApprovalPolicy.requiresApproval(hasExistingPairing: app.connection != nil) else {
             let lease = await app.configure(host: intent.host, token: intent.token)
             return (.authorized, lease)
@@ -534,7 +693,7 @@ struct ConnectionView: View {
         let outcome = await appLock.requestApproval(
             reason: "Confirm it's you to replace your desktop pairing"
         )
-        guard outcome == .authorized else { return (outcome, nil) }
+        guard outcome == .authorized, !Task.isCancelled else { return (outcome, nil) }
         let lease = await app.configure(host: intent.host, token: intent.token)
         return (.authorized, lease)
     }

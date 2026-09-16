@@ -71,6 +71,12 @@ for (const state of ["## Living", "## Program", "## Historical", "## Tombstone"]
   );
 }
 
+const historical = index.split("\n## Historical\n")[1]?.split("\n## ")[0];
+assert.ok(
+  historical?.includes("](branch-cleanup-relaxation.md)"),
+  "the legacy Beads cleanup proposal must be Historical, not current retirement guidance",
+);
+
 console.log(
   `docs-index.test.mjs: index ok (${onDisk.length} documents classified, ${linkTargets.length} links resolved)`,
 );

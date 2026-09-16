@@ -35,7 +35,6 @@ assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
 assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
 assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
 assert.match(settings, /familiar\.id/);
-assert.match(settings, /localDaemonReady/);
 assert.match(settings, /allFamiliars/);
 assert.match(settings, /<Tabs<FamiliarSettingsTab>/);
 assert.match(settings, /initialTab\?: FamiliarSettingsTab/);

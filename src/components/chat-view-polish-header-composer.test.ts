@@ -388,35 +388,28 @@ assert.doesNotMatch(
   "Dead standalone icon-button chrome is removed with the buttons",
 );
 
-// Ultra-minimal header: the promoted voice + delete verbs are quiet at rest —
-// they use the shared reveal-on-hover utility (§8) against the header's
-// reveal-scope instead of a bespoke pointer-events dance (which could never
-// outrank its own hide rule). Archive, find and the kebab stay visible.
+// Session actions remain discoverable without hover; delete still confirms.
 assert.match(
   sessionHeader,
   /className="focus-ring cave-chat-actions-kebab"/,
-  "The overflow kebab is tagged so it stays visible while sibling actions collapse",
+  "The overflow kebab stays visible",
 );
 assert.match(
   sessionHeader,
-  /className="focus-ring cave-chat-delete-btn reveal-on-hover"/,
-  "The direct delete button is quiet at rest via the shared reveal utility",
+  /className="focus-ring cave-chat-delete-btn"/,
+  "The direct delete button stays visible without hover",
 );
 assert.match(
   sessionHeader,
-  /className="focus-ring voice-call-button reveal-on-hover"/,
-  "The direct voice button is quiet at rest via the shared reveal utility",
+  /className="focus-ring voice-call-button"/,
+  "The direct voice button stays visible without hover",
 );
 assert.doesNotMatch(
   styles,
   /\.focus-ring:not\(\.cave-chat-actions-kebab\)/,
   "The bespoke cluster hide rule is gone — its :not() chain outranked every reveal rule",
 );
-assert.match(
-  styles,
-  /\.cave-chat-session-actions:has\(\[aria-expanded="true"\]\) \.reveal-on-hover \{\s*opacity: 1;/,
-  "An armed popover keeps the cluster revealed so the anchor doesn't fade under it",
-);
+assert.doesNotMatch(sessionHeader, /reveal-on-hover/, "session controls never depend on pointer hover");
 // "No plan limits" is suppressed — the plan chip only shows a real limit.
 assert.match(
   source,

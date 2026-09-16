@@ -14,3 +14,4 @@ DerivedData/
 # + the standalone CSS the full-screen zoom view restyles lifted content with)
 CovenCave/Resources/markdown.html
 CovenCave/Resources/markdown.css
+CovenCave/Resources/markdown-mermaid.js

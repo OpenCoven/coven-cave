@@ -63,6 +63,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
       { keys: "⌘↑ / ⌘↓", description: "Cycle through familiars" },
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
+      { keys: "⇧⌘A", description: "Open Needs you (sessions blocked, failed or awaiting you)" },
       { keys: "⌥↵", description: "Thread rail: open the focused chat in a split pane" },
       { keys: "⌥⌘← / ⌥⌘→", description: "Move focus between split chat panes (also ⌥⌘↑ / ⌥⌘↓)" },
       { keys: "⌥⌘W", description: "Close the focused split chat pane" },

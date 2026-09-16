@@ -13,6 +13,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { stripTypeScriptTypes } from "node:module";
+import { protectApproveMarkers } from "../../../../lib/approve-blocks.ts";
+import { splitReasoning } from "../../../../lib/chat-reasoning.ts";
+import { extractChatAttentionMarker, extractIncompleteChatAttentionMarker } from "../../../../lib/chat-attention-marker.ts";
 
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const chatView = await readFile(
@@ -26,10 +30,10 @@ const renderedText = await readFile(
 
 function renderedTextAttentionPipeline() {
   const start = renderedText.indexOf(
-    "const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);",
+    "const approveSplit = protectApproveMarkers(extractAgentAttachmentMarkers(text).text);",
   );
   const end = renderedText.indexOf("\nexport function chatTurnVisibleText", start);
-  assert.notEqual(start, -1, "expected the shared marker pipeline to start at reasoningSplit");
+  assert.notEqual(start, -1, "expected the shared marker pipeline to start at question protection");
   assert.notEqual(end, -1, "expected the shared marker pipeline to end before the turn helper");
   return renderedText.slice(start, end);
 }
@@ -61,7 +65,7 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\([\s\S]{0,400}const \{ visible: visibleBody, reasoning: reasoningBody \} = splitReasoning\(args\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);[\s\S]{0,320}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(reasoningBody\)\s*:\s*extractChatAttentionMarker\(reasoningBody\)/,
+    /function prepareAttentionRequest\([\s\S]{0,400}const approveSplit = protectApproveMarkers\(args\.text\);\s*const \{ visible: visibleBody, reasoning: reasoningBody \} = splitReasoning\(approveSplit\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);[\s\S]{0,320}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(reasoningBody\)\s*:\s*extractChatAttentionMarker\(reasoningBody\)/,
     "the helper must parse markers only from visible text while separately scrubbing reasoning for persisted reloads; incomplete mode uses the shared pending-tail sanitizer in both places",
   );
 });
@@ -230,8 +234,8 @@ test("the shared projection never strips preview/GitHub/image markers before att
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
-    "skill markers must extract directly from reasoningSplit.visible — nothing may strip preview/GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
+    /const approveSplit = protectApproveMarkers\(extractAgentAttachmentMarkers\(text\)\.text\);\s*const reasoningSplit = splitReasoning\(approveSplit\.text\);\s*const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
+    "skill markers must extract from reasoningSplit.visible via only the marker-protecting pass — nothing may strip preview/GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
   );
   const attentionIndex = pipeline.indexOf(
     "const attentionSplit = extractChatAttentionMarker(resultSplit.visible, {",
@@ -261,7 +265,7 @@ test("the shared projection extracts research and strips display markers only af
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
     "research extraction and preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
   );
 });
@@ -280,3 +284,22 @@ test("ChatView counts current or persisted attention as meaningful output", () =
 });
 
 console.log("chat attention persistence: ok");
+
+for (const incomplete of [false, true]) {
+  test(`persistence protects question attributes before reasoning and attention (incomplete=${incomplete})`, () => {
+    const start = route.indexOf("function prepareAttentionRequest(");
+    const end = route.indexOf("\nfunction attentionClearOperationForTurn", start);
+    const prepare = new Function(
+      "protectApproveMarkers", "splitReasoning", "extractChatAttentionMarker", "extractIncompleteChatAttentionMarker",
+      `${stripTypeScriptTypes(route.slice(start, end))}; return prepareAttentionRequest;`,
+    )(protectApproveMarkers, splitReasoning, extractChatAttentionMarker, extractIncompleteChatAttentionMarker);
+    const marker = '<coven:approve kind="questions" prompt="Use ` here?" options="Yes|No" />';
+    const result = prepare({
+      text: `${marker}\n<thinking>private reasoning</thinking>\n<coven:attention reason="decision" />`,
+      sessionId: "session", turnId: "turn", requestedAt: "2026-09-09T00:00:00.000Z", incomplete,
+    });
+    assert.equal(result.text.trim(), marker);
+    assert.equal(result.reasoning, "private reasoning");
+    assert.deepEqual(result.request, { sessionId: "session", turnId: "turn", requestedAt: "2026-09-09T00:00:00.000Z", reason: "decision" });
+  });
+}

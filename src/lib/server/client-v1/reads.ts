@@ -27,6 +27,7 @@
 
 import type { ChatTurn, ConversationFile, ConversationSummary } from "../../cave-conversations.ts";
 import type { CaveProject } from "../../cave-projects-types.ts";
+import type { FlowSessionReference } from "../../flow-session.ts";
 import { resolveActivePath } from "../../conversation-tree.ts";
 import type { VisibleFamiliarRosterEntry } from "../familiar-roster.ts";
 import {
@@ -72,6 +73,8 @@ export type ClientV1ProjectRecord = {
   updatedAt: string;
 };
 
+export type ClientV1ConversationSummary = ConversationSummary & { flow?: FlowSessionReference };
+
 export type ClientV1ConversationRecord = {
   id: string;
   familiarId: string;
@@ -99,6 +102,8 @@ export type ClientV1ConversationRecord = {
   runtime?: string;
   title?: string;
   origin?: string;
+  /** Exact execution ownership; these remain readable canonical resources. */
+  flow?: FlowSessionReference;
   status?: string;
   exitCode?: number | null;
   pending?: boolean;
@@ -234,7 +239,7 @@ export function projectClientV1Project(project: CaveProject): ClientV1ProjectRec
 }
 
 export function projectClientV1Conversation(
-  summary: ConversationSummary,
+  summary: ClientV1ConversationSummary,
 ): ClientV1ConversationRecord {
   const harness = optionalText(summary.harness);
   const model = optionalText(summary.model);
@@ -251,6 +256,7 @@ export function projectClientV1Conversation(
     ...(runtime ? { runtime } : {}),
     ...(title ? { title } : {}),
     ...(origin ? { origin } : {}),
+    ...(summary.flow ? { flow: summary.flow } : {}),
     ...(status ? { status } : {}),
     // `null` is a fact — the run has no exit code yet — so it is served, while
     // `undefined` (the store never recorded one) is omitted.

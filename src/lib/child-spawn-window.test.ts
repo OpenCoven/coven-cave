@@ -123,11 +123,26 @@ function childProcessCalls(raw: string, fileName = "fixture.ts"): ChildProcessCa
   const checker = program.getTypeChecker();
   const boundSource = program.getSourceFile(absoluteFileName) ?? source;
   const launchers = new Set<ts.Symbol>();
+  const promisifiers = new Set<ts.Symbol>();
   const launcherNamespaces = new Set<ts.Symbol>();
   const initializers = new Map<ts.Symbol, ts.Expression>();
 
   const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined =>
     checker.getSymbolAtLocation(identifier);
+
+  for (const statement of boundSource.statements) {
+    if (!ts.isImportDeclaration(statement)
+      || !ts.isStringLiteral(statement.moduleSpecifier)
+      || statement.moduleSpecifier.text !== "node:util") continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const specifier of bindings.elements) {
+      const symbol = symbolAt(specifier.name);
+      if ((specifier.propertyName?.text ?? specifier.name.text) === "promisify" && symbol) {
+        promisifiers.add(symbol);
+      }
+    }
+  }
 
   for (const statement of boundSource.statements) {
     if (!ts.isImportDeclaration(statement)
@@ -260,7 +275,7 @@ function childProcessCalls(raw: string, fileName = "fixture.ts"): ChildProcessCa
     }
     if (ts.isCallExpression(unwrapped)
       && ts.isIdentifier(unwrapped.expression)
-      && unwrapped.expression.text === "promisify") {
+      && promisifiers.has(symbolAt(unwrapped.expression))) {
       return aliasesLauncher(unwrapped.arguments[0]);
     }
     if (ts.isArrowFunction(unwrapped)) {
@@ -609,6 +624,19 @@ for (const [label, callee] of [
   assert.equal(childProcessCalls(safe)[0]?.hasWindowsHide, true, `${label} accepts the explicit safe option`);
 }
 
+const bundledPromisifyFixture = [
+  'import { execFile as execFile2 } from "node:child_process";',
+  'import { promisify as promisify2 } from "node:util";',
+  'const run = promisify2(execFile2);',
+  'run("tailscale", ["status", "--json"], { windowsHide: true });',
+].join("\n");
+assert.equal(childProcessCalls(bundledPromisifyFixture)[0]?.hasWindowsHide, true);
+assert.equal(
+  childProcessCalls(bundledPromisifyFixture.replace("windowsHide: true", "timeout: 1000"))[0]?.hasWindowsHide,
+  false,
+  "bundler-renamed promisify imports retain launcher provenance",
+);
+
 const namespaceFixture = [
   'import * as childProcess from "node:child_process";',
   'childProcess.spawn("codex", [], { windowsHide: true });',
@@ -701,7 +729,9 @@ assert.equal(
   true,
   "the tracked packaged server artifact is semantically audited for the hidden Tailscale subprocess option",
 );
-const unsafePackagedServer = packagedServerSource.replace(/, windowsHide: true(?= \})/, "");
+const unsafePackagedCall = currentPackagedTailnetCall.text.replace(/\bwindowsHide: true,?\s*/, "");
+assert.notEqual(unsafePackagedCall, currentPackagedTailnetCall.text);
+const unsafePackagedServer = packagedServerSource.replace(currentPackagedTailnetCall.text, unsafePackagedCall);
 const unsafePackagedTailnetCall = childProcessCalls(unsafePackagedServer, packagedServerPath)
   .find((call) => call.text.includes('"status", "--json"'));
 assert.equal(

@@ -12,14 +12,14 @@ assert.match(
 );
 assert.match(
   src,
-  /export function useDraftPersistence\(\s*key: string,\s*value: string,\s*delayMs = 250,\s*\): \{ clearNow: \(\) => void \}/,
-  "useDraftPersistence(key, value, delayMs) returns a synchronous clearNow()",
+  /export function useDraftPersistence\(\s*key: string,\s*value: string,\s*delayMs = 250,\s*\{ enabled = true \}: \{ enabled\?: boolean \} = \{\},\s*\): \{ clearNow: \(\) => void \}/,
+  "draft persistence defaults to enabled and exposes a hydration gate",
 );
 
 // ── Debounce (extracted verbatim from the two composers) ─────────────────────
 assert.match(
   src,
-  /useEffect\(\(\) => \{\s*latestRef\.current = \{ key, value \};\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(key, value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs\]\);/,
+  /useEffect\(\(\) => \{\s*latestRef\.current = enabled \? \{ key, value \} : null;\s*if \(!enabled\) return;\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(key, value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs, enabled\]\);/,
   "draft writes are debounced so mobile typing does not hit localStorage per keystroke",
 );
 
@@ -29,9 +29,11 @@ assert.match(
 // switches). A ref-driven empty-dep cleanup flushes the latest value instead.
 assert.match(
   src,
-  /useEffect\(\s*\(\) => \(\) => writeComposerDraft\(latestRef\.current\.key, latestRef\.current\.value\),\s*\[\],\s*\);/,
-  "unmount flushes the latest draft value the cancelled debounce never wrote",
+  /useEffect\(\s*\(\) => \(\) => \{\s*if \(latestRef\.current\) writeComposerDraft\(latestRef\.current\.key, latestRef\.current\.value\);\s*\},\s*\[\],\s*\);/,
+  "unmount flushes only a restored draft, never the empty SSR placeholder",
 );
+const home = readFileSync(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
+assert.match(home, /useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS, \{\s*enabled: draftRestored,/);
 // clearNow must update latestRef too, or a send that unmounts the composer in
 // the same tick would flush the PRE-send text — resurrecting the sent prompt.
 assert.match(

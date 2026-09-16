@@ -3,6 +3,7 @@ import type { IconName } from "@/lib/icon";
 
 export const SESSION_ORIGINS: readonly SessionOrigin[] = [
   "chat",
+  "flow",
   "mention",
   "board",
   "cron",
@@ -15,6 +16,7 @@ export const SESSION_ORIGINS: readonly SessionOrigin[] = [
 
 export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
   chat: "chat",
+  flow: "flow",
   mention: "mention",
   board: "board",
   cron: "cron",
@@ -27,6 +29,7 @@ export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
 
 export const ORIGIN_ICON: Record<SessionOrigin, IconName> = {
   chat: "ph:chat-circle-dots-fill",
+  flow: "ph:tree-structure",
   mention: "ph:at",
   board: "ph:kanban",
   cron: "ph:alarm-fill",

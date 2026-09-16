@@ -3,8 +3,8 @@
 import "@/styles/cave-chat.css";
 
 /**
- * ChatArchiveNudge — the inline "final nudge" rendered at the bottom of a
- * chat transcript when the chat is tied to a task whose execution lifecycle
+ * ChatArchiveNudge — persistent guidance above the composer, outside the
+ * transcript scroller, when the chat is tied to a task whose execution lifecycle
  * has reached `completed`. Companion to the global inbox toast (see
  * `task-archive-nudge.ts`): the toast catches the user wherever they are, this
  * banner persists inside the chat itself so it's still here when they come
@@ -15,6 +15,7 @@ import "@/styles/cave-chat.css";
  */
 
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 
 export type ChatArchiveNudgeProps = {
   /** Title of the linked task — surfaced in the nudge body for context. */
@@ -39,52 +40,46 @@ export function ChatArchiveNudge({
       role="status"
       aria-live="polite"
       aria-label={`Ready to archive: ${title}`}
-      className="cave-chat-archive-nudge focus-ring relative mx-auto my-4 flex w-full max-w-[42rem] items-start gap-3 rounded-xl border border-[color-mix(in_oklch,var(--accent-presence)_38%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] px-4 py-3 text-[length:var(--text-base)] text-[var(--text-primary)] shadow-[0_1px_0_color-mix(in_oklch,var(--accent-presence)_20%,transparent)]"
+      className="cave-chat-archive-nudge mx-4 mb-2 flex shrink-0 items-start gap-3 rounded-[var(--radius-card)] border border-[var(--border-strong)] bg-[var(--bg-raised)] p-4 text-[length:var(--text-base)] text-[var(--text-primary)]"
       data-testid="chat-archive-nudge"
     >
       <Icon
         name="ph:archive"
         width={18}
-        className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
+        className="shrink-0 text-[var(--text-secondary)]"
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-[var(--text-primary)]">
-          Ready to archive
-        </div>
-        <p className="mt-0.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+        <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
+          Task complete. Ready to archive?
+        </h2>
+        <p className="mt-1 break-words text-[length:var(--text-sm)] text-[var(--text-secondary)]">
           <span className="font-medium text-[var(--text-primary)]">{title}</span>
-          {" is complete. Archive this chat to clear it from your active sessions."}
+          {" is complete. Archive when you're finished with this topic."}
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
+        <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+          This clears the chat from active chats, not its history. Find it again with Show archived.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button
+            variant="primary"
             onClick={onArchive}
-            disabled={archiving}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] px-2.5 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] disabled:opacity-50"
+            loading={archiving}
+            leadingIcon="ph:archive"
+            className="focus-ring"
           >
-            <Icon name="ph:archive" width={12} aria-hidden />
             {archiving ? "Archiving…" : "Archive chat"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="ghost"
             onClick={onDismiss}
             disabled={archiving}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
+            className="focus-ring"
           >
-            Dismiss
-          </button>
+            Keep chat open
+          </Button>
         </div>
       </div>
-      <button
-        type="button"
-        aria-label="Dismiss archive nudge"
-        onClick={onDismiss}
-        disabled={archiving}
-        className="focus-ring absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
-      >
-        <Icon name="ph:x" width={12} aria-hidden />
-      </button>
     </div>
   );
 }

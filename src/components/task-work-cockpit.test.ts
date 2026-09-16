@@ -107,11 +107,11 @@ assert.match(
 );
 
 // The collapsed code rail is an in-flow flex child sized against a flex ROW
-// (14px wide, full height). The cockpit root is a flex COLUMN, so hosting it
+// (28px wide, full height). The cockpit root is a flex COLUMN, so hosting it
 // there docked it as a stub in the bottom-left corner under the composer.
 // It belongs inside the body row, before the body closes.
 const bodyStart = source.indexOf('<div className="task-work-cockpit__body">');
-const railStart = source.indexOf('className="workspace-rail-reopen focus-ring"');
+const railStart = source.indexOf("<CodeRailReopen");
 const sheetStart = source.indexOf("<WorkspaceRailSheet");
 assert.ok(bodyStart > -1 && railStart > bodyStart, "the reopen rail renders after the cockpit body opens");
 // The `</div>` immediately before the rail sheet closes the body row, so the
@@ -121,7 +121,7 @@ assert.ok(bodyEnd > bodyStart, "the cockpit body row closes before the rail shee
 assert.ok(railStart < bodyEnd, "the reopen rail renders inside the cockpit body row, not as a column child");
 assert.match(
   cockpitCss,
-  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 14px;[\s\S]{0,200}?align-self: stretch;/,
-  "the reopen pull tab reserves an ultra-minimal full-height edge beside the conversation",
+  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 calc\(var\(--space-6\) \+ var\(--space-1\)\);[\s\S]{0,200}?align-self: stretch;/,
+  "the reopen pull tab reserves a 28px full-height edge beside the conversation",
 );
-assert.doesNotMatch(source, /workspace-rail-reopen__label|>Code</, "the cockpit pull tab has no persistent vertical label");
+assert.match(source, /changeNonce=\{railController\.changeNonce\}/, "the cockpit shares Chat's new-change cue");

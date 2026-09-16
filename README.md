@@ -57,6 +57,26 @@ persist state offline, and hand a live session off to your phone over Tailscale.
 - **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows,
   automations, and marketplace-seeded catalog data.
 
+### Flow executions and Chat
+
+Automated Flow transcripts stay in **Flow runs**, not the ordinary Chat list.
+Research iterations stay grouped under their mission. In Chat's Sessions list,
+choose **Session view options > Flow runs** to inspect execution history and
+read transcripts without creating a chat.
+Use **Discuss in Chat** when you want a separate conversation with the familiar:
+it links back to the execution and starts with a bounded snapshot of its output,
+without resuming the automation or inheriting its runtime permissions.
+
+Execution ownership is retained independently of the capped, clearable run
+history. Older sessions are classified only from exact run/session links, never
+from a title such as "Flow:". Clearing history does not delete transcripts or
+make execution sessions reappear in Chat.
+
+Routine success stays quiet. Failures, approval requests, and checkpoints that
+need human input produce one actionable notification per run or Research
+mission, linking to that exact owner. Its guidance updates as blockers change;
+resolved work clears the notification without generating another completion.
+
 <div align="center">
 <img src="screenshots/canvas-chat.png" alt="Chat canvas" width="405">
 <img src="screenshots/workflows.png" alt="Workflows surface" width="405">
@@ -341,33 +361,21 @@ pnpm check:tests-wired  # ensure new tests are registered
 ## Contributing
 
 `main` is **protected** — every change goes through a short-lived branch and a
-pull request. This repository uses Beads for durable task tracking and managed
-worktrees for implementation:
+pull request. Use **GitHub Issues** for durable development work and the
+[Cave Project](https://github.com/orgs/OpenCoven/projects/9) for planning.
 
-```bash
-git fetch origin main
-bd prime
-bd ready
-bd show <bead-id>
-bd update <bead-id> --claim
-
-pnpm beads:worktrees:create \
-  --bead <bead-id> \
-  --branch fix/<bead-id>-short-description \
-  --owner <your-name> \
-  --purpose "Describe the scoped change"
-
-# Use the exact path printed by the command. For the branch above:
-cd .worktrees/<bead-id>-short-description
-pnpm install --frozen-lockfile
-```
+Start with [GitHub work tracking](docs/workflows/github-work-tracking.md).
+Reuse matching work and record its owner, scope, branch, and worktree before
+editing. Follow that guide's ownership and budget review before creating an
+issue-owned worktree from current `origin/main` with `--no-track`.
+Beads is retired from development tracking; its remaining records are
+preserved as historical reference, not another queue.
 
 Make the branch PR-shaped before opening: a scoped diff, relevant local
-verification, and a clear summary of what changed. Do not replace the managed
-creation command with raw `git worktree add`; the managed command records the
-lifecycle metadata required for safe retirement. Follow the post-merge
-retirement procedure in [`AGENTS.md`](AGENTS.md) instead of deleting a branch or
-worktree ad hoc.
+verification, and a clear summary of what changed. Follow
+[Branch To Merge](.agents/skills/branch-to-merge/SKILL.md) for the authorized
+protected merge. Worktree retirement is a separate decision requiring current
+authority and preservation evidence; never delete branches or worktrees ad hoc.
 
 - **Releases, TestFlight uploads, and updater validation start from a successful
   signed release candidate on clean `main`, followed by a signed final tag on

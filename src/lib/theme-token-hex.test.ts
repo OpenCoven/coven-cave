@@ -32,7 +32,7 @@ test("rounds fractional channels", () => {
 });
 
 test("persistThemeTokens rasterises tokens to sRGB hex before PUT", () => {
-  const src = readFileSync(new URL("../components/settings-shell.tsx", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../components/settings-appearance.tsx", import.meta.url), "utf8");
   // Must paint + read the pixel — reading fillStyle back doesn't down-convert
   // lab()/oklch() on modern engines (CSS Color 4).
   assert.match(src, /getContext\("2d",\s*\{\s*willReadFrequently:\s*true\s*\}\)/, "should request a readback-optimised 2D context");

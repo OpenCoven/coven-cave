@@ -245,9 +245,19 @@ test("opening a saved GitHub card automatically loads and renders its full snaps
 
     const text = visibleText(renderer);
     expect(requests.filter((url) => url === "/api/research/links?id=saved_github")).toHaveLength(1);
-    expect(text).toMatch(/Saved GitHub repository/);
+    // The repository modal IS the dialog now: one identity row, one meta line.
+    // The old "Saved GitHub repository" eyebrow was the second of three copies
+    // of the repo's identity and is deliberately gone.
+    expect(text).toMatch(/OpenCoven\/coven-cave/);
+    expect(text).not.toMatch(/Saved GitHub repository/);
+    // The captured README still renders in the reader.
     expect(text).toMatch(/Saved repository/);
-    expect(text).toMatch(new RegExp("a".repeat(12)));
+    // Provenance is stated once. `visibleText` here is the serialised tree, so
+    // the chip's own text arrives split across its child spans — assert against
+    // the commit chip's title, which carries the full SHA and the ref together.
+    expect(text).toMatch(
+      new RegExp(`Captured commit ${"a".repeat(40)}, resolved from main`),
+    );
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     globalThis.fetch = originalFetch;

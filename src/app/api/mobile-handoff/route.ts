@@ -12,6 +12,7 @@ import {
 import { signMobileAccessToken } from "@/lib/mobile-access-token";
 import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
 import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
+import { DEVICE_MANAGED_HEADER, hasDeviceAccessStamp } from "@/lib/device-access-markers";
 import {
   acquireTailscaleServeLease,
   assessServeOwnership,
@@ -37,6 +38,10 @@ import {
 } from "@/lib/mobile-handoff";
 
 export const dynamic = "force-dynamic";
+
+function managedDeviceAccess(req: Request): boolean {
+  return hasDeviceAccessStamp(req.headers.get(DEVICE_MANAGED_HEADER), process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET);
+}
 
 function trustedBackendPort() {
   return (process.env.PORT || "3000").trim();
@@ -484,9 +489,13 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   }
 
   const backend = nativeAppBackendUrl();
+  const managed = managedDeviceAccess(req);
+  if (managed && backend !== backendUrl()) {
+    return mobileUnavailableResponse("Device approval must use this desktop's own Cave backend.");
+  }
   const res = await withServeMutationLease(
     backend,
-    async () => ensureNativeAppServeReady(chatId, access.secret),
+    async () => ensureNativeAppServeReady(chatId, access.secret, managed),
   );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
@@ -494,6 +503,7 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
 async function ensureNativeAppServeReady(
   chatId: string | null | undefined,
   accessSecret: string,
+  managed = false,
 ) {
   const backend = nativeAppBackendUrl();
   const backendReady = await verifyNativeAppBackend(backend);
@@ -567,6 +577,9 @@ async function ensureNativeAppServeReady(
     backendUrl: backend,
     allowMagicDnsFallback: false,
   });
+  if (managed && !tailnetDiscovery.ok) {
+    return mobileUnavailableResponse("Device approval requires a verified HTTPS Tailscale Serve route.");
+  }
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
@@ -641,8 +654,10 @@ async function ensureNativeAppServeReady(
     expiresAt: number;
     expiresAtIso: string;
   } | null = null;
-  let qrTarget = withChatFragment(discovery.serveUrl, chatId);
-  if (!nativeTokenlessMode()) {
+  let qrTarget = managed
+    ? new URL("/connect", discovery.serveUrl).toString()
+    : withChatFragment(discovery.serveUrl, chatId);
+  if (!managed && !nativeTokenlessMode()) {
     const invite = await createMobileInvite({
       baseUrl: discovery.serveUrl,
       accessSecret,
@@ -673,6 +688,7 @@ async function ensureNativeAppServeReady(
     serveUrl: discovery.serveUrl,
     url: qrTarget,
     ...(invitePayload ?? {}),
+    ...(managed ? { inviteUrl: qrTarget, pairingMode: "device-approval" } : {}),
     nativeUrl: discovery.serveUrl,
     nativeHost: discovery.host,
     discoverySource: discovery.source,
@@ -705,7 +721,7 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
   const backend = backendUrl();
   const res = await withServeMutationLease(
     backend,
-    async () => mobileHandoffReady(access.secret, chatId),
+    async () => mobileHandoffReady(access.secret, chatId, managedDeviceAccess(req)),
   );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
@@ -713,6 +729,7 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
 async function mobileHandoffReady(
   accessSecret: string,
   chatId?: string | null,
+  managed = false,
 ) {
   const backend = backendUrl();
   // `--json` doubles as the connectivity check (exit 0 == connected) and the
@@ -772,7 +789,7 @@ async function mobileHandoffReady(
     );
   }
 
-  const invite = await createMobileInvite({
+  const invite = managed ? null : await createMobileInvite({
     baseUrl: discovery.serveUrl,
     accessSecret,
     sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
@@ -780,7 +797,9 @@ async function mobileHandoffReady(
   });
   // "Continue on phone" (cave-i74f): the QR carries the chat deep-link
   // fragment so one scan opens THIS conversation, not just the app.
-  const inviteUrl = withChatFragment(invite.url, chatId);
+  const inviteUrl = invite
+    ? withChatFragment(invite.url, chatId)
+    : new URL("/connect", discovery.serveUrl).toString();
   const qrSvg = await QRCode.toString(inviteUrl, {
     type: "svg",
     margin: 1,
@@ -797,11 +816,9 @@ async function mobileHandoffReady(
     appUrl: inviteUrl,
     // Native-app pairing: covencave:// deep link with a long-lived token —
     // shown beside the QR so the iOS/iPadOS app pairs without typing.
-    appInviteUrl: invite.appInviteUrl,
-    appTokenExpiresAt: invite.appTokenExpiresAt,
+    ...(invite ? { appInviteUrl: invite.appInviteUrl, appTokenExpiresAt: invite.appTokenExpiresAt } : { pairingMode: "device-approval" }),
     discoverySource: discovery.source,
-    expiresAt: invite.expiresAt,
-    expiresAtIso: invite.expiresAtIso,
+    ...(invite ? { expiresAt: invite.expiresAt, expiresAtIso: invite.expiresAtIso } : {}),
     // Paired signal (cave-i74f): the last token-refresh beat from a paired
     // device — null until a phone has actually connected.
     lastSeenAt: await readMobileLastSeen(),

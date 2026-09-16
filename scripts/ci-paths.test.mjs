@@ -30,6 +30,26 @@ test("workflow and script changes run their validation lanes", () => {
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
 });
 
+test("standalone continuity sources always run the lightweight docs contracts", () => {
+  for (const file of [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".agents/skills/work-continuity/SKILL.md",
+    ".agents/skills/work-continuity/agents/openai.yaml",
+    ".agents/skills/work-continuity/evals/scenarios.json",
+  ]) {
+    assert.deepEqual(classifyCiPaths([file]), {
+      frontend: false,
+      rust: false,
+      e2e: false,
+      ios: false,
+      docs: true,
+    }, file);
+  }
+  assert.equal(classifyCiPaths(["nested/AGENTS.md"]).docs, false);
+  assert.equal(classifyCiPaths([".agents/skills/unrelated/SKILL.md"]).docs, false);
+});
+
 test("protocol changes run conformance in normal Linux pull-request CI", () => {
   assert.equal(
     classifyCiPaths(["schemas/research/v1/run-manifest.schema.json"]).frontend,

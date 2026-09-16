@@ -465,6 +465,9 @@ function buildConversation(args: {
     ...(args.existing?.model ? { model: args.existing.model } : {}),
     ...(args.existing?.modelIntent ? { modelIntent: args.existing.modelIntent } : {}),
     ...(args.existing?.runtime ? { runtime: args.existing.runtime } : {}),
+    ...(args.existing?.origin ? { origin: args.existing.origin } : {}),
+    ...(args.existing?.parentSessionId ? { parentSessionId: args.existing.parentSessionId } : {}),
+    ...(args.existing?.flowDiscussion ? { flowDiscussion: args.existing.flowDiscussion } : {}),
     title: conversationTitle(args.id, args.body, args.existing),
     ...(createdAt ? { createdAt } : {}),
     updatedAt:

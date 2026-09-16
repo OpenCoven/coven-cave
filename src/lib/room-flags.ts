@@ -30,12 +30,11 @@
 import {
   CODE_SURFACE_ID,
   INDEXER_SURFACE_ID,
-  MESSENGER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
-  REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
   // Relative + extensioned, like role-surfaces.ts's own imports, so the rules
   // stay runnable under bare `node --experimental-strip-types`.
 } from "../components/role-surfaces/ids.ts";
@@ -50,11 +49,10 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
   RESEARCHER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
   CODE_SURFACE_ID,
-  REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
-  MESSENGER_SURFACE_ID,
   INDEXER_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
 ];
 
 /**
@@ -65,6 +63,14 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
 export const PRODUCTION_ROOM_IDS: readonly string[] = [
   RESEARCHER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
+  // Shipped demo-backed, at the owner's direction. Promotion widens the BUILD
+  // gate only: the room still renders solely for a familiar carrying
+  // `xPublishEnabled`, so it reaches the people who asked for X publishing and
+  // nobody else. What they get is seeded drafts and an Approve that moves a
+  // local record — the room's own banner says so above everything else, which
+  // is the condition this entry depends on. If that banner ever goes, this
+  // line goes with it.
+  X_COMMS_SURFACE_ID,
 ];
 
 /** The inputs that decide room visibility for a build. */

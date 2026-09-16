@@ -1,241 +1,75 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Familiars-first Chats home (cave-ru7ay): the home lists familiars, tapping
-// one opens its chat, and session selection lives in the config popover.
-const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
-const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
-const familiarThreads = await read("apps/ios/CovenCave/CovenCave/Views/FamiliarThreadsView.swift");
-const familiarList = await read("apps/ios/CovenCave/CovenCave/Views/FamiliarsListView.swift");
+// The familiars-first home is intentionally migrated to individual global
+// conversations. Exact participant identity and the in-chat session picker stay.
+const read = (p) => readFile(new URL(`../apps/ios/CovenCave/CovenCave/${p}`, import.meta.url), "utf8");
+const model = await read("State/AppModel.swift");
+const familiarThreads = await read("Views/FamiliarThreadsView.swift");
+const home = await read("Views/ChatsHomeView.swift");
+const chat = await read("Views/ChatView.swift");
+const projection = await read("State/ChatListSnapshot.swift");
 
-// --- The project-scoped familiar chat helpers -------------------------------
-// Tapping a familiar should only consider the active project's direct/server
-// activity.
-assert.match(
-  model,
-  /func directThreads\(for familiarId: String, in context: ProjectContext\) -> \[ChatThread\]/,
-  "AppModel's direct-thread helpers must consume an explicit project context",
-);
-assert.match(
-  model,
-  /func landingDirectThread\(for familiarId: String, in context: ProjectContext\) -> ChatThread\?/,
-  "AppModel's landing-thread helper must consume an explicit project context",
-);
-assert.match(
-  model,
-  /func projectLandingDirectThread[\s\S]{0,320}?landingDirectThread\(for: familiarId, in: projectContext\)/,
-  "the active-project landing thread must delegate to the context-aware helper",
-);
-assert.match(
-  model,
-  /func serverOnlySessions\(for familiarId: String, in context: ProjectContext\) -> \[SessionRow\]/,
-  "server-only session helpers must consume an explicit project context",
-);
-assert.match(
-  model,
-  /func globalServerOnlySessions\(for familiarId: String\) -> \[SessionRow\]/,
-  "everywhere search keeps an explicit global server-only helper",
-);
-assert.match(
-  model,
-  /func projectRecentThreads\(limit: Int = 5\) -> \[ChatThread\]/,
-  "AppModel exposes project-scoped recents for the drawer",
-);
-assert.match(
-  model,
-  /func validatedOpenContext\(for thread: ChatThread\) -> ProjectContext\?[\s\S]*func canOpen\(_ thread: ChatThread\) -> Bool/,
-  "AppModel must expose a pure thread-open validation helper",
-);
-assert.match(
-  model,
-  /func threadOpenFailure\(for thread: ChatThread\) -> ThreadOpenFailure\?/,
-  "AppModel must expose thread-open failures for recovery UI",
-);
-assert.match(
-  model,
-  /var projectMostRecentThread: ChatThread\?/,
-  "AppModel exposes the most recent visible project thread",
-);
-assert.match(
-  familiarList,
-  /struct FamiliarsListPresentation[\s\S]*visibleFamiliars = app\.projectFamiliars/,
-  "FamiliarsListView should always derive its roster from the active project's familiar membership",
-);
-assert.match(
-  familiarList,
-  /showsCachedAccessBanner = app\.projectMembershipLoaded && app\.familiarsError != nil/,
-  "cached membership refresh failures should surface a stale-data banner instead of falling back globally",
-);
-assert.match(
-  familiarList,
-  /"No familiars have access"/,
-  "a registered project with an empty roster should explain that no familiars have access",
-);
-assert.match(
-  familiarList,
-  /"No recovery familiars"/,
-  "the Unassigned roster should use recovery-specific empty-state copy",
-);
-assert.match(
-  familiarList,
-  /FamiliarHubView\(familiar: familiar\)/,
-  "the roster opens the dashboard-backed Familiar hub",
-);
-
-const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
-
-// --- The home is a familiar list --------------------------------------------
-assert.doesNotMatch(
-  home,
-  /ForEach\(recentThreads\)/,
-  "the cross-familiar recents section is gone",
-);
-assert.doesNotMatch(
-  home,
-  /struct FamiliarRailItem/,
-  "the horizontal rail item is gone",
-);
+for (const name of ["directThreads", "landingDirectThread", "serverOnlySessions"]) {
+  assert.match(
+    model,
+    new RegExp(`func ${name}\\(for familiarId: String, in context: ProjectContext\\)`),
+    `${name} must continue accepting an exact conversation context`,
+  );
+}
+assert.match(model, /func threadOpenFailure\(for thread: ChatThread\) -> ThreadOpenFailure\?/);
+assert.match(model, /func globalServerOnlySessions\(for familiarId: String\) -> \[SessionRow\]/);
+assert.match(home, /ChatListSnapshot\(\s*threads: app\.chatThreads,\s*sessions: app\.chatServerSessions,/);
+assert.match(home, /ForEach\(snapshot\.entries\)/, "home renders real resumable conversations");
+assert.match(home, /\.tag\(ChatRoute\.thread\(thread\)\)/, "local rows select their exact conversation");
+assert.doesNotMatch(home, /filteredFamiliars|FamiliarConversationRow|handleProjectContextChange/);
+assert.match(home, /ServerSessionRow\(session: session\)/, "unhydrated desktop chats remain visible");
+assert.match(home, /requestOpenServerSession\(session, fallbackFamiliarId: session\.familiarId\)/);
+assert.match(projection, /represented\.contains\(SessionIdentity/, "hydrated sessions are deduplicated");
+assert.match(projection, /thread\.familiarIds\.contains\(familiarId\)/, "only actual participant bindings suppress server rows");
+assert.doesNotMatch(projection, /thread\.messages/, "list sorting and filtering never scan transcripts");
+assert.match(home, /struct ThreadRow[\s\S]*?thread\.messages\.last/, "each row observes its own preview");
+assert.match(home, /struct ThreadRow[\s\S]*?app\.seenBoundary\(for: thread\)/, "unread uses the conversation context");
+assert.match(home, /parts\.append\("unread"\)/, "unread is announced, not only colored");
+assert.match(home, /app\.threadDrafts\[thread\.id\]/, "unsent drafts remain discoverable");
 assert.match(
   home,
-  /ForEach\(filteredFamiliars\) \{ familiar in\s*\n\s*FamiliarConversationRow\(familiar: familiar\)/,
-  "the list renders one conversation row per familiar",
-);
-assert.match(
-  home,
-  /private var filteredFamiliars: \[Familiar\] \{[\s\S]{0,220}app\.projectFamiliars/,
-  "the visible familiar list is scoped to the active project",
-);
-assert.match(
-  home,
-  /private var activeProjectContext: ProjectContext \{[\s\S]*app\.projectContext \?\? \.unassigned[\s\S]*\}/,
-  "ChatsHome must snapshot the active project context for thread-history routing",
-);
-assert.match(
-  home,
-  /\.onChange\(of: activeProjectContext\.id\) \{[\s\S]*handleProjectContextChange\(\)/,
-  "ChatsHome must explicitly react when the active project id changes",
-);
-assert.match(
-  home,
-  /private func handleProjectContextChange\(\) \{[\s\S]*detailPath = \[\][\s\S]*selection = nil[\s\S]*selectMostRecentThreadIfNeeded\(\)/,
-  "project switches must clear stale sidebar/detail selection before seeding the next project's default chat",
-);
-assert.match(
-  home,
-  /FamiliarConversationRow[\s\S]*?\.tag\(ChatRoute\.familiar\(familiar\)\)/,
-  "familiar rows are tagged so the sidebar selection drives the detail column",
-);
-
-// The row carries the iMessage payload: who, what was last said, and when.
-assert.match(home, /struct FamiliarConversationRow: View/, "a familiar conversation row exists");
-assert.match(
-  home,
-  /struct FamiliarConversationRow[\s\S]*?AvatarView\(familiar: familiar/,
-  "the row shows the familiar's avatar",
-);
-assert.match(
-  home,
-  /struct FamiliarConversationRow[\s\S]*?app\.projectLandingDirectThread\(for: familiar\.id\)[\s\S]*?app\.projectServerOnlySessions\(for: familiar\.id\)/,
-  "the row must consider both local and server-only project activity",
-);
-assert.match(
-  home,
-  /struct FamiliarConversationRow[\s\S]*?app\.projectHasUnread\(familiar\.id\)/,
-  "the row keeps the unread indicator scoped to the active project",
-);
-assert.match(
-  home,
-  /struct FamiliarConversationRow[\s\S]*?app\.projectLastActivity\(for: familiar\.id\)/,
-  "the row timestamp must reflect the active project's latest local or server activity",
-);
-
-// --- One tap lands in the conversation ---------------------------------------
-// The detail column resolves a familiar to its chat. FamiliarThreadsView is no
-// longer the tap target; it becomes the session picker (Task 4).
-assert.match(
-  home,
-  /case \.familiar\(let familiar\):\s*\n\s*familiarChat\(familiar\)/,
-  "selecting a familiar shows its chat, not a thread list",
-);
-assert.match(
-  home,
-  /private func familiarChat[\s\S]{0,500}?app\.projectLandingDirectThread\(for: familiar\.id\)[\s\S]*?app\.projectServerOnlySessions\(for: familiar\.id\)\.first/,
-  "the detail pane must fall back to the active project's newest server-only session",
+  /private func selectMostRecentThreadIfNeeded\(\)[\s\S]*guard sizeClass == \.regular,[\s\S]*selection == nil/,
+  "only an empty wide detail may auto-select; iPhone keeps its conversation list",
 );
 assert.match(
   home,
   /private func chatDestination\([\s\S]*_ thread: ChatThread,[\s\S]*app\.threadOpenFailure\(for: thread\)[\s\S]*ThreadOpenRecoveryView/,
-  "ChatsHome must gate ChatView behind the shared thread-open validator",
-);
-assert.match(
-  home,
-  /private struct FamiliarServerLandingView: View[\s\S]*?app\.openServerSession\(session, familiarId: familiar\.id\)/,
-  "server-only familiar landings must materialize the project-scoped session before opening chat",
-);
-assert.match(
-  home,
-  /private struct FamiliarServerLandingView: View[\s\S]*app\.threadOpenFailure\(for: thread\)[\s\S]*ThreadOpenRecoveryView/,
-  "server-only familiar landings must recover instead of mounting an invalid sendable chat",
-);
-assert.match(
-  home,
-  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,700}projectThreads[\s\S]{0,220}projectLastActivity[\s\S]{0,220}open\(\.familiar\(familiar\)\)|open\(\.thread\(mostRecentGroupThread\)\)/,
-  "default selection must compare active-project familiar activity against group threads",
+  "malformed conversation metadata cannot silently become sendable",
 );
 
-const chat = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
-
-// --- Conversation selection lives in the config card -------------------------
-// The card groups runtime identity, model choice, project, and conversation.
-assert.match(
-  chat,
-  /sessionDetailsCard[\s\S]*?sessionDetailRow\(\s*\n?\s*"Conversation"/,
-  "the config card exposes a Conversation row",
-);
-assert.match(
-  chat,
-  /"Conversation",[\s\S]{0,200}?showsChevron: true/,
-  "the Conversation row is tappable",
-);
-assert.match(
-  chat,
-  /showSessionPicker\s*=\s*true/,
-  "tapping the Conversation row opens the picker",
-);
+assert.match(chat, /sessionDetailsCard[\s\S]*?sessionDetailRow\(\s*"Conversation"/);
+assert.match(chat, /"Conversation",[\s\S]{0,200}?showsChevron: true/);
+assert.match(chat, /showSessionPicker\s*=\s*true/);
 assert.match(
   chat,
   /\.sheet\(isPresented: \$showSessionPicker\)[\s\S]{0,500}?FamiliarThreadsView\([\s\S]*projectContext: visibleThreadContext/,
-  "the picker is FamiliarThreadsView pinned to the visible thread context",
+  "the in-chat session picker is pinned to the visible conversation",
 );
-assert.match(
-  home,
-  /FamiliarThreadsView\(familiar: familiar,\s*projectContext: activeProjectContext,\s*path: \$detailPath/,
-  "ChatsHome must pass its active project context into FamiliarThreadsView",
-);
-assert.match(
-  familiarThreads,
-  /let projectContext: ProjectContext/,
-  "FamiliarThreadsView accepts an explicit project context",
-);
+assert.match(familiarThreads, /let projectContext: ProjectContext/);
 assert.match(
   familiarThreads,
   /app\.directThreads\(for: familiar\.id,\s*in: projectContext\)[\s\S]*app\.serverOnlySessions\(for: familiar\.id,\s*in: projectContext\)/,
-  "FamiliarThreadsView must derive local and server rows from its explicit project context",
 );
 assert.match(
   familiarThreads,
-  /private func chooseIfOpenable\(_ thread: ChatThread\) \{[\s\S]*guard app\.canOpen\(thread\) else \{[\s\S]*app\.threadOpenFailure\(for: thread\)[\s\S]*showToast/,
-  "FamiliarThreadsView must validate a thread before choosing it from the session picker",
+  /private func chooseIfOpenable\(_ thread: ChatThread\)[\s\S]*guard app\.canOpen\(thread\)[\s\S]*showToast/,
 );
 assert.match(
   familiarThreads,
-  /case \.local\(let thread\):\s*\n\s*chooseIfOpenable\(thread\)[\s\S]*case \.server\(let session\):[\s\S]*chooseIfOpenable\(app\.openServerSession\(session, familiarId: familiar\.id\)\)/,
-  "local and server rows in FamiliarThreadsView must share the same open validation path",
+  /case \.local\(let thread\):\s*chooseIfOpenable\(thread\)[\s\S]*case \.server\(let session\):[\s\S]*chooseIfOpenable\(app\.openServerSession\(session, familiarId: familiar\.id\)\)/,
 );
-assert.match(
-  familiarThreads,
-  /app\.markFamiliarViewed\(\[familiar\.id\],\s*in: projectContext\)/,
-  "FamiliarThreadsView must clear unread state in its explicit project context",
-);
+assert.doesNotMatch(familiarThreads, /app\.markFamiliarViewed\(/,
+  "opening the session picker does not read every listed conversation");
+assert.doesNotMatch(familiarThreads, /requestOpenDestination\(/, "New chat never changes shell scope");
+for (const action of ["setThreadPinned", "setThreadMuted", "setThreadArchived", "renameThread", "duplicateThread", "exportThreadsZip", "deleteThread"]) {
+  assert.ok(home.includes(action), `${action} remains reachable on the global chat list`);
+}
+assert.match(familiarThreads, /app\.deleteThreads\(selectedIds\)/, "session selection retains bulk deletion");
 
 console.log("ios-chat-familiars-home.test.mjs: ok");

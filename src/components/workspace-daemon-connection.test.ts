@@ -140,10 +140,23 @@ test("Workspace applies connection polls through the existing classifier-driven 
     /daemonAutoStartCoordinatorRef\.current!\.observeStatus\(result\)/,
     "the first accepted classifier result should still feed the one-shot desktop auto-start decision",
   );
+  // This used to pin `setAcceptedLocalDaemonHealthy(result.targetMode === "local")`
+  // with a matching `else { setAcceptedLocalDaemonHealthy(false) }`. That latch
+  // existed for ONE reader: `localDaemonReady` combined it with
+  // `canonicalMemoryLocalAccessEligible` to decide whether the canonical vault
+  // could be reached over loopback, and warmed it up. The vault moved to the
+  // dedicated memory application, so the latch has no consumer — keeping it
+  // would be state nothing reads. What the running branch still owes the UI is
+  // the recovery presentation, so that is what is pinned now.
   assert.match(
     applyPoll,
-    /if \(result\.kind === "running"\) \{[\s\S]*setAcceptedLocalDaemonHealthy\(result\.targetMode === "local"\)[\s\S]*\} else \{[\s\S]*setAcceptedLocalDaemonHealthy\(false\)/,
-    "acceptedLocalDaemonHealthy should still only latch when the active target is a healthy local daemon",
+    /if \(result\.kind === "running"\) \{[\s\S]*?setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{ type: "running" \}\)\)/,
+    "a running classifier result should still clear the recovery banner",
+  );
+  assert.doesNotMatch(
+    applyPoll,
+    /setAcceptedLocalDaemonHealthy/,
+    "the vault's local-access latch is gone with the store it gated",
   );
   assert.match(applyPoll, /setDaemonStatusResolved\(true\)/, "the first accepted connection poll should still resolve the unknown boot state");
   assert.match(

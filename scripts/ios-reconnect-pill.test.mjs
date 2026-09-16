@@ -29,11 +29,8 @@ assert.match(
   /case \.checking where app\.connection != nil && !app\.hasLoadedSurfaces:\s*\n\s*ConnectingView\(\)/,
   "the Connecting screen is a cold-launch state, not a reconnect state",
 );
-assert.match(
-  root,
-  /case \.projectContextRequired where !app\.hasLoadedSurfaces:\s*\n[\s\S]*?ProjectContextGateView\(\)/,
-  "a first project-context failure should stay out of MainShell and show a dedicated retry gate",
-);
+assert.doesNotMatch(root, /ProjectContextGateView\(\)/,
+  "access-catalog failures must not replace readable chat and Settings with a global gate");
 assert.match(
   gate,
   /struct ProjectContextGateView: View[\s\S]*?Button\("Retry"\)/,
@@ -113,8 +110,8 @@ assert.match(
 );
 assert.match(
   model,
-  /var hasLoadedSurfaces: Bool \{\s*\n\s*familiarsLoaded \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
-  "hasLoadedSurfaces should treat successful empty familiar loads as loaded shell state",
+  /var hasLoadedSurfaces: Bool \{\s*!chatThreads\.isEmpty \|\| !chatServerSessions\.isEmpty\s*\|\| familiarsLoaded \|\| sessionsLoaded \|\| projectsLoaded\s*\}/,
+  "cached chats or successful empty catalog loads keep the chat shell readable without task readiness",
 );
 
 console.log("ios-reconnect-pill: OK");

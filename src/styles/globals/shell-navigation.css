@@ -262,6 +262,8 @@
    language (header · primary action · search · sticky groups · thread rows ·
    footer) so the two surfaces feel like one considered product. ═══════════════ */
 .cnav {
+  /* The docked rail and mobile sheet no longer inherit from .shell-nav. */
+  --rail-pad: var(--space-1);
   --cnav-pad: var(--rail-pad);
   --cnav-indent: 24px;
   display: flex;
@@ -668,6 +670,16 @@
 .cnav__thread:hover .cnav__thread-main {
   padding-right: 76px;
 }
+@media (min-width: 1024px) {
+  .cnav__thread .cnav__icon-btn {
+    width: var(--space-8);
+    height: var(--space-8);
+  }
+  .cnav__thread:hover .cnav__thread-main,
+  .cnav__thread:has(.cnav__row-actions:focus-within) .cnav__thread-main {
+    padding-right: calc(3 * var(--space-8) + var(--space-3));
+  }
+}
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
@@ -675,13 +687,25 @@
 .cnav__thread[data-attention="left-hanging"] {
   background: color-mix(in oklch, var(--color-warning) 7%, transparent);
 }
-.cnav__thread[data-attention="awaiting-human"] {
+/* Waiting is ONE field, however long it has been waiting.
+ *
+ * overdue-human used to carry --danger-bg/--danger-border here: a row-wide red
+ * field, identical to a genuine failure, on a session that was only ever
+ * queued behind the reader. Fifteen of those at once is the alarm wall the
+ * redesign handoff §5 diagnoses, and it is why red now means failed and
+ * nothing else. Sharing awaiting-human's selector rather than restating its
+ * values keeps the two from drifting apart again. */
+.cnav__thread[data-attention="awaiting-human"],
+.cnav__thread[data-attention="overdue-human"] {
   border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--color-warning) 14%, transparent);
 }
-.cnav__thread[data-attention="overdue-human"] {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
+/* Blocked is the stronger waiting state — stopped on a gate only this person
+   can open. Same recipe, one token further toward red without being red.
+   Follows the rule above so it wins at equal specificity. */
+.cnav__thread[data-attention-kind="blocked"] {
+  border-color: color-mix(in oklch, var(--status-blocked) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--status-blocked) 14%, transparent);
 }
 .cnav__thread[data-attention="left-hanging"] .cnav__thread-main,
 .cnav__thread[data-attention="awaiting-human"] .cnav__thread-main,
@@ -690,11 +714,30 @@
   padding-top: var(--space-1);
   padding-bottom: var(--space-1);
 }
+/* An overdue wait is a LONGER WAIT, not an error.
+ *
+ * These three rules used to escalate overdue-human to --danger-text, which
+ * spent the app's error colour on a queue: a row that was waiting on the
+ * person reading it rendered identically to a run that had actually failed,
+ * and 15 of them at once read as an alarm wall. Red is now reserved for
+ * failed (redesign handoff §5). The escalation itself is kept — it just moves
+ * off hue and onto the channels that can carry it honestly: the relative time
+ * on the row, and chatAttentionDescription's "since 2 days ago". */
 .cnav__thread[data-attention="overdue-human"] .cnav__attention {
-  color: var(--danger-text);
+  color: var(--status-awaiting);
 }
 .cnav__thread[data-attention="overdue-human"] .cnav__attention-dot {
-  background: var(--danger-text);
+  background: var(--status-awaiting);
+}
+/* Blocked is the stronger of the two waiting states: the run is STOPPED on a
+   gate only this person can open (approval, credentials), not merely holding a
+   question open. It reads a step toward red without being red — red still means
+   failed — which is exactly what --status-blocked mixes. */
+.cnav__thread[data-attention-kind="blocked"] .cnav__attention {
+  color: var(--status-blocked);
+}
+.cnav__thread[data-attention-kind="blocked"] .cnav__attention-dot {
+  background: var(--status-blocked);
 }
 .cnav__thread.is-active {
   --cnav-active-background: var(--bg-raised);
@@ -707,15 +750,16 @@
   --cnav-active-background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
   background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
 }
-.cnav__thread.is-active[data-attention="awaiting-human"] {
+.cnav__thread.is-active[data-attention="awaiting-human"],
+.cnav__thread.is-active[data-attention="overdue-human"] {
   --cnav-active-background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
 }
-.cnav__thread.is-active[data-attention="overdue-human"] {
-  --cnav-active-background: var(--danger-bg);
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
+.cnav__thread.is-active[data-attention-kind="blocked"] {
+  --cnav-active-background: color-mix(in oklch, var(--status-blocked) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--status-blocked) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--status-blocked) 14%, var(--bg-raised));
 }
 .cnav__thread.is-active::after {
   content: "";
@@ -723,6 +767,7 @@
   z-index: -1;
   inset-block: 0;
   inset-inline: calc(var(--rail-pad) * -1);
+  border-radius: inherit;
   background: var(--cnav-active-background);
   pointer-events: none;
 }
@@ -789,8 +834,8 @@
    paused/queued) and its human-attention state can never fight over the same
    colour. Sits inboard of the runtime tick and the active-selection accent
    (::before) at left var(--space-2)) so all three cues stay simultaneously
-   readable rather than one silently overwriting another. Warning by default
-   (left-hanging/awaiting-human); overdue-human escalates to danger. Never
+   readable rather than one silently overwriting another. One waiting tone for
+   every attention state; red stays reserved for failed (see above). Never
    animated — only .cnav__dot--running pulses, and that pulse is intentionally
    scoped to runtime status, not attention. Rendered only for non-none,
    non-archived attention (see resolveThreadAttention), so there is nothing to
@@ -807,7 +852,12 @@
   z-index: 2;
 }
 .cnav__thread[data-attention="overdue-human"] .cnav__attention-tick {
-  background: var(--danger-text);
+  background: var(--status-awaiting);
+}
+/* Must follow the overdue rule above: equal specificity, so source order is
+   what decides a row that is both overdue AND blocked. */
+.cnav__thread[data-attention-kind="blocked"] .cnav__attention-tick {
+  background: var(--status-blocked);
 }
 .cnav__dot {
   width: 6px;

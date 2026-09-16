@@ -270,6 +270,16 @@ assert.match(
     /isRenameDueAtTurn\(assistantTurns, policy\.everyTurns\)/,
     "periodic renaming remains controlled by the configured assistant-turn cadence",
   );
+  assert.match(
+    fnBody,
+    /hasMaterialTitleChange\(/,
+    "a cadence checkpoint alone does not authorize a title change",
+  );
+  assert.match(
+    fnBody,
+    /setSessionTitleAutoIfOwned\([\s\S]*sessionTitleRevision\(state, sessionId\)[\s\S]*state\.sessionTitles\[sessionId\]/,
+    "periodic writes are fenced by the title revision observed before generation",
+  );
 }
 
 // D: No stub title path may use chatTitleFromPrompt as the selected title.

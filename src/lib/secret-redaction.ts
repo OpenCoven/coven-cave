@@ -798,7 +798,8 @@ function scanLineEnd(text: string, start: number): number {
   return end;
 }
 
-function scanAuthorizationCredential(text: string, start: number): number | undefined {
+/** End of a complete HTTP authorization value, including parameterized schemes. */
+export function scanAuthorizationCredential(text: string, start: number): number | undefined {
   const schemeEnd = scanHttpTokenEnd(text, start);
   if (schemeEnd === start) return undefined;
 

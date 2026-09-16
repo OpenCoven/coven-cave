@@ -1,26 +1,18 @@
 import assert from "node:assert/strict";
-import type { CanonicalMemorySummary } from "./canonical-memory.ts";
 import * as memoryRowsModule from "./memory-rows.ts";
 import { buildMemoryRows, groupMemoryRows, type MemoryRow } from "./memory-rows.ts";
 
-const NOW = Date.parse("2026-06-13T12:00:00Z");
+// Memory rows are files. The canonical-vault variant went with the vault
+// itself, which lives in the dedicated memory application now, so the cases
+// below that proved canonical/file INTERLEAVING, canonical scoping, the safe
+// search-field allowlist and the missing-summary reconciliation went with it.
+//
+// Every case that was really about FILE behaviour is kept, including the ones
+// that happened to be written as "files survive a canonical failure" — those
+// assert that one feed's state does not decide the list's, which still holds
+// with one feed.
 
-function canonical(
-  overrides: Partial<CanonicalMemorySummary> = {},
-): CanonicalMemorySummary {
-  return {
-    id: "c1",
-    familiarId: "echo",
-    title: "Daily note",
-    updatedAt: "2026-06-13T11:00:00Z",
-    relativeUpdatedAt: "1h ago",
-    excerpt: "Remember the garden gate.",
-    source: { kind: "distilled", label: "Coven index" },
-    privacy: { classification: "private", revealRequired: true },
-    verification: { state: "verified" },
-    ...overrides,
-  };
-}
+const NOW = Date.parse("2026-06-13T12:00:00Z");
 
 const files = [
   {
@@ -49,7 +41,6 @@ function rows(
   overrides: Partial<Parameters<typeof buildMemoryRows>[0]> = {},
 ): MemoryRow[] {
   return buildMemoryRows({
-    canonical: [canonical()],
     files,
     familiarFilter: "echo",
     query: "",
@@ -62,146 +53,67 @@ function rows(
   });
 }
 
+// ── Ordering ─────────────────────────────────────────────────────────────────
 {
   const result = rows();
   assert.deepEqual(
     result.map((row) => row.rowId),
     [
       "file:/Users/x/.coven/echo/memory/new.md",
-      "coven:c1",
       "file:/Users/x/.coven/echo/memory/old.md",
     ],
-    "canonical and file rows interleave by recency",
+    "rows sort by recency, newest first",
+  );
+  assert.ok(
+    result.every((row) => row.kind === "file"),
+    "every row is a file row",
   );
 }
 
-{
-  const result = rows();
-  const canonicalRow = result.find((row) => row.kind === "canonical");
-  const fileRow = result.find((row) => row.kind === "file");
-  assert.deepEqual(canonicalRow, {
-    kind: "canonical",
-    rowId: "coven:c1",
-    memoryId: "c1",
-    title: "Daily note",
-    sortTime: "2026-06-13T11:00:00Z",
-    sourceLabel: "Echo",
-    excerpt: "Remember the garden gate.",
-    privacy: { classification: "private", revealRequired: true },
-    verification: { state: "verified" },
-    stale: false,
-  });
-  assert.deepEqual(fileRow, {
-    kind: "file",
-    rowId: "file:/Users/x/.coven/echo/memory/new.md",
-    title: "new.md",
-    path: "/Users/x/.coven/echo/memory/new.md",
-    contentPath: "/Users/x/.coven/echo/memory/new.md",
-    sortTime: "2026-06-13T11:30:00Z",
-    size: 100,
-    sourceLabel: "Runtime memory",
-    stale: false,
-    protection: "normal",
-  });
-  for (const forbidden of ["path", "contentPath", "protection", "size"]) {
-    assert.equal(
-      Object.hasOwn(canonicalRow ?? {}, forbidden),
-      false,
-      `canonical rows do not expose ${forbidden}`,
-    );
-  }
-}
-
+// ── Scoping ──────────────────────────────────────────────────────────────────
 {
   const result = rows({ familiarFilter: "other" });
-  assert.equal(
-    result.filter((row) => row.kind === "canonical").length,
-    0,
-    "canonical summaries are familiar-scoped",
-  );
-  assert.equal(
-    result.filter((row) => row.kind === "file").length,
-    0,
-    "file rows are familiar-scoped",
-  );
+  assert.equal(result.length, 0, "file rows are familiar-scoped");
 }
 
 {
   assert.deepEqual(
     rows({ sourceFilter: "runtime" }).map((row) => row.rowId),
-    ["file:/Users/x/.coven/echo/memory/new.md", "coven:c1"],
-    "file source filters never suppress canonical summaries",
+    ["file:/Users/x/.coven/echo/memory/new.md"],
+    "source filters narrow the file list",
   );
 }
 
+// ── Search ───────────────────────────────────────────────────────────────────
 {
-  const safeQueries = [
-    "daily",
-    "garden",
-    "echo",
-    "distilled",
-    "coven index",
-    "private",
-    "verified",
-  ];
-  for (const query of safeQueries) {
-    assert.ok(
-      rows({ query }).some((row) => row.rowId === "coven:c1"),
-      `canonical search includes safe summary field: ${query}`,
-    );
-  }
-  assert.deepEqual(
-    rows({
-      canonical: [canonical({ id: "secret-id-only" })],
-      query: "secret-id-only",
-    }),
-    [],
-    "opaque canonical IDs are not searchable",
-  );
   assert.deepEqual(
     rows({ query: "/Users/x/.coven/echo/memory/new.md" }).map((row) => row.rowId),
     ["file:/Users/x/.coven/echo/memory/new.md"],
     "file search retains path matching",
   );
-}
-
-{
-  const staleRows = rows({
-    canonical: [
-      canonical({
-        title: "2026-06-13",
-        excerpt: "No notable updates.",
-      }),
-    ],
-    staleOnly: true,
-  });
-  assert.ok(
-    staleRows.every((row) => row.kind === "file"),
-    "canonical rows are never stale or cleanup candidates",
+  assert.deepEqual(
+    rows({ query: "runtime memory" }).map((row) => row.rowId),
+    ["file:/Users/x/.coven/echo/memory/new.md"],
+    "file search matches the source label",
   );
 }
 
+// ── Sorting ──────────────────────────────────────────────────────────────────
 {
   assert.deepEqual(
     rows({ sortMode: "name" }).map((row) => row.title),
-    ["Daily note", "new.md", "old.md"],
+    ["new.md", "old.md"],
     "name sort is alphabetical",
+  );
+  assert.deepEqual(
+    rows({ sortMode: "size" }).map((row) => row.title),
+    ["old.md", "new.md"],
+    "size sort is largest first",
   );
 }
 
+// ── Grouping ─────────────────────────────────────────────────────────────────
 const groupedRows: MemoryRow[] = [
-  {
-    kind: "canonical",
-    rowId: "coven:c1",
-    memoryId: "c1",
-    title: "Note",
-    sortTime: "2026-06-13T11:00:00Z",
-    sourceLabel: "Sage",
-    excerpt: "Private note",
-    privacy: { classification: "private", revealRequired: true },
-    verification: { state: "verified" },
-    stale: false,
-  },
   {
     kind: "file",
     rowId: "file:/x/new.md",
@@ -232,31 +144,35 @@ const groupedRows: MemoryRow[] = [
   const groups = groupMemoryRows(groupedRows, "type");
   assert.deepEqual(
     groups.map((group) => group.label),
-    ["Familiar memories", "Files"],
-    "canonical type grouping label is exact",
+    ["Files"],
+    "type grouping has one label now that files are the only kind",
   );
 }
 
 {
-  const groups = groupMemoryRows(groupedRows, "familiar");
+  const groups = groupMemoryRows(groupedRows, "source");
   assert.deepEqual(
-    groups.map((group) => group.label),
-    ["Sage", "Files"],
-    "canonical rows group under the familiar and file rows remain together",
+    groups.map((group) => group.label).sort(),
+    ["Coven origin", "Runtime memory"],
+    "source grouping splits by the file's own source label",
   );
 }
 
 {
   const groups = groupMemoryRows(groupedRows, "date", NOW);
-  assert.equal(groups.find((group) => group.label === "Today")?.rows.length, 2);
+  assert.equal(groups.find((group) => group.label === "Today")?.rows.length, 1);
   assert.equal(groups.find((group) => group.label === "Older")?.rows.length, 1);
 }
 
+// ── Presentation ─────────────────────────────────────────────────────────────
+// The distinction these cases defend is unchanged: an EMPTY list means
+// something different depending on whether the feed settled. A failed feed with
+// no rows must never render as true-empty, because "nothing here" and "we could
+// not look" are different claims.
 {
   const presentation = (
     memoryRowsModule as typeof memoryRowsModule & {
       memoryListPresentation(input: {
-        canonicalState: "loading" | "ready" | "error";
         filesState: "loading" | "ready" | "error";
         rowCount: number;
       }): "loading" | "rows" | "empty" | "unavailable";
@@ -264,34 +180,34 @@ const groupedRows: MemoryRow[] = [
   ).memoryListPresentation;
   assert.equal(typeof presentation, "function", "memory list presentation is exported");
   assert.equal(
-    presentation({ canonicalState: "error", filesState: "ready", rowCount: 1 }),
+    presentation({ filesState: "error", rowCount: 1 }),
     "rows",
-    "a canonical failure keeps usable file rows visible",
+    "rows already loaded stay visible through a later failure",
   );
   assert.equal(
-    presentation({ canonicalState: "ready", filesState: "error", rowCount: 1 }),
-    "rows",
-    "a file failure keeps canonical rows visible",
-  );
-  assert.equal(
-    presentation({ canonicalState: "error", filesState: "error", rowCount: 0 }),
+    presentation({ filesState: "error", rowCount: 0 }),
     "unavailable",
-    "two failed empty feeds never masquerade as true-empty",
+    "a failed empty feed never masquerades as true-empty",
   );
   assert.equal(
-    presentation({ canonicalState: "ready", filesState: "ready", rowCount: 0 }),
+    presentation({ filesState: "ready", rowCount: 0 }),
     "empty",
-    "true-empty requires both feeds to be ready",
+    "true-empty requires the feed to be ready",
+  );
+  assert.equal(
+    presentation({ filesState: "loading", rowCount: 0 }),
+    "loading",
+    "an unsettled feed reads as loading, not empty",
   );
 }
 
+// ── Selection reconciliation ─────────────────────────────────────────────────
 {
   const reconcile = (
     memoryRowsModule as typeof memoryRowsModule & {
       reconcileMemorySelection(input: {
         selectedRowId: string | null;
         rowIds: readonly string[];
-        canonicalState: "loading" | "ready" | "error";
         filesState: "loading" | "ready" | "error";
       }): string | null;
     }
@@ -299,108 +215,38 @@ const groupedRows: MemoryRow[] = [
   assert.equal(typeof reconcile, "function", "selection reconciliation is exported");
   assert.equal(
     reconcile({
-      selectedRowId: "coven:c1",
-      rowIds: ["coven:c1"],
-      canonicalState: "ready",
+      selectedRowId: "file:/x/new.md",
+      rowIds: ["file:/x/new.md"],
       filesState: "ready",
     }),
-    "coven:c1",
-    "a visible canonical selection stays selected",
-  );
-  assert.equal(
-    reconcile({
-      selectedRowId: "coven:c1",
-      rowIds: [],
-      canonicalState: "loading",
-      filesState: "ready",
-    }),
-    "coven:c1",
-    "a canonical selection survives only while its feed is settling",
-  );
-  assert.equal(
-    reconcile({
-      selectedRowId: "coven:c1",
-      rowIds: [],
-      canonicalState: "ready",
-      filesState: "ready",
-    }),
-    null,
-    "a removed or query-filtered canonical row returns to the list",
+    "file:/x/new.md",
+    "a visible selection stays selected",
   );
   assert.equal(
     reconcile({
       selectedRowId: "file:/x/new.md",
       rowIds: [],
-      canonicalState: "ready",
+      filesState: "loading",
+    }),
+    "file:/x/new.md",
+    "a selection survives while its feed is still settling",
+  );
+  assert.equal(
+    reconcile({
+      selectedRowId: "file:/x/new.md",
+      rowIds: [],
+      filesState: "ready",
+    }),
+    null,
+    "a removed or query-filtered row returns to the list once settled",
+  );
+  assert.equal(
+    reconcile({
+      selectedRowId: "file:/x/new.md",
+      rowIds: [],
       filesState: "error",
     }),
     null,
-    "a removed or source-filtered file row returns to the list after settlement",
+    "a failed feed also releases a selection that is no longer present",
   );
 }
-
-{
-  const excludeMissing = (
-    memoryRowsModule as typeof memoryRowsModule & {
-      excludeMissingCanonicalMemory<T extends { id: string }>(
-        entries: readonly T[],
-        memoryId: string | null,
-      ): T[];
-    }
-  ).excludeMissingCanonicalMemory;
-  assert.equal(typeof excludeMissing, "function", "missing recovery is exported");
-  assert.deepEqual(
-    excludeMissing(
-      [canonical({ id: "gone" }), canonical({ id: "kept", title: "Kept" })],
-      "gone",
-    ).map((entry) => entry.id),
-    ["kept"],
-    "a 404 removes the stale canonical summary while preserving usable rows",
-  );
-}
-
-{
-  const reconcileRefresh = (
-    memoryRowsModule as typeof memoryRowsModule & {
-      reconcileMissingCanonicalRefresh<T extends { id: string }>(input: {
-        missingMemoryId: string | null;
-        notice: string | null;
-        refreshState: "ready" | "error";
-        entries: readonly T[];
-      }): { missingMemoryId: string | null; notice: string | null };
-    }
-  ).reconcileMissingCanonicalRefresh;
-  assert.equal(typeof reconcileRefresh, "function", "missing refresh reconciliation is exported");
-  assert.deepEqual(
-    reconcileRefresh({
-      missingMemoryId: "gone",
-      notice: "Memory not found",
-      refreshState: "ready",
-      entries: [canonical({ id: "gone" }), canonical({ id: "kept" })],
-    }),
-    { missingMemoryId: "gone", notice: "Memory not found" },
-    "a ready list that still advertises the missing ID preserves its exclusion and notice",
-  );
-  assert.deepEqual(
-    reconcileRefresh({
-      missingMemoryId: "gone",
-      notice: "Memory not found",
-      refreshState: "ready",
-      entries: [canonical({ id: "kept" })],
-    }),
-    { missingMemoryId: null, notice: null },
-    "a successful coordinated canonical refresh clears the notice and reconciled exclusion",
-  );
-  assert.deepEqual(
-    reconcileRefresh({
-      missingMemoryId: "gone",
-      notice: "Memory not found",
-      refreshState: "error",
-      entries: [],
-    }),
-    { missingMemoryId: "gone", notice: "Memory not found" },
-    "a failed coordinated refresh preserves the actionable missing notice",
-  );
-}
-
-console.log("memory-rows: all assertions passed");

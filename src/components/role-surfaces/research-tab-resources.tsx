@@ -471,6 +471,23 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     });
   }, [loadDetail, openLink]);
 
+  const retryGithubLoad = useCallback(() => {
+    const requestedId = openLink?.githubRepo ? openLink.id : null;
+    if (!requestedId) return;
+    const request = ++githubRequestRef.current;
+    setGithubLoading(true);
+    setGithubError(null);
+    void loadDetail(requestedId).then((detail) => {
+      if (githubRequestRef.current !== request) return;
+      setGithubLoading(false);
+      if (!detail || detail.id !== requestedId || !detail.githubRepo) {
+        setGithubError("Couldn’t load the saved repository snapshot. Try again.");
+        return;
+      }
+      setGithubDetail(detail);
+    });
+  }, [loadDetail, openLink]);
+
   useLayoutEffect(() => {
     if (!articleDetail?.xArticle || !pendingArticleFocusRef.current) return;
     const reader = articleReaderRef.current;
@@ -573,6 +590,56 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
 
   const openCited = openLink ? citingMissions(openLink) : [];
   const openPaperId = openLink?.paper?.arxivId ?? null;
+
+  // Two controls the detail overlay owns rather than any one resource type:
+  // the destructive management action and the run attachment. The redesigned
+  // GitHub modal renders its own action bar, so both are hoisted here and
+  // handed to whichever footer is on screen.
+  const removeControl = openLink ? (
+    confirmingRemove ? (
+      <>
+        <span className="research-res-overlay__remove-warn">
+          {openDurableResource
+            ? "Delete this resource? This permanently deletes its durable local snapshots and evidence, and removes it from Resources and quick saves. This can’t be undone."
+            : "Remove this save from Resources and quick saves?"}
+        </span>
+        <Button
+          size="xs"
+          variant="danger-ghost"
+          loading={resourceMutationBusy !== null}
+          onClick={() => void removeOpenLink()}
+        >
+          {openDurableResource ? "Delete resource" : "Remove save"}
+        </Button>
+        <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(false)}>
+          Keep
+        </Button>
+      </>
+    ) : (
+      <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(true)}>
+        {openDurableResource ? "Delete resource" : "Remove from saves"}
+      </Button>
+    )
+  ) : null;
+  const addToRunControl = openLink ? (
+    attachedToSelected(openLink) ? (
+      <span className="research-res-card__state">
+        <Icon name="ph:check" width={11} height={11} aria-hidden />
+        In this run
+      </span>
+    ) : selectedMission ? (
+      <Button
+        size="sm"
+        variant="primary"
+        leadingIcon="ph:plus"
+        disabled={attachBusy}
+        title={addHint(openLink)}
+        onClick={() => void attachToRun(openLink)}
+      >
+        Add to run
+      </Button>
+    ) : null
+  ) : null;
 
   return (
     <section className="research-res" aria-label="Research resources">
@@ -1091,6 +1158,25 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
+            {openLink.githubRepo ? (
+              <ResearchGithubRepoViewer
+                summary={openLink.githubRepo}
+                snapshot={githubDetail?.githubRepo ?? null}
+                loadError={githubLoading ? null : githubError}
+                onRetryLoad={retryGithubLoad}
+                openUrl={context.openUrl}
+                onClose={closeOverlay}
+                onPreviewInBrowser={() => setBrowserPreview({
+                  title: openLink.title,
+                  url: (openDurableResource
+                    ? researchResourceSourceUrl(openDurableResource)
+                    : null) ?? openLink.url,
+                })}
+                removeSlot={removeControl}
+                addToRunSlot={addToRunControl}
+              />
+            ) : (
+              <>
             <header className="research-res-overlay__head">
               <span className="research-res-overlay__glyph" aria-hidden>
                 <Icon
@@ -1278,42 +1364,6 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 )
               ) : null}
 
-              {openLink.githubRepo ? (
-                githubLoading ? (
-                  <p className="research-res__empty" role="status">Loading repository snapshot…</p>
-                ) : githubError ? (
-                  <p className="research-res__error" role="alert">
-                    {githubError}{" "}
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => {
-                        const requestedId = openLink.id;
-                        const request = ++githubRequestRef.current;
-                        setGithubLoading(true);
-                        setGithubError(null);
-                        void loadDetail(requestedId).then((detail) => {
-                          if (githubRequestRef.current !== request) return;
-                          setGithubLoading(false);
-                          if (!detail?.githubRepo) {
-                            setGithubError("Couldn’t load the saved repository snapshot. Try again.");
-                            return;
-                          }
-                          setGithubDetail(detail);
-                        });
-                      }}
-                    >
-                      Retry
-                    </Button>
-                  </p>
-                ) : githubDetail?.githubRepo ? (
-                  <ResearchGithubRepoViewer
-                    snapshot={githubDetail.githubRepo}
-                    openUrl={context.openUrl}
-                  />
-                ) : null
-              ) : null}
-
               {/* A loaded Article reader replaces the normal resource stats
                   rather than stacking the generic metadata beneath the text. */}
               {!articleDetail?.xArticle && !openLink.githubRepo ? (
@@ -1363,30 +1413,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
 
             <footer className="research-res-overlay__actions">
               <div className="research-res-overlay__remove">
-                {confirmingRemove ? (
-                  <>
-                    <span className="research-res-overlay__remove-warn">
-                      {openDurableResource
-                        ? "Delete this resource? This permanently deletes its durable local snapshots and evidence, and removes it from Resources and quick saves. This can’t be undone."
-                        : "Remove this save from Resources and quick saves?"}
-                    </span>
-                    <Button
-                      size="xs"
-                      variant="danger-ghost"
-                      loading={resourceMutationBusy !== null}
-                      onClick={() => void removeOpenLink()}
-                    >
-                      {openDurableResource ? "Delete resource" : "Remove save"}
-                    </Button>
-                    <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(false)}>
-                      Keep
-                    </Button>
-                  </>
-                ) : (
-                  <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(true)}>
-                    {openDurableResource ? "Delete resource" : "Remove from saves"}
-                  </Button>
-                )}
+                {removeControl}
               </div>
               <div className="research-res-overlay__primary-actions">
                 {!selectedMission ? (
@@ -1442,25 +1469,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 >
                   Open link
                 </Button>
-                {attachedToSelected(openLink) ? (
-                  <span className="research-res-card__state">
-                    <Icon name="ph:check" width={11} height={11} aria-hidden />
-                    In this run
-                  </span>
-                ) : selectedMission ? (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    leadingIcon="ph:plus"
-                    disabled={attachBusy}
-                    title={addHint(openLink)}
-                    onClick={() => void attachToRun(openLink)}
-                  >
-                    Add to run
-                  </Button>
-                ) : null}
+                {addToRunControl}
               </div>
             </footer>
+              </>
+            )}
           </div>
         </div>
       ) : null}

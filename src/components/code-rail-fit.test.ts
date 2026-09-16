@@ -8,6 +8,8 @@ import { readFile } from "node:fs/promises";
 // sizing, the collapsed reopen rail) and guard the retired panel's fossils.
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const reopen = await readFile(new URL("./code-rail-reopen.tsx", import.meta.url), "utf8");
+const controller = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const caveChatAux = await readFile(new URL("../styles/cave-chat/auxiliary-surfaces.css", import.meta.url), "utf8");
 const caveChat = (
@@ -55,7 +57,7 @@ assert.match(
 // wide panes) — content flows beside it, never underneath.
 assert.match(
   chatSurface,
-  /rail\.available && !rail\.open && !isMobile && !paneNarrow && \([\s\S]{0,600}?className="workspace-rail-reopen focus-ring"[\s\S]{0,300}?onClick=\{rail\.reopen\}/,
+  /rail\.available && !rail\.open && !isMobile && !paneNarrow && \([\s\S]{0,600}?<CodeRailReopen[\s\S]{0,300}?onOpen=\{railController\.openChanges\}/,
   "collapsing the code rail must leave a reopen rail (wide desktop panes) that restores it",
 );
 
@@ -63,8 +65,8 @@ assert.match(
 // it must NOT be absolutely positioned, and it reserves only a pull-tab width.
 assert.match(
   caveChatAux,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 14px;[\s\S]{0,300}?background:\s*var\(--bg-panel\);/,
-  "the reopen rail reserves an opaque ultra-minimal in-flow pull-tab width",
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 calc\(var\(--space-6\) \+ var\(--space-1\)\);[\s\S]{0,300}?background:\s*var\(--bg-panel\);/,
+  "the reopen rail reserves an opaque 28px in-flow pull-tab width",
 );
 assert.doesNotMatch(
   caveChatAux,
@@ -72,14 +74,18 @@ assert.doesNotMatch(
   "the reopen rail must not overlay content (no absolute positioning)",
 );
 
-assert.doesNotMatch(chatSurface, /workspace-rail-reopen__label|>Code</, "the pull tab has no persistent vertical label");
-assert.match(chatSurface, /workspace-rail-reopen__tab[\s\S]{0,200}?ph:caret-left/, "the pull tab uses a quiet inward caret");
+assert.match(reopen, /workspace-rail-reopen__label">Code</, "the pull tab is labeled without hover");
+assert.match(reopen, /ph:caret-left/, "the pull tab points inward");
+assert.match(controller, /autoRevealChanges: false/, "new changes must not force open the conversation's code rail");
+assert.match(reopen, /previousNonce\.current === changeNonce/, "unchanged polls cannot replay the cue");
+assert.match(reopen, /setTimeout\(\(\) => setNotifying\(false\), 1600\)/, "reduced motion also settles the cue");
+assert.match(caveChatAux, /animation: code-rail-change-nudge[^;]+ 2;/, "new changes expand exactly twice");
 
 // The rail carries the left panel's glass (with honest fallbacks).
 assert.match(
   caveChatAux,
-  /\.workspace-rail-reopen:hover \.workspace-rail-reopen__tab,[\s\S]*?\.workspace-rail-reopen:focus-visible \.workspace-rail-reopen__tab[\s\S]{0,500}?color-mix\(in oklch, var\(--bg-raised\) 82%, transparent\)[\s\S]{0,300}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
-  "the pull tab reveals glass only on hover or keyboard focus",
+  /\.workspace-rail-reopen__tab \{[\s\S]{0,500}?background: var\(--bg-raised\);/,
+  "the pull tab stays visible at rest",
 );
 assert.match(
   caveChatAux,

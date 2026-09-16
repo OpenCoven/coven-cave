@@ -22,7 +22,7 @@ const themeCss = [
 ].join("\n");
 
 test("Settings delegates the About surface to a focused component", () => {
-  assert.match(shell, /import \{ AboutSection \} from "\.\/settings-about"/);
+  assert.match(shell, /const AboutSection = dynamic\(\(\) => import\("\.\/settings-about"\)/);
   assert.match(shell, /section === "about"\s*&&\s*<AboutSection \/>/);
   assert.doesNotMatch(shell, /function AboutSection\(/);
   assert.match(component, /import "@\/styles\/settings-about\.css";/);

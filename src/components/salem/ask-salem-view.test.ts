@@ -40,20 +40,13 @@ test("local index corpora mirror the palette sources", () => {
   for (const endpoint of ["/api/chat/search?q=", "/api/board", "/api/memory"]) {
     assert.ok(source.includes(endpoint), `gathers ${endpoint}`);
   }
-  assert.match(
-    source,
-    /loadCanonicalMemoryList\(\)/,
-    "canonical summaries use the shared non-forced list loader",
-  );
-  assert.match(
-    source,
-    /canonical\.state === "ready" \? canonical\.entries\.map/,
-    "only ready canonical summaries enter Salem context",
-  );
+  // The canonical vault was a fourth corpus here and is now in the dedicated
+  // memory application. Salem gathers the three local corpora asserted above;
+  // nothing may reach for the removed store.
   assert.doesNotMatch(
     source,
-    /fetchJson\(\s*["'`]\/api\/coven-memory/,
-    "Ask Salem never bypasses the canonical cache",
+    /loadCanonicalMemoryList|coven-memory|covenMemory/,
+    "the retired vault corpus is gone from the Salem gather",
   );
 });
 

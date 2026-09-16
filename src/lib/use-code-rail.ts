@@ -21,9 +21,10 @@ export type UseCodeRailArgs = {
   /** A "browse at root" peek is active — suppress the Changes auto-reveal so the
    *  browsed project stays on its Files tab (cave-z44). */
   browseActive?: boolean;
+  autoRevealChanges?: boolean;
 };
 
-export function useCodeRail({ projectRoot, changeCount, terminalActive, browseActive }: UseCodeRailArgs) {
+export function useCodeRail({ projectRoot, changeCount, terminalActive, browseActive, autoRevealChanges }: UseCodeRailArgs) {
   const [pinned, setPinned] = useState(false);
   // Closed at rest (cave-xsq.7): the conversation owns the pane by default.
   // The rail opens on demand — pin, manual reopen, an explicit focus target
@@ -40,8 +41,8 @@ export function useCodeRail({ projectRoot, changeCount, terminalActive, browseAc
   }, []);
 
   const state = resolveCodeRail(
-    { hasRepo: Boolean(projectRoot), changeCount, terminalActive, pinned, dismissed, browseActive },
-    prevRef.current,
+    { hasRepo: Boolean(projectRoot), changeCount, terminalActive, pinned, dismissed, browseActive, autoRevealChanges },
+    prevRef.current ? { ...prevRef.current, activeTab } : null,
   );
 
   // Commit the resolved state as `prev` on EVERY render so the pure fn always

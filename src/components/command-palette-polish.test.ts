@@ -16,7 +16,9 @@ assert.match(
 );
 
 // ── Right-edge affordance labels render on the active row only ──────────────
-for (const label of ["switch", "card", "memory", "file", "open", "run", "create", "ask"]) {
+// "memory" left with the canonical-vault row that carried it; the file-memory
+// row's affordance label is "file", which is still here.
+for (const label of ["switch", "card", "file", "open", "run", "create", "ask"]) {
   assert.match(
     source,
     new RegExp(`\\{active \\? <span className="text-\\[length:var\\(--text-2xs\\)\\] text-\\[var\\(--text-muted\\)\\]">${label}</span> : null\\}`),

@@ -635,6 +635,8 @@ test("create/start records exact daemon authority outside public mission state",
       else assert.deepEqual(owner, owners[0], "post-return publication is an exact idempotent retry");
     },
     startFlow: async (_flow, options) => {
+      assert.equal(options.missionId, "mission-1", "Flow execution keeps its parent mission");
+      assert.equal(options.iteration, 1, "Flow execution keeps its iteration number");
       await options.publishSessionOwner?.(
         "session-1",
         "owner-local-daemon",

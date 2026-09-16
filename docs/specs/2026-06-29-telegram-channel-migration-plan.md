@@ -6,7 +6,7 @@
 
 **Architecture:** Treat OpenClaw's Telegram implementation as the compatibility reference, not the long-term runtime owner. First land an OpenCoven Telegram connector for safe outbound delivery; then add Cave docs/settings and a migration inventory; then move inbound/session handling only after outbound, auth, allowlists, and transcript compatibility are verified.
 
-**Tech Stack:** `@opencoven/channels` in `OpenCoven/coven`, Cave docs/settings in `coven-cave`, existing Cave OpenClaw session parsing (`src/lib/session-initiator.ts`), OpenClaw Telegram docs/extension as migration reference, 1Password refs for live tokens and chat IDs.
+**Tech Stack:** `@opencoven/channels` in `OpenCoven/coven`, Cave docs/settings in `coven-cave`, Cave session-key attribution (`src/lib/session-initiator.ts`), OpenClaw Telegram docs/extension as migration reference, 1Password refs for live tokens and chat IDs.
 
 ---
 
@@ -27,7 +27,7 @@ OpenClaw already has a mature Telegram stack:
 - Group policy and group sender allowlists.
 - Group/forum topic support and topic-aware session keys.
 - Message send/action paths and health/probe coverage.
-- Cave already parses OpenClaw Telegram transcript metadata into human initiators in `src/lib/session-initiator.ts`.
+- Cave's former OpenClaw transcript ingestion caller was removed with the Calls surface in PR #1858 (`7f2beed2e`); its unused parsing helpers were retired in `cave-ep9fb`. `src/lib/session-initiator.ts` now provides session-key attribution only. Its production caller, `src/lib/session-list-merge.ts`, preserves supplied initiators; daemon rows reaching the session-key fallback use an empty key with a familiar/harness fallback, while local conversations without supplied initiators default to the human "Cave user". Neither path ingests OpenClaw sender metadata. Transcript attribution remains a migration requirement, not an already-wired capability.
 - Cave already treats `telegram` as a remote lane in `src/lib/presence.ts`.
 
 The OpenCoven target should preserve the parts Val relies on first, then graduate the richer group/topic behavior.
@@ -177,7 +177,7 @@ Do not copy raw IDs or real 1Password item titles.
 
 At minimum:
 
-- existing OpenClaw Telegram transcript metadata still renders as "Valentina / Telegram" in Cave;
+- migrated OpenClaw Telegram transcript metadata produces sanitized human attribution (for example, "Valentina / Telegram") in Cave; this requires an ingestion path and presentation coverage, not just session-key tests;
 - OpenCoven Telegram outbound messages can be attributed to a familiar;
 - session keys with group/topic shape parse without losing the familiar id;
 - missing or unresolved token refs fail closed;
@@ -227,7 +227,7 @@ Start with one-owner direct-message allowlist. Then add groups and topics after 
 
 - [ ] **Step 3: Preserve transcript attribution**
 
-Inbound events should carry sanitized sender metadata compatible with Cave's existing initiator parsing:
+Inbound events should carry sanitized sender metadata for a future wired Cave ingestion path, with compatibility coverage before cutover:
 
 ```ts
 {

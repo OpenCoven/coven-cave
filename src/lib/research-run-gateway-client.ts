@@ -170,10 +170,12 @@ export function researchRunGatewayStreamUrl(
   missionOrRunId: string,
   familiarId: string,
   afterSeq: number,
+  cursorRunId: string,
 ): string {
   const query = new URLSearchParams({
     familiarId,
     afterSeq: String(afterSeq),
+    cursorRunId,
   });
   return `/api/research/runs/${encodeURIComponent(missionOrRunId)}/stream?${query}`;
 }

@@ -1,0 +1,139 @@
+.cave-launch {
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-base);
+  overflow: auto;
+}
+
+.cave-launch__shell {
+  width: min(calc(var(--space-10) * 18), 100%);
+  display: grid;
+  gap: var(--space-6);
+}
+
+.cave-launch__hero {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.cave-launch__mark {
+  display: grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  color: var(--text-secondary);
+}
+
+.cave-launch__title {
+  margin: 0;
+  font-family: var(--font-eb-garamond), serif;
+  font-size: var(--text-display);
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+
+.cave-launch__subtitle {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+.cave-launch__project {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.cave-launch__project svg { flex: none; }
+.cave-launch__project span { overflow-wrap: anywhere; }
+.cave-launch__choose { justify-self: center; min-height: var(--touch-target); }
+.cave-launch__section { display: grid; gap: var(--space-3); min-width: 0; }
+
+.cave-launch__label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.cave-launch__grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-10) * 5)), 1fr));
+}
+
+.cave-launch__card,
+.cave-launch__recent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  text-align: left;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.cave-launch__card:hover,
+.cave-launch__recent:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.cave-launch__card-copy,
+.cave-launch__recent-copy {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.cave-launch__card-name,
+.cave-launch__recent-title {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-launch__card-name { font-weight: 600; }
+.cave-launch__card-meta,
+.cave-launch__recent-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-launch__card-meta { font-family: var(--font-mono); }
+.cave-launch__recents { display: grid; gap: var(--space-2); }
+.cave-launch__recent { background: transparent; border-color: transparent; }
+.cave-launch__card-go,
+.cave-launch__recent-go,
+.cave-launch__recent-icon { color: var(--text-muted); flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-launch__card,
+  .cave-launch__recent { transition: none; }
+}

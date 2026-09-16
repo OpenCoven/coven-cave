@@ -17,6 +17,7 @@ export type CanonicalWorkspaceMode =
   | "board"
   | "inbox"
   | "browser"
+  | "canvas"
   | "marketplace"
   | "submissions"
   | "grimoire"
@@ -46,6 +47,7 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "board",
   "inbox",
   "browser",
+  "canvas",
   "marketplace",
   "submissions",
   "grimoire",

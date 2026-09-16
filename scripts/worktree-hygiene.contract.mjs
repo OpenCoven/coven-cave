@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -331,7 +331,8 @@ assert.doesNotMatch(workflow, /^\s*cache:\s*pnpm\s*$/m, "dependency-free contrac
   }
 }
 
-// Applied park/unpark persists, restores, and then clears a custom path.
+// Replacing the tracker must refuse legacy mutations before touching Git,
+// not discover an unavailable safety proof after removing a worktree.
 {
   const dir = repo();
   try {
@@ -343,74 +344,61 @@ assert.doesNotMatch(workflow, /^\s*cache:\s*pnpm\s*$/m, "dependency-free contrac
     const customPath = path.join(dir, "custom", "round-trip");
     git(dir, "worktree", "add", "-q", "-b", branch, customPath, "main");
     git(dir, "push", "-q", "-u", "origin", branch);
-    const registeredCustomPath = realpathSync(customPath);
-
     const fakeBin = path.join(dir, "round-trip-bin");
     mkdirSync(fakeBin);
-    const fakeNode = path.join(fakeBin, "node");
-    const head = git(dir, "rev-parse", branch);
+    const marker = path.join(dir, "git-was-invoked");
+    const fakeGit = path.join(fakeBin, "git");
     writeFileSync(
-      fakeNode,
-      `#!/bin/sh\ncase "$*" in *worktree-lifecycle-patrol.ts*) if git -C ${JSON.stringify(dir)} worktree list --porcelain | grep -Fq ${JSON.stringify(`branch refs/heads/${branch}`)}; then printf '%s\\n' ${JSON.stringify(JSON.stringify({ items: [{ branch, head, kind: "worktree", path: registeredCustomPath, lane: "active", reasons: [] }] }))}; else printf '%s\\n' ${JSON.stringify(JSON.stringify({ items: [{ branch, head, kind: "branch-only", path: null, lane: "cooldown", reasons: [] }] }))}; fi ;; *) exec ${JSON.stringify(process.execPath)} "$@" ;; esac\n`,
+      fakeGit,
+      `#!/bin/sh\nprintf called > ${JSON.stringify(marker)}\nexit 99\n`,
     );
-    chmodSync(fakeNode, 0o755);
+    chmodSync(fakeGit, 0o755);
     const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
-
-    let result = spawnSync(process.execPath, [script, "park", "--branch", branch, "--apply"], { cwd: dir, encoding: "utf8", env });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(existsSync(customPath), false);
-    assert.equal(git(dir, "config", "--local", parkedPathConfigKey(branch)), registeredCustomPath);
-
-    result = spawnSync(process.execPath, [script, "unpark", "--branch", branch, "--apply"], { cwd: dir, encoding: "utf8", env });
-    assert.equal(result.status, 0, result.stderr);
+    const beforeRegistration = git(dir, "worktree", "list", "--porcelain");
+    const beforeConfig = git(dir, "config", "--local", "--list");
+    for (const args of [
+      ["park", "--branch", branch, "--apply"],
+      ["unpark", "--branch", branch, "--apply"],
+      ["park", "--all-eligible", "--max", "2", "--apply"],
+    ]) {
+      const result = spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: "utf8", env });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--apply unavailable: the Beads lifecycle proof is retired/);
+      assert.equal(result.stdout, "");
+    }
+    assert.equal(existsSync(marker), false, "refuse before even the first Git query");
     assert.equal(existsSync(customPath), true);
-    assert.equal(
-      spawnSync("git", ["config", "--local", "--get", parkedPathConfigKey(branch)], { cwd: dir }).status,
-      1,
-      "successful unpark must clear the recorded path",
-    );
+    assert.equal(git(dir, "worktree", "list", "--porcelain"), beforeRegistration);
+    assert.equal(git(dir, "config", "--local", "--list"), beforeConfig);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-// A failed destructive attempt consumes the budget, stops the batch, and
-// exits nonzero even when rollback restores the first worktree.
+// Weekly reports remain useful without invoking the retired lifecycle tracker.
 {
   const dir = repo();
   try {
-    const remote = path.join(dir, "origin.git");
-    mkdirSync(remote);
-    git(remote, "init", "-q", "--bare");
-    git(dir, "remote", "add", "origin", remote);
-    for (const branch of ["feat/cave-test-first", "feat/cave-test-second"]) {
-      const wt = path.join(dir, branch.endsWith("first") ? "first-custom" : "second-custom");
-      git(dir, "worktree", "add", "-q", "-b", branch, wt, "main");
-      git(dir, "push", "-q", "-u", "origin", branch);
-    }
-
     const fakeBin = path.join(dir, "fake-bin");
     mkdirSync(fakeBin);
     const fakeNode = path.join(fakeBin, "node");
+    const marker = path.join(dir, "lifecycle-was-invoked");
     writeFileSync(
       fakeNode,
-      `#!/bin/sh\ncase "$*" in *worktree-lifecycle-patrol.ts*) printf '{"items":[]}\\n' ;; *) exec ${JSON.stringify(process.execPath)} "$@" ;; esac\n`,
+      `#!/bin/sh\ncase "$*" in *worktree-lifecycle-patrol.ts*) printf called > ${JSON.stringify(marker)}; exit 99 ;; *) exec ${JSON.stringify(process.execPath)} "$@" ;; esac\n`,
     );
     chmodSync(fakeNode, 0o755);
     const result = spawnSync(
       process.execPath,
-      [script, "park", "--all-eligible", "--max", "2", "--apply"],
+      [script, "weekly", "--json"],
       { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } },
     );
-    assert.equal(result.status, 2);
+    assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
-    assert.equal(report.ok, false);
-    assert.equal(report.rolledBack.length, 1);
-    assert.equal(
-      git(dir, "worktree", "list", "--porcelain").includes("branch refs/heads/feat/cave-test-second"),
-      true,
-      "the second eligible worktree must not be mutated after the first attempt fails",
-    );
+    assert.equal(report.authoritativeLifecycle, null);
+    assert.equal(report.retirementAuthority, "unavailable");
+    assert.ok(report.remoteHygiene, "preserve independent remote-hygiene reporting");
+    assert.equal(existsSync(marker), false, "weekly reporting must not invoke the legacy tracker");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

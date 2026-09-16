@@ -2,7 +2,7 @@
 
 import "@/styles/chat-list.css";
 
-import { Fragment, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, Suspense, lazy, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
@@ -11,6 +11,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
+import { truncateBranch } from "@/lib/truncate-middle";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -80,6 +81,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
+import { ChatRowTitle } from "./chat-row-title";
 import { filterChatListRows, visibleChatSessions } from "@/lib/chat-list-model";
 import {
   CHAT_GROUP_BY_KEY,
@@ -118,6 +120,10 @@ import {
   sortChatSessionRows,
   type ChatSessionSort,
 } from "@/lib/chat-session-sort";
+
+const FlowExecutionsDialog = lazy(() => import("./flow-executions-dialog").then((module) => ({
+  default: module.FlowExecutionsDialog,
+})));
 
 type Props = {
   familiar: Familiar | null;
@@ -210,6 +216,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
   const projectOverrides = useProjectOverrides();
   const dtPrefs = useDateTimePrefs();
   const [error, setError] = useState<string | null>(null);
+  const [flowRunsOpen, setFlowRunsOpen] = useState(false);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -928,7 +935,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                   title={option.title}
                   onClick={() => setGroupBy(option.id)}
                   className={[
-                    "focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
+                    "focus-ring relative inline-flex flex-none items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
                     selected
                       ? "bg-[var(--bg-raised)] text-[var(--text-primary)] border-[var(--border-strong)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -1065,6 +1072,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                 size="sm"
                 minWidth={216}
               >
+                <PopoverItem onSelect={() => setFlowRunsOpen(true)}>
+                  Flow runs
+                </PopoverItem>
+                <PopoverSeparator />
                 {CHAT_SESSION_KIND_ORDER.map((key) => {
                   const presentation = CHAT_SESSION_KIND[key];
                   return (
@@ -1602,10 +1613,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                           {/* Content */}
                           <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">
                             {/* Row 1: session title (bold subject line) + a
-                                neutral project tag + the relative-age column.
-                                Running sessions get full white; others are
-                                slightly muted — mirrors the unread/read
-                                convention in email clients. */}
+                                neutral project tag + the relative-age column. */}
                             <span className="chat-list-row-meta flex items-center justify-between gap-2">
                               <span className="chat-list-row-title flex min-w-0 flex-1 items-center gap-1.5">
                                 {pinned && (
@@ -1616,19 +1624,15 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                     aria-hidden
                                   />
                                 )}
-                                <span className={[
-                                  "truncate text-[length:var(--text-md)] font-semibold",
-                                  s.status === "running"
-                                    ? "text-white"
-                                    : "text-[var(--text-primary)]",
-                                ].join(" ")}>
-                                  {stripLeadingTrailingEmoji((displayTitles.get(s.id) ?? s.title) || "(untitled chat)")}
-                                </span>
+                                <ChatRowTitle
+                                  className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
+                                  title={stripLeadingTrailingEmoji((displayTitles.get(s.id) ?? s.title) || "(untitled chat)")}
+                                />
                               </span>
                               {workBranch ? (
                                 <span className="chat-session-branch hidden sm:inline-flex" title={`Branch ${workBranch}`}>
                                   <Icon name="ph:git-branch" width={9} aria-hidden />
-                                  {workBranch}
+                                  {truncateBranch(workBranch)}
                                 </span>
                               ) : null}
                               {project ? (
@@ -1839,7 +1843,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 aria-label={`${pinned ? "Unpin" : "Pin"} chat ${rowName}`}
                                 aria-pressed={pinned}
                                 className={[
-                                  "touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] transition-all hover:border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] hover:text-[var(--accent-presence)] focus-visible:opacity-100 group-hover:opacity-100",
+                                  "focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] transition-all hover:border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] hover:text-[var(--accent-presence)] focus-visible:opacity-100 group-hover:opacity-100",
                                   pinned
                                     ? "text-[var(--accent-presence)] opacity-100"
                                     : "text-[var(--text-muted)] opacity-0",
@@ -1853,7 +1857,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 disabled={archivingId !== null}
                                 title={s.archived_at ? "Unarchive chat" : "Archive chat"}
                                 aria-label={`${s.archived_at ? "Unarchive" : "Archive"} chat ${rowName}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
                               >
                                 <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
                               </button>
@@ -1864,8 +1868,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 <OverflowMenu
                                   ariaLabel={`Archive controls for chat ${rowName}`}
                                   icon="ph:clock-counter-clockwise"
+                                  size="lg"
                                   disabled={archivingId !== null}
-                                  className="touch-always-visible h-6 w-6 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                  className="touch-always-visible shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
                                   minWidth={208}
                                 >
                                   <PopoverItem
@@ -1889,7 +1894,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 onClick={(e) => debugSession(e, s)}
                                 title="Debug chat"
                                 aria-label={`Debug chat ${rowName}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
                               >
                                 <Icon name="ph:bug-bold" width={12} aria-hidden />
                               </button>
@@ -1898,7 +1903,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
                                 title="Delete chat"
                                 aria-label={`Delete chat ${s.title || s.id}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
                               >
                                 <Icon name="ph:trash" width={12} aria-hidden />
                               </button>
@@ -1956,9 +1961,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                         className="focus-ring-inset group flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-[var(--bg-raised)]/50"
                       >
                         <span className="flex items-baseline justify-between gap-2">
-                          <span className="min-w-0 truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
-                            {stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
-                          </span>
+                          <ChatRowTitle
+                            className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]"
+                            title={stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
+                          />
                           <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                             {hit.matchCount === 1 ? "1 match" : `${hit.matchCount} matches`}
                           </span>
@@ -1986,6 +1992,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
         <kbd className="chat-list-kbd">{keys.mod}K</kbd> palette
       </footer>
       </section>
+      {flowRunsOpen ? (
+        <Suspense fallback={<p role="status">Loading Flow runs…</p>}>
+          <FlowExecutionsDialog
+            open
+            sessions={sessions}
+            onClose={() => setFlowRunsOpen(false)}
+            onOpenSession={(sessionId, familiarId) => {
+              onSessionsChanged?.();
+              onOpen(sessionId, familiarId);
+            }}
+          />
+        </Suspense>
+      ) : null}
       {deletePending ? (
         <UndoToast
           key={deletePending.id}
