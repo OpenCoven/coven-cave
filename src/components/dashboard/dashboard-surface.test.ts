@@ -4,9 +4,8 @@ import { test } from "node:test";
 
 const source = readFileSync(new URL("./dashboard-surface.tsx", import.meta.url), "utf8");
 
-test("the embedded dashboard seeds and refreshes the shared bento surface", () => {
-  assert.match(source, /buildDashboardModel/);
-  assert.match(source, /fetch\("\/api\/inbox"/);
-  assert.match(source, /<BentoDashboard model=\{model\} \/>/);
+test("the embedded dashboard delegates reads to the shared bento surface", () => {
+  assert.doesNotMatch(source, /fetch\(|useEffect|buildDashboardModel/);
+  assert.match(source, /<BentoDashboard \/>/);
   assert.match(source, /workspace-dashboard-surface/);
 });

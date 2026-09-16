@@ -33,7 +33,7 @@ const pairingSteps = readFileSync(
 test("Settings delegates the Phone surface to a focused component", () => {
   assert.match(
     shell,
-    /import \{ PhoneSection \} from "\.\/settings-phone"/,
+    /const PhoneSection = dynamic\(\(\) => import\("\.\/settings-phone"\)/,
   );
   assert.match(
     shell,

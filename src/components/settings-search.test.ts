@@ -122,3 +122,30 @@ assert.equal(
 );
 
 console.log("settings-search.test.ts OK");
+
+// Every search result must resolve inside its own section, including sections
+// with custom markup instead of SettingsGroup. This is intentionally scoped:
+// a same-named group in some other section cannot rescue a broken destination.
+const sectionFiles = {
+  profile: ["settings-profile.tsx"],
+  general: ["settings-shell.tsx"],
+  voice: ["voice-provider-settings.tsx", "voice-engine-settings.tsx"],
+  daemon: ["settings-daemon.tsx", "settings-shell.tsx"],
+  mobile: ["settings-phone.tsx"],
+  "client-access": ["settings-client-access.tsx"],
+  appearance: ["settings-appearance.tsx", "settings-fonts.tsx"],
+  about: ["settings-about.tsx"],
+};
+for (const entry of SETTINGS_INDEX) {
+  if (!entry.group) continue;
+  const content = sectionFiles[entry.section]
+    .map((file) => readFileSync(new URL(`./${file}`, import.meta.url), "utf8"))
+    .join("\n");
+  const groups = new Set([
+    ...[...content.matchAll(/<SettingsGroup\b[^>]*?\blabel="([^"]+)"/g)].map((match) => settingsGroupId(match[1])),
+    ...[...content.matchAll(/settingsGroupId\("([^"]+)"\)/g)].map((match) => settingsGroupId(match[1])),
+    ...[...content.matchAll(/\bid="(settings-group-[^"]+)"/g)].map((match) => match[1]),
+  ]);
+  assert.ok(groups.has(settingsGroupId(entry.group)), `Settings search destination is missing: ${entry.section} / ${entry.group}`);
+}
+assert.ok(SETTINGS_INDEX.some((entry) => entry.section === "general" && entry.group === "Chat" && /stop/.test(entry.keywords)), "Stop phrases are discoverable in Settings search");

@@ -27,6 +27,8 @@ type Props<T extends string> = {
   groupsByTab: Record<T, readonly string[]>;
   /** The shell's active search/deep-link scroll target, if any. */
   scrollTarget?: string | null;
+  /** Identifies each search, including repeated requests for the same group. */
+  searchJump?: number;
   /** Render the panel for the active tab. */
   children: (tab: T) => ReactNode;
 };
@@ -36,6 +38,7 @@ export function SettingsTabbed<T extends string>({
   tabs,
   groupsByTab,
   scrollTarget,
+  searchJump = 0,
   children,
 }: Props<T>) {
   // One level per section, so two tabbed sections never share a journal entry.
@@ -46,15 +49,15 @@ export function SettingsTabbed<T extends string>({
   const setTab = showTab;
   // Track whether the user has manually picked a tab, so a stale scrollTarget
   // doesn't yank them away — only an *active* search target switches tabs.
-  const lastTarget = useRef<string | null>(null);
+  const lastTarget = useRef<{ target: string | null; jump: number } | null>(null);
 
   useEffect(() => {
     const current = scrollTarget ?? null;
-    if (current === lastTarget.current) return;
-    lastTarget.current = current;
+    if (current === lastTarget.current?.target && searchJump === lastTarget.current.jump) return;
+    lastTarget.current = { target: current, jump: searchJump };
     const target = tabForScrollTarget(groupsByTab, current, settingsGroupId);
     if (target) setTab(target);
-  }, [scrollTarget, groupsByTab]);
+  }, [scrollTarget, searchJump, groupsByTab]);
 
   return (
     <>

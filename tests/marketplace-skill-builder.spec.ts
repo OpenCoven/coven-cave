@@ -5,22 +5,36 @@ import { expect, test, type Page } from "@playwright/test";
 // stubbed, and the write endpoint mocked so the spec asserts the exact body
 // the form posts and the success-panel flow (View in Skills / Build another).
 
-async function gotoBuildTab(page: Page) {
+async function openMarketplace(page: Page, legacySkills = false) {
   await page.route("**/api/marketplace", (r) => r.fulfill({ json: { ok: true, plugins: [] } }));
-  await page.route("**/api/skills/directory**", (r) => r.fulfill({ json: { ok: true, entries: [] } }));
+  await page.route("**/api/skills/directory**", (r) => r.fulfill({ json: { ok: true, entries: legacySkills ? [{
+    id: "local-release-notes", name: "Local release notes", description: "An owned skill.", installed: true,
+    local: { path: "/tmp/e2e/release-notes/SKILL.md", scope: "coven" },
+  }] : [] } }));
   await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [] } }));
   await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-  await page.addInitScript(() => {
+  await page.addInitScript((legacy) => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
-  });
+    if (legacy && !window.localStorage.getItem("test:marketplace-seeded")) {
+      window.localStorage.setItem("test:marketplace-seeded", "1");
+      window.localStorage.setItem("cave:surface-preferences:v1", JSON.stringify({ version: 1, values: {
+        "marketplace.section": "skills", "marketplace.kind": "mcp",
+        "marketplace.status": "needs-setup", "marketplace.category": "Old category",
+      } }));
+    }
+  }, legacySkills);
   await page.goto("/?mode=marketplace");
   await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
+}
+
+async function gotoBuildTab(page: Page) {
+  await openMarketplace(page);
   await page.locator("#marketplace-tab-build").click();
   await expect(page.locator("#marketplace-panel-build")).toBeVisible();
 }
 
 test.describe("marketplace skill builder", () => {
-  test("authors a skill: form → preview → save → success panel → Skills tab", async ({ page }) => {
+  test("authors a skill: form → preview → save → success panel → owned Skills", async ({ page }) => {
     let postedBody: Record<string, unknown> | null = null;
     await page.route("**/api/skills/build", async (route) => {
       postedBody = route.request().postDataJSON() as Record<string, unknown>;
@@ -96,3 +110,38 @@ test.describe("marketplace skill builder", () => {
     await expect(form.getByLabel("Name")).toHaveValue("Release Notes Writer");
   });
 });
+
+for (const width of [1280, 600]) {
+  test(`retired Skills preference reaches owned inventory at ${width}px and stays navigable`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await openMarketplace(page, true);
+    await expect(page.locator("#marketplace-tab-skills")).toHaveCount(0);
+    await expect(page.getByText("Skills worth summoning.", { exact: true })).toHaveCount(0);
+    await expect(page.locator("#marketplace-tab-browse")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("button", { name: /Local release notes/ })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("cave:surface-preferences:v1")!).values)).toMatchObject({
+      "marketplace.section": "browse", "marketplace.kind": "skill",
+      "marketplace.status": "all", "marketplace.category": "All",
+    });
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.setAttribute("data-mode", mode);
+      }, { theme, mode });
+      await expect(page.getByRole("button", { name: /Local release notes/ })).toBeVisible();
+      await page.screenshot({ animations: "disabled", path: test.info().outputPath(`owned-skills-${width}-${theme}-${mode}.png`) });
+    }
+    const yours = page.locator("#marketplace-tab-browse");
+    await yours.focus();
+    await page.keyboard.press("End");
+    await expect(page.locator("#marketplace-tab-build")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#marketplace-panel-build")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("cave:surface-preferences:v1")!).values["marketplace.section"])).toBe("build");
+    // Re-enter the surface explicitly: the shell owns and clears entry URLs.
+    await page.goto("/?mode=marketplace");
+    await expect(page.locator("#marketplace-panel-build")).toBeVisible();
+    await page.locator("#marketplace-tab-browse").click();
+    await expect(page.getByRole("button", { name: /Local release notes/ })).toBeVisible();
+  });
+}

@@ -56,8 +56,8 @@ assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared paus
 assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
   bento,
-  /inboxReady \? buildDashboardModel\(data\.inbox, new Date\(\)\) : initialModel/,
-  "the server model is only the first-paint seed — polls rebuild it from the fresh inbox",
+  /inboxReady \? buildDashboardModel\(data\.inbox, new Date\(\)\) : \(initialModel \?\? emptyModel\)/,
+  "polls replace the optional server seed or empty embedded model with the fresh inbox",
 );
 
 // Pure helpers drive every panel — no inline derivation drift.

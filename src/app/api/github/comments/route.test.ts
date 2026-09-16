@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { parseReadinessComments } from "../../../../components/role-surfaces/use-pr-readiness.ts";
 
 const home = mkdtempSync(join(tmpdir(), "cave-review-evidence-"));
 process.env.COVEN_HOME = home;
@@ -37,7 +36,6 @@ test("a failed GraphQL thread read cannot masquerade as an empty reviewed conver
   assert.equal(response.status, 200, "the readable conversation remains available");
   assert.equal(body.reviewEvidenceComplete, false);
   assert.match(body.reviewEvidenceError, /thread/i);
-  assert.throws(() => parseReadinessComments(body), /thread/i);
 });
 
 test("genuinely empty review evidence is complete and accepted", async (t) => {
@@ -45,7 +43,7 @@ test("genuinely empty review evidence is complete and accepted", async (t) => {
   const body = await (await read()).json();
   assert.equal(body.reviewEvidenceComplete, true);
   assert.equal(body.reviewEvidenceError, null);
-  assert.deepEqual(parseReadinessComments(body).reviewThreads, []);
+  assert.deepEqual(body.reviewThreads, []);
 });
 
 test("GraphQL partial errors, missing pagination, and malformed state cannot grant completeness", async (t) => {
@@ -62,7 +60,6 @@ test("GraphQL partial errors, missing pagination, and malformed state cannot gra
   for (payload of payloads) {
     const body = await (await read()).json();
     assert.equal(body.reviewEvidenceComplete, false);
-    assert.throws(() => parseReadinessComments(body));
   }
 });
 
@@ -78,7 +75,6 @@ test("bounded thread and review windows explicitly remain incomplete", async (t)
   for (hasNextPage of [true, false]) {
     const body = await (await read()).json();
     assert.equal(body.reviewEvidenceComplete, false);
-    assert.throws(() => parseReadinessComments(body));
   }
 });
 
@@ -88,7 +84,6 @@ test("a failed review-summary read also blocks readiness without losing the time
   const body = await (await read()).json();
   assert.equal(body.ok, true);
   assert.equal(body.reviewEvidenceComplete, false);
-  assert.throws(() => parseReadinessComments(body));
 });
 
 test("capped comments inside a fully read thread connection remain non-authorizing", async (t) => {
@@ -106,8 +101,6 @@ test("capped comments inside a fully read thread connection remain non-authorizi
     const body = await (await read()).json();
     assert.equal(body.reviewEvidenceComplete, !hasNextPage);
     assert.equal(body.reviewThreads[0].comments[0].body, "Readable comment");
-    if (hasNextPage) assert.throws(() => parseReadinessComments(body), /incomplete/);
-    else assert.equal(parseReadinessComments(body).reviewThreads?.length, 1);
   }
 });
 
@@ -125,7 +118,6 @@ test("missing or malformed nested comment pagination cannot grant completeness",
   for (pageInfo of [undefined, null, {}, { hasNextPage: "false" }]) {
     const body = await (await read()).json();
     assert.equal(body.reviewEvidenceComplete, false);
-    assert.throws(() => parseReadinessComments(body), /incomplete/);
   }
 });
 

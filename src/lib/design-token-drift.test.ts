@@ -247,7 +247,8 @@ BASELINES.offScaleSpacingPx = 1616;
 // constants in that stylesheet — and the sheet's three off-scale spacing
 // literals were snapped to --space-1/-2 in this PR rather than banked, so
 // offScaleSpacingPx is unchanged rather than raised.
-BASELINES.inlineTsxStyles = 290;
+// -5: retiring Review Desk removes its exclusive dynamic pane styles (#5412).
+BASELINES.inlineTsxStyles = 285;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

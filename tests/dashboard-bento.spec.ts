@@ -62,7 +62,7 @@ const card = (id: string, title: string, status: string, familiarId: string | nu
   labels: [], lifecycle: "active", lifecycleAt: daysAgo(ageDays), retryCount: 0, maxRetries: 0, steps: [],
 });
 
-async function gotoDashboard(page: Page, opts: { inbox?: unknown[]; cards?: unknown[] } = {}) {
+async function gotoDashboard(page: Page, opts: { inbox?: unknown[]; cards?: unknown[]; inboxStatus?: number; boardStatus?: number } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
@@ -81,8 +81,8 @@ async function gotoDashboard(page: Page, opts: { inbox?: unknown[]; cards?: unkn
       },
     },
   }));
-  await page.route("**/api/board", (route) => route.fulfill({ json: { cards: opts.cards ?? [] } }));
-  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: opts.inbox ?? [] } }));
+  await page.route("**/api/board", (route) => route.fulfill({ status: opts.boardStatus ?? 200, json: { cards: opts.cards ?? [] } }));
+  await page.route("**/api/inbox**", (route) => route.fulfill({ status: opts.inboxStatus ?? 200, json: { items: opts.inbox ?? [] } }));
   await page.route("**/api/projects", (route) => route.fulfill({ json: { ok: true, projects: [{ id: "p1" }, { id: "p2" }] } }));
   await page.route("**/api/profile", (route) => route.fulfill({ json: { ok: true, profile: null } }));
   await page.goto("/dashboard");
@@ -254,4 +254,33 @@ test("activity feed merges sources with machine-readable times; footer ranks col
   await expect(foot.locator("a[href^='/dashboard/familiars/']")).toHaveCount(4);
   await expect(foot.locator("a[href^='/dashboard/familiars/']").first()).toHaveAttribute("href", "/dashboard/familiars/sage/profile");
   await expect(foot.locator(".bd-footer-stamp")).toContainText("COVEN CAVE");
+});
+
+
+test("unavailable attention sources never claim all clear and recover on the next poll", async ({ page }, testInfo) => {
+  await page.clock.install();
+  await gotoDashboard(page, { inboxStatus: 503, boardStatus: 503 });
+  const board = page.locator(".bd-board");
+  await expect(board.getByRole("status")).toContainText("Attention updates unavailable");
+  await expect(board.getByText("all clear", { exact: true })).toHaveCount(0);
+  await expect(board.getByRole("link", { name: "Tasks", exact: true })).toHaveAttribute("href", "/?mode=board");
+  await expect(board.getByRole("link", { name: "Rituals", exact: true })).toHaveAttribute("href", "/?mode=inbox");
+  for (const width of [1280, 600]) {
+    await page.setViewportSize({ width, height: 850 });
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, { theme, mode });
+      await board.screenshot({ path: testInfo.outputPath(`attention-unavailable-${width}-${theme}-${mode}.png`), animations: "disabled" });
+    }
+  }
+  await board.getByRole("link", { name: "Tasks", exact: true }).focus();
+  await expect(board.getByRole("link", { name: "Tasks", exact: true })).toBeFocused();
+  await expect(board.getByRole("link", { name: "Tasks", exact: true })).toHaveCSS("text-decoration-line", "underline");
+  await page.route("**/api/board", route => route.fulfill({ json: { cards: [] } }));
+  await page.route("**/api/inbox**", route => route.fulfill({ json: { items: [] } }));
+  await page.clock.fastForward(30_000);
+  await expect(board.getByText("all clear", { exact: true })).toBeVisible();
+  await expect(board.getByRole("status")).toHaveCount(0);
 });

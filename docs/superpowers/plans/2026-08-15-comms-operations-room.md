@@ -1,5 +1,9 @@
 # Comms Operations Room Implementation Plan
 
+> Retired by [#5412](https://github.com/OpenCoven/coven-cave/issues/5412).
+> Generic Comms Operations is removed. X Comms retains X planning and the
+> confirmed live publishing panel. This plan is historical and must not be executed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Turn the existing Messenger role surface into Charm's durable, approval-gated communications cockpit for listening, shaping one message into channel-native variants, delivering through OpenCoven connectors, and learning what resonated.

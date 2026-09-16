@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -11,7 +12,6 @@ const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const marketplaceConfigure = await readFile(new URL("./marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
-const skillsComingSoon = await readFile(new URL("./marketplace/skills-coming-soon.tsx", import.meta.url), "utf8");
 const css = [
   await readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   await readFile(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8"),
@@ -27,7 +27,7 @@ const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.me
 const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
 // ── Roles + Marketplace are ONE merged hub surface ──────────────────────────
-// Owned inventory (Yours), the curated Skills preview, and Build live on a
+// Owned inventory (Yours) and Build live on a
 // single Marketplace page with a section tablist. The old modes stay in the
 // WorkspaceMode union so deep links and navigate-mode events keep working —
 // roles/capabilities land on Yours while those sections are hidden.
@@ -61,8 +61,8 @@ assert.doesNotMatch(
 // ── Navigation: one Tools entry for the merged hub ───────────────────────────
 assert.match(
   navigation,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", group: "explore", quiet: true \},/,
-  "The navigation registry should describe the owned inventory and curated Skills shelf truthfully",
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage installed items and author local skills", group: "explore", quiet: true \},/,
+  "The navigation registry describes owned inventory and local skill authoring",
 );
 assert.doesNotMatch(
   navigation,
@@ -171,7 +171,7 @@ assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subt
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
 // Yours and Build are always present; Crafts stays feature-gated. The Skills
-// component owns its tabpanel wrapper.
+// preview is retired; owned skills remain a Yours filter.
 for (const id of ["browse", "crafts", "build"]) {
   assert.match(
     marketplaceView,
@@ -179,23 +179,20 @@ for (const id of ["browse", "crafts", "build"]) {
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
-assert.match(marketplaceView, /<SkillsComingSoon/, "the Skills panel renders the curated Coming Soon shelf");
-assert.match(
-  skillsComingSoon,
-  /role="tabpanel"\s*\n\s*id="marketplace-panel-skills"\s*\n\s*aria-labelledby="marketplace-tab-skills"/,
-  "the Skills preview is a tabpanel labelled by its tab",
-);
+assert.doesNotMatch(marketplaceView, /SkillsComingSoon/, "the unavailable Skills preview is removed");
+assert.doesNotMatch(css, /marketplace-coming-soon/, "preview-only styles are removed");
+assert.equal(existsSync(new URL("./marketplace/skills-coming-soon.tsx", import.meta.url)), false);
 assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
 assert.doesNotMatch(marketplaceView, /marketplace-panel-capabilities/, "no capabilities tabpanel — the section is retired");
 
 // Search only appears where there is owned inventory to filter. Skills is a
-// curated preview and Build owns its own form.
+// a Yours filter and Build owns its own form.
 assert.match(marketplaceView, /section === "browse" \? SEARCH_LABEL\.browse[\s\S]*?: section === "crafts" \? SEARCH_LABEL\.crafts[\s\S]*?: null/, "search labels are limited to owned inventory sections");
 assert.match(marketplaceView, /aria-label=\{searchLabel\}/, "the search input names the active owned section");
 assert.match(
   marketplaceView,
   /\{searchLabel \? \(\s*\n\s*<SearchInput/,
-  "the shared search hides on Skills and Build",
+  "the shared search hides on Build",
 );
 
 // Yours filters the owned pool by Type · Status · Category.
