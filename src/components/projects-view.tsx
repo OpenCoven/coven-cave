@@ -504,7 +504,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   // Command palette "Open project" → scroll the row into view and flash it.
   const [flashId, setFlashId] = useState<string | null>(null);
-  const [pendingFocusRoot, setPendingFocusRoot] = useState<string | null>(() => consumeProjectFocusPending());
+  const [pendingFocusRoot, setPendingFocusRoot] = useState<string | null>(null);
   const focusProject = useCallback((root: string): boolean => {
       const rootKey = normalizeProjectRoot(root);
       const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
@@ -519,8 +519,19 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       return true;
   }, [projects]);
   useEffect(() => {
-    if (pendingFocusRoot && focusProject(pendingFocusRoot)) setPendingFocusRoot(null);
-  }, [focusProject, pendingFocusRoot]);
+    const root = consumeProjectFocusPending();
+    if (root) setPendingFocusRoot(root);
+  }, []);
+  useEffect(() => {
+    if (!pendingFocusRoot) return;
+    if (focusProject(pendingFocusRoot)) {
+      setPendingFocusRoot(null);
+      return;
+    }
+    if (!projectsLoading && !projectsError && (!grantsLoading || grantsData) && !(grantsError && !grantsData)) {
+      setPendingFocusRoot(null);
+    }
+  }, [focusProject, grantsData, grantsError, grantsLoading, pendingFocusRoot, projectsError, projectsLoading]);
   useEffect(() => {
     const onFocus = (e: Event) => {
       const root = (e as CustomEvent<{ root?: string }>).detail?.root;
