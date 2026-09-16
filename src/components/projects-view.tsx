@@ -504,45 +504,42 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   // Command palette "Open project" → scroll the row into view and flash it.
   const [flashId, setFlashId] = useState<string | null>(null);
-  const [pendingFocusRoot, setPendingFocusRoot] = useState<string | null>(null);
-  const focusProject = useCallback((root: string): boolean => {
-      const rootKey = normalizeProjectRoot(root);
-      const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
-      if (!match) return false;
-      setQuery("");
-      setFlashId(match.id);
-      window.requestAnimationFrame(() => {
-        document
-          .getElementById(`project-access-row:${match.id}`)
-          ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
-      });
-      return true;
+  const focusProjectRoot = useCallback((root: string): boolean => {
+    const rootKey = normalizeProjectRoot(root);
+    const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
+    if (!match) return false;
+    setQuery("");
+    setFlashId(match.id);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`project-access-row:${match.id}`)
+        ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
+    });
+    return true;
   }, [projects]);
   useEffect(() => {
-    const root = consumeProjectFocusPending();
-    if (root) setPendingFocusRoot(root);
-  }, []);
-  useEffect(() => {
-    if (!pendingFocusRoot) return;
-    if (focusProject(pendingFocusRoot)) {
-      setPendingFocusRoot(null);
-      return;
-    }
-    if (!projectsLoading && !projectsError && (!grantsLoading || grantsData) && !(grantsError && !grantsData)) {
-      setPendingFocusRoot(null);
-    }
-  }, [focusProject, grantsData, grantsError, grantsLoading, pendingFocusRoot, projectsError, projectsLoading]);
-  useEffect(() => {
     const onFocus = (e: Event) => {
-      const root = (e as CustomEvent<{ root?: string }>).detail?.root;
-      if (!root) return;
-      // Clear a latch created while this view was already mounted.
-      consumeProjectFocusPending();
-      setPendingFocusRoot(root);
+      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root) return;
+      // A direct hit clears the latch too, so an already-mounted surface does
+      // not leave a pending root behind to fire again on the next mount.
+      if (focusProjectRoot(detail.root)) consumeProjectFocusPending();
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
     return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
-  }, []);
+  }, [focusProjectRoot]);
+  // The latch, for the cold path: this surface and its parent are both lazy,
+  // so the 60ms event can land before either listener is subscribed — and even
+  // when it does not, the handler above resolves the root against `projects`,
+  // which is empty until the fetch settles. Waiting for `projectsLoading` to
+  // clear covers both, and consuming only on a real hit means a request that
+  // names a project this user cannot see is dropped rather than left pending
+  // for an unrelated later mount.
+  useEffect(() => {
+    if (projectsLoading) return;
+    const pending = consumeProjectFocusPending();
+    if (pending) focusProjectRoot(pending);
+  }, [projectsLoading, focusProjectRoot]);
   useEffect(() => {
     if (!flashId) return;
     const timer = window.setTimeout(() => setFlashId(null), 1600);

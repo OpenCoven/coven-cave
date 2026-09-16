@@ -3705,11 +3705,15 @@ export function Workspace() {
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
+      const root = intent.root;
       markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
-      markProjectFocusPending(intent.root); // latch survives the lazy ProjectsView boundary
+      // Same discipline for the destination WITHIN the tab. Set before the mode
+      // flips, so a lazily-mounted ProjectsView can consume it once its rows
+      // exist; the event below still covers the already-mounted, already-loaded
+      // case and fires first when it wins.
+      markProjectFocusPending(root);
       setMode("chat");
       shellRef.current?.dismissNavMobile();
-      const root = intent.root;
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
         window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } }));
