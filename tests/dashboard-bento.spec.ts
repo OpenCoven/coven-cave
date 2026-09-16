@@ -83,7 +83,6 @@ async function gotoDashboard(page: Page, opts: { inbox?: unknown[]; cards?: unkn
   }));
   await page.route("**/api/board", (route) => route.fulfill({ json: { cards: opts.cards ?? [] } }));
   await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: opts.inbox ?? [] } }));
-  await page.route("**/api/coven-memory", (route) => route.fulfill({ json: { entries: [] } }));
   await page.route("**/api/projects", (route) => route.fulfill({ json: { ok: true, projects: [{ id: "p1" }, { id: "p2" }] } }));
   await page.route("**/api/profile", (route) => route.fulfill({ json: { ok: true, profile: null } }));
   await page.goto("/dashboard");

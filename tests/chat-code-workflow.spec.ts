@@ -242,37 +242,6 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
     expect(route.request().method()).toBe("GET");
     return route.fulfill({ json: { ok: true, cards: [] } });
   });
-  await page.route(/\/api\/coven-memory(?:\?.*)?$/, (route) => {
-    expect(route.request().method()).toBe("GET");
-    return route.fulfill({ json: { ok: true, entries: [] } });
-  });
-  await page.route(/\/api\/coven-memory\/overview(?:\?.*)?$/, (route) => {
-    expect(route.request().method()).toBe("GET");
-    return route.fulfill({
-      json: {
-        ok: true,
-        overview: {
-          generatedAt: ISO,
-          totals: { entries: 0, familiars: 0, verified: 0, needsReview: 0, unknown: 0 },
-          lastUpdatedAt: null,
-          capabilities: {
-            detail: false,
-            verification: false,
-            attestationMetadata: false,
-            supersessionHistory: false,
-            mutations: false,
-          },
-          verification: {
-            state: "unknown",
-            checkedAt: ISO,
-            manifest: null,
-            index: null,
-            issues: [],
-          },
-        },
-      },
-    });
-  });
   await page.route(/\/api\/queue\/readiness(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
     return route.fulfill({
