@@ -148,6 +148,7 @@ import {
   BoardView,
   BrowserPane,
   CalendarView,
+  ChatSurface,
   CommandPalette,
   FamiliarsView,
   FamiliarWorkQueueView,
@@ -169,7 +170,6 @@ import {
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface } from "@/components/chat-surface";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";

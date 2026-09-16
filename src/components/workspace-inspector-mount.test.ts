@@ -6,8 +6,8 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 
 assert.match(
   workspace,
-  /import \{ ChatSurface(?:, [^}]+)? \} from "@\/components\/chat-surface";/,
-  "Workspace should import ChatSurface so agent sessions are integrated",
+  /import \{[\s\S]*ChatSurface[\s\S]*\} from "@\/components\/lazy-surfaces";/,
+  "Workspace loads ChatSurface through the shared lazy boundary",
 );
 
 assert.match(
