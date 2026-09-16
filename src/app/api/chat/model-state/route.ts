@@ -16,6 +16,7 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import { isTrustedChatHarness } from "@/lib/harness-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ type ModelStatePatchBody = {
   sessionId?: unknown;
   model?: unknown;
   scope?: unknown;
+  runtime?: unknown;
 };
 
 function jsonError(error: string, status: number) {
@@ -86,8 +88,9 @@ async function currentState(
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   const conversation = sessionId ? await loadConversation(sessionId) : null;
-  const conversationHarness = conversation?.harness
-    ? canonicalHarnessId(conversation.harness)
+  const conversationHarness = conversation?.pendingRuntimeHandoff?.toHarness ?? conversation?.harness;
+  const resolvedConversationHarness = conversationHarness
+    ? canonicalHarnessId(conversationHarness)
     : null;
   return resolveChatModelState({
     familiarId,
@@ -95,7 +98,7 @@ async function currentState(
     // contract. Model state must resolve against the same harness or a
     // familiar rebind can render Hermes controls while the next turn still
     // launches the old Claude conversation (and vice versa).
-    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
+    harness: resolvedConversationHarness ?? canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -219,14 +222,14 @@ export async function PATCH(req: Request) {
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
-  if (scope !== "familiar-default" && scope !== "session") {
+  if (scope !== "familiar-default" && scope !== "session" && scope !== "runtime-handoff") {
     return jsonError("unsupported scope", 400);
   }
 
-  const sessionConversation = scope === "session" && sessionId
+  const sessionConversation = (scope === "session" || scope === "runtime-handoff") && sessionId
     ? await loadConversation(sessionId)
     : null;
-  if (scope === "session" && sessionId &&
+  if ((scope === "session" || scope === "runtime-handoff") && sessionId &&
       (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
     return jsonError("not found", 404);
   }
@@ -249,6 +252,39 @@ export async function PATCH(req: Request) {
         },
       },
     });
+    const state = await currentState(familiarId, sessionId);
+    return NextResponse.json({ ok: true, state });
+  }
+
+  if (scope === "runtime-handoff") {
+    if (!sessionId) return jsonError("sessionId is required for runtime handoff", 400);
+    const runtime = cleanText(body.runtime);
+    if (!runtime || !isTrustedChatHarness(runtime)) return jsonError("invalid runtime", 400);
+    const targetHarness = canonicalHarnessId(runtime);
+    if (targetHarness !== canonicalHarnessId(binding.harness)) {
+      return jsonError("runtime must match the familiar binding", 409);
+    }
+    const updated = await withConversationLock(sessionId, async () => {
+      const conversation = await loadConversation(sessionId);
+      if (!conversation || conversation.familiarId !== familiarId) return false;
+      conversation.pendingRuntimeHandoff = {
+        fromHarness: canonicalHarnessId(conversation.harness),
+        toHarness: targetHarness,
+        requestedAt: new Date().toISOString(),
+      };
+      // A session-scoped model belongs to its previous runtime. Selecting a
+      // runtime is an explicit request for that runtime's default unless the
+      // user makes a new model pick after the handoff.
+      conversation.modelIntent = {
+        model: "",
+        source: "session",
+        applicationState: "saved",
+        reason: "Using the target runtime's configured default model.",
+      };
+      await saveConversation(conversation);
+      return true;
+    });
+    if (!updated) return jsonError("not found", 404);
     const state = await currentState(familiarId, sessionId);
     return NextResponse.json({ ok: true, state });
   }

@@ -317,8 +317,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: openClawSessionKey\(conversationId\)/,
-  "OpenClaw transcript metadata should persist Cave id, session key, agent id, and diagnostic gateway id separately",
+  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: gatewaySessionKey/,
+  "OpenClaw transcript metadata should persist the selected safe gateway key separately from Cave identity",
+);
+assert.match(
+  chatRoute,
+  /`key \$\{gatewaySessionKey\} · id \$\{gatewaySessionId\}`/,
+  "OpenClaw gateway diagnostics should report the isolated handoff key",
 );
 assert.match(
   chatRoute,
@@ -448,7 +453,7 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = flowDiscussionStartsFresh \|\| \(body\.startNewConversation && !existingConversation\)[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  /const resumeTarget = flowDiscussionStartsFresh \|\| runtimeHandoff\?\.startsFresh \|\| \(body\.startNewConversation && !existingConversation\)[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
   "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
 assert.match(

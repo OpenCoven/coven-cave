@@ -101,8 +101,8 @@ assert.match(
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectRuntimeBlock,
-  /if \(sessionId\) \{[\s\S]*?Runtime switching applies to new chats[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
-  "an active conversation rejects runtime rebinding because its persisted harness pins the next send",
+  /sessionId[\s\S]*?fetch\("\/api\/chat\/model-state", \{[\s\S]*?scope: "runtime-handoff",[\s\S]*?runtime,/,
+  "an active conversation persists a fresh-session runtime handoff after the familiar binding changes",
 );
 assert.match(
   selectRuntimeBlock,

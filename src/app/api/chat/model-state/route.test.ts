@@ -37,8 +37,8 @@ assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(
   route,
-  /const conversationHarness = conversation\?\.harness[\s\S]*?harness: conversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
-  "model state must use the persisted conversation harness that chat/send will launch",
+  /const conversationHarness = conversation\?\.pendingRuntimeHandoff\?\.toHarness \?\? conversation\?\.harness;[\s\S]*?const resolvedConversationHarness = conversationHarness[\s\S]*?canonicalHarnessId\(conversationHarness\)[\s\S]*?harness: resolvedConversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
+  "model state must preview a persisted runtime-handoff target before its first fresh turn",
 );
 assert.match(
   route,
@@ -62,7 +62,12 @@ assert.match(
   /conversation\.familiarId !== familiarId[\s\S]*jsonError\("not found", 404\)/,
   "session-scoped model writes must reject conversations owned by another familiar",
 );
-assert.match(route, /scope !== "familiar-default" && scope !== "session"/);
+assert.match(route, /scope !== "familiar-default" && scope !== "session" && scope !== "runtime-handoff"/);
+assert.match(
+  route,
+  /if \(scope === "runtime-handoff"\)[\s\S]*?runtime must match the familiar binding[\s\S]*?conversation\.pendingRuntimeHandoff = \{[\s\S]*?fromHarness:[\s\S]*?toHarness:[\s\S]*?requestedAt:[\s\S]*?conversation\.modelIntent = \{[\s\S]*?model: ""/,
+  "runtime handoff is persisted only for the configured target and clears a foreign session model to the target default",
+);
 assert.match(route, /next-message scope is composer-local/);
 assert.match(route, /const clearModel = body\.model === null \|\| body\.model === ""/);
 assert.equal(

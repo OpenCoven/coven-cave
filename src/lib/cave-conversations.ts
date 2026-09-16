@@ -10,6 +10,7 @@ import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
+import type { PendingRuntimeHandoff } from "./chat-runtime-handoff.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import {
@@ -117,6 +118,8 @@ export type ConversationFile = {
   runtimeAccessFingerprint?: string;
   familiarId: string;
   harness: string;
+  /** A user-selected runtime change waiting for its first fresh native turn. */
+  pendingRuntimeHandoff?: PendingRuntimeHandoff;
   /** Non-secret inference connection used by the latest successful launch. */
   inferenceRouteId?: string;
   /** Launch-authority fingerprint used to prevent cross-route native resume. */
