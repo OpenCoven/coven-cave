@@ -318,7 +318,7 @@ struct MarkdownWebView: UIViewRepresentable {
                     ],
                 ],
                 in: nil,
-                in: .page
+                contentWorld: .page
             ) { [weak self] result in
                 guard let self, !self.isInvalidated, !self.failed,
                       self.callbackGeneration == generation else { return }
