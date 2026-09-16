@@ -80,10 +80,10 @@ const router = vi.hoisted(() => ({
 // without re-implementing its internal view state machine. This suite is
 // about RightChatPanel's own session-selection contract, not ChatRouter's.
 vi.mock("@/components/chat-router", async () => {
-  const { forwardRef, useImperativeHandle } = await import("react");
+  const { forwardRef, useEffect, useImperativeHandle } = await import("react");
   const ChatRouter = forwardRef(function MockChatRouter(props: Record<string, unknown>, ref: unknown) {
     router.latestProps = props;
-    useImperativeHandle(ref, () => ({
+    const handle = {
       goToList: () => {},
       newChat: (...args: unknown[]) => {
         router.calls.newChat.push(args);
@@ -95,10 +95,27 @@ vi.mock("@/components/chat-router", async () => {
       currentSessionId: () => null,
       clearTranscript: () => {},
       runSlash: () => {},
-    }));
+    };
+    useImperativeHandle(ref, () => handle);
+    const handleRef = props.handleRef;
+    useEffect(() => {
+      if (typeof handleRef === "function") handleRef(handle);
+      else if (handleRef && typeof handleRef === "object") handleRef.current = handle;
+      return () => {
+        if (typeof handleRef === "function") handleRef(null);
+        else if (handleRef && typeof handleRef === "object") handleRef.current = null;
+      };
+    }, [handleRef]);
     return null;
   });
   return { ChatRouter };
+});
+
+// Keep this suite focused on the panel controller. Production's next/dynamic
+// loader is covered by browser E2E; here it resolves to the imperative mock.
+vi.mock("next/dynamic", async () => {
+  const { ChatRouter } = await import("@/components/chat-router");
+  return { default: () => ChatRouter };
 });
 
 vi.mock("@/components/familiar-avatar", () => ({
