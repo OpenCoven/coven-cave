@@ -9,7 +9,6 @@ import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-wind
 import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
 import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
 import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
-import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 import type { SessionRow } from "../lib/types.ts";
 
 // The workbench is three files: the view owns loading, the content composes
@@ -29,7 +28,6 @@ const source = [
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  clearCanonicalMemoryResources();
 });
 
 const originalFetch = globalThis.fetch;
@@ -185,38 +183,19 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/coven-memory",
-      {
-        ok: true,
-        entries: score === "trusted"
-          ? [
-              {
-                id: "memory-1",
-                familiarId: "cody",
-                title: "Recent memory",
-                updatedAt: "2026-06-25T12:00:00.000Z",
-                relativeUpdatedAt: "recently",
-                excerpt: "A recent verified memory",
-                source: { kind: "familiar-memory", label: "Familiar memory" },
-                privacy: { classification: null, revealRequired: null },
-                verification: { state: "verified" },
-              },
-            ]
-          : [],
-      },
-    ],
-    [
+      // The one memory this fixture carries used to live in the canonical
+      // vault; renown counted it there. The vault moved to the dedicated
+      // memory application, so the workspace file IS the memory now — same
+      // count, same 3x weight, one store instead of two.
       "/api/memory?familiarId=cody",
       {
         ok: true,
-        entries: score === "trusted"
-          ? []
-          : [{
-              familiarId: "cody",
-              relPath: "MEMORY.md",
-              fullPath: "/tmp/cody/MEMORY.md",
-              modified: "2026-06-25T12:00:00.000Z",
-            }],
+        entries: [{
+          familiarId: "cody",
+          relPath: "MEMORY.md",
+          fullPath: "/tmp/cody/MEMORY.md",
+          modified: "2026-06-25T12:00:00.000Z",
+        }],
       },
     ],
     [
@@ -512,20 +491,14 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.contractReport, null);
   });
 
-  it("keeps an unavailable canonical list distinct from a confirmed zero", async () => {
+  it("counts workspace memory so a familiar with files never reads as no-memory", async () => {
+    // This case carried two feeds — the canonical vault and the MEMORY.md scan
+    // — and proved a vault outage could not produce a false "no memory" signal
+    // while files existed. The vault is gone; the surviving property is that
+    // the file scan alone drives both availability and the growth signal.
     mockFetchFor("trusted");
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (url: RequestInfo | URL) => {
-      if (String(url) === "/api/coven-memory") {
-        return {
-          ok: false,
-          status: 503,
-          json: async () => ({
-            ok: false,
-            code: "canonical_memory_unavailable",
-          }),
-        } as unknown as Response;
-      }
       if (String(url) === "/api/memory?familiarId=cody") {
         return {
           ok: true,
@@ -547,14 +520,11 @@ describe("FamiliarAnalyticsView", () => {
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
-    assert.equal(data.covenEntries.length, 0);
-    assert.equal(data.memoryAvailability, "unavailable");
-    assert.equal(data.fileMemoryAvailability, "ready");
-    assert.ok(model.errors.some((message) => message.includes("canonical memory unavailable")));
+    assert.equal(data.memoryAvailability, "ready");
     assert.equal(model.progression?.memoryAvailability, "ready");
     assert.ok(
       !model.growthReport?.signals.some((signal) => signal.kind === "no-memory"),
-      "workspace memory prevents a false no-memory signal when canonical memory is unavailable",
+      "workspace memory prevents a false no-memory signal",
     );
   });
 

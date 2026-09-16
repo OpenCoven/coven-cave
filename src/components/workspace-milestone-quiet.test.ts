@@ -31,52 +31,34 @@ const watcher = readFileSync(
   new URL("../lib/use-milestone-watch.ts", import.meta.url),
   "utf8",
 );
+
+// The canonical vault supplied per-familiar memory counts and is now in the
+// dedicated memory application. What it left behind is a trap worth pinning.
+//
+// The watcher used to gate tier milestones on `memoryCounts === null`, meaning
+// "unknown". Carrying that forward past the vault's removal would have made it
+// permanently null and killed tier milestones outright, silently. An EMPTY map
+// is the honest reading — zero, not unknown — and it preserves the hook's own
+// rule that a milestone may pay out late but never early.
+assert.doesNotMatch(
+  watcher,
+  /loadCanonicalMemoryList|canonicalMemoryCountsForMilestones/,
+  "the watcher no longer reads the retired vault",
+);
+assert.doesNotMatch(
+  watcher,
+  /memoryCounts === null/,
+  "an unknown-memory gate would now be permanently true and would disable tier milestones",
+);
 assert.match(
   watcher,
-  /loadCanonicalMemoryList\(\)/,
-  "milestone checks use the shared non-forced canonical list loader",
+  /const memoryCounts = new Map<string, number>\(\);/,
+  "memory counts read as an honest zero rather than as unknown",
 );
 assert.match(
   watcher,
-  /memoryCounts === null \? \[\] : dueTierMilestones/,
-  "canonical unavailability suppresses memory-derived tier awards",
-);
-
-const memoryCountsUrl = new URL(
-  "../lib/canonical-memory-milestones.ts",
-  import.meta.url,
-);
-assert.ok(
-  existsSync(fileURLToPath(memoryCountsUrl)),
-  "canonical milestone count helper must exist",
-);
-const memoryCountsModule = "../lib/canonical-memory-milestones.ts";
-const { canonicalMemoryCountsForMilestones } = await import(memoryCountsModule);
-
-assert.equal(
-  canonicalMemoryCountsForMilestones({
-    state: "error",
-    error: new Error("unavailable"),
-  }),
-  null,
-  "an unavailable canonical list is unknown, not an empty count map",
-);
-assert.deepEqual(
-  [
-    ...canonicalMemoryCountsForMilestones({
-      state: "ready",
-      entries: [
-        { familiarId: "cody" },
-        { familiarId: "cody" },
-        { familiarId: "salem" },
-      ],
-    }).entries(),
-  ],
-  [
-    ["cody", 2],
-    ["salem", 1],
-  ],
-  "ready summaries count by canonical familiarId",
+  /\.\.\.dueTierMilestones\(tierRows, awarded\),/,
+  "tier milestones are still evaluated",
 );
 
 console.log("workspace-milestone-quiet: all pins hold");

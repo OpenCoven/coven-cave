@@ -16,7 +16,6 @@ function browseGroup(row: PaletteGroupingRow): string {
       return "Commands";
     case "familiar": return "Familiars";
     case "card": return "Tasks";
-    case "coven-memory":
     case "fs-memory": return "Memory";
     case "shortcut": return "Shortcuts";
     case "setting": return "Settings";

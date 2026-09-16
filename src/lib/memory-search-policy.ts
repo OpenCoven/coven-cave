@@ -1,45 +1,17 @@
-import type { CanonicalMemorySummary } from "./canonical-memory.ts";
-
 /**
- * One familiar-memory search policy for every surface (cave-she6o.1).
+ * One file-memory search policy for every surface (cave-she6o.1).
  *
  * The compact view (familiars-memory-utils' memoryMatches) and the
- * master-detail view (memory-rows' canonicalMatches/fileMatches) each grew
- * their own copy of this logic; the canonical field lists agreed but the
- * match semantics and file field sets had drifted. Both now consume this
- * module, so a field added or removed here changes every surface together.
+ * master-detail view (memory-rows' fileMatches) each grew their own copy of
+ * this logic and had drifted. Both consume this module, so a field added or
+ * removed here changes every surface together.
+ *
+ * The canonical half of this policy went with the canonical vault, which now
+ * lives in the dedicated memory application. Its field list was a PRIVACY
+ * boundary — summaries reached surfaces that must never leak where a memory
+ * lives — so it was deleted with the store rather than left behind guarding
+ * nothing.
  */
-
-/**
- * The ONLY fields canonical search may see. Storage paths, raw bodies, and
- * private detail fields are deliberately absent: canonical summaries reach
- * surfaces that must never leak where a memory lives or what its unredacted
- * content says. Widening this list is a privacy decision, not a convenience —
- * memory-search-policy.test.ts proxies an entry to prove no other property
- * is even read.
- */
-export function canonicalSearchFields(entry: CanonicalMemorySummary): string[] {
-  return [
-    entry.title,
-    entry.excerpt,
-    entry.familiarId,
-    entry.source.kind,
-    entry.source.label,
-    entry.privacy.classification ?? "",
-    entry.verification.state,
-  ];
-}
-
-/**
- * Per-field substring match. Deliberately NOT a joined-string match: joining
- * with spaces let a query span two adjacent fields ("excerpt-end familiarId")
- * and match rows no single field justified — one of the drifts this module
- * retires.
- */
-export function canonicalMemoryMatches(entry: CanonicalMemorySummary, query: string): boolean {
-  if (!query) return true;
-  return canonicalSearchFields(entry).some((value) => value.toLowerCase().includes(query));
-}
 
 /**
  * Structural view of a searchable file entry: covers memory-rows'

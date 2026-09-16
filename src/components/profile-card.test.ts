@@ -5,7 +5,6 @@ import {
   buildProfileCardViewModel,
   loadProfileCardData,
 } from "./profile-card-data.ts";
-import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -123,7 +122,16 @@ describe("Profile card wiring (cave-ujbr)", () => {
     assert.doesNotMatch(css, /max-width: 1200px/);
   });
 
-  it("renders canonical memory as unavailable instead of a confirmed zero", async () => {
+  it("reports a familiar's memory as unknown rather than a confirmed zero", async () => {
+    // The canonical vault supplied this count and now lives in the dedicated
+    // memory application. The tile must read "—", not "0": Cave is in no
+    // position to state how many memories a familiar has.
+    //
+    // The related guarantee this case used to carry still matters — memory
+    // availability never lands in `errors`. That list is what makes ProfileCard
+    // abort a refresh and keep stale data, so an enrichment landing there meant
+    // every refresh off Cave's own host failed permanently over data that had
+    // loaded fine.
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: RequestInfo | URL) => {
       const value = String(url);
@@ -131,21 +139,10 @@ describe("Profile card wiring (cave-ujbr)", () => {
         value === "/api/familiars"
           ? {
               ok: true,
-              familiars: [
-                { id: "cody", display_name: "Cody", role: "agent" },
-              ],
+              familiars: [{ id: "cody", display_name: "Cody", role: "agent" }],
             }
-          : value === "/api/sessions/list"
-            ? { ok: true, sessions: [] }
-            : {
-                ok: false,
-                code: "canonical_memory_unavailable",
-              };
-      return {
-        ok: value !== "/api/coven-memory",
-        status: value === "/api/coven-memory" ? 503 : 200,
-        json: async () => body,
-      } as Response;
+          : { ok: true, sessions: [] };
+      return { ok: true, status: 200, json: async () => body } as Response;
     }) as typeof fetch;
 
     try {
@@ -157,17 +154,9 @@ describe("Profile card wiring (cave-ujbr)", () => {
 
       assert.equal(data.memoryAvailability, "unavailable");
       assert.equal(memoryTile?.value, "—");
-      // Availability is reported as a NOTICE, never as an error. `errors` is
-      // what makes ProfileCard abort a refresh and keep stale data, so an
-      // enrichment landing there meant that off Cave's own host every refresh
-      // failed permanently — "Refresh failed: memory unavailable
-      // (local_access_required)" over data that had loaded fine.
       assert.deepEqual(viewModel.errors, []);
-      assert.equal(data.memoryNotice, "Canonical memory unavailable");
-      assert.equal(viewModel.memoryNotice, "Canonical memory unavailable");
     } finally {
       globalThis.fetch = originalFetch;
-      clearCanonicalMemoryResources();
     }
   });
 });

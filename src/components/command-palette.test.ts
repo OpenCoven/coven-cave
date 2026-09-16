@@ -288,51 +288,26 @@ assert.match(
   "task rows sort by recency when the query is empty",
 );
 
-// Canonical memory is an opaque-ID destination. It must never be downgraded
-// into the path-bearing file-memory/Grimoire intent.
-assert.match(
+// The canonical vault was an opaque-ID palette destination, deliberately kept
+// distinct from the path-bearing file-memory intent so a memory result could
+// never be downgraded into a file path. The vault now lives in the dedicated
+// memory application, so the destination is retired — and the separation it
+// protected is asserted here in its surviving form: file-memory rows still
+// carry the Grimoire file intent, and nothing reintroduces a vault row.
+assert.doesNotMatch(
   source,
-  /kind:\s*"open-coven-memory";\s*id:\s*string;\s*familiarId:\s*string/,
-  "PaletteIntent exposes the typed opaque-ID canonical-memory destination",
-);
-assert.match(
-  source,
-  /loadCanonicalMemoryList\(\)/,
-  "the palette consumes the shared canonical-memory corpus",
+  /open-coven-memory|loadCanonicalMemoryList|canonicalMemoryState/,
+  "the retired vault destination, corpus and state are all gone",
 );
 assert.doesNotMatch(
   source,
   /fetch\(\s*["'`]\/api\/coven-memory["'`]/,
-  "the palette does not bypass the shared canonical-memory resource",
-);
-const canonicalFire = source.match(
-  /else if \(row\.kind === "coven-memory"\) \{([\s\S]*?)\} else if \(row\.kind === "fs-memory"\)/,
-);
-assert.ok(canonicalFire, "the palette handles canonical and file-memory rows separately");
-assert.match(
-  canonicalFire[1],
-  /kind:\s*"open-coven-memory"[\s\S]*id:\s*row\.entry\.id[\s\S]*familiarId:\s*row\.entry\.familiarId/,
-  "canonical rows dispatch an opaque ID plus familiar ID",
-);
-assert.doesNotMatch(
-  canonicalFire[1],
-  /open-memory-file|\.path|fullPath|CustomEvent/,
-  "canonical result navigation carries neither a file intent nor a path/event race",
+  "nothing reaches for the removed vault route",
 );
 assert.match(
   source,
   /row\.kind === "fs-memory"[\s\S]{0,180}kind:\s*"open-memory-file"[\s\S]{0,100}row\.entry\.fullPath/,
   "file-memory rows retain the Grimoire file intent",
-);
-assert.match(
-  source,
-  /entry\.title[\s\S]*entry\.excerpt[\s\S]*entry\.familiarId[\s\S]*entry\.source\.label[\s\S]*entry\.verification\.state[\s\S]*entry\.relativeUpdatedAt/,
-  "canonical result search/rendering is limited to the approved safe summary fields",
-);
-assert.match(
-  source,
-  /canonicalMemoryState\.state === "error"[\s\S]*Familiar memories unavailable/,
-  "a failed canonical corpus is visibly unavailable instead of masquerading as an empty index",
 );
 
 console.log("command-palette.test.ts OK");

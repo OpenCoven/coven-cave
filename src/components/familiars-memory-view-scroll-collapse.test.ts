@@ -9,9 +9,14 @@ const source = [
 assert.doesNotMatch(source, /memory-masthead|headerCollapsed|onListScroll/, "the scroll-reactive masthead is removed");
 assert.match(source, />\s*Familiar Memory\s*</, "the compact scope row keeps the surface name visible");
 assert.match(source, /\{selectedFamiliar\?\.display_name \?\? "No familiar selected"\}/, "the scope row names the active familiar");
-assert.match(source, /Canonical status unavailable|Checking canonical status/, "the scope row reports canonical status");
-assert.match(source, /aria-expanded=\{overviewOpen\}/, "the compact status exposes the canonical overview disclosure state");
-assert.match(source, /<CanonicalMemoryOverviewPanel/, "the overview remains reachable without restoring the masthead");
+// The canonical status readout and its overview disclosure went with the
+// vault. The point of this file is unchanged: the compact scope row and its
+// controls stay stable while the list scrolls, without restoring the masthead.
+assert.doesNotMatch(
+  source,
+  /Canonical status|CanonicalMemoryOverviewPanel|overviewOpen/,
+  "the vault status readout and overview disclosure are retired",
+);
 assert.match(source, /<SearchInput[\s\S]*?placeholder=/, "search remains stable while the list scrolls");
 assert.match(source, /<Popover[\s\S]*?ariaLabel="Memory filters"/, "filters stay in a focus-return popover");
 

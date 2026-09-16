@@ -14,14 +14,19 @@ assert.match(
   "authoritative inbox SSE events invalidate Schedules' warmed landing cache",
 );
 
-assert.match(
+// The canonical vault had its own readiness-gated warmup beside the ordinary
+// surface coordinator, because it could only be read on Cave's own host. The
+// vault lives in the dedicated memory application now, so BOTH halves of that
+// arrangement must be gone — the gated warmup, and any vault transport leaking
+// into the unconditional coordinator.
+assert.doesNotMatch(
   workspace,
-  /useCanonicalMemoryWarmup\(localDaemonReady\);[\s\S]{0,80}useSurfaceWarmup\(\);/,
-  "local canonical memory has a separate readiness-gated lifecycle from ordinary surface warmup",
+  /useCanonicalMemoryWarmup|localDaemonReady/,
+  "the vault's readiness-gated warmup and its local-daemon gate are retired",
 );
 
 assert.doesNotMatch(
   surfaceWarmup,
   /canonical-memory|\/api\/coven-memory/,
-  "the unconditional surface coordinator never owns local canonical-memory transport",
+  "the unconditional surface coordinator never owns canonical-memory transport",
 );

@@ -52,14 +52,12 @@ export function FamiliarSettingsSection({
   familiar,
   familiars,
   allFamiliars,
-  localDaemonReady,
   initialTab,
   onRosterChanged,
 }: {
   familiar: ResolvedFamiliar;
   familiars: Familiar[];
   allFamiliars: ResolvedFamiliar[];
-  localDaemonReady: boolean;
   initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
 }) {
@@ -143,7 +141,6 @@ export function FamiliarSettingsSection({
             key={`${familiar.id}:memory`}
             familiar={familiar}
             allFamiliars={familiars}
-            localDaemonReady={localDaemonReady}
           />
         ) : null}
         {tab === "vault" ? <VaultPanel key={`${familiar.id}:vault`} familiarId={familiar.id} /> : null}

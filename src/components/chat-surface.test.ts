@@ -177,10 +177,13 @@ assert.doesNotMatch(
   "ChatSurface should not foreground trace terminology in the primary tabs",
 );
 
-assert.match(
+// The daemon-backed canonical landing resources went with the vault. What the
+// memory view loads now is the filesystem scan, through the shared resource —
+// asserted immediately below, which is the half that still exists.
+assert.doesNotMatch(
   agentsMemoryView,
-  /loadCanonicalMemoryList\(\)[\s\S]*loadCanonicalMemoryOverview\(\)/,
-  "Familiars memory should load daemon-backed canonical landing resources",
+  /loadCanonicalMemoryList|loadCanonicalMemoryOverview/,
+  "the retired vault loaders are gone",
 );
 
 assert.match(
@@ -275,7 +278,7 @@ assert.match(
 assert.match(
   chatSurface,
   /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
-  "the familiar scope renders the scope-aware view with the canonical selection callback",
+  "the familiar scope renders the scope-aware view with its selection callback",
 );
 
 assert.match(

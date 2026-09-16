@@ -28,11 +28,8 @@ test("InspectorEmpty helper is defined and used for independent memory error sta
   assert.match(src, /function InspectorEmpty\(/, "helper declared");
   const usages = src.match(/<InspectorEmpty\b/g) ?? [];
   assert.ok(usages.length >= 1, `expected >=1 usage, got ${usages.length}`);
-  assert.match(
-    src,
-    /icon="ph:warning"\s+title="Couldn't load familiar memories"/,
-    "canonical error state is explicit",
-  );
+  // The vault's own error state went with it; the file error state below is
+  // the one the inspector still renders.
   assert.match(
     src,
     /icon="ph:warning"\s+title="Couldn't load memory files"/,
@@ -54,16 +51,16 @@ test("InspectorEmpty helper is defined and used for independent memory error sta
   assert.doesNotMatch(familiarView, /No familiar selected/, "all and multi scopes cannot regress to the singular empty state");
 });
 
-test("memory inner mode toggle uses the shared Vercel-style Tabs (2px underline)", () => {
-  // The memory mode strip now delegates to the shared <Tabs> component, which
-  // owns the tablist role + 2px underline idiom.
-  assert.match(src, /<Tabs<"coven" \| "files">/, "memory mode renders shared Tabs");
-  assert.match(src, /ariaLabel="Memory mode"/, "memory mode tablist labelled");
-  // Should no longer use the old pill background for active mode
+test("the memory mode toggle is gone now that one source remains", () => {
+  // The strip switched between Coven (the canonical vault) and Files, and
+  // delegated to the shared <Tabs> for its tablist role and 2px underline. The
+  // vault moved to the dedicated memory application, so there is no second mode
+  // to switch to — a tablist with one tab is chrome that lies about a choice.
+  assert.doesNotMatch(src, /<Tabs<|ariaLabel="Memory mode"/, "no mode tablist remains");
   assert.doesNotMatch(
     src,
     /mode === m\s*\n[\s\S]*?bg-\[color-mix\(in_oklch,var\(--accent-presence\)_15%,transparent\)\]/,
-    "old pill background removed",
+    "old pill background stays removed",
   );
 });
 
