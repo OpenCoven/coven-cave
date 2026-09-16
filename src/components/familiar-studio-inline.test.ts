@@ -123,20 +123,21 @@ assert.match(source, /BRAIN_STUDIO_FAMILIAR_KEY/, "Reads the one-shot handoff ke
 assert.match(source, /Changes save automatically/, "Shows the autosave footer");
 assert.match(source, /Saved locally, daemon offline/, "Shows daemon-offline state");
 
-assert.match(
+// Memory counts came from the canonical vault plus the MEMORY.md scan. The
+// vault is in the dedicated memory application now, so the count is the file
+// scan alone — but the three-state contract it feeds is unchanged, and that is
+// the part worth pinning: loading, ready (including a confirmed zero) and a
+// terminal unavailable must stay distinguishable, because "we could not look"
+// and "there are none" are different claims.
+assert.doesNotMatch(
   source,
-  /loadCanonicalMemoryList\(\)/,
-  "Studio memory counts use the shared non-forced canonical list loader",
-);
-assert.match(
-  source,
-  /canonical\.entries\.filter/,
-  "Studio only counts canonical entries from a ready list",
+  /loadCanonicalMemoryList|canonicalCount/,
+  "the retired vault loader and its count are gone",
 );
 assert.match(
   source,
   /entry\.familiarId === familiarId/,
-  "Studio scopes canonical summaries with the shared camelCase familiar id",
+  "Studio scopes file memory with the shared camelCase familiar id",
 );
 assert.match(
   source,
@@ -146,11 +147,11 @@ assert.match(
 assert.match(
   source,
   /setCount\(\{ state: "unavailable" \}\)/,
-  "a failed canonical or file source settles to unavailable",
+  "a failed file source settles to unavailable",
 );
 assert.match(
   source,
-  /setCount\(\{\s*state: "ready",\s*count: canonicalCount \+ fileCount,\s*\}\)/,
+  /setCount\(\{ state: "ready", count: fileCount \}\)/,
   "a complete count settles to ready, including a confirmed zero",
 );
 assert.match(
