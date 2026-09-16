@@ -14,6 +14,9 @@ import { promisify } from "node:util";
 
 const INTENT_NAME =
   /^(\d{24})-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.lock$/;
+// Lamport's "choosing" marker. It carries no order field on purpose: it exists
+// only during the window in which its owner has not yet published one.
+const CHOOSING_NAME = /^(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.choosing$/;
 const execFileAsync = promisify(execFile);
 const pendingIntentRemovals = new Map<
   string,
@@ -154,6 +157,17 @@ function intentOwner(
     : null;
 }
 
+function choosingOwner(
+  name: string,
+): { pid: number; startIdentityHash: string } | null {
+  const match = CHOOSING_NAME.exec(name);
+  if (!match) return null;
+  const pid = Number(match[1]);
+  return Number.isSafeInteger(pid) && pid > 0
+    ? { pid, startIdentityHash: match[2] }
+    : null;
+}
+
 export type ProcessIntentLockOptions = {
   intentsDirectory: string;
   timeoutMs?: number;
@@ -222,24 +236,66 @@ export async function acquireProcessIntentLock(
   if (!ownStartIdentity) {
     throw new Error(`could not verify current process identity for ${options.label}`);
   }
-  const order = process.hrtime.bigint().toString().padStart(24, "0");
-  const ownName =
-    `${order}-${process.pid}-${identityHash(ownStartIdentity)}-` +
-    `${randomBytes(8).toString("hex")}.lock`;
-  const ownPath = path.join(
+  const ownIdentityHash = identityHash(ownStartIdentity);
+  // ── Lamport's choosing phase ───────────────────────────────────────────────
+  // The ticket below is taken BEFORE the intent file exists, and an `await`
+  // separates the two. A process descheduled in that window registers late
+  // carrying an early ticket, and can then win the comparison against a
+  // contender that has already decided it was oldest — so both enter the
+  // critical section and one update is lost. The window is not theoretical:
+  // measured at median 2.6 ms, p95 10.4 ms and max 19.8 ms under 10x CPU load,
+  // against contenders that reach this function well under a millisecond
+  // apart (issue #5443).
+  //
+  // This marker closes it. It is published before the ticket is taken and
+  // removed once the intent is visible, and no contender compares tickets
+  // while any marker is live. That is the guard the bakery algorithm requires
+  // and this implementation was missing.
+  const choosingName =
+    `${process.pid}-${ownIdentityHash}-${randomBytes(8).toString("hex")}.choosing`;
+  const choosingPath = path.join(
     /* turbopackIgnore: true */ options.intentsDirectory,
-    ownName,
+    choosingName,
   );
-  const handle = await open(
-    /* turbopackIgnore: true */ ownPath,
+  const choosingHandle = await open(
+    /* turbopackIgnore: true */ choosingPath,
     "wx",
     0o600,
   );
   try {
-    await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
+    await choosingHandle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
   } finally {
-    await handle.close();
+    await choosingHandle.close();
   }
+
+  let ownPath: string;
+  try {
+    const order = process.hrtime.bigint().toString().padStart(24, "0");
+    const ownName =
+      `${order}-${process.pid}-${ownIdentityHash}-` +
+      `${randomBytes(8).toString("hex")}.lock`;
+    ownPath = path.join(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+      ownName,
+    );
+    const handle = await open(
+      /* turbopackIgnore: true */ ownPath,
+      "wx",
+      0o600,
+    );
+    try {
+      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
+    } finally {
+      await handle.close();
+    }
+  } finally {
+    // Cleared whether or not the intent was published: a marker outliving its
+    // owner's attempt would stall every other contender until the liveness
+    // reclaim below noticed, and on the success path it must be gone before
+    // this process waits, so it never blocks on itself.
+    await removeIntent(choosingPath);
+  }
+  const ownName = path.basename(ownPath);
   try {
     while (true) {
       assertBeforeDeadline(deadline, options.label);
@@ -250,11 +306,44 @@ export async function acquireProcessIntentLock(
           ),
           options.label,
         );
-        const names = (
-          await readdir(
-            /* turbopackIgnore: true */ options.intentsDirectory,
-          )
-        )
+        const entries = await readdir(
+          /* turbopackIgnore: true */ options.intentsDirectory,
+        );
+        assertBeforeDeadline(deadline, options.label);
+        // Lamport: do not compare tickets while anyone is still choosing one.
+        // A live marker means some process has taken a ticket that may sort
+        // ahead of ours and has not published it yet; deciding now is exactly
+        // the double-acquisition this guard exists to prevent.
+        let chooserIsLive = false;
+        for (const entry of entries) {
+          if (entry === choosingName) continue;
+          const chooser = choosingOwner(entry);
+          if (!chooser) continue;
+          const chooserIdentity = await processStartIdentity(chooser.pid);
+          assertBeforeDeadline(deadline, options.label);
+          // Same policy as intents: age proves nothing. Only a dead PID or a
+          // different process incarnation makes a marker reclaimable, so a
+          // stalled-but-live chooser is waited for rather than stepped over.
+          if (
+            chooserIdentity === null ||
+            identityHash(chooserIdentity) !== chooser.startIdentityHash
+          ) {
+            await removeIntent(
+              path.join(
+                /* turbopackIgnore: true */ options.intentsDirectory,
+                entry,
+              ),
+            );
+            continue;
+          }
+          chooserIsLive = true;
+          break;
+        }
+        if (chooserIsLive) {
+          await waitBeforeRetry(deadline, options.label);
+          continue;
+        }
+        const names = entries
           .filter((name) => intentOwner(name) !== null)
           .sort();
         assertBeforeDeadline(deadline, options.label);

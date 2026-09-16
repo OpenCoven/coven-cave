@@ -74,6 +74,80 @@ test("an arbitrarily old live-owner intent is never reclaimed", async () => {
   }
 });
 
+// ── Lamport's choosing phase (issue #5443) ───────────────────────────────────
+// The ticket is taken before the intent file exists, with an await between, so
+// a descheduled process registers late carrying an early ticket and can win the
+// comparison against a contender that already decided it was oldest. Both then
+// enter the critical section and one update is lost. These pin the guard.
+
+test("a live chooser blocks ticket comparison until its intent is published", async () => {
+  const intentsDirectory = path.join(temporary, "choosing-live");
+  await mkdir(intentsDirectory, { recursive: true });
+  // A marker naming THIS process, which is definitionally alive and whose
+  // start identity therefore matches — a contender mid-choice.
+  const seed = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-choosing-seed",
+  });
+  const [seedName] = await readdir(intentsDirectory);
+  const identityHash = /-(\w{16})-/.exec(seedName)![1];
+  await seed();
+  const chooser = path.join(
+    intentsDirectory,
+    `${process.pid}-${identityHash}-abcdef0123456789.choosing`,
+  );
+  await writeFile(chooser, `${process.pid}\n`);
+
+  try {
+    // No intent file exists at all, so without the guard this would acquire
+    // immediately. It must instead wait for the chooser to publish.
+    await assert.rejects(
+      () =>
+        acquireProcessIntentLock({
+          intentsDirectory,
+          timeoutMs: 120,
+          label: "test-choosing-live",
+        }),
+      /timed out/,
+      "a contender must not compare tickets while another process is choosing one",
+    );
+  } finally {
+    await rm(chooser, { force: true });
+  }
+
+  // Once the chooser is gone the lock is available again — the guard delays,
+  // it does not wedge.
+  const release = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-choosing-cleared",
+  });
+  await release();
+});
+
+test("a chooser from a dead incarnation is reclaimed rather than blocking forever", async () => {
+  const intentsDirectory = path.join(temporary, "choosing-stale");
+  await mkdir(intentsDirectory, { recursive: true });
+  // Same PID, deliberately wrong start identity: the process at that PID is
+  // alive but is demonstrably a different incarnation, which is the one thing
+  // that makes a marker reclaimable. Age alone never is.
+  const stale = path.join(
+    intentsDirectory,
+    `${process.pid}-0000000000000000-abcdef0123456789.choosing`,
+  );
+  await writeFile(stale, "orphan\n");
+
+  const release = await acquireProcessIntentLock({
+    intentsDirectory,
+    timeoutMs: 5_000,
+    label: "test-choosing-stale",
+  });
+  assert.ok(
+    !(await readdir(intentsDirectory)).includes(path.basename(stale)),
+    "the unreclaimable-looking marker must be removed, not waited on forever",
+  );
+  await release();
+});
+
 test("an orphan from a reused PID is reclaimed by process-start identity", async () => {
   const intentsDirectory = path.join(temporary, "pid-reuse");
   const initialRelease = await acquireProcessIntentLock({
