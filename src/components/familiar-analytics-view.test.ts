@@ -183,38 +183,19 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/coven-memory",
-      {
-        ok: true,
-        entries: score === "trusted"
-          ? [
-              {
-                id: "memory-1",
-                familiarId: "cody",
-                title: "Recent memory",
-                updatedAt: "2026-06-25T12:00:00.000Z",
-                relativeUpdatedAt: "recently",
-                excerpt: "A recent verified memory",
-                source: { kind: "familiar-memory", label: "Familiar memory" },
-                privacy: { classification: null, revealRequired: null },
-                verification: { state: "verified" },
-              },
-            ]
-          : [],
-      },
-    ],
-    [
+      // The one memory this fixture carries used to live in the canonical
+      // vault; renown counted it there. The vault moved to the dedicated
+      // memory application, so the workspace file IS the memory now — same
+      // count, same 3x weight, one store instead of two.
       "/api/memory?familiarId=cody",
       {
         ok: true,
-        entries: score === "trusted"
-          ? []
-          : [{
-              familiarId: "cody",
-              relPath: "MEMORY.md",
-              fullPath: "/tmp/cody/MEMORY.md",
-              modified: "2026-06-25T12:00:00.000Z",
-            }],
+        entries: [{
+          familiarId: "cody",
+          relPath: "MEMORY.md",
+          fullPath: "/tmp/cody/MEMORY.md",
+          modified: "2026-06-25T12:00:00.000Z",
+        }],
       },
     ],
     [
