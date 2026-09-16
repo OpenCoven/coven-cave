@@ -50,6 +50,7 @@ export const SUITES = {
     "src/lib/split-snap.test.ts",
     "src/lib/split-geometry.test.ts",
     "src/lib/chat-split.test.ts",
+    "src/lib/chat-tab-events.test.ts",
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
     "src/lib/right-chat-session.test.ts",

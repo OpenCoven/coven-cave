@@ -13,7 +13,7 @@ import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-type
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_FOCUS_PROJECT_EVENT, consumeProjectFocusPending } from "@/lib/chat-tab-events";
 import { gitHubRepoSlug } from "@/lib/github-repo-link";
 import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
@@ -504,24 +504,42 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   // Command palette "Open project" → scroll the row into view and flash it.
   const [flashId, setFlashId] = useState<string | null>(null);
+  const focusProjectRoot = useCallback((root: string): boolean => {
+    const rootKey = normalizeProjectRoot(root);
+    const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
+    if (!match) return false;
+    setQuery("");
+    setFlashId(match.id);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`project-access-row:${match.id}`)
+        ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
+    });
+    return true;
+  }, [projects]);
   useEffect(() => {
     const onFocus = (e: Event) => {
       const detail = (e as CustomEvent<{ root?: string }>).detail;
       if (!detail?.root) return;
-      const rootKey = normalizeProjectRoot(detail.root);
-      const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
-      if (!match) return;
-      setQuery("");
-      setFlashId(match.id);
-      window.requestAnimationFrame(() => {
-        document
-          .getElementById(`project-access-row:${match.id}`)
-          ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
-      });
+      // A direct hit clears the latch too, so an already-mounted surface does
+      // not leave a pending root behind to fire again on the next mount.
+      if (focusProjectRoot(detail.root)) consumeProjectFocusPending();
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
     return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
-  }, [projects]);
+  }, [focusProjectRoot]);
+  // The latch, for the cold path: this surface and its parent are both lazy,
+  // so the 60ms event can land before either listener is subscribed — and even
+  // when it does not, the handler above resolves the root against `projects`,
+  // which is empty until the fetch settles. Waiting for `projectsLoading` to
+  // clear covers both, and consuming only on a real hit means a request that
+  // names a project this user cannot see is dropped rather than left pending
+  // for an unrelated later mount.
+  useEffect(() => {
+    if (projectsLoading) return;
+    const pending = consumeProjectFocusPending();
+    if (pending) focusProjectRoot(pending);
+  }, [projectsLoading, focusProjectRoot]);
   useEffect(() => {
     if (!flashId) return;
     const timer = window.setTimeout(() => setFlashId(null), 1600);

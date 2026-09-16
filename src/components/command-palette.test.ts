@@ -260,12 +260,22 @@ assert.match(
   /intent:\s*\{ kind: "open-project", root: p\.root \}/,
   "an open-project row carries the project root",
 );
-// Consumer: workspace latches the Projects tab (fresh-mount race, cave-c2zf),
-// opens it, then focuses the chosen project.
+// Consumer: workspace latches the Projects tab (fresh-mount race, cave-c2zf)
+// AND the project to focus within it, opens the tab, then asks for the project.
+// Both latches are set before the mode flips; the events still serve the
+// already-mounted case.
 assert.match(
   workspace,
-  /intent\.kind === "open-project"[\s\S]{0,200}?markProjectsTabPending\(\)[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
-  "workspace latches then opens the Projects tab and focuses the chosen project",
+  /intent\.kind === "open-project"[\s\S]{0,400}?markProjectsTabPending\(\)[\s\S]{0,400}?markProjectFocusPending\(root\)[\s\S]{0,400}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,240}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
+  "workspace latches the Projects tab and the chosen project, then opens and focuses",
+);
+// The focus latch must be set synchronously, not inside the timeout that
+// dispatches the event — a latch set on the same tick as the event it backs up
+// would inherit the race it exists to lose gracefully.
+assert.match(
+  workspace,
+  /markProjectFocusPending\(root\);[\s\S]{0,200}?setMode\("chat"\)/,
+  "the project-focus latch is set before the mode flip, not alongside the event",
 );
 
 // Tasks view-switch: the palette offers "Tasks: Kanban/Table/Gantt" rows that
