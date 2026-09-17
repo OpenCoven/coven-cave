@@ -1,0 +1,14 @@
+
+Running 5 tests using 1 worker
+
+[WebServer] ⨯ Error: timed out waiting for local cave home reconciliation queue after 15000ms
+[WebServer]     at Timeout.<anonymous> (src/lib/server/cave-home-reconciliation.ts:675:27)
+[WebServer]   673 |       new Promise<never>((_resolve, reject) => {
+[WebServer]   674 |         queueTimeout = setTimeout(() => {
+[WebServer] > 675 |           const timeout = new Error(
+[WebServer]       |                           ^
+[WebServer]   676 |             `timed out waiting for local cave home reconciliation queue after ${queueTimeoutMs}ms`,
+[WebServer]   677 |           ) as NodeJS.ErrnoException;
+[WebServer]   678 |           timeout.code = "ETIMEDOUT"; {
+[WebServer]   code: 'ETIMEDOUT'
+[WebServer] }

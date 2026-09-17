@@ -1614,6 +1614,7 @@ export function Workspace() {
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
     const openCreate = () => {
+      console.log("[DEBUG-EVENT-ONBOARDING-OPEN]");
       setOnboardingOpen(true);
     };
     window.addEventListener("cave:onboarding-open", openCreate);
@@ -2279,6 +2280,7 @@ export function Workspace() {
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => {
+    console.log("[DEBUG-OPEN-ONBOARDING]", new Error().stack);
     setOnboardingOpen(true);
   }, []);
   const closeOnboarding = useCallback(() => {
