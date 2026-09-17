@@ -50,6 +50,9 @@ struct ChatsHomeView: View {
     @State private var showArchived = false
     @State private var renamingThread: ChatThread?
     @State private var pendingDelete: ChatThread?
+    /// Server-only rows have no ChatThread to hand the existing dialog, so
+    /// they get their own confirmation (#5429).
+    @State private var pendingServerDelete: SessionRow?
     @State private var exportArchive: ExportArchive?
     @State private var appliedPreviewLaunchIntent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -82,6 +85,20 @@ struct ChatsHomeView: View {
         } message: { thread in
             Text(thread.title)
         }
+        .confirmationDialog(
+            "Delete this chat?",
+            isPresented: Binding(
+                get: { pendingServerDelete != nil },
+                set: { if !$0 { pendingServerDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingServerDelete
+        ) { session in
+            Button("Delete", role: .destructive) { app.deleteServerSession(session) }
+            Button("Cancel", role: .cancel) {}
+        } message: { session in
+            Text(session.title)
+        }
         .sheet(item: $exportArchive) { archive in
             ActivityView(items: [archive.url])
         }
@@ -98,7 +115,9 @@ struct ChatsHomeView: View {
     private var splitView: some View {
         let snapshot = ChatListSnapshot(
             threads: app.chatThreads,
-            sessions: app.chatServerSessions,
+            // Both lists go in; the snapshot owns the archived filter, so the
+            // "Show archived" count includes server-only rows (#5429).
+            sessions: app.chatServerSessions + app.chatArchivedServerSessions,
             familiars: app.familiars,
             query: query,
             includeArchived: showArchived
@@ -470,6 +489,29 @@ struct ChatsHomeView: View {
                             ServerSessionRow(session: session)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu { serverSessionActions(session) }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                app.setServerSessionPinned(session, session.pinned != true)
+                            } label: {
+                                Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
+                            }
+                            .tint(chrome.accent)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { pendingServerDelete = session } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                app.setServerSessionArchived(session, session.archivedAt == nil)
+                            } label: {
+                                Label(
+                                    session.archivedAt == nil ? "Archive" : "Unarchive",
+                                    systemImage: "archivebox"
+                                )
+                            }
+                            .tint(chrome.accent)
+                        }
                     }
                 }
                 .accessibilityIdentifier("Chat row \(entry.id)")
@@ -483,6 +525,30 @@ struct ChatsHomeView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
+    }
+
+    /// Archive, pin and delete for a conversation the desktop owns that this
+    /// device has no local thread for. Rename, Duplicate, Mute, Mark read and
+    /// Export are deliberately absent: each needs thread-local state a server
+    /// row does not have yet (#5429).
+    @ViewBuilder
+    private func serverSessionActions(_ session: SessionRow) -> some View {
+        Button {
+            app.setServerSessionPinned(session, session.pinned != true)
+        } label: {
+            Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
+        }
+        Button {
+            app.setServerSessionArchived(session, session.archivedAt == nil)
+        } label: {
+            Label(
+                session.archivedAt == nil ? "Archive" : "Unarchive",
+                systemImage: "archivebox"
+            )
+        }
+        Button(role: .destructive) { pendingServerDelete = session } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     @ViewBuilder
