@@ -1920,6 +1920,13 @@ console.log("mobile-handoff.test.ts OK");
     "cli-unusable",
     "exit 0 with no output at all is equally unusable",
   );
+  for (const nonStatusJson of [{}, []]) {
+    assert.equal(
+      classifyTailscaleSelf({ ok: true, stdout: JSON.stringify(nonStatusJson), stderr: "" }).kind,
+      "cli-unusable",
+      "valid JSON without a string BackendState is unusable status output",
+    );
+  }
   assert.equal(
     classifyTailscaleSelf({ ok: false, stdout: "", stderr: "Tailscale CLI not found. Install Tailscale…" }).kind,
     "not-installed",

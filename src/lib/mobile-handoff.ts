@@ -1442,8 +1442,16 @@ export function classifyTailscaleSelf(probe: {
   }
   let backendState = "";
   try {
-    const parsed = JSON.parse(probe.stdout) as { BackendState?: unknown };
-    if (typeof parsed.BackendState === "string") backendState = parsed.BackendState;
+    const parsed = JSON.parse(probe.stdout) as unknown;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { BackendState?: unknown }).BackendState !== "string"
+    ) {
+      return { kind: "cli-unusable", detail: cliUnusableDetail(probe.stdout) };
+    }
+    backendState = (parsed as { BackendState: string }).BackendState;
   } catch {
     // Exit 0 with output that is not status JSON means the CLI never reached
     // the backend, so its state is UNKNOWN. Reporting that as "not running"
