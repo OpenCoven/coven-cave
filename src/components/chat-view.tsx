@@ -3088,12 +3088,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
-      if (sessionId) {
-        const message = "Runtime switching applies to new chats. Start a new chat to switch runtimes.";
-        setError(message);
-        announce(message, "assertive");
-        return;
-      }
       const selectionRevision = ++modelSelectionRevisionRef.current;
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
@@ -3132,6 +3126,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }),
         });
         if (!res.ok) return false;
+        if (sessionId) {
+          const handoff = await fetch("/api/chat/model-state", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiarId: familiar.id,
+              sessionId,
+              scope: "runtime-handoff",
+              runtime,
+            }),
+          });
+          if (!handoff.ok) return false;
+        }
         // The roster's familiar.harness feeds the empty-state identity line
         // (and anything else reading the familiars list) — refresh it now
         // rather than waiting out the next natural reload.

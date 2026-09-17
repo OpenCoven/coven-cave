@@ -37,8 +37,8 @@ assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(
   route,
-  /const conversationHarness = conversation\?\.harness[\s\S]*?harness: conversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
-  "model state must use the persisted conversation harness that chat/send will launch",
+  /const conversationHarness = conversation\?\.pendingRuntimeHandoff\?\.toHarness \?\? conversation\?\.harness;[\s\S]*?const resolvedConversationHarness = conversationHarness[\s\S]*?canonicalHarnessId\(conversationHarness\)[\s\S]*?harness: resolvedConversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
+  "model state must preview a persisted runtime-handoff target before its first fresh turn",
 );
 assert.match(
   route,
@@ -62,7 +62,20 @@ assert.match(
   /conversation\.familiarId !== familiarId[\s\S]*jsonError\("not found", 404\)/,
   "session-scoped model writes must reject conversations owned by another familiar",
 );
-assert.match(route, /scope !== "familiar-default" && scope !== "session"/);
+assert.match(route, /scope !== "familiar-default" && scope !== "session" && scope !== "runtime-handoff"/);
+assert.match(
+  route,
+  /if \(scope === "runtime-handoff"\)[\s\S]*?runtime must match the familiar binding[\s\S]*?const handoffModelIntent = \{[\s\S]*?model: "",[\s\S]*?source: "session"[\s\S]*?conversation\.pendingRuntimeHandoff = \{[\s\S]*?fromHarness:[\s\S]*?toHarness:[\s\S]*?requestedAt,[\s\S]*?conversation\.modelIntent = handoffModelIntent/,
+  "runtime handoff is persisted only for the configured target and clears a foreign session model to the target default",
+);
+// A session displayed from the daemon alone has no Cave transcript. The
+// boundary is still recorded, or the next send has no marker to honor and
+// resumes the runtime this handoff exists to leave.
+assert.match(
+  route,
+  /const ownerFamiliarId = \(await loadState\(\)\)\.sessionFamiliar\[sessionId\];[\s\S]*?if \(ownerFamiliarId && ownerFamiliarId !== familiarId\) return false;[\s\S]*?await saveConversation\(\{[\s\S]*?harness: targetHarness,[\s\S]*?pendingRuntimeHandoff: \{[\s\S]*?toHarness: targetHarness,[\s\S]*?requestedAt,[\s\S]*?modelIntent: handoffModelIntent,[\s\S]*?turns: \[\],/,
+  "an unrecorded daemon session gets a boundary record instead of a 404 after the familiar was rebound",
+);
 assert.match(route, /next-message scope is composer-local/);
 assert.match(route, /const clearModel = body\.model === null \|\| body\.model === ""/);
 assert.equal(
@@ -72,8 +85,8 @@ assert.equal(
 );
 assert.match(
   route,
-  /const modelValidationHarness = scope === "session"[\s\S]*?canonicalHarnessId\(sessionConversation\?\.harness \?\? binding\.harness\)[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
-  "model-state writes enforce the active conversation runtime custom-id policy rather than trusting picker validation",
+  /const modelValidationHarness = scope === "session"[\s\S]*?sessionConversation\?\.pendingRuntimeHandoff\?\.toHarness[\s\S]*?sessionConversation\?\.harness[\s\S]*?binding\.harness[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
+  "model-state writes validate pending handoffs against their target runtime rather than trusting picker validation",
 );
 assert.match(
   route,

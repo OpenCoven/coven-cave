@@ -1753,6 +1753,7 @@ export const SUITES = {
     "src/lib/cave-chat-titles.test.ts",
     "src/lib/session-title-canon.test.ts",
     "src/lib/chat-model-state.test.ts",
+    "src/lib/chat-runtime-handoff.test.ts",
     "src/lib/claude-models.test.ts",
     "src/lib/copilot-models.test.ts",
     "src/lib/runtime-models.test.ts",
