@@ -885,6 +885,8 @@
   font: 600 var(--text-2xs) var(--font-mono);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .rr-table tbody td {
@@ -901,7 +903,7 @@
   position: sticky;
   right: 0;
   width: calc(var(--space-12) + var(--space-4));
-  min-width: calc(var(--space-12) + var(--space-4));
+  min-width: max(10ch, calc(var(--space-12) + var(--space-4)));
   padding-inline: var(--space-2) !important;
   background: var(--bg-raised);
   text-align: right !important;
@@ -1831,5 +1833,157 @@
   .rr-tip,
   .rr-kroverlay-card {
     transition: none !important;
+  }
+}
+
+.rr-print-sources {
+  display: none;
+}
+
+/* Export the document, not a screenshot of the scrolling application.
+   System paper/ink colors intentionally ignore the selected screen palette. */
+@media print {
+  body:has(> .research-reader-overlay) > :not(.research-reader-overlay) {
+    display: none !important;
+  }
+
+  html:has(.research-reader-overlay),
+  body:has(> .research-reader-overlay) {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .research-reader-overlay {
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --text-muted: CanvasText;
+    --bg-base: Canvas;
+    --bg-panel: Canvas;
+    --bg-raised: Canvas;
+    --bg-subtle: Canvas;
+    color-scheme: light;
+    position: static;
+    display: block;
+    padding: 0;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .research-reader,
+  .research-reader__grid,
+  .research-reader .document-reader,
+  .research-reader .document-reader__layout,
+  .research-reader .document-reader__scroll,
+  .research-reader .rr-doc__column {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0;
+    max-height: none;
+    overflow: visible !important;
+    container-type: normal;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .research-reader .rr-doc,
+  .research-reader .rr-doc__column {
+    --research-evidence-edge-reserve: 0;
+    padding: 0;
+  }
+
+  .research-reader .document-reader__column > *,
+  .research-reader .rr-codeblock,
+  .research-reader .rr-krblock {
+    width: auto;
+    max-width: none;
+    margin-inline: 0;
+    transform: none;
+  }
+
+  .research-reader .rr-head {
+    background: none;
+    padding-inline: 0;
+    margin-bottom: var(--space-6);
+  }
+
+  .research-reader .rr-head__actions,
+  .research-reader .rr-pbar,
+  .research-reader .document-reader__toolbar,
+  .research-reader .document-reader__toc,
+  .research-reader .rr-rail,
+  .research-reader .rr-railhandle,
+  .research-reader .rr-krfocus,
+  .research-reader .research-provenance-edge,
+  .research-reader .rr-wide-ref,
+  .research-reader .rr-table__evidence {
+    display: none !important;
+  }
+
+  .research-reader .rr-block-row,
+  .research-reader .rr-list-row {
+    display: block;
+  }
+
+  .research-reader .rr-inline-ref,
+  .research-reader .rr-inline-ref-gap {
+    display: inline;
+    color: CanvasText;
+    background: none;
+    border: 0;
+  }
+
+  .research-reader .rr-table__redundant-reference {
+    display: table-cell;
+  }
+
+  .research-reader .rr-krframe {
+    overflow: visible;
+    border: 0;
+  }
+
+  .research-reader .cave-code-wrap,
+  .research-reader .cave-code-wrap > pre {
+    display: block !important;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .research-reader pre,
+  .research-reader code,
+  .research-reader code span {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: CanvasText !important;
+    background: none !important;
+  }
+
+  .research-reader .cave-code-header,
+  .research-reader .cave-code-expand {
+    display: none !important;
+  }
+
+  .research-reader h2,
+  .research-reader h3 {
+    break-after: avoid;
+  }
+
+  .research-reader tr,
+  .research-reader .rr-print-sources li {
+    break-inside: avoid;
+  }
+
+  .research-reader .rr-print-sources {
+    display: block;
+    margin-top: var(--space-8);
+    overflow-wrap: anywhere;
+  }
+
+  .research-reader .rr-print-sources li {
+    margin-bottom: var(--space-4);
   }
 }
