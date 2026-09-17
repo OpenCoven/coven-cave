@@ -96,9 +96,7 @@ struct ChatView: View {
     @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
     @State private var projectResolved = false
-    @State private var firstRichRenderMessageID: String?
-    @State private var firstRichRenderSpan: CavePerformanceSpan?
-    @State private var recordedFirstRichRender = false
+    @State private var firstRichRenderMeasurement = CaveFirstRichRenderMeasurement()
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
@@ -388,6 +386,8 @@ struct ChatView: View {
         // was dismissed or the app backgrounded). Only when the live draft is
         // empty, so a draft already in hand isn't clobbered.
         .onAppear {
+            updateFirstRichRenderScene(scenePhase)
+            firstRichRenderMeasurement.setVisible(true)
             if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
             }
@@ -417,12 +417,10 @@ struct ChatView: View {
         }
         .onDisappear {
             flushDraftPersistence()
-            cancelFirstRichRender()
+            firstRichRenderMeasurement.setVisible(false)
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active {
-                cancelFirstRichRender()
-            }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            updateFirstRichRenderScene(phase)
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
@@ -1127,32 +1125,25 @@ struct ChatView: View {
         }
     }
 
-    private func beginFirstRichRender(messageID: String) {
-        guard scenePhase == .active,
-              !recordedFirstRichRender,
-              firstRichRenderMessageID == nil
-        else { return }
-        firstRichRenderMessageID = messageID
-        firstRichRenderSpan = app.performanceRecorder.begin(
-            CavePerformanceSpanName.chatFirstRichRender.rawValue
-        )
+    private func updateFirstRichRenderScene(_ phase: ScenePhase) {
+        switch phase {
+        case .active: firstRichRenderMeasurement.setSceneState(.active)
+        case .inactive: firstRichRenderMeasurement.setSceneState(.inactive)
+        case .background: firstRichRenderMeasurement.setSceneState(.background)
+        @unknown default: firstRichRenderMeasurement.setSceneState(.background)
+        }
     }
 
-    private func finishFirstRichRender(messageID: String? = nil) {
-        if let messageID, messageID != firstRichRenderMessageID { return }
-        app.performanceRecorder.end(firstRichRenderSpan)
-        firstRichRenderSpan = nil
-        if firstRichRenderMessageID != nil {
-            recordedFirstRichRender = true
-        }
-        firstRichRenderMessageID = nil
+    private func beginFirstRichRender(messageID: String) {
+        firstRichRenderMeasurement.begin(messageID: messageID, recorder: app.performanceRecorder)
+    }
+
+    private func finishFirstRichRender(messageID: String) {
+        firstRichRenderMeasurement.finish(messageID: messageID)
     }
 
     private func cancelFirstRichRender(messageID: String? = nil) {
-        if let messageID, messageID != firstRichRenderMessageID { return }
-        app.performanceRecorder.cancel(firstRichRenderSpan)
-        firstRichRenderSpan = nil
-        firstRichRenderMessageID = nil
+        firstRichRenderMeasurement.cancel(messageID: messageID)
     }
 
     // MARK: - Empty state

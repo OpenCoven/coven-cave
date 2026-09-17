@@ -143,6 +143,67 @@ final class CavePerformanceSpanLifecycle {
     }
 }
 
+// Shared by retained MessageBubble callbacks so scene eligibility is always current.
+@MainActor
+final class CaveFirstRichRenderMeasurement {
+    enum SceneState { case inactive, active, background }
+
+    private var sceneState: SceneState?
+    private var hasObservedActiveOrBackground = false
+    private var isVisible = true
+    private var attemptEnded = false
+    private var active: (messageID: String, recorder: CavePerformanceRecorder, span: CavePerformanceSpan?)?
+
+    private var canRecord: Bool {
+        guard isVisible else { return false }
+        switch sceneState {
+        case .active: return true
+        // The initial foreground frame may render before SwiftUI reports active.
+        // Keep its original boundary; later inactive transitions are interruptions.
+        case .inactive: return !hasObservedActiveOrBackground
+        case .background, nil: return false
+        }
+    }
+
+    func setSceneState(_ state: SceneState) {
+        sceneState = state
+        if state == .active || state == .background {
+            hasObservedActiveOrBackground = true
+        }
+        if !canRecord { cancel() }
+    }
+
+    func setVisible(_ visible: Bool) {
+        isVisible = visible
+        if !visible { cancel() }
+    }
+
+    func begin(messageID: String, recorder: CavePerformanceRecorder,
+               clock: any CavePerformanceClock = ContinuousPerformanceClock()) {
+        guard canRecord, !attemptEnded, active == nil else { return }
+        active = (messageID, recorder, recorder.begin(
+            CavePerformanceSpanName.chatFirstRichRender.rawValue, clock: clock
+        ))
+    }
+
+    func finish(messageID: String) {
+        guard canRecord, let pending = active, pending.messageID == messageID else { return }
+        pending.recorder.end(pending.span)
+        active = nil
+        attemptEnded = true
+    }
+
+    func cancel(messageID: String? = nil) {
+        guard let pending = active,
+              messageID == nil || messageID == pending.messageID else { return }
+        pending.recorder.cancel(pending.span)
+        active = nil
+        // A late callback carries only the message ID. Retrying within this mount
+        // could let an abandoned completion finish a replacement span.
+        attemptEnded = true
+    }
+}
+
 @MainActor
 final class CavePerformanceRecorder {
     private nonisolated static let enablementEnvironmentKey = "CAVE_PERFORMANCE_INSTRUMENTATION"
