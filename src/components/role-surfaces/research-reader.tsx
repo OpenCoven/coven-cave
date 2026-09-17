@@ -1197,7 +1197,7 @@ export function ResearchReader({
                     <li key={source.id}>
                       <strong>{source.id} · {source.title}</strong>
                       <p>{[source.publisher, source.publishedAt, source.status].filter(Boolean).join(" · ")}</p>
-                      {source.url ? <a href={source.url}>{source.url}</a> : null}
+                      {source.url ? <a href={source.url}>{source.url}</a> : source.localPath ? <code>{source.localPath}</code> : null}
                     </li>
                   ))}
                 </ul>

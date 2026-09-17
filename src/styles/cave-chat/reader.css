@@ -1062,7 +1062,8 @@ button.cave-reader-row { cursor: pointer; }
    sense on screen (rail, footer, progress, controls) drops out. Without this,
    "Export PDF" prints the transcript underneath with a modal pasted over it. */
 @media print {
-  body:has(> .cave-reader-backdrop) > *:not(.cave-reader-backdrop) { display: none !important; }
+  /* Research sits above Chat (350 vs 60); print only that foreground reader. */
+  body:has(> .cave-reader-backdrop):not(:has(> .research-reader-overlay)) > *:not(.cave-reader-backdrop) { display: none !important; }
 
   .cave-reader-backdrop {
     position: static;

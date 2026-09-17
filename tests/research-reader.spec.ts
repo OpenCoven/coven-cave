@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import type {
   ResearchMission,
   ResearchSourceRef,
@@ -1193,7 +1194,13 @@ test("final report stays readable and prints the complete document", async ({ pa
     `## Extended finding ${i + 1}\n\n${"A long report must preserve its conclusion and supporting evidence. ".repeat(8)} [S1]`,
   ).join("\n\n") + "\n\n## Final conclusion\n\nEND OF COMPLETE REPORT.";
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await openReader(page, { markdown });
+  await openReader(page, {
+    markdown,
+    sourceLedgers: [{ state: "available", sources: [
+      ...COMPLETED_MISSION.sources,
+      { ...COMPLETED_MISSION.sources[0], id: "S99", url: undefined, localPath: "/research/local-evidence.md" },
+    ] }],
+  });
   await expect(page.locator(".rr-codeblock .cm-mermaid-diagram")).toBeVisible();
   for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
     await page.evaluate(({ theme, mode }) => {
@@ -1226,12 +1233,23 @@ test("final report stays readable and prints the complete document", async ({ pa
   // Print must include even code the reader collapsed on screen.
   const longCode = page.locator(".cave-code-wrap").filter({ hasText: "CODE_TAIL_SENTINEL" });
   await longCode.getByRole("button", { name: "Collapse code", exact: true }).click();
+  // The persistent Chat panel can retain its own reader behind Research.
+  // Load its real sheet too: either stylesheet order must preserve the top reader.
+  await page.addStyleTag({ content: readFileSync("src/styles/cave-chat/reader.css", "utf8") });
+  await page.evaluate(() => {
+    const chatReader = document.createElement("div");
+    chatReader.className = "cave-reader-backdrop";
+    chatReader.textContent = "Background Chat reader";
+    document.body.append(chatReader);
+  });
   await page.emulateMedia({ media: "print" });
   const reader = page.locator(".research-reader");
   await expect(reader).toBeVisible();
+  await expect(page.locator(".cave-reader-backdrop")).toBeHidden();
   await expect(page.locator(".shell-frame")).toBeHidden();
   await expect(reader.locator(".rr-head__actions")).toBeHidden();
   await expect(reader.locator(".rr-print-sources")).toContainText("https://example.com/s1");
+  await expect(reader.locator(".rr-print-sources")).toContainText("/research/local-evidence.md");
   await expect(longCode.locator("pre")).toBeVisible();
   const printedTable = await reader.locator(".rr-table").first().boundingBox();
   const printedColumn = await reader.locator(".rr-doc__column").boundingBox();
