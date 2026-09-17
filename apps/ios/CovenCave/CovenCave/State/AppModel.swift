@@ -1723,6 +1723,13 @@ final class AppModel {
         serverSessions.filter { !$0.isGeneratedRun }
     }
 
+    /// Archived counterpart of `chatServerSessions`. The chat list feeds both
+    /// into `ChatListSnapshot`, which owns the archived filter, so the
+    /// "Show archived" count stays honest about server-only rows (#5429).
+    var chatArchivedServerSessions: [SessionRow] {
+        archivedServerSessions.filter { !$0.isGeneratedRun }
+    }
+
     var projectThreads: [ChatThread] {
         guard let projectContext else { return [] }
         return chatThreads.filter { projectContext.matches(thread: $0, registeredProjects: projects) }
@@ -5926,6 +5933,12 @@ final class AppModel {
     /// conversations started on the desktop/web that have no local thread yet.
     /// Merged with on-device threads to build each familiar's thread list.
     var serverSessions: [SessionRow] = []
+    /// Archived server rows, kept apart from `serverSessions` because every
+    /// existing consumer of that property expects the active-only view. The
+    /// chat list still needs them: an archived server-only conversation that
+    /// lived nowhere would vanish from the phone the moment it was archived,
+    /// with no way back (#5429).
+    var archivedServerSessions: [SessionRow] = []
     var sessionsError: String?
     var sessionsLoaded = false
 
@@ -6163,7 +6176,14 @@ final class AppModel {
         // existing consumer of serverSessions expects the active-only view —
         // keep that contract and reconcile flags from the full fetched list
         // (cave-sve2a).
-        serverSessions = sessions.filter { $0.archivedAt == nil }
+        let partitioned = Self.partitioningLoadedSessions(
+            sessions,
+            active: serverSessions,
+            archived: archivedServerSessions,
+            inFlight: Set(serverSessionWrites.keys)
+        )
+        serverSessions = partitioned.active
+        archivedServerSessions = partitioned.archived
         sessionsError = nil
         sessionsLoaded = true
         lastSessionsLoadedAt = Date()
@@ -7390,6 +7410,229 @@ final class AppModel {
             restored.insert(item.thread, at: min(max(shiftedIndex, 0), restored.count))
         }
         return restored
+    }
+
+    // MARK: - Server-only conversation rows (#5429)
+    //
+    // A server row is a conversation the desktop owns that this device has no
+    // local thread for. Local threads carry archive/pin/delete through
+    // `setThreadArchived`, `setThreadPinned` and `deleteThread`, which fan out
+    // over the sessions a thread owns. A server row owns exactly one session
+    // and has no thread to fan out from, so it gets its own path with the same
+    // optimistic-write, roll-back-on-refusal, offer-a-Retry contract.
+
+    /// In-flight mutations per server session id, so a rapid archive/unarchive
+    /// cannot let the older result land last, and so a refresh that arrives
+    /// mid-write does not clobber the optimistic value (see
+    /// `partitioningLoadedSessions`). Same hazard as `threadFlagWrites`.
+    @ObservationIgnored private var serverSessionWrites: [String: Task<Void, Never>] = [:]
+
+    /// Archive or unarchive a server-only conversation.
+    func setServerSessionArchived(_ session: SessionRow, _ archived: Bool) {
+        let stamp = archived ? Self.serverSessionArchiveStamp() : nil
+        mutateServerSession(session, verb: archived ? "archive" : "unarchive") { row in
+            var next = row
+            next.archivedAt = stamp
+            return next
+        } call: { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, archived: archived)
+        } retry: { [weak self] in
+            self?.setServerSessionArchived(session, archived)
+        }
+    }
+
+    /// Pin or unpin a server-only conversation.
+    func setServerSessionPinned(_ session: SessionRow, _ pinned: Bool) {
+        mutateServerSession(session, verb: pinned ? "pin" : "unpin") { row in
+            var next = row
+            next.pinned = pinned
+            return next
+        } call: { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
+        } retry: { [weak self] in
+            self?.setServerSessionPinned(session, pinned)
+        }
+    }
+
+    /// Delete a server-only conversation, sacrificing its session.
+    ///
+    /// Applied locally first, like `deleteThread`. A refusal puts the row back
+    /// rather than leaving a delete that did not happen looking like it did.
+    func deleteServerSession(_ session: SessionRow) {
+        guard let client else { return }
+        let id = session.id
+        let removal = Self.removingServerSession(
+            active: serverSessions,
+            archived: archivedServerSessions,
+            id: id
+        )
+        guard let removed = removal.removed else { return }
+        serverSessions = removal.active
+        archivedServerSessions = removal.archived
+        Haptics.success()
+        showToast("Chat deleted", systemImage: "trash.fill")
+        serverSessionWrites[id]?.cancel()
+        serverSessionWrites[id] = Task { [weak self] in
+            do {
+                try await client.deleteSession(sessionId: id)
+                guard let self, !Task.isCancelled else { return }
+                // A refresh can have landed while the DELETE was in flight and
+                // put the row back. The delete did land, so drop it again.
+                self.serverSessions.removeAll { $0.id == id }
+                self.archivedServerSessions.removeAll { $0.id == id }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                let restored = Self.placingServerSession(
+                    active: self.serverSessions,
+                    archived: self.archivedServerSessions,
+                    removed
+                )
+                self.serverSessions = restored.active
+                self.archivedServerSessions = restored.archived
+                // The transport already retried idempotently, so this failure
+                // is real: offer a Retry rather than leaving the restore as the
+                // only word (same contract as cave-ioswipe.1).
+                self.reportServerSessionFailure(verb: "delete") { [weak self] in
+                    self?.deleteServerSession(removed)
+                }
+            }
+            self?.serverSessionWrites[id] = nil
+        }
+    }
+
+    /// Shared optimistic tail for a server-row flag change.
+    private func mutateServerSession(
+        _ session: SessionRow,
+        verb: String,
+        transform: (SessionRow) -> SessionRow,
+        call: @escaping @Sendable (CaveClient, String) async throws -> Void,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
+        guard let client else { return }
+        let id = session.id
+        // Read the cached row rather than trusting the one the view handed
+        // over: a list rendered before the last refresh can carry stale flags,
+        // and rolling back to those would undo someone else's change.
+        guard let previous = serverSessions.first(where: { $0.id == id })
+            ?? archivedServerSessions.first(where: { $0.id == id })
+        else { return }
+        let next = transform(previous)
+        guard next != previous else { return }
+        let applied = Self.placingServerSession(
+            active: serverSessions,
+            archived: archivedServerSessions,
+            next
+        )
+        serverSessions = applied.active
+        archivedServerSessions = applied.archived
+        serverSessionWrites[id]?.cancel()
+        serverSessionWrites[id] = Task { [weak self] in
+            do {
+                try await call(client, id)
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                // Rolling back is the same move as applying: put the row the
+                // server never accepted back where it came from.
+                let rolledBack = Self.placingServerSession(
+                    active: self.serverSessions,
+                    archived: self.archivedServerSessions,
+                    previous
+                )
+                self.serverSessions = rolledBack.active
+                self.archivedServerSessions = rolledBack.archived
+                self.reportServerSessionFailure(verb: verb, retry: retry)
+            }
+            self?.serverSessionWrites[id] = nil
+        }
+    }
+
+    private func reportServerSessionFailure(
+        verb: String,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
+        showToast(
+            "Couldn’t \(verb) that chat — it was restored",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
+        )
+        Haptics.error()
+    }
+
+    /// Optimistic `archived_at` for a row the server has not answered for yet.
+    /// Only its presence is read, but keep it a real instant so a value that
+    /// does reach a parser is not garbage.
+    static func serverSessionArchiveStamp(_ now: Date = Date()) -> String {
+        ISO8601DateFormatter().string(from: now)
+    }
+
+    /// Put a server row in whichever list its `archivedAt` says it belongs to,
+    /// replacing any existing copy.
+    ///
+    /// The optimistic apply, the rollback after a refusal, and the restore
+    /// after a refused delete are all this same move, so they share one
+    /// implementation instead of three that can drift apart.
+    static func placingServerSession(
+        active: [SessionRow],
+        archived: [SessionRow],
+        _ row: SessionRow
+    ) -> (active: [SessionRow], archived: [SessionRow]) {
+        var nextActive = active.filter { $0.id != row.id }
+        var nextArchived = archived.filter { $0.id != row.id }
+        if row.archivedAt == nil {
+            nextActive.append(row)
+        } else {
+            nextArchived.append(row)
+        }
+        return (nextActive, nextArchived)
+    }
+
+    /// Drop a server row from whichever list holds it, returning it so a
+    /// refused delete can put it back.
+    static func removingServerSession(
+        active: [SessionRow],
+        archived: [SessionRow],
+        id: String
+    ) -> (active: [SessionRow], archived: [SessionRow], removed: SessionRow?) {
+        let removed = active.first { $0.id == id } ?? archived.first { $0.id == id }
+        return (
+            active.filter { $0.id != id },
+            archived.filter { $0.id != id },
+            removed
+        )
+    }
+
+    /// Split a fetched session list into the active/archived pair.
+    ///
+    /// Local intent wins while a mutation is in flight, exactly as the thread
+    /// fold does: a fetch that predates the write must not restore the value
+    /// the user just changed. A row that is in flight and no longer held
+    /// locally is an optimistic delete, so it is dropped rather than revived.
+    static func partitioningLoadedSessions(
+        _ sessions: [SessionRow],
+        active: [SessionRow],
+        archived: [SessionRow],
+        inFlight: Set<String>
+    ) -> (active: [SessionRow], archived: [SessionRow]) {
+        var localByID: [String: SessionRow] = [:]
+        for row in active { localByID[row.id] = row }
+        for row in archived { localByID[row.id] = row }
+        var nextActive: [SessionRow] = []
+        var nextArchived: [SessionRow] = []
+        for fetched in sessions {
+            var row = fetched
+            if inFlight.contains(fetched.id) {
+                guard let local = localByID[fetched.id] else { continue }
+                row = local
+            }
+            if row.archivedAt == nil {
+                nextActive.append(row)
+            } else {
+                nextArchived.append(row)
+            }
+        }
+        return (nextActive, nextArchived)
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.

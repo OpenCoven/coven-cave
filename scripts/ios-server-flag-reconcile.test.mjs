@@ -64,8 +64,15 @@ const apply = blockAfter(model, "private func applyLoadedSessions(");
 assert.ok(apply, "applyLoadedSessions must exist");
 assert.match(
   apply,
-  /serverSessions = sessions\.filter \{ \$0\.archivedAt == nil \}/,
-  "serverSessions must stay the active-only view consumers already expect",
+  /serverSessions = partitioned\.active\s*\n\s*archivedServerSessions = partitioned\.archived/,
+  "serverSessions must stay the active-only view consumers already expect; archived rows live apart (#5430)",
+);
+const partition = blockAfter(model, "static func partitioningLoadedSessions(");
+assert.ok(partition, "partitioningLoadedSessions must exist");
+assert.match(
+  partition,
+  /if row\.archivedAt == nil \{\s*nextActive\.append\(row\)\s*\} else \{\s*nextArchived\.append\(row\)/,
+  "the partition keys on archivedAt, so the active list never carries an archived row",
 );
 assert.match(
   apply,

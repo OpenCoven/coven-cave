@@ -19,7 +19,11 @@ for (const name of ["directThreads", "landingDirectThread", "serverOnlySessions"
 }
 assert.match(model, /func threadOpenFailure\(for thread: ChatThread\) -> ThreadOpenFailure\?/);
 assert.match(model, /func globalServerOnlySessions\(for familiarId: String\) -> \[SessionRow\]/);
-assert.match(home, /ChatListSnapshot\(\s*threads: app\.chatThreads,\s*sessions: app\.chatServerSessions,/);
+assert.match(
+  home,
+  /ChatListSnapshot\(\s*threads: app\.chatThreads,\s*sessions: app\.chatServerSessions \+ app\.chatArchivedServerSessions,/,
+  "the snapshot receives archived server rows too, so Show archived counts them (#5430)",
+);
 assert.match(home, /ForEach\(snapshot\.entries\)/, "home renders real resumable conversations");
 assert.match(home, /\.tag\(ChatRoute\.thread\(thread\)\)/, "local rows select their exact conversation");
 assert.doesNotMatch(home, /filteredFamiliars|FamiliarConversationRow|handleProjectContextChange/);
