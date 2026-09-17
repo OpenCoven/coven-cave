@@ -1187,3 +1187,65 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(reader.locator('[data-source-id="S99"]')).toHaveCount(0);
   });
 });
+
+test("final report stays readable and prints the complete document", async ({ page }, testInfo) => {
+  const markdown = FINDINGS_MD + "\n\n```text\n" + "Full exported code line\n".repeat(80) + "CODE_TAIL_SENTINEL\n```\n\n" + Array.from({ length: 30 }, (_, i) =>
+    `## Extended finding ${i + 1}\n\n${"A long report must preserve its conclusion and supporting evidence. ".repeat(8)} [S1]`,
+  ).join("\n\n") + "\n\n## Final conclusion\n\nEND OF COMPLETE REPORT.";
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await openReader(page, { markdown });
+  await expect(page.locator(".rr-codeblock .cm-mermaid-diagram")).toBeVisible();
+  for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+    await page.evaluate(({ theme, mode }) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.mode = mode;
+    }, { theme, mode });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const headings = page.locator(".rr-table thead th");
+      for (const heading of await headings.all()) {
+        if (!(await heading.isVisible())) continue;
+        const brokenWord = await heading.evaluate((element) => {
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+          let node;
+          while ((node = walker.nextNode())) {
+            const value = node.textContent?.trim();
+            if (!value || !/^[A-Za-z]+$/.test(value)) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            if (new Set(Array.from(range.getClientRects(), (r) => Math.round(r.top))).size > 1) return value;
+          }
+          return null;
+        });
+        expect(brokenWord).toBeNull();
+      }
+      await page.screenshot({ path: testInfo.outputPath(`report-${theme}-${mode}-${width}.png`) });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Print must include even code the reader collapsed on screen.
+  const longCode = page.locator(".cave-code-wrap").filter({ hasText: "CODE_TAIL_SENTINEL" });
+  await longCode.getByRole("button", { name: "Collapse code", exact: true }).click();
+  await page.emulateMedia({ media: "print" });
+  const reader = page.locator(".research-reader");
+  await expect(reader).toBeVisible();
+  await expect(page.locator(".shell-frame")).toBeHidden();
+  await expect(reader.locator(".rr-head__actions")).toBeHidden();
+  await expect(reader.locator(".rr-print-sources")).toContainText("https://example.com/s1");
+  await expect(longCode.locator("pre")).toBeVisible();
+  const printedTable = await reader.locator(".rr-table").first().boundingBox();
+  const printedColumn = await reader.locator(".rr-doc__column").boundingBox();
+  expect(printedTable!.width).toBeGreaterThan(printedColumn!.width * 0.9);
+  expect(Math.abs(printedTable!.x - printedColumn!.x)).toBeLessThan(2);
+  for (const final of [reader.getByText("END OF COMPLETE REPORT.", { exact: true }), longCode.locator("pre")]) {
+    expect(await final.evaluate((el) => {
+      const bottom = el.getBoundingClientRect().bottom;
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)
+          && bottom > parent.getBoundingClientRect().bottom + 1) return false;
+      }
+      return true;
+    })).toBe(true);
+  }
+  await page.pdf({ path: testInfo.outputPath("complete-research-report.pdf"), format: "A4" });
+});

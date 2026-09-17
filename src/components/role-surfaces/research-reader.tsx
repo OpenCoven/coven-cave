@@ -1185,6 +1185,25 @@ export function ResearchReader({
               renderBlock={renderBlock}
             />
 
+            <section className="rr-print-sources" aria-label="Report sources">
+              <h2>Sources</h2>
+              {sourceLedger.state === "failed" ? (
+                <p>Sources unavailable. Evidence could not be verified for this export.</p>
+              ) : sources.length === 0 ? (
+                <p>No sources recorded.</p>
+              ) : (
+                <ul>
+                  {sources.map((source) => (
+                    <li key={source.id}>
+                      <strong>{source.id} · {source.title}</strong>
+                      <p>{[source.publisher, source.publishedAt, source.status].filter(Boolean).join(" · ")}</p>
+                      {source.url ? <a href={source.url}>{source.url}</a> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             <div
               className="rr-railhandle"
               onPointerDown={onHandleDown}

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/globals/surface-research-studio.css";
+
 /**
  * Studio tab (cave-dl74, Phase B4) — turns mission artifacts into shareable
  * drafts via /api/research/generations. Design: "Generations" screen, markup

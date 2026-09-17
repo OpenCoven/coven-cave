@@ -276,8 +276,8 @@ test("3a — Export PDF prints the reader, not the app behind it", () => {
   assert.ok(print, "expected a print block — window.print() alone prints the transcript underneath");
   assert.match(
     print,
-    /body > \*:not\(\.cave-reader-backdrop\) \{ display: none !important; \}/,
-    "the app behind the overlay must not print",
+    /body:has\(> \.cave-reader-backdrop\) > \*:not\(\.cave-reader-backdrop\) \{ display: none !important; \}/,
+    "hide the app only while the chat reader is open so other readers can print",
   );
   assert.match(print, /\.cave-reader-rail,\s*\n\s*\.cave-reader-foot,/, "screen-only chrome drops out");
   assert.match(
