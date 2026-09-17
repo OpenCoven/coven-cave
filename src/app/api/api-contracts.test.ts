@@ -418,6 +418,12 @@ const contracts: RouteContract[] = [
   { route: "/workflows", methods: ["GET"], kind: "json" },
   { route: "/weaves", methods: ["GET"], kind: "json" },
   { route: "/weaves/[id]", methods: ["GET"], kind: "json" },
+  // CovenWiki Phase 2 (#5440): read-only manifest, wiki and page reads from the
+  // local wiki store. No request body, no path parameter reaches the filesystem
+  // unvalidated (slugs are shape-checked and the store rejects traversal).
+  { route: "/wikis", methods: ["GET"], kind: "json" },
+  { route: "/wikis/[repo]", methods: ["GET"], kind: "json" },
+  { route: "/wikis/[repo]/page/[[...slug]]", methods: ["GET"], kind: "json" },
   // cave-lsj8u: the X route handlers, landed after their lib/ and
   // components/ halves. All five reject non-local requests; the four that
   // read a body go through readJsonBody, which returns its own guarded
@@ -494,6 +500,12 @@ function effectiveRouteSource(file: string, source: string): string {
   }
   if (source.includes('from "@/lib/server/research-run-gateway-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "research-run-gateway-route.ts"), "utf8"));
+  }
+  // The three CovenWiki reads (#5440) share one response builder so the
+  // 404 / 500 / no-store shape cannot drift between them. Inline it the same
+  // way, or the route files read as returning nothing.
+  if (source.includes('from "@/lib/server/covenwiki-response"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "covenwiki-response.ts"), "utf8"));
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
