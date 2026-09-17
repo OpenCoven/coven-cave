@@ -337,6 +337,7 @@ if (command === "acquire") {
 }
 if (command === "heartbeat") {
   if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  if (state.replaceWriterOnHeartbeat) state.writers[0].generation = "unexpected-generation";
   state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
   state.events.push("heartbeat");
   save();
@@ -680,6 +681,118 @@ function createArgs({
     purpose,
     ...extra,
   ];
+}
+
+for (const overridden of [true, false]) {
+  const fixture = createFixture();
+  try {
+    const writers = overridden
+      ? [{ id: "session-active", kind: "session", generation: "writer-generation", expires_at: 9_999_999_999 }]
+      : [];
+    writeJson(fixture.covenStateFile, { owner: null, writers });
+    updateFixture(fixture, (state) => { state.config.updateMode = "fail"; });
+    const branch = "feat/cave-unit1-preserve-drain-failure";
+    const targetPath = path.join(fixture.repo, ".worktrees", "cave-unit1-preserve-drain-failure");
+    const reason = "Create a new unit only; no destructive rollback while writers are active";
+    const result = runCreate(fixture, createArgs({
+      branch,
+      extra: ["--override-coven-drain", reason],
+    }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /fixture persistence failed/);
+    assert.equal(pathEntry(targetPath).exists, overridden, "an applied override must preserve even clean failure artifacts");
+    assert.equal(registeredAt(fixture.repo, targetPath).length, overridden ? 1 : 0);
+    assert.equal(refState(fixture.repo, `refs/heads/${branch}`) !== null, overridden);
+    if (overridden) {
+      const partial = assertPartialTruth(result, fixture, branch, targetPath);
+      assert.match(result.stderr, /destructive compensation.*disabled/i);
+      assert.equal(partial.covenDrainOverride.reason, reason);
+      assert.deepEqual(partial.covenDrainOverride.writers, writers);
+    } else {
+      assert.doesNotMatch(result.stderr, /rollback-incomplete/);
+    }
+    assert.equal(readJson(fixture.covenStateFile).owner, null);
+    assert.deepEqual(readJson(fixture.covenStateFile).writers, writers);
+    assert.equal(maintenanceGateStatus(fixture.repo).gate, null);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+}
+
+{
+  const fixture = createFixture();
+  try {
+    const writer = { id: "session-active", kind: "session", generation: "writer-generation", expires_at: 9_999_999_999 };
+    writeJson(fixture.covenStateFile, { owner: null, writers: [writer], releaseFails: false });
+    const args = createArgs({ branch: "feat/cave-unit1-drain-override" });
+    const refused = runCreate(fixture, args);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /coven-still-draining/);
+    assert.match(refused.stderr, /session-active/);
+    assert.match(refused.stderr, /--override-coven-drain/);
+    assert.equal(readJson(fixture.covenStateFile).owner, null);
+    assert.deepEqual(readJson(fixture.covenStateFile).writers, [writer]);
+    for (const reason of ["", "   ", "two\nlines", "x".repeat(501)]) {
+      const invalid = runCreate(fixture, [...args, "--override-coven-drain", reason]);
+      assert.equal(invalid.status, 1);
+      assert.equal(readJson(fixture.stateFile).counts.update, 0);
+    }
+    const reason = "Operator accepts the observed writers for this new worktree only";
+    const created = runCreate(fixture, [...args, "--override-coven-drain", reason]);
+    assert.equal(created.status, 0, created.stderr);
+    assert.match(created.stderr, /WARNING.*Coven drain override/);
+    assert.match(created.stderr, /session-active/);
+    const report = parseJsonOutput(created);
+    const audit = report.metadata.coven.worktree.covenDrainOverride;
+    assert.equal(audit.reason, reason);
+    assert.ok(Number.isFinite(Date.parse(audit.observedAt)));
+    assert.equal(audit.writers[0].id, writer.id);
+    assert.deepEqual(readJson(fixture.stateFile).issues[0].metadata.coven.worktree.covenDrainOverride, audit);
+    const state = readJson(fixture.covenStateFile);
+    assert.equal(state.owner, null);
+    assert.deepEqual(state.writers, [writer], "creation never removes, expires or rewrites the writer");
+    assert.ok(state.events.includes("heartbeat"));
+    assert.equal(maintenanceGateStatus(fixture.repo).gate, null);
+    assert.equal(registeredAt(fixture.repo, report.path).length, 1);
+    const extra = runCreate(fixture, createArgs({
+      branch: "feat/cave-unit1-drain-extra",
+      extra: ["--override-coven-drain", reason],
+    }));
+    assert.equal(extra.status, 2, extra.stderr);
+    assert.match(extra.stderr, /--override-coven-drain 'Operator accepts/);
+    assert.equal(refState(fixture.repo, "refs/heads/feat/cave-unit1-drain-extra"), null);
+    const retirement = run(process.execPath, [
+      path.join(sourceRoot, "scripts/worktree-lifecycle-patrol.ts"),
+      "--apply", "--override-coven-drain", reason,
+    ], fixture.repo, { env: fixture.env });
+    assert.notEqual(retirement.status, 0);
+    assert.match(retirement.stderr, /unsupported argument: --override-coven-drain/);
+    assert.equal(registeredAt(fixture.repo, report.path).length, 1);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+}
+
+{
+  const fixture = createFixture();
+  try {
+    writeJson(fixture.covenStateFile, {
+      owner: null,
+      writers: [{ id: "session-active", kind: "session", generation: "old-generation", expires_at: 9_999_999_999 }],
+      replaceWriterOnHeartbeat: true,
+    });
+    const result = runCreate(fixture, createArgs({
+      extra: ["--override-coven-drain", "Accept only the originally observed session"],
+    }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /coven-drain-writers-changed/);
+    assert.equal(readJson(fixture.stateFile).counts.update, 0);
+    assert.equal(refState(fixture.repo, "refs/heads/feat/cave-unit1-example"), null);
+    assert.equal(readJson(fixture.covenStateFile).owner, null);
+    assert.equal(maintenanceGateStatus(fixture.repo).gate, null);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
 }
 
 function parseJsonOutput(result) {

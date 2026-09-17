@@ -5,6 +5,36 @@ import { fenceRefusalMessage } from "./fence-refusal-message.mjs";
 
 const NOW = Date.parse("2026-08-12T10:00:00.000Z");
 
+test("Coven draining explains renewable writers and a creation-only reasoned override", () => {
+  const message = fenceRefusalMessage({
+    reason: "coven-acquire-failed: coven-still-draining",
+    covenDrain: {
+      phase: "draining",
+      waitMs: 30_000,
+      writers: [{ id: "session-existing", kind: "session", expires_at: NOW / 1000 + 90 }],
+    },
+  }, NOW);
+  assert.match(message, /new writers/i);
+  assert.match(message, /30000ms/);
+  assert.match(message, /1 existing writer/);
+  assert.match(message, /session-existing.*session/);
+  assert.match(message, /renew/i);
+  assert.match(message, /own session/i);
+  assert.match(message, /coven maintenance status --json/);
+  assert.match(message, /--override-coven-drain "<reason>"/);
+  assert.match(message, /creation only/i);
+  assert.match(message, /retirement.*strict/i);
+  assert.doesNotMatch(message, /Wait for the lease to expire/);
+});
+
+test("only a drain refusal advertises the drain override", () => {
+  const draining = fenceRefusalMessage({ reason: "coven-acquire-failed: coven-still-draining" });
+  assert.match(draining, /--override-coven-drain/);
+  for (const reason of ["coven-acquire-failed: coven-expired", "local-acquire-failed: gate-held", "coven-acquire-cleanup-failed"]) {
+    assert.doesNotMatch(fenceRefusalMessage({ reason }), /--override-coven-drain/);
+  }
+});
+
 test("a held lease names the holder, its process, and how long the wait is", () => {
   const message = fenceRefusalMessage(
     {

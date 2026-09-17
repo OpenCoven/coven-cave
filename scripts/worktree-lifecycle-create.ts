@@ -29,6 +29,7 @@ import {
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   releaseMaintenanceGate,
   repositoryMaintenanceCapabilities,
+  validCovenDrainOverrideReason,
 } from "./maintenance-gate.mjs";
 
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -70,6 +71,7 @@ type ManagedCreateOptions = {
   reviewAfter: string | null;
   exception: ManagedCreationException | null;
   startPoint: string;
+  covenDrainOverrideReason: string | null;
 };
 
 type ExactBead = {
@@ -139,6 +141,11 @@ type MaintenanceFence = {
     ownerId: string;
     generation: string;
     repoDir: string;
+    drainOverride?: {
+      reason: string;
+      observedAt: string;
+      writers: { id: string; kind: string; generation: string; expires_at: number }[];
+    };
   };
 };
 
@@ -287,6 +294,7 @@ function parseArgs(argv: string[]): ManagedCreateOptions {
     "--exception-reason",
     "--exception-expires-at",
     "--exception-path",
+    "--override-coven-drain",
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]!;
@@ -308,6 +316,12 @@ function parseArgs(argv: string[]): ManagedCreateOptions {
   const branch = nonblank("--branch", values.get("--branch"));
   const owner = nonblank("--owner", values.get("--owner"));
   const purpose = nonblank("--purpose", values.get("--purpose"));
+  const covenDrainOverrideReason = values.has("--override-coven-drain")
+    ? nonblank("--override-coven-drain", values.get("--override-coven-drain"))
+    : null;
+  if (covenDrainOverrideReason !== null && !validCovenDrainOverrideReason(covenDrainOverrideReason)) {
+    throw new CliError("--override-coven-drain requires a single-line reason of 1-500 characters without control characters");
+  }
   const dispositionValue = values.get("--disposition") ?? "active";
   if (!DISPOSITIONS.has(dispositionValue as LifecycleDisposition)) {
     throw new CliError("--disposition must be active, pr, recovery, or archive");
@@ -377,6 +391,7 @@ function parseArgs(argv: string[]): ManagedCreateOptions {
     branch,
     owner,
     purpose,
+    covenDrainOverrideReason,
     disposition,
     reason,
     reviewAfter,
@@ -978,6 +993,9 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
     `    --branch ${shellQuote(options.branch)} \\`,
     `    --owner ${shellQuote(options.owner)} \\`,
     `    --purpose ${shellQuote(options.purpose)} \\`,
+    ...(options.covenDrainOverrideReason === null
+      ? []
+      : [`    --override-coven-drain ${shellQuote(options.covenDrainOverrideReason)} \\`]),
     `    --exception-owner ${shellQuote(options.owner)} \\`,
     "    --exception-reason 'why this exception is needed' \\",
     `    --exception-expires-at ${expiresAt} \\`,
@@ -1085,6 +1103,12 @@ type FenceRefusal = {
   covenVersion?: string;
   covenVersionOutput?: string;
   covenMinimumVersion?: string;
+  covenDrain?: {
+    phase: string;
+    waitMs: number;
+    writerCount: number;
+    writers: { id: string; kind: string; expires_at: number }[];
+  };
 };
 
 function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {
@@ -1368,6 +1392,7 @@ function partialOutcome(
   message: string,
   state: PartialState,
   original: CreationEvidence,
+  covenDrainOverride?: MaintenanceFence["coven"]["drainOverride"],
 ): Outcome {
   const evidence = `path=${original.path} ref=${original.ref} oid=${original.oid}`;
   return {
@@ -1377,6 +1402,7 @@ function partialOutcome(
       rollback: "rollback-incomplete",
       original,
       partialState: state,
+      ...(covenDrainOverride ? { covenDrainOverride } : {}),
     }),
     stderr: [
       `worktree-lifecycle-create: ${message}`,
@@ -1492,6 +1518,17 @@ function compensate(
     ref: fullRef,
     oid: createdOid,
   };
+  const covenDrainOverride = leases.find((lease) => lease.coven.drainOverride)?.coven.drainOverride;
+  if (covenDrainOverride) {
+    // Even an unchanged OID can be adopted by a still-active writer. Creation
+    // approval is not exclusion for worktree removal or branch compare-delete.
+    return partialOutcome(
+      `${originalMessage}; destructive compensation is disabled under the Coven drain override; preserve artifacts for separately fenced recovery`,
+      probePartialState(root, worktreePath, fullRef),
+      original,
+      covenDrainOverride,
+    );
+  }
   try {
     heartbeatBoth(leases, "compensation proof");
   } catch (error) {
@@ -1694,6 +1731,7 @@ function intendedRecord(
   worktreePath: string,
   createdAt: string,
   exception: ManagedCreationException | null,
+  covenDrainOverride: MaintenanceFence["coven"]["drainOverride"],
 ): JsonRecord {
   return {
     branch: options.branch,
@@ -1707,6 +1745,7 @@ function intendedRecord(
       ? {}
       : { reviewAfter: options.reviewAfter }),
     ...(exception === null ? {} : { exception }),
+    ...(covenDrainOverride ? { covenDrainOverride } : {}),
   };
 }
 
@@ -1833,13 +1872,32 @@ function execute(
     repoDir: root,
     ttlMs: INTENT_TTL_MS,
     quiesceTimeoutMs: 30_000,
+    drainOverrideReason: options.covenDrainOverrideReason,
   });
   if (!acquired.ok) {
     throw new CliError(fenceRefusalMessage(acquired as FenceRefusal));
   }
-  leases.push(acquired.handle as MaintenanceFence);
+  const fence = acquired.handle as MaintenanceFence;
+  leases.push(fence);
+  const covenDrainOverride = fence.coven.drainOverride;
+  if (covenDrainOverride) {
+    process.stderr.write([
+      "worktree-lifecycle-create: WARNING: Coven drain override is active for this creation only.",
+      `  Bead: ${options.beadId}; owner: ${options.owner}; path: ${worktreePath}`,
+      `  Reason: ${covenDrainOverride.reason}`,
+      `  ${covenDrainOverride.writers.length} observed writer(s) may still change repository data:`,
+      ...covenDrainOverride.writers.slice(0, 10).map((writer) => `    ${writer.id} (${writer.kind})`),
+      ...(covenDrainOverride.writers.length > 10
+        ? [`    ${covenDrainOverride.writers.length - 10} more observed writer(s).`]
+        : []),
+      "  The local fence and Coven owner lease remain enforced; retirement is not authorized.",
+      "  On failure, newly created artifacts are preserved for separately fenced recovery.",
+      "",
+    ].join("\n"));
+  }
   // The preflight above reduces needless drain time; this second proof is the
-  // authoritative one because the composite fence now excludes participants.
+  // authoritative one under the fence. An explicit override fences new Coven
+  // writers, but accepts only the existing generations recorded on the handle.
   assertRefAndPathAbsent(root, fullRef, worktreePath);
 
   const initialBead = loadExactBead(root, options.beadId);
@@ -2148,6 +2206,7 @@ function execute(
     persistenceCoven.primary === null
       ? options.exception
       : persistenceException,
+    covenDrainOverride,
   );
   let completeMetadata: JsonRecord;
   try {

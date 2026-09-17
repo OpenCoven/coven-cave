@@ -155,6 +155,46 @@ operational guidance, not automatic cross-thread routing or additional access.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
+## Coven draining and the creation-only override
+
+`coven-still-draining` means Coven fenced new writers, but existing writer
+leases remained after the managed creator's 30-second wait. A supervisor can
+keep renewing a writer indefinitely, including the session invoking creation:
+waiting longer does not necessarily converge. A missing session-index entry
+does not prove that a writer is dead. Inspect `coven maintenance status --json`
+with the same resolved CLI; do not erase lease files or kill unidentified runs.
+
+Prefer letting the owning runs finish. When an operator explicitly accepts
+concurrent existing writers for **one new managed worktree**, creation supports:
+
+```bash
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
+  --owner cody --purpose "Repair example" \
+  --override-coven-drain "Operator accepts existing writers for this new worktree"
+```
+
+The flag requires a nonblank, single-line reason of at most 500 characters.
+It accepts only the writer IDs, kinds and generations observed at acquisition;
+a new or replaced writer refuses renewal/verification. Coven remains in
+`draining`, not falsely `held`. The local fence, exact Coven owner/generation,
+expiry, heartbeat, release, complete inventory, budgets, path/ref absence,
+metadata ownership and compensation safeguards remain enforced.
+
+When actually used, the override prints a warning before repository mutation
+and records the reason, observation time and writer snapshot in the owning
+Bead's `coven.worktree.covenDrainOverride` (or additional worktree record).
+It never stops sessions or changes their leases. **Retirement does not accept
+this flag**; neither unattended sweeps nor agents may silently opt into it.
+This is an explicit creation escape hatch, not a fix for automatic supervisor
+drain convergence (`cave-cgk9v`).
+
+An applied override also **disables destructive compensation**. If creation
+or metadata persistence later fails, the command returns `rollback-incomplete`
+with the original path/ref/OID, current artifact state and override evidence.
+It preserves the worktree and branch for separately fenced recovery instead of
+deleting something an active writer could have adopted. Passing the flag when
+Coven drains normally does not activate the override or change normal rollback.
+
 ## Pull-request Review Standard
 
 When asked to review or assess a pull request, treat the request as **read-only**

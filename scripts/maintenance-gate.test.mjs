@@ -116,13 +116,169 @@ test("Coven client drains rather than proceeding, then releases its own incomple
   });
   const client = createCovenMaintenanceClient({ run: fixture.run });
   const acquired = client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0 });
-  assert.deepEqual(acquired, { ok: false, reason: "coven-still-draining" });
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.reason, "coven-still-draining");
+  assert.equal(acquired.covenDrain.waitMs, 0);
+  assert.equal(acquired.covenDrain.phase, "draining");
+  assert.deepEqual(acquired.covenDrain.writers.map(({ id, kind }) => ({ id, kind })), [
+    { id: "daemon-session", kind: "session" },
+  ]);
   assert.equal(fixture.owner(), null, "a non-held drain must not strand the Coven owner");
   assert.equal(
     fixture.calls.filter((call) => call.args[1] === "release").length,
     1,
     "the incomplete acquisition releases the exact generation it created",
   );
+});
+
+const renewingWriter = {
+  id: "session-existing",
+  kind: "session",
+  generation: "writer-original",
+  expires_at: 9_999_999_999,
+};
+const drainReason = "Create only this new worktree while the existing session continues";
+
+test("an explicit drain override preserves the Coven barrier and exact writer snapshot", () => {
+  const writers = [{ ...renewingWriter }];
+  const fixture = covenFixture({ writers });
+  const client = createCovenMaintenanceClient({ run: fixture.run });
+  const acquired = client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0, drainOverrideReason: drainReason });
+  assert.equal(acquired.ok, true);
+  assert.equal(fixture.owner().phase, "draining", "does not pretend Coven promoted the lease to held");
+  assert.equal(acquired.handle.drainOverride.reason, drainReason);
+  assert.deepEqual(acquired.handle.drainOverride.writers, [renewingWriter]);
+  assert.ok(Number.isFinite(Date.parse(acquired.handle.drainOverride.observedAt)));
+  writers[0].expires_at += 40;
+  assert.deepEqual(client.heartbeat(acquired.handle), { ok: true }, "the same writer may renew");
+  assert.deepEqual(client.verify(acquired.handle), { ok: true });
+  writers.length = 0;
+  assert.deepEqual(client.verify(acquired.handle), { ok: true }, "observed writers may finish");
+  assert.deepEqual(client.release(acquired.handle), { ok: true });
+  assert.equal(fixture.owner(), null);
+  assert.equal(fixture.calls.filter(({ args }) => args[1] === "release").length, 1);
+});
+
+for (const change of ["new writer", "new generation", "new kind"]) {
+  test(`drain override refuses ${change} on heartbeat and verification`, () => {
+    const writers = [{ ...renewingWriter }];
+    const fixture = covenFixture({ writers });
+    const client = createCovenMaintenanceClient({ run: fixture.run });
+    const acquired = client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0, drainOverrideReason: drainReason });
+    assert.equal(acquired.ok, true);
+    if (change === "new writer") writers.push({ ...renewingWriter, id: "another-session" });
+    if (change === "new generation") writers[0].generation = "replacement";
+    if (change === "new kind") writers[0].kind = "different";
+    for (const result of [client.verify(acquired.handle), client.heartbeat(acquired.handle)]) {
+      assert.deepEqual(result, { ok: false, reason: "coven-drain-writers-changed" });
+    }
+    assert.deepEqual(client.release(acquired.handle), { ok: true });
+  });
+}
+
+for (const refusal of ["owner", "generation", "expiry", "held-with-writers", "malformed-writer"]) {
+  test(`drain override never waives ${refusal}`, () => {
+    const fixture = covenFixture({ writers: [{ ...renewingWriter }] });
+    let tamper = false;
+    const client = createCovenMaintenanceClient({
+      run: (command) => {
+        const result = fixture.run(command);
+        if (!tamper || !["status", "heartbeat"].includes(command.args[1])) return result;
+        const value = JSON.parse(result.stdout);
+        if (refusal === "owner") value.owner.owner_id = "other-owner";
+        if (refusal === "generation") value.owner.generation = "other-generation";
+        if (refusal === "expiry") value.owner.expires_at = 1;
+        if (refusal === "held-with-writers") value.owner.phase = "held";
+        if (refusal === "malformed-writer") value.writers = [{}];
+        return { ...result, stdout: JSON.stringify(value) };
+      },
+    });
+    const acquired = client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0, drainOverrideReason: drainReason });
+    assert.equal(acquired.ok, true);
+    tamper = true;
+    assert.equal(client.verify(acquired.handle).ok, false);
+    assert.equal(client.heartbeat(acquired.handle).ok, false);
+    tamper = false;
+    assert.deepEqual(client.release(acquired.handle), { ok: true });
+  });
+}
+
+test("invalid override reasons and malformed writers cannot authorize a drain", () => {
+  for (const drainOverrideReason of ["", " ", "line\nbreak", "x".repeat(501), true]) {
+    const fixture = covenFixture();
+    const client = createCovenMaintenanceClient({ run: fixture.run });
+    assert.equal(client.acquire({ ownerId: "cave-maintenance", repoDir, drainOverrideReason }).ok, false);
+    assert.equal(fixture.calls.length, 0, "invalid input is rejected before taking a lease");
+  }
+  const fixture = covenFixture({ writers: [{}] });
+  const client = createCovenMaintenanceClient({ run: fixture.run });
+  assert.equal(client.acquire({ ownerId: "cave-maintenance", repoDir, drainOverrideReason: drainReason }).ok, false);
+  assert.equal(fixture.owner(), null, "malformed writer output must not strand a valid acquired owner");
+});
+
+test("the composite coordinator retains both fences during an explicit drain override", () => {
+  const localHandle = { generation: 1, token: "local", root: repoDir };
+  const localCalls = [];
+  const fixture = covenFixture({ writers: [{ ...renewingWriter }] });
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    localFence: {
+      acquire: () => ({ ok: true, handle: localHandle }),
+      heartbeat: () => ({ ok: true }),
+      verify: () => ({ ok: true }),
+      release: (handle) => (localCalls.push(handle), { ok: true }),
+    },
+    covenClient: createCovenMaintenanceClient({ run: fixture.run }),
+  });
+  const acquired = coordinator.acquire({
+    ownerId: "worktree-lifecycle-create:cave-example",
+    purpose: "managed create",
+    repoDir,
+    drainOverrideReason: drainReason,
+  });
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.handle.local, localHandle);
+  assert.equal(localCalls.length, 0);
+  assert.deepEqual(coordinator.heartbeat(acquired.handle), { ok: true });
+  assert.deepEqual(coordinator.verify(acquired.handle), { ok: true });
+  assert.deepEqual(coordinator.release(acquired.handle), { ok: true });
+  assert.equal(fixture.owner(), null);
+  assert.deepEqual(localCalls, [localHandle]);
+});
+
+test("a drain override cannot bypass local exclusion", () => {
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    localFence: { acquire: () => ({ ok: false, reason: "writers-active" }) },
+    covenClient: { acquire: () => assert.fail("Coven cannot be acquired after local refusal") },
+  });
+  assert.deepEqual(
+    coordinator.acquire({ ownerId: "maintenance", repoDir, drainOverrideReason: drainReason }),
+    { ok: false, reason: "local-acquire-failed: writers-active" },
+  );
+});
+
+test("a drain override is not sticky and does not waive release failure", () => {
+  const fixture = covenFixture({ writers: [{ ...renewingWriter }] });
+  const client = createCovenMaintenanceClient({ run: fixture.run });
+  const acquired = client.acquire({ ownerId: "maintenance", repoDir, drainOverrideReason: drainReason });
+  assert.equal(acquired.ok, true);
+  client.release(acquired.handle);
+  assert.equal(client.acquire({ ownerId: "maintenance", repoDir }).reason, "coven-still-draining");
+
+  const stuck = covenFixture({ writers: [{ ...renewingWriter }], releaseFails: true });
+  const localReleases = [];
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    localFence: {
+      acquire: () => ({ ok: true, handle: { local: true } }),
+      release: (handle) => (localReleases.push(handle), { ok: true }),
+    },
+    covenClient: createCovenMaintenanceClient({ run: stuck.run }),
+  });
+  const held = coordinator.acquire({ ownerId: "maintenance", repoDir, drainOverrideReason: drainReason });
+  assert.equal(held.ok, true);
+  const released = coordinator.release(held.handle);
+  assert.equal(released.ok, false);
+  assert.equal(released.recoveryHandle, held.handle);
+  assert.equal(localReleases.length, 0);
 });
 
 test("Coven client fails closed for malformed or unavailable CLI responses", () => {

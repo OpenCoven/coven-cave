@@ -6,6 +6,8 @@
 // let the other class of writer race a destructive operation. This coordinator
 // holds both fences, never writes Coven's owner/writer/lock records itself,
 // and releases the Coven fence before its local counterpart.
+// Managed creation may explicitly accept observed writers without claiming
+// quiescence; that approval is bound to their exact generations.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -200,6 +202,30 @@ function parseStatus(stdout) {
   }
 }
 
+export function validCovenDrainOverrideReason(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 500 &&
+    !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function validWriter(writer) {
+  return writer !== null && typeof writer === "object" &&
+    [writer.id, writer.kind, writer.generation].every(
+      (value) => typeof value === "string" && value.length > 0 && value.length <= 512 &&
+        !/[\u0000-\u001f\u007f]/.test(value),
+    ) &&
+    Number.isSafeInteger(writer.expires_at) && writer.expires_at > 0 &&
+    Number.isFinite(new Date(writer.expires_at * 1_000).getTime());
+}
+
+function drainDetails(status, waitMs) {
+  return {
+    phase: status.owner.phase,
+    waitMs,
+    writerCount: status.writers.length,
+    writers: status.writers.filter(validWriter).map(({ id, kind, expires_at }) => ({ id, kind, expires_at })),
+  };
+}
+
 function heldBy(status, handle, nowSeconds) {
   const owner = status.owner;
   if (!owner) return { ok: false, reason: "coven-owner-missing" };
@@ -207,7 +233,17 @@ function heldBy(status, handle, nowSeconds) {
     return { ok: false, reason: "coven-not-owner" };
   }
   if (owner.expires_at <= nowSeconds) return { ok: false, reason: "coven-expired" };
-  if (owner.phase !== "held") return { ok: false, reason: "coven-still-draining" };
+  if (owner.phase !== "held") {
+    if (!handle.drainOverride) return { ok: false, reason: "coven-still-draining" };
+    if (!status.writers.every(validWriter)) return { ok: false, reason: "coven-drain-writers-malformed" };
+    const approved = handle.drainOverride.writers;
+    if (!status.writers.every((writer) => approved.some(
+      (prior) => writer.id === prior.id && writer.kind === prior.kind && writer.generation === prior.generation,
+    ))) {
+      return { ok: false, reason: "coven-drain-writers-changed" };
+    }
+    return { ok: true };
+  }
   if (status.writers.length > 0) return { ok: false, reason: "coven-writers-active" };
   return { ok: true };
 }
@@ -377,14 +413,15 @@ export function createCovenMaintenanceClient({
   return {
     version,
 
-    acquire({ ownerId, repoDir, waitMs = DEFAULT_COVEN_DRAIN_TIMEOUT_MS } = {}) {
+    acquire({ ownerId, repoDir, waitMs = DEFAULT_COVEN_DRAIN_TIMEOUT_MS, drainOverrideReason = null } = {}) {
       if (
         typeof ownerId !== "string" ||
         ownerId.length === 0 ||
         typeof repoDir !== "string" ||
         repoDir.length === 0 ||
         !Number.isSafeInteger(waitMs) ||
-        waitMs < 0
+        waitMs < 0 ||
+        (drainOverrideReason !== null && !validCovenDrainOverrideReason(drainOverrideReason))
       ) {
         return { ok: false, reason: "coven-invalid-acquire-options" };
       }
@@ -409,8 +446,26 @@ export function createCovenMaintenanceClient({
         generation: parsed.owner.generation,
         repoDir,
       };
-      const held = heldBy(parsed, handle, Math.floor(now() / 1_000));
+      let held = heldBy(parsed, handle, Math.floor(now() / 1_000));
       if (held.ok) return { ok: true, handle };
+
+      const covenDrain = held.reason === "coven-still-draining" ? drainDetails(parsed, waitMs) : undefined;
+      if (covenDrain && drainOverrideReason !== null) {
+        if (!parsed.writers.every(validWriter)) {
+          held = { ok: false, reason: "coven-drain-writers-malformed" };
+        } else {
+          const overrideHandle = {
+            ...handle,
+            drainOverride: {
+              reason: drainOverrideReason.trim(),
+              observedAt: new Date(now()).toISOString(),
+              writers: parsed.writers.map(({ id, kind, generation, expires_at }) => ({ id, kind, generation, expires_at })),
+            },
+          };
+          held = heldBy(parsed, overrideHandle, Math.floor(now() / 1_000));
+          if (held.ok) return { ok: true, handle: overrideHandle };
+        }
+      }
 
       // Acquire may intentionally return a draining lease after its bounded
       // wait. It must not strand that fence when Cave refuses the operation.
@@ -421,9 +476,10 @@ export function createCovenMaintenanceClient({
           reason: "coven-acquire-cleanup-failed",
           detail: held.reason,
           recoveryHandle: handle,
+          ...(covenDrain ? { covenDrain } : {}),
         };
       }
-      return { ok: false, reason: held.reason };
+      return { ok: false, reason: held.reason, ...(covenDrain ? { covenDrain } : {}) };
     },
 
     heartbeat(handle) {
@@ -501,6 +557,7 @@ export function createRepositoryMaintenanceCoordinator({
       repoDir = process.cwd(),
       ttlMs,
       quiesceTimeoutMs = DEFAULT_COVEN_DRAIN_TIMEOUT_MS,
+      drainOverrideReason = null,
     } = {}) {
       const local = localFence.acquire({
         ownerId,
@@ -526,6 +583,7 @@ export function createRepositoryMaintenanceCoordinator({
         ownerId,
         repoDir,
         waitMs: quiesceTimeoutMs,
+        drainOverrideReason,
       });
       if (coven.ok) {
         return {
