@@ -1085,7 +1085,15 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
     cachedTailscalePath = joined || process.env.PATH || "";
   }
 
-  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath });
+  // Second GUI-launch repair, same shape as the PATH one above. A process
+  // launched from the Finder/Dock inherits no TERM, and the macOS
+  // Tailscale.app CLI refuses to reach the running backend without one: it
+  // writes "The Tailscale GUI failed to start" to STDOUT and still exits 0, so
+  // every probe from the packaged sidecar reads as a stopped tunnel while the
+  // same command works in a terminal. Any value clears it (cave #5438).
+  const term = process.env.TERM?.trim() ? process.env.TERM : "dumb";
+
+  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath, TERM: term });
 }
 
 type TailscaleSelfStatus = {
@@ -1390,7 +1398,25 @@ export type TailscaleSelfClassification =
   | { kind: "running" }
   | { kind: "needs-login"; detail: string }
   | { kind: "not-running"; detail: string }
-  | { kind: "not-installed"; detail: string };
+  | { kind: "not-installed"; detail: string }
+  /** The CLI ran and exited 0, but answered with something that is not status
+   *  JSON — the tunnel's state is unknown, not stopped. */
+  | { kind: "cli-unusable"; detail: string };
+
+const CLI_UNUSABLE_DETAIL = "The Tailscale CLI did not return status JSON, so the tunnel state is unknown.";
+
+/** Quote the CLI's own first line of output — for the TERM-less GUI launch it
+ *  reads "The Tailscale GUI failed to start", which is the whole diagnosis and
+ *  is otherwise thrown away (the probe's stderr is empty in that case). */
+function cliUnusableDetail(stdout: string): string {
+  const firstLine = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return `${CLI_UNUSABLE_DETAIL} It printed nothing.`;
+  const quoted = firstLine.length > 200 ? `${firstLine.slice(0, 200)}…` : firstLine;
+  return `${CLI_UNUSABLE_DETAIL} It said: ${quoted}`;
+}
 
 /**
  * Read the story out of a `tailscale status --self --json` probe. The exit
@@ -1419,7 +1445,11 @@ export function classifyTailscaleSelf(probe: {
     const parsed = JSON.parse(probe.stdout) as { BackendState?: unknown };
     if (typeof parsed.BackendState === "string") backendState = parsed.BackendState;
   } catch {
-    // Fall through — an unparseable status reads as not-running below.
+    // Exit 0 with output that is not status JSON means the CLI never reached
+    // the backend, so its state is UNKNOWN. Reporting that as "not running"
+    // sends the operator to restart a tunnel that is already up and hides the
+    // only evidence there is — the line the CLI actually printed (#5438).
+    return { kind: "cli-unusable", detail: cliUnusableDetail(probe.stdout) };
   }
   if (backendState === "Running") return { kind: "running" };
   if (backendState === "NeedsLogin" || backendState === "NeedsMachineAuth") {
