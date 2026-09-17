@@ -750,6 +750,7 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
           renderValue={() => (
             <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
           )}
+          disabled={!routerReady}
           onChange={(nextId) => {
             if (nextId === "__new__") {
               routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
@@ -774,6 +775,7 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
           type="button"
           className="focus-ring right-chat__icon-button"
           aria-label="New Chat panel chat"
+          disabled={!routerReady}
           onClick={() => {
             routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
             setSelectedSessionId(null);

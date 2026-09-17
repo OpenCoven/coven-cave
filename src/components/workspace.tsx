@@ -3716,10 +3716,7 @@ export function Workspace() {
       shellRef.current?.dismissNavMobile();
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-        window.setTimeout(
-          () => window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } })),
-          60,
-        );
+        window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } }));
       }, 0);
       return;
     }
