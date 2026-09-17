@@ -7,6 +7,10 @@ import { LiveRegionProvider } from "@/components/ui/live-region";
 import { sha256Digest } from "@/lib/research-protocol/digest";
 import { ResearchTabResources } from "./research-tab-resources.tsx";
 
+vi.mock("@/components/message-bubble", () => ({
+  MarkdownBlock: ({ text }: { text: string }) => <pre>{text}</pre>,
+}));
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => { vi.useFakeTimers(); });
@@ -62,6 +66,28 @@ const savedLink = {
   title: "Other source",
   addedAt: "2026-08-27T00:00:00.000Z",
   source: "desk",
+};
+const githubSummary = {
+  version: 1,
+  owner: "OpenCoven",
+  repo: "coven-cave",
+  description: "Desktop control room",
+  visibility: "public",
+  stars: 42,
+  forks: 7,
+  defaultBranch: "main",
+  resolvedRef: "main",
+  commitSha: "a".repeat(40),
+  fetchedAt: "2026-09-01T12:00:00.000Z",
+  truncated: false,
+};
+const githubSavedLink = {
+  ...savedLink,
+  id: "saved_github",
+  url: "https://github.com/OpenCoven/coven-cave",
+  category: "github",
+  title: "OpenCoven/coven-cave",
+  githubRepo: githubSummary,
 };
 
 function visibleText(renderer) {
@@ -165,6 +191,63 @@ test("query edits synchronously hide stale evidence before the debounce and reco
     ).props.value).toBe("");
     expect(visibleText(renderer)).not.toMatch(/Local evidence search is unavailable/);
     expect(visibleText(renderer)).not.toMatch(/Local evidence/);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("opening a saved GitHub card automatically loads and renders its full snapshot", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url === "/api/research/links") {
+      return Response.json({ ok: true, links: [githubSavedLink] });
+    }
+    if (url === "/api/research/links?id=saved_github") {
+      return Response.json({
+        ok: true,
+        link: {
+          ...githubSavedLink,
+          githubRepo: {
+            ...githubSummary,
+            tree: [{ path: "README.md", type: "blob", sha: "b".repeat(40), size: 6 }],
+            readme: { path: "README.md", markdown: "# Saved repository" },
+          },
+        },
+      });
+    }
+    if (url === "/api/research/resources") {
+      return Response.json({ ok: true, resources: [] });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  let renderer;
+  try {
+    await act(async () => {
+      renderer = create(
+        <LiveRegionProvider>
+          <ResearchTabResources research={research} context={context} onNavigate={() => {}} />
+        </LiveRegionProvider>,
+      );
+    });
+    const open = renderer.root.find(
+      (node) => node.type === "button" && node.props.children?.[0] === "OpenCoven/coven-cave",
+    );
+    await act(async () => {
+      open.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const text = visibleText(renderer);
+    expect(requests.filter((url) => url === "/api/research/links?id=saved_github")).toHaveLength(1);
+    expect(text).toMatch(/Saved GitHub repository/);
+    expect(text).toMatch(/Saved repository/);
+    expect(text).toMatch(new RegExp("a".repeat(12)));
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     globalThis.fetch = originalFetch;

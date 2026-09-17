@@ -155,18 +155,24 @@ assert.match(
 // drawer's backdrop paints over the open menu and the click that "selects an
 // option" lands on the backdrop and closes the drawer instead (the Tasks
 // inspector's Status/Priority/Familiar/Project dropdowns were unusable).
-const globalsCss = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
-const boardCss = readFileSync(new URL("../../styles/board.css", import.meta.url), "utf8");
+const primitivesCss = readFileSync(
+  new URL("../../styles/globals/primitives.css", import.meta.url),
+  "utf8",
+);
+const boardCss = readFileSync(
+  new URL("../../styles/board/kanban-inspector.css", import.meta.url),
+  "utf8",
+);
 const portalZ = Number(
-  globalsCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
+  primitivesCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
 );
 const drawerZ = Math.max(
   ...[...boardCss.matchAll(/\.board-drawer(?:-backdrop)?\s*\{[^}]*?z-index:\s*(\d+)/g)].map(
     (m) => Number(m[1]),
   ),
 );
-assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in globals.css");
-assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in board.css");
+assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in primitives.css");
+assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in styles/board/kanban-inspector.css");
 assert.ok(
   portalZ > drawerZ,
   `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
@@ -192,6 +198,36 @@ assert.match(
   src,
   /anchorRef\.current\?\.contains\(next\)/,
   "focus moving back to the anchor doesn't close the popover",
+);
+assert.match(
+  src,
+  /useRegisterPopoverOwner\(open, popoverRef, parentLayers, focusTrapPortalLayers\)/,
+  "each Popover registers its panel with its owning Popover and Modal boundaries",
+);
+assert.match(
+  src,
+  /if \(!active \|\| !el \|\| !layers\) return;[\s\S]{0,300}\[active, el, layers, coverOwner\]/,
+  "closing releases owner cover during layout cleanup before focus restoration",
+);
+assert.match(
+  src,
+  /register: \(el: HTMLElement\) => \{[\s\S]{0,220}parentLayers\?\.register\(el\)[\s\S]{0,160}focusTrapPortalLayers\?\.register\(el\)/,
+  "descendant portals propagate through every ancestor Popover and Modal boundary",
+);
+assert.match(
+  src,
+  /cover: \(\) => \{[\s\S]{0,180}parentLayers\?\.cover\(\)/,
+  "cover ownership propagates through the complete Popover chain",
+);
+assert.match(
+  src,
+  /if \(covered\) return;[\s\S]{0,200}const t = e\.target as Node/,
+  "a covered owner ignores outside-click dismissal while its child Modal is active",
+);
+assert.match(
+  src,
+  /data-covered=\{covered \|\| undefined\}[\s\S]{0,120}aria-hidden=\{covered \|\| undefined\}[\s\S]{0,120}inert=\{covered \|\| undefined\}/,
+  "a covered owner is removed from pointer, focus, and accessibility interaction",
 );
 
 // A `checked` row used to be a menuitemradio unconditionally, so every
@@ -284,5 +320,44 @@ for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "..
     `${file} is a one-of-a-set picker and must stay menuitemradio`,
   );
 }
+
+// Layer registration is exported for consumers outside popover.tsx (e.g.
+// AvatarLightbox's Modal, cave-fzr4p) to mark their own complete portaled layer
+// as "inside" a Popover and optionally become its deepest Escape owner.
+assert.match(
+  src,
+  /export const PopoverLayersContext = createContext/,
+  "PopoverLayersContext is exported for use outside this module",
+);
+assert.match(
+  src,
+  /export function usePopoverLayerRegistration\(\s*el: HTMLElement \| null,\s*active = Boolean\(el\),\s*onEscape\?: \(\) => void,\s*coverOwner = false,/,
+  "exports a hook that registers an element as an inside layer",
+);
+assert.match(
+  src,
+  /usePopoverLayerRegistration[\s\S]{0,300}if \(!active \|\| !el \|\| !layers\) return;\s*const unregister = layers\.register\(el\);/,
+  "the hook is a no-op with no ancestor Popover and registers the complete child layer",
+);
+assert.match(
+  src,
+  /usePopoverEscapeLayer\(Boolean\(layers && active && onEscape\), onEscape \?\? NOOP\)/,
+  "a registered modal can absorb Escape before the owning Popover closes",
+);
+assert.match(
+  src,
+  /const uncover = coverOwner \? layers\.cover\(\) : NOOP;[\s\S]{0,160}uncover\(\);/,
+  "a modal layer covers its owner and reliably releases it on cleanup",
+);
+assert.match(
+  src,
+  /data-covered=\{covered \|\| undefined\}/,
+  "the owning Popover exposes its covered state to CSS",
+);
+assert.match(
+  primitivesCss,
+  /\.ui-popover\[data-covered\]\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/,
+  "a covered owner is hidden and inert while its portaled Modal remains visible",
+);
 
 console.log("popover.test.ts: ok");

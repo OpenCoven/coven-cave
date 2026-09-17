@@ -66,7 +66,7 @@ assert.match(
 );
 assert.match(
   workflow,
-  /name: Overlay audited X release provenance renderer[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?RECOVERY_TOOLING_REF: \$\{\{ github\.ref \}\}[\s\S]*?refs\/heads\/\$DEFAULT_BRANCH[\s\S]*?for tooling_path in scripts\/release-notes\.sh scripts\/release-notes\.test\.mjs/,
+  /name: Overlay audited recovery provenance renderer[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?RECOVERY_TOOLING_REF: \$\{\{ github\.ref \}\}[\s\S]*?refs\/heads\/\$DEFAULT_BRANCH[\s\S]*?for tooling_path in scripts\/release-notes\.sh scripts\/release-notes\.test\.mjs/,
   "manual recovery overlays the reviewed provenance renderer after checking out the release tag",
 );
 

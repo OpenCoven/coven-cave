@@ -5,16 +5,17 @@
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
  * owner's request; default-on since phase 2 (cave-m6ys).
  *
- * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
+ * Phase 3+ (this shape): top-level Review/Work/GitHub tabs, with GitHub
+ * carrying a secondary Activity/PRs/Issues/Reviews filter, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
  * per-session Coding Desk — a persistent terminal center beside a resizable
  * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
  * with the follow-up composer (code-composer.tsx) under both. New sessions
  * start via code-new-session.tsx — project + familiar + optional fresh
- * worktree. CodeView hosts the whole GitHubView under the
- * Activity/PRs/Issues/Reviews tabs; the dock's GitHub tab mounts a second,
- * session-scoped copy so triage never has to displace a running shell.
- * Workspace routing lives outside this component.
+ * worktree. CodeView hosts the whole GitHubView under the GitHub destination;
+ * the dock's GitHub tab mounts a second, session-scoped copy so triage never
+ * has to displace a running shell. Workspace routing lives outside this
+ * component.
  *
  * TWO GITHUB SURFACES ARE INTENTIONAL (cave-xxp9f, owner decision 2026-08-15).
  * The 2026-07-26 Coding Room design said "there is no top-level GitHub page",
@@ -29,21 +30,28 @@
  * record.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
+import {
+  codeReviewQueue,
+  resolvePendingCodeOpenSessionId,
+  type CodeQueueMode,
+} from "@/lib/code-review-queue";
 import {
   CODE_GITHUB_TABS,
   CODE_ROOM_RAIL_WIDTH_PX,
   codeRoomFitsRail,
   codeSessionWorkRoot,
-  groupCodeRailSessions,
   isCodeGithubTab,
   parseCodeDeepLink,
   type CodeGithubTab,
   type CodeTopTab,
+  type CodeWorkbenchTab,
 } from "@/lib/code-surface";
+import { codeComboFromEvent, isCodeShortcutTarget } from "@/lib/code-shortcuts";
 import type { Filter as GitHubFilter } from "@/components/github-view-data";
+import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
@@ -72,7 +80,7 @@ const LazyWorkScheduler = dynamic(
   { ssr: false },
 );
 
-// The GitHub content tabs and the GitHubView filter each one drives.
+// The GitHub sub-tabs and the GitHubView filter each one drives.
 const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
   activity: "all",
   prs: "pr",
@@ -93,6 +101,10 @@ function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
   return request.kind === "github-item"
     ? codeTopTabForGitHubTarget(request.target)
     : request.topTab;
+}
+
+function githubTabFromTopTab(topTab: CodeTopTab | null | undefined): CodeGithubTab | null {
+  return isCodeGithubTab(topTab) ? topTab : null;
 }
 
 export type CodeViewProps = {
@@ -145,6 +157,24 @@ export function CodeView({
         ? topTabForNavigation(navigationRequest)
         : deepLink?.topTab ?? "sessions",
   );
+  const [lastGithubTab, setLastGithubTab] = useState<CodeGithubTab>(
+    githubTabFromTopTab(
+      pendingOpen
+        ? navigationRequest
+          ? topTabForNavigation(navigationRequest)
+          : deepLink?.topTab ?? null
+        : navigationRequest
+          ? topTabForNavigation(navigationRequest)
+          : deepLink?.topTab ?? null,
+    ) ?? "activity",
+  );
+  const lastGithubTabRef = useRef(lastGithubTab);
+  const rememberGithubTab = useCallback((nextTopTab: CodeTopTab | null | undefined) => {
+    const nextGithubTab = githubTabFromTopTab(nextTopTab);
+    if (!nextGithubTab || lastGithubTabRef.current === nextGithubTab) return;
+    lastGithubTabRef.current = nextGithubTab;
+    setLastGithubTab(nextGithubTab);
+  }, []);
   const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
     pendingOpen
       ? null
@@ -159,21 +189,72 @@ export function CodeView({
   useEffect(() => {
     if (!navigationRequest) return;
     if (handledNavigationNonceRef.current === navigationRequest.nonce) return;
-    setTopTab(topTabForNavigation(navigationRequest));
+    const nextTopTab = topTabForNavigation(navigationRequest);
+    setTopTab(nextTopTab);
+    rememberGithubTab(nextTopTab);
     setInitialGithubTarget(
       navigationRequest.kind === "github-item" ? navigationRequest.target : null,
     );
     setGithubNavigationKey(navigationRequest.nonce);
     handledNavigationNonceRef.current = navigationRequest.nonce;
     onNavigationHandled?.(navigationRequest.nonce);
-  }, [navigationRequest, onNavigationHandled]);
+  }, [navigationRequest, onNavigationHandled, rememberGithubTab]);
   const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
+  const githubFilterBaseId = useId().replaceAll(":", "");
+  const githubFilterRefs = useRef<Record<CodeGithubTab, HTMLButtonElement | null>>({
+    activity: null,
+    prs: null,
+    issues: null,
+    reviews: null,
+  });
+  const githubFilterTabId = useCallback(
+    (id: CodeGithubTab) => `${githubFilterBaseId}-github-filter-tab-${id}`,
+    [githubFilterBaseId],
+  );
+  const githubFilterPanelId = useCallback(
+    (id: CodeGithubTab) => `${githubFilterBaseId}-github-filter-panel-${id}`,
+    [githubFilterBaseId],
+  );
+  const selectGithubTab = useCallback((id: CodeGithubTab, focus = false) => {
+    rememberGithubTab(id);
+    setTopTab(id);
+    if (focus) githubFilterRefs.current[id]?.focus();
+  }, [rememberGithubTab]);
+  const handleGithubFilterKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>, id: CodeGithubTab) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const currentIndex = CODE_GITHUB_TABS.indexOf(id);
+      if (currentIndex < 0) return;
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") {
+        nextIndex = (currentIndex + 1) % CODE_GITHUB_TABS.length;
+      } else if (event.key === "ArrowLeft") {
+        nextIndex = (currentIndex - 1 + CODE_GITHUB_TABS.length) % CODE_GITHUB_TABS.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = CODE_GITHUB_TABS.length - 1;
+      }
+      if (nextIndex === null) return;
+      event.preventDefault();
+      selectGithubTab(CODE_GITHUB_TABS[nextIndex], true);
+    },
+    [selectGithubTab],
+  );
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
   // the session list (auto-pick must NOT re-select), string = a session.
   const [selectedId, setSelectedId] = useState<string | null | undefined>(
     deepLink?.sessionId ?? undefined,
   );
+  const [queueMode, setQueueMode] = useState<CodeQueueMode>("reviewable");
+  const reviewRailOpenBySessionRef = useRef(new Map<string, boolean>());
+  const terminalOpenBySessionRef = useRef(new Map<string, boolean>());
+  const [, setPanelStateVersion] = useState(0);
+  const [initialWorkbenchTab, setInitialWorkbenchTab] = useState<{
+    sessionId: string;
+    tab: CodeWorkbenchTab;
+  } | null>(deepLink?.sessionId ? { sessionId: deepLink.sessionId, tab: deepLink.workbenchTab } : null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   // The workbench picker offers "start a new session about <query>" when the
   // filter matches nothing. There is no title field to set — a session's title
@@ -204,7 +285,113 @@ export function CodeView({
     setNarrowLanding(narrowLandingRef.current);
   }, [roomWidth, isMobile]);
 
-  const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
+  const pendingQueueSelectedId = useMemo(
+    () => resolvePendingCodeOpenSessionId(sessions, pendingOpen),
+    [pendingOpen, sessions],
+  );
+  const queueSelectedId = pendingQueueSelectedId ?? (typeof selectedId === "string" ? selectedId : null);
+  const queue = useMemo(
+    () => codeReviewQueue(sessions, queueMode, queueSelectedId),
+    [queueMode, queueSelectedId, sessions],
+  );
+  const setSessionReviewRailOpen = useCallback((sessionId: string, open: boolean) => {
+    const states = reviewRailOpenBySessionRef.current;
+    if (states.get(sessionId) === open) return;
+    states.set(sessionId, open);
+    setPanelStateVersion((value) => value + 1);
+  }, []);
+  const setSessionTerminalOpen = useCallback((sessionId: string, open: boolean) => {
+    const states = terminalOpenBySessionRef.current;
+    if (states.get(sessionId) === open) return;
+    states.set(sessionId, open);
+    setPanelStateVersion((value) => value + 1);
+  }, []);
+  const queueTargetBelongsToRoom = useCallback((target: EventTarget | null) => {
+    const node = target instanceof Node ? target : null;
+    if (!node) return false;
+    if (roomRef.current?.contains(node)) return true;
+    return Boolean(document.querySelector("[data-code-picker-panel]")?.contains(node));
+  }, []);
+  const activeQueuePickerTrigger = useCallback(() => {
+    if (!roomRef.current) return null;
+    return [...roomRef.current.querySelectorAll<HTMLElement>(".code-picker__trigger")].find((trigger) => {
+      const style = window.getComputedStyle(trigger);
+      return style.display !== "none" && style.visibility !== "hidden" && trigger.getClientRects().length > 0;
+    }) ?? null;
+  }, []);
+  const visibleQueueRows = useCallback((target: EventTarget | null) => {
+    const node = target instanceof Node ? target : null;
+    const pickerPanel = document.querySelector<HTMLElement>("[data-code-picker-panel]");
+    const scope =
+      node && pickerPanel?.contains(node)
+        ? pickerPanel
+        : roomRef.current;
+    if (!scope) return [];
+    const seenSessionIds = new Set<string>();
+    return [...scope.querySelectorAll<HTMLButtonElement>("[data-code-session-id]")]
+      .filter((row) => {
+        const style = window.getComputedStyle(row);
+        if (style.display === "none" || style.visibility === "hidden" || row.getClientRects().length === 0) {
+          return false;
+        }
+        const sessionId = row.dataset.codeSessionId;
+        if (!sessionId || seenSessionIds.has(sessionId)) return false;
+        seenSessionIds.add(sessionId);
+        return true;
+      });
+  }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (topTab !== "sessions") return;
+      if (!queueTargetBelongsToRoom(event.target)) return;
+      if (!isCodeShortcutTarget(event.target)) return;
+      const combo = codeComboFromEvent(event);
+      if (combo === "/") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const picker = activeQueuePickerTrigger();
+        if (!document.querySelector("[data-code-picker-panel]")) picker?.click();
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>("[data-code-picker-panel] [data-code-session-search]")?.focus();
+        });
+        return;
+      }
+      if (combo === "J" || combo === "K") {
+        const rows = visibleQueueRows(event.target);
+        if (!rows.length) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const active = document.activeElement as HTMLElement | null;
+        const currentIndex = rows.findIndex((row) => row === active || row.contains(active));
+        const selectedIndex = rows.findIndex(
+          (row) =>
+            row.getAttribute("aria-selected") === "true" ||
+            row.getAttribute("aria-current") === "true" ||
+            row.dataset.selected === "true",
+        );
+        const nextIndex =
+          currentIndex >= 0
+            ? combo === "J"
+              ? (currentIndex + 1) % rows.length
+              : (currentIndex - 1 + rows.length) % rows.length
+            : selectedIndex >= 0
+              ? selectedIndex
+              : combo === "J"
+                ? 0
+                : rows.length - 1;
+        rows[nextIndex]?.focus();
+        return;
+      }
+      if (combo === "Shift+A") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setQueueMode((current) => (current === "reviewable" ? "all" : "reviewable"));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [activeQueuePickerTrigger, queueTargetBelongsToRoom, topTab, visibleQueueRows]);
 
   // Consume a routed file/diff open (cave-ohcj): select the raising chat
   // session's workbench — or, for a Projects-hub root browse, the newest
@@ -217,19 +404,21 @@ export function CodeView({
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
-    const byId = pendingOpen.sessionId
-      ? groups.flatMap((g) => g.sessions).find((row) => row.id === pendingOpen.sessionId)
+    const queueSessions = queue.sessions;
+    const byId = pendingQueueSelectedId
+      ? queueSessions.find((row) => row.id === pendingQueueSelectedId)
       : undefined;
     const root = pendingOpen.kind === "files" ? pendingOpen.root : undefined;
     const trim = (p: string) => p.replace(/\/+$/, "");
     const byRoot =
       !byId && root
-        ? groups.flatMap((g) => g.sessions).find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
+        ? queueSessions.find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
         : undefined;
     const target = byId ?? byRoot;
     setTopTab("sessions");
     setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
+    if (target && pendingOpen.kind === "changes") setSessionReviewRailOpen(target.id, true);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
@@ -237,7 +426,7 @@ export function CodeView({
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
     onPendingOpenHandled?.();
-  }, [groups, onPendingOpenHandled, pendingOpen]);
+  }, [onPendingOpenHandled, pendingOpen, pendingQueueSelectedId, queue.sessions, setSessionReviewRailOpen]);
 
   // Only opens raised from a conversation carry an origin; a file picked from
   // the tree shows nothing, because there is no conversation to point back to.
@@ -259,12 +448,8 @@ export function CodeView({
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    for (const group of groups) {
-      const hit = group.sessions.find((row) => row.id === selectedId);
-      if (hit) return hit;
-    }
-    return null;
-  }, [groups, selectedId]);
+    return queue.sessions.find((row) => row.id === selectedId) ?? null;
+  }, [queue.sessions, selectedId]);
 
   // Land on the newest session so the surface is immediately useful; keep the
   // user's explicit pick as long as that session is still visible. Skipped
@@ -277,74 +462,111 @@ export function CodeView({
     if (selectedId === null) return;
     if (narrowLanding !== false) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
-    const first = groups[0]?.sessions[0];
+    const first = queue.sessions[0];
     if (first) setSelectedId(first.id);
-  }, [groups, selected, selectedId, narrowLanding]);
+  }, [narrowLanding, queue.sessions, selected, selectedId]);
 
   return (
     <div ref={roomRef} className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-1.5">
-        <div
-          role="tablist"
-          aria-label="Code surface"
-          className="flex min-w-0 items-center gap-1 overflow-x-auto"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={topTab === "sessions"}
-            onClick={() => setTopTab("sessions")}
-            className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-              topTab === "sessions"
-                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
+      <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-1.5">
+        <div className="flex items-center gap-1">
+          <div
+            role="tablist"
+            aria-label="Code surface"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto"
           >
-            <Icon name="ph:code" width={14} height={14} />
-            Sessions
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={topTab === "work"}
-            onClick={() => setTopTab("work")}
-            className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-              topTab === "work"
-                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
-          >
-            <Icon name="ph:list-checks" width={14} height={14} />
-            Work
-          </button>
-          {CODE_GITHUB_TABS.map((id) => (
             <button
-              key={id}
               type="button"
               role="tab"
-              aria-selected={topTab === id}
-              onClick={() => setTopTab(id)}
+              aria-selected={topTab === "sessions"}
+              onClick={() => setTopTab("sessions")}
               className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-                topTab === id
+                topTab === "sessions"
                   ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
-              <Icon name={GITHUB_TAB_META[id].icon} width={14} height={14} />
-              {GITHUB_TAB_META[id].label}
+              <Icon name="ph:code" width={14} height={14} />
+              Review
             </button>
-          ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={topTab === "work"}
+              onClick={() => setTopTab("work")}
+              className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+                topTab === "work"
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:list-checks" width={14} height={14} />
+              Work
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={githubTab !== null}
+              onClick={() => setTopTab(lastGithubTabRef.current)}
+              className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+                githubTab !== null
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:github-logo" width={14} height={14} />
+              GitHub
+            </button>
+          </div>
+          <div className="ml-auto shrink-0">
+            <GithubOrganizationSettings />
+          </div>
         </div>
-        <div className="ml-auto shrink-0">
-          <GithubOrganizationSettings />
-        </div>
+        {githubTab ? (
+          <div
+            role="tablist"
+            aria-label="GitHub filter"
+            aria-orientation="horizontal"
+            className="mt-1 flex min-w-0 items-center gap-1 overflow-x-auto"
+          >
+            {CODE_GITHUB_TABS.map((id) => (
+              <button
+                key={id}
+                ref={(node) => {
+                  githubFilterRefs.current[id] = node;
+                }}
+                type="button"
+                role="tab"
+                id={githubFilterTabId(id)}
+                aria-selected={githubTab === id}
+                aria-controls={githubFilterPanelId(id)}
+                tabIndex={githubTab === id ? 0 : -1}
+                onClick={() => selectGithubTab(id)}
+                onKeyDown={(event) => handleGithubFilterKeyDown(event, id)}
+                className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+                  githubTab === id
+                    ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <Icon name={GITHUB_TAB_META[id].icon} width={14} height={14} />
+                {GITHUB_TAB_META[id].label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {topTab === "work" ? (
         <div className="min-h-0 flex-1">
           <LazyWorkScheduler onJumpToSession={onJumpToSession} />
         </div>
       ) : githubTab ? (
-        <div className="min-h-0 flex-1">
+        <div
+          role="tabpanel"
+          id={githubFilterPanelId(githubTab)}
+          aria-labelledby={githubFilterTabId(githubTab)}
+          className="min-h-0 flex-1"
+        >
           <LazyGitHubView
             key={githubNavigationKey}
             onJumpToSession={onJumpToSession}
@@ -385,7 +607,9 @@ export function CodeView({
             >
               {(open, setOpen) => (
                 <CodeSessionRail
-                  sessions={sessions}
+                  queue={queue}
+                  mode={queueMode}
+                  onModeChange={setQueueMode}
                   selectedId={selectedId ?? null}
                   onSelect={selectSession}
                   open={open}
@@ -397,8 +621,25 @@ export function CodeView({
             <div
               className={`${selected ? "hidden" : "block w-full"} shrink-0 border-[var(--border-hairline)]`}
             >
+              {!selected ? (
+                <div className="px-2 pt-2">
+                  <CodeSessionPicker
+                    queue={queue}
+                    mode={queueMode}
+                    selected={null}
+                    onModeChange={setQueueMode}
+                    onSelect={selectSession}
+                    onCreate={(seed) => {
+                      setNewSessionSeed(seed);
+                      setNewSessionOpen(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               <CodeSessionRail
-                sessions={sessions}
+                queue={queue}
+                mode={queueMode}
+                onModeChange={setQueueMode}
                 selectedId={selectedId ?? null}
                 onSelect={selectSession}
                 onNewSession={() => {
@@ -442,9 +683,11 @@ export function CodeView({
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
-                    // The workbench header carries its own session picker
-                    // (cave-0rcku), so it needs the same list the rail shows.
-                    sessions={sessions}
+                    // The workbench header carries the same shared queue scope
+                    // as the rail, so switching lenses cannot drift.
+                    queue={queue}
+                    queueMode={queueMode}
+                    onQueueModeChange={setQueueMode}
                     onSelectSession={(id) => {
                       setWorkbenchTarget(null);
                       setSelectedId(id);
@@ -453,7 +696,16 @@ export function CodeView({
                       setNewSessionSeed(seed);
                       setNewSessionOpen(true);
                     }}
-                    initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
+                    reviewOpen={reviewRailOpenBySessionRef.current.get(selected.id)}
+                    terminalOpen={terminalOpenBySessionRef.current.get(selected.id)}
+                    onReviewOpenChange={(open) => setSessionReviewRailOpen(selected.id, open)}
+                    onTerminalOpenChange={(open) => setSessionTerminalOpen(selected.id, open)}
+                    initialTab={initialWorkbenchTab?.sessionId === selected.id ? initialWorkbenchTab.tab : undefined}
+                    onInitialTabHandled={() => {
+                      setInitialWorkbenchTab((current) =>
+                        current?.sessionId === selected.id ? null : current,
+                      );
+                    }}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
                         ? workbenchTarget.open

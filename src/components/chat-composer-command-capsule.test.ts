@@ -32,6 +32,20 @@ assert.match(
   /\.cave-composer-edge-actions \{[\s\S]*?transform:\s*translateY\(-50%\);/,
   "Tools and Task ride across the input capsule's top border",
 );
+const toolsHoverMatch = css.match(
+  /\.cave-composer-tools-tab:hover:not\(:disabled\) \{([\s\S]*?)\}/,
+);
+assert.ok(toolsHoverMatch, "expected a dedicated Tools hover treatment");
+assert.match(
+  toolsHoverMatch[1],
+  /background:\s*color-mix\(in oklch, var\(--bg-panel\) 94%, var\(--bg-base\)\);/,
+  "the Tools hover state keeps the same opaque panel surface",
+);
+assert.doesNotMatch(
+  toolsHoverMatch[1],
+  /transparent/,
+  "hovering Tools must not replace its opaque surface with transparency",
+);
 assert.match(
   css,
   /\.cave-composer-control-row \{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/,

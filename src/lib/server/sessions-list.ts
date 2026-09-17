@@ -57,8 +57,16 @@ import {
   sweepStaleRunningGhosts,
 } from "@/lib/server/stale-running-sweep";
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
-import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
-import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
+import {
+  classifyFamiliarWorkspaceSessions,
+  collapseFamiliarWorkspaceSessions,
+  isFamiliarWorkspaceRoot,
+} from "@/lib/familiar-workspace-sessions";
+import {
+  familiarWorkspacesRoot,
+  readFamiliarWorkspaces,
+  readFamiliarWorkspacesStrict,
+} from "@/lib/coven-paths";
 import type { SessionsListResult } from "@/lib/server/sessions-list-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
@@ -78,9 +86,15 @@ export type ComputeSessionsListOptions = {
   sweepArchives?: boolean;
   /** Attach git branch/diff/PR context. Spawns `git` subprocesses. */
   enrichGit?: boolean;
+  /** Attach trusted familiar-workspace metadata without changing membership. */
+  classifyFamiliarWorkspace?: boolean;
 };
 
-const DEFAULT_OPTIONS = { sweepArchives: true, enrichGit: true } as const;
+const DEFAULT_OPTIONS = {
+  sweepArchives: true,
+  enrichGit: true,
+  classifyFamiliarWorkspace: false,
+} as const;
 
 type DaemonSession = {
   id: string;
@@ -204,16 +218,81 @@ async function applyAutoArchiveSweep(
  * a familiar-workspace root would leak into the unscoped view while the daemon
  * is unavailable. No-op (and no FS read) when the flag is off.
  */
-async function applyFamiliarWorkspaceCollapse(
-  sessions: SessionRow[],
+type FamiliarWorkspaceRoots = {
+  root: string;
+  collapseDeclaredRoots: string[];
+  classificationDeclaredRoots: string[] | null;
+};
+
+async function loadFamiliarWorkspaceRoots(
   collapseFamiliarWorkspace: boolean,
-): Promise<SessionRow[]> {
-  if (!collapseFamiliarWorkspace) return sessions;
-  return collapseFamiliarWorkspaceSessions(
-    sessions,
-    familiarWorkspacesRoot(),
-    Array.from((await readFamiliarWorkspaces()).values()),
-  );
+  classifyFamiliarWorkspace: boolean,
+): Promise<FamiliarWorkspaceRoots | null> {
+  if (!collapseFamiliarWorkspace && !classifyFamiliarWorkspace) return null;
+  const root = familiarWorkspacesRoot();
+  if (!classifyFamiliarWorkspace) {
+    return {
+      root,
+      collapseDeclaredRoots: Array.from((await readFamiliarWorkspaces()).values()),
+      classificationDeclaredRoots: null,
+    };
+  }
+  try {
+    const declaredRoots = Array.from((await readFamiliarWorkspacesStrict()).values());
+    return {
+      root,
+      collapseDeclaredRoots: declaredRoots,
+      classificationDeclaredRoots: declaredRoots,
+    };
+  } catch {
+    return {
+      root,
+      collapseDeclaredRoots: collapseFamiliarWorkspace
+        ? Array.from((await readFamiliarWorkspaces()).values())
+        : [],
+      classificationDeclaredRoots: null,
+    };
+  }
+}
+
+function familiarWorkspaceForCwd(
+  familiarWorkspaceRoots: FamiliarWorkspaceRoots | null,
+  classifyFamiliarWorkspace: boolean,
+): ((cwd: string) => boolean | undefined) | undefined {
+  if (!classifyFamiliarWorkspace || !familiarWorkspaceRoots?.classificationDeclaredRoots) {
+    return undefined;
+  }
+  const classificationDeclaredRoots = familiarWorkspaceRoots.classificationDeclaredRoots;
+  return (cwd: string) =>
+    isFamiliarWorkspaceRoot(
+      cwd,
+      familiarWorkspaceRoots.root,
+      classificationDeclaredRoots,
+    );
+}
+
+/**
+ * Apply the opt-in familiar-workspace view shaping to an already-scoped list.
+ * Collapse changes membership; classification is metadata-only. Both consume
+ * the same configured root snapshot so one compute path never re-reads
+ * familiars.toml just to attach metadata after filtering.
+ */
+function applyFamiliarWorkspacePresentation(
+  sessions: SessionRow[],
+  familiarWorkspaceRoots: FamiliarWorkspaceRoots | null,
+  collapseFamiliarWorkspace: boolean,
+  classifyFamiliarWorkspace: boolean,
+): SessionRow[] {
+  if (!collapseFamiliarWorkspace && !classifyFamiliarWorkspace) return sessions;
+  if (!familiarWorkspaceRoots) return sessions;
+  const { root, collapseDeclaredRoots, classificationDeclaredRoots } =
+    familiarWorkspaceRoots;
+  const visible = collapseFamiliarWorkspace
+    ? collapseFamiliarWorkspaceSessions(sessions, root, collapseDeclaredRoots)
+    : sessions;
+  return classifyFamiliarWorkspace && classificationDeclaredRoots
+    ? classifyFamiliarWorkspaceSessions(visible, root, classificationDeclaredRoots)
+    : visible;
 }
 
 export async function computeSessionsList(
@@ -224,13 +303,20 @@ export async function computeSessionsList(
 ): Promise<SessionsListResult> {
   const sweepArchives = options.sweepArchives ?? DEFAULT_OPTIONS.sweepArchives;
   const enrichGit = options.enrichGit ?? DEFAULT_OPTIONS.enrichGit;
+  const classifyFamiliarWorkspace =
+    options.classifyFamiliarWorkspace ?? DEFAULT_OPTIONS.classifyFamiliarWorkspace;
   const withGitContext = async (rows: SessionRow[]): Promise<SessionRow[]> =>
     enrichGit ? enrichSessionsWithGitContext(rows) : rows;
-  const [res, state, projects] = await Promise.all([
+  const [res, state, projects, familiarWorkspaceRoots] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadState(),
     loadProjects(),
+    loadFamiliarWorkspaceRoots(collapseFamiliarWorkspace, classifyFamiliarWorkspace),
   ]);
+  const classifyFamiliarWorkspaceForCwd = familiarWorkspaceForCwd(
+    familiarWorkspaceRoots,
+    classifyFamiliarWorkspace,
+  );
   const localConversations = (await listConversations()).map((conv) => {
     // Resolve every live chat against the in-process run registry so an
     // existing conversation's follow-up cannot retain stale attention while
@@ -248,7 +334,13 @@ export async function computeSessionsList(
   const projectRootForCwd = (cwd: string) => projectForRoot(cwd, projects)?.root ?? null;
   if (!res.ok || !res.data) {
     const localSessions = await applyAutoArchiveSweep(
-      localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd),
+      localConversationSessionRows(
+        localConversations,
+        state,
+        includeArchived,
+        projectRootForCwd,
+        classifyFamiliarWorkspaceForCwd,
+      ),
       state,
       includeArchived,
       sweepArchives,
@@ -261,9 +353,11 @@ export async function computeSessionsList(
           error: res.error ?? `daemon http ${res.status}`,
           sessions: await applyMergedPrAutoArchive(
             await withGitContext(
-              await applyFamiliarWorkspaceCollapse(
+              applyFamiliarWorkspacePresentation(
                 await scopeForFamiliar(localSessions, projects, familiarId),
+                familiarWorkspaceRoots,
                 collapseFamiliarWorkspace,
+                classifyFamiliarWorkspace,
               ),
             ),
             state,
@@ -300,6 +394,7 @@ export async function computeSessionsList(
       includeArchived,
       isValidDaemonProjectRoot: isKnownProjectOrValidDir,
       projectRootForCwd,
+      familiarWorkspaceForCwd: classifyFamiliarWorkspaceForCwd,
     }).map((session) =>
       hasActiveChatRun(session.id)
         ? { ...session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION }
@@ -311,7 +406,12 @@ export async function computeSessionsList(
   );
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
-  const visible = await applyFamiliarWorkspaceCollapse(scoped, collapseFamiliarWorkspace);
+  const visible = applyFamiliarWorkspacePresentation(
+    scoped,
+    familiarWorkspaceRoots,
+    collapseFamiliarWorkspace,
+    classifyFamiliarWorkspace,
+  );
   return {
     payload: {
       ok: true,

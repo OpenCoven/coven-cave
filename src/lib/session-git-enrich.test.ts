@@ -10,11 +10,13 @@
  *  3. the is-inside-work-tree gate short-circuits non-repo dirs
  *  4. missing directories never spawn git at all
  *  5. per-root dedup — many sessions on one root probe git once
- *  6. diffstat vs base ref + parseShortstat parsing
- *  7. MAX_DIFF_CALLS global cap
- *  8. failed base-ref resolution yields no diff and does not consume the cap
- *  9. root-level concurrency stays within ROOT_CONCURRENCY
- * 10. rows without a root pass through untouched
+ *  6. GitHub origin normalization plus missing/malformed/non-GitHub/credential
+ *     remote omission without losing branch/worktree context
+ *  7. diffstat vs base ref + parseShortstat parsing
+ *  8. MAX_DIFF_CALLS global cap
+ *  9. failed base-ref resolution yields no diff and does not consume the cap
+ * 10. root-level concurrency stays within ROOT_CONCURRENCY
+ * 11. rows without a root pass through untouched
  */
 
 import assert from "node:assert/strict";
@@ -66,6 +68,7 @@ const REPO_SCRIPT = {
   "rev-parse --show-toplevel": (root) => root,
   "rev-parse --git-dir": ".git",
   "rev-parse --git-common-dir": ".git",
+  "config --get remote.origin.url": "git@github.com:acme/repo-a.git",
   "symbolic-ref --short refs/remotes/origin/HEAD": "origin/main",
   "diff origin/main...feat/thing --shortstat": " 3 files changed, 10 insertions(+), 2 deletions(-)",
 };
@@ -80,6 +83,7 @@ const REPO_SCRIPT = {
     branch: "feat/thing",
     worktreeRoot: rootA,
     isWorktree: false,
+    repositoryUrl: "https://github.com/acme/repo-a",
   });
   assert.deepEqual(rows[0].diff, { additions: 10, deletions: 2 });
 }
@@ -141,9 +145,56 @@ const REPO_SCRIPT = {
   assert.equal(diffCalls.length, 1, "one diff per root, not per session");
   const gateCalls = calls.filter((c) => c.args.join(" ") === "rev-parse --is-inside-work-tree");
   assert.equal(gateCalls.length, 1, "one context probe set per root");
+  const originCalls = calls.filter((c) => c.args.join(" ") === "config --get remote.origin.url");
+  assert.equal(originCalls.length, 1, "one origin probe per root, not per session");
 }
 
-// ── 6. parseShortstat parsing ────────────────────────────────────────────────
+// ── 6. repositoryUrl only reflects valid canonical GitHub origins ───────────
+{
+  const cases = [
+    {
+      name: "missing remote",
+      remote: null,
+    },
+    {
+      name: "malformed remote",
+      remote: "not a remote",
+    },
+    {
+      name: "non-GitHub remote",
+      remote: "https://gitlab.com/acme/repo-a.git",
+    },
+    {
+      name: "credential-bearing remote",
+      remote: "https://token@github.com/acme/private.git",
+    },
+  ];
+
+  for (const [index, testCase] of cases.entries()) {
+    const root = makeRoot(`repo-remote-${index}`);
+    const { runner, calls } = fakeGit({
+      ...REPO_SCRIPT,
+      "config --get remote.origin.url": testCase.remote,
+    });
+    const rows = await enrichSessionsWithGitContext([session(`s${index}`, root)], runner);
+    assert.deepEqual(
+      rows[0].git,
+      {
+        branch: "feat/thing",
+        worktreeRoot: root,
+        isWorktree: false,
+      },
+      `${testCase.name} must preserve branch/worktree context without repositoryUrl`,
+    );
+    assert.equal(
+      calls.some((c) => c.args.join(" ") === "config --get remote.origin.url"),
+      true,
+      `${testCase.name} must still probe remote.origin.url`,
+    );
+  }
+}
+
+// ── 7. parseShortstat parsing ────────────────────────────────────────────────
 {
   assert.deepEqual(parseShortstat(" 3 files changed, 10 insertions(+), 2 deletions(-)"), {
     additions: 10,
@@ -157,7 +208,7 @@ const REPO_SCRIPT = {
   assert.equal(parseShortstat(null), null);
 }
 
-// ── 7. the global diff cap holds across many roots ──────────────────────────
+// ── 8. the global diff cap holds across many roots ──────────────────────────
 {
   const roots = Array.from({ length: MAX_DIFF_CALLS + 8 }, (_, i) => makeRoot(`repo-cap-${i}`));
   const { runner, calls } = fakeGit(REPO_SCRIPT);
@@ -176,7 +227,7 @@ const REPO_SCRIPT = {
   );
 }
 
-// ── 8. missing base ref: no diff, and the cap is not consumed ───────────────
+// ── 9. missing base ref: no diff, and the cap is not consumed ───────────────
 {
   const noBase = makeRoot("repo-no-base");
   const withBase = makeRoot("repo-with-base");
@@ -196,7 +247,7 @@ const REPO_SCRIPT = {
   assert.equal(diffCalls.length, 1, "the failed-base root must not consume a diff slot");
 }
 
-// ── 9. root-level concurrency stays bounded ─────────────────────────────────
+// ── 10. root-level concurrency stays bounded ────────────────────────────────
 {
   const roots = Array.from({ length: 12 }, (_, i) => makeRoot(`repo-conc-${i}`));
   let inFlight = 0;
@@ -234,7 +285,7 @@ const REPO_SCRIPT = {
   assert.ok(peak >= 2, "roots must actually be probed in parallel");
 }
 
-// ── 10. rootless rows pass through untouched ────────────────────────────────
+// ── 11. rootless rows pass through untouched ────────────────────────────────
 {
   const { runner, calls } = fakeGit(REPO_SCRIPT);
   const bare = { id: "s1", project_root: "", harness: "codex", title: "s1", status: "completed" };
@@ -246,7 +297,7 @@ const REPO_SCRIPT = {
   assert.equal(calls.length, 0);
 }
 
-// ── 11. PR attribution is per session, never per root-current-branch ────────
+// ── 12. PR attribution is per session, never per root-current-branch ────────
 // (cave-9q24: stamping the root's checked-out branch's PR onto every session
 // sharing the root let one merged PR mass-archive unrelated chats.)
 {
@@ -324,7 +375,7 @@ const REPO_SCRIPT = {
   }
 }
 
-// 12. Transcript fallback (cave-u9wl): a chat that reported a PR URL in a
+// 13. Transcript fallback (cave-u9wl): a chat that reported a PR URL in a
 // reply gets URL-resolved PR context tagged attribution:"transcript" — even
 // with no project root — and branch attribution always wins when present.
 {

@@ -146,6 +146,21 @@ export type FamiliarExecutionCoverage = KnownDenominator & {
   ratio: number;
 };
 
+/**
+ * One UTC calendar day of a window's runs-per-day series.
+ *
+ * `completed + failed + cancelled` is the day's attempt count; the three are
+ * kept apart because a chart that folds cancellations into failures would
+ * report an operator's own interruptions as the familiar's mistakes.
+ */
+export type FamiliarExecutionDay = {
+  /** `YYYY-MM-DD`, in UTC. */
+  date: string;
+  completed: number;
+  failed: number;
+  cancelled: number;
+};
+
 export type FamiliarExecutionAnalyticsWindow = {
   attempts: number;
   completed: number;
@@ -161,6 +176,17 @@ export type FamiliarExecutionAnalyticsWindow = {
   models: FamiliarExecutionSlice[];
   harnesses: FamiliarExecutionSlice[];
   coverage: Record<string, FamiliarExecutionCoverage>;
+  /**
+   * Runs per UTC day, oldest first, for the day-bounded windows (`7d`, `14d`).
+   *
+   * Exactly 7 or 14 entries ending on the day `generatedAt` falls in, every
+   * day present even when it saw no run, so a client can chart it without
+   * bucketing on its own clock. Absent on `8w` and `all`, which are not
+   * day-shaped. The window's totals filter on a rolling `N × 24h` cutoff, so a
+   * run inside the window but on the calendar day before the series starts is
+   * counted in `attempts` and not in `days`.
+   */
+  days?: FamiliarExecutionDay[];
 };
 
 export type ExecutionAnalyticsWindow = FamiliarExecutionAnalyticsWindow;
@@ -699,10 +725,41 @@ function aggregateWindow(
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function windowStart(nowMs: number, key: ExecutionAnalyticsWindowKey): number | undefined {
   if (key === "all") return undefined;
   const days = key === "7d" ? 7 : key === "14d" ? 14 : 56;
-  return nowMs - days * 24 * 60 * 60 * 1000;
+  return nowMs - days * DAY_MS;
+}
+
+/** The number of calendar days a window charts, or undefined when it is not day-shaped. */
+function windowDayCount(key: ExecutionAnalyticsWindowKey): number | undefined {
+  return key === "7d" ? 7 : key === "14d" ? 14 : undefined;
+}
+
+function utcDateOf(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function dailySeries(
+  attempts: ExecutionAttemptSnapshotV1[],
+  nowMs: number,
+  dayCount: number,
+): FamiliarExecutionDay[] {
+  const buckets = new Map<string, FamiliarExecutionDay>();
+  for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
+    const date = utcDateOf(nowMs - offset * DAY_MS);
+    buckets.set(date, { date, completed: 0, failed: 0, cancelled: 0 });
+  }
+  for (const attempt of attempts) {
+    const bucket = buckets.get(utcDateOf(Date.parse(attempt.timing.completedAt)));
+    if (!bucket) continue;
+    if (attempt.outcome.status === "succeeded") bucket.completed += 1;
+    else if (attempt.outcome.status === "error") bucket.failed += 1;
+    else bucket.cancelled += 1;
+  }
+  return [...buckets.values()];
 }
 
 function publicExecutionAttempt(
@@ -753,7 +810,11 @@ export function buildFamiliarExecutionAnalytics(args: {
       const windowAttempts = startsAtMs === undefined
         ? attempts
         : attempts.filter((attempt) => Date.parse(attempt.timing.completedAt) >= startsAtMs);
-      return [key, aggregateWindow(windowAttempts)];
+      const dayCount = windowDayCount(key);
+      return [key, {
+        ...aggregateWindow(windowAttempts),
+        ...(dayCount === undefined ? {} : { days: dailySeries(windowAttempts, nowMs, dayCount) }),
+      }];
     }),
   ) as Record<ExecutionAnalyticsWindowKey, FamiliarExecutionAnalyticsWindow>;
   return {

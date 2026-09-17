@@ -101,6 +101,38 @@ test("uses the paper date when present and omits an incomplete paper block", () 
   assert.equal(incomplete.paper, undefined);
 });
 
+test("projects bounded GitHub metadata without tree or README bodies", () => {
+  const snapshot = {
+    version: 1,
+    owner: "OpenCoven",
+    repo: "coven-cave",
+    visibility: "public",
+    stars: 42,
+    forks: 7,
+    defaultBranch: "main",
+    resolvedRef: "main",
+    commitSha: "a".repeat(40),
+    fetchedAt: ADDED_AT,
+    truncated: false,
+    tree: [{ path: "README.md", type: "blob", sha: "b".repeat(40) }],
+    readme: { path: "README.md", markdown: "README_SENTINEL" },
+  };
+  const summary = resourceManifestToSavedLinkSummary(manifest("github", {
+    category: "github",
+    legacySavedLink: {
+      id: "legacy-github",
+      url: "https://github.com/OpenCoven/coven-cave",
+      addedAt: ADDED_AT,
+      source: "desk",
+      caveGithubRepoV1: snapshot,
+    },
+  }));
+  assert.equal(summary?.githubRepo?.commitSha, snapshot.commitSha);
+  assert.ok(summary?.githubRepo && !("tree" in summary.githubRepo));
+  assert.ok(summary?.githubRepo && !("readme" in summary.githubRepo));
+  assert.ok(!JSON.stringify(summary).includes("README_SENTINEL"));
+});
+
 test("excludes non-legacy manifests and categorizes legacy URLs when category is absent", () => {
   assert.equal(
     resourceManifestToSavedLinkSummary(manifest("native", { legacySavedLink: undefined })),

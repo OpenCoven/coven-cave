@@ -38,3 +38,30 @@ export function sanitizeHtml(html: string): string {
 
   return doc.body.innerHTML;
 }
+
+export function stripAutoloadingContent(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+
+  for (const el of Array.from(
+    doc.querySelectorAll("img,picture,video,audio,source,track,svg image,svg use"),
+  )) {
+    el.remove();
+  }
+
+  for (const el of Array.from(doc.querySelectorAll("*"))) {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      if (
+        name === "src"
+        || name === "srcset"
+        || name === "poster"
+        || name === "background"
+        || (name === "style" && /url\s*\(/i.test(attr.value))
+      ) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+
+  return doc.body.innerHTML;
+}

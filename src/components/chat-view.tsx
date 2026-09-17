@@ -289,6 +289,8 @@ import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
+import { SessionStatusPill } from "@/components/ui/session-status-pill";
+import { chatSessionStateFromLifecycle } from "@/lib/chat-session-status";
 import { AutoModeFeedbackModal } from "@/components/auto-mode-feedback-modal";
 import {
   NO_PROJECT_ID,
@@ -1442,19 +1444,23 @@ function metaLineSegments(args: {
   // / "runtime:" labels — the harness and agent profile read bare, the cwd
   // reads as a folder.
   const runtime = formatRuntime(args.runtime) ?? formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
+  // cave-dkdev: the state words that used to terminate each of these branches
+  // — "daemon offline", "failed", "connecting…", "using tools…", "writing…" —
+  // are gone. They were the header's THIRD account of the same fact: the row
+  // already carries a status pill, and the band below it counts steps, so a
+  // single run narrated itself in three voices that could visibly disagree
+  // ("connecting…" over "28 done" over "elapsed 1m 33s"). Status belongs to
+  // the pill; these segments are provenance only — model, cwd, cost.
   if (args.state === "offline") {
-    // The remedy renders inline: MetaLine appends its own Start-daemon action
-    // after the segments, so the notice never points at chrome that may not be
-    // visible (the banner can be dismissed or scrolled away) (cave-5qmm).
-    segs.push("daemon offline");
+    // The remedy still renders inline: MetaLine appends its own Start-daemon
+    // action after the segments, so the notice never points at chrome that may
+    // not be visible (the banner can be dismissed or scrolled away) (cave-5qmm).
   } else if (args.state === "failed") {
     if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
-    segs.push("failed");
   } else if (args.state === "streaming") {
     if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
-    segs.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
     // CHAT-D3-06: the "· 14s" ticker + esc hint tail is rendered by MetaLine
     // itself so the ticking elapsed can live in an aria-hidden span — keeping
     // the per-second rewrite out of the role="status" live region.
@@ -1645,6 +1651,11 @@ function MetaLine({
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
+  // The pill speaks the list's five-state vocabulary; `state` above stays the
+  // four-way STYLING key this row has always used (it drives the row's tint
+  // and the live dot). Two derivations of one truth, not two truths: both read
+  // the same lifecycle, and the pill is what the user is told.
+  const sessionState = chatSessionStateFromLifecycle({ lifecycle, busy, error, daemonRunning });
   // Session-settle flare (cave-q06w): the summoning bloom fires when a LONG
   // run settles — the case where the user context-switched away and the
   // completion is an event. Short replies are their own feedback, so a
@@ -1724,6 +1735,20 @@ function MetaLine({
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitle}
           readOnly={readOnly}
+        />
+      ) : null}
+      {/* One status, stated once (cave-dkdev). The same <SessionStatusPill>
+          the Sessions list renders, so a chat reads identically whether you
+          are looking at it or looking for it. Transport ("connecting",
+          "reconnecting") rides the pill's dot rather than taking the label,
+          because it describes the wire and not the work — a connecting
+          session is running, and "connecting" is not an outcome a run can
+          finish in. A brand-new chat with nothing to report shows nothing. */}
+      {session || state !== "complete" ? (
+        <SessionStatusPill
+          className="shrink-0"
+          status={sessionState.key}
+          transport={sessionState.transport}
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
@@ -9336,7 +9361,7 @@ function TurnRowImpl({
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : null}
             {turn.progress?.length ? (
-              <ProgressGroup progress={turn.progress} pending={pending} />
+              <ProgressGroup progress={turn.progress} pending={pending} collapsible />
             ) : null}
             {pending
               ? bubbleSegments?.map((segment) =>
@@ -9652,43 +9677,107 @@ function currentProgress(progress: ProgressEvent[]): ProgressEvent | undefined {
   );
 }
 
+/**
+ * The step list for a run, with a bar instead of a second set of counts.
+ *
+ * Inside RunActivityStrip this used to be a <details> nested in the strip's OWN
+ * expanded panel — a disclosure reachable only by opening a disclosure — whose
+ * summary re-rendered the exact chips ("2 running", "4 done") already showing
+ * one row above it, under a shouted "PROGRESS" label that named the card rather
+ * than saying anything about the run.
+ *
+ * A bar and "3 of 4" carry the same fact in one line, and carry it better:
+ * counts make you do the division, a bar does not. The counts are not lost —
+ * they are still one row up, where they were first.
+ *
+ * `collapsible` is why this is a prop rather than one shape. The card renders in
+ * TWO places, and they are not the same situation: in the strip the reader has
+ * already opened a panel to ask for it, so a second disclosure is pure friction;
+ * in the transcript nobody asked, and expanding every assistant turn's full step
+ * list by default buries the reply it belongs to. So the transcript keeps a
+ * disclosure — it just gets the bar in its summary instead of duplicate chips.
+ */
 function ProgressGroup({
   progress,
   pending,
+  collapsible = false,
 }: {
   progress: ProgressEvent[];
+  /** Whether the run is still in flight; drives the disclosure's default state. */
   pending: boolean;
+  /** Render as a <details>. True in the transcript, false inside the strip. */
+  collapsible?: boolean;
 }) {
-  const running = progress.filter((event) => event.status === "running").length;
-  const notices = progress.filter((event) => event.status === "notice").length;
-  const errors = progress.filter((event) => event.status === "error").length;
-  const completed = progress.filter((event) => event.status === "done").length;
+  const settled = progress.filter((event) => event.status !== "running").length;
+  const total = progress.length;
   const current = currentProgress(progress);
+  // Deliberately NOT "total when settled". A finished run can still carry a
+  // step marked running — the stream ends without a final event for it — and
+  // reporting "4 of 4" beside a row that is visibly still spinning is the exact
+  // self-contradiction this card is being repaired for. Counting what actually
+  // settled says "3 of 4", which is both honest and the more useful fact: the
+  // run ended without finishing that step.
+  const percent = total > 0 ? Math.round((settled / total) * 100) : 0;
+  const label = current?.label ?? (pending ? "Working…" : "Steps");
+
+  const head = (
+    /* Utilities, not new classes: this card is reachable from the startup
+       graph, so a bespoke selector here is paid for by every route, and the
+       home CSS budget sits near zero headroom. The count reuses the
+       .cave-tool-count chip the strip above already ships. */
+    <>
+      <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]" title={label}>
+        {label}
+      </span>
+      <span className="cave-tool-count shrink-0 tabular-nums">
+        {settled} of {total}
+      </span>
+    </>
+  );
+
+  const bar = (
+    /* The bar restates the count for scanning, so it is aria-hidden: the
+       numbers beside it are the accessible version, and announcing both would
+       read the same fact twice — the failure this card is being repaired for. */
+    <span className="cave-progress-bar" aria-hidden>
+      {/* The 2% floor keeps a just-started run's fill visible instead of
+          collapsing it to an invisible sliver — but it applies only once
+          something HAS settled. Clamping unconditionally drew a bar at
+          "0 of 4", the card asserting progress that had not happened: the
+          same self-contradiction this rebuild removed from the counts,
+          reintroduced in the graphic beside them. */}
+      <span
+        className="cave-progress-bar__fill"
+        style={{ width: percent > 0 ? `${Math.max(2, percent)}%` : "0%" }}
+      />
+    </span>
+  );
+
+  const list = (
+    <div className="cave-progress-list">
+      {progress.map((event) => (
+        <ProgressRow key={event.id} event={event} />
+      ))}
+    </div>
+  );
+
+  if (!collapsible) {
+    return (
+      <div className="cave-progress-group mt-3">
+        <div className="flex min-w-0 items-baseline gap-2">{head}</div>
+        {bar}
+        {list}
+      </div>
+    );
+  }
 
   return (
     <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
       <summary className="cave-tool-summary">
-        <span className="inline-flex items-center gap-1.5">
-          <Icon name="ph:list-checks-bold" width={12} aria-hidden />
-          Progress
-        </span>
-        {current ? (
-          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)] normal-case tracking-normal" title={current.label}>
-            {current.label}
-          </span>
-        ) : null}
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
-          {completed ? <span className="cave-tool-count">{completed} done</span> : null}
-        </span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-2 normal-case tracking-normal">{head}</span>
       </summary>
-      <div className="cave-progress-list">
-        {progress.map((event) => (
-          <ProgressRow key={event.id} event={event} />
-        ))}
-      </div>
+      {bar}
+      {list}
     </details>
   );
 }

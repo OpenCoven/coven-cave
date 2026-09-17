@@ -279,6 +279,64 @@ test("analytics projection builds windows, coverage, slices, and bounded recent 
   assert.equal(analytics.backfill.state, "not-started");
 });
 
+test("day-shaped windows carry a runs-per-day series over exactly their calendar days", () => {
+  const completedYesterday = snapshot({
+    attemptId: "ea1_yesterday",
+    timing: { completedAt: "2026-08-17T23:59:59.000Z" },
+    outcome: { status: "succeeded" },
+  });
+  const failedToday = snapshot({
+    attemptId: "ea1_today",
+    timing: { completedAt: "2026-08-18T09:30:00.000Z" },
+    outcome: { status: "error" },
+  });
+  const cancelledToday = snapshot({
+    attemptId: "ea1_cancelled",
+    timing: { completedAt: "2026-08-18T09:45:00.000Z" },
+    outcome: { status: "cancelled" },
+  });
+  // Inside the rolling 7 × 24h cutoff (2026-08-11T10:00Z) but on a calendar
+  // day the seven-day series does not chart. Counted in the window's totals,
+  // absent from `days` — which is the documented shape, not a leak.
+  const boundary = snapshot({
+    attemptId: "ea1_boundary",
+    timing: { completedAt: "2026-08-11T12:00:00.000Z" },
+    outcome: { status: "succeeded" },
+  });
+
+  const analytics = buildFamiliarExecutionAnalytics({
+    familiarId: "cody",
+    attempts: [completedYesterday, failedToday, cancelledToday, boundary],
+    now: new Date("2026-08-18T10:00:00.000Z"),
+  });
+
+  const week = analytics.windows["7d"];
+  assert.equal(week.attempts, 4);
+  assert.deepEqual(week.days?.map((day) => day.date), [
+    "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15",
+    "2026-08-16", "2026-08-17", "2026-08-18",
+  ]);
+  assert.deepEqual(week.days?.at(-2), { date: "2026-08-17", completed: 1, failed: 0, cancelled: 0 });
+  assert.deepEqual(week.days?.at(-1), { date: "2026-08-18", completed: 0, failed: 1, cancelled: 1 });
+  assert.deepEqual(week.days?.[0], { date: "2026-08-12", completed: 0, failed: 0, cancelled: 0 });
+  assert.equal(
+    week.days?.reduce((total, day) => total + day.completed + day.failed + day.cancelled, 0),
+    3,
+    "the boundary run is in the window's totals and outside the charted days",
+  );
+
+  const fortnight = analytics.windows["14d"];
+  assert.equal(fortnight.days?.length, 14);
+  assert.equal(fortnight.days?.[0].date, "2026-08-05");
+  assert.deepEqual(fortnight.days?.find((day) => day.date === "2026-08-11"), {
+    date: "2026-08-11", completed: 1, failed: 0, cancelled: 0,
+  });
+
+  // The week-shaped and unbounded windows are not day-shaped.
+  assert.equal("days" in analytics.windows["8w"], false);
+  assert.equal("days" in analytics.windows.all, false);
+});
+
 test("repeated conversation backfill does not duplicate attempts", async () => {
   const conversation = historicalConversation();
   const dependencies = {

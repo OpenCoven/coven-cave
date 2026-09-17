@@ -18,25 +18,17 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { CODE_ROOM_SHORTCUT_HINTS } from "@/lib/code-room-shortcuts";
 import {
+  CODE_FIXED_QUEUE_SHORTCUTS,
+  CODE_FIXED_TERMINAL_SHORTCUTS,
   CODE_SHORTCUTS,
   bindCodeShortcut,
   codeComboChips,
   codeComboFromEvent,
+  codeReservedComboOwner,
   defaultCodeKeymap,
   type CodeShortcutId,
 } from "@/lib/code-shortcuts";
-
-/** Human labels for the fixed terminal bindings. */
-const FIXED_LABEL: Record<string, string> = {
-  "focus-next-terminal": "Focus the next terminal pane",
-  "focus-previous-terminal": "Focus the previous terminal pane",
-  "split-right": "Split the pane right",
-  "split-down": "Split the pane down",
-  "close-terminal": "Close the pane",
-  "toggle-broadcast": "Broadcast typing to every pane",
-};
 
 export type CodeShortcutsDialogProps = {
   open: boolean;
@@ -67,6 +59,11 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
       if (combo === "Escape") {
         setCapturing(null);
         announce("Rebinding cancelled.");
+        return;
+      }
+      const reservedOwner = codeReservedComboOwner(combo);
+      if (reservedOwner) {
+        announce(`That shortcut is reserved for the ${reservedOwner}.`);
         return;
       }
       const displaced = CODE_SHORTCUTS.find((s) => s.id !== capturing && keymap[s.id] === combo);
@@ -153,16 +150,35 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
           );
         })}
       </ul>
-      {/* The terminal's own bindings are FIXED — they resolve inside a focused
-          pane, before this keymap is consulted. Listing them here is what stops
-          a rebind from silently colliding with a key that will never reach it. */}
+      {/* Queue and terminal bindings are FIXED — they resolve before this
+          per-session keymap. Listing them here is what stops a rebind from
+          silently colliding with a key that will never reach it. */}
+      <p className="code-keys__section">Session queue — fixed</p>
+      <ul className="code-keys">
+        {CODE_FIXED_QUEUE_SHORTCUTS.map((shortcut) => (
+          <li key={shortcut.id} className="code-keys__row">
+            <span className="code-keys__label">{shortcut.label}</span>
+            <span className="code-keys__combo">
+              {codeComboChips(shortcut.combo, apple).map((chip, i) => (
+                <kbd key={`${shortcut.id}-${chip}-${i}`} className="code-keys__kbd">
+                  {chip}
+                </kbd>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
       <p className="code-keys__section">Terminal panes — fixed</p>
       <ul className="code-keys">
-        {(Object.entries(CODE_ROOM_SHORTCUT_HINTS) as [string, string][]).map(([id, hint]) => (
-          <li key={id} className="code-keys__row">
-            <span className="code-keys__label">{FIXED_LABEL[id] ?? id}</span>
+        {CODE_FIXED_TERMINAL_SHORTCUTS.map((shortcut) => (
+          <li key={shortcut.id} className="code-keys__row">
+            <span className="code-keys__label">{shortcut.label}</span>
             <span className="code-keys__combo">
-              <kbd className="code-keys__kbd">{hint}</kbd>
+              {codeComboChips(shortcut.combo, apple).map((chip, i) => (
+                <kbd key={`${shortcut.id}-${chip}-${i}`} className="code-keys__kbd">
+                  {chip}
+                </kbd>
+              ))}
             </span>
           </li>
         ))}

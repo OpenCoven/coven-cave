@@ -133,8 +133,11 @@ INSTALL_REST
 # remain fail-closed; when a maintainer uses a manual override, the permanent
 # release body records it instead of leaving the only evidence in an Actions log.
 registry_guards_skipped="${COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED:-}"
+openclaw_registry_guard_skipped="${COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED:-}"
 x_guard_skipped="${COVEN_RELEASE_X_GUARD_SKIPPED:-}"
-if [ "$registry_guards_skipped" = "true" ] || [ "$x_guard_skipped" = "true" ]; then
+if [ "$registry_guards_skipped" = "true" ] \
+  || [ "$openclaw_registry_guard_skipped" = "true" ] \
+  || [ "$x_guard_skipped" = "true" ]; then
   cat <<'PROVENANCE'
 ## Build provenance
 
@@ -148,6 +151,18 @@ enabled, so the signed OpenCode, Grok, and OpenClaw compatibility-registry
 checks did not run. The build uses the built-in baseline schema parsers.
 
 Releases published from a tag push cannot skip those checks.
+
+PROVENANCE
+fi
+
+if [ "$openclaw_registry_guard_skipped" = "true" ]; then
+  cat <<'PROVENANCE'
+This release was built on a manual run with
+`allow_unconfigured_openclaw_registry` enabled, so the signed OpenClaw
+compatibility-registry check did not run. The OpenCode and Grok checks still ran;
+OpenClaw uses its built-in baseline parser.
+
+A release published from a tag push cannot skip this check.
 
 PROVENANCE
 fi

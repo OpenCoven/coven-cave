@@ -8,6 +8,8 @@ import {
   MAX_SUMMARY_TITLE_WORDS,
   mergeSessionTitleOverrides,
   normalizeChatTitle,
+  promptSubjectLine,
+  chatTitleFromPrompt,
   stripLeadingTrailingEmoji,
   titleFromAssistantReply,
 } from "./cave-chat-titles.ts";
@@ -1193,6 +1195,54 @@ assert.equal(
   chatSummaryTitle({ userText: "1\uFE0F\u20E3 Fix parser" }),
   "Fix parser",
   "leading keycap with VS16 still stripped (no regression)",
+);
+
+
+// ── promptSubjectLine ───────────────────────────────────────────────────────
+// A machine-composed brief may name itself on line 1 so the session it launches
+// is tellable apart in the list (cave-dkdev). Untested when it landed (flagged
+// in review on #5283), and it is the one rule here that ALREADY had to be
+// tightened once: a first version keyed only on length and punctuation, which
+// promoted "Hey" and "Do these:" out of ordinary human prompts. These pin the
+// narrowness, because widening it silently renames real conversations.
+
+// Accepted: the two shapes a person does not type before a blank line.
+assert.equal(promptSubjectLine("Signal sweep · 5 signals\n\nResolve these 5 signals."), "Signal sweep · 5 signals");
+assert.equal(promptSubjectLine("Low signal score · 1 signal\n\nResolve this signal."), "Low signal score · 1 signal");
+assert.equal(promptSubjectLine("# Refactor the parser\n\nSplit it into two passes."), "Refactor the parser");
+assert.equal(promptSubjectLine("### Deep heading\n\nbody"), "Deep heading");
+assert.equal(promptSubjectLine("Subject · qualifier\r\n\r\nCRLF bodies count too."), "Subject · qualifier");
+
+// Rejected: ordinary human openings. Every one of these is a real prompt shape.
+assert.equal(promptSubjectLine("Hey\n\ncan you fix the login bug?"), null, "a greeting is not a title");
+assert.equal(promptSubjectLine("fix the parser\n\nit breaks on empty input"), null, "a bare ask is not a title");
+assert.equal(promptSubjectLine("Do these:\n\n- one\n- two"), null, "a colon lead-in is not a title");
+assert.equal(promptSubjectLine("ERROR: cannot read property\n\nwhat does this mean"), null, "a pasted log is not a title");
+
+// Rejected: shapes that look close but must not qualify.
+assert.equal(promptSubjectLine("Signal sweep · 5 signals"), null, "no blank line, so nothing is named");
+assert.equal(promptSubjectLine("Signal sweep · 5 signals\n\n   "), null, "a subject with no body names nothing");
+assert.equal(promptSubjectLine("Broken · thing.\n\nbody"), null, "sentence punctuation means prose");
+assert.equal(promptSubjectLine("wrapped line one\nwrapped line two\n\nbody"), null, "a wrapped paragraph is prose");
+assert.equal(promptSubjectLine(`${"A".repeat(80)} · x\n\nbody`), null, "over the length ceiling");
+assert.equal(promptSubjectLine("lower · case\n\nbody"), null, "the middot form requires a capitalised subject");
+assert.equal(promptSubjectLine("#\n\nbody"), null, "a bare hash names nothing");
+assert.equal(promptSubjectLine(null), null);
+assert.equal(promptSubjectLine(undefined), null);
+
+// Precedence: a self-naming brief beats the normal cleaning path outright,
+// which is the whole point — the instruction below it is identical on every
+// launch from the same surface.
+assert.equal(
+  chatTitleFromPrompt("Signal sweep · 5 signals\n\nResolve these 5 signals surfaced by your thread self-reports:"),
+  "Signal sweep · 5 signals",
+);
+// …and a prompt that names nothing still derives exactly as it always did.
+assert.equal(chatTitleFromPrompt("please fix the search bar"), "Fix the search bar");
+assert.equal(
+  chatSummaryTitle({ userText: "Low signal score · 1 signal\n\nResolve this low signal score." }),
+  "Low signal score · 1 signal",
+  "the assistant's own heading must not overrule a brief that named itself",
 );
 
 console.log("cave-chat-titles.test.ts ok");

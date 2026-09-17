@@ -24,36 +24,50 @@ assert.match(
 
 assert.match(
   source,
+  /classifyFamiliarWorkspace\s*=\s*\n?\s*url\.searchParams\.get\("classifyFamiliarWorkspace"\)\s*===\s*"1"/,
+  "the list route parses the opt-in classifyFamiliarWorkspace query param",
+);
+
+assert.match(
+  source,
   /cacheKey\s*=[\s\S]{0,160}collapseFamiliarWorkspace\s*\?\s*"collapse"\s*:\s*"full"/,
   "the cache key varies by collapse mode so full and collapsed views never alias",
 );
 
 assert.match(
   source,
-  /computeSessionsList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace\)/,
-  "the collapse flag is threaded into computeSessionsList",
-);
-
-// No options argument: the route must keep the auto-archive sweeps and git
-// enrichment it has always run. The dashboard read is the caller that opts out,
-// and this pins the route to the default so the extraction cannot quietly
-// disable the sweeps for the poll that is the only thing driving them.
-assert.doesNotMatch(
-  source,
-  /computeSessionsList\([^)]*sweepArchives/,
-  "the list route uses default compute options (sweeps and git enrichment on)",
+  /cacheKey\s*=[\s\S]{0,220}classifyFamiliarWorkspace\s*\?\s*"classified"\s*:\s*"unclassified"/,
+  "the cache key varies by classification mode so metadata-bearing and plain views never alias",
 );
 
 assert.match(
+  source,
+  /computeSessionsList\(\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\s*\)/,
+  "the collapse and classification flags are threaded into computeSessionsList",
+);
+
+// The route now passes only the classification option. Sweeps and git
+// enrichment still rely on computeSessionsList's defaults — the dashboard read
+// is the caller that opts those out, and this pins the route to not override
+// them while still forwarding classification.
+assert.match(
+  source,
+  /computeSessionsList\([\s\S]{0,120}\{\s*classifyFamiliarWorkspace\s*\}\s*\)/,
+  "the list route passes only the classification compute option",
+);
+assert.doesNotMatch(source, /sweepArchives\s*:/, "the list route leaves archive sweeps on by default");
+assert.doesNotMatch(source, /enrichGit\s*:/, "the list route leaves git enrichment on by default");
+
+assert.match(
   helper,
-  /if \(!collapseFamiliarWorkspace\) return sessions;/,
-  "the collapse helper is a no-op (and skips the FS read) when the flag is off",
+  /if \(!collapseFamiliarWorkspace && !classifyFamiliarWorkspace\) return null;/,
+  "the familiar-workspace roots loader is a no-op (and skips the FS read) when both flags are off",
 );
 
 assert.equal(
-  (helper.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
+  (helper.match(/applyFamiliarWorkspacePresentation\(/g) || []).length,
   3,
-  "applyFamiliarWorkspaceCollapse is defined once and called in BOTH the happy and degraded paths",
+  "applyFamiliarWorkspacePresentation is defined once and called in BOTH the happy and degraded paths",
 );
 
 assert.match(

@@ -157,11 +157,11 @@ assert.ok(
 );
 const sidecarMeasurement = declaredSidecarBudget.measurement;
 const measuredPlatforms = ["windows", "ubuntu", "macos"];
-assert.equal(sidecarMeasurement.on, "2026-08-25", "the Task9 HPKE budget review date must not drift");
+assert.equal(sidecarMeasurement.on, "2026-09-02", "the release-candidate budget review date must not drift");
 assert.equal(
   sidecarMeasurement.reference,
-  "OpenCoven/coven-cave#4996",
-  "the Task9 HPKE budget must retain its governing issue reference",
+  "v0.3.13-rc.1 / GitHub Actions run 33587097523",
+  "the release-candidate budget must retain its governing evidence reference",
 );
 const governingMeasurement = Math.max(
   ...measuredPlatforms.map((platform) => sidecarMeasurement[platform]),
@@ -179,7 +179,7 @@ assert.equal(
 assert.equal(
   sidecarMeasurement.headroom,
   150,
-  "the HPKE feature delta must preserve the established 150-file headroom",
+  "the release budget must preserve the established 150-file headroom",
 );
 assert.ok(
   sidecarMeasurement.featureDelta
@@ -204,9 +204,32 @@ assert.equal(
 );
 for (const platform of measuredPlatforms) {
   assert.equal(
-    sidecarMeasurement[platform] - sidecarMeasurement.featureDelta.baseline[platform],
+    sidecarMeasurement.featureDelta.measured[platform]
+      - sidecarMeasurement.featureDelta.baseline[platform],
     sidecarMeasurement.featureDelta.fileCount,
     `${platform} must move by exactly the reviewed feature delta`,
+  );
+}
+assert.equal(
+  sidecarMeasurement.windowsObserved,
+  false,
+  "the failed rc.1 Windows runtime leg must remain explicitly identified as projected evidence",
+);
+assert.equal(
+  sidecarMeasurement.releaseDelta.nextTraceFileCount,
+  18,
+  "the release delta must retain the measured Next trace growth",
+);
+assert.equal(
+  sidecarMeasurement.releaseDelta.tracedPackageCountChanged,
+  false,
+  "the release delta must not be reclassified as dependency-subtree growth",
+);
+for (const platform of measuredPlatforms) {
+  assert.equal(
+    sidecarMeasurement[platform] - sidecarMeasurement.releaseDelta.baseline[platform],
+    sidecarMeasurement.releaseDelta.fileCount,
+    `${platform} must move by exactly the reviewed v0.3.13 release delta`,
   );
 }
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");

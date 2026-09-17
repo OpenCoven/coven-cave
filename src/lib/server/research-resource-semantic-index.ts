@@ -342,7 +342,7 @@ function ensurePrivateFile(file: string): boolean {
 function hardenSqliteFiles(file: string, safetyCheck: () => void = () => {}): void {
   for (const candidate of [file, `${file}-wal`, `${file}-shm`]) {
     safetyCheck();
-    if (!existsSync(candidate)) continue;
+    if (!existsSync(/* turbopackIgnore: true */ candidate)) continue;
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic SQLite sidecar is unsafe");
@@ -459,7 +459,7 @@ function purgeResidualFiles(
   const residual = new RegExp(`^(?:${base}\\.corrupt-[0-9]+-[a-f0-9]{8}|\\.research-semantic-[0-9]+-[a-f0-9]{24}\\.sqlite)(?:-wal|-shm)?$`);
   let removed = false;
   safetyCheck();
-  for (const name of readdirSync(directory).sort()) {
+  for (const name of readdirSync(/* turbopackIgnore: true */ directory).sort()) {
     if (!residual.test(name)) continue;
     safetyCheck();
     const candidate = path.join(directory, name);
@@ -487,7 +487,7 @@ function purgeOrphanedCanonicalSidecars(
   let removed = false;
   for (const candidate of [`${file}-wal`, `${file}-shm`]) {
     safetyCheck();
-    if (!existsSync(candidate)) continue;
+    if (!existsSync(/* turbopackIgnore: true */ candidate)) continue;
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "orphaned semantic SQLite sidecar is unsafe");
@@ -622,7 +622,7 @@ function cosine(left: readonly number[], right: readonly number[]): number {
 export async function openResearchResourceSemanticIndex(
   options: { file?: string; beforeFinalSafetyCheck?: () => void } = {},
 ): Promise<ResearchResourceSemanticIndex> {
-  const file = path.resolve(options.file ?? semanticIndexPath());
+  const file = path.resolve(/* turbopackIgnore: true */ options.file ?? semanticIndexPath());
   if (!path.isAbsolute(file)) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index path must be absolute");
   }
@@ -1005,7 +1005,7 @@ export async function removeResearchResourceSemanticPublication(input: {
     for (const candidate of canonicalCandidates) {
       input.beforeCorruptCanonicalSafetyCheck?.(candidate.boundary);
       assertStableDeletionLayout(deletionLayout);
-      if (!existsSync(candidate.file)) continue;
+      if (!existsSync(/* turbopackIgnore: true */ candidate.file)) continue;
       const metadata = lstatSync(candidate.file);
       if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
         throw new ResearchResourceSemanticIndexError("unsafe-path", "corrupt semantic database path is unsafe");
@@ -1027,10 +1027,10 @@ export async function removeResearchResourceSemanticPublication(input: {
 export async function rebuildResearchResourceSemanticIndex(
   options: { file?: string } = {},
 ): Promise<{ index: ResearchResourceSemanticIndex; quarantinePath: string | null }> {
-  const file = path.resolve(options.file ?? semanticIndexPath());
+  const file = path.resolve(/* turbopackIgnore: true */ options.file ?? semanticIndexPath());
   ensureDirectory(path.dirname(file));
-  if (existsSync(file)) hardenSqliteFiles(file);
-  const expectedIdentity = existsSync(file) ? lstatSync(file) : null;
+  if (existsSync(/* turbopackIgnore: true */ file)) hardenSqliteFiles(file);
+  const expectedIdentity = existsSync(/* turbopackIgnore: true */ file) ? lstatSync(file) : null;
   const temporary = path.join(
     path.dirname(file),
     `.research-semantic-${process.pid}-${randomBytes(12).toString("hex")}.sqlite`,
@@ -1073,7 +1073,9 @@ export async function rebuildResearchResourceSemanticIndex(
       if (quarantinePath) {
         await renameWithRetry(file, quarantinePath);
         for (const suffix of ["-wal", "-shm"]) {
-          if (existsSync(`${file}${suffix}`)) await renameWithRetry(`${file}${suffix}`, `${quarantinePath}${suffix}`);
+          if (existsSync(/* turbopackIgnore: true */ `${file}${suffix}`)) {
+            await renameWithRetry(`${file}${suffix}`, `${quarantinePath}${suffix}`);
+          }
         }
         syncDirectory(path.dirname(file));
       }
@@ -1081,7 +1083,7 @@ export async function rebuildResearchResourceSemanticIndex(
         await renameWithRetry(temporary, file);
         syncDirectory(path.dirname(file));
       } catch (error) {
-        if (quarantinePath && !existsSync(file)) {
+        if (quarantinePath && !existsSync(/* turbopackIgnore: true */ file)) {
           await renameWithRetry(quarantinePath, file);
           syncDirectory(path.dirname(file));
         }

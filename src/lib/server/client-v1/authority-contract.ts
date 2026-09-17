@@ -17,6 +17,8 @@ export const CLIENT_V1_HPKE_PROTECTED_OPERATIONS = Object.freeze([
   "pairing.poll",
   "pairing.exchange",
   "familiars.list",
+  "familiars.contract.read",
+  "familiars.analytics.read",
   "projects.list",
   "conversations.list",
   "conversations.read",

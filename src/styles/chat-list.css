@@ -307,51 +307,13 @@
   text-overflow: ellipsis;
 }
 
-/* Status pill — one solid token in, the whole pill out. */
-/* The five states the daemon reports are a closed set, so the tint lives in
-   CSS keyed off data-state rather than as an inline style prop. */
-[data-state="running"] {
-  --state-tint: var(--accent-presence);
-}
-[data-state="queued"] {
-  --state-tint: var(--color-warning);
-}
-[data-state="completed"] {
-  --state-tint: var(--color-success);
-}
-[data-state="failed"] {
-  --state-tint: var(--color-danger);
-}
-[data-state="paused"] {
-  --state-tint: var(--text-muted);
-}
-
-.chat-session-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: none;
-  height: 20px;
-  padding: 0 var(--space-2);
-  border: 1px solid color-mix(in oklch, var(--state-tint, var(--text-muted)) 30%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--state-tint, var(--text-muted)) 14%, transparent);
-  color: var(--state-tint, var(--text-muted));
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.chat-session-pill__dot {
-  width: 5px;
-  height: 5px;
-  flex: none;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  animation: chat-session-breathe 2.2s var(--ease-standard) infinite;
-}
+/* Status pill moved to `styles/session-status-pill.css` (cave-dkdev), which
+   the shared <SessionStatusPill> imports. It is no longer a chat-list-only
+   idiom: the session detail header renders the same component, so the two
+   surfaces can no longer drift apart on what a session's state is called.
+   The bare `[data-state="…"]` tint block that used to live here was also
+   unscoped — it set --state-tint on ANY element in the app carrying a
+   data-state attribute, chat-list or not. */
 
 /* Run stats — elapsed, and the working-tree delta this session produced. */
 .chat-session-stat {
@@ -372,8 +334,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-session-avatar__ring,
-  .chat-session-pill__dot {
+  .chat-session-avatar__ring {
     animation: none;
   }
 }
@@ -392,4 +353,19 @@
 
 .chat-list-row-broadcast[data-state="failed"] {
   color: var(--color-danger);
+}
+
+/* Failure severity stripe (cave-dkdev).
+ *
+ * A failed run was previously distinguished only by the pill's red tint, which
+ * makes colour the sole carrier of the one row state a person is most likely
+ * scanning for. The stripe adds a second, non-colour channel — position — so
+ * a failure is findable in peripheral vision and survives a colour-vision
+ * difference or a monochrome screenshot.
+ *
+ * Drawn as an inset shadow rather than a positioned element so it cannot
+ * collide with the active-row indicator, which is an absolutely positioned
+ * span at the same edge and deliberately paints over this. */
+.chat-list-row[data-status="failed"] {
+  box-shadow: inset 2px 0 0 var(--color-danger);
 }

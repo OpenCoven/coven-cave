@@ -34,6 +34,15 @@ const SESSION = {
   archived_at: null,
   created_at: ISO,
   updated_at: ISO,
+  familiarWorkspace: false,
+  workBranch: "feat/auth-flow",
+  git: {
+    branch: "feat/auth-flow",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
 };
 
 async function base(page: Page) {

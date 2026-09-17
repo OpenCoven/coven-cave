@@ -372,8 +372,9 @@ objects.
 ### Protected operations and administrator exclusion
 
 The `hpke-bound-v1` protected operation list is exactly `pairing.poll`,
-`pairing.exchange`, `familiars.list`, `projects.list`,
-`conversations.list`, `conversations.read`, and `messages.list`.
+`pairing.exchange`, `familiars.list`, `familiars.contract.read`,
+`familiars.analytics.read`, `projects.list`, `conversations.list`,
+`conversations.read`, and `messages.list`.
 `health.read` and `pairing.create` carry no credential and remain unbound.
 
 The five administrator operations — `pairing.admin.list`,
@@ -402,15 +403,16 @@ one shape, so a client parses once:
   "apiVersion": "1.0",
   "minimumClientVersion": "0.1.0",
   "capabilities": [
-    "health", "pairing", "credentials", "familiars", "projects",
+    "health", "pairing", "credentials", "familiars",
+    "familiar-contract", "familiar-analytics", "projects",
     "conversations", "conversation-messages", "cursors"
   ],
   "operations": [
     "health.read", "pairing.create", "pairing.poll", "pairing.exchange",
     "pairing.admin.list", "pairing.admin.decide",
     "credentials.admin.list", "credentials.admin.revoke", "status.admin.read",
-    "familiars.list", "projects.list",
-    "conversations.list", "conversations.read", "messages.list"
+    "familiars.list", "familiars.contract.read", "familiars.analytics.read",
+    "projects.list", "conversations.list", "conversations.read", "messages.list"
   ],
   "data": { }
 }
@@ -494,6 +496,8 @@ contract fixture, which carries the same records — rather than by probing path
 | `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | `admin` | `none` | — | `credentials` |
 | `status.admin.read` | `GET /api/client/v1/admin/status` | admin | `admin` | `none` | — | `health` |
 | `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiars`, `cursors` |
+| `familiars.contract.read` | `GET /api/client/v1/familiars/:id/contract` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiar-contract` |
+| `familiars.analytics.read` | `GET /api/client/v1/familiars/:id/analytics` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiar-analytics` |
 | `projects.list` | `GET /api/client/v1/projects` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `projects`, `cursors` |
 | `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations`, `cursors` |
 | `conversations.read` | `GET /api/client/v1/conversations/:id` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations` |
@@ -536,8 +540,10 @@ the `pairing` family. A paired client cannot list, inspect, or revoke its own
 credential through this API.
 
 `cursors` is the one family with no route of its own. It is cross-cutting: the
-four paged reads claim it and `conversations.read` does not, because that route
-refuses `limit` and `cursor` outright. Membership is explicit metadata on each
+four paged reads claim it and the three single-record reads —
+`conversations.read`, `familiars.contract.read`, `familiars.analytics.read` —
+do not, because each answers one record and refuses `limit` and `cursor`
+outright. Membership is explicit metadata on each
 operation rather than inferred from a path, which is what lets a family like
 this exist truthfully.
 
@@ -1009,15 +1015,21 @@ ten and lock out both.
 
 ## Canonical read routes
 
-The four resource families the inventory advertises to a paired bearer —
-`"familiars"`, `"projects"`, `"conversations"`, `"conversation-messages"` —
-served as paged reads over `"cursors"`. Every one of them is a `GET`, requires
-the `chat:read` scope, and projects a store the Cave itself reads, so a paired
-client and the desktop never disagree about what exists.
+The six resource families the inventory advertises to a paired bearer —
+`"familiars"`, `"familiar-contract"`, `"familiar-analytics"`, `"projects"`,
+`"conversations"`, `"conversation-messages"` — four of them served as paged
+reads over `"cursors"` and two as single records per familiar. Every one of
+them is a `GET`, requires the `chat:read` scope, and projects a store the Cave
+itself reads, so a paired client and the desktop never disagree about what
+exists.
 
-Five operations, not four: `conversations.list` and `conversations.read` are
+Seven operations, not six: `conversations.list` and `conversations.read` are
 separately invokable and share the `conversations` family, which is why the
-`operations` list is the one to branch on.
+`operations` list is the one to branch on. The two familiar detail reads carry
+families of their own — `familiar-contract`, `familiar-analytics` — rather than
+`familiars`, because a Cave that lists familiars need not serve their wards or
+their history, and a client gates its Access and Activity tabs on exactly those
+claims.
 
 ### Authentication, and how it fails
 
@@ -1450,6 +1462,149 @@ path, a command, the contents of a file it read. Neither is served. `toolCount`
 and `attachmentCount` tell you the turn did work without handing over the work.
 `usage` and `costUsd` are also withheld. `chat:read` is a grant to read the
 conversation, not everything the conversation touched.
+
+### `GET /api/client/v1/familiars/:id/contract`
+
+One familiar's Familiar Contract: which of its four contract files exist, the
+identity fields `IDENTITY.md` declares, the ward parsed from `ward.toml`, and
+the v0.1.0 adherence report. It is the promotion of the Studio's own Contract
+tab read, so a paired client and the desktop render the same ward — what the
+familiar may do alone, what it must ask about, the only paths it may change.
+
+**Request:** `Authorization: Bearer …` and the loopback stamp. **No query
+parameters**, including `limit` and `cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "contract": {
+      "id": "scribe",
+      "present": { "soul": true, "identity": true, "ward": true, "memory": true },
+      "identity": {
+        "name": "Scribe",
+        "creature": "Archivist familiar in the Coven",
+        "person": "Val Alexander"
+      },
+      "ward": {
+        "version": "0.1.0",
+        "familiar": "scribe",
+        "person": "val",
+        "protectedFiles": ["SOUL.md", "IDENTITY.md", "MEMORY.md", "ward.toml"],
+        "invariants": ["familiar.name == 'Scribe'"],
+        "editablePaths": ["TOOLS.md", "notes/"],
+        "approvalTiers": {
+          "auto": ["read files", "write to notes/"],
+          "humanReview": ["publish a finding"]
+        }
+      },
+      "report": {
+        "specVersion": "0.1.0",
+        "pass": true,
+        "properties": [{ "property": "named-identity", "pass": true }],
+        "violations": [],
+        "warnings": []
+      }
+    }
+  }
+}
+```
+
+`present` says which files exist. `identity` is present only when
+`IDENTITY.md` is, and `ward` only when `ward.toml` is; a familiar that has not
+authored one still gets a `report`, and the report names what is missing. Each
+optional field inside them is omitted, never null, when the file does not
+state it.
+
+`ward.approvalTiers.auto` and `.humanReview` are the action lists the ward
+names, whichever spelling its author used — the `blocks` of an
+`[approval_tiers.auto]` table, or the inline `auto = [...]` under
+`[approval_tiers]`. Match a draft against `humanReview` to warn before it
+crosses the must-ask tier.
+
+**What is withheld.** The Studio's private route serves the familiar's
+`workspace` path; this one does not. `chat:read` is a grant to read the
+familiar, not the disk it lives on.
+
+**404 `not_found`:** the visible roster — the same source `familiars.list`
+serves — does not carry that id. This is the answer for a malformed id too,
+and it is the answer whether or not a workspace directory happens to match the
+id: existence is roster membership, checked before the workspace is read, so
+the route cannot be used to map which slugs have directories.
+
+**503 `service_unavailable`, retryable:** the roster could not be read because
+the daemon is down or refused the Cave's own token. Not `not_found` — the
+familiar has not gone anywhere — and not `unauthorized`, which would tell a
+correctly paired client to discard a working credential.
+
+### `GET /api/client/v1/familiars/:id/analytics`
+
+One familiar's execution analytics: the aggregate windows Cave keeps, a
+runs-per-day series on the day-shaped ones, the most recent attempts, and
+whether the history behind the numbers is complete. It is the promotion of the
+Studio's Activity tab read.
+
+**Request:** `Authorization: Bearer …` and the loopback stamp. Optional
+`window` (`7d`, `14d`, `8w`, or `all`) narrows the response to one window;
+optional `recent` (an integer from 0 to 100, default 50) bounds the attempt
+list. Anything else — another parameter, a repeated one, a value outside its
+bound — is **400 `invalid_request`** with `details.reason` naming it, not
+corrected.
+
+**200:**
+
+```json
+{
+  "data": {
+    "analytics": {
+      "generatedAt": "2026-08-18T10:00:00.000Z",
+      "windows": {
+        "7d": {
+          "attempts": 2, "completed": 1, "failed": 1, "cancelled": 0,
+          "successRate": 0.5, "medianDurationMs": 4000,
+          "toolCalls": 3, "toolFailures": 0,
+          "models": [{ "key": "claude-sonnet", "attempts": 2, "completed": 1, "failed": 1, "cancelled": 0, "successRate": 0.5, "toolCalls": 3, "toolFailures": 0 }],
+          "harnesses": [],
+          "coverage": { "usage": { "known": 1, "total": 2, "ratio": 0.5 } },
+          "days": [
+            { "date": "2026-08-12", "completed": 0, "failed": 0, "cancelled": 0 },
+            { "date": "2026-08-18", "completed": 1, "failed": 1, "cancelled": 0 }
+          ]
+        }
+      },
+      "recentAttempts": [
+        {
+          "id": "ea1_live",
+          "sessionId": "session-1",
+          "executionKind": "chat",
+          "occurredAt": "2026-08-18T09:30:00.000Z",
+          "harnessId": "claude",
+          "status": "failed",
+          "durationMs": 4000,
+          "toolCalls": 3,
+          "toolFailures": 0,
+          "provenance": "live"
+        }
+      ],
+      "backfill": { "state": "complete", "imported": 12 }
+    }
+  }
+}
+```
+
+`successRate` is `null`, not `0`, when a window has no settled attempt: a rate
+over nothing is not zero. `days` is carried by `7d` and `14d` only — exactly 7
+or 14 entries, oldest first, every UTC calendar day present even when it saw no
+run, ending on the day `generatedAt` falls in. The window's counts filter on a
+rolling `N × 24h` cutoff, so a run inside the window but on the calendar day
+before the series starts is in `attempts` and not in `days`. `backfill` reports
+whether the history behind these numbers is complete; a success rate drawn from
+a partial import is a different claim from one drawn from all of it.
+
+**404 `not_found`** and **503 `service_unavailable`** exactly as the contract
+route above: existence is roster membership, and a daemon that is down is
+reported as unavailable, not as absence.
 
 ## Administrator routes
 

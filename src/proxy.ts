@@ -8,6 +8,7 @@ import {
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
   CLIENT_V1_ADMIN_HEADER,
+  VALIDATED_SIDECAR_QUERY_HEADER,
   LOCAL_PEER_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
@@ -294,17 +295,24 @@ function isProductionWebhookGet(pathname: string, method: string) {
   );
 }
 
+const RESEARCH_RUN_STREAM_PATH_RE = /^\/api\/research\/runs\/[^/]+\/stream$/;
+
 function nextWithInternalAuthMarkers(
   req: NextRequest,
   mobileAccessAuthenticated: boolean,
   clientV1AdminSecret?: string,
+  validatedSidecarQuery = false,
 ) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);
   requestHeaders.delete(CLIENT_V1_ADMIN_HEADER);
+  requestHeaders.delete(VALIDATED_SIDECAR_QUERY_HEADER);
   if (mobileAccessAuthenticated) requestHeaders.set(MOBILE_ACCESS_HEADER, "1");
   if (clientV1AdminSecret) {
     requestHeaders.set(CLIENT_V1_ADMIN_HEADER, clientV1AdminSecret);
+  }
+  if (validatedSidecarQuery) {
+    requestHeaders.set(VALIDATED_SIDECAR_QUERY_HEADER, "1");
   }
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
@@ -328,6 +336,11 @@ export async function proxy(req: NextRequest) {
     req.headers.get(LOCAL_PEER_HEADER),
     localPeerSecret,
   );
+  const validatedSidecarQuery =
+    req.method === "GET"
+    && RESEARCH_RUN_STREAM_PATH_RE.test(req.nextUrl.pathname)
+    && trustedLocalPeer
+    && sidecarTokenMatches(req.nextUrl.searchParams.get(TOKEN_PARAM));
   if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
     const response = NextResponse.next();
     response.headers.set(DEV_READINESS_PROOF_HEADER, "1");
@@ -575,7 +588,7 @@ export async function proxy(req: NextRequest) {
     trustedLocalPeer && !isClientV1Path(req.nextUrl.pathname);
   if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi) {
     if (mediaTicketAuthenticated) {
-      return nextWithInternalAuthMarkers(req, remoteIngress);
+      return nextWithInternalAuthMarkers(req, remoteIngress, undefined, validatedSidecarQuery);
     }
     // A verified signed mobile invite is the paired phone's credential: the
     // token is minted by this desktop from its access secret and already
@@ -587,7 +600,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithInternalAuthMarkers(req, remoteIngress);
+  return nextWithInternalAuthMarkers(req, remoteIngress, undefined, validatedSidecarQuery);
 }
 
 export const config = {

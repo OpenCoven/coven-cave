@@ -1,5 +1,13 @@
 # Chat v1 Phase 7 — Packaging, Compatibility, Publishing, and Rollout: Verified Program Status
 
+> **Current refresh — 2026-09-04:** Phase 7 remains blocked in canonical
+> Beads; it is no longer tracker-unverifiable. Chat's `v0.0.1-demo.1`
+> prerelease is macOS-arm64 demo evidence, not the signed cross-platform
+> production/updater candidate required by this program. Coven has advanced to
+> v0.4.3, but the planned client crate publication remains absent. Phase 1 is
+> closed canonically; GitHub #4833 is only a stale open mirror. The missing
+> acceptance record and Phase 7 gate evidence remain real blockers.
+
 Issue: [OpenCoven/coven-cave#4820](https://github.com/OpenCoven/coven-cave/issues/4820) · Bead `cave-j65ie` · Lane `program-coordination`
 
 **Verified: 2026-08-30.** Read-only verification. This document records verified program status only; it closes nothing and changes no bead.

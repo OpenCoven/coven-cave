@@ -74,8 +74,8 @@ test("the sessions/list route scopes by familiar grants", () => {
   assert.match(route, /searchParams\.get\("familiarId"\)/, "reads the familiarId param");
   assert.match(
     route,
-    /computeSessionsList\(includeArchived, familiarId, collapseFamiliarWorkspace\)/,
-    "threads the parsed familiar id into the scoped compute",
+    /computeSessionsList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\)/,
+    "threads the parsed familiar id and classification flag into the scoped compute",
   );
 });
 
@@ -95,7 +95,11 @@ test("chat surface consumers pass the active familiar scope", () => {
     /useProjects\(\)/,
     "ProjectsView loads unscoped — it manages the grants themselves",
   );
-  assert.match(read("src/components/workspace.tsx"), /\/api\/sessions\/list\$\{scope\}/, "workspace scopes the session poll by familiar");
+  const workspace = read("src/components/workspace.tsx");
+  assert.match(workspace, /params\.set\("classifyFamiliarWorkspace",\s*"1"\)/, "workspace always requests trusted familiar-workspace classification");
+  assert.match(workspace, /if \(capturedActiveId\) params\.set\("familiarId", capturedActiveId\);/, "workspace scopes the session poll by familiar when one is active");
+  assert.match(workspace, /else params\.set\("collapseFamiliarWorkspace",\s*"1"\);/, "workspace collapses familiar workspace rows only in the unscoped poll");
+  assert.match(workspace, /\/api\/sessions\/list\?\$\{params\.toString\(\)\}/, "workspace sends the assembled shared session-list query");
 });
 
 test("chat/send still gates project access for the acting familiar", () => {

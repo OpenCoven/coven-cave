@@ -5,13 +5,20 @@ import type { GithubRepoView } from "@/lib/research-github-repo";
 import type { GithubRepoViewResult } from "@/lib/server/research-github-repo";
 import { createGithubRepoRouteHandlers } from "./route.ts";
 
+const SHA = "a".repeat(40);
 const VIEW: GithubRepoView = {
+  version: 1,
   owner: "OpenCoven",
   repo: "coven-cave",
+  visibility: "public",
+  stars: 1,
+  forks: 2,
   defaultBranch: "main",
   resolvedRef: "main",
+  commitSha: SHA,
+  fetchedAt: "2026-09-01T00:00:00.000Z",
   truncated: false,
-  tree: [{ path: "README.md", type: "blob", size: 12 }],
+  tree: [{ path: "README.md", type: "blob", sha: SHA, size: 12 }],
   readme: { path: "README.md", markdown: "# Hello" },
 };
 
@@ -102,6 +109,7 @@ test("resolves the token and forwards a validated repo/ref to the fetch module",
 test("omits the ref key when none is supplied", async () => {
   const calls: Array<{ owner: string; repo: string; ref?: string }> = [];
   const handler = route({
+    resolveToken: () => null,
     fetchView: async (args) => {
       calls.push(args);
       return { ok: true, view: VIEW };
@@ -109,6 +117,23 @@ test("omits the ref key when none is supplied", async () => {
   });
 
   await handler(localRequest("/api/research/github-repo?repo=o%2Fr"));
+  assert.deepEqual(calls, [{ owner: "o", repo: "r", token: null }]);
+});
+
+test("continues public repository reads when credential resolution fails", async () => {
+  const calls: unknown[] = [];
+  const handler = route({
+    resolveToken: () => {
+      throw new Error("encrypted vault unavailable");
+    },
+    fetchView: async (args) => {
+      calls.push(args);
+      return { ok: true, view: VIEW };
+    },
+  });
+
+  const response = await handler(localRequest("/api/research/github-repo?repo=o%2Fr"));
+  assert.equal(response.status, 200);
   assert.deepEqual(calls, [{ owner: "o", repo: "r", token: null }]);
 });
 

@@ -7,6 +7,7 @@ const iosRoot = "apps/ios/CovenCave/CovenCave";
 const sheet = await read(`${iosRoot}/Views/LinkedTasksSheet.swift`);
 const model = await read(`${iosRoot}/State/AppModel.swift`);
 const chat = await read(`${iosRoot}/Views/ChatView.swift`);
+const tasks = await read(`${iosRoot}/Views/TasksView.swift`);
 
 // Linked task assignment is two-stage: first the task must still belong to the
 // chat's project context, then the familiar/search filters apply within that
@@ -75,6 +76,11 @@ assert.doesNotMatch(
   chat,
   /app\.linkedTasks\(for: thread\)/,
   "chat should not advertise out-of-scope linked tasks once project scoping is active",
+);
+assert.match(
+  tasks,
+  /let wasPresentingBoardDetail = boardDetail != nil[\s\S]{0,200}let consumesRequestedCard = card == nil[\s\S]{0,200}&& !wasPresentingBoardDetail[\s\S]{0,120}boardDetail = card[\s\S]{0,120}if consumesRequestedCard \{[\s\S]{0,80}app\.cardToOpen = nil/,
+  "dismissing a manually opened compact detail should preserve a deferred cross-surface task intent",
 );
 
 console.log("ios-task-search-familiar-scope.test.mjs: ok");

@@ -14,11 +14,26 @@ const styles = existsSync(stylesUrl) ? readFileSync(stylesUrl, "utf8") : "";
 // The legacy Settings host is retired; the shared inline primitives remain
 // contract-tested for any remaining non-settings reuse.
 assert.doesNotMatch(shell, /section === "familiars"|FamiliarsSection/, "Settings no longer hosts the retired Familiars control sheet");
-assert.match(
+// The sheet left the global facade in cave-dkdev (#3264): its 60 selectors are
+// settings/familiar-studio only, and both roots that mount them are dynamic(),
+// so it ships with those chunks instead of with every route. What matters now
+// is that BOTH roots import it — dropping either silently unstyles a surface,
+// which no other assertion here would catch.
+assert.doesNotMatch(
   globals,
   /@import "\.\.\/styles\/settings-familiars\.css";/,
-  "The focused Familiars control-sheet stylesheet is wired through the global facade",
+  "the sheet must not return to the global facade every route pays for",
 );
+for (const [file, label] of [
+  ["./settings-shell.tsx", "the Settings root"],
+  ["./chat-familiar-capabilities.tsx", "the chat Familiar tab root"],
+] as const) {
+  assert.match(
+    readFileSync(new URL(file, import.meta.url), "utf8"),
+    /import "@\/styles\/settings-familiars\.css";/,
+    `${label} imports the sheet its subtree needs`,
+  );
+}
 assert.match(
   styles,
   /\.familiar-studio-inline\s*\{[\s\S]*?grid-template-columns:\s*var\(--familiar-roster-width\)\s+minmax\(0,\s*1fr\)/,

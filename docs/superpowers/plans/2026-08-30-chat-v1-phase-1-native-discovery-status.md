@@ -1,5 +1,15 @@
 # Chat v1 P1 — Native Discovery, Launch, Keychain, and Connection State: Working Record and Claimable Scope
 
+> **Current refresh — 2026-09-04:** Implementation and canonical Phase 1 gate
+> closure are complete. OpenCoven/chat#41 merged on 2026-08-30 and later
+> hardening continued through OpenCoven/chat#55. GitHub #4780 and #4830 are
+> closed, while #4830
+> still lacks an on-issue closure-evidence comment. Treat that as mirror
+> hygiene, not an implementation blocker. OpenCoven/chat CI run `33853544991`
+> at `1e8597d3a6195fcce2fa8f76b28dc9bdd9bec985` passed the Phase 1
+> real-authority job and retains its report through 2026-09-18. Chat `main` has
+> advanced again and its newest run is still in progress.
+
 Bead `cave-tsvfj` · Issue [#4830](https://github.com/OpenCoven/coven-cave/issues/4830) · Phase 1 · owner **Chat** · surface `desktop`
 
 **Verified 2026-08-30.** Every claim below was re-checked read-only against the GitHub API on 2026-08-30. Evidence links carry their own dates. This record supersedes the state line in the #4830 issue body (verified 2026-08-22) and refines the 2026-08-24 reassessment comment ([#4830 comment](https://github.com/OpenCoven/coven-cave/issues/4830#issuecomment-5394655968)).

@@ -290,6 +290,18 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // dependency subtree, source maps, tests, or duplicate package tree entered
   // the closure. Keep the established 150-file headroom from the governing
   // Windows measurement without relaxing the expanded-byte ceiling.
+  //
+  // 2026-09-02 (v0.3.13-rc.1): macOS measured 7,194 files and Ubuntu
+  // measured 7,198, exactly +327 on both platforms from the last successful
+  // candidate's 6,867/6,871. The tree added 18 Next traces (335 -> 353) and
+  // 64 changed src/app files, including 18 new routes, while traced package
+  // counts stayed unchanged. No forbidden root, dependency/native subtree,
+  // source map, or test tree entered the closure. The Windows leg failed
+  // before assembly, so project its governing count as its measured 6,874
+  // baseline plus the identical 327-file delta: 7,201. Preserve the established
+  // 150-file headroom. A separate zero-warning Turbopack build still measured
+  // 7,194 on macOS, proving the increase is generated application output rather
+  // than broad filesystem tracing; leave the expanded-byte ceiling unchanged.
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });

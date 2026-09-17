@@ -204,6 +204,18 @@ never fake production data.
   Generation and verified normalizations pass through `cave-board` mutators in
   one lock-checked atomic batch, so a stale or failed apply leaves the proposal
   reviewable and preserves the explicit error.
+- **Coding Desk** (`code`, role `coder`) — the Coding familiar's review-first
+  room. It opens in **Reviewable**, showing only active human-created sessions
+  that are outside configured familiar workspaces, verified inside a Git work
+  tree, and enriched with a canonical GitHub `repositoryUrl`; linked worktrees
+  remain eligible when that proof points back to their `repositoryRoot`.
+  **All local** is the explicit escape hatch back to the older generic Code
+  visibility, so familiar workspaces, non-GitHub or unverified repositories,
+  rootless sessions, and missing familiar-workspace classification stay
+  reachable there. Missing Git or workspace classification therefore fails
+  closed for Reviewable only, and the rail and header picker read from the same
+  queue model so their eligibility, ordering, and repository headings stay in
+  sync.
 - **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a three-column
   cockpit built from sessions carrying PRs, working changes, or branches. Each
   column answers exactly one question, so a control's position tells you what

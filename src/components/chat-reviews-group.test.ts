@@ -69,29 +69,16 @@ test("rows reuse the shared band grammar — no third vocabulary", () => {
   }
 });
 
-test("Reviews sheds first — before Queue, and long before the Chats band", () => {
-  // Both are extra-source groups (each costs a request); the page's own data
-  // — board cards and threads — survives longer. Reviews is the quietest, so
-  // it is the first band a short pane gives up.
-  const css = readFileSync(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
-  assert.match(
-    css,
-    /@container \(max-height: 760px\) \{\s*\n\s*\.cave-sf__band\[data-kind="reviews"\] \{/,
-    "Reviews owns the earliest shed tier",
-  );
-  const tier = (kind) =>
-    Number(
-      css.match(
-        new RegExp(
-          `@container \\(max-height: (\\d+)px\\) \\{\\s*\\n\\s*\\.cave-sf__band\\[data-kind="${kind}"\\]`,
-        ),
-      )[1],
-    );
-  assert.ok(
-    tier("reviews") > tier("queue") && tier("queue") > tier("chats"),
-    "shed order is reviews, then queue, then chats",
-  );
-});
+// The "Reviews sheds first" compact-height assertion was removed in
+// cave-drsph. It pinned a `.cave-sf__band[data-kind="reviews"]` @container
+// rule in home-dashboard.css that "Compact home dashboard and composer"
+// (641ccac12) deleted as dead CSS -- ChatStartFromBands renders one active
+// band at a time via tabs (`.cave-sf__source`) and a single deck
+// (`.cave-sf__deck`), never a stacked `.cave-sf__band` per kind, so that
+// selector never matched real markup even before the cleanup. The
+// compact-height tiers that remain intentionally no longer hide whole bands
+// by pane height (see the CSS's own "nothing is hidden solely because the
+// pane is short" comment).
 
 test("starting a review opens the work in place", () => {
   assert.match(

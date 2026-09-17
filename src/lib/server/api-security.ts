@@ -2,7 +2,10 @@ import { NextResponse } from "next/server.js";
 
 import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { isLocalOrigin } from "./local-origin.ts";
-import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
+import {
+  MOBILE_ACCESS_HEADER,
+  VALIDATED_SIDECAR_QUERY_HEADER,
+} from "../../proxy-helpers.ts";
 import { isValidResearchMediaTicketRequest } from "../research-media-ticket.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
@@ -52,6 +55,23 @@ export function rejectNonLocalRequest(req: Request): NextResponse | null {
     }
   }
 
+  return null;
+}
+
+export function rejectResearchRunStreamRequest(req: Request): NextResponse | null {
+  const ordinary = rejectNonLocalRequest(req);
+  if (!ordinary) return null;
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return ordinary;
+  if (req.headers.get(VALIDATED_SIDECAR_QUERY_HEADER) !== "1") return ordinary;
+  if (!isLocalHost(req.headers.get("host"))) return ordinary;
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      if (!isLocalHost(new URL(origin).host)) return ordinary;
+    } catch {
+      return ordinary;
+    }
+  }
   return null;
 }
 

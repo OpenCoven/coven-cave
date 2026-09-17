@@ -16,7 +16,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Above app drawers and mobile navigation; below portaled popovers (400). */
+  /* Above app drawers and mobile navigation; below portaled popovers (400).
+     A Popover that launches a Modal hides its own panel while the Modal is
+     open, so later Popovers launched from inside the Modal still layer above. */
   z-index: 350;
   padding: var(--space-4);
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
@@ -197,10 +199,12 @@
 }
 
 /* ---- Origin chip (provenance for a session/card) ----------- */
-/* Origin + initiator pills share one chrome so adjacent pills read as
-   siblings; only the semantic accent/tint (call/human/familiar) varies. */
-.ui-origin-chip,
-.ui-initiator-chip {
+/* Was shared chrome for origin + initiator pills. The initiator pill was
+   removed from the chat row (cave-dkdev): it read "Cave user" on every row,
+   which is width spent to say nothing. Its component and these rules went with
+   it (cave-matid) — dead CSS here is not free, because primitives.css is the
+   root bundle every route downloads. */
+.ui-origin-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -229,30 +233,17 @@
   color: var(--text-secondary);
 }
 
+/* One rule, not two: collapsing the old two-selector label pair (origin +
+   initiator) left a second block for the same selector. */
 .ui-origin-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: lowercase;
 }
 
 .ui-origin-chip-suffix {
   color: var(--text-muted);
-}
-
-/* ---- Initiator chip (who started a session) ---------------- */
-.ui-initiator-chip[data-initiator="human"] {
-  color: var(--accent-presence);
-  border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
-}
-
-.ui-initiator-chip[data-initiator="familiar"] {
-  color: var(--text-secondary);
-  border-color: color-mix(in oklch, var(--text-secondary) 26%, var(--border-hairline));
-}
-
-.ui-initiator-chip-label,
-.ui-origin-chip-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- Lifecycle badge (card state machine) ------------------ */
@@ -1505,6 +1496,10 @@
   pointer-events: auto;
   animation: ui-popover-enter var(--duration-fast) var(--ease-decelerate);
   overflow: hidden;
+}
+.ui-popover[data-covered] {
+  visibility: hidden;
+  pointer-events: none;
 }
 @keyframes ui-popover-enter {
   from { opacity: 0; transform: translateY(-2px); }

@@ -74,6 +74,30 @@ const turn = (id, tools) => ({
   assert.equal(model.totalMs, 0);
   for (const s of model.segments) assert.ok(Number.isFinite(s.ratio) && s.ratio > 0, "no NaN widths when nothing reported a duration");
 }
+{
+  const repeatedTools = [
+    turn("assistant-1", [
+      { id: "create_5", name: "create", status: "ok", durationMs: 10 },
+      { id: "view_5", name: "view", status: "ok", durationMs: 10 },
+    ]),
+    turn("assistant-2", [
+      { id: "create_5", name: "create", status: "ok", durationMs: 10 },
+      { id: "view_5", name: "view", status: "ok", durationMs: 10 },
+    ]),
+  ];
+  const first = runRailModel(repeatedTools, { nowMs: NOW });
+  const second = runRailModel(repeatedTools, { nowMs: NOW });
+  assert.equal(
+    new Set(first.segments.map((segment) => segment.id)).size,
+    first.segments.length,
+    "tool ids that repeat across turns still produce unique timeline identities",
+  );
+  assert.deepEqual(
+    first.segments.map((segment) => segment.id),
+    second.segments.map((segment) => segment.id),
+    "timeline identities remain stable across equivalent renders",
+  );
+}
 
 // ── tool mix ────────────────────────────────────────────────────────────────
 {

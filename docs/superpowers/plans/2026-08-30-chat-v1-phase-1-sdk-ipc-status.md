@@ -1,5 +1,12 @@
 # [Chat v1 P1] TypeScript Coven IPC discovery and health — verified status + implementation contract handoff
 
+> **Current refresh — 2026-09-04:** The SDK IPC implementation remains landed,
+> and `cave-p8qkk`, implementation child `cave-p8qkk.1`, Phase 0 prerequisite
+> `cave-bt9wx`, Phase 1 gate `cave-23nmv`, and Phase 1 epic `cave-fz01p` are
+> closed in canonical Beads. GitHub #4780 is closed; #4818 and #4833 remain
+> stale open mirrors. Those mirror records are reconciliation debt, not
+> execution blockers.
+
 **Date:** 2026-08-30 (all evidence below was fetched on this date)
 **Bead:** `cave-p8qkk` · Phase 1 · P0 · lane `typescript-sdk-cli` · owner repo **OpenCoven/sdk**
 **Issue:** [OpenCoven/coven-cave#4780](https://github.com/OpenCoven/coven-cave/issues/4780) (GitHub Teamwork visibility mirror; Beads is authoritative)

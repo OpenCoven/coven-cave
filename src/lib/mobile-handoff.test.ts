@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildInviteUrl,
@@ -14,7 +15,6 @@ import {
   resolveIosInstallUrl,
   resolveTailscaleBin,
   serveRouteFailure,
-  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleIpHost,
 } from "./mobile-handoff.ts";
@@ -39,27 +39,1328 @@ const status = {
 };
 const signingKey = ["handoff", "mobile", "key"].join("-");
 
+// ── Machine-global Tailscale Serve ownership (cave-uq1ht) ───────────────────
 {
-  assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: false }),
-    false,
-    "a failed Serve mutation with no status proof stays fail-closed",
+  const module = (await import("./mobile-handoff.ts")) as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [
+      typeof module.enumerateServeProxyBackends,
+      typeof module.assessServeOwnership,
+      typeof module.serveRouteOwnedByBackend,
+      typeof module.packagedServeMayTakeOverHealthyLoopback,
+      typeof module.normalizeLoopbackBackendUrl,
+      typeof module.claimTailscaleServeRoute,
+      typeof module.resetTailscaleServeRoute,
+      typeof module.serveResetAllowsCredentialRetirement,
+    ],
+    ["function", "function", "function", "function", "function", "function", "function", "function"],
+    "Serve ownership exposes one canonical claim/reset protocol",
   );
+
+  const enumerateServeProxyBackends = module.enumerateServeProxyBackends as (
+    status: unknown,
+  ) => Array<{ kind: string; target?: string; raw: string }>;
+  const assessServeOwnership = module.assessServeOwnership as (
+    status: unknown,
+    backend: string,
+    probe: (target: string) => Promise<boolean>,
+    options?: { takeOverHealthyLoopback?: boolean },
+  ) => Promise<{ kind: string; targets: string[] }>;
+  const serveRouteOwnedByBackend = module.serveRouteOwnedByBackend as (
+    status: unknown,
+    backend: string,
+  ) => boolean;
+  const packagedServeMayTakeOverHealthyLoopback =
+    module.packagedServeMayTakeOverHealthyLoopback as (
+      backend: string,
+      env: Record<string, string | undefined>,
+    ) => boolean;
+  const normalizeLoopbackBackendUrl =
+    module.normalizeLoopbackBackendUrl as (
+      backend: string | null | undefined,
+    ) => string | null;
+  const claimTailscaleServeRoute = module.claimTailscaleServeRoute as (
+    options: Record<string, unknown>,
+  ) => Promise<{ kind: string; status?: unknown }>;
+  const resetTailscaleServeRoute = module.resetTailscaleServeRoute as (
+    options: Record<string, unknown>,
+  ) => Promise<{ kind: string }>;
+  const serveResetAllowsCredentialRetirement =
+    module.serveResetAllowsCredentialRetirement as (
+      result: { kind: string },
+    ) => boolean;
   assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: true }),
-    false,
-    "a readable status does not by itself authorize MagicDNS fallback after mutation failure",
-  );
-  assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: false }),
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3020" },
+    ),
     true,
-    "an acknowledged Serve mutation may use MagicDNS when status is unavailable",
+    "only a real packaged process serving the fixed production port gets precedence",
   );
   assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
-    true,
-    "status-schema drift must not veto an acknowledged Serve mutation",
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { PORT: "3020" },
+    ),
+    false,
+    "a development process cannot gain precedence by choosing port 3020",
   );
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3000",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3000" },
+    ),
+    false,
+    "bundle evidence alone does not grant precedence to an overridden dev port",
+  );
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3000" },
+    ),
+    false,
+    "a configured 3020 override is not precedence unless this process is actually bound there",
+  );
+
+  const competingStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/": { Proxy: "http://localhost:3020/" },
+          "/legacy": { Proxy: "http://127.0.0.1:3007" },
+        },
+      },
+    },
+  };
+  assert.deepEqual(
+    enumerateServeProxyBackends(competingStatus),
+    [
+      { kind: "loopback", raw: "http://localhost:3020/", target: "http://localhost:3020" },
+      { kind: "loopback", raw: "http://127.0.0.1:3007", target: "http://127.0.0.1:3007" },
+    ],
+    "all proxy handlers preserve their loopback host identity",
+  );
+  assert.equal(
+    serveRouteOwnedByBackend(competingStatus, "http://127.0.0.1:3020"),
+    false,
+    "one desired handler does not own a mixed route",
+  );
+  assert.equal(
+    serveRouteOwnedByBackend(status, "http://localhost:3000/"),
+    false,
+    "localhost is not assumed to own an IPv4 route on the same port",
+  );
+  const localhostStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://LOCALHOST:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(localhostStatus, "http://localhost:3000"),
+    true,
+    "localhost owns only an exactly selected localhost backend identity",
+  );
+
+  const ipv6Status = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://[::1]:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(status, "http://[::1]:3000"),
+    false,
+    "an IPv4 route is not owned by an IPv6 backend on the same port",
+  );
+  assert.equal(
+    serveRouteOwnedByBackend(ipv6Status, "http://[::1]:3000"),
+    true,
+    "an IPv6 route is owned by the same normalized IPv6 backend",
+  );
+  assert.equal(
+    (
+      await assessServeOwnership(
+        status,
+        "http://[::1]:3000",
+        async (target) => target === "http://127.0.0.1:3000",
+      )
+    ).kind,
+    "conflict",
+    "a healthy IPv4 route conflicts with an IPv6 backend on the same port",
+  );
+  let localhostProbeCount = 0;
+  assert.equal(
+    (
+      await assessServeOwnership(
+        localhostStatus,
+        "http://127.0.0.1:3000",
+        async () => {
+          localhostProbeCount += 1;
+          return false;
+        },
+      )
+    ).kind,
+    "conflict",
+    "an ambiguous localhost owner is preserved unless localhost was selected exactly",
+  );
+  assert.equal(localhostProbeCount, 0, "a different localhost identity is not probed");
+
+  const tcpForwardStatus = {
+    TCP: {
+      "443": { HTTPS: true },
+      "2222": { TCPForward: "127.0.0.1:22" },
+    },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(tcpForwardStatus, "http://127.0.0.1:3000"),
+    false,
+    "an unrelated TCP forward prevents global reset ownership",
+  );
+  let tcpForwardProbeCount = 0;
+  const tcpForwardAssessment = await assessServeOwnership(
+    tcpForwardStatus,
+    "http://127.0.0.1:3000",
+    async () => {
+      tcpForwardProbeCount += 1;
+      return false;
+    },
+  );
+  assert.equal(tcpForwardAssessment.kind, "conflict");
+  assert.equal(tcpForwardProbeCount, 0, "protected TCP settings are never probed or taken over");
+
+  const httpFallbackStatus = {
+    TCP: { "3020": { HTTP: true } },
+    Web: {
+      "100.101.102.103:3020": {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(httpFallbackStatus, "http://127.0.0.1:3000"),
+    true,
+    "Cave's generated HTTP listener metadata remains part of the owned route",
+  );
+
+  const handlerMetadataStatus = {
+    ...status,
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/": {
+            Proxy: "http://127.0.0.1:3000",
+            AcceptAppCaps: true,
+          },
+        },
+      },
+    },
+  };
+  const protectedCompleteSettings = [
+    {
+      Web: status.Web,
+    },
+    {
+      ...status,
+      TCP: { "443": { HTTP: true, HTTPS: true } },
+    },
+    {
+      ...status,
+      TCP: { "443": { HTTPS: "true" } },
+    },
+    {
+      ...status,
+      TCP: {
+        "443": {
+          HTTPS: true,
+          TCPForward: "127.0.0.1:8443",
+          TerminateTLS: serveHost,
+          ProxyProtocol: 2,
+        },
+      },
+    },
+    {
+      TCP: {
+        "443": { HTTPS: true },
+        "8443": { HTTPS: true },
+      },
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+        },
+      },
+    },
+    {
+      ...status,
+      Services: {
+        "svc:database": {
+          TCP: { "5432": { TCPForward: "127.0.0.1:5432" } },
+        },
+      },
+    },
+    {
+      ...status,
+      AllowFunnel: { [`${serveHost}:443`]: true },
+    },
+    {
+      ...status,
+      Foreground: {
+        session: {
+          TCP: { "8080": { TCPForward: "127.0.0.1:8080" } },
+        },
+      },
+    },
+    handlerMetadataStatus,
+    {
+      ...status,
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: {
+            "/": {
+              Proxy: "http://127.0.0.1:3000",
+              FutureHandlerSetting: {},
+            },
+          },
+        },
+      },
+    },
+    {
+      ...status,
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": null },
+        },
+      },
+    },
+  ];
+  for (const protectedConfig of protectedCompleteSettings) {
+    assert.equal(
+      serveRouteOwnedByBackend(protectedConfig, "http://127.0.0.1:3000"),
+      false,
+      "non-Cave listeners, handler metadata, services, funnel, and foreground settings prevent global reset",
+    );
+  }
+  let handlerMetadataProbeCount = 0;
+  const handlerMetadataAssessment = await assessServeOwnership(
+    handlerMetadataStatus,
+    "http://127.0.0.1:3020",
+    async () => {
+      handlerMetadataProbeCount += 1;
+      return false;
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    handlerMetadataAssessment.kind,
+    "conflict",
+    "packaged precedence cannot replace a handler carrying additional metadata",
+  );
+  assert.equal(handlerMetadataProbeCount, 0, "protected handler metadata is never probed");
+
+  let protectedProbeCount = 0;
+  const protectedStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/external": { Proxy: "https://example.com/backend" },
+          "/malformed": { Proxy: "not a URL" },
+        },
+      },
+    },
+  };
+  const protectedAssessment = await assessServeOwnership(
+    protectedStatus,
+    "http://127.0.0.1:3000",
+    async () => {
+      protectedProbeCount += 1;
+      return false;
+    },
+  );
+  assert.equal(protectedAssessment.kind, "conflict");
+  assert.equal(protectedProbeCount, 0, "protected targets are never network-probed");
+  const packagedProtectedAssessment = await (
+    assessServeOwnership as typeof assessServeOwnership & (
+      (
+        status: unknown,
+        backend: string,
+        probe: (target: string) => Promise<boolean>,
+        options: { takeOverHealthyLoopback: boolean },
+      ) => Promise<{ kind: string; targets: string[] }>
+    )
+  )(
+    protectedStatus,
+    "http://127.0.0.1:3020",
+    async () => {
+      assert.fail("packaged precedence must not probe or replace a protected route");
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    packagedProtectedAssessment.kind,
+    "conflict",
+    "packaged precedence never overrides malformed or non-loopback ownership",
+  );
+  assert.deepEqual(
+    enumerateServeProxyBackends(null),
+    [{ kind: "protected", raw: "<malformed status>" }],
+    "a non-object Serve status is protected rather than mistaken for an empty route",
+  );
+  assert.deepEqual(
+    enumerateServeProxyBackends({
+      Web: {
+        "null.tailnet.ts.net:443": null,
+        "primitive.tailnet.ts.net:443": 42,
+        "array.tailnet.ts.net:443": [],
+        "missing-handlers.tailnet.ts.net:443": {},
+      },
+    }),
+    [
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+    ],
+    "every malformed per-host Web config is protected instead of becoming an empty takeover",
+  );
+
+  const healthyAssessment = await assessServeOwnership(
+    competingStatus,
+    "http://127.0.0.1:3000",
+    async (target) => target.endsWith(":3020"),
+  );
+  assert.equal(healthyAssessment.kind, "conflict", "a responsive packaged backend keeps ownership");
+
+  let packagedProbeCount = 0;
+  const packagedAssessment = await (
+    assessServeOwnership as typeof assessServeOwnership & (
+      (
+        status: unknown,
+        backend: string,
+        probe: (target: string) => Promise<boolean>,
+        options: { takeOverHealthyLoopback: boolean },
+      ) => Promise<{ kind: string; targets: string[] }>
+    )
+  )(
+    {
+      TCP: { "443": { HTTPS: true } },
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
+        },
+      },
+    },
+    "http://127.0.0.1:3020",
+    async () => {
+      packagedProbeCount += 1;
+      return true;
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    packagedAssessment.kind,
+    "takeover",
+    "the trusted packaged 3020 channel has the same healthy-dev precedence as Rust",
+  );
+  assert.equal(packagedProbeCount, 0, "packaged precedence does not need to probe a dev owner");
+
+  const staleAssessment = await assessServeOwnership(
+    {
+      TCP: { "443": { HTTPS: true } },
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
+        },
+      },
+    },
+    "http://127.0.0.1:3000",
+    async () => false,
+  );
+  assert.equal(staleAssessment.kind, "takeover", "unreachable competing dev routes may be reclaimed");
+
+  const emptyAssessment = await assessServeOwnership(
+    {},
+    "http://127.0.0.1:3000",
+    async () => {
+      assert.fail("an empty route has nothing to probe");
+    },
+  );
+  assert.equal(emptyAssessment.kind, "takeover");
+
+  assert.equal(
+    serveRouteOwnedByBackend(
+      {
+        TCP: { "443": { HTTPS: true } },
+        Web: {
+          [`${serveHost}:443`]: {
+            Handlers: { "/": { Proxy: "http://127.0.0.1:3020" } },
+          },
+        },
+      },
+      "http://127.0.0.1:3000",
+    ),
+    false,
+    "post-mutation verification detects a race that repointed Serve",
+  );
+
+  const commandResult = (
+    overrides: Partial<{
+      ok: boolean;
+      status: number | null;
+      stdout: string;
+      stderr: string;
+      cleanupFailed: boolean;
+    }> = {},
+  ) => ({
+    ok: true,
+    status: 0,
+    stdout: "",
+    stderr: "",
+    cleanupFailed: false,
+    ...overrides,
+  });
+  const lease = { release: async () => undefined };
+  const packagedEnv = { COVEN_CAVE_BUNDLE: "1", PORT: "3020" };
+  const packagedBackend = "http://127.0.0.1:3020";
+  const devBackend = "http://127.0.0.1:3007";
+  const packagedOwnedStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: packagedBackend } },
+      },
+    },
+  };
+  const healthyDevStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: devBackend } },
+      },
+    },
+  };
+  {
+    const ipv6Backend = "http://[::1]:3007";
+    assert.equal(
+      normalizeLoopbackBackendUrl(`${ipv6Backend}/api/familiars`),
+      ipv6Backend,
+      "a bracketed IPv6 loopback override remains selected instead of falling back to IPv4",
+    );
+
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: normalizeLoopbackBackendUrl(ipv6Backend),
+      env: { PORT: "3000" },
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) return commandResult({ stdout: "{}" });
+        if (commands.length === 2) return commandResult();
+        return commandResult({
+          stdout: JSON.stringify({
+            TCP: { "443": { HTTPS: true } },
+            Web: {
+              [`${serveHost}:443`]: {
+                Handlers: { "/": { Proxy: ipv6Backend } },
+              },
+            },
+          }),
+        });
+      },
+    });
+    assert.equal(result.kind, "claimed");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+        ["serve", "--bg", ipv6Backend],
+        ["serve", "status", "--json"],
+      ],
+      "Serve ownership claims and verifies the selected bracketed IPv6 backend",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (commands.length === 2) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (commands.length === 3) return commandResult();
+        return commandResult({ stdout: JSON.stringify(packagedOwnedStatus) });
+      },
+    });
+    assert.equal(result.kind, "claimed");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+        ["serve", "--bg", packagedBackend],
+        ["serve", "status", "--json"],
+      ],
+      "packaged recovery takes over a healthy dev route only under the canonical lease and postcheck",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        return commandResult({ stdout: JSON.stringify(packagedOwnedStatus) });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+      ],
+      "an ownership change after probing aborts before Serve mutation",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({
+          stdout: JSON.stringify({
+            ...status,
+            TCP: {
+              ...status.TCP,
+              "2222": { TCPForward: "127.0.0.1:22" },
+            },
+          }),
+        });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "packaged recovery never overwrites protected mixed Serve state",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      env: { PORT: "3000" },
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "a healthy competing dev route is inspected but never mutated",
+    );
+  }
+  {
+    let calls = 0;
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        calls += 1;
+        if (calls === 1) return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        if (calls <= 2) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (calls === 3) return commandResult();
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "verification-failed", "a post-mutation race loss fails closed");
+  }
+
+  const resetCase = async ({
+    acquireLease = async () => lease,
+    results,
+  }: {
+    acquireLease?: () => Promise<typeof lease | null>;
+    results: ReturnType<typeof commandResult>[];
+  }) => {
+    let call = 0;
+    let retirements = 0;
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return results[call++] ?? commandResult();
+      },
+      afterVerifiedRemoval: async () => {
+        retirements += 1;
+      },
+    });
+    assert.equal(
+      retirements,
+      result.kind === "removed" ? 1 : 0,
+      `${result.kind} must have the matching credential-retirement effect`,
+    );
+    return { result, commands };
+  };
+  assert.equal(
+    (await resetCase({ acquireLease: async () => null, results: [] })).result.kind,
+    "busy",
+    "lock contention retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [commandResult({ stdout: JSON.stringify(healthyDevStatus) })],
+    })).result.kind,
+    "not-owned",
+    "ownership conflict retains the credential",
+  );
+  {
+    const events: string[] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      afterVerifiedRouteRemoval: async () => {
+        events.push("stop-process");
+      },
+      runTailscale: async (args: string[]) => {
+        events.push(args.join(" "));
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      events,
+      ["serve status --json"],
+      "a foreign reassignment is detected under the lease before process cleanup",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    let statusReads = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (args[1] === "reset") return commandResult();
+        statusReads += 1;
+        return commandResult({
+          stdout: JSON.stringify(statusReads === 1 ? status : healthyDevStatus),
+        });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+      ],
+      "reset rechecks the complete owned snapshot immediately before mutation and preserves a reassignment",
+    );
+  }
+  {
+    const events: string[] = [];
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => ({
+        release: async () => {
+          events.push("release");
+        },
+      }),
+      probeBackend: async () => false,
+      afterVerifiedRouteRemoval: async () => {
+        events.push("stop-process");
+        throw new Error("process tree remained alive");
+      },
+      runTailscale: async (args: string[]) => {
+        call += 1;
+        events.push(args.join(" "));
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
+        return commandResult({ stdout: "{}" });
+      },
+    });
+    assert.equal(result.kind, "process-cleanup-failed");
+    assert.equal(call, 4, "process cleanup runs only after Serve reset is verified");
+    assert.deepEqual(
+      events,
+      [
+        "serve status --json",
+        "serve status --json",
+        "serve reset",
+        "serve status --json",
+        "stop-process",
+        "release",
+      ],
+      "route removal is verified before slow process cleanup while the machine lease is held",
+    );
+  }
+  {
+    const events: string[] = [];
+    let route: unknown = status;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        events.push(args.join(" "));
+        if (args[1] === "status") return commandResult({ stdout: JSON.stringify(route) });
+        route = {};
+        return commandResult();
+      },
+      afterVerifiedRouteRemoval: async () => {
+        route = healthyDevStatus;
+        events.push("foreign-reassigned");
+      },
+    });
+    assert.equal(result.kind, "verification-failed");
+    assert.deepEqual(
+      events,
+      [
+        "serve status --json",
+        "serve status --json",
+        "serve reset",
+        "serve status --json",
+        "foreign-reassigned",
+        "serve status --json",
+      ],
+      "a foreign route installed during process cleanup is never reset and blocks credential retirement",
+    );
+  }
+  {
+    let route: unknown = {};
+    let statusReads = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        statusReads += 1;
+        return commandResult({ stdout: JSON.stringify(route) });
+      },
+      afterVerifiedRouteRemoval: async () => {
+        route = healthyDevStatus;
+      },
+    });
+    assert.equal(result.kind, "verification-failed");
+    assert.equal(statusReads, 2, "an initially absent route is rechecked after process cleanup");
+  }
+  {
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://[::1]:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(status) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "reset refuses to clear an IPv4 route for an IPv6 backend on the same port",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(handlerMetadataStatus) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "reset leaves a route with additional handler metadata untouched",
+    );
+  }
+  assert.equal(
+    (await resetCase({
+      results: [commandResult({ ok: false, status: 1, stderr: "status failed" })],
+    })).result.kind,
+    "status-failed",
+    "status CLI failure retains the credential",
+  );
+  {
+    const cleanupFailure = await resetCase({
+      results: [
+        commandResult({
+          ok: false,
+          status: null,
+          stderr: "cleanup failed",
+          cleanupFailed: true,
+        }),
+      ],
+    });
+    assert.equal(cleanupFailure.result.kind, "cleanup-failed");
+    assert.equal(cleanupFailure.commands.length, 1, "cleanup failure aborts every later command");
+  }
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ ok: false, status: 1, stderr: "reset failed" }),
+        commandResult({ stdout: "{}" }),
+      ],
+    })).result.kind,
+    "reset-failed",
+    "a reset CLI failure retains the credential even if the route appears absent",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ stdout: JSON.stringify(status) }),
+      ],
+    })).result.kind,
+    "verification-failed",
+    "remaining Serve configuration retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ ok: false, status: 1, stderr: "postcheck failed" }),
+      ],
+    })).result.kind,
+    "status-failed",
+    "post-reset status failure retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ stdout: "{}" }),
+      ],
+    })).result.kind,
+    "removed",
+    "only a successful reset with verified complete removal retires the credential",
+  );
+  for (const kind of [
+    "busy",
+    "not-owned",
+    "status-failed",
+    "status-malformed",
+    "cleanup-failed",
+    "reset-failed",
+    "verification-failed",
+    "process-cleanup-failed",
+    "finalization-failed",
+  ]) {
+    assert.equal(
+      serveResetAllowsCredentialRetirement({ kind }),
+      false,
+      `${kind} must preserve the access credential`,
+    );
+  }
+  assert.equal(
+    serveResetAllowsCredentialRetirement({ kind: "removed" }),
+    true,
+    "verified complete route removal permits access credential retirement",
+  );
+  {
+    const events: string[] = [];
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => ({
+        release: async () => {
+          events.push("release");
+        },
+      }),
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        call += 1;
+        events.push(
+          call === 1
+            ? "status"
+            : call === 2
+              ? "pre-reset-status"
+              : call === 3
+                ? "reset"
+                : call === 4
+                  ? "postcheck"
+                  : "final-status",
+        );
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
+        return commandResult({ stdout: "{}" });
+      },
+      afterVerifiedRouteRemoval: async () => {
+        events.push("stop-process");
+      },
+      afterVerifiedRemoval: async () => {
+        events.push("retire");
+      },
+    });
+    assert.equal(result.kind, "removed");
+    assert.deepEqual(
+      events,
+      [
+        "status",
+        "pre-reset-status",
+        "reset",
+        "postcheck",
+        "stop-process",
+        "final-status",
+        "retire",
+        "release",
+      ],
+      "route removal, process cleanup, and credential retirement all happen under the lease",
+    );
+  }
+  {
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        call += 1;
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
+        return commandResult({ stdout: "{}" });
+      },
+      afterVerifiedRemoval: async () => {
+        throw new Error("credential file remained");
+      },
+    });
+    assert.deepEqual(result, {
+      kind: "finalization-failed",
+      stderr: "credential file remained",
+    });
+  }
+}
+
+// ── Cross-process Serve mutation lease (cave-uq1ht review follow-up) ────────
+{
+  const module = (await import("./mobile-handoff.ts")) as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [
+      typeof module.tailscaleServeLeasePath,
+      typeof module.acquireTailscaleServeLease,
+      typeof module.recoverStaleTailscaleServeLease,
+    ],
+    ["function", "function", "function"],
+    "Serve ownership exposes the shared lock path, bounded acquisition, and fenced recovery",
+  );
+
+  const tailscaleServeLeasePath = module.tailscaleServeLeasePath as (home: string) => string;
+  assert.equal(
+    tailscaleServeLeasePath("/Users/coven"),
+    "/Users/coven/.coven/cave/tailscale-serve-ownership.lock",
+    "Node and Rust share one deterministic machine-wide lock path",
+  );
+  const rustReachability = readFileSync(
+    new URL("../../src-tauri/src/desktop_reachability.rs", import.meta.url),
+    "utf8",
+  );
+  const typescriptHandoff = readFileSync(new URL("./mobile-handoff.ts", import.meta.url), "utf8");
+  assert.match(
+    typescriptHandoff,
+    /const TAILSCALE_SERVE_RECLAMATION_PORT = 61_987;/,
+    "TypeScript pins the shared crash-released reclamation fence",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_LEASE_FILE: &str = "tailscale-serve-ownership\.lock";/,
+    "Rust uses the identical lease filename",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;/,
+    "Rust uses the identical lease record version",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_RECLAMATION_PORT: u16 = 61_987;/,
+    "Rust uses the identical crash-released reclamation fence",
+  );
+
+  type FakeEntry = { content: string; dev: number; ino: number };
+  class FakeLeaseFs {
+    readonly files = new Map<string, FakeEntry>();
+    private nextIno = 1;
+
+    async mkdir(): Promise<void> {}
+
+    async writeFile(file: string, content: string, options?: { flag?: string }): Promise<void> {
+      if (options?.flag === "wx" && this.files.has(file)) {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }
+      this.files.set(file, { content, dev: 1, ino: this.nextIno++ });
+    }
+
+    async link(source: string, destination: string): Promise<void> {
+      if (this.files.has(destination)) {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }
+      const sourceEntry = this.files.get(source);
+      assert.ok(sourceEntry, `missing hard-link source ${source}`);
+      this.files.set(destination, sourceEntry);
+    }
+
+    async readFile(file: string): Promise<string> {
+      const entry = this.files.get(file);
+      if (!entry) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return entry.content;
+    }
+
+    async stat(file: string): Promise<{ dev: number; ino: number }> {
+      const entry = this.files.get(file);
+      if (!entry) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return { dev: entry.dev, ino: entry.ino };
+    }
+
+    async unlink(file: string): Promise<void> {
+      if (!this.files.delete(file)) {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      }
+    }
+
+    replace(file: string, content: string): void {
+      this.files.set(file, { content, dev: 1, ino: this.nextIno++ });
+    }
+  }
+
+  type LeaseOptions = {
+    path: string;
+    fs: FakeLeaseFs;
+    pid: number;
+    token: string;
+    isProcessAlive: (pid: number) => boolean;
+    now: () => number;
+    sleep: (milliseconds: number) => Promise<void>;
+    timeoutMs: number;
+    pollMs: number;
+    acquireReclamationFence?: () => Promise<ReclamationFence | null>;
+  };
+  type ReclamationFence = { release(): Promise<void> };
+  type RecoverOptions = {
+    path: string;
+    fs: FakeLeaseFs;
+    isProcessAlive: (pid: number) => boolean;
+    acquireReclamationFence: () => Promise<ReclamationFence | null>;
+  };
+  const acquireTailscaleServeLease = module.acquireTailscaleServeLease as (
+    options: LeaseOptions,
+  ) => Promise<{ release(): Promise<void> } | null>;
+  const recoverStaleTailscaleServeLease = module.recoverStaleTailscaleServeLease as (
+    options: RecoverOptions,
+  ) => Promise<boolean>;
+  const lockPath = tailscaleServeLeasePath("/Users/coven");
+  let now = 0;
+  const sleep = async (milliseconds: number) => {
+    now += milliseconds;
+  };
+  const fs = new FakeLeaseFs();
+  const first = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 101,
+    token: "first-owner",
+    isProcessAlive: (pid) => pid === 101,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+    acquireReclamationFence: async () => ({ async release() {} }),
+  });
+  assert.ok(first, "the first reconciler acquires the machine-wide lease");
+  const contended = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 202,
+    token: "second-owner",
+    isProcessAlive: (pid) => pid === 101 || pid === 202,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.equal(contended, null, "contention is bounded and fails closed");
+
+  await first.release();
+  const afterRelease = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 202,
+    token: "second-owner",
+    isProcessAlive: (pid) => pid === 202,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(afterRelease, "the lease releases for the next reconciler");
+  await afterRelease.release();
+
+  const crashed = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 303,
+    token: "crashed-owner",
+    isProcessAlive: (pid) => pid === 303,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(crashed);
+  const recovered = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 404,
+    token: "recovered-owner",
+    isProcessAlive: (pid) => pid === 404,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+    acquireReclamationFence: async () => ({ async release() {} }),
+  });
+  assert.ok(recovered, "a dead process owner is safely recovered");
+  await recovered.release();
+
+  const oldOwner = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 505,
+    token: "old-owner",
+    isProcessAlive: (pid) => pid === 505,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(oldOwner);
+  fs.replace(lockPath, JSON.stringify({ version: 1, pid: 606, token: "replacement-owner" }));
+  await oldOwner.release();
+  assert.match(
+    await fs.readFile(lockPath),
+    /replacement-owner/,
+    "release never unlinks a replacement owner's lease",
+  );
+
+  const interleavedFs = new FakeLeaseFs();
+  interleavedFs.replace(
+    lockPath,
+    JSON.stringify({ version: 1, pid: 701, token: "stale-owner" }),
+  );
+  let fenceCalls = 0;
+  let grantFirstFence: ((lease: ReclamationFence) => void) | null = null;
+  let grantSecondFence: ((lease: ReclamationFence) => void) | null = null;
+  const acquireInterleavedFence = () => new Promise<ReclamationFence>((resolve) => {
+    fenceCalls += 1;
+    if (fenceCalls === 1) {
+      grantFirstFence = resolve;
+      return;
+    }
+    grantSecondFence = resolve;
+    grantFirstFence?.({
+      async release() {
+        interleavedFs.replace(
+          lockPath,
+          JSON.stringify({ version: 1, pid: 703, token: "third-owner" }),
+        );
+        grantSecondFence?.({ async release() {} });
+      },
+    });
+  });
+  const recoverOptions: RecoverOptions = {
+    path: lockPath,
+    fs: interleavedFs,
+    isProcessAlive: (pid) => pid === 703,
+    acquireReclamationFence: acquireInterleavedFence,
+  };
+  const [firstRecovery, delayedRecovery] = await Promise.all([
+    recoverStaleTailscaleServeLease(recoverOptions),
+    recoverStaleTailscaleServeLease(recoverOptions),
+  ]);
+  assert.deepEqual(
+    [firstRecovery, delayedRecovery],
+    [true, false],
+    "only the fenced reclaimer removes the stale canonical lease",
+  );
+  assert.match(
+    await interleavedFs.readFile(lockPath),
+    /third-owner/,
+    "a delayed second reclaimer rereads under the fence and never deletes the third acquirer",
+  );
+
+  const malformedFs = new FakeLeaseFs();
+  malformedFs.replace(lockPath, JSON.stringify({ version: 1, pid: 707, token: "../unsafe" }));
+  const malformed = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs: malformedFs,
+    pid: 808,
+    token: "safe-owner",
+    isProcessAlive: () => false,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.equal(malformed, null, "malformed owner records fail closed instead of being unlinked");
+  assert.match(await malformedFs.readFile(lockPath), /unsafe/);
 }
 
 {
@@ -98,7 +1399,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 }
 
 {
-  // Tailscale may report the proxy with a trailing slash or as `localhost`.
+  // Cosmetic spelling normalizes, but localhost is never assumed to be IPv4.
   const variants = {
     Web: {
       [`${serveHost}:443`]: {
@@ -108,6 +1409,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   };
   assert.equal(
     findServeUrl(variants, "http://127.0.0.1:3000"),
+    null,
+  );
+  assert.equal(
+    findServeUrl(variants, "http://LOCALHOST:3000"),
     serveUrl,
   );
 }
@@ -444,6 +1749,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
   const route = read("../app/api/mobile-handoff/route.ts");
+  const ownership = read("./mobile-handoff.ts");
   assert.match(route, /withChatFragment\(discovery\.serveUrl, chatId\)/, "app-start QR target carries the chat fragment");
   assert.match(route, /ensureNativeAppServe\(req, chatId\)/, "POST threads chatId into app-start");
   assert.match(route, /lastSeenAt: await readMobileLastSeen\(\)/, "handoff responses expose the paired-device beat");
@@ -453,6 +1759,51 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(route, /qrTarget = withChatFragment\(invite\.url, chatId\)/, "token-gated app-start swaps the QR target to the signed invite");
   assert.match(route, /expiresAtIso: invite\.expiresAtIso/, "token-gated app-start exposes the invite expiry");
   assert.match(route, /ok: false, unavailable: true/, "known optional prerequisites use a clean application-level unavailable response");
+  assert.match(
+    route,
+    /async function inspectServeOwnership\(backend: string\)/,
+    "every mutation path shares one fail-closed Serve ownership inspection",
+  );
+  assert.equal(
+    route.match(/await inspectServeOwnership\(backend\)/g)?.length,
+    2,
+    "app-start and GET/start inspect ownership before mutating Serve",
+  );
+  assert.match(
+    ownership,
+    /export async function resetTailscaleServeRoute[\s\S]+?const current = await readTailscaleServeStatus\(runTailscale\);[\s\S]+?serveRouteOwnedByBackend\(current\.status, backendUrl\)/,
+    "reset uses the canonical complete ownership inspection under its lease",
+  );
+  assert.match(
+    route,
+    /let serveStatus = ownership\.status;[\s\S]*?if \(ownership\.kind !== "owned"\)/,
+    "an already-owned route reuses status without churning serve --bg",
+  );
+  assert.match(
+    route,
+    /serveRouteOwnedByBackend\(verified\.status, backend\)/,
+    "claim success requires a post-mutation status snapshot that still points only at this backend",
+  );
+  assert.match(
+    route,
+    /async function resetOwnedServeRoute\([\s\S]{0,100}?backend: string,/,
+    "app-stop and explicit reset share an ownership-aware reset",
+  );
+  assert.equal(
+    route.match(/(?:return|await) resetOwnedServeRoute\(/g)?.length,
+    2,
+    "both destructive actions refuse to reset a route owned by another instance",
+  );
+  assert.doesNotMatch(
+    route,
+    /if \(action === "(?:reset|app-stop)"\) \{\s*const reset = await runTailscale\(\["serve", "reset"\]\)/,
+    "no destructive action reaches serve reset without ownership proof",
+  );
+  assert.match(
+    route,
+    /return mobileUnavailableResponse\(detail, \{ backendUrl: backend, steps \}, 503\)/,
+    "healthy ownership conflicts return the reconciler's unavailable breaker response",
+  );
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");

@@ -290,4 +290,14 @@ assert.match(
   "onOpenChange guard + setOpen(next) is semantically equivalent to setOpen(!disabled && next)",
 );
 
+// The header avatar (inside the open dialog, not the trigger button) is
+// expandable into the shared lightbox (cave-fzr4p / cave-ocy8). It renders
+// safely here — this is a Popover-hosted dialog, but AvatarLightbox's Modal
+// registers itself as an inside layer so it doesn't get self-dismissed.
+assert.match(
+  source,
+  /<FamiliarAvatar familiar=\{active\} size="md" expandable \/>/,
+  "the header avatar (inside the panel, distinct from the trigger's own small avatar) is expandable",
+);
+
 console.log("familiar-switcher.test.ts: ok");

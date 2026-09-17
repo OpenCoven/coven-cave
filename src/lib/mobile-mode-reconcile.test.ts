@@ -75,6 +75,27 @@ test("legacy sidecar 503 responses still open the automatic-retry circuit", asyn
   assert.equal(calls, 1);
 });
 
+test("Serve ownership conflicts use the existing unavailable breaker", async () => {
+  let calls = 0;
+  const reconcile = createMobileModeReconciler(async () => {
+    calls += 1;
+    return Response.json(
+      {
+        ok: false,
+        unavailable: true,
+        error: "Tailscale Serve is owned by another backend (http://127.0.0.1:3020).",
+      },
+      { status: 503 },
+    );
+  });
+
+  const conflict = await reconcile(true);
+  const cached = await reconcile(true);
+  assert.equal(conflict.retryBlocked, true);
+  assert.equal(cached.skipped, true);
+  assert.equal(calls, 1, "healthy packaged ownership is not challenged every poll");
+});
+
 test("concurrent Workspace and Settings requests share one fetch", async () => {
   let calls = 0;
   let release!: () => void;

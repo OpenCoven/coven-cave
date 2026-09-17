@@ -245,6 +245,12 @@ struct ChatView: View {
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { app.navigationDrawerOpen = true } label: {
+                    Image(systemName: "line.3.horizontal")
+                }
+                .accessibilityLabel("Open navigation")
+            }
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 9) {
                     Circle()
@@ -520,6 +526,20 @@ struct ChatView: View {
                     }
                 }
             }
+            Divider()
+            Button {
+                Haptics.tap()
+                showSessionDetails = false
+                app.setThreadArchived(thread, !thread.archived)
+            } label: {
+                sessionDetailRow(
+                    thread.archived ? "Unarchive chat" : "Archive chat",
+                    value: thread.archived ? "Return to Chats" : "Hide from Chats",
+                    systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(thread.archived ? "Unarchive chat" : "Archive chat")
         }
         .padding(.vertical, 4)
         .frame(maxWidth: 420)

@@ -166,6 +166,19 @@ and URL https://x.test/[S95] stay distinct.
   assert.deepEqual(doc.refIds, ["S99"]);
 });
 
+test("malformed nested quote prefixes are rejected without exponential backtracking", () => {
+  const input = `${"> ".repeat(26)}x\`\`\` [S1]`;
+  const startedAt = performance.now();
+  const spans = parseInline(input, SOURCES);
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.deepEqual(refIds(spans), ["S1"]);
+  assert.ok(
+    elapsedMs < 150,
+    `malformed container prefix took ${elapsedMs.toFixed(1)}ms to reject`,
+  );
+});
+
 test("conflicting/rejected source refs carry warn/muted tones", () => {
   const spans = parseInline("see S6 and R1 and S14", SOURCES);
   const byId = new Map(

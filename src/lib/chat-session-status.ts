@@ -87,3 +87,54 @@ export function filterChatRowsByStatus(
 export function chatStatusChipDisabled(count: number, active: boolean): boolean {
   return count === 0 && !active;
 }
+
+// ── Transport is a modifier, never a status ────────────────────────────────
+// The session detail header used to report transport (`connecting…`) in the
+// same slot as outcome (`28 done`) and wall-clock (`elapsed 1m 33s`), so one
+// run narrated itself in three disagreeing voices. Transport is not a state a
+// session can END in — it describes the wire, not the work — so it modifies
+// the pill's dot rather than replacing the pill's label.
+
+/** Wire condition beneath a running session. `null` once bytes are flowing. */
+export type ChatSessionTransport = "connecting" | "reconnecting" | null;
+
+/** Lifecycle of the turn in flight, as `chat-turn-state.ts` reports it. */
+type TurnLifecycle =
+  | "queued"
+  | "connecting"
+  | "streaming"
+  | "tooling"
+  | "cancelled"
+  | "failed"
+  | "complete";
+
+export type ChatSessionState = {
+  key: ChatSessionStatusKey;
+  transport: ChatSessionTransport;
+};
+
+/**
+ * Collapse a turn lifecycle onto the ONE status vocabulary the list already
+ * speaks, keeping the wire condition beside it instead of inside it.
+ *
+ * `daemonRunning === false` outranks everything: with no daemon there is no
+ * run to report on, and the header's remedy (Start daemon) is the only useful
+ * thing left to say. It reads as `paused` + `reconnecting` — the session is
+ * not progressing and the wire is what's missing.
+ */
+export function chatSessionStateFromLifecycle(args: {
+  lifecycle: TurnLifecycle | null;
+  busy: boolean;
+  error: boolean;
+  daemonRunning: boolean | undefined;
+}): ChatSessionState {
+  if (args.daemonRunning === false) return { key: "paused", transport: "reconnecting" };
+  if (args.lifecycle === "failed" || args.error) return { key: "failed", transport: null };
+  if (args.lifecycle === "cancelled") return { key: "paused", transport: null };
+  if (args.lifecycle === "queued") return { key: "queued", transport: "connecting" };
+  if (args.lifecycle === "connecting") return { key: "running", transport: "connecting" };
+  if (args.lifecycle === "streaming" || args.lifecycle === "tooling" || args.busy) {
+    return { key: "running", transport: null };
+  }
+  return { key: "completed", transport: null };
+}

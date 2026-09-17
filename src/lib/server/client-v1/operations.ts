@@ -221,6 +221,32 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       families: ["familiars", "cursors"],
     }),
     freezeDefinition({
+      id: "familiars.contract.read",
+      method: "GET",
+      path: "/api/client/v1/familiars/:id/contract",
+      ingress: "authenticated",
+      scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
+      // One record, no paging: like conversations.read it refuses `limit` and
+      // `cursor`, so it claims no `cursors`. Its own family rather than
+      // `familiars`, because a Cave that lists familiars need not serve their
+      // wards, and a client gates its Access tab on exactly this claim.
+      families: ["familiar-contract"],
+    }),
+    freezeDefinition({
+      id: "familiars.analytics.read",
+      method: "GET",
+      path: "/api/client/v1/familiars/:id/analytics",
+      ingress: "authenticated",
+      scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
+      // `window` and `recent` are narrowing parameters, not a cursor: the
+      // response is one record however it is narrowed.
+      families: ["familiar-analytics"],
+    }),
+    freezeDefinition({
       id: "projects.list",
       method: "GET",
       path: "/api/client/v1/projects",
@@ -277,6 +303,8 @@ const CLIENT_V1_CAPABILITY_FAMILY_ORDER: readonly ClientV1Capability[] = Object.
   "pairing",
   "credentials",
   "familiars",
+  "familiar-contract",
+  "familiar-analytics",
   "projects",
   "conversations",
   "conversation-messages",

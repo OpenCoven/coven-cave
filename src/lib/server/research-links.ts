@@ -19,6 +19,10 @@ import {
 } from "../link-organizer.ts";
 import { arxivIdFromUrl } from "../hf-papers.ts";
 import {
+  normalizeGithubRepoSnapshot,
+  type GithubRepoSnapshot,
+} from "../research-github-repo.ts";
+import {
   MAX_X_ARTICLE_BODY_CHARS,
   MAX_X_ARTICLE_EXCERPT_CHARS,
   isValidXArticleAuthorDisplayName,
@@ -51,6 +55,7 @@ export type ResearchLinkEnrichment = {
     title: string;
     snapshot: XArticleSnapshot;
   };
+  githubRepo?: GithubRepoSnapshot;
 };
 
 type LegacyResearchLinkEnrichment = HfPaperMetadata | null;
@@ -156,7 +161,7 @@ function normalizeResearchLinkEnrichment(
   value: ResearchLinkEnrichmentInput | undefined,
 ): ResearchLinkEnrichment | undefined {
   if (!isRecord(value)) return undefined;
-  if (!("paper" in value || "xArticle" in value)) {
+  if (!("paper" in value || "xArticle" in value || "githubRepo" in value)) {
     return isHfPaperMetadata(value) ? { paper: value } : undefined;
   }
 
@@ -170,11 +175,13 @@ function normalizeResearchLinkEnrichment(
           snapshot: value.xArticle.snapshot as XArticleSnapshot,
         }
       : undefined;
+  const githubRepo = normalizeGithubRepoSnapshot(value.githubRepo) ?? undefined;
 
-  return paper || xArticle
+  return paper || xArticle || githubRepo
     ? {
         ...(paper ? { paper } : {}),
         ...(xArticle ? { xArticle } : {}),
+        ...(githubRepo ? { githubRepo } : {}),
       }
     : undefined;
 }
@@ -262,11 +269,17 @@ export async function listSavedLinks(): Promise<SavedLink[]> {
 }
 
 export function toSavedLinkSummary(link: SavedLink): SavedLinkSummary {
-  if (!link.xArticle) return { ...link };
-  const { body: _body, ...xArticle } = link.xArticle;
+  const { xArticle: fullXArticle, githubRepo: fullGithubRepo, ...rest } = link;
+  const xArticle = fullXArticle
+    ? (({ body: _body, ...summary }) => summary)(fullXArticle)
+    : undefined;
+  const githubRepo = fullGithubRepo
+    ? (({ tree: _tree, readme: _readme, ...summary }) => summary)(fullGithubRepo)
+    : undefined;
   return {
-    ...link,
-    xArticle,
+    ...rest,
+    ...(xArticle ? { xArticle } : {}),
+    ...(githubRepo ? { githubRepo } : {}),
   };
 }
 
@@ -366,6 +379,9 @@ export async function saveResearchLinks(
           source,
           ...(paper ? { paper } : {}),
           ...(normalizedXArticle ? { xArticle: normalizedXArticle } : {}),
+          ...(normalizedEnrichment?.githubRepo
+            ? { githubRepo: normalizedEnrichment.githubRepo }
+            : {}),
         });
       }
 

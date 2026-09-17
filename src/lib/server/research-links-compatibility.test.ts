@@ -59,6 +59,29 @@ function xLink(): SavedLink {
   });
 }
 
+function githubLink(): SavedLink {
+  return link("github-repo", {
+    url: "https://github.com/OpenCoven/coven-cave",
+    category: "github",
+    title: "OpenCoven/coven-cave",
+    githubRepo: {
+      version: 1,
+      owner: "OpenCoven",
+      repo: "coven-cave",
+      visibility: "public",
+      stars: 42,
+      forks: 7,
+      defaultBranch: "main",
+      resolvedRef: "main",
+      commitSha: "a".repeat(40),
+      fetchedAt: NOW,
+      truncated: false,
+      tree: [{ path: "README.md", type: "blob", sha: "b".repeat(40) }],
+      readme: { path: "README.md", markdown: "# Cave" },
+    },
+  });
+}
+
 function deterministicResourceId(legacyId: string): string {
   return `saved-link-${createHash("sha256").update(legacyId).digest("hex").slice(0, 32)}`;
 }
@@ -173,7 +196,7 @@ test("an immediate saved-links mutation remains fail-closed for a preparing rest
   });
 });
 
-test("first upgrade imports every strict row, preserves X bodies, and verifies a complete projection", async () => {
+test("first upgrade imports every strict row and preserves detail-only snapshot bodies", async () => {
   await fixture(async ({ legacyPath, resourceRoot, options }) => {
     const initial = [
       link("paper", {
@@ -186,25 +209,35 @@ test("first upgrade imports every strict row, preserves X bodies, and verifies a
         },
       }),
       xLink(),
+      githubLink(),
     ];
     await writeResearchLinksVerified({ version: 1, links: initial }, { path: legacyPath });
 
     const listed = await listCompatibleResearchLinks(options);
-    assert.equal(listed.length, 2);
+    assert.equal(listed.length, 3);
     assert.equal(listed.find((item) => item.id === "x-123")?.xArticle?.body, "Archived X Article body");
+    assert.equal(
+      listed.find((item) => item.id === "github-repo")?.githubRepo?.readme?.markdown,
+      "# Cave",
+    );
 
     const manifests = await createResearchResourceStore({ root: resourceRoot }).listManifests();
-    assert.equal(manifests.length, 2);
+    assert.equal(manifests.length, 3);
     const xManifest = manifests.find((manifest) => manifest.legacySavedLink?.id === "x-123");
     assert.ok(xManifest?.legacySavedLink);
     assert.ok("caveXArticleV1" in xManifest.legacySavedLink);
+    const githubManifest = manifests.find(
+      (manifest) => manifest.legacySavedLink?.id === "github-repo",
+    );
+    assert.ok(githubManifest?.legacySavedLink);
+    assert.ok("caveGithubRepoV1" in githubManifest.legacySavedLink);
 
     const migration = path.join(resourceRoot, "migration");
     const projection = JSON.parse(
       await readFile(path.join(migration, "research-links-projection.json"), "utf8"),
     ) as { catalogRevision: number; projectedDigest: string; rows: unknown[] };
     assert.equal(projection.catalogRevision, 1);
-    assert.equal(projection.rows.length, 2);
+    assert.equal(projection.rows.length, 3);
     assert.equal(
       projection.projectedDigest,
       researchLinksDigest(await readFile(legacyPath)),

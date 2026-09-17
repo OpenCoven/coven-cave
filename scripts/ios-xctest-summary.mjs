@@ -194,40 +194,7 @@ export function countXCTestMethodsInDirectory(dir, { readDir = readdirSync, read
  * Key = bare XCTest method name exactly as the result bundle reports it,
  * without the trailing `()`.
  */
-export const QUARANTINED_FAILURES = new Map([
-  // ── Residue after #4958. Each needs a decision, not a patch ──────────────
-  [
-    "testOpenChatForExistingDirectTaskThreadRepairsStaleSessionFamiliarBinding",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
-    "testOpenChatForExistingTaskGroupThreadPreservesRosterWhenOnlyOneParticipantHasABoundSession",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
-    "testOpenChatForExistingTaskGroupThreadPreservesRosterWhenSeveralParticipantsHaveBoundSessions",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
-    "testOpenChatForMissingTaskSessionOpensAuthoritativeSessionAfterRefresh",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
-    "testSessionUnlinkRelinkKeepsTheLatestOptimisticState",
-    {
-      bead: "cave-jiox8",
-      reason:
-        "linkedThread(for:) returns nil after an optimistic relink: BOTH of its " +
-        "branches require cachedSessionRow(for: card.sessionId) to be non-nil, and " +
-        "this test never populates the session-row cache. Undecided on purpose — " +
-        "either the gate is too strict and defeats optimistic linking for a " +
-        "session the server has not confirmed yet (product bug), or the fixture " +
-        "omits a row production always has (test bug). Deciding it needs the suite " +
-        "run, not source reading.",
-      expires: "2026-09-27",
-    },
-  ],
-]);
+export const QUARANTINED_FAILURES = new Map([]);
 
 /**
  * Reduce whatever the bundle calls a test to the bare method name the

@@ -48,6 +48,12 @@ assert.deepEqual(mergeCodeKeymap({ nope: "Mod+Z", help: 7 }), defaultCodeKeymap(
 // to survive a reload or the dialog's unbind does nothing.
 assert.equal(mergeCodeKeymap({ help: "" }).help, "");
 assert.equal(mergeCodeKeymap({ terminal: "Mod+T" }).terminal, "Mod+T");
+// Reserved combos stay with their fixed owners. Old saved keymaps that tried
+// to take one must sanitize back to a valid map rather than double-fire.
+assert.equal(mergeCodeKeymap({ prompt: "/" }).prompt, defaultCodeKeymap().prompt);
+assert.equal(mergeCodeKeymap({ files: "J" }).files, defaultCodeKeymap().files);
+assert.equal(mergeCodeKeymap({ outline: "K" }).outline, defaultCodeKeymap().outline);
+assert.equal(mergeCodeKeymap({ terminal: "Shift+A" }).terminal, defaultCodeKeymap().terminal);
 
 // ── Combos from events ───────────────────────────────────────────────────────
 
@@ -112,6 +118,15 @@ assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? 
   assert.equal(map.changes, "");
   assert.equal(codeShortcutForCombo(map, "Mod+Shift+C"), "terminal");
 }
+// Reserved combos are owned by the fixed queue/terminal handlers, never by a
+// per-session workbench binding.
+{
+  const before = defaultCodeKeymap();
+  assert.deepEqual(bindCodeShortcut(before, "prompt", "/"), before);
+  assert.deepEqual(bindCodeShortcut(before, "files", "J"), before);
+  assert.deepEqual(bindCodeShortcut(before, "outline", "K"), before);
+  assert.deepEqual(bindCodeShortcut(before, "terminal", "Shift+A"), before);
+}
 // Binding never mutates the input.
 {
   const before = defaultCodeKeymap();
@@ -133,5 +148,9 @@ assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? 
 assert.deepEqual(codeComboChips("Mod+Shift+C", true), ["⌘", "⇧", "C"]);
 assert.deepEqual(codeComboChips("Mod+Shift+C", false), ["Ctrl", "Shift", "C"]);
 assert.deepEqual(codeComboChips("", true), []);
+
+for (const reserved of ["/", "J", "K", "Shift+A"]) {
+  assert.ok(CODE_RESERVED_COMBOS.includes(reserved), `${reserved} stays reserved by the queue`);
+}
 
 console.log("code-shortcuts: ok");

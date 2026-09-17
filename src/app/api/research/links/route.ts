@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 
 import { arxivIdFromUrl } from "@/lib/hf-papers";
 import { savedLinkDedupeKey } from "@/lib/link-organizer";
+import {
+  resolveGitHubToken,
+  resolveGitHubTokenForRead,
+} from "@/lib/github-token";
+import {
+  githubRepoCandidates,
+  MAX_GITHUB_REPOSITORIES_PER_INGEST,
+} from "@/lib/research-github-repo";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import { fetchGithubRepoView } from "@/lib/server/research-github-repo";
 import { fetchHfPaperMetadata } from "@/lib/server/hf-paper-metadata";
 import {
   getSavedLinkById,
@@ -43,6 +52,8 @@ export type ResearchLinksRouteDependencies = {
   listSavedLinkSummaries?: typeof listSavedLinkSummaries;
   getSavedLinkById?: typeof getSavedLinkById;
   fetchHfPaperMetadata?: typeof fetchHfPaperMetadata;
+  fetchGithubRepoView?: typeof fetchGithubRepoView;
+  resolveGitHubToken?: () => string | null;
   enrichXArticleUrls?: typeof enrichXArticleUrls;
   reserveXArticleCandidates?: (
     urls: readonly string[],
@@ -57,6 +68,8 @@ export function createResearchLinksRouteHandlers(
   const loadSavedLinkSummaries = dependencies.listSavedLinkSummaries ?? listSavedLinkSummaries;
   const loadSavedLinkById = dependencies.getSavedLinkById ?? getSavedLinkById;
   const fetchPaperMetadata = dependencies.fetchHfPaperMetadata ?? fetchHfPaperMetadata;
+  const fetchRepoView = dependencies.fetchGithubRepoView ?? fetchGithubRepoView;
+  const resolveGithubToken = dependencies.resolveGitHubToken ?? resolveGitHubToken;
   const enrichArticles = dependencies.enrichXArticleUrls ?? enrichXArticleUrls;
   const reserveArticles = dependencies.reserveXArticleCandidates ?? reserveXArticleCandidates;
   const saveLinks = dependencies.saveResearchLinks ?? saveResearchLinks;
@@ -114,7 +127,7 @@ export function createResearchLinksRouteHandlers(
       }
 
       const source = parsed.body.source === "desk" ? "desk" : "chat";
-      const enrichHfPapers = async () => {
+      const enrichRemoteResources = async () => {
         const enrichment = new Map<string, ResearchLinkEnrichment>();
         await Promise.all(
           urls.map(async (url) => {
@@ -127,6 +140,30 @@ export function createResearchLinksRouteHandlers(
             if (paper) enrichment.set(url, { paper });
           }),
         );
+        const repositories = githubRepoCandidates(urls).slice(
+          0,
+          MAX_GITHUB_REPOSITORIES_PER_INGEST,
+        );
+        if (repositories.length > 0) {
+          const token = resolveGitHubTokenForRead(resolveGithubToken);
+          for (const candidate of repositories) {
+            try {
+              const result = await fetchRepoView({
+                ...candidate.ref,
+                token,
+              });
+              if (!result.ok) continue;
+              for (const url of candidate.urls) {
+                enrichment.set(url, {
+                  ...enrichment.get(url),
+                  githubRepo: result.view,
+                });
+              }
+            } catch {
+              // A saved GitHub URL remains useful even when snapshot enrichment fails.
+            }
+          }
+        }
         return enrichment;
       };
       const saveAndRespond = async (
@@ -154,7 +191,7 @@ export function createResearchLinksRouteHandlers(
       };
       const xCandidateUrls = urls.filter((url) => parseXArticleCandidateUrl(url) !== null);
       if (xCandidateUrls.length === 0) {
-        return saveAndRespond(urls, await enrichHfPapers());
+        return saveAndRespond(urls, await enrichRemoteResources());
       }
 
       let reservation: XArticleCandidateReservation;
@@ -168,7 +205,7 @@ export function createResearchLinksRouteHandlers(
       }
 
       try {
-        const enrichment = await enrichHfPapers();
+        const enrichment = await enrichRemoteResources();
 
         let xResult: XArticleBatchResult;
         try {

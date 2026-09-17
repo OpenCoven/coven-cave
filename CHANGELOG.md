@@ -7,6 +7,162 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-09-01
+
+> Makes native iOS chat recovery more durable, introduces a review-first
+> Coding Desk, and strengthens automation supervision, Research, mobile
+> handoff, and release reliability.
+
+Patch release on top of v0.3.12. Native iOS now retries safe mutations
+idempotently, preserves authoritative task chat during navigation hydration,
+reconciles archived and pinned state from the server, and carries improved
+group-message recovery plus WebRTC symbol coverage. The release also adds the
+canonical Research run gateway, a fail-closed GitHub repository review queue,
+and workspace-scoped automation supervision with an explicit execution graph.
+Focused reliability fixes span mobile handoff, Chat, the sidecar, CI, and
+authenticated clients.
+
+### Changes
+- feat(code): add review-first Coding Desk (#5276)
+- docs(roadmaps): reconcile Automations v1 tracker mapping to terminal state (#5278)
+- chore: seed the Automations v1 execution graph (#5277)
+- Update interactions.jsonl
+- Keep composer Tools opaque on hover
+- Update interactions.jsonl
+- Remove duplicate desktop familiar selector
+- Fix duplicate chat run-rail keys
+- Update interactions.jsonl
+- fix(mobile): arbitrate Tailscale Serve ownership (#5270)
+- feat(research): add canonical run gateway (#5254)
+- Fix nested AvatarLightbox modal ownership (#5269)
+- Add OpenClaw-only release recovery override
+- Keep AvatarLightbox open inside a Popover (#5267)
+- Retry Tailscale CLI probe once on timeout in mobile handoff (#5266)
+- Remove band-shed tests pinning CSS already dead before 641ccac12 (#5268)
+- Add familiar presence design spec
+- Compact home dashboard and composer
+- Sanitize squash attribution metadata
+- feat(avatars): extend lightbox peek to more familiar avatar surfaces (#5262)
+- Update interactions.jsonl
+- Clarify Research Desk topic decisions
+- fix(research): bound stored paper metadata and gate zoom on ready state (#5259)
+- fix(research): gate iteration limit on computed number, not array length (cave-oct20)
+- Polish chat response actions (#5214)
+- docs: operationalize Coven Automations v1 roadmap and Beads rollout (#5219)
+- feat(auto): supervise missions at workspace scope (#5227)
+- fix(podcast): scan dense lead takeaways (#5249)
+- fix(vault): smooth the secret visibility transition (#5257)
+- Retire dead ChatProjectSidebar and its coverage (#5213)
+- feat(chat): negotiate OpenClaw tool activity per conversation and persist projected events (#5216)
+- docs(program): refresh Chat v1 P2 canonical-read conformance record (#5242)
+- feat(automations): human oversight projection slice — daemon run-state projection with honest staleness semantics (#5239)
+- docs(research): refresh the X API status record against main (#5241)
+- docs(program): refresh Chat v1 Phase 7 rollout status record (#5243)
+- docs(program): refresh Chat v1 P2 shell record after upstream landing (#5240)
+- docs(chat-v1): refresh SDK Coven IPC status record for issue #4780 (#5244)
+- docs(program): refresh Chat v1 Phase 1 program status record (second pass) (#5245)
+- fix(build): ignore semantic index runtime paths (#5253)
+- fix(projects): guide Canvas roots before selection (cave-cu0x) (#5255)
+- fix(research): align input character limits (#5246)
+- fix(ui): keep overflow submenus open on click (#5247)
+- fix(research): classify local daemon update gaps (#5248)
+- fix(worktrees): launch bd safely on Windows (#5250)
+- fix(sidecar): bound startup and diagnostic reads (#5238)
+- fix(server): log startup heap ceiling (#5229)
+- fix(design): retire safe undefined token references (#5237)
+- docs: reconcile fixed port behavior (#5228)
+- test(rust): run doctests in CI (#5226)
+- test(release): pin checksums build dependency edge (#5223)
+- fix(dev-app): diagnose owned server OOM exits (#5224)
+- fix(paths): reject remote Windows Coven homes (#5225)
+- feat(research): reduce canonical run events safely (#5222)
+- feat(github): support in-place review thread replies (#5218)
+- feat(chat): make the run rail the automatic right-side instrument (cave-5m5hv) (#5215)
+- fix(ios): preserve authoritative task chat during navigation hydration (#5221)
+- Bake absolute node path into the beads-jsonl merge driver (#5212)
+- Upstream CompleteDotTech main changes (#5211)
+- chore(chat): drop redundant project/branch/model chips from session context row (#5208)
+- WIP: same-thread blocker admission (#5207)
+- fix(shell): label expanded sidebar (#5205)
+- Accept an agent-written envelope around sources.json (#5161)
+- Strip the chat header to a title and its verbs (#5128)
+- fix(familiars): re-render the glyph grid when the lazy catalog lands (#5200)
+- docs: record daemon fault-injection CI coverage decision (#5199)
+- fix(mobile): reject non-HTTPS Serve handoffs (#5203)
+- fix(chat): keep skill paste handoff responsive (#5202)
+- fix(familiars): route studio destinations correctly (#5204)
+- fix(settings): hide macOS-only reachability card on Windows (squash)
+- Update interactions.jsonl
+- fix(settings): prefer installed Coven version on Windows (#5189)
+- Redesign the Research Reader around Evidence Edge (#5193)
+- fix(ci): bound daemon-less E2E memory (cave-dejw3) (#5195)
+- test: stabilize semantic cleanup and Grimoire E2E (#5187)
+- fix(ci): serialize main validation runs (cave-wi81e) (#5185)
+- Move shared familiar selector above Home and Chat tabs (cave-3pnnq) (#5145)
+- fix(ci): refuse a green Frontend build built on carried-forward upstream evidence (cave-38aud) (#5097)
+- test(mobile): wait for composer dock to settle before measuring geometry (cave-vkb2d) (#5108)
+- feat(research): browser-capable resource preview modal (cave-m13fh) (#5158)
+- Bead: cave-21rp — Show actual running activity from the top bar (#5160)
+- Inset sidepanel layout around main content (cave-x1hk6) (#5171)
+- fix(client-v1): raise conformance build heap (#5182)
+- fix(client-v1): stabilize conformance packaging (#5181)
+- test(client-v1): add packaged compatibility controls (#5179)
+- Update interactions.jsonl
+- feat(projects): surface workspace-root guidance across project entry points (cave-cu0x) (#5167)
+- fix(ios): idempotent mutation retries and retry toast (cave-ioswipe.1) (#5178)
+- fix(attention): guard clear/projection paths against sessions lacking attention (cave-zdbij) (#5175)
+- feat(search): context scopes, URL sharing, relocation, and performance/a11y verification (cave-ychtl.6, cave-ychtl.7) (#5141)
+- feat(chat): persist research run id on /research chat turns (cave-8o5s7.2) (#5176)
+- Research Desk: GitHub repository viewer (#5173)
+- feat(avatars): wire project + human avatars onto the shared lightbox (cave-ocy8) (#5114)
+- docs: demand-driven WebSocket event plane plan (cave-qjvbb.1) (#5148)
+- feat(research): Local Context Packs — Unit 1 seal/reopen/delete (cave-6sles.10) (#5140)
+- feat(chat): restore organization level in group-by-project mode (cave-1vpy) (#5169)
+- fix(ios): restore vendored WebRTC dSYM symbolication coverage (cave-ea6dw) (#5164)
+- test(chat): pin composer send-state grammar (cave-9v9jr) (#5137)
+- feat(automations): route the Codex-automations facade through Coven routines (cave-4990) (#5117)
+- fix(cave-lzl2e): guard the browser preview pane sliver fix (#5172)
+- Parameterize Beautiful UI ApprovalCard for permission prompts (#5142)
+- fix(onboarding): require @opencoven/cli 0.4.0 for supervised research (cave-kvgtd) (#5152)
+- feat(ios): reconcile server archived/pinned onto local thread flags (cave-sve2a) (#5131)
+- feat(passkey): verify WebAuthn attestation statements (cave-01v4u) (#5168)
+- fix(chat): mint new-conversation origins server-side (cave-cst0g) (#5135)
+- Split /auto blocked into needs-approval vs cannot-proceed (cave-l9hsu) (#5147)
+- feat(board): gate dependency and next-step suggestions in the Enhance route (cave-bmcoe) (#5165)
+- fix(usage): emit token usage and cost from the codex/opencode harness adapters (cave-0osmn) (#5162)
+- feat: move archive visibility into Sessions and segment grouping (cave-zdbij) (#5124)
+- perf(copilot): memoize bundled plugin startup dirs across turns (cave-wks6) (#5157)
+- ci: fail PR jobs on a stale merge-tree checkout (cave-d9xfq) (#5153)
+- feat(group-chat): add shared conversation topic and goal (cave-o1za) (#5159)
+- fix(a11y): make full-bleed right-chat drawer close reachable (cave-4snk9) (#5138)
+- feat(chat): fade the first visible turns below the earlier-turns fold (cave-4akqc) (#5134)
+- Add questions variant to the inline approve marker (ApprovalCard) (#5143)
+- feat(search): complete the coordinator contract — cursors, abort/timeout, warming, safe diagnostics (cave-ychtl.4) (#5139)
+- Tighten the Rituals Day view: one date, one runs summary, readable projections (#5133)
+- feat(ios): reconcile server archive/pin flags back onto threads on load (cave-ioswipe.6) (#5136)
+- docs(cave-wc0j7): audit Coven Grimoire.dc.html frame conformance (#5151)
+- docs(search): re-scope global intelligent search and structured filtering plan (cave-ychtl) (#5150)
+- fix(cave-eg1ag): patrol surfaces worktree lock reasons alongside live verdicts (#5146)
+- fix(desktop): keep Cave runtime alive until the last main window closes (cave-4hhna) (#5144)
+- feat(familiars): wire growth hints to their verbs (cave-mo4q) (#5132)
+- fix(ios): give refused and partial group message deletes a recovery path (cave-7nrp9) (#5116)
+- skills: daytona (cont)
+- docs(worktrees): design bounded retirement for clean landed work (cave-jcdgb) (#5122)
+- Broadcast one message into many selected chats (#5130)
+- Vendor the Daytona plugin, regenerate the logo audit, and plate grid tiles (#5129)
+- fix(shell): single writer for navOpen; spec awaits settled state (cave-az3ha) (#5126)
+- feat: validate attached source URLs client-side in the evidence ledger (cave-k4kp) (#5125)
+- docs: add release-candidate CI implementation plan (cave-7kix8.8) (#5123)
+- fix(ios): never re-adopt a group reply the thread already owns (cave-bm3qq) (#5121)
+- feat: revive the client-v1 proxy bearer-presentation gate (cave-q5mwb) (#5119)
+- fix(ci-recovery): treat concurrency-blocked pending runs as recoverable (cave-q7spw) (#5118)
+- fix(inbox): surface agent inbox item when a session finishes unwatched (cave-fgey) (#5115)
+- fix(client-v1): surface the client-v1-disabled and waiver states in Settings (cave-6rwq0) (#5109)
+- fix(release): stop OpenClaw registry from blocking Cave releases (#5127)
+- docs(cave-ui5z): re-run conformance counts after P1.5 fixes (#5120)
+- fix(scope): roll up per-root read/write access level in the permissions UI (cave-fydri) (#5112)
+
+
 ## [0.3.12] - 2026-08-27
 
 > Streamlines iOS navigation, adds packaged mobile recovery, and strengthens

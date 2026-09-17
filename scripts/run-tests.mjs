@@ -32,6 +32,7 @@ export const SUITES = {
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
+    "src/components/code-work-scheduler.test.ts",
     "src/lib/session-list-deletes.test.ts",
     "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",
@@ -107,6 +108,7 @@ export const SUITES = {
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
+    "src/components/code-shortcuts-dialog.test.tsx",
     "src/components/workspace-canonical-memory-warmup.test.ts",
     "src/components/workspace-canonical-memory-navigation.test.ts",
     "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
@@ -120,6 +122,7 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-run-event-reducer.test.ts",
+    "src/lib/research-run-gateway-client.test.ts",
     "src/lib/research-run-authority-receipt.test.ts",
     "src/lib/server/research-run-receipt-store.test.ts",
     "src/lib/research-chat-command.test.ts",
@@ -151,6 +154,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-studio-providers.test.ts",
     "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
     "src/components/role-surfaces/research-tab-desk.test.ts",
+    "src/components/role-surfaces/use-research-run-gateway.test.ts",
     "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
     "src/components/role-surfaces/research-tab-studio.test.ts",
@@ -268,6 +272,8 @@ export const SUITES = {
     "src-tauri/notch-window-chrome.test.mjs",
     "scripts/react-compiler-config.test.mjs",
     "scripts/turbopack-dev-cache.test.mjs",
+    "scripts/turbopack-runtime-boundaries.test.mjs",
+    "scripts/corepack-launch.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
@@ -458,6 +464,8 @@ export const SUITES = {
     "src/lib/server/coven-process-supervisor.test.ts",
     "src/lib/server/flow-copilot-session.test.ts",
     "src/lib/server/research-mission-store.test.ts",
+    "src/lib/server/research-run-gateway-store.test.ts",
+    "src/lib/server/research-run-gateway.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
     "src/lib/server/research-links-compatibility-crash.test.ts",
@@ -913,7 +921,10 @@ export const SUITES = {
     "src/components/session-changes-inner.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
+    "src/components/code-review-queue-controls.test.tsx",
+    "src/components/code-session-picker.test.tsx",
     "src/lib/code-surface.test.ts",
+    "src/lib/code-review-queue.test.ts",
     "src/lib/code-session-picker.test.ts",
     "src/lib/code-outline.test.ts",
     "src/lib/code-side-rail.test.ts",
@@ -1148,6 +1159,7 @@ export const SUITES = {
     "src/components/use-openai-voice-preview.test.tsx",
     "src/components/theme-script.test.ts",
     "src/components/ui/error-state.test.ts",
+    "src/components/ui/avatar-lightbox.behavior.test.tsx",
     "src/components/ui/avatar-lightbox.test.ts",
     "src/components/ui/live-region.test.ts",
     "src/components/workspace-chat-handoff.test.ts",
@@ -1429,6 +1441,7 @@ export const SUITES = {
     "src/app/api/research/links/ingest-urls.test.ts",
     "src/app/api/research/links/route.test.ts",
     "src/app/api/research/github-repo/route.test.ts",
+    "src/app/api/research/github-repo/file/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
     "src/app/api/research/resources/route.test.ts",
     "src/app/api/research/resources/[id]/route.test.ts",
@@ -1545,7 +1558,10 @@ export const SUITES = {
     "src/lib/server/client-v1/pagination.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
     "src/lib/server/client-v1/read-guard.test.ts",
+    "src/lib/server/client-v1/familiar-reads.test.ts",
     "src/app/api/client/v1/familiars/route.test.ts",
+    "src/app/api/client/v1/familiars/[id]/contract/route.test.ts",
+    "src/app/api/client/v1/familiars/[id]/analytics/route.test.ts",
     "src/app/api/client/v1/projects/route.test.ts",
     "src/app/api/client/v1/conversations/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/route.test.ts",
@@ -1707,6 +1723,7 @@ export const SUITES = {
     "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
     "src/app/api/research/missions/[id]/actions/route.test.ts",
     "src/app/api/research/missions/[id]/schedule/route.test.ts",
+    "src/app/api/research/runs/route-tests.test.ts",
     "src/app/api/research/generations/route.test.ts",
     "src/app/api/research/generations/cancel/route.test.ts",
     "src/app/api/research/generations/media/route.test.ts",
@@ -1991,6 +2008,8 @@ export const SUITES = {
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
+    "scripts/mobile-serve-ownership.test.ts",
+    "scripts/mobile-process-ownership.test.ts",
     "scripts/mobile-tailscale.test.mjs",
     "src/components/mobile-handoff.test.ts",
     "src/app/api/mobile-handoff/route.test.ts",
@@ -2088,6 +2107,8 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/projects/route.test.ts",
   "src/app/api/client/v1/conversations/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/route.test.ts",
+  "src/app/api/client/v1/familiars/[id]/contract/route.test.ts",
+  "src/app/api/client/v1/familiars/[id]/analytics/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
   // The refusal gate imports "@/proxy-helpers" and the client-v1 runtime, and
   // dynamically imports every pre-authorized route module — each of which
@@ -2121,6 +2142,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/links/route.test.ts",
   // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
   "src/app/api/research/github-repo/route.test.ts",
+  "src/app/api/research/github-repo/file/route.test.ts",
   // the mission-file route resolves the validated store and shared source
   // parser through "@/lib/..." runtime imports.
   "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
@@ -2140,9 +2162,6 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-retention.test.ts",
   // same reason: the idempotence suite loads cave-board.ts directly.
   "src/lib/cave-board-backfill-idempotence.test.ts",
-  // the picker imports the module under test, which resolves
-  // "@/lib/code-surface" for the shared session-visibility rule.
-  "src/lib/code-session-picker.test.ts",
   // the session-finished emit test loads session-finished-inbox-emit.ts,
   // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
   // runtime values; the suite cannot load without the alias resolver.
@@ -2445,11 +2464,16 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",
+  "src/components/ui/avatar-lightbox.behavior.test.tsx",
   "src/components/ui/overflow-menu-submenu.test.tsx",
   "src/lib/home-composer-context.test.ts",
   "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
   "src/components/project-root-workspace-notice.behavior.test.tsx",
+  "src/components/code-session-picker.test.tsx",
+  "src/components/code-shortcuts-dialog.test.tsx",
+  // rendered JSX for the shared reviewable/all queue scope control
+  "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",

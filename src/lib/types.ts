@@ -130,6 +130,8 @@ export type SessionRow = {
   pinned?: boolean;
   /** Cave-local auto-archive defer-until timestamp, if set. */
   archive_extended_until?: string | null;
+  /** Trusted server classification; true only for configured familiar workspace roots. */
+  familiarWorkspace?: boolean;
 };
 
 export type SessionGitContext = {
@@ -139,6 +141,9 @@ export type SessionGitContext = {
   /** Main checkout that owns this linked worktree, derived from
    *  `git rev-parse --git-common-dir`. Present only for linked worktrees. */
   repositoryRoot?: string | null;
+  /** Canonical GitHub origin; absent for missing, malformed, credential-bearing,
+   *  or non-GitHub remotes. */
+  repositoryUrl?: string | null;
 };
 
 export type SessionPullRequestContext = {

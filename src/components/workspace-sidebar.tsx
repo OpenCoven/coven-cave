@@ -17,9 +17,9 @@ import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import {
   deriveChatProjectGroups,
-  filterVisibleChatSessions,
   type ChatProjectGroup,
 } from "@/lib/chat-projects";
+import { visibleChatSessions } from "@/lib/chat-list-model";
 import {
   isSessionPinned,
   toggleStoredPinnedSession,
@@ -523,8 +523,13 @@ export function SidebarChatsSection({
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
 
+  // The same selector the Sessions list runs (cave-dkdev). The sidebar holds
+  // no archive toggle and no bulk-delete undo window, so it passes neither and
+  // gets the plain visible set — but it can no longer drift from the list by
+  // composing its own answer, which is how the two surfaces came to disagree
+  // about how many chats a workspace had.
   const visibleSessions = useMemo(
-    () => filterVisibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
+    () => visibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
     [normalizedSessions, activeFamiliarId],
   );
 

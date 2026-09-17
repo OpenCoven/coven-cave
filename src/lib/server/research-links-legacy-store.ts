@@ -19,6 +19,11 @@ import {
 import { caveHome } from "../coven-paths.ts";
 import { isArxivPaperId } from "../hf-papers.ts";
 import {
+  normalizeGithubRepoSnapshot,
+  parseGithubRepoInput,
+  type GithubRepoSnapshot,
+} from "../research-github-repo.ts";
+import {
   MAX_X_ARTICLE_BODY_CHARS,
   MAX_X_ARTICLE_EXCERPT_CHARS,
   isValidXArticleAuthorDisplayName,
@@ -217,10 +222,57 @@ function validateXArticle(value: unknown, rawUrl: string, row: number): XArticle
   };
 }
 
+function validateGithubRepo(value: unknown, rawUrl: string, row: number): GithubRepoSnapshot {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version",
+    "owner",
+    "repo",
+    "visibility",
+    "stars",
+    "forks",
+    "defaultBranch",
+    "resolvedRef",
+    "commitSha",
+    "fetchedAt",
+    "truncated",
+    "tree",
+    "readme",
+  ], ["description", "primaryLanguage", "licenseSpdx"])) {
+    fail(`links[${row}].githubRepo is invalid`);
+  }
+  if (
+    !Array.isArray(value.tree)
+    || !value.tree.every((entry) =>
+      isRecord(entry)
+      && hasExactKeys(entry, ["path", "type", "sha"], ["size"]))
+    || (
+      value.readme !== null
+      && (
+        !isRecord(value.readme)
+        || !hasExactKeys(value.readme, ["path", "markdown"])
+      )
+    )
+  ) {
+    fail(`links[${row}].githubRepo is invalid`);
+  }
+  const snapshot = normalizeGithubRepoSnapshot(value);
+  const candidate = parseGithubRepoInput(rawUrl);
+  if (
+    !snapshot
+    || !candidate
+    || snapshot.owner.toLowerCase() !== candidate.owner.toLowerCase()
+    || snapshot.repo.toLowerCase() !== candidate.repo.toLowerCase()
+    || !isCanonicalUtcTimestamp(value.fetchedAt)
+  ) {
+    fail(`links[${row}].githubRepo is invalid`);
+  }
+  return snapshot;
+}
+
 export function validateAndDetachSavedLink(value: unknown, row = 0): SavedLink {
   if (!isRecord(value) || !hasExactKeys(value, [
     "id", "url", "category", "title", "addedAt", "source",
-  ], ["paper", "xArticle"])) {
+  ], ["paper", "xArticle", "githubRepo"])) {
     fail(`links[${row}] is invalid`);
   }
   if (
@@ -241,6 +293,8 @@ export function validateAndDetachSavedLink(value: unknown, row = 0): SavedLink {
 
   const paper = value.paper === undefined ? undefined : validatePaper(value.paper, row);
   const xArticle = value.xArticle === undefined ? undefined : validateXArticle(value.xArticle, url, row);
+  const githubRepo =
+    value.githubRepo === undefined ? undefined : validateGithubRepo(value.githubRepo, url, row);
   return {
     id: value.id,
     url,
@@ -250,6 +304,7 @@ export function validateAndDetachSavedLink(value: unknown, row = 0): SavedLink {
     source: value.source,
     ...(paper ? { paper } : {}),
     ...(xArticle ? { xArticle } : {}),
+    ...(githubRepo ? { githubRepo } : {}),
   };
 }
 

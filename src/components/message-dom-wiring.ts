@@ -110,23 +110,72 @@ function wireCopyButtons(container: HTMLElement) {
   }
 }
 
-function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
-  if (!onOpenUrl) return;
+type MarkdownLinkWiring = {
+  href: string;
+  onOpenUrl: (url: string) => void;
+  cleanup: () => void;
+};
+
+const markdownLinkWirings = new WeakMap<HTMLAnchorElement, MarkdownLinkWiring>();
+
+function clearMarkdownLinkWiring(link: HTMLAnchorElement) {
+  markdownLinkWirings.get(link)?.cleanup();
+  markdownLinkWirings.delete(link);
+}
+
+function cleanupMarkdownLinks(container: HTMLElement) {
+  for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    clearMarkdownLinkWiring(link);
+  }
+}
+
+function wireMarkdownLinks(
+  container: HTMLElement,
+  onOpenUrl?: (url: string) => void,
+  resolveOpenUrl?: (url: string) => string | null,
+) {
+  if (!onOpenUrl) {
+    cleanupMarkdownLinks(container);
+    return;
+  }
   for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
     if (
       link.getAttribute("href")?.startsWith("#cite-") ||
       link.classList.contains("cave-citation-chip")
-    ) continue;
-    if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
-    const href = link.href;
+    ) {
+      clearMarkdownLinkWiring(link);
+      continue;
+    }
+    const rawHref = link.getAttribute("href") ?? "";
+    const href = resolveOpenUrl ? resolveOpenUrl(rawHref) : link.href;
+    if (!href) {
+      clearMarkdownLinkWiring(link);
+      continue;
+    }
     let parsed: URL;
-    try { parsed = new URL(href); } catch { continue; }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
-    (link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired = true;
-    link.addEventListener("click", (event) => {
+    try {
+      parsed = new URL(href);
+    } catch {
+      clearMarkdownLinkWiring(link);
+      continue;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      clearMarkdownLinkWiring(link);
+      continue;
+    }
+    const current = markdownLinkWirings.get(link);
+    if (current?.href === href && current.onOpenUrl === onOpenUrl) continue;
+    clearMarkdownLinkWiring(link);
+    const open = (event: MouseEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
       event.preventDefault();
       onOpenUrl(href);
+    };
+    link.addEventListener("click", open);
+    markdownLinkWirings.set(link, {
+      href,
+      onOpenUrl,
+      cleanup: () => link.removeEventListener("click", open),
     });
   }
 }
@@ -382,6 +431,7 @@ export function useWireCopyButtons(
   onOpenUrl?: (url: string) => void,
   fileLinkResolver: FileLinkResolver | null = null,
   reading: CodeReading | null = null,
+  resolveOpenUrl?: (url: string) => string | null,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -389,7 +439,7 @@ export function useWireCopyButtons(
     if (!html || !el) return;
     const wireAll = () => {
       wireCopyButtons(el);
-      wireMarkdownLinks(el, onOpenUrl);
+      wireMarkdownLinks(el, onOpenUrl, resolveOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
       wireFilePathLinks(el, fileLinkResolver);
@@ -398,7 +448,10 @@ export function useWireCopyButtons(
     wireAll();
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver, reading]);
+    return () => {
+      observer.disconnect();
+      cleanupMarkdownLinks(el);
+    };
+  }, [html, onOpenUrl, fileLinkResolver, reading, resolveOpenUrl]);
   return containerRef;
 }

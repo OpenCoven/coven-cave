@@ -294,7 +294,7 @@ export function closeCanonicalResearchResourceLexicalHandlesForRestore(fileInput
 
 function hardenSqliteFiles(file: string): void {
   for (const candidate of [file, `${file}-wal`, `${file}-shm`]) {
-    if (!existsSync(candidate)) continue;
+    if (!existsSync(/* turbopackIgnore: true */ candidate)) continue;
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceLexicalIndexError("unsafe-path", "lexical SQLite sidecar is unsafe");
@@ -710,7 +710,7 @@ async function openAt(
 export async function openResearchResourceLexicalIndex(
   options: { file?: string } = {},
 ): Promise<ResearchResourceLexicalIndex> {
-  const file = path.resolve(options.file ?? lexicalIndexPath());
+  const file = path.resolve(/* turbopackIgnore: true */ options.file ?? lexicalIndexPath());
   const marker = canonicalRestoreMarker(file);
   if (marker && existsSync(marker)) throw unavailableDuringRestore();
   return openAt(file, { observeRestoreMarker: marker !== null });
@@ -720,7 +720,7 @@ export async function rebuildResearchResourceLexicalIndex(
   options: { file?: string },
   populateFromVerifiedSnapshots: (index: ResearchResourceLexicalIndex) => void | Promise<void>,
 ): Promise<{ index: ResearchResourceLexicalIndex; quarantinePath: string | null }> {
-  const file = path.resolve(options.file ?? lexicalIndexPath());
+  const file = path.resolve(/* turbopackIgnore: true */ options.file ?? lexicalIndexPath());
   ensureDirectory(path.dirname(file));
   const temporary = path.join(
     path.dirname(file),
@@ -742,13 +742,15 @@ export async function rebuildResearchResourceLexicalIndex(
     throw error;
   }
 
-  const quarantinePath = existsSync(file)
+  const quarantinePath = existsSync(/* turbopackIgnore: true */ file)
     ? `${file}.corrupt-${Date.now()}-${randomBytes(4).toString("hex")}`
     : null;
   if (quarantinePath) {
     renameSync(file, quarantinePath);
     for (const suffix of ["-wal", "-shm"]) {
-      if (existsSync(`${file}${suffix}`)) renameSync(`${file}${suffix}`, `${quarantinePath}${suffix}`);
+      if (existsSync(/* turbopackIgnore: true */ `${file}${suffix}`)) {
+        renameSync(`${file}${suffix}`, `${quarantinePath}${suffix}`);
+      }
     }
     syncDirectory(path.dirname(file));
   }
@@ -756,7 +758,7 @@ export async function rebuildResearchResourceLexicalIndex(
     renameSync(temporary, file);
     syncDirectory(path.dirname(file));
   } catch (error) {
-    if (quarantinePath && !existsSync(file)) {
+    if (quarantinePath && !existsSync(/* turbopackIgnore: true */ file)) {
       renameSync(quarantinePath, file);
       syncDirectory(path.dirname(file));
     }

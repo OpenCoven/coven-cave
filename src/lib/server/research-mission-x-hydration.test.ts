@@ -717,6 +717,7 @@ function runnerFor(overrides: Partial<ResearchMissionRunnerDeps> = {}): RunnerHa
       const { saveResearchMission } = await import("./research-mission-store.ts");
       await saveResearchMission(mission);
     },
+    finalizeTerminalRun: async () => {},
     loadSessionOwner: async () => null,
     recordSessionOwner: async () => {},
     clearSessionOwner: async () => {},

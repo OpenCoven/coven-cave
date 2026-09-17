@@ -2218,6 +2218,7 @@ final class AppModel {
         }
 
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-design-closeout") {
+            isConnectingPreview = true
             configureDesignCloseoutPreview()
             _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
@@ -2229,6 +2230,7 @@ final class AppModel {
         // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
         // fixture state and the preview never touches the saved thread store.
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
+            isConnectingPreview = true
             configureEmptyChatPreview()
             if ProcessInfo.processInfo.arguments.contains("--ui-preview-second-thread") {
                 // A second conversation with the same familiar, so the session
@@ -2254,6 +2256,7 @@ final class AppModel {
         // `--ui-preview-tool-activity` and
         // `CAVE_OPEN_THREAD=ui-preview-tool-activity`.
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-activity") {
+            isConnectingPreview = true
             configureToolActivityPreview()
             _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
@@ -2640,6 +2643,54 @@ final class AppModel {
         }
         if let projectContext {
             seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-avatar-editing") {
+            connection = CaveConnection(host: "cave-desktop.example")
+            let generatedAt = "2026-08-06T09:00:00Z"
+            let unavailableOverview = FamiliarDashboardClientSection<FamiliarDashboardOverview>(
+                presentation: .unavailable,
+                serverState: .unavailable,
+                generatedAt: generatedAt,
+                data: nil
+            )
+            let profile = FamiliarDashboardProfile(
+                description: "Keeps implementation work moving.",
+                familiarType: "Code familiar",
+                runtime: .init(
+                    harness: "codex",
+                    defaultHarness: nil,
+                    harnessOverride: nil,
+                    model: "gpt-5.6",
+                    modelProvenance: "familiar"
+                ),
+                glyph: .init(icon: "moon.stars.fill", emoji: nil, color: nil),
+                configuration: .init(note: nil, autoSelfReport: false),
+                contract: nil
+            )
+            familiarDashboards.setEndpointKey(connection?.host)
+            familiarDashboards.seedPreview(FamiliarDashboardSnapshot(
+                familiarId: "nyx",
+                version: FamiliarDashboardContract.version,
+                generatedAt: generatedAt,
+                identity: FamiliarDashboardIdentity(
+                    id: "nyx",
+                    displayName: "Nyx",
+                    role: "Code familiar"
+                ),
+                overview: unavailableOverview,
+                profile: FamiliarDashboardClientSection(
+                    presentation: .fresh,
+                    serverState: .fresh,
+                    generatedAt: generatedAt,
+                    data: profile
+                ),
+                analytics: FamiliarDashboardClientSection<FamiliarDashboardAnalytics>(
+                    presentation: .unavailable,
+                    serverState: .unavailable,
+                    generatedAt: generatedAt,
+                    data: nil
+                )
+            ))
         }
         projectContextError = nil
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-light") {
@@ -6203,13 +6254,20 @@ final class AppModel {
     func linkedThread(for card: BoardCard) -> ChatThread? {
         let authoritativeSessionID = normalizedSessionID(card.sessionId)
         let taskAuthoritativeRow = cachedSessionRow(for: authoritativeSessionID)
-        if authoritativeSessionID == nil || taskAuthoritativeRow != nil {
-            if let thread = localLinkedThread(for: card.id),
+        if let thread = localLinkedThread(for: card.id) {
+            let localLinkMatchesUncachedSession = authoritativeSessionID.map { sessionID in
+                taskAuthoritativeRow == nil && thread.sessionIds.values.contains {
+                    normalizedSessionID($0) == sessionID
+                }
+            } ?? false
+            if (authoritativeSessionID == nil
+                || taskAuthoritativeRow != nil
+                || localLinkMatchesUncachedSession),
                taskLinkMatchesProject(
-                   card,
-                   thread: thread,
-                   authoritativeRow: taskAuthoritativeRow
-                       ?? cachedSessionRow(for: primarySessionId(of: thread))
+                card,
+                thread: thread,
+                authoritativeRow: taskAuthoritativeRow
+                    ?? cachedSessionRow(for: primarySessionId(of: thread))
                ) {
                 return thread
             }

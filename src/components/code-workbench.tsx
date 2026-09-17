@@ -54,6 +54,7 @@ import {
   codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
+  resolveCodeWorkbenchPanels,
   type CodeWorkbenchStep,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
@@ -73,6 +74,7 @@ import {
 } from "@/lib/code-shortcuts";
 import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
 import type { SessionRow } from "@/lib/types";
 
 // The reader pulls a markdown renderer and a diff highlighter; the room opens
@@ -90,28 +92,42 @@ const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
 
 export function CodeWorkbench({
   row,
-  sessions,
+  queue,
+  queueMode,
+  reviewOpen,
+  terminalOpen,
   initialTab,
   openTarget,
+  onQueueModeChange,
+  onReviewOpenChange,
+  onTerminalOpenChange,
   onSelectSession,
   onNewSession,
   onJumpToSession,
   onRefresh,
+  onInitialTabHandled,
 }: {
   row: SessionRow;
-  /** Every code session, for the header picker. */
-  sessions: SessionRow[];
+  /** The shared precomputed queue, for the header picker. */
+  queue: CodeReviewQueue;
+  queueMode: CodeQueueMode;
+  reviewOpen?: boolean;
+  terminalOpen?: boolean;
   /** Deep-linked review tab (?wtab=), mapped through the rail vocabulary. */
   initialTab?: CodeWorkbenchTab;
   /** A routed file/diff open (cave-ohcj): lands on the file or the review rail
    *  with that path focused. `nonce` re-triggers the jump for a repeat path. */
   openTarget?: PendingCodeOpen;
+  onQueueModeChange: (mode: CodeQueueMode) => void;
+  onReviewOpenChange: (open: boolean) => void;
+  onTerminalOpenChange: (open: boolean) => void;
   onSelectSession?: (sessionId: string) => void;
   /** Receives the picker's unmatched query, which seeds the kickoff prompt. */
   onNewSession?: (seed: string) => void;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
   onRefresh?: () => void;
+  onInitialTabHandled?: () => void;
 }) {
   const workRoot = codeSessionWorkRoot(row);
   const branch = codeSessionBranch(row);
@@ -120,6 +136,8 @@ export function CodeWorkbench({
   const prRepo = pr?.repo ?? null;
   const prNumber = pr?.number ?? null;
   const running = codeSessionActivity(row) === "running";
+  const handledOpenNonceRef = useRef<number | null>(null);
+  const handledInitialTabRef = useRef<CodeWorkbenchTab | null>(null);
 
   // ── Layout state ───────────────────────────────────────────────────────────
   // Measured against the workbench's OWN body, not the viewport: this renders
@@ -135,10 +153,8 @@ export function CodeWorkbench({
   const [railTab, setRailTab] = useState<CodeRailTab>(() =>
     codeRailTabForWorkbenchTab(initialTab) ?? "changes",
   );
-  const [railOpen, setRailOpen] = useState(true);
   const [railWidth, setRailWidth] = useState(CODE_RAIL_DEFAULT_WIDTH_PX);
   const [treeChangedOnly, setTreeChangedOnly] = useState(false);
-  const [termOpen, setTermOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // The frame's `prFull`: the reader replaces the columns, and the room keeps
   // your file, your rail width and your step for the trip back.
@@ -157,6 +173,7 @@ export function CodeWorkbench({
   // split, so viewport width systematically overstates what it actually got.
   // Three crushed columns is the failure this prevents.
   const fitsSplit = codeWorkbenchFitsSplit(measuredWidth, isMobile);
+  const initialTabNeedsMeasuredLayout = initialTab === "files" && measuredWidth === null && typeof ResizeObserver !== "undefined" && !isMobile;
   const [step, setStep] = useState<CodeWorkbenchStep>("source");
   const { announce } = useAnnouncer();
   const announcedStepRef = useRef<CodeWorkbenchStep | null>(null);
@@ -183,6 +200,16 @@ export function CodeWorkbench({
     setPrFull(false);
   }, [row.id]);
 
+  const panels = resolveCodeWorkbenchPanels({
+    row,
+    reviewOpen,
+    terminalOpen,
+    initialTab:
+      handledInitialTabRef.current === initialTab ? undefined : initialTab,
+    openTarget:
+      openTarget && handledOpenNonceRef.current === openTarget.nonce ? undefined : openTarget,
+  });
+
   const openPath = useCallback(
     (path: string) => {
       setSelectedPath(
@@ -197,18 +224,35 @@ export function CodeWorkbench({
   // closed rail (and drills the narrow room to the right step) so the routed
   // target is actually visible rather than silently correct behind something.
   useEffect(() => {
+    if (initialTabNeedsMeasuredLayout) return;
+    if (!initialTab) return;
+    if (handledInitialTabRef.current === initialTab) return;
+    handledInitialTabRef.current = initialTab;
+    const nextRailTab = codeRailTabForWorkbenchTab(initialTab);
+    if (initialTab === "terminal") onTerminalOpenChange(true);
+    if (initialTab === "files" && !fitsSplit) setStep("files");
+    if (nextRailTab) {
+      setRailTab(nextRailTab);
+      onReviewOpenChange(true);
+      setStep("review");
+    }
+    onInitialTabHandled?.();
+  }, [fitsSplit, initialTab, initialTabNeedsMeasuredLayout, onInitialTabHandled, onReviewOpenChange, onTerminalOpenChange]);
+
+  useEffect(() => {
     if (!openTarget) return;
+    handledOpenNonceRef.current = openTarget.nonce;
     setRangeLabel(openTarget.origin?.selectionLabel ?? null);
     if (openTarget.kind === "changes") {
       setRailTab("changes");
-      setRailOpen(true);
+      onReviewOpenChange(true);
       setStep("review");
     } else if (openTarget.path) {
       openPath(openTarget.path);
       setFocusLine(openTarget.line ?? null);
       setStep("source");
     }
-  }, [openPath, openTarget]);
+  }, [onReviewOpenChange, openPath, openTarget]);
 
   const changes = useWorktreeChanges(workRoot, running);
 
@@ -233,6 +277,7 @@ export function CodeWorkbench({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       // Never steal a keystroke from a field — the composer, the picker's
       // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
       // and Ctrl+C belong to the shell. Both exclusions live in one predicate
@@ -242,13 +287,13 @@ export function CodeWorkbench({
       if (!action) return;
       event.preventDefault();
       if (action === "help") setKeysOpen((open) => !open);
-      else if (action === "terminal") setTermOpen((open) => !open);
+      else if (action === "terminal") onTerminalOpenChange(!panels.terminalOpen);
       else if (action === "changes") {
         setRailTab("changes");
-        setRailOpen(true);
+        onReviewOpenChange(true);
       } else if (action === "pr") {
         setRailTab("pr");
-        setRailOpen(true);
+        onReviewOpenChange(true);
       } else if (action === "files") {
         roomRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
       } else if (action === "outline") {
@@ -263,7 +308,7 @@ export function CodeWorkbench({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keymap]);
+  }, [keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
 
@@ -271,8 +316,10 @@ export function CodeWorkbench({
     <div className="code-room" data-testid="code-workbench">
       <div className="code-room__header" data-testid="code-workbench-header">
         <CodeSessionPicker
-          sessions={sessions}
+          queue={queue}
+          mode={queueMode}
           selected={row}
+          onModeChange={onQueueModeChange}
           onSelect={(id) => onSelectSession?.(id)}
           onCreate={onNewSession}
         />
@@ -409,8 +456,8 @@ export function CodeWorkbench({
             // survive into the narrow step — the Review step would render a
             // 28px sliver with no control to recover it. The state itself is
             // left alone so returning to the split restores what you chose.
-            open={fitsSplit ? railOpen : true}
-            onOpenChange={fitsSplit ? setRailOpen : () => setStep("source")}
+            open={fitsSplit ? panels.reviewOpen : true}
+            onOpenChange={fitsSplit ? onReviewOpenChange : () => setStep("source")}
             widthPx={fitsSplit ? railWidth : roomWidth}
             onWidthChange={setRailWidth}
             roomWidthPx={roomWidth}
@@ -425,8 +472,8 @@ export function CodeWorkbench({
         sessionId={row.id}
         projectRoot={workRoot}
         running={running}
-        open={termOpen}
-        onOpenChange={setTermOpen}
+        open={panels.terminalOpen}
+        onOpenChange={onTerminalOpenChange}
       />
 
       <CodeComposer row={row} onJumpToSession={onJumpToSession} />

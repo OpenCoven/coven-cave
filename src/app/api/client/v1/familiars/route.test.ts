@@ -41,6 +41,8 @@ function sources(overrides: Partial<ClientV1ReadSources> = {}): ClientV1ReadSour
     listProjects: unsupported,
     listConversations: unsupported,
     loadConversation: unsupported,
+    loadFamiliarContract: unsupported,
+    readFamiliarAnalytics: unsupported,
     ...overrides,
   };
 }

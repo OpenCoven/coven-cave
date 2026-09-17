@@ -192,6 +192,62 @@ test("rehydration is deterministic regardless of delivery order", () => {
   assert.deepEqual(shuffled, ordered);
 });
 
+test("initial snapshot replay hydrates event-derived activity and evidence", () => {
+  const snapshot = {
+    ...run,
+    status: "completed" as const,
+    updatedAt: event(3, "run.completed").at,
+    nextEventSequence: 4,
+  };
+  const state = rehydrateResearchRun(snapshot, [
+    event(1, "run.created"),
+    event(2, "phase.started", {
+      phase: "scope",
+      activity: "Reviewing primary sources",
+      reviewed: 4,
+    }),
+    event(3, "run.completed", { retained: 2 }),
+  ], { afterSequence: 0 });
+
+  assert.equal(state.lastEventSequence, 3);
+  assert.deepEqual(state.activity, { label: "Reviewing primary sources" });
+  assert.deepEqual(state.evidence, { reviewed: 4, retained: 2 });
+  assert.equal(state.phaseStates.scope, "active");
+});
+
+test("reconnect snapshot replay preserves previously derived activity and evidence", () => {
+  const initialSnapshot = {
+    ...run,
+    status: "challenging" as const,
+    nextEventSequence: 4,
+  };
+  const initial = rehydrateResearchRun(initialSnapshot, [
+    event(1, "run.created"),
+    event(2, "phase.started", {
+      phase: "scope",
+      activity: "Collecting sources",
+      sources: 6,
+    }),
+    event(3, "phase.completed", { phase: "scope", retained: 3 }),
+  ], { afterSequence: 0 });
+  const reconnectSnapshot = {
+    ...initialSnapshot,
+    status: "completed" as const,
+    updatedAt: event(4, "run.completed").at,
+    nextEventSequence: 5,
+  };
+  const reconnected = rehydrateResearchRun(
+    reconnectSnapshot,
+    [event(4, "run.completed", { cited: 2 })],
+    { afterSequence: 3, previousState: initial },
+  );
+
+  assert.equal(reconnected.lastEventSequence, 4);
+  assert.deepEqual(reconnected.activity, { label: "Collecting sources" });
+  assert.deepEqual(reconnected.evidence, { sources: 6, retained: 3, cited: 2 });
+  assert.equal(reconnected.phaseStates.scope, "completed");
+});
+
 test("malformed and cross-run frames are rejected without mutating the projection", () => {
   const initial = createResearchRunEventState(run);
   const malformed = consumeResearchRunEvent(initial, {

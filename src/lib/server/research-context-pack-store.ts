@@ -534,7 +534,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
       const layout = await openLayout(root);
       let entries: string[];
       try {
-        entries = await readdir(layout.manifestsDir);
+        entries = await readdir(/* turbopackIgnore: true */ layout.manifestsDir);
       } catch {
         return [];
       }
@@ -623,7 +623,7 @@ export async function reconcileRestoredContextPacks(options: {
   const layout = await openLayout(options.root ?? path.join(caveHome(), "research-context-packs"));
   let entries: string[] = [];
   try {
-    entries = await readdir(layout.manifestsDir);
+    entries = await readdir(/* turbopackIgnore: true */ layout.manifestsDir);
   } catch {
     return { validated: 0, invalid: 0 };
   }

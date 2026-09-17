@@ -23,15 +23,31 @@ final class SessionSwitchUITests: XCTestCase {
         return app
     }
 
-    /// Opens the switcher from the chat's session controls.
-    private func openSessionPicker(_ app: XCUIApplication) {
+    private func openSessionControls(_ app: XCUIApplication) {
         let controls = app.buttons["Session controls"]
         XCTAssertTrue(controls.waitForExistence(timeout: 10), "session controls are reachable")
         controls.tap()
+    }
 
+    /// Opens the switcher from the chat's session controls.
+    private func openSessionPicker(_ app: XCUIApplication) {
+        openSessionControls(app)
         let sessionRow = app.buttons["Switch session"].firstMatch
         XCTAssertTrue(sessionRow.waitForExistence(timeout: 10), "the details card offers Conversation")
         sessionRow.tap()
+    }
+
+    @MainActor
+    func testSessionControlsOfferOneArchiveActionWithoutModelCapabilities() {
+        let app = launchInFirstThread()
+        openSessionControls(app)
+
+        let archiveActions = app.buttons.matching(identifier: "Archive chat")
+        XCTAssertTrue(
+            archiveActions.firstMatch.waitForExistence(timeout: 10),
+            "active chats expose archive even when model controls are unavailable"
+        )
+        XCTAssertEqual(archiveActions.count, 1, "session controls expose exactly one archive action")
     }
 
     /// The whole point: tapping a session switches to it, closes the switcher,

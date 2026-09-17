@@ -19,7 +19,8 @@ vi.mock("@/lib/canonical-memory-resources", () => ({
 vi.mock("@/lib/use-projects", () => ({
   useProjects: () => ({ projects: [] }),
 }));
-vi.mock("@/lib/use-focus-trap", () => ({
+vi.mock("@/lib/use-focus-trap", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/use-focus-trap")>()),
   useFocusTrap: () => {},
 }));
 vi.mock("@/lib/datetime-format", () => ({

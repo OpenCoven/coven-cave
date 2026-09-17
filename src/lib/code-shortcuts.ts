@@ -31,16 +31,23 @@ export type CodeShortcutDef = {
   combo: string;
 };
 
+export type CodeFixedShortcutDef = {
+  id: string;
+  label: string;
+  combo: string;
+};
+
 /**
  * The bindable set. Deliberately only actions this surface owns — global
  * navigation already has bindings elsewhere, and shadowing them from a
  * per-surface dialog is how two keymaps start disagreeing.
  *
- * These must also stay clear of the Room's FIXED terminal bindings
- * (`code-room-shortcuts.ts`: ⇧⌘→ ⇧⌘← ⇧⌘D ⇧⌘E ⇧⌘X ⇧⌘B). Those resolve first,
- * inside the terminal, and are not rebindable — a default that collided would
- * be dead on arrival in exactly the pane it was meant for. `defaultCodeKeymap`
- * is asserted against that list in `code-shortcuts.test.ts`.
+ * These must also stay clear of the Room's FIXED bindings: the terminal-pane
+ * controls (`code-room-shortcuts.ts`: ⇧⌘→ ⇧⌘← ⇧⌘D ⇧⌘E ⇧⌘X ⇧⌘B) and the session
+ * queue's own `/`, `J`, `K`, and `Shift+A`. Those resolve first and are not
+ * rebindable — a default that collided would be dead on arrival in exactly the
+ * surface it was meant for. `defaultCodeKeymap` is asserted against that list
+ * in `code-shortcuts.test.ts`.
  */
 export const CODE_SHORTCUTS: readonly CodeShortcutDef[] = [
   { id: "picker", label: "Switch session", combo: "Mod+P" },
@@ -54,13 +61,27 @@ export const CODE_SHORTCUTS: readonly CodeShortcutDef[] = [
 ] as const;
 
 /** Fixed terminal bindings the rebindable set must never collide with. */
+export const CODE_FIXED_TERMINAL_SHORTCUTS: readonly CodeFixedShortcutDef[] = [
+  { id: "focus-next-terminal", label: "Focus the next terminal pane", combo: "Mod+Shift+ArrowRight" },
+  { id: "focus-previous-terminal", label: "Focus the previous terminal pane", combo: "Mod+Shift+ArrowLeft" },
+  { id: "split-right", label: "Split the pane right", combo: "Mod+Shift+D" },
+  { id: "split-down", label: "Split the pane down", combo: "Mod+Shift+E" },
+  { id: "close-terminal", label: "Close the pane", combo: "Mod+Shift+X" },
+  { id: "toggle-broadcast", label: "Broadcast typing to every pane", combo: "Mod+Shift+B" },
+] as const;
+
+/** Fixed queue bindings owned by the Sessions view, not the per-session room. */
+export const CODE_FIXED_QUEUE_SHORTCUTS: readonly CodeFixedShortcutDef[] = [
+  { id: "queue-search", label: "Search sessions", combo: "/" },
+  { id: "queue-next", label: "Focus the next visible session", combo: "J" },
+  { id: "queue-previous", label: "Focus the previous visible session", combo: "K" },
+  { id: "queue-scope", label: "Toggle Reviewable / All local", combo: "Shift+A" },
+] as const;
+
+/** Every non-rebindable combo, in the same normalized grammar as storage/events. */
 export const CODE_RESERVED_COMBOS: readonly string[] = [
-  "Mod+Shift+ArrowRight",
-  "Mod+Shift+ArrowLeft",
-  "Mod+Shift+D",
-  "Mod+Shift+E",
-  "Mod+Shift+X",
-  "Mod+Shift+B",
+  ...CODE_FIXED_TERMINAL_SHORTCUTS.map((shortcut) => shortcut.combo),
+  ...CODE_FIXED_QUEUE_SHORTCUTS.map((shortcut) => shortcut.combo),
 ] as const;
 
 export type CodeKeymap = Partial<Record<CodeShortcutId, string>>;
@@ -84,9 +105,19 @@ export function mergeCodeKeymap(stored: unknown): Record<CodeShortcutId, string>
   if (!stored || typeof stored !== "object") return map;
   for (const shortcut of CODE_SHORTCUTS) {
     const value = (stored as Record<string, unknown>)[shortcut.id];
-    if (typeof value === "string") map[shortcut.id] = value;
+    if (typeof value === "string" && !isCodeReservedCombo(value)) map[shortcut.id] = value;
   }
   return map;
+}
+
+export function isCodeReservedCombo(combo: string): boolean {
+  return CODE_RESERVED_COMBOS.includes(combo);
+}
+
+export function codeReservedComboOwner(combo: string): "session queue" | "terminal panes" | null {
+  if (CODE_FIXED_QUEUE_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "session queue";
+  if (CODE_FIXED_TERMINAL_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "terminal panes";
+  return null;
 }
 
 /**
@@ -140,6 +171,7 @@ export function bindCodeShortcut(
   id: CodeShortcutId,
   combo: string,
 ): Record<CodeShortcutId, string> {
+  if (combo && isCodeReservedCombo(combo)) return { ...keymap };
   const next = { ...keymap };
   if (combo) {
     for (const shortcut of CODE_SHORTCUTS) {

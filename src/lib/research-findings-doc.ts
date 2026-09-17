@@ -145,6 +145,59 @@ function backtickRunLength(input: string, index: number): number {
   return length;
 }
 
+function isUnsupportedContainerPrefix(prefix: string): boolean {
+  let cursor = 0;
+  let foundMarker = false;
+  const skipHorizontalWhitespace = () => {
+    while (prefix[cursor] === " " || prefix[cursor] === "\t") cursor += 1;
+  };
+
+  while (cursor < prefix.length) {
+    skipHorizontalWhitespace();
+    if (cursor === prefix.length) return foundMarker;
+
+    if (prefix[cursor] === ">") {
+      foundMarker = true;
+      cursor += 1;
+      skipHorizontalWhitespace();
+      continue;
+    }
+
+    if (
+      prefix[cursor] === "-" ||
+      prefix[cursor] === "+" ||
+      prefix[cursor] === "*"
+    ) {
+      cursor += 1;
+      if (prefix[cursor] !== " " && prefix[cursor] !== "\t") return false;
+      foundMarker = true;
+      skipHorizontalWhitespace();
+      continue;
+    }
+
+    const digitStart = cursor;
+    while (
+      cursor - digitStart < 9 &&
+      prefix[cursor] >= "0" &&
+      prefix[cursor] <= "9"
+    ) {
+      cursor += 1;
+    }
+    if (
+      cursor === digitStart ||
+      (prefix[cursor] !== "." && prefix[cursor] !== ")")
+    ) {
+      return false;
+    }
+    cursor += 1;
+    if (prefix[cursor] !== " " && prefix[cursor] !== "\t") return false;
+    foundMarker = true;
+    skipHorizontalWhitespace();
+  }
+
+  return foundMarker;
+}
+
 function isUnsupportedContainerFenceRun(
   input: string,
   index: number,
@@ -157,9 +210,7 @@ function isUnsupportedContainerFenceRun(
   return (
     (index === lineStart && /\s/.test(input[index + runLength] ?? "")) ||
     /^[ \t]+$/.test(prefix) ||
-    /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(
-      prefix,
-    )
+    isUnsupportedContainerPrefix(prefix)
   );
 }
 

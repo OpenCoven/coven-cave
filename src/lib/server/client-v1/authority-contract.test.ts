@@ -351,6 +351,8 @@ test("publishes the complete pure authority manifest contract", () => {
         "pairing.poll",
         "pairing.exchange",
         "familiars.list",
+        "familiars.contract.read",
+        "familiars.analytics.read",
         "projects.list",
         "conversations.list",
         "conversations.read",

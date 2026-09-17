@@ -26,7 +26,6 @@
 @import "../styles/globals/themes.css";
 @import "../styles/globals/desktop-chrome.css";
 @import "../styles/globals/shell-responsive.css";
-@import "../styles/settings-familiars.css";
 @import "../styles/globals/calendar-agenda.css";
 @import "../styles/globals/surface-compact-calendar.css";
 @import "../styles/globals/shell-cards-and-controls.css";
@@ -34,6 +33,18 @@
 @import "../styles/globals/shared-pickers-and-toasts.css";
 @import "../styles/globals/surface-role-workspaces.css";
 @import "../styles/document-reader.css";
+/* settings-familiars.css left this facade (cave-dkdev, the #3264 pattern above).
+   Its 60 selectors are settings/familiar-studio only, and BOTH roots that mount
+   them are already dynamic() in lazy-surfaces.tsx — SettingsShell and
+   ChatFamiliarView — so the sheet now ships with those chunks instead of with
+   every route. Verified before moving: none of its selectors appear in any
+   sheet imported after it here, so loading later in the cascade cannot change
+   how a single rule resolves.
+
+   The reclaim was not optional. The initial/route CSS budget had drifted to
+   ~0.04% headroom, and the session-status work that prompted this would have
+   left 15 bytes — passing, but handing the next author an unexplained failure
+   on their first one-line CSS change. */
 /* The five surface-research-*.css sheets are imported by researcher-surface.tsx
  * so they code-split with the mode-gated Research Desk (#3264 pattern).
  * surface-weaves.css follows the same rule: threads-chrome.tsx imports it, so

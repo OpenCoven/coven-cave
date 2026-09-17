@@ -74,6 +74,11 @@ export type ResearchRunEventConsumption = {
   disposition: ResearchRunEventDisposition;
 };
 
+export type ResearchRunRehydrationOptions = {
+  afterSequence?: number;
+  previousState?: ResearchRunEventState;
+};
+
 const RUN_EVENT_TYPES: ReadonlySet<RunEventV1["type"]> = new Set([
   "run.created",
   "run.status",
@@ -178,15 +183,13 @@ function initialSequence(run: ResearchRunV1): number {
   return run.nextEventSequence - 1;
 }
 
-/**
- * Start a reducer from a canonical snapshot. `nextEventSequence` is the
- * server's next sequence, so the snapshot already includes every event below
- * `nextEventSequence` and those events are treated as stale on replay.
- */
-export function createResearchRunEventState(run: ResearchRunV1): ResearchRunEventState {
+function createResearchRunEventStateAtSequence(
+  run: ResearchRunV1,
+  lastEventSequence: number,
+): ResearchRunEventState {
   return {
     run,
-    lastEventSequence: initialSequence(run),
+    lastEventSequence,
     lastEventAt: run.updatedAt,
     appliedEvents: [],
     pendingEvents: [],
@@ -196,6 +199,11 @@ export function createResearchRunEventState(run: ResearchRunV1): ResearchRunEven
       ...(run.artifactManifest ? { artifacts: run.artifactManifest.artifacts.length } : {}),
     },
   };
+}
+
+/** Start a reducer from a canonical snapshot after its included event prefix. */
+export function createResearchRunEventState(run: ResearchRunV1): ResearchRunEventState {
+  return createResearchRunEventStateAtSequence(run, initialSequence(run));
 }
 
 function nextExpectedSequence(sequence: number): number {
@@ -490,8 +498,21 @@ export function consumeResearchRunEvent(
 export function rehydrateResearchRun(
   run: ResearchRunV1,
   events: readonly RunEventV1[],
+  options: ResearchRunRehydrationOptions = {},
 ): ResearchRunEventState {
-  return events.reduce(reduceResearchRunEvent, createResearchRunEventState(run));
+  const afterSequence = options.afterSequence
+    ?? (events.length > 0
+      ? Math.max(0, Math.min(...events.map((event) => event.sequence)) - 1)
+      : initialSequence(run));
+  const previous = options.previousState;
+  const initial = previous
+    && previous.run.id === run.id
+    && previous.lastEventSequence === afterSequence
+    && previous.sync.status === "synced"
+    && previous.pendingEvents.length === 0
+    ? { ...previous, run }
+    : createResearchRunEventStateAtSequence(run, afterSequence);
+  return events.reduce(reduceResearchRunEvent, initial);
 }
 
 export function researchRunNeedsResync(state: ResearchRunEventState): boolean {

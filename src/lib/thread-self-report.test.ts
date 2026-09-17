@@ -247,7 +247,12 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
     assert.match(prompt, /classify every requested deliverable/i);
     assert.match(prompt, /verified with exact evidence, incomplete, or blocked/i);
-    assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
+    // The brief now NAMES ITSELF on line 1 so the session it launches is
+    // tellable apart in the Sessions list (cave-dkdev): every launch from here
+    // shares the directive below, so a title derived from it was identical on
+    // every row. The directive still leads the body.
+    assert.match(prompt, /^Skill access gap · 1 signal\n\n/, "opens with its own subject line");
+    assert.match(prompt, /\n\nResolve this /, "the resolution directive still leads the body");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {
       const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", sourceId: "t", title: "t", detail: "d" });

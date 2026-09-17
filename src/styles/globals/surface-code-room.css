@@ -317,6 +317,59 @@
 .code-room__action[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
 .code-room__inspector { padding: var(--space-2); max-height: 60vh; overflow-y: auto; }
 
+/* ── Shared queue scope controls ── */
+.code-queue-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+.code-queue-filter__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.code-queue-filter__button {
+  display: inline-flex;
+  flex: 1;
+  min-height: var(--space-6);
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+}
+.code-queue-filter__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-queue-filter__button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-queue-filter__button[aria-pressed="true"],
+.code-queue-filter__button[data-on="true"] {
+  background: color-mix(in oklab, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklab, var(--accent-presence) 38%, transparent);
+  color: var(--text-primary);
+}
+.code-queue-filter__count {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.code-queue-filter__notice {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
 /* ── Body: three columns ── */
 .code-room__body {
   display: flex;

@@ -7,6 +7,7 @@ const iosRoot = "apps/ios/CovenCave/CovenCave";
 const thread = await read(`${iosRoot}/State/ChatThread.swift`);
 const model = await read(`${iosRoot}/State/AppModel.swift`);
 const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`);
+const chat = await read(`${iosRoot}/Views/ChatView.swift`);
 
 assert.match(thread, /var archived: Bool = false/, "ChatThread should carry an archived flag");
 assert.match(thread, /var archived: Bool\?/, "ThreadSnapshot.archived should be optional for back-compat");
@@ -28,5 +29,16 @@ for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /showArchived \|\| !\$0\.archived/, `${name} should filter out archived by default`);
   assert.match(src, /"Hide archived"/, `${name} should offer a reveal toggle`);
 }
+
+assert.match(
+  chat,
+  /private var sessionDetailsCard:[\s\S]*?app\.setThreadArchived\(thread, !thread\.archived\)[\s\S]{0,300}?thread\.archived \? "Unarchive chat" : "Archive chat"/,
+  "ChatView should expose archive and unarchive from the active conversation controls",
+);
+assert.match(
+  chat,
+  /\.accessibilityLabel\(thread\.archived \? "Unarchive chat" : "Archive chat"\)/,
+  "ChatView's active-conversation archive action should have an accessible label",
+);
 
 console.log("ios-archive-threads.test.mjs: ok");

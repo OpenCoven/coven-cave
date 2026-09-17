@@ -1,5 +1,13 @@
 # Chat v1 Phase 7 — OS acceptance, staged rollout, and rollback drill: verified status + acceptance evidence runbook
 
+> **Current refresh — 2026-09-04:** Phase 7 remains blocked in canonical
+> Beads. Chat now has the `v0.0.1-demo.1` macOS-arm64 prerelease, but it is not
+> a signed cross-platform production candidate and updater artifacts remain
+> disabled. Published npm/crate artifacts, compatibility canaries, three-OS
+> acceptance, rollout/rollback evidence, and gate evidence are still missing.
+> Bead `cave-as76u` and the other Phase 7 records are now directly queryable as
+> blocked rather than tracker-unverifiable.
+
 Bead `cave-udcn7` (issue [#4781](https://github.com/OpenCoven/coven-cave/issues/4781)), Phase 7, P0, lane `release-acceptance`.
 
 **Verification date: 2026-08-30.** Everything under "Verified" below was checked against live state on that date unless a date is attached to the specific claim. Verifier: agent session authenticated as `CompleteDotTech` (push access to OpenCoven/coven-cave only; `OpenCoven/chat`, `OpenCoven/sdk`, and `OpenCoven/coven` were read as read-only sources).

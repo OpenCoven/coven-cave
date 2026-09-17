@@ -11,6 +11,8 @@ use std::io::Read;
 #[cfg(desktop)]
 use std::io::Write;
 #[cfg(all(desktop, target_os = "macos"))]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+#[cfg(all(desktop, target_os = "macos"))]
 use std::os::unix::io::AsRawFd;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -41,6 +43,16 @@ const SERVE_REPAIR_OUTPUT_BYTES: usize = 64 * 1024;
 const SERVE_REPAIR_OUTPUT_DRAIN: Duration = Duration::from_millis(250);
 #[cfg(all(desktop, target_os = "macos"))]
 const SERVE_REPAIR_KILL_GRACE: Duration = Duration::from_millis(500);
+#[cfg(desktop)]
+const TAILSCALE_SERVE_LEASE_FILE: &str = "tailscale-serve-ownership.lock";
+#[cfg(desktop)]
+const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_LEASE_TIMEOUT: Duration = Duration::from_millis(1500);
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_LEASE_POLL: Duration = Duration::from_millis(50);
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_RECLAMATION_PORT: u16 = 61_987;
 
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -50,6 +62,37 @@ static DAEMON_SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(desktop, target_os = "macos"))]
 static SERVE_REPAIR_STATE: OnceLock<Mutex<ServeRepairState>> = OnceLock::new();
+
+#[cfg(desktop)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct ServeMutationLeaseRecord {
+    version: u8,
+    pid: u32,
+    token: String,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+struct ServeMutationLease {
+    path: PathBuf,
+    candidate_path: PathBuf,
+    record: ServeMutationLeaseRecord,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+impl Drop for ServeMutationLease {
+    fn drop(&mut self) {
+        let current = std::fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<ServeMutationLeaseRecord>(&raw).ok());
+        if current
+            .as_ref()
+            .is_some_and(|current| serve_mutation_lease_matches(&self.record, current))
+        {
+            let _ = std::fs::remove_file(&self.path);
+        }
+        let _ = std::fs::remove_file(&self.candidate_path);
+    }
+}
 
 #[cfg(desktop)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -123,6 +166,46 @@ struct GuiOwnershipState {
 enum TailscaleServeMode {
     Https,
     Http(u16),
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoopbackHost {
+    Ipv4,
+    Ipv6,
+    Localhost,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LoopbackBackend {
+    host: LoopbackHost,
+    port: u16,
+}
+
+#[cfg(desktop)]
+impl LoopbackBackend {
+    const fn ipv4(port: u16) -> Self {
+        Self {
+            host: LoopbackHost::Ipv4,
+            port,
+        }
+    }
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ServeProxyTarget {
+    Loopback(LoopbackBackend),
+    Protected,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ServeRepairDecision {
+    Noop,
+    Preserve,
+    Repair(TailscaleServeMode),
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -501,6 +584,230 @@ fn serve_mode_from_status(status: &serde_json::Value) -> Option<TailscaleServeMo
     })
 }
 
+#[cfg(desktop)]
+fn parse_loopback_proxy_backend(proxy: &str) -> Option<LoopbackBackend> {
+    let target = proxy.trim();
+    let rest = target.strip_prefix("http://")?;
+    let authority = rest.split('/').next()?;
+    if authority.contains(['@', '?', '#']) {
+        return None;
+    }
+    let (host, port) = if let Some(rest) = authority.strip_prefix("[::1]:") {
+        (LoopbackHost::Ipv6, rest)
+    } else {
+        let (host, port) = authority.rsplit_once(':')?;
+        let host = if host == "127.0.0.1" {
+            LoopbackHost::Ipv4
+        } else if host.eq_ignore_ascii_case("localhost") {
+            LoopbackHost::Localhost
+        } else {
+            return None;
+        };
+        (host, port)
+    };
+    Some(LoopbackBackend {
+        host,
+        port: port.parse().ok()?,
+    })
+}
+
+#[cfg(desktop)]
+fn serve_status_web_port(host: &str) -> Option<u16> {
+    let (_, port) = host.trim().rsplit_once(':')?;
+    let port = port.parse::<u16>().ok()?;
+    (port > 0).then_some(port)
+}
+
+#[cfg(desktop)]
+fn is_expected_web_tcp_listener(config: &serde_json::Value) -> bool {
+    let Some(config) = config.as_object() else {
+        return false;
+    };
+    if config.keys().any(|key| key != "HTTP" && key != "HTTPS") {
+        return false;
+    }
+    if config.get("HTTP").is_some_and(|value| !value.is_boolean())
+        || config.get("HTTPS").is_some_and(|value| !value.is_boolean())
+    {
+        return false;
+    }
+    let http = config.get("HTTP").and_then(serde_json::Value::as_bool) == Some(true);
+    let https = config.get("HTTPS").and_then(serde_json::Value::as_bool) == Some(true);
+    http != https
+}
+
+#[cfg(desktop)]
+fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
+    let Some(status) = status.as_object() else {
+        return vec![ServeProxyTarget::Protected];
+    };
+    let mut targets = Vec::new();
+    let mut web_ports = std::collections::BTreeSet::new();
+    if let Some(web) = status.get("Web") {
+        let Some(web) = web.as_object() else {
+            return vec![ServeProxyTarget::Protected];
+        };
+        for (host, config) in web {
+            let port = serve_status_web_port(host);
+            if port.is_none() {
+                targets.push(ServeProxyTarget::Protected);
+            }
+            let Some(config) = config.as_object() else {
+                targets.push(ServeProxyTarget::Protected);
+                continue;
+            };
+            let Some(handlers) = config
+                .get("Handlers")
+                .and_then(serde_json::Value::as_object)
+                .filter(|handlers| !handlers.is_empty())
+            else {
+                targets.push(ServeProxyTarget::Protected);
+                continue;
+            };
+            if let Some(port) = port {
+                web_ports.insert(port);
+            }
+            for handler in handlers.values() {
+                let target = handler
+                    .as_object()
+                    .filter(|handler| handler.len() == 1 && handler.contains_key("Proxy"))
+                    .and_then(|handler| handler.get("Proxy"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(parse_loopback_proxy_backend)
+                    .map(ServeProxyTarget::Loopback)
+                    .unwrap_or(ServeProxyTarget::Protected);
+                targets.push(target);
+            }
+        }
+    }
+
+    let mut matched_web_ports = std::collections::BTreeSet::new();
+    if let Some(tcp) = status.get("TCP") {
+        if let Some(tcp) = tcp.as_object() {
+            for (port, config) in tcp {
+                let parsed_port = port
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|parsed| *parsed > 0 && parsed.to_string() == *port);
+                if parsed_port.is_some_and(|port| {
+                    web_ports.contains(&port) && is_expected_web_tcp_listener(config)
+                }) {
+                    matched_web_ports.insert(parsed_port.expect("checked above"));
+                } else {
+                    targets.push(ServeProxyTarget::Protected);
+                }
+            }
+        } else {
+            targets.push(ServeProxyTarget::Protected);
+        }
+    }
+    for port in web_ports {
+        if !matched_web_ports.contains(&port) {
+            targets.push(ServeProxyTarget::Protected);
+        }
+    }
+    for field in ["Services", "AllowFunnel", "Foreground"] {
+        if let Some(value) = status.get(field) {
+            if value
+                .as_object()
+                .is_none_or(|settings| !settings.is_empty())
+            {
+                targets.push(ServeProxyTarget::Protected);
+            }
+        }
+    }
+    targets
+}
+
+#[cfg(desktop)]
+fn serve_route_owned_by_backend(status: &serde_json::Value, backend: LoopbackBackend) -> bool {
+    let targets = serve_proxy_targets(status);
+    !targets.is_empty()
+        && targets
+            .iter()
+            .all(|target| *target == ServeProxyTarget::Loopback(backend))
+}
+
+#[cfg(desktop)]
+fn decide_serve_repair(
+    status: &serde_json::Value,
+    requested: LoopbackBackend,
+    packaged: bool,
+    mut responds: impl FnMut(LoopbackBackend) -> bool,
+) -> ServeRepairDecision {
+    let Some(mode) = serve_mode_from_status(status) else {
+        return ServeRepairDecision::Preserve;
+    };
+    let targets = serve_proxy_targets(status);
+    if targets.is_empty() || targets.contains(&ServeProxyTarget::Protected) {
+        return ServeRepairDecision::Preserve;
+    }
+    if targets
+        .iter()
+        .all(|target| *target == ServeProxyTarget::Loopback(requested))
+    {
+        return ServeRepairDecision::Noop;
+    }
+    if requested.host == LoopbackHost::Localhost
+        || targets.iter().any(|target| {
+            matches!(
+                target,
+                ServeProxyTarget::Loopback(LoopbackBackend {
+                    host: LoopbackHost::Localhost,
+                    ..
+                })
+            )
+        })
+    {
+        return ServeRepairDecision::Preserve;
+    }
+    if packaged && requested.port == super::sidecar_ports::CAVE_PRODUCTION_PORT {
+        return ServeRepairDecision::Repair(mode);
+    }
+    if targets.iter().any(|target| match target {
+        ServeProxyTarget::Loopback(backend) if *backend != requested => responds(*backend),
+        _ => false,
+    }) {
+        ServeRepairDecision::Preserve
+    } else {
+        ServeRepairDecision::Repair(mode)
+    }
+}
+
+#[cfg(desktop)]
+fn serve_inventory_unchanged_before_mutation(
+    inspected: &serde_json::Value,
+    current: &serde_json::Value,
+) -> bool {
+    inspected == current
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn loopback_backend_responds(backend: LoopbackBackend) -> bool {
+    let address = match backend.host {
+        LoopbackHost::Ipv4 => std::net::SocketAddr::from(([127, 0, 0, 1], backend.port)),
+        LoopbackHost::Ipv6 => std::net::SocketAddr::new(
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+            backend.port,
+        ),
+        LoopbackHost::Localhost => return true,
+    };
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500))
+    else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    if stream
+        .write_all(b"GET /api/familiars HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut first_byte = [0_u8; 1];
+    stream.read(&mut first_byte).is_ok_and(|read| read > 0)
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 fn tailscale_binary() -> PathBuf {
     if let Some(explicit) = std::env::var_os("TAILSCALE_BIN") {
@@ -521,6 +828,191 @@ fn tailscale_binary() -> PathBuf {
     .map(PathBuf::from)
     .find(|path| path.is_file())
     .unwrap_or_else(|| PathBuf::from("tailscale"))
+}
+
+#[cfg(desktop)]
+fn tailscale_serve_lease_path_for(home: &Path) -> PathBuf {
+    home.join(".coven")
+        .join("cave")
+        .join(TAILSCALE_SERVE_LEASE_FILE)
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_record_is_valid(record: &ServeMutationLeaseRecord) -> bool {
+    record.version == TAILSCALE_SERVE_LEASE_VERSION
+        && !record.token.is_empty()
+        && record.token.len() <= 128
+        && record
+            .token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        && record.pid > 0
+        && record.pid <= i32::MAX as u32
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_is_stale(
+    record: &ServeMutationLeaseRecord,
+    is_process_alive: impl FnOnce(u32) -> bool,
+) -> bool {
+    serve_mutation_lease_record_is_valid(record) && !is_process_alive(record.pid)
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_matches(
+    expected: &ServeMutationLeaseRecord,
+    current: &ServeMutationLeaseRecord,
+) -> bool {
+    serve_mutation_lease_record_is_valid(current)
+        && current.pid == expected.pid
+        && current.token == expected.token
+}
+
+#[cfg(desktop)]
+fn stale_lease_matches_under_fence(
+    expected: &ServeMutationLeaseRecord,
+    current: &ServeMutationLeaseRecord,
+    is_process_alive: impl FnOnce(u32) -> bool,
+) -> bool {
+    serve_mutation_lease_matches(expected, current) && !is_process_alive(current.pid)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn serve_mutation_lease_candidate_path(
+    lease_path: &Path,
+    record: &ServeMutationLeaseRecord,
+) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.{}.{}.owner",
+        lease_path.display(),
+        record.pid,
+        record.token
+    ))
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn process_is_alive(pid: u32) -> bool {
+    if unsafe { libc::kill(pid as libc::pid_t, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn recover_stale_tailscale_serve_lease(lease_path: &Path) -> bool {
+    let Ok(first_raw) = std::fs::read_to_string(lease_path) else {
+        return false;
+    };
+    let Ok(first_metadata) = std::fs::metadata(lease_path) else {
+        return false;
+    };
+    let Ok(first_record) = serde_json::from_str::<ServeMutationLeaseRecord>(&first_raw) else {
+        return false;
+    };
+    if !serve_mutation_lease_is_stale(&first_record, process_is_alive) {
+        return false;
+    }
+
+    // Node binds the same loopback port before stale reclamation. The kernel
+    // releases this fence on crash, so only one reclaimer can reread and
+    // remove the canonical path while a delayed contender waits.
+    let Ok(_reclamation_fence) =
+        std::net::TcpListener::bind(("127.0.0.1", TAILSCALE_SERVE_RECLAMATION_PORT))
+    else {
+        return false;
+    };
+    let Ok(second_raw) = std::fs::read_to_string(lease_path) else {
+        return false;
+    };
+    let Ok(second_metadata) = std::fs::metadata(lease_path) else {
+        return false;
+    };
+    let Ok(second_record) = serde_json::from_str::<ServeMutationLeaseRecord>(&second_raw) else {
+        return false;
+    };
+    if !stale_lease_matches_under_fence(&first_record, &second_record, process_is_alive)
+        || first_metadata.dev() != second_metadata.dev()
+        || first_metadata.ino() != second_metadata.ino()
+    {
+        return false;
+    }
+
+    if std::fs::remove_file(lease_path).is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_file(serve_mutation_lease_candidate_path(
+        lease_path,
+        &first_record,
+    ));
+    true
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn acquire_tailscale_serve_lease() -> Result<Option<ServeMutationLease>, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is unavailable".to_string())?;
+    let path = tailscale_serve_lease_path_for(&home);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Serve lease path has no parent".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("could not create Serve lease directory: {error}"))?;
+
+    let record = ServeMutationLeaseRecord {
+        version: TAILSCALE_SERVE_LEASE_VERSION,
+        pid: std::process::id(),
+        token: format!("{:032x}", rand::random::<u128>()),
+    };
+    let candidate_path = serve_mutation_lease_candidate_path(&path, &record);
+    // Node uses this same hard-link protocol: write the complete unique owner
+    // record first, then atomically link it to the shared machine lock path.
+    let mut candidate = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&candidate_path)
+        .map_err(|error| format!("could not create Serve lease candidate: {error}"))?;
+    if let Err(error) = serde_json::to_writer(&mut candidate, &record) {
+        let _ = std::fs::remove_file(&candidate_path);
+        return Err(format!("could not write Serve lease candidate: {error}"));
+    }
+    if let Err(error) = candidate
+        .write_all(b"\n")
+        .and_then(|_| candidate.sync_all())
+    {
+        let _ = std::fs::remove_file(&candidate_path);
+        return Err(format!("could not sync Serve lease candidate: {error}"));
+    }
+
+    let deadline = Instant::now() + TAILSCALE_SERVE_LEASE_TIMEOUT;
+    loop {
+        match std::fs::hard_link(&candidate_path, &path) {
+            Ok(()) => {
+                return Ok(Some(ServeMutationLease {
+                    path,
+                    candidate_path,
+                    record,
+                }));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                let _ = std::fs::remove_file(&candidate_path);
+                return Err(format!("could not link Serve lease: {error}"));
+            }
+        }
+
+        if recover_stale_tailscale_serve_lease(&path) {
+            continue;
+        }
+        if Instant::now() >= deadline {
+            let _ = std::fs::remove_file(&candidate_path);
+            return Ok(None);
+        }
+        thread::sleep(
+            TAILSCALE_SERVE_LEASE_POLL.min(deadline.saturating_duration_since(Instant::now())),
+        );
+    }
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -573,15 +1065,29 @@ fn run_queued_tailscale_serve_repairs() {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn run_tailscale_serve_repair(port: u16) {
+    let requested_backend = LoopbackBackend::ipv4(port);
+    let _lease = match acquire_tailscale_serve_lease() {
+        Ok(Some(lease)) => lease,
+        Ok(None) => {
+            log::warn!(
+                "[cave] Tailscale Serve ownership is busy; preserving the current route for port {port}"
+            );
+            return;
+        }
+        Err(error) => {
+            log::warn!(
+                "[cave] could not acquire Tailscale Serve ownership lease for port {port}: {error}"
+            );
+            return;
+        }
+    };
     let status_args = [
         "serve".to_string(),
         "status".to_string(),
         "--json".to_string(),
     ];
-    let mode = match run_tailscale_command(&status_args) {
-        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
-            .ok()
-            .and_then(|status| serve_mode_from_status(&status)),
+    let inspected_status = match run_tailscale_command(&status_args) {
+        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout).ok(),
         Ok(output) => {
             log::warn!(
                 "[cave] could not inspect Tailscale Serve before repairing port {port}: exited with {}",
@@ -596,24 +1102,68 @@ fn run_tailscale_serve_repair(port: u16) {
             None
         }
     };
-    let Some(mode) = mode else {
+    let Some(inspected_status) = inspected_status else {
         // There is no paired Serve route to repair. Avoid creating an HTTPS
         // listener that could overwrite an unavailable or managed fallback.
         return;
+    };
+    let decision = decide_serve_repair(
+        &inspected_status,
+        requested_backend,
+        !cfg!(debug_assertions),
+        loopback_backend_responds,
+    );
+    let mode = match decision {
+        ServeRepairDecision::Noop => return,
+        ServeRepairDecision::Preserve => {
+            log::info!(
+                "[cave] preserving Tailscale Serve owned by another backend instead of repairing port {port}"
+            );
+            return;
+        }
+        ServeRepairDecision::Repair(mode) => mode,
     };
     let args = match mode {
         TailscaleServeMode::Https => serve_arguments(port).to_vec(),
         TailscaleServeMode::Http(http_port) => http_serve_arguments(port, http_port).to_vec(),
     };
+    let current_status = run_tailscale_command(&status_args)
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| serde_json::from_slice(&output.stdout).ok());
+    let Some(current_status) = current_status else {
+        log::warn!(
+            "[cave] could not re-read Tailscale Serve immediately before repairing port {port}"
+        );
+        return;
+    };
+    if !serve_inventory_unchanged_before_mutation(&inspected_status, &current_status) {
+        log::warn!(
+            "[cave] Tailscale Serve changed after ownership probing; preserving the newer route instead of repairing port {port}"
+        );
+        return;
+    }
     match run_tailscale_command(&args) {
-        Ok(output) if output.status.success() => {
-            log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
-        }
         Ok(output) => {
-            log::warn!(
-                "[cave] could not repair Tailscale Serve for port {port}: exited with {}",
-                output.status
-            );
+            let mutation_succeeded = output.status.success();
+            let verified = run_tailscale_command(&status_args)
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| serde_json::from_slice(&output.stdout).ok())
+                .is_some_and(|status| serve_route_owned_by_backend(&status, requested_backend));
+            if verified && mutation_succeeded {
+                log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+            } else if verified {
+                log::warn!(
+                    "[cave] Tailscale Serve reported {}, but the verified route points at 127.0.0.1:{port}",
+                    output.status
+                );
+            } else {
+                log::warn!(
+                    "[cave] Tailscale Serve repair for port {port} lost ownership verification after {}",
+                    output.status
+                );
+            }
         }
         Err(error) => {
             log::warn!("[cave] could not repair Tailscale Serve for port {port}: {error}");
@@ -2161,6 +2711,10 @@ mod tests {
             serve_mode_from_status(&http_status),
             Some(TailscaleServeMode::Http(3000))
         );
+        assert!(serve_route_owned_by_backend(
+            &http_status,
+            LoopbackBackend::ipv4(3000)
+        ));
         assert_eq!(
             http_serve_arguments(3007, 3000),
             [
@@ -2180,6 +2734,395 @@ mod tests {
             Some(TailscaleServeMode::Https)
         );
         assert_eq!(serve_mode_from_status(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn serve_repair_same_owner_is_a_noop() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007/" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| panic!(
+                "same owner is not probed"
+            )),
+            ServeRepairDecision::Noop
+        );
+    }
+
+    #[test]
+    fn serve_repair_aborts_when_inventory_changes_after_liveness_probes() {
+        let inspected = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3001" } } } }
+        });
+        let reassigned = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3020" } } } }
+        });
+        assert!(
+            !serve_inventory_unchanged_before_mutation(&inspected, &reassigned),
+            "a reassignment after probing must prevent the pending Serve mutation"
+        );
+    }
+
+    #[test]
+    fn serve_ownership_does_not_collapse_ipv4_and_ipv6_by_port() {
+        let ipv6_status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://[::1]:3007" } } } }
+        });
+        assert!(
+            !serve_route_owned_by_backend(&ipv6_status, LoopbackBackend::ipv4(3007)),
+            "the IPv4 desktop backend must not own an IPv6 route on the same port"
+        );
+        let ipv6_backend = LoopbackBackend {
+            host: LoopbackHost::Ipv6,
+            port: 3007,
+        };
+        assert!(
+            serve_route_owned_by_backend(&ipv6_status, ipv6_backend),
+            "an IPv6 route is owned by the same IPv6 backend identity"
+        );
+        assert_eq!(
+            decide_serve_repair(
+                &ipv6_status,
+                LoopbackBackend::ipv4(3007),
+                false,
+                |backend| backend == ipv6_backend
+            ),
+            ServeRepairDecision::Preserve,
+            "repair preserves a healthy cross-family owner instead of treating it as the same backend"
+        );
+    }
+
+    #[test]
+    fn serve_repair_treats_localhost_as_an_exact_only_identity() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://localhost:3007" } } } }
+        });
+        let localhost = LoopbackBackend {
+            host: LoopbackHost::Localhost,
+            port: 3007,
+        };
+        assert_eq!(
+            decide_serve_repair(&status, localhost, false, |_| {
+                panic!("an exact localhost owner is not probed")
+            }),
+            ServeRepairDecision::Noop
+        );
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
+                panic!("an ambiguous localhost owner is preserved without probing")
+            }),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_ownership_protects_unrelated_tcp_forwarding() {
+        let status = serde_json::json!({
+            "TCP": {
+                "443": { "HTTPS": true },
+                "2222": { "TCPForward": "127.0.0.1:22" }
+            },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        assert!(!serve_route_owned_by_backend(
+            &status,
+            LoopbackBackend::ipv4(3007)
+        ));
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
+                panic!("protected TCP forwarding must not be probed")
+            }),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_ownership_protects_other_machine_global_settings() {
+        let normal_web = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        let protected = [
+            serde_json::json!({
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTP": true, "HTTPS": true } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTPS": "true" } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": {
+                    "443": { "HTTPS": true },
+                    "8443": { "HTTPS": true }
+                },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTPS": true, "ProxyProtocol": 2 } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "Services": { "svc:database": { "TCP": { "5432": { "TCPForward": "127.0.0.1:5432" } } } }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "AllowFunnel": { "cave.tailnet.ts.net:443": true }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "Foreground": { "session": { "TCP": { "8080": { "TCPForward": "127.0.0.1:8080" } } } }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": {
+                    "cave.tailnet.ts.net:443": {
+                        "Handlers": {
+                            "/": {
+                                "Proxy": "http://127.0.0.1:3007",
+                                "AcceptAppCaps": true
+                            }
+                        }
+                    }
+                }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": {
+                    "cave.tailnet.ts.net:443": {
+                        "Handlers": {
+                            "/": {
+                                "Proxy": "http://127.0.0.1:3007",
+                                "FutureHandlerSetting": {}
+                            }
+                        }
+                    }
+                }
+            }),
+        ];
+        for status in protected {
+            assert!(!serve_route_owned_by_backend(
+                &status,
+                LoopbackBackend::ipv4(3007)
+            ));
+            assert_eq!(
+                decide_serve_repair(&status, LoopbackBackend::ipv4(3007), true, |_| {
+                    panic!("protected machine-global settings must not be probed")
+                }),
+                ServeRepairDecision::Preserve
+            );
+        }
+    }
+
+    #[test]
+    fn serve_repair_preserves_a_competing_healthy_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(
+                &status,
+                LoopbackBackend::ipv4(3007),
+                false,
+                |backend| backend == LoopbackBackend::ipv4(3008)
+            ),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_repair_takes_over_an_unreachable_stale_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| false),
+            ServeRepairDecision::Repair(TailscaleServeMode::Https)
+        );
+    }
+
+    #[test]
+    fn serve_repair_protects_non_loopback_targets_without_probing_them() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "https://example.com/backend" } } } }
+        });
+        let mut probes = 0;
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
+                probes += 1;
+                false
+            }),
+            ServeRepairDecision::Preserve
+        );
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3020), true, |_| {
+                probes += 1;
+                false
+            }),
+            ServeRepairDecision::Preserve
+        );
+        assert_eq!(probes, 0);
+    }
+
+    #[test]
+    fn serve_proxy_inventory_protects_malformed_per_host_configs() {
+        let status = serde_json::json!({
+            "Web": {
+                "null.tailnet.ts.net:443": null,
+                "primitive.tailnet.ts.net:443": 42,
+                "array.tailnet.ts.net:443": [],
+                "missing-handlers.tailnet.ts.net:443": {}
+            }
+        });
+        assert_eq!(
+            serve_proxy_targets(&status),
+            vec![
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+            ]
+        );
+    }
+
+    #[test]
+    fn packaged_serve_repair_has_precedence_over_a_healthy_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3020), true, |_| true),
+            ServeRepairDecision::Repair(TailscaleServeMode::Https)
+        );
+    }
+
+    #[test]
+    fn packaged_serve_repair_override_preserves_a_healthy_different_owner() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(
+                &status,
+                LoopbackBackend::ipv4(3007),
+                true,
+                |backend| backend == LoopbackBackend::ipv4(3008)
+            ),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_mutation_lease_uses_the_cross_language_machine_path() {
+        assert_eq!(
+            tailscale_serve_lease_path_for(Path::new("/Users/coven")),
+            PathBuf::from("/Users/coven/.coven/cave/tailscale-serve-ownership.lock")
+        );
+    }
+
+    #[test]
+    fn serve_mutation_lease_recovers_only_dead_well_formed_owners() {
+        let owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "owner-token".to_string(),
+        };
+        assert!(!serve_mutation_lease_is_stale(&owner, |_| true));
+        assert!(serve_mutation_lease_is_stale(&owner, |_| false));
+
+        let incompatible = ServeMutationLeaseRecord {
+            version: 2,
+            ..owner.clone()
+        };
+        assert!(!serve_mutation_lease_is_stale(&incompatible, |_| false));
+    }
+
+    #[test]
+    fn serve_mutation_lease_release_cannot_remove_a_replacement_owner() {
+        let owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "owner-token".to_string(),
+        };
+        let replacement = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4002,
+            token: "replacement-token".to_string(),
+        };
+        assert!(serve_mutation_lease_matches(&owner, &owner));
+        assert!(!serve_mutation_lease_matches(&owner, &replacement));
+    }
+
+    #[test]
+    fn delayed_reclaimer_revalidates_after_the_fence_before_removing() {
+        let stale = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "stale-owner".to_string(),
+        };
+        let third_owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4003,
+            token: "third-owner".to_string(),
+        };
+        assert!(stale_lease_matches_under_fence(&stale, &stale, |_| false));
+        assert!(
+            !stale_lease_matches_under_fence(&stale, &third_owner, |pid| pid == 4003),
+            "a second reclaimer authorized before the wait cannot remove the third acquirer"
+        );
+    }
+
+    #[test]
+    fn serve_repair_acquires_the_lease_before_its_first_status_read() {
+        let source = include_str!("desktop_reachability.rs");
+        let start = source
+            .find("fn run_tailscale_serve_repair(port: u16)")
+            .expect("repair function");
+        let body = &source[start
+            ..source[start..]
+                .find(
+                    "\n#[cfg(all(desktop, target_os = \"macos\"))]\nstruct TailscaleCommandOutput",
+                )
+                .map(|offset| start + offset)
+                .expect("repair function end")];
+        let lease = body
+            .find("acquire_tailscale_serve_lease")
+            .expect("shared lease acquisition");
+        let status = body
+            .find("run_tailscale_command(&status_args)")
+            .expect("status read");
+        let final_status = status
+            + 1
+            + body[status + 1..]
+                .find("run_tailscale_command(&status_args)")
+                .expect("final pre-mutation status read");
+        let mutation = body
+            .find("run_tailscale_command(&args)")
+            .expect("Serve mutation");
+        let verification = body
+            .rfind("run_tailscale_command(&status_args)")
+            .expect("post-mutation status read");
+        assert!(lease < status);
+        assert!(status < final_status);
+        assert!(final_status < mutation);
+        assert!(mutation < verification);
     }
 
     #[test]

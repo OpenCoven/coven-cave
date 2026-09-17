@@ -1,5 +1,12 @@
 # Chat v1 Phase 2 — Chat shell working record and claimable scope (verified 2026-08-30)
 
+> **Current refresh — 2026-09-04:** OpenCoven/chat#41-#45, #47-#51, #53, and
+> #55 merged as conformance and harness hardening; #46, #52, and #54 closed
+> unmerged. This work did not complete the canonical Phase 2 shell.
+> GitHub #4837 remains open and canonical Bead `cave-ff3j6` remains blocked.
+> Search, grouping, degraded-state handling, and real-authority canonical-read
+> journeys remain the critical work.
+
 > Working record for [OpenCoven/coven-cave#4837](https://github.com/OpenCoven/coven-cave/issues/4837)
 > (bead `cave-ff3j6` · Phase 2 · owner Chat · surface desktop). Register:
 > [`2026-08-15-opencoven-chat-program-tracking.md`](https://github.com/OpenCoven/chat/blob/main/docs/superpowers/plans/2026-08-15-opencoven-chat-program-tracking.md)

@@ -38,4 +38,30 @@ assert.match(
   "caller classes are conditionally appended to the trigger's reset classes",
 );
 
+// Popover focus-trap conflict fix (cave-fzr4p): a Modal's focus trap steals
+// focus the instant it opens, which an ancestor Popover reads as focus
+// leaving its panel and self-dismisses — unmounting both. AvatarLightbox must
+// register its complete Modal layer as "inside" and as the deepest Escape
+// owner. A no-op when there is no ancestor Popover.
+assert.match(
+  src,
+  /from "\.\/popover"/,
+  "must import the shared popover-layers registration hook",
+);
+assert.match(
+  src,
+  /usePopoverLayerRegistration\(layerEl, enlarged, closeLightbox, true\)/,
+  "registers the complete Modal as an inside and Escape layer and covers its owning Popover",
+);
+assert.match(
+  src,
+  /onLayerElement=\{setLayerEl\}/,
+  "wires the Modal's backdrop callback through to the registration hook",
+);
+assert.doesNotMatch(
+  src,
+  /abovePopovers/,
+  "does not force every lightbox above Popovers opened from inside the Modal",
+);
+
 console.log("avatar-lightbox.test.ts: ok");

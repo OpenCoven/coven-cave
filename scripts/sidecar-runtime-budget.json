@@ -1,14 +1,15 @@
 {
   "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
   "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
-  "fileCount": 6924,
+  "fileCount": 7351,
   "measurement": {
-    "on": "2026-08-25",
-    "reference": "OpenCoven/coven-cave#4996",
+    "on": "2026-09-02",
+    "reference": "v0.3.13-rc.1 / GitHub Actions run 33587097523",
     "governingPlatform": "windows",
-    "windows": 6774,
-    "ubuntu": 6770,
-    "macos": 6766,
+    "windows": 7201,
+    "windowsObserved": false,
+    "ubuntu": 7198,
+    "macos": 7194,
     "headroom": 150,
     "featureDelta": {
       "fileCount": 139,
@@ -25,8 +26,27 @@
         "windows": 6635,
         "ubuntu": 6631,
         "macos": 6627
+      },
+      "measured": {
+        "windows": 6774,
+        "ubuntu": 6770,
+        "macos": 6766
       }
     },
-    "headroomRationale": "OpenCoven/coven-cave#4996 adds the pinned pure-JS @hpke/common, @hpke/core, and @hpke/dhkem-x25519 dynamic runtime closure: exactly 139 packaged files in 42 directories, approximately 868 KiB on disk, with no native or platform subtree. Each reviewed platform measurement moves by exactly that feature delta from the 2026-08-24 baseline: macOS 6,766, Ubuntu 6,770, and Windows 6,774. Preserve the established 150-file headroom from the governing Windows measurement, yielding 6,924 files. Unrelated current-main drift remains inside that headroom; the expanded-byte ceiling and directory budgets are unchanged."
+    "releaseDelta": {
+      "fileCount": 327,
+      "nextTraceFileCount": 18,
+      "changedAppFileCount": 64,
+      "addedRouteCount": 18,
+      "runtimeKind": "generated-next-output",
+      "nativeOrPlatformSubtree": false,
+      "tracedPackageCountChanged": false,
+      "baseline": {
+        "windows": 6874,
+        "ubuntu": 6871,
+        "macos": 6867
+      }
+    },
+    "headroomRationale": "v0.3.13-rc.1 measured 7,194 files on macOS and 7,198 on Ubuntu after 140 mainline commits. Both platforms increased by exactly 327 files over the last successful candidate (6,867 and 6,871), while Next trace files increased from 335 to 353 and traced package counts remained unchanged. The delta is generated .next server/static output from 64 changed src/app files, including 18 added routes; no forbidden root, dependency subtree, native subtree, source map, or test tree entered the closure. The Windows job failed before assembly, so its 7,201 baseline is the prior measured 6,874 plus the identical 327-file cross-platform delta. Preserve the established 150-file headroom from that conservative Windows projection, yielding 7,351. A clean zero-warning Turbopack build still measured 7,194 files on macOS, independently proving the sidecar increase is ordinary generated application output rather than broad filesystem tracing. The expanded-byte ceiling remains unchanged."
   }
 }

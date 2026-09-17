@@ -162,6 +162,31 @@
   padding: 10px var(--space-3);
 }
 
+/* Progress completion bar (cave-dkdev) — replaces the nested "PROGRESS"
+   disclosure whose summary duplicated the count chips one row above it.
+   The head row beside it is plain utilities and the count reuses the existing
+   .cave-tool-count chip, so the whole card costs two rules rather than six:
+   the home CSS budget sits at ~0.5% headroom and this is a surface reachable
+   from the startup graph, so every selector here is paid for by every route. */
+.cave-progress-bar {
+  display: block;
+  height: 3px;
+  margin-top: 7px;
+  /* --radius-pill, matching .cave-chat-context-stat__meter one strip above:
+     at 3px tall a pill radius IS the rounded end, so the literal 2px this
+     started with bought nothing and cost a token-drift ratchet. */
+  border-radius: var(--radius-pill);
+  background: var(--border-hairline);
+  overflow: hidden;
+}
+
+.cave-progress-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
 .cave-reasoning-block[data-streaming] {
   border-color: color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 7%, var(--bg-panel));

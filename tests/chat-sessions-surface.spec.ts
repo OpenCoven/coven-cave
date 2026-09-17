@@ -188,18 +188,18 @@ test.describe("sessions list", () => {
     await expect(activeHeader.locator(".chat-activity-header__count")).toHaveText("1");
   });
 
-  test("a row reports its own branch, a labelled state, and how long it ran", async ({ page }) => {
+  test("a row reports its own branch, a labelled state, and how long it has been open", async ({ page }) => {
     const running = rows(page).first();
 
     // The status is a LABEL, not just a tint — colour is never the only channel.
-    await expect(running.locator(".chat-session-pill")).toContainText(/running/i);
-    await expect(running.locator(".chat-session-pill")).toHaveAttribute("data-state", "running");
+    await expect(running.locator(".ui-session-pill")).toContainText(/running/i);
+    await expect(running.locator(".ui-session-pill")).toHaveAttribute("data-state", "running");
 
     // The session's OWN working branch, never the checkout's current one.
     await expect(running.locator(".chat-session-branch")).toContainText("main");
 
     // Elapsed time, and the working-tree delta the session produced.
-    await expect(running.locator(".chat-session-stat").first()).toHaveText(/\d/);
+    await expect(running.locator(".chat-session-stat").first()).toHaveText(/open \d/);
     await expect(running.locator('.chat-session-stat[data-kind="adds"]')).toContainText("53");
 
     // A failed run wears a danger spine as well as its pill, so the state

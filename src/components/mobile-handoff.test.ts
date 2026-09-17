@@ -548,10 +548,9 @@ assert.match(
 assert.doesNotMatch(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should not register a custom app connect URL scheme");
 assert.doesNotMatch(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should not install the deep-link plugin");
 
-// A failed `tailscale serve --bg` mutation (including macOS CLIError 3) never
-// promotes MagicDNS on its own. A matching route in readable Serve status is
-// independently proven by tailnetDiscoveryProof; an empty or mismatched status
-// must remain unavailable.
+// A `tailscale serve --bg` result is never success evidence on its own. Every
+// claim is verified from a fresh Serve status snapshot, and discovery never
+// promotes an unverified MagicDNS hostname.
 assert.doesNotMatch(
   handoffRoute,
   /error: "failed to start tailscale serve"/,
@@ -559,8 +558,13 @@ assert.doesNotMatch(
 );
 assert.match(
   handoffRoute,
-  /tailnetDiscoveryProof\(\{[\s\S]{0,400}allowMagicDnsFallback: shouldAllowMagicDnsFallback\(\{[\s\S]{0,180}serveOk: serve\.ok,[\s\S]{0,100}statusOk: status\.ok/,
-  "MagicDNS fallback requires a successful Serve mutation and an unreadable status",
+  /serveRouteOwnedByBackend\(verified\.status, backend\)/,
+  "a fresh status snapshot must prove exclusive backend ownership after every Serve mutation",
+);
+assert.equal(
+  handoffRoute.match(/tailnetDiscoveryProof\(\{[\s\S]{0,240}allowMagicDnsFallback: false/g)?.length,
+  2,
+  "browser and native discovery both reject unverified MagicDNS fallback",
 );
 assert.match(
   handoffRoute,
@@ -574,8 +578,8 @@ assert.match(
 );
 assert.match(
   handoffRoute,
-  /HTTP fallback failed:/,
-  "native mobile mode should keep the HTTP Serve fallback stderr when that fallback fails",
+  /mutateOwnedServeRoute\([\s\S]{0,160}`--http=\$\{backendPort\(backend\)\}`/,
+  "native HTTP fallback uses the same post-mutation ownership verification",
 );
 assert.match(
   handoffRoute,
@@ -584,7 +588,7 @@ assert.match(
 );
 assert.match(
   handoffRoute,
-  /warning: serveWarning/,
+  /warning: fallbackWarning \?\? serveWarning/,
   "route returns the serve-start failure as a non-fatal warning alongside the link",
 );
 assert.match(

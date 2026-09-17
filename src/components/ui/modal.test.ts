@@ -38,8 +38,44 @@ assert.match(src, /dismissOnEscape\?: boolean/, "Modal exposes a dismissOnEscape
 assert.match(src, /dismissOnEscape = true/, "dismissOnEscape defaults to true");
 assert.match(
   src,
-  /useFocusTrap\(open, dialogRef, \{ onEscape: dismissOnEscape \? onClose : undefined \}\)/,
+  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*\}\)/,
   "the trap stays active while busy; only the Esc dismissal callback is gated",
+);
+assert.match(
+  src,
+  /<FocusTrapPortalLayersContext\.Provider value=\{portalLayers\}>/,
+  "body-portaled descendants can join the Modal's focus boundary",
+);
+assert.match(
+  src,
+  /<PortalLayerRootContext\.Provider value=\{portalLayerRootId\}>[\s\S]{0,120}<PortalLayerDepthContext\.Provider value=\{ownerLayerDepth \+ 1\}>/,
+  "nested traps share a root while increasing their portal depth",
+);
+
+// Optional escape hatch (cave-fzr4p): Modal itself stays Popover-agnostic, but
+// exposes its complete backdrop layer via a callback ref so a caller like
+// AvatarLightbox can register it as an "inside" layer of an ancestor Popover.
+// Registering only the inner dialog leaves backdrop presses outside that layer,
+// so the Popover dismisses before the Modal can close itself.
+assert.match(
+  src,
+  /onLayerElement\?: \(el: HTMLDivElement \| null\) => void;/,
+  "Modal accepts an optional onLayerElement callback",
+);
+assert.match(
+  src,
+  /const setLayerElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*onLayerElement\?\.\(el\);\s*\},\s*\[onLayerElement\],\s*\);/,
+  "the complete modal layer uses a memoized callback ref",
+);
+assert.match(
+  src,
+  /ref=\{setLayerElement\}[\s\S]{0,120}className="ui-modal-backdrop"/,
+  "the stable callback ref exposes the backdrop rather than only the inner dialog",
+);
+assert.doesNotMatch(
+  src,
+  /abovePopovers|ui-modal-backdrop--above-popovers/,
+  "Modal keeps the shared layer order; its owning Popover is covered instead",
 );
 
 console.log("modal.test.ts: ok");

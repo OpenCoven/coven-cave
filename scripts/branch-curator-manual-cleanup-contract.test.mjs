@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 function read(path) {
@@ -31,6 +34,50 @@ const implementationPlan = read(
 const evals = JSON.parse(
   read(".agents/skills/branch-curator/evals/evals.json"),
 ).evals;
+
+function runDocumentedReflogParser(contents) {
+  const functionMatch = proof.match(/emit_reflog_records\(\) \{[\s\S]*?\n\}/);
+  assert.ok(functionMatch, "missing documented emit_reflog_records function");
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "branch-curator-reflog-"));
+  const fixture = path.join(fixtureRoot, "HEAD");
+  fs.writeFileSync(fixture, contents);
+  try {
+    return spawnSync(
+      "bash",
+      ["-c", `oid_width=40\n${functionMatch[0]}\nemit_reflog_records "$1"`, "branch-curator-reflog", fixture],
+      { encoding: "utf8" },
+    );
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+test("normative reflog parser accepts only the canonical message-less creation record", () => {
+  const zero = "0".repeat(40);
+  const created = "98be54a3a6901e3c60706fb09ef5e81121128b36";
+  const committed = "c79e68eb6017b66be9e1bf9685adb61ed049288c";
+  const creation = `${zero} ${created} Val Alexander <68980965+BunsDev@users.noreply.github.com> 1788294729 -0500\n`;
+  const update = `${created} ${committed} Val Alexander <68980965+BunsDev@users.noreply.github.com> 1788296310 -0500\tcommit: reconcile tracker\n`;
+
+  const accepted = runDocumentedReflogParser(creation + update);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.deepEqual(accepted.stdout.trim().split("\n"), [
+    `1788294729 ${created}`,
+    `1788296310 ${created}`,
+    `1788296310 ${committed}`,
+  ]);
+
+  const missingLaterMessage = runDocumentedReflogParser(
+    creation +
+      `${created} ${committed} Val Alexander <68980965+BunsDev@users.noreply.github.com> 1788296310 -0500\n`,
+  );
+  assert.notEqual(missingLaterMessage.status, 0, "later message-less records must fail closed");
+
+  const nonCreationFirstRecord = runDocumentedReflogParser(
+    `${created} ${committed} Val Alexander <68980965+BunsDev@users.noreply.github.com> 1788296310 -0500\n`,
+  );
+  assert.notEqual(nonCreationFirstRecord.status, 0, "message-less first records with a nonzero old OID must fail closed");
+});
 
 test("Branch Curator separates automatic and maintainer-authorized cleanup", () => {
   const profiles = section(
@@ -286,6 +333,8 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
     ),
   );
   assert.match(worktreeTransaction, /--retained-by-github-pr origin "\$audited_gh_repo"/);
+  assert.match(worktreeTransaction, /--retained-by-remote-branch/);
+  assert.match(worktreeTransaction, /--expected-remote-oid/);
   assert.match(worktreeTransaction, /"\$audited_merged_pr_number"/);
   assert.match(worktreeTransaction, /--expected-base "\$audited_remote_main_branch"/);
   assert.match(worktreeTransaction, /queries\/fetches only the exact|queries\/fetches only|queries\/fetches/);

@@ -140,6 +140,8 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
   { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars/[id]/analytics", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars/[id]/contract", methods: ["GET"], kind: "json" },
   { route: "/client/v1/health", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
@@ -335,6 +337,7 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/github-repo", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/github-repo/file", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/files/[key]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
@@ -348,6 +351,9 @@ const contracts: RouteContract[] = [
   { route: "/research/resources", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/resources/[id]", methods: ["GET", "POST", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/research/resources/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/runs/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/runs/[id]/events", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/runs/[id]/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/running-activity", methods: ["GET"], kind: "json" },
@@ -484,6 +490,9 @@ function effectiveRouteSource(file: string, source: string): string {
   // service. Inline that reviewed helper just like the OAuth route above.
   if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
+  }
+  if (source.includes('from "@/lib/server/research-run-gateway-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "research-run-gateway-route.ts"), "utf8"));
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
@@ -632,7 +641,9 @@ const contractRoutes = contracts.map((contract) => contract.route).sort();
 // endpoint to ask), the pairing exchange, and the admin routes that approve
 // and revoke credentials. Phase 2 adds the canonical reads the contract's
 // capability list has been advertising since Phase 0 — familiars, projects,
-// conversations, and a conversation's messages (cave-jfa9y). The gate is
+// conversations, and a conversation's messages (cave-jfa9y); the Familiars
+// integration's Stage 1 then promoted one familiar's contract and analytics
+// reads out of the Studio's private routes. The gate is
 // narrowed rather than dropped, because what it was really protecting against
 // is client-v1 surface appearing faster than it is reviewed — so each new route
 // has to be added here deliberately, not just by existing on disk.
@@ -648,6 +659,8 @@ assert.deepEqual(
     "/client/v1/conversations/[id]",
     "/client/v1/conversations/[id]/messages",
     "/client/v1/familiars",
+    "/client/v1/familiars/[id]/analytics",
+    "/client/v1/familiars/[id]/contract",
     "/client/v1/health",
     "/client/v1/pairing/requests",
     "/client/v1/pairing/requests/[id]",

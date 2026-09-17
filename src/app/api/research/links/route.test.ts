@@ -12,6 +12,8 @@ import type { XArticleProvider } from "@/lib/server/x-article-provider";
 import { createResearchLinksRouteHandlers } from "./route.ts";
 
 const ARTICLE_BODY_SENTINEL = "ARTICLE_BODY_SENTINEL";
+const GITHUB_COMMIT_SHA = "a".repeat(40);
+const GITHUB_BLOB_SHA = "b".repeat(40);
 
 function savedLink(id: string, url: string, patch: Partial<SavedLink> = {}): SavedLink {
   return {
@@ -83,6 +85,7 @@ function reserveAllXCandidates(urls: readonly string[]) {
     reservedIdentities.add(identity);
     reservedUrls.push(url);
   }
+
   return Promise.resolve({
     reservedUrls,
     reservedIdentities,
@@ -90,6 +93,24 @@ function reserveAllXCandidates(urls: readonly string[]) {
     contendedIdentities: new Set<string>(),
     release: async () => {},
   });
+}
+
+function githubSnapshot(owner: string, repo: string) {
+  return {
+    version: 1 as const,
+    owner,
+    repo,
+    visibility: "public" as const,
+    stars: 1,
+    forks: 0,
+    defaultBranch: "main",
+    resolvedRef: "main",
+    commitSha: GITHUB_COMMIT_SHA,
+    fetchedAt: "2026-09-01T12:00:00.000Z",
+    truncated: false,
+    tree: [{ path: "README.md", type: "blob" as const, sha: GITHUB_BLOB_SHA, size: 5 }],
+    readme: { path: "README.md", markdown: "# Repo" },
+  };
 }
 
 test("rejects non-local list, detail, save, and delete requests before data access", async () => {
@@ -890,4 +911,101 @@ test("storage failures release X reservations for a later save", async () => {
   const retry = await route.POST(post({ urls: [xUrl] }));
   assert.equal(retry.status, 200);
   assert.equal(writes, 2);
+});
+
+test("GitHub saves capture at most five distinct repositories serially", async () => {
+  const urls = Array.from({ length: 7 }, (_, index) => `https://github.com/o/r${index}`);
+  const fetchCalls: string[] = [];
+  let active = 0;
+  let peakActive = 0;
+  let tokenReads = 0;
+  let captured: Map<string, ResearchLinkEnrichment> | undefined;
+  const route = createResearchLinksRouteHandlers({
+    resolveGitHubToken: () => {
+      tokenReads++;
+      return "token";
+    },
+    fetchGithubRepoView: async ({ owner, repo, token }) => {
+      assert.equal(token, "token");
+      active++;
+      peakActive = Math.max(peakActive, active);
+      await new Promise((resolve) => setImmediate(resolve));
+      fetchCalls.push(`${owner}/${repo}`);
+      active--;
+      return { ok: true, view: githubSnapshot(owner, repo) };
+    },
+    saveResearchLinks: async (submitted, _source, enrichment) => {
+      captured = enrichment as Map<string, ResearchLinkEnrichment>;
+      return {
+        added: submitted.map((url, index) => savedLink(`saved-${index}`, url)),
+        duplicates: [],
+        invalid: [],
+      };
+    },
+  });
+
+  const response = await route.POST(post({ urls, source: "desk" }));
+  assert.equal(response.status, 200);
+  assert.equal(tokenReads, 1);
+  assert.equal(peakActive, 1);
+  assert.deepEqual(fetchCalls, urls.slice(0, 5).map((_, index) => `o/r${index}`));
+  assert.ok(captured);
+  for (const url of urls.slice(0, 5)) assert.ok(captured.get(url)?.githubRepo);
+  for (const url of urls.slice(5)) assert.equal(captured.get(url)?.githubRepo, undefined);
+});
+
+test("GitHub enrichment failures preserve the generic saved link", async () => {
+  const url = "https://github.com/OpenCoven/missing";
+  let captured: Map<string, ResearchLinkEnrichment> | undefined;
+  const route = createResearchLinksRouteHandlers({
+    fetchGithubRepoView: async () => ({
+      ok: false,
+      error: { kind: "not-found", message: "not found" },
+    }),
+    saveResearchLinks: async (submitted, _source, enrichment) => {
+      captured = enrichment as Map<string, ResearchLinkEnrichment>;
+      return {
+        added: submitted.map((item) => savedLink("generic", item, { category: "github" })),
+        duplicates: [],
+        invalid: [],
+      };
+    },
+  });
+
+  const response = await route.POST(post({ urls: [url] }));
+  assert.equal(response.status, 200);
+  assert.equal(captured?.get(url)?.githubRepo, undefined);
+  assert.equal((await response.json()).added[0].category, "github");
+});
+
+test("GitHub credential resolution failures retry public ingestion anonymously", async () => {
+  const url = "https://github.com/OpenCoven/coven-cave";
+  let fetches = 0;
+  let fetchedToken: string | null | undefined;
+  let captured: Map<string, ResearchLinkEnrichment> | undefined;
+  const route = createResearchLinksRouteHandlers({
+    resolveGitHubToken: () => {
+      throw new Error("encrypted vault unavailable");
+    },
+    fetchGithubRepoView: async ({ token }) => {
+      fetches++;
+      fetchedToken = token;
+      return { ok: true, view: githubSnapshot("OpenCoven", "coven-cave") };
+    },
+    saveResearchLinks: async (submitted, _source, enrichment) => {
+      captured = enrichment as Map<string, ResearchLinkEnrichment>;
+      return {
+        added: submitted.map((item) => savedLink("generic", item, { category: "github" })),
+        duplicates: [],
+        invalid: [],
+      };
+    },
+  });
+
+  const response = await route.POST(post({ urls: [url] }));
+  assert.equal(response.status, 200);
+  assert.equal(fetches, 1);
+  assert.equal(fetchedToken, null);
+  assert.ok(captured?.get(url)?.githubRepo);
+  assert.equal((await response.json()).added[0].category, "github");
 });

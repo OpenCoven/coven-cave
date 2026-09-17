@@ -56,7 +56,7 @@ export function CovenRosterPopover({
                 {entry.included ? entry.position : "–"}
               </span>
             ) : null}
-            <FamiliarAvatar familiar={entry.familiar} size="md" className="coven-roster__avatar" />
+            <FamiliarAvatar familiar={entry.familiar} size="md" className="coven-roster__avatar" expandable />
             <span className="coven-roster__identity">
               <span className="coven-roster__name">{entry.familiar.display_name}</span>
               <span className="coven-roster__role">{entry.familiar.role}</span>

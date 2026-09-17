@@ -50,6 +50,9 @@ type MergeOptions = {
   /** Map a local conversation's recorded cwd to a registered project root
    *  (null = no registered project). See localConversationToSession. */
   projectRootForCwd?: (cwd: string) => string | null;
+  /** Attach trusted familiar-workspace metadata from the original local cwd
+   *  without changing no-project grouping. Undefined leaves it unknown. */
+  familiarWorkspaceForCwd?: (cwd: string) => boolean | undefined;
 };
 
 const DAEMON_AUTHORITATIVE_TERMINAL_STATUSES = new Set(["archived", "killed", "orphaned", "stopped"]);
@@ -110,6 +113,7 @@ function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
   projectRootForCwd?: (cwd: string) => string | null,
+  familiarWorkspaceForCwd?: (cwd: string) => boolean | undefined,
   now = Date.now(),
 ): SessionRow {
   const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
@@ -128,6 +132,7 @@ function localConversationToSession(
   // design (see resolveChatProjectSelection in chat-projects.ts).
   const cwd = conversationLocalCwd(conv.runtime);
   const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
+  const familiarWorkspace = cwd ? familiarWorkspaceForCwd?.(cwd) : undefined;
   return {
     id: conv.sessionId,
     project_root: projectRoot,
@@ -158,6 +163,7 @@ function localConversationToSession(
     ...(keep ? { keep: true } : {}),
     ...(pinned ? { pinned: true } : {}),
     ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
+    ...(familiarWorkspace === undefined ? {} : { familiarWorkspace }),
   };
 }
 
@@ -171,10 +177,19 @@ export function localConversationSessionRows(
   state: CaveState,
   includeArchived: boolean,
   projectRootForCwd?: (cwd: string) => string | null,
+  familiarWorkspaceForCwd?: (cwd: string) => boolean | undefined,
 ): SessionRow[] {
   const now = Date.now();
   return localConversations
-    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
+    .map((conv) =>
+      localConversationToSession(
+        conv,
+        state,
+        projectRootForCwd,
+        familiarWorkspaceForCwd,
+        now,
+      ),
+    )
     .filter((row) => visibleSession(row, state, includeArchived))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 }
@@ -186,6 +201,7 @@ export function mergeSessionRows({
   includeArchived,
   isValidDaemonProjectRoot,
   projectRootForCwd,
+  familiarWorkspaceForCwd,
 }: MergeOptions): SessionRow[] {
   const now = Date.now();
   const seen = new Set<string>();
@@ -238,7 +254,13 @@ export function mergeSessionRows({
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
       if (local && isDaemonRecoverableStatus(session.status)) {
         seen.add(stateSessionId);
-        const recovered = localConversationToSession(local, state, projectRootForCwd, now);
+        const recovered = localConversationToSession(
+          local,
+          state,
+          projectRootForCwd,
+          familiarWorkspaceForCwd,
+          now,
+        );
         const archived_at = state.sessionArchived[stateSessionId] ?? session.archived_at;
         const attention =
           isArchivedStatus(session.status)
@@ -344,7 +366,15 @@ export function mergeSessionRows({
   }
 
   for (const row of localConversations
-    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
+    .map((conv) =>
+      localConversationToSession(
+        conv,
+        state,
+        projectRootForCwd,
+        familiarWorkspaceForCwd,
+        now,
+      ),
+    )
     .filter((session) => visibleSession(session, state, includeArchived))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))) {
     if (seen.has(row.id)) continue;

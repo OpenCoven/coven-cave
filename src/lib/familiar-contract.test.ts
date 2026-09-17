@@ -112,6 +112,77 @@ function compliantFiles(overrides = {}) {
   assert.equal(ward.hasApprovalTiers, true);
   assert.equal(ward.hasAutoTier, true);
   assert.equal(ward.hasHumanReviewTier, true);
+  // The compliant ward names gates but no blocks, so both tiers read as empty
+  // lists rather than as absent.
+  assert.deepEqual(ward.autoTier, []);
+  assert.deepEqual(ward.humanReviewTier, []);
+
+  assert.equal(id.creature, "Research familiar in the Coven", "parseIdentity keeps the creature text");
+  assert.equal(id.person, null, "no **Person:** field means no person");
+  const withPerson = parseIdentity(`${COMPLIANT_IDENTITY}\n- **Person:** Val Alexander\n`);
+  assert.equal(withPerson.person, "Val Alexander");
+  assert.equal(parseIdentity("# IDENTITY.md - Bare\n- **Creature:**   \n").creature, null, "an empty creature field is absent, not blank");
+}
+
+// ── Approval tiers: both spellings the wards in the wild use ─────────────────
+
+{
+  // The scaffold's form: tier tables carrying `blocks`.
+  const tables = parseWardToml(`[meta]
+version = "0.1.0"
+familiar = "scribe"
+person = "val"
+
+[approval_tiers]
+
+[approval_tiers.auto]
+blocks = ["output_formats", "tool_defaults"]
+gate = "regression_suite"
+
+[approval_tiers.human_review]
+blocks = [
+  "tool_grants",
+  "system_prompt.execution",
+]
+gate = "human_approval"
+`);
+  assert.deepEqual(tables.autoTier, ["output_formats", "tool_defaults"]);
+  assert.deepEqual(tables.humanReviewTier, ["tool_grants", "system_prompt.execution"]);
+  assert.equal(tables.hasAutoTier, true);
+  assert.equal(tables.hasHumanReviewTier, true);
+
+  // The inline form: action lists directly under [approval_tiers].
+  const inline = parseWardToml(`[meta]
+version = "0.3.1"
+familiar = "Astra"
+person = "Val Alexander"
+
+[protected]
+files = ["SOUL.md", "ward.toml"]
+
+[approval_tiers]
+auto = ["read files", "search the web", "write to notes/"]
+human_review = ["publish a finding", "open a pull request"]
+`);
+  assert.deepEqual(inline.autoTier, ["read files", "search the web", "write to notes/"]);
+  assert.deepEqual(inline.humanReviewTier, ["publish a finding", "open a pull request"]);
+  assert.equal(inline.hasApprovalTiers, true);
+  // The inline form declares no tier tables, so the table flags stay false —
+  // the validator's opinion of that is unchanged by reading the lists.
+  assert.equal(inline.hasAutoTier, false);
+  assert.deepEqual(inline.protectedFiles, ["SOUL.md", "ward.toml"], "the protected section still parses around the tiers");
+
+  // A `blocks` key under an unrelated tier table is nobody's tier.
+  const stray = parseWardToml(`[meta]
+version = "0.1.0"
+familiar = "x"
+person = "y"
+
+[approval_tiers.escalation]
+blocks = ["everything"]
+`);
+  assert.deepEqual(stray.autoTier, []);
+  assert.deepEqual(stray.humanReviewTier, []);
 }
 
 // ── Full PASS ───────────────────────────────────────────────────────────────────

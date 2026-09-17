@@ -42,8 +42,11 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   FocusTrapOwnerHiddenContext,
+  PortalLayerDepthContext,
+  PortalLayerRootContext,
   resetFocusTrapStackForTest,
   useFocusTrap,
+  usePortalLayerRootId,
 } from "@/lib/use-focus-trap";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -111,12 +114,19 @@ function makeWindowStub() {
      *  onEscape triggering a state update inside the same act() call) must
      *  not perturb the iteration. */
     dispatchKeydown(partial: { key: string; shiftKey?: boolean }) {
+      let immediateStopped = false;
       const event = {
         key: partial.key,
         shiftKey: partial.shiftKey ?? false,
         preventDefault: () => {},
+        stopImmediatePropagation: () => {
+          immediateStopped = true;
+        },
       };
-      for (const fn of [...listeners]) fn(event);
+      for (const fn of [...listeners]) {
+        fn(event);
+        if (immediateStopped) break;
+      }
     },
   };
 }
@@ -283,6 +293,184 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     });
     expect(parentEscapeCount).toBe(1);
     expect(childEscapeCount).toBe(1);
+  });
+
+  test("an initially-mounted nested trap owns focus and Escape by layer depth", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    const trigger = makeElement("trigger", activeHolder);
+    const parentFocusable = makeElement("parent-focusable", activeHolder);
+    const childFocusable = makeElement("child-focusable", activeHolder);
+    const parentContainer = makeContainer([parentFocusable], activeHolder);
+    const childContainer = makeContainer([childFocusable], activeHolder);
+    activeHolder.current = trigger;
+    let parentEscapeCount = 0;
+    let childEscapeCount = 0;
+
+    function ParentWithInitiallyOpenChild() {
+      const parentRef = useRef<unknown>(null);
+      const rootId = usePortalLayerRootId();
+      useFocusTrap(true, parentRef as never, {
+        onEscape: () => {
+          parentEscapeCount += 1;
+        },
+        portalRootId: rootId,
+      });
+      return (
+        <div data-probe-id="parent" ref={parentRef as never}>
+          <PortalLayerRootContext.Provider value={rootId}>
+            <PortalLayerDepthContext.Provider value={1}>
+              <TrapProbe
+                probeId="child"
+                active
+                onEscape={() => {
+                  childEscapeCount += 1;
+                }}
+              />
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
+        </div>
+      );
+    }
+
+    act(() => {
+      renderer = create(<ParentWithInitiallyOpenChild />, {
+        createNodeMock: (element) =>
+          element.props["data-probe-id"] === "parent" ? parentContainer : childContainer,
+      });
+    });
+    expect(activeHolder.current).toBe(childFocusable);
+
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(childEscapeCount).toBe(1);
+    expect(parentEscapeCount).toBe(0);
+  });
+
+  test("one Escape cannot fall through after the child synchronously unregisters", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    const trigger = makeElement("trigger", activeHolder);
+    const parentFocusable = makeElement("parent-focusable", activeHolder);
+    const childFocusable = makeElement("child-focusable", activeHolder);
+    const parentContainer = makeContainer([parentFocusable], activeHolder);
+    const childContainer = makeContainer([childFocusable], activeHolder);
+    let parentEscapeCount = 0;
+    let childEscapeCount = 0;
+    activeHolder.current = trigger;
+
+    function Scene() {
+      const parentRef = useRef<unknown>(null);
+      const [parentActive, setParentActive] = useState(true);
+      const [showChild, setShowChild] = useState(true);
+      const rootId = usePortalLayerRootId();
+      useFocusTrap(parentActive, parentRef as never, {
+        onEscape: () => {
+          parentEscapeCount += 1;
+          setParentActive(false);
+        },
+        portalRootId: rootId,
+      });
+      return (
+        <div data-probe-id="parent" ref={parentRef as never}>
+          <PortalLayerRootContext.Provider value={rootId}>
+            <PortalLayerDepthContext.Provider value={1}>
+              {showChild ? (
+                <TrapProbe
+                  probeId="child"
+                  active
+                  onEscape={() => {
+                    childEscapeCount += 1;
+                    setShowChild(false);
+                  }}
+                />
+              ) : null}
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
+        </div>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, {
+        createNodeMock: (element) =>
+          element.props["data-probe-id"] === "parent" ? parentContainer : childContainer,
+      });
+    });
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(childEscapeCount).toBe(1);
+    expect(parentEscapeCount).toBe(0);
+    expect(activeHolder.current).toBe(parentFocusable);
+
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(parentEscapeCount).toBe(1);
+    expect(activeHolder.current).toBe(trigger);
+  });
+
+  test("a newer independent root outranks an older deeper root", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    const oldFocusable = makeElement("old-focusable", activeHolder);
+    const newFocusable = makeElement("new-focusable", activeHolder);
+    const oldContainer = makeContainer([oldFocusable], activeHolder);
+    const newContainer = makeContainer([newFocusable], activeHolder);
+    let oldEscapeCount = 0;
+    let newEscapeCount = 0;
+
+    function Scene({ showNew }: { showNew: boolean }) {
+      return (
+        <>
+          <PortalLayerDepthContext.Provider value={3}>
+            <TrapProbe
+              probeId="old"
+              active
+              onEscape={() => {
+                oldEscapeCount += 1;
+              }}
+            />
+          </PortalLayerDepthContext.Provider>
+          {showNew ? (
+            <TrapProbe
+              probeId="new"
+              active
+              onEscape={() => {
+                newEscapeCount += 1;
+              }}
+            />
+          ) : null}
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene showNew={false} />, {
+        createNodeMock: (element) =>
+          element.props["data-probe-id"] === "old" ? oldContainer : newContainer,
+      });
+    });
+    expect(activeHolder.current).toBe(oldFocusable);
+
+    act(() => {
+      renderer!.update(<Scene showNew />);
+    });
+    expect(activeHolder.current).toBe(newFocusable);
+
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(newEscapeCount).toBe(1);
+    expect(oldEscapeCount).toBe(0);
   });
 
   test("Tab containment is owned solely by the topmost trap — the background trap never inspects its own focusables", () => {

@@ -23,6 +23,19 @@ export function resolveGitHubTokenFromEnvironment(env: NodeJS.ProcessEnv = proce
   return null;
 }
 
+export function resolveGitHubTokenForRead(
+  resolveToken: () => string | null = resolveGitHubToken,
+): string | null {
+  try {
+    return resolveToken();
+  } catch {
+    console.warn(
+      "[github-token] Credential resolution failed; continuing GitHub read without authentication.",
+    );
+    return null;
+  }
+}
+
 export function resolveGitHubToken(): string | null {
   // Cave-managed storage takes precedence over a same-named credential
   // inherited from a launcher. This lets an installation use any supported

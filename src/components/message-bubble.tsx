@@ -71,6 +71,7 @@ const MessageReader = dynamic(
 import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
+import { stripAutoloadingContent } from "@/lib/html-sanitize";
 import { decorateResponseHtml } from "@/lib/response-status-tokens";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
@@ -428,22 +429,26 @@ export function MarkdownBlock({
   text,
   className,
   onOpenUrl,
+  resolveOpenUrl,
+  suppressRemoteMedia,
 }: {
   text: string;
   className?: string;
   onOpenUrl?: (url: string) => void;
+  resolveOpenUrl?: (url: string) => string | null;
+  suppressRemoteMedia?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html, onOpenUrl);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, null, null, resolveOpenUrl);
 
   useEffect(() => {
     if (!text) return;
     let cancelled = false;
-    mdToHtml(text)
+    mdToHtml(text, { suppressRemoteMedia })
       .then((h) => { if (!cancelled) setHtml(h); })
       .catch((err) => { console.error("[MarkdownBlock] mdToHtml failed", err); });
     return () => { cancelled = true; };
-  }, [text]);
+  }, [text, suppressRemoteMedia]);
 
   if (!html) {
     return (
@@ -667,10 +672,21 @@ function isMermaidCodeBlock(block: Block): boolean {
 
 async function mdToHtml(
   markdown: string,
-  opts?: { transient?: boolean; highlightCode?: boolean; decorateResponse?: boolean },
+  opts?: {
+    transient?: boolean;
+    highlightCode?: boolean;
+    decorateResponse?: boolean;
+    suppressRemoteMedia?: boolean;
+  },
 ): Promise<string> {
   const canUseCache = !opts?.transient && opts?.highlightCode !== false;
-  const cacheKey = `${opts?.decorateResponse ? "response" : "document"}:${markdown}`;
+  const cacheKey = `${
+    opts?.decorateResponse
+      ? "response"
+      : opts?.suppressRemoteMedia
+        ? "remote-document"
+        : "document"
+  }:${markdown}`;
   if (canUseCache) {
     const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) return cached;
@@ -702,7 +718,9 @@ async function mdToHtml(
   // fence is usually incomplete, so the mermaid source shows as a code block
   // until the message finishes, then swaps to the rendered diagram.
   const mermaidPlugin =
-    canUseCache && codeBlocks.some(isMermaidCodeBlock) ? await getMermaidPlugin() : null;
+    canUseCache && !opts?.suppressRemoteMedia && codeBlocks.some(isMermaidCodeBlock)
+      ? await getMermaidPlugin()
+      : null;
   const codeReplacements: string[] = new Array(codeBlocks.length);
   await Promise.all(
     codeBlocks.map(async (block, i) => {
@@ -750,6 +768,9 @@ async function mdToHtml(
   });
 
   let sanitizedHtml = sanitizeHtml(html);
+  if (opts?.suppressRemoteMedia) {
+    sanitizedHtml = stripAutoloadingContent(sanitizedHtml);
+  }
   // Render mermaid diagrams AFTER sanitize: the SVG (and the <style> mermaid
   // embeds inside it) must not pass through sanitizeHtml, which strips <style>.
   if (mermaidPlugin?.postProcess) {

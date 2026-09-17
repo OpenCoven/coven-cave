@@ -193,7 +193,7 @@ async function pruneResearchAuthority(
     path.join(researchRoot, "blobs", "sha256"),
   ]);
   for (const relativeDirectory of RESEARCH_AUTHORITATIVE_DIRECTORIES) {
-    const directory = path.join(researchRoot, relativeDirectory);
+    const directory = path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory);
     await prepareResearchRestorePath(
       path.join(directory, ".restore-placeholder"),
       researchRoot,
