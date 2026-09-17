@@ -12,17 +12,7 @@ import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
 } from "@/components/familiars-view-stats";
-import {
-  loadCanonicalMemoryList,
-  loadCanonicalMemoryOverview,
-  refreshCanonicalMemory,
-  type CanonicalMemoryListLoad,
-  type CanonicalMemoryOverviewLoad,
-} from "@/lib/canonical-memory-resources";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
-import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
@@ -56,13 +46,6 @@ type AgentsViewProps = {
   sessions: SessionRow[];
   activeFamiliar?: Familiar | null;
   daemonRunning: boolean;
-  localDaemonReady: boolean;
-  pendingRosterSettledSuccessfully: boolean;
-  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
-  onCanonicalMemorySelectionApplied?: (id: string) => void;
-  onCanonicalMemorySelectionUnavailable?: (
-    selection: PendingCanonicalMemorySelection,
-  ) => void;
   responseNeeded: Set<string>;
   onStartChat: (familiarId: string) => void;
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
@@ -95,11 +78,6 @@ export function FamiliarsView({
   sessions,
   activeFamiliar,
   daemonRunning,
-  localDaemonReady,
-  pendingRosterSettledSuccessfully,
-  pendingCanonicalMemorySelection = null,
-  onCanonicalMemorySelectionApplied,
-  onCanonicalMemorySelectionUnavailable,
   responseNeeded,
   onStartChat,
   onOpenSession,
@@ -132,10 +110,6 @@ export function FamiliarsView({
   }, []);
   // When set, the summoning circle opens as the Enhancement Rite for this familiar.
   const [enhanceTarget, setEnhanceTarget] = useState<ResolvedFamiliar | null>(null);
-  const [canonicalMemoryState, setCanonicalMemoryState] =
-    useState<MemoryFeed["canonical"]>({ state: "loading", entries: [] });
-  const [canonicalOverviewState, setCanonicalOverviewState] =
-    useState<MemoryFeed["overview"]>({ state: "loading", value: null });
   const [fileMemoryState, setFileMemoryState] = useState<MemoryFeed["files"]>({
     state: "loading",
     entries: [],
@@ -149,24 +123,12 @@ export function FamiliarsView({
   // Detail-tab setter shares the SAME registry as the detail panel (cave-mo4q):
   // the rite's "open daily notes" hint lands on the Daily Notes tab in one move.
   const [, setDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
-  const rejectedPendingSelectionRef =
-    useRef<PendingCanonicalMemorySelection | null>(null);
   const memoryRequestGateRef = useRef<ReturnType<
     typeof createMemoryFeedRequestGate
   > | null>(null);
   if (!memoryRequestGateRef.current) {
     memoryRequestGateRef.current = createMemoryFeedRequestGate();
   }
-
-  useEffect(() => {
-    if (!pendingCanonicalMemorySelection) return;
-    setSelectedFamiliarId(pendingCanonicalMemorySelection.familiarId);
-    setViewMode("agent-memory");
-  }, [
-    pendingCanonicalMemorySelection,
-    setSelectedFamiliarId,
-    setViewMode,
-  ]);
 
   useEffect(() => {
     const requestGate = memoryRequestGateRef.current!;
@@ -236,48 +198,7 @@ export function FamiliarsView({
   // Pauses in a hidden tab; non-forced reads coalesce with the shared cache.
   usePausablePoll(() => void loadMemory(), 30_000);
 
-  const applyCanonicalList = useCallback((canonical: CanonicalMemoryListLoad) => {
-    setCanonicalMemoryState((current) =>
-      canonical.state === "ready"
-        ? { state: "ready", entries: canonical.entries }
-        : {
-            state: "error",
-            entries: current.entries,
-            error: canonical.error,
-          },
-    );
-  }, []);
-
-  const applyCanonicalOverview = useCallback(
-    (overview: CanonicalMemoryOverviewLoad) => {
-      setCanonicalOverviewState(
-        overview.state === "ready"
-          ? { state: "ready", value: overview.overview }
-          : { state: "error", value: null, error: overview.error },
-      );
-    },
-    [],
-  );
-
-  const loadCanonicalMemory = useCallback(async () => {
-    const requestGate = memoryRequestGateRef.current!;
-    const request = requestGate.beginBackground("canonical");
-    const [canonical, overview] = await Promise.all([
-      loadCanonicalMemoryList(),
-      loadCanonicalMemoryOverview(),
-    ]);
-    if (!requestGate.isCurrent(request)) return;
-    applyCanonicalList(canonical);
-    applyCanonicalOverview(overview);
-  }, [applyCanonicalList, applyCanonicalOverview]);
-
-  useEffect(() => {
-    void loadCanonicalMemory();
-  }, [loadCanonicalMemory]);
-  // Background reads stay non-forced so canonical list consumers coalesce.
-  usePausablePoll(() => void loadCanonicalMemory(), 30_000);
-
-  const refreshMemory = useCallback(async (): Promise<CanonicalMemoryListLoad> => {
+  const refreshMemory = useCallback(async (): Promise<void> => {
     const requestGate = memoryRequestGateRef.current!;
     const request = requestGate.beginForce();
     const fileRefresh = (async () => {
@@ -296,67 +217,27 @@ export function FamiliarsView({
       }
     })();
 
-    let canonicalList: CanonicalMemoryListLoad;
     try {
-      try {
-        const canonical = await refreshCanonicalMemory();
-        canonicalList = canonical.list;
-        if (requestGate.isCurrent(request)) {
-          applyCanonicalList(canonical.list);
-          applyCanonicalOverview(canonical.overview);
-        }
-      } catch (error) {
-        const stableError =
-          error instanceof CanonicalMemoryRequestError
-            ? error
-            : new CanonicalMemoryRequestError("invalid_daemon_payload", 0);
-        canonicalList = { state: "error", error: stableError };
-        if (requestGate.isCurrent(request)) {
-          applyCanonicalList(canonicalList);
-          applyCanonicalOverview({ state: "error", error: stableError });
-        }
-      }
       await fileRefresh;
       if (requestGate.isCurrent(request)) {
         setMemoryLoadedAt(new Date().toISOString());
       }
-      return canonicalList;
     } finally {
       requestGate.finishForce(request);
     }
-  }, [
-    applyCanonicalList,
-    applyCanonicalOverview,
-    applyFileMemory,
-    applyFileMemoryError,
-  ]);
+  }, [applyFileMemory, applyFileMemoryError]);
 
-  // A single parent feed keeps embedded memory surfaces on the same independently
-  // settled canonical-list, overview, and local-file snapshots.
+  // A single parent feed keeps embedded memory surfaces on the same
+  // independently settled local-file snapshot.
   const memoryFeed = useMemo<MemoryFeed>(
     () => ({
-      canonical: canonicalMemoryState,
-      overview: canonicalOverviewState,
       files: fileMemoryState,
       lastLoadedAt: memoryLoadedAt,
       reload: refreshMemory,
     }),
-    [
-      canonicalMemoryState,
-      canonicalOverviewState,
-      fileMemoryState,
-      memoryLoadedAt,
-      refreshMemory,
-    ],
+    [fileMemoryState, memoryLoadedAt, refreshMemory],
   );
 
-  const canonicalStatsEntries =
-    canonicalMemoryState.state === "ready"
-      ? canonicalMemoryState.entries
-      : [];
-  const canonicalMemoryAvailability: CanonicalMemoryAvailability =
-    canonicalMemoryState.state === "ready" ? "ready" : "unavailable";
-  const canonicalMemoryLoaded = canonicalMemoryState.state !== "loading";
   const fileEntries = fileMemoryState.entries;
   const memoryError =
     fileMemoryState.state === "error" ? fileMemoryState.error : null;
@@ -366,15 +247,10 @@ export function FamiliarsView({
     () => buildFamiliarCardStats({
       familiars,
       sessions,
-      covenEntries: canonicalStatsEntries,
-      memoryAvailability: canonicalMemoryAvailability,
+      fileEntries: fileMemoryState.entries,
+      memoryAvailability: fileMemoryState.state === "ready" ? "ready" : "unavailable",
     }),
-    [
-      canonicalMemoryAvailability,
-      canonicalStatsEntries,
-      familiars,
-      sessions,
-    ],
+    [fileMemoryState, familiars, sessions],
   );
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
@@ -407,54 +283,16 @@ export function FamiliarsView({
     () => (activeFamiliar ? resolvedFamiliars.find((f) => f.id === activeFamiliar.id) ?? null : null),
     [activeFamiliar, resolvedFamiliars],
   );
-  const pendingMemoryFamiliar = pendingCanonicalMemorySelection
-    ? resolvedFamiliars.find(
-        (familiar) =>
-          familiar.id === pendingCanonicalMemorySelection.familiarId,
-      ) ?? null
-    : null;
-  const memoryFamiliar = pendingCanonicalMemorySelection
-    ? pendingMemoryFamiliar
-    : selectedFamiliar ?? resolvedActiveFamiliar ?? null;
+  const memoryFamiliar = selectedFamiliar ?? resolvedActiveFamiliar ?? null;
 
-  useEffect(() => {
-    if (
-      !pendingCanonicalMemorySelection ||
-      !pendingRosterSettledSuccessfully ||
-      pendingMemoryFamiliar ||
-      rejectedPendingSelectionRef.current ===
-        pendingCanonicalMemorySelection
-    ) {
-      return;
-    }
-    rejectedPendingSelectionRef.current = pendingCanonicalMemorySelection;
-    setSelectedFamiliarId(null);
-    setViewMode("roster");
-    onCanonicalMemorySelectionUnavailable?.(
-      pendingCanonicalMemorySelection,
-    );
-  }, [
-    pendingRosterSettledSuccessfully,
-    onCanonicalMemorySelectionUnavailable,
-    pendingCanonicalMemorySelection,
-    pendingMemoryFamiliar,
-    setSelectedFamiliarId,
-    setViewMode,
-  ]);
+
 
   useEffect(() => {
     if (selectedFamiliarId && !selectedFamiliar) {
-      if (
-        pendingCanonicalMemorySelection &&
-        selectedFamiliarId === pendingCanonicalMemorySelection.familiarId
-      ) {
-        return;
-      }
       setSelectedFamiliarId(null);
       setViewMode("roster");
     }
   }, [
-    pendingCanonicalMemorySelection,
     selectedFamiliar,
     selectedFamiliarId,
     setSelectedFamiliarId,
@@ -625,7 +463,6 @@ export function FamiliarsView({
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
               memoryFeed={memoryFeed}
-              localDaemonReady={localDaemonReady}
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
@@ -659,14 +496,14 @@ export function FamiliarsView({
                   familiar={familiar}
                   stats={
                     stats.get(familiar.id) ??
-                    emptyStats(canonicalMemoryAvailability)
+                    emptyStats(fileMemoryState.state === "ready" ? "ready" : "unavailable")
                   }
                   healthLabel={healthByFamiliar.get(familiar.id) ?? "steady"}
                   responseNeeded={responseNeeded.has(familiar.id)}
                   memoryStatus={
-                    canonicalMemoryAvailability === "ready"
+                    fileMemoryState.state === "ready"
                       ? "ready"
-                      : canonicalMemoryLoaded
+                      : fileMemoryState.state === "error"
                         ? "error"
                         : "loading"
                   }
@@ -682,9 +519,6 @@ export function FamiliarsView({
           familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
           memoryFeed={memoryFeed}
-          localDaemonReady={localDaemonReady}
-          pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
-          onCanonicalMemorySelectionApplied={onCanonicalMemorySelectionApplied}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />

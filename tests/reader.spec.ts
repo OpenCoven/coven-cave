@@ -21,7 +21,7 @@ import { expect, test, type Page } from "@playwright/test";
 // compiler with the same route at once and all time out on the FIRST
 // navigation — which reads as "the reader is broken" when it is only cold.
 // Serial lets the first test pay the compile and the rest run warm. Same
-// posture as canonical-memory / code-surface / research-desk-tabs.
+// posture as code-surface / research-desk-tabs.
 // 240s, not 180s: openReader's own waits already budget 30s (chat surface) +
 // 30s (the answer) + 90s (the reader chunk) = 150s, and the FIRST test also
 // pays cold navigation and compile on top. At 180s the outer timeout fired

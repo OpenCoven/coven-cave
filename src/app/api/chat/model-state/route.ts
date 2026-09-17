@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import { bindingFor, loadConfig, loadState, saveConfig } from "@/lib/cave-config";
 import {
   isSafeConversationSessionId,
   loadConversation,
@@ -16,6 +16,7 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import { isTrustedChatHarness } from "@/lib/harness-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ type ModelStatePatchBody = {
   sessionId?: unknown;
   model?: unknown;
   scope?: unknown;
+  runtime?: unknown;
 };
 
 function jsonError(error: string, status: number) {
@@ -86,8 +88,9 @@ async function currentState(
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   const conversation = sessionId ? await loadConversation(sessionId) : null;
-  const conversationHarness = conversation?.harness
-    ? canonicalHarnessId(conversation.harness)
+  const conversationHarness = conversation?.pendingRuntimeHandoff?.toHarness ?? conversation?.harness;
+  const resolvedConversationHarness = conversationHarness
+    ? canonicalHarnessId(conversationHarness)
     : null;
   return resolveChatModelState({
     familiarId,
@@ -95,7 +98,7 @@ async function currentState(
     // contract. Model state must resolve against the same harness or a
     // familiar rebind can render Hermes controls while the next turn still
     // launches the old Claude conversation (and vice versa).
-    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
+    harness: resolvedConversationHarness ?? canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -219,19 +222,23 @@ export async function PATCH(req: Request) {
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
-  if (scope !== "familiar-default" && scope !== "session") {
+  if (scope !== "familiar-default" && scope !== "session" && scope !== "runtime-handoff") {
     return jsonError("unsupported scope", 400);
   }
 
-  const sessionConversation = scope === "session" && sessionId
+  const sessionConversation = (scope === "session" || scope === "runtime-handoff") && sessionId
     ? await loadConversation(sessionId)
     : null;
-  if (scope === "session" && sessionId &&
+  if ((scope === "session" || scope === "runtime-handoff") && sessionId &&
       (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
     return jsonError("not found", 404);
   }
   const modelValidationHarness = scope === "session"
-    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    ? canonicalHarnessId(
+      sessionConversation?.pendingRuntimeHandoff?.toHarness ??
+        sessionConversation?.harness ??
+        binding.harness,
+    )
     : canonicalHarnessId(binding.harness);
   if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
     return jsonError("model is not allowed by this runtime", 400);
@@ -249,6 +256,76 @@ export async function PATCH(req: Request) {
         },
       },
     });
+    const state = await currentState(familiarId, sessionId);
+    return NextResponse.json({ ok: true, state });
+  }
+
+  if (scope === "runtime-handoff") {
+    if (!sessionId) return jsonError("sessionId is required for runtime handoff", 400);
+    const runtime = cleanText(body.runtime);
+    if (!runtime || !isTrustedChatHarness(runtime)) return jsonError("invalid runtime", 400);
+    const targetHarness = canonicalHarnessId(runtime);
+    if (targetHarness !== canonicalHarnessId(binding.harness)) {
+      return jsonError("runtime must match the familiar binding", 409);
+    }
+    // A session-scoped model belongs to its previous runtime. Selecting a
+    // runtime is an explicit request for that runtime's default unless the
+    // user makes a new model pick after the handoff.
+    const handoffModelIntent = {
+      model: "",
+      source: "session" as const,
+      applicationState: "saved" as const,
+      reason: "Using the target runtime's configured default model.",
+    };
+    const requestedAt = new Date().toISOString();
+    const updated = await withConversationLock(sessionId, async () => {
+      const conversation = await loadConversation(sessionId);
+      if (conversation) {
+        if (conversation.familiarId !== familiarId) return false;
+        conversation.pendingRuntimeHandoff = {
+          fromHarness: canonicalHarnessId(conversation.harness),
+          toHarness: targetHarness,
+          requestedAt,
+        };
+        conversation.modelIntent = handoffModelIntent;
+        await saveConversation(conversation);
+        return true;
+      }
+      // Sessions displayed straight from the daemon have no Cave transcript,
+      // and the send route supports that. Refusing here used to 404 *after*
+      // /api/config had already rebound the familiar, leaving the thread
+      // unable to send. Persist the boundary instead: without a record there
+      // is no marker for the next send to honor, and both native resume paths
+      // fall back to the session id (`resumeTarget`, and the OpenCode
+      // `harnessSessionId` announcement), which is exactly the previous
+      // runtime's session this handoff exists to leave behind.
+      //
+      // Ownership follows the recorded familiar when there is one; an
+      // unattributed daemon session is claimed the same way a first send
+      // claims it.
+      const ownerFamiliarId = (await loadState()).sessionFamiliar[sessionId];
+      if (ownerFamiliarId && ownerFamiliarId !== familiarId) return false;
+      // The prior runtime is not recoverable — nothing server-side records a
+      // daemon-only session's harness — so provenance names the target rather
+      // than inventing a source. `startsFresh` is what enforces the boundary,
+      // and it holds either way.
+      await saveConversation({
+        sessionId,
+        familiarId,
+        harness: targetHarness,
+        pendingRuntimeHandoff: {
+          fromHarness: targetHarness,
+          toHarness: targetHarness,
+          requestedAt,
+        },
+        modelIntent: handoffModelIntent,
+        createdAt: requestedAt,
+        updatedAt: requestedAt,
+        turns: [],
+      });
+      return true;
+    });
+    if (!updated) return jsonError("not found", 404);
     const state = await currentState(familiarId, sessionId);
     return NextResponse.json({ ok: true, state });
   }

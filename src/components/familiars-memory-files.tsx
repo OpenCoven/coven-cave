@@ -6,7 +6,7 @@ import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { DocumentReader } from "@/components/document-reader";
-import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
+import { MarkdownReaderBlock } from "@/components/document-reader-markdown";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 import { classifyProtection } from "@/lib/memory-management";

@@ -291,8 +291,8 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
-  "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
+  "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts, carrying the handoff session key into the CLI fallback",
 );
 
 // Session persistence contract (regression: chats forked into new sessions
@@ -300,9 +300,12 @@ assert.match(
 // 1. every turn pins the conversation to a cave-owned explicit session id/key — values are
 //    OpenClaw's durable identity; internally generated session ids rotate on reset/compaction;
 // 2. the gateway's session id is never adopted as the conversation key.
+// A runtime handoff overrides the key with a cave-minted fresh one, so the
+// per-conversation key is the default rather than a literal at the call. Both
+// halves are cave-owned; neither is the gateway's rotating id.
 assert.match(
   openclawBridge,
-  /"--session-id",\s*\n?\s*openClawSessionKey\(conversationId\)/,
+  /sessionKey = openClawSessionKey\(conversationId\),[\s\S]*?"--session-id",\s*\n?\s*sessionKey,/,
   "OpenClaw native chat must pin a per-conversation explicit session id/key",
 );
 assert.match(
@@ -317,8 +320,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: openClawSessionKey\(conversationId\)/,
-  "OpenClaw transcript metadata should persist Cave id, session key, agent id, and diagnostic gateway id separately",
+  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: gatewaySessionKey/,
+  "OpenClaw transcript metadata should persist the selected safe gateway key separately from Cave identity",
+);
+assert.match(
+  chatRoute,
+  /`key \$\{gatewaySessionKey\} · id \$\{gatewaySessionId\}`/,
+  "OpenClaw gateway diagnostics should report the isolated handoff key",
 );
 assert.match(
   chatRoute,
@@ -448,7 +456,7 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = flowDiscussionStartsFresh \|\| \(body\.startNewConversation && !existingConversation\)[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  /const resumeTarget = flowDiscussionStartsFresh \|\| runtimeHandoff\?\.startsFresh \|\| \(body\.startNewConversation && !existingConversation\)[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
   "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
 assert.match(

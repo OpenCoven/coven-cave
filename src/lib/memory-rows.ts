@@ -1,5 +1,4 @@
-import type { CanonicalMemorySummary } from "./canonical-memory.ts";
-import { canonicalMemoryMatches, fileMemoryMatches } from "./memory-search-policy.ts";
+import { fileMemoryMatches } from "./memory-search-policy.ts";
 import {
   classifyProtection,
   detectStale,
@@ -9,19 +8,6 @@ import {
   type RawFileEntry,
   type SortMode,
 } from "./memory-management.ts";
-
-export type CanonicalMemoryRow = {
-  kind: "canonical";
-  rowId: `coven:${string}`;
-  memoryId: string;
-  title: string;
-  sortTime: string;
-  sourceLabel: string;
-  excerpt: string;
-  privacy: CanonicalMemorySummary["privacy"];
-  verification: CanonicalMemorySummary["verification"];
-  stale: false;
-};
 
 export type FileMemoryRow = {
   kind: "file";
@@ -36,7 +22,9 @@ export type FileMemoryRow = {
   protection: ProtectionTier;
 };
 
-export type MemoryRow = CanonicalMemoryRow | FileMemoryRow;
+/** Memory rows are files. The canonical-vault variant went with the vault
+ *  itself — that store lives in the dedicated memory application now. */
+export type MemoryRow = FileMemoryRow;
 export type MemoryFeedState = "loading" | "ready" | "error";
 export type MemoryListPresentation =
   | "loading"
@@ -45,7 +33,6 @@ export type MemoryListPresentation =
   | "unavailable";
 
 type BuildArgs = {
-  canonical: CanonicalMemorySummary[];
   files: RawFileEntry[];
   familiarFilter: string;
   query: string;
@@ -57,34 +44,22 @@ type BuildArgs = {
 };
 
 export function memoryListPresentation(input: {
-  canonicalState: MemoryFeedState;
   filesState: MemoryFeedState;
   rowCount: number;
 }): MemoryListPresentation {
   if (input.rowCount > 0) return "rows";
-  if (input.canonicalState === "loading" || input.filesState === "loading") {
-    return "loading";
-  }
-  if (input.canonicalState === "ready" && input.filesState === "ready") {
-    return "empty";
-  }
+  if (input.filesState === "loading") return "loading";
+  if (input.filesState === "ready") return "empty";
   return "unavailable";
 }
 
 export function reconcileMemorySelection(input: {
   selectedRowId: string | null;
   rowIds: readonly string[];
-  canonicalState: MemoryFeedState;
   filesState: MemoryFeedState;
 }): string | null {
   const { selectedRowId } = input;
   if (!selectedRowId || input.rowIds.includes(selectedRowId)) {
-    return selectedRowId;
-  }
-  if (
-    selectedRowId.startsWith("coven:") &&
-    input.canonicalState === "loading"
-  ) {
     return selectedRowId;
   }
   if (
@@ -96,44 +71,6 @@ export function reconcileMemorySelection(input: {
   return null;
 }
 
-export function excludeMissingCanonicalMemory<T extends { id: string }>(
-  entries: readonly T[],
-  memoryId: string | null,
-): T[] {
-  return memoryId
-    ? entries.filter((entry) => entry.id !== memoryId)
-    : [...entries];
-}
-
-export function reconcileMissingCanonicalRefresh<T extends { id: string }>(
-  input: {
-    missingMemoryId: string | null;
-    notice: string | null;
-    refreshState: "ready" | "error";
-    entries: readonly T[];
-  },
-): { missingMemoryId: string | null; notice: string | null } {
-  if (input.refreshState === "error") {
-    return {
-      missingMemoryId: input.missingMemoryId,
-      notice: input.notice,
-    };
-  }
-  if (
-    input.missingMemoryId !== null &&
-    input.entries.some((entry) => entry.id === input.missingMemoryId)
-  ) {
-    return {
-      missingMemoryId: input.missingMemoryId,
-      notice: input.notice,
-    };
-  }
-  return {
-    missingMemoryId: null,
-    notice: null,
-  };
-}
-
 function baseName(path: string): string {
   const segments = path.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? path;
@@ -142,24 +79,6 @@ function baseName(path: string): string {
 
 export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
   const query = args.query.trim().toLowerCase();
-
-  const canonicalRows: CanonicalMemoryRow[] = args.canonical
-    .filter((entry) => entry.familiarId === args.familiarFilter)
-    .filter((entry) => canonicalMemoryMatches(entry, query))
-    .map((entry) => ({
-      kind: "canonical",
-      rowId: `coven:${entry.id}`,
-      memoryId: entry.id,
-      title: entry.title,
-      sortTime: entry.updatedAt,
-      sourceLabel: args.familiarLabel
-        ? args.familiarLabel(entry.familiarId)
-        : entry.familiarId,
-      excerpt: entry.excerpt,
-      privacy: entry.privacy,
-      verification: entry.verification,
-      stale: false,
-    }));
 
   const fileRows: FileMemoryRow[] = args.files
     .filter(
@@ -184,11 +103,10 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
       };
     });
 
-  const rows: MemoryRow[] = args.staleOnly ? fileRows.filter((row) => row.stale) : [
-    ...canonicalRows,
-    ...fileRows,
-  ];
-  const size = (row: MemoryRow): number => row.kind === "file" ? row.size : 0;
+  const rows: MemoryRow[] = args.staleOnly
+    ? fileRows.filter((row) => row.stale)
+    : fileRows;
+  const size = (row: MemoryRow): number => row.size;
   const compare: Record<SortMode, (a: MemoryRow, b: MemoryRow) => number> = {
     recent: (a, b) =>
       a.sortTime < b.sortTime ? 1 : a.sortTime > b.sortTime ? -1 : 0,
@@ -208,7 +126,6 @@ export type MemoryRowGroup = {
 };
 
 const TYPE_LABEL = {
-  canonical: "Familiar memories",
   file: "Files",
 } satisfies Record<MemoryRow["kind"], string>;
 
@@ -243,9 +160,6 @@ export function groupMemoryRows(
       label = row.sourceLabel;
     } else if (by === "date") {
       ({ key, label } = rowDateBucket(row.sortTime, now));
-    } else if (row.kind === "canonical") {
-      key = `a:${row.sourceLabel}`;
-      label = row.sourceLabel;
     } else {
       key = "z:files";
       label = "Files";

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/globals/surface-research-resources.css";
+
 /**
  * Resources tab — the saved-links browser (cave-dl74, Phase B5).
  *

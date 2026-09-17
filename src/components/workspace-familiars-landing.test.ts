@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const rightChatPanel = readFileSync(new URL("./right-chat-panel.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
@@ -51,12 +52,47 @@ assert.match(
   "Workspace passes the selected familiar into the Familiars page",
 );
 
-// Chat is the default boot surface and stays eager. Every mode/open-gated
-// workspace host crosses the shared next/dynamic boundary instead.
+// Home is the default boot surface. Chat has its own loading state, so its
+// large graph must not inflate Home's first-load bundle.
+assert.doesNotMatch(
+  workspace,
+  /from "@\/components\/chat-surface"/,
+  "Workspace does not statically import ChatSurface into Home's boot graph",
+);
 assert.match(
   workspace,
-  /import \{ ChatSurface \} from "@\/components\/chat-surface"/,
-  "ChatSurface stays eager for the Chat-first boot path",
+  /import \{[\s\S]*ChatSurface[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "Workspace reaches ChatSurface through the shared lazy boundary",
+);
+assert.doesNotMatch(
+  rightChatPanel,
+  /ref=\{routerRef\}/,
+  "the next/dynamic wrapper does not receive ChatRouter's imperative ref",
+);
+assert.match(
+  rightChatPanel,
+  /import dynamic from "next\/dynamic"/,
+  "the panel lazily loads ChatRouter after Home boots",
+);
+assert.match(
+  rightChatPanel,
+  /dynamic\(\s*\(\) => import\("@\/components\/chat-router"\)/,
+  "the panel keeps the ChatRouter graph behind its lazy boundary",
+);
+assert.match(
+  rightChatPanel,
+  /handleRef=\{handleRouterRef\}/,
+  "the lazy ChatRouter receives its imperative handle as a normal prop",
+);
+assert.match(
+  workspace,
+  /const rightChat = \([\s\S]*?<RightChatPanel/,
+  "Workspace keeps the panel DOM available while it is closed",
+);
+assert.match(
+  workspace,
+  /onRightChatOpenChange=\{setRightChatOpen\}/,
+  "Shell visibility reaches the persistent panel",
 );
 assert.match(
   workspace,

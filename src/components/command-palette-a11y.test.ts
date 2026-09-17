@@ -21,18 +21,16 @@ assert.match(
 );
 assert.match(
   src,
-  /const loadCanonicalCorpus = async \(\)[\s\S]*?loadCanonicalMemoryList\(\)[\s\S]*?if \(cancelled\) return;[\s\S]*?setCanonicalMemoryState/,
-  "the canonical corpus uses the shared loader and cannot publish after close",
-);
-assert.match(
-  src,
   /const loadFileMemoryCorpus = async \(\)[\s\S]*?\/api\/memory[\s\S]*?if \(cancelled\) return;[\s\S]*?setFsMemory/,
   "the file-memory corpus cannot publish after the palette closes",
 );
+// The canonical corpus went with the vault. The property that mattered is
+// unchanged with two corpora instead of three: they settle INDEPENDENTLY, so
+// one failure cannot suppress the others' results.
 assert.match(
   src,
-  /Promise\.allSettled\(\[\s*loadBoardCorpus\(\),\s*loadCanonicalCorpus\(\),\s*loadFileMemoryCorpus\(\),?\s*\]\)/,
-  "board, canonical, and file-memory corpora settle independently",
+  /Promise\.allSettled\(\[\s*loadBoardCorpus\(\),\s*loadFileMemoryCorpus\(\),?\s*\]\)/,
+  "board and file-memory corpora settle independently",
 );
 assert.doesNotMatch(
   src,
@@ -44,10 +42,10 @@ assert.match(
   /return \(\) => \{ cancelled = true; clearTimeout\(t\); \};/,
   "closing the palette cancels the in-flight corpus refresh",
 );
-assert.match(
+assert.doesNotMatch(
   src,
-  /role="status"[\s\S]{0,300}Familiar memories unavailable/,
-  "canonical corpus failure is announced without claiming a true empty result",
+  /Familiar memories unavailable|canonicalMemoryState/,
+  "the retired vault corpus takes its unavailable banner with it",
 );
 
 // ── Active option is scrolled into view on keyboard nav ──────────────────────

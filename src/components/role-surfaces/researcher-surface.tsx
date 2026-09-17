@@ -19,11 +19,8 @@
 // globals.css so the home first-load stays inside the CSS bundle budget
 // (#3264 pattern; the desk sheet carries the tab strip, then one per tab).
 import "@/styles/globals/surface-research-desk.css";
-import "@/styles/globals/surface-research-prompt.css";
-import "@/styles/globals/surface-research-library.css";
-import "@/styles/globals/surface-research-studio.css";
-import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -36,12 +33,17 @@ import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 import { RESEARCHER_SURFACE_ID } from "./ids";
 import { ResearchTabDesk } from "./research-tab-desk";
-import { ResearchTabLibrary } from "./research-tab-library";
-import { ResearchTabPrompt } from "./research-tab-prompt";
-import { ResearchTabResources } from "./research-tab-resources";
-import { ResearchTabStudio } from "./research-tab-studio";
 import { researchEngineStatus, researchLiveRunCount } from "./researcher-status";
 import { useResearchMissions } from "./use-research-missions";
+
+function ResearchTabLoading() {
+  return <div role="status" aria-label="Loading research view"><SkeletonRows count={3} /></div>;
+}
+
+const ResearchTabPrompt = dynamic(() => import("./research-tab-prompt").then((module) => module.ResearchTabPrompt), { loading: ResearchTabLoading });
+const ResearchTabLibrary = dynamic(() => import("./research-tab-library").then((module) => module.ResearchTabLibrary), { loading: ResearchTabLoading });
+const ResearchTabStudio = dynamic(() => import("./research-tab-studio").then((module) => module.ResearchTabStudio), { loading: ResearchTabLoading });
+const ResearchTabResources = dynamic(() => import("./research-tab-resources").then((module) => module.ResearchTabResources), { loading: ResearchTabLoading });
 
 export type ResearchDeskTab = "prompt" | "desk" | "library" | "studio" | "resources";
 

@@ -303,6 +303,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     title: replayTitle,
     createdAt: item.createdAt,
     harnessSessionId,
+    // The hub session above ran this turn on `binding.harness`. If that is the
+    // runtime a pending handoff was waiting for, the transition is complete.
+    settlesRuntimeHandoff: true,
     userTurn: {
       id: userTurnId,
       text: prompt,

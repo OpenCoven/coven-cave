@@ -21,10 +21,9 @@ import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profi
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import {
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type FamiliarFileMemoryStat,
+  type MemoryAvailability,
 } from "@/components/familiars-view-stats";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useHeatTip } from "@/components/ui/heat-tip";
 import { formatHeatTip } from "@/lib/heat-tip";
@@ -60,8 +59,8 @@ type BentoData = {
   githubComplete: boolean | null;
   inbox: InboxItem[];
   sessions: SessionRow[];
-  memory: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memory: FamiliarFileMemoryStat[];
+  memoryAvailability: MemoryAvailability;
   projects: number | null;
 };
 
@@ -168,9 +167,12 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
       attentionResult("inbox", r?.ok !== false && Array.isArray(r?.items) ? r.items : null),
     );
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
-    void loadCanonicalMemoryList().then((memory) => {
-      if (memory.state === "ready") {
-        put("memory", memory.entries);
+    // Familiar memory counts came from the canonical vault, which now lives in
+    // the dedicated memory application. The MEMORY.md scan is the remaining
+    // source, so the stat keeps meaning something instead of going blank.
+    void getJson<{ ok?: boolean; entries?: FamiliarFileMemoryStat[] }>("/api/memory").then((r) => {
+      if (r?.ok && Array.isArray(r.entries)) {
+        put("memory", r.entries);
         put("memoryAvailability", "ready");
       } else {
         put("memoryAvailability", "unavailable");
@@ -271,7 +273,7 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
     () => buildFamiliarCardStats({
       familiars: data.familiars,
       sessions: data.sessions,
-      covenEntries: data.memory,
+      fileEntries: data.memory,
       memoryAvailability: data.memoryAvailability,
       now: nowMs,
     }),

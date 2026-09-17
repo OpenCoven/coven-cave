@@ -132,3 +132,29 @@ export function consumeProjectsTabPending(): boolean {
   projectsTabPending = false;
   return pending;
 }
+
+// Which project to expand and scroll to once that tab opens. The latch above
+// preserves the TAB; this preserves the destination inside it, exactly as
+// pendingCovenGroupId does for covenTabPending.
+//
+// Two races drop a fire-and-forget CHAT_FOCUS_PROJECT_EVENT, and the second is
+// not fixed by waiting longer:
+//
+//  1. Mount. The event is dispatched 60ms after the Projects tab is asked for,
+//     but ChatSurface is lazy now, and ProjectsView is lazy inside it, so on a
+//     cold or slow load neither listener is subscribed yet.
+//  2. Data. ProjectsView's listener resolves `detail.root` against its loaded
+//     `projects`, so an event arriving before that fetch settles finds no match
+//     and is discarded even though the listener was subscribed.
+//
+// A retained latch covers both: set synchronously before the mode flips, and
+// consumed once ProjectsView actually has rows to scroll to.
+let pendingProjectFocusRoot: string | null = null;
+export function markProjectFocusPending(root: string): void {
+  pendingProjectFocusRoot = root.trim() || null;
+}
+export function consumeProjectFocusPending(): string | null {
+  const pending = pendingProjectFocusRoot;
+  pendingProjectFocusRoot = null;
+  return pending;
+}

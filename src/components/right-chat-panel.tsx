@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
+import dynamic from "next/dynamic";
+import type { ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -21,6 +22,14 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+
+const ChatRouter = dynamic(
+  () => import("@/components/chat-router").then((module) => module.ChatRouter),
+  {
+    ssr: false,
+    loading: () => <div role="status" aria-label="Loading Chat">Loading Chat…</div>,
+  },
+);
 
 export type RightChatLaunchRequest = AgentsNewChatRequest & { familiarId: string; nonce: number };
 
@@ -151,6 +160,10 @@ type Props = {
  */
 export function RightChatPanel(props: Props) {
   const consumedLaunchRef = useRef<number | null>(null);
+  const [hasOpened, setHasOpened] = useState(props.open);
+  useEffect(() => {
+    if (props.open) setHasOpened(true);
+  }, [props.open]);
   const launch = props.launchRequest;
   const familiarId = launch?.familiarId ?? null;
   const [roster, setRoster] = useState<{
@@ -189,7 +202,7 @@ export function RightChatPanel(props: Props) {
   // A fix's actor is independent of the main surface's familiar filter. In
   // particular ChatRouter.newChat calls onSetActiveFamiliar synchronously;
   // forwarding that callback here would replace an already-open main chat.
-  if (!launch) return <RightChatPanelContent {...props} consumedLaunchRef={consumedLaunchRef} />;
+  if (!launch) return <RightChatPanelContent {...props} hasOpened={hasOpened} consumedLaunchRef={consumedLaunchRef} />;
   const launchFamiliar = props.familiars.find((familiar) => familiar.id === familiarId) ?? null;
   if (props.familiarsLoaded && !props.familiarsError && !launchFamiliar) {
     return (
@@ -202,6 +215,7 @@ export function RightChatPanel(props: Props) {
   return (
     <RightChatPanelContent
       {...props}
+      hasOpened={hasOpened}
       consumedLaunchRef={consumedLaunchRef}
       activeFamiliar={launchFamiliar}
       sessions={scoped ? roster.sessions : []}
@@ -221,7 +235,7 @@ export function RightChatPanel(props: Props) {
   );
 }
 
-function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<number | null> }) {
+function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaunchRef: RefObject<number | null> }) {
   const {
     open,
     familiars,
@@ -235,6 +249,11 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
     daemonRunning,
   } = props;
   const routerRef = useRef<ChatRouterHandle | null>(null);
+  const [routerReady, setRouterReady] = useState(false);
+  const handleRouterRef = useCallback((handle: ChatRouterHandle | null) => {
+    routerRef.current = handle;
+    setRouterReady(handle !== null);
+  }, []);
   const { consumedLaunchRef } = props;
   // Tracks which familiar's latest session has actually been RESOLVED (an
   // imperative openSession/newChat call issued and selectedSessionId set to
@@ -531,7 +550,7 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
       setSelectedSessionId(null);
     }
 
-    if (!familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
+    if (!familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError || !routerReady) return;
     if (!sessionsScopeCurrent) return;
 
     const launch = props.launchRequest;
@@ -585,7 +604,7 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
     if (replacement) routerRef.current?.openSession(replacement);
     else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
     setSelectedSessionId(replacement);
-  }, [activeFamiliar, announce, consumedLaunchRef, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded, sessionsScopeCurrent, props.launchRequest]);
+  }, [activeFamiliar, announce, consumedLaunchRef, eligibleSessions, familiarsError, familiarsLoaded, open, routerReady, selectedSessionId, sessions, sessionsError, sessionsLoaded, sessionsScopeCurrent, props.launchRequest]);
 
   // Blocks rendering — including ChatRouter's own mount — while the active
   // familiar's sessions scope hasn't been confirmed yet, for a familiar that
@@ -731,6 +750,7 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
           renderValue={() => (
             <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
           )}
+          disabled={!routerReady}
           onChange={(nextId) => {
             if (nextId === "__new__") {
               routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
@@ -755,6 +775,7 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
           type="button"
           className="focus-ring right-chat__icon-button"
           aria-label="New Chat panel chat"
+          disabled={!routerReady}
           onClick={() => {
             routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
             setSelectedSessionId(null);
@@ -808,8 +829,8 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
             />
           ) : null}
           <div className="right-chat__content">
-            <ChatRouter
-            ref={routerRef}
+            {props.hasOpened ? <ChatRouter
+            handleRef={handleRouterRef}
             familiar={activeFamiliar}
             familiars={familiars}
             sessions={sessions}
@@ -835,7 +856,7 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
             syncUrlHash={false}
             enableSplitPanes={false}
             activeFamiliarId={activeFamiliar.id}
-            />
+            /> : null}
           </div>
         </FocusTrapOwnerHiddenContext.Provider>
       </div>

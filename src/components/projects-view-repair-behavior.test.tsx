@@ -2,24 +2,29 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { consumeProjectFocusPending, markProjectFocusPending } from "@/lib/chat-tab-events";
 import { ProjectsView } from "./projects-view";
 
 const observed = vi.hoisted(() => ({
   confirm: vi.fn(),
   announcements: [] as string[],
+  listeners: new Map<string, EventListener>(),
+  scrollIntoView: vi.fn(),
+}));
+const projectsState = vi.hoisted(() => ({
+  projects: [] as Array<{ id: string; name: string; root: string; repoUrl: string | null }>,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
+  createProject: vi.fn(),
+  createProjectOrThrow: vi.fn(),
+  updateRepoUrl: vi.fn(),
+  renameProject: vi.fn(),
+  deleteProject: vi.fn(),
 }));
 
 vi.mock("@/lib/use-projects", () => ({
-  useProjects: () => ({
-    projects: [],
-    loading: false,
-    error: null,
-    reload: vi.fn(),
-    createProject: vi.fn(),
-    updateRepoUrl: vi.fn(),
-    renameProject: vi.fn(),
-    deleteProject: vi.fn(),
-  }),
+  useProjects: () => projectsState,
 }));
 vi.mock("@/lib/use-refresh-on-focus", () => ({ useRefreshOnFocus: vi.fn() }));
 vi.mock("@/components/project-picker", () => ({
@@ -75,6 +80,10 @@ function response(body: unknown, status = 200) {
   } as Response;
 }
 
+function project(id: string, root: string, name = id) {
+  return { id, name, root, repoUrl: null };
+}
+
 function textContent(node: unknown): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textContent).join("");
@@ -96,30 +105,107 @@ async function settle(): Promise<void> {
   for (let index = 0; index < 6; index += 1) await Promise.resolve();
 }
 
+async function renderView() {
+  let renderer: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(
+      <ProjectsView
+        familiars={[{ id: "wren", display_name: "Wren", role: "researcher" }]}
+        activeFamiliarId="wren"
+        onSessionsDeleted={() => undefined}
+      />,
+    );
+    await settle();
+  });
+  return renderer!;
+}
+
+async function updateView(renderer: ReactTestRenderer) {
+  await act(async () => {
+    renderer.update(
+      <ProjectsView
+        familiars={[{ id: "wren", display_name: "Wren", role: "researcher" }]}
+        activeFamiliarId="wren"
+        onSessionsDeleted={() => undefined}
+      />,
+    );
+    await settle();
+  });
+}
+
+function projectRow(renderer: ReactTestRenderer, id: string) {
+  return renderer.root.find((node) => node.props.id === `project-access-row:${id}`);
+}
+
 beforeEach(() => {
   observed.confirm.mockReset();
   observed.confirm.mockResolvedValue(false);
   observed.announcements.length = 0;
+  observed.listeners = new Map();
+  observed.scrollIntoView.mockReset();
+  projectsState.projects = [];
+  projectsState.loading = false;
+  projectsState.error = null;
+  projectsState.reload.mockReset();
+  projectsState.createProject.mockReset();
+  projectsState.createProjectOrThrow.mockReset();
+  projectsState.updateRepoUrl.mockReset();
+  projectsState.renameProject.mockReset();
+  projectsState.deleteProject.mockReset();
+  while (consumeProjectFocusPending()) {
+    // drain any module-level latch left by a previous test
+  }
   vi.stubGlobal("window", {
     localStorage: {
       getItem: () => null,
       setItem: () => undefined,
+      removeItem: () => undefined,
     },
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
+    addEventListener: (type: string, listener: EventListener) => {
+      observed.listeners.set(type, listener);
+    },
+    removeEventListener: (type: string, listener: EventListener) => {
+      if (observed.listeners.get(type) === listener) observed.listeners.delete(type);
+    },
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }),
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       callback(0);
       return 0;
     },
     setTimeout,
     clearTimeout,
-    dispatchEvent: () => true,
+    dispatchEvent: (event: Event) => {
+      observed.listeners.get(event.type)?.(event);
+      return true;
+    },
   });
+  vi.stubGlobal("document", {
+    getElementById: (id: string) =>
+      id.startsWith("project-access-row:") ? { scrollIntoView: observed.scrollIntoView } : null,
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      response({
+        grants: [],
+        accessGroups: [],
+        supremeFamiliarId: null,
+        integrity: repairedIntegrity,
+      }),
+    ),
+  );
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  while (consumeProjectFocusPending()) {
+    // keep tests isolated even if a failure leaves the latch armed
+  }
 });
 
 test("stale-permission repair requires confirmation, mutates once, then refreshes its rendered integrity state", async () => {
@@ -130,6 +216,7 @@ test("stale-permission repair requires confirmation, mutates once, then refreshe
   const repairResponse = new Promise<Response>((resolve) => {
     resolveRepair = resolve;
   });
+
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url !== "/api/project-grants") throw new Error(`Unexpected request: ${url}`);
@@ -197,4 +284,44 @@ test("stale-permission repair requires confirmation, mutates once, then refreshe
     });
     globalThis.fetch = originalFetch;
   }
+});
+
+test("retains a pending project-focus latch until the matching row arrives, then flashes and scrolls it once", async () => {
+  const cave = project("cave", "/code/cave", "Cave");
+  markProjectFocusPending(cave.root);
+  projectsState.loading = true;
+
+  const renderer = await renderView();
+  expect(observed.scrollIntoView).not.toHaveBeenCalled();
+
+  projectsState.projects = [cave];
+  projectsState.loading = false;
+  await updateView(renderer);
+
+  expect(observed.scrollIntoView).toHaveBeenCalledTimes(1);
+  expect(observed.scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+  expect(projectRow(renderer, cave.id).props.className).toContain("is-flash");
+
+  await act(async () => {
+    renderer.unmount();
+  });
+});
+
+test("drops a settled no-match pending focus so a later refresh does not resurrect the stale command", async () => {
+  const missingRoot = "/code/missing";
+  markProjectFocusPending(missingRoot);
+  projectsState.projects = [project("other", "/code/other", "Other")];
+
+  const renderer = await renderView();
+  expect(observed.scrollIntoView).not.toHaveBeenCalled();
+
+  projectsState.projects = [project("missing", missingRoot, "Missing")];
+  await updateView(renderer);
+
+  expect(observed.scrollIntoView).not.toHaveBeenCalled();
+  expect(projectRow(renderer, "missing").props.className).not.toContain("is-flash");
+
+  await act(async () => {
+    renderer.unmount();
+  });
 });

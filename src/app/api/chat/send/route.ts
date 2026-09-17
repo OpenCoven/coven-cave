@@ -221,8 +221,10 @@ import type {
   OpenClawRegistryKeyring,
 } from "@/lib/openclaw-compatibility";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
+import { resolveRuntimeHandoff, runtimeHandoffEpoch } from "@/lib/chat-runtime-handoff";
 import {
   type ChatTurn,
+  type ConversationFile,
   createConversationStub,
   isSafeConversationSessionId,
   loadConversation,
@@ -787,6 +789,22 @@ async function maybeQueueOfflineChat(args: {
   });
 }
 
+function finalizeRuntimeHandoff(
+  conversation: ConversationFile,
+  succeeded: boolean,
+  epoch: string | null,
+): void {
+  const handoff = conversation.pendingRuntimeHandoff;
+  if (!handoff || !succeeded) return;
+  // Finalize only the marker that selected this turn. A runtime picked while
+  // the turn was still in flight owns its own boundary: consuming it here
+  // would move the conversation to a target that never ran and clear the
+  // fresh-start that target is still waiting for.
+  if (runtimeHandoffEpoch(handoff) !== epoch) return;
+  conversation.harness = canonicalHarnessId(handoff.toHarness);
+  delete conversation.pendingRuntimeHandoff;
+}
+
 function openClawChatResponse(args: {
   req: Request;
   body: SendBody;
@@ -798,6 +816,9 @@ function openClawChatResponse(args: {
   modelState: ChatModelState;
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
+  gatewaySessionKey?: string;
+  /** Marker that selected this turn; only it may be finalized on success. */
+  runtimeHandoffEpoch?: string | null;
   openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
   openClawBridgeDiscovery?: unknown;
   openClawRegistryBundle?: unknown;
@@ -862,6 +883,7 @@ function openClawChatResponse(args: {
       // the client got back on the first turn. The gateway session is keyed
       // off this id, so it survives OpenClaw's internal session-id rotation.
       const conversationId = args.body.sessionId ?? crypto.randomUUID();
+      const gatewaySessionKey = args.gatewaySessionKey ?? openClawSessionKey(conversationId);
       const ownsFirstExchangeTitle = args.ownsFirstExchangeTitle;
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
       let agentBinding;
@@ -901,7 +923,7 @@ function openClawChatResponse(args: {
         openclawAgentSource: agentBinding.source,
         caveSessionId: conversationId,
         gatewaySessionId: undefined,
-        sessionKey: openClawSessionKey(conversationId),
+        sessionKey: gatewaySessionKey,
       };
 
       // Slice 2 (issue #4892): per-conversation bridge negotiation. The
@@ -1026,7 +1048,7 @@ function openClawChatResponse(args: {
       );
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
-        sessionKey: openClawSessionKey(conversationId),
+        sessionKey: gatewaySessionKey,
         agentId,
         message: args.harnessPrompt,
         // A direct Gateway turn is only safe when Cave has the caller's
@@ -1314,8 +1336,9 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
-          if (conv.flowDiscussion && !isError && !cancelledByUser) {
-            conv.harnessSessionId = openClawSessionKey(conversationId);
+          finalizeRuntimeHandoff(conv, !isError && !cancelledByUser, args.runtimeHandoffEpoch ?? null);
+          if (!isError && !cancelledByUser) {
+            conv.harnessSessionId = gatewaySessionKey;
           }
           if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
             conv.inferenceRouteId = responseMetadata.inferenceRouteId;
@@ -1440,7 +1463,7 @@ function openClawChatResponse(args: {
       let localRecoveryAttempted = false;
       let stopChildOnLaunch = false;
       const spawnChild = (mode: "gateway" | "local") => {
-        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
+        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
           cwd: args.cwd,
@@ -1650,7 +1673,7 @@ function openClawChatResponse(args: {
             "openclaw-session",
             "Gateway session",
             "done",
-            `key ${openClawSessionKey(conversationId)} · id ${gatewaySessionId}`,
+            `key ${gatewaySessionKey} · id ${gatewaySessionId}`,
           );
         }
 
@@ -1712,8 +1735,9 @@ function openClawChatResponse(args: {
               };
               conv.model = responseMetadata.model;
               conv.runtime = responseMetadata.runtime;
-              if (conv.flowDiscussion && !isError && !cancelledByUser) {
-                conv.harnessSessionId = openClawSessionKey(sessionId);
+              finalizeRuntimeHandoff(conv, !isError && !cancelledByUser, args.runtimeHandoffEpoch ?? null);
+              if (!isError && !cancelledByUser) {
+                conv.harnessSessionId = gatewaySessionKey;
               }
               if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
                 conv.inferenceRouteId = responseMetadata.inferenceRouteId;
@@ -1992,13 +2016,25 @@ async function postChat(
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  const runtimeHandoff = existingConversation
+    ? resolveRuntimeHandoff(existingConversation)
+    : null;
   // On resume, the persisted conversation is the execution contract: a later
   // familiar edit must not silently move an in-progress OpenClaw (or other
   // runtime) conversation to a different harness. The trust gate below still
   // rejects any malformed legacy value.
   if (existingConversation) {
-    binding.harness = canonicalHarnessId(existingConversation.harness);
+    binding.harness = runtimeHandoff!.harness;
     if (
+      runtimeHandoff!.startsFresh &&
+      binding.inferenceRouteId?.startsWith("native:") &&
+      binding.inferenceRouteId !== `native:${binding.harness}`
+    ) {
+      binding.inferenceRouteId = `native:${binding.harness}`;
+      delete binding.hasInvalidInferenceRouteBinding;
+    }
+    if (
+      !runtimeHandoff!.startsFresh &&
       binding.inferenceRouteId?.startsWith("native:") &&
       binding.inferenceRouteId !== `native:${binding.harness}`
     ) {
@@ -2163,6 +2199,11 @@ async function postChat(
     binding.harness === "codex" &&
     body.sessionId &&
     !flowDiscussionStartsFresh &&
+    // A handoff never resumes the previous runtime's native session. Without
+    // this, a conversation moved Codex -> elsewhere -> Codex resumes the
+    // original Codex session id instead of opening the fresh one the boundary
+    // promised.
+    !runtimeHandoff?.startsFresh &&
     !(body.startNewConversation && !existingConversation)
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
@@ -3051,6 +3092,9 @@ async function postChat(
   // A discussion has a Cave transcript but no native history. All live
   // transports, including the early OpenClaw bridge, receive the same replay.
   // Offline sends replay their saved history at dequeue time instead.
+  const runtimeHandoffReplay = runtimeHandoff?.startsFresh
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   const flowDiscussionReplay = flowDiscussionStartsFresh
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
@@ -3060,13 +3104,19 @@ async function postChat(
       req,
       body,
       promptText,
-      harnessPrompt: flowDiscussionReplay?.prompt ?? harnessPrompt,
+      harnessPrompt: runtimeHandoffReplay?.prompt ?? flowDiscussionReplay?.prompt ?? harnessPrompt,
       attachments: persistedAttachments,
       cwd,
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
       ownsFirstExchangeTitle,
+      runtimeHandoffEpoch: runtimeHandoff?.handoffEpoch ?? null,
+      gatewaySessionKey: runtimeHandoff?.startsFresh
+        ? openClawSessionKey(`${body.sessionId ?? crypto.randomUUID()}:handoff:${crypto.randomUUID()}`)
+        : existingConversation?.harness === "openclaw"
+          ? existingConversation.harnessSessionId
+          : undefined,
       openClawGatewayCredentialStore: dependencies.openClawGatewayCredentialStore,
       openClawBridgeDiscovery: dependencies.openClawBridgeDiscovery,
       openClawRegistryBundle: dependencies.openClawRegistryBundle,
@@ -3309,7 +3359,7 @@ async function postChat(
   };
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
-  const resumeTarget = flowDiscussionStartsFresh || (body.startNewConversation && !existingConversation)
+  const resumeTarget = flowDiscussionStartsFresh || runtimeHandoff?.startsFresh || (body.startNewConversation && !existingConversation)
     ? null
     : body.sessionId
       ? openCodeDirect
@@ -3384,13 +3434,15 @@ async function postChat(
     : null;
   const freshNativeSessionRequired =
     flowDiscussionStartsFresh ||
+    Boolean(runtimeHandoff?.startsFresh) ||
     runtimeAccessRefreshNeeded ||
     inferenceRouteRefreshNeeded ||
     grokFreshSessionForSandbox ||
     openCodeFreshSessionForCompatibility;
   const args = buildArgs(
     freshNativeSessionRequired ? null : resumeTarget,
-    flowDiscussionReplay?.prompt ??
+    runtimeHandoffReplay?.prompt ??
+      flowDiscussionReplay?.prompt ??
       runtimeAccessRetry?.prompt ??
       inferenceRouteRetry?.prompt ??
       grokSandboxRetry?.prompt ??
@@ -6192,6 +6244,7 @@ async function postChat(
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
+          finalizeRuntimeHandoff(conv, !result.is_error && !cancelledByUser, runtimeHandoff?.handoffEpoch ?? null);
           persistSendModelIntent(
             conv,
             body,

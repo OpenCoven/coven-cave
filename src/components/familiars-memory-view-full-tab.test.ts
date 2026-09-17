@@ -14,15 +14,20 @@ assert.match(
   "The compact scope row keeps the surface title",
 );
 assert.match(source, /\{selectedFamiliar\?\.display_name \?\? "No familiar selected"\}/, "the scope row names its familiar");
-assert.match(source, /Canonical \$\{overviewState\.value\.verification\.state\}/, "canonical verification remains visible");
 
 assert.doesNotMatch(
   source,
   /memory-stats-inline|data-testid="memory-masthead"/,
   "the expanded statistics masthead remains removed",
 );
-assert.match(source, /aria-controls=\{overviewPanelId\}/, "canonical overview is reachable from the compact status row");
-assert.match(source, /<CanonicalMemoryOverviewPanel overview=\{overviewState\.value\}/, "the full canonical overview remains available on demand");
+// The scope row used to carry a canonical verification readout and a
+// disclosure for the vault's overview panel. Both went with the vault; what
+// the row still owes is naming its surface and its familiar, asserted above.
+assert.doesNotMatch(
+  source,
+  /CanonicalMemoryOverviewPanel|overviewState|overviewPanelId/,
+  "the vault's overview panel and its disclosure are retired",
+);
 
 for (const label of ["Coven origin", "External runtimes", "Runtime memory"]) {
   assert.ok(source.includes(label), `Filter popover must keep source option: ${label}`);
@@ -76,10 +81,14 @@ assert.doesNotMatch(
   /rounded-lg border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-raised\)\]\/35 p-3/,
   "Compact memory cards should not be bordered rounded card boxes",
 );
+// The flat divided treatment was pinned on the canonical section, which went
+// with the vault. The rule it encoded — memory rows render as a flat divided
+// list, not as bordered card boxes — now belongs to the file list, which is
+// the only list left.
 assert.match(
   source,
-  /flex flex-col divide-y divide-\[var\(--border-hairline\)\] border-t border-\[var\(--border-hairline\)\]/,
-  "Compact memories render as a flat divided list",
+  /divide-y divide-\[var\(--border-hairline\)\]/,
+  "Memory rows render as a flat divided list",
 );
 
 console.log("familiars-memory-view-full-tab.test.ts: ok");

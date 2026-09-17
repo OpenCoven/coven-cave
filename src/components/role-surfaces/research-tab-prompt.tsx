@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/globals/surface-research-prompt.css";
+
 /**
  * Prompt tab — the handoff's "New research" screen.
  *

@@ -66,10 +66,12 @@ const router = vi.hoisted(() => ({
     newChat: [] as unknown[][],
   },
   latestProps: null as Record<string, unknown> | null,
+  attachHandle: true,
   reset() {
     this.calls.openSession = [];
     this.calls.newChat = [];
     this.latestProps = null;
+    this.attachHandle = true;
   },
 }));
 
@@ -80,10 +82,11 @@ const router = vi.hoisted(() => ({
 // without re-implementing its internal view state machine. This suite is
 // about RightChatPanel's own session-selection contract, not ChatRouter's.
 vi.mock("@/components/chat-router", async () => {
-  const { forwardRef, useImperativeHandle } = await import("react");
+  const { forwardRef, useEffect, useImperativeHandle } = await import("react");
   const ChatRouter = forwardRef(function MockChatRouter(props: Record<string, unknown>, ref: unknown) {
     router.latestProps = props;
-    useImperativeHandle(ref, () => ({
+    const attachHandle = router.attachHandle;
+    const handle = {
       goToList: () => {},
       newChat: (...args: unknown[]) => {
         router.calls.newChat.push(args);
@@ -95,10 +98,27 @@ vi.mock("@/components/chat-router", async () => {
       currentSessionId: () => null,
       clearTranscript: () => {},
       runSlash: () => {},
-    }));
+    };
+    useImperativeHandle(ref, () => handle);
+    const handleRef = props.handleRef;
+    useEffect(() => {
+      if (typeof handleRef === "function") handleRef(attachHandle ? handle : null);
+      else if (handleRef && typeof handleRef === "object") handleRef.current = attachHandle ? handle : null;
+      return () => {
+        if (typeof handleRef === "function") handleRef(null);
+        else if (handleRef && typeof handleRef === "object") handleRef.current = null;
+      };
+    }, [attachHandle, handleRef]);
     return null;
   });
   return { ChatRouter };
+});
+
+// Keep this suite focused on the panel controller. Production's next/dynamic
+// loader is covered by browser E2E; here it resolves to the imperative mock.
+vi.mock("next/dynamic", async () => {
+  const { ChatRouter } = await import("@/components/chat-router");
+  return { default: () => ChatRouter };
 });
 
 vi.mock("@/components/familiar-avatar", () => ({
@@ -371,6 +391,38 @@ test("initial resolve opens the active familiar's newest eligible session", asyn
 
   expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-newer");
   expect(sessionIdAttr(renderer)).toBe("cody-newer");
+});
+
+test("rail actions stay disabled until the router handle arrives, then become usable", async () => {
+  router.attachHandle = false;
+  const cody = familiar("cody", "Cody");
+  const older = sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+  const newer = sessionRow("cody-newer", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
+  const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [older, newer] });
+  const renderer = await renderPanel(props);
+
+  expect(threadSwitcher(renderer).props.disabled).toBe(true);
+  expect(findByAria(renderer, "New Chat panel chat").props.disabled).toBe(true);
+  expect(router.calls.openSession).toEqual([]);
+  expect(router.calls.newChat).toEqual([]);
+
+  router.attachHandle = true;
+  await update(renderer, props);
+
+  expect(threadSwitcher(renderer).props.disabled).toBe(false);
+  expect(findByAria(renderer, "New Chat panel chat").props.disabled).toBe(false);
+  expect(router.calls.openSession).toEqual([["cody-newer"]]);
+
+  router.calls.openSession = [];
+  await act(async () => {
+    findByAria(renderer, "New Chat panel chat").props.onClick();
+  });
+  expect(router.calls.newChat).toEqual([[undefined, undefined, "cody"]]);
+
+  await act(async () => {
+    threadSwitcher(renderer).props.onChange("cody-older");
+  });
+  expect(router.calls.openSession).toEqual([["cody-older"]]);
 });
 
 describe("promotion race (fix 1: a newly promoted session is never misclassified as deleted)", () => {
