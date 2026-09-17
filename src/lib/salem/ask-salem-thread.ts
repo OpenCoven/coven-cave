@@ -7,7 +7,6 @@
 // via `formatSearchContextForPrompt` — one context format, two producers.
 
 import type { SalemSearchContext } from "@/lib/command-palette-salem-context";
-import type { CanonicalMemoryVerificationState } from "@/lib/canonical-memory";
 
 export type AskSalemRole = "user" | "salem";
 
@@ -118,14 +117,6 @@ export type AskSalemCard = {
   labels?: string[];
 };
 
-export type AskSalemCovenMemory = {
-  title: string;
-  familiarId: string;
-  excerpt: string;
-  sourceLabel: string;
-  verificationState: CanonicalMemoryVerificationState;
-};
-
 export type AskSalemFsMemory = {
   relPath: string;
   rootLabel?: string;
@@ -139,7 +130,6 @@ export type AskSalemConversationHit = {
 
 export type AskSalemCorpora = {
   cards?: readonly AskSalemCard[];
-  covenMemory?: readonly AskSalemCovenMemory[];
   fsMemory?: readonly AskSalemFsMemory[];
   conversationHits?: readonly AskSalemConversationHit[];
 };
@@ -191,31 +181,6 @@ export function buildAskSalemContext(
       const detailParts = [card.status, card.priority, ...(card.labels ?? [])].filter(Boolean);
       const score = overlapScore(queryTokens, `${card.title} ${detailParts.join(" ")}`);
       if (score > 0) scored.push({ type: "task", title: card.title, detail: detailParts.join(" · "), score });
-    }
-    for (const entry of corpora.covenMemory ?? []) {
-      if (!entry.title) continue;
-      const score = overlapScore(
-        queryTokens,
-        [
-          entry.title,
-          entry.excerpt,
-          entry.familiarId,
-          entry.sourceLabel,
-          entry.verificationState,
-        ].join(" "),
-      );
-      if (score > 0) {
-        scored.push({
-          type: "memory",
-          title: entry.title,
-          detail: [
-            entry.familiarId,
-            entry.sourceLabel,
-            entry.verificationState,
-          ].join(" · "),
-          score,
-        });
-      }
     }
     for (const entry of corpora.fsMemory ?? []) {
       if (!entry.relPath) continue;

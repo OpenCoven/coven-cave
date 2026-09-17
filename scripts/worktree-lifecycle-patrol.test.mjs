@@ -1223,34 +1223,19 @@ try {
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
-  assert.equal(
-    packageJson.scripts["beads:worktrees:create"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
-  );
-  assert.equal(
-    packageJson.scripts["beads:worktrees:apply"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --apply",
-  );
-  assert.equal(
-    packageJson.scripts["beads:worktrees"],
-    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
-  );
-  assert.equal(
-    packageJson.scripts["beads:patrol:apply"],
-    "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
-    "normal apply patrol remains nonmutating until all gate planes are enforced",
+  assert.ok(
+    Object.keys(packageJson.scripts).every((name) => !name.startsWith("beads:")),
+    "legacy lifecycle coverage must not restore routine Beads entrypoints",
   );
   const agents = readFileSync(path.join(sourceRoot, "AGENTS.md"), "utf8");
   const claude = readFileSync(path.join(sourceRoot, "CLAUDE.md"), "utf8");
-  assert.match(agents, /After a PR merges, run `pnpm beads:worktrees`/);
-  assert.match(agents, /pnpm beads:worktrees:create/);
-  assert.match(agents, /pnpm beads:worktrees:apply/);
+  assert.match(agents, /docs\/workflows\/github-work-tracking\.md/);
   assert.match(agents, /remote deletion remains proposal-only/);
-  assert.match(claude, /normal completion uses the lifecycle patrol/);
+  assert.match(claude, /docs\/workflows\/github-work-tracking\.md/);
   assert.match(claude, /gate-incomplete, preserve the unit/);
   assert.match(
     claude,
-    /Never bypass\s+the worktree guard to force completion/,
+    /Do not[\s\S]*force-remove a dirty tree, clear a foreign lock/,
   );
   assert.doesNotMatch(
     claude,

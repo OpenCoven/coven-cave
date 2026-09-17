@@ -2,8 +2,8 @@ import XCTest
 @testable import CovenCave
 
 /// Placement rules for the "New Messages" transcript divider: it sits above
-/// the first assistant reply created after the operator's seen boundary, and
-/// its run length decides whether the initial scroll lands on it.
+/// the first assistant reply created after the operator's seen boundary. Its
+/// run length remains observable, but opening the chat still lands at latest.
 final class UnreadMarkerTests: XCTestCase {
 
     private let base = Date(timeIntervalSince1970: 1_700_000_000)

@@ -118,8 +118,8 @@ assert.match(
 );
 assert.match(
   thread,
-  /func replayQueued\(client: CaveClient,[\s\S]{0,160}?onConnectionFailure: \(\(Error\) -> Void\)\? = nil,[\s\S]{0,140}?dispatchLeaseIsCurrent: @escaping \(\) -> Bool,[\s\S]{0,140}?persistBeforeDispatch: @escaping \(\) async -> Bool,[\s\S]{0,160}?onChange: @escaping \(\) -> Void\) async/,
-  "ChatThread.replayQueued drives the reconnect send",
+  /func replayQueued\(client: CaveClient,[\s\S]{0,160}?onConnectionFailure: \(\(Error\) -> Void\)\? = nil,\s*dispatchLeaseIsCurrent: @escaping \(\) -> Bool,\s*targetAccessIsCurrent: @escaping \(String\?, String\) -> Bool,\s*onAccessRefused: @escaping \(String\?\) -> Void,\s*persistBeforeDispatch: @escaping \(\) async -> Bool,[\s\S]{0,160}?onChange: @escaping \(\) -> Void\) async/,
+  "ChatThread.replayQueued requires endpoint, per-target access, refusal feedback, and durability callbacks",
 );
 assert.match(
   thread,
@@ -129,6 +129,7 @@ assert.match(
 assert.match(thread, /var queuedRunIdsByFamiliarId: \[String: String\]\?/);
 assert.match(thread, /var queuedAttemptedFamiliarIds: \[String\]\?/);
 assert.match(thread, /var queuedTargetFamiliarIds: \[String\]\?/);
+assert.match(thread, /var queuedContext: QueuedContext\?/);
 assert.match(models, /var attentionClearOperationId: String\?/);
 assert.match(models, /var parentId: String\?/);
 const sendStart = thread.indexOf("func send(_ text: String");
@@ -179,6 +180,36 @@ assert.match(
   /let targets = queuedMessage\.queuedTargetFamiliarIds[\s\S]{0,180}queuedRunIdsByFamiliarId[\s\S]{0,100}\?\? familiarIds/,
   "replay freezes the original fan-out instead of using mutable group membership",
 );
+assert.match(
+  replayImplementation,
+  /let queuedContext = queuedMessage\.queuedContext,[\s\S]{0,100}let queuedProjectRoot = queuedContext\.projectRoot,[\s\S]{0,100}queuedProjectRoot == projectRoot/,
+  "replay requires the original persisted project rather than adopting a replacement thread root",
+);
+assert.match(
+  replayImplementation,
+  /let queuedSessionId = queuedContext\.sessionIds\[familiarId\] \?\? sessionIds\[familiarId\]/,
+  "an established queued session cannot be replaced, but an initially absent session may become established",
+);
+assert.match(
+  sendImplementation,
+  /queuedContext: \.init\(projectRoot: projectRoot, sessionIds: sessionIds\)/,
+  "a live send captures its original project and conversation before a checkpoint can suspend",
+);
+assert.match(
+  thread,
+  /migrated\.queuedContext = \.init\(projectRoot: projectRoot, sessionIds: sessionIds\)/,
+  "legacy queued turns capture saved provenance during construction, before thread hydration",
+);
+assert.match(
+  thread,
+  /if migrated\.queuedTargetFamiliarIds == nil \{[\s\S]{0,120}message\.queuedRunIdsByFamiliarId[\s\S]{0,100}\?\? familiarIds/,
+  "legacy recipients freeze from the saved delivery IDs or saved roster before hydration",
+);
+assert.match(
+  replayImplementation,
+  /if streamOutcome == \.queued, targetWasRefused,\s*!Task\.isCancelled, dispatchLeaseIsCurrent\(\) \{\s*continue/,
+  "a proven per-target preflight refusal does not starve allowed siblings or waive the endpoint lease",
+);
 assert.match(thread, /var sendPrompt: String\?/);
 assert.match(sendImplementation, /sendPrompt: shown == trimmed \? nil : trimmed/);
 assert.match(replayImplementation, /let prompt = queuedMessage\.sendPrompt \?\? queuedMessage\.text/);
@@ -206,13 +237,13 @@ const freshStream = replayImplementation.indexOf("let streamOutcome = await stre
 assert.ok(freshCheckpoint >= 0 && freshStream > freshCheckpoint);
 assert.match(
   replayImplementation.slice(freshCheckpoint, freshStream),
-  /else \{[\s\S]*?_ = await persistAfterRollback\(\)[\s\S]*?return\s*\n\s*\}[\s\S]*?guard !Task\.isCancelled, dispatchLeaseIsCurrent\(\) else \{[\s\S]*?_ = await persistAfterRollback\(\)[\s\S]*?return\s*\n\s*\}/,
+  /else \{[\s\S]*?_ = await persistAfterRollback\(\)[\s\S]*?return\s*\n\s*\}[\s\S]*?guard !Task\.isCancelled, dispatchLeaseIsCurrent\(\), mayDispatchTarget\(\) else \{[\s\S]*?_ = await persistAfterRollback\(\)[\s\S]*?return\s*\n\s*\}/,
   "failed and cancelled pre-POST checkpoints durably roll back before returning",
 );
 assert.match(
   replayImplementation.slice(freshStream),
-  /runId: runId,[\s\S]{0,160}liveDispatchLeaseIsCurrent: dispatchLeaseIsCurrent,[\s\S]{0,120}persistAfterProvablyUnsentRollback: persistAfterRollback/,
-  "queued replay passes the exact checkpointed run id and its local rollback durability closure into stream",
+  /runId: runId,[\s\S]{0,160}liveDispatchLeaseIsCurrent: mayDispatchTarget,[\s\S]{0,120}persistAfterProvablyUnsentRollback: persistAfterRollback/,
+  "queued replay passes its checkpointed run id, exact-target access fence, and local rollback durability into stream",
 );
 assert.match(
   sendImplementation,
@@ -319,7 +350,7 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /mutate\(queuedId\) \{\s*\n\s*\$0\.queued = false[\s\S]{0,240}\$0\.queuedTargetFamiliarIds = nil\s*\n\s*\}/,
+  /mutate\(queuedId\) \{\s*\n\s*\$0\.queued = false[\s\S]{0,240}\$0\.queuedTargetFamiliarIds = nil\s*\n\s*\$0\.queuedContext = nil\s*\n\s*\}/,
   "the queue clears only after every intended familiar attempt has settled",
 );
 

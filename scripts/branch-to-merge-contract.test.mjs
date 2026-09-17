@@ -2,7 +2,7 @@
 //
 // The skill tells agents how to land a branch on protected `main`. Its value is
 // entirely in the facts it asserts — the required check, the PR-only path,
-// the no-AI-attribution rule, the lifecycle retirement route. A skill that
+// the no-AI-attribution rule, the evidence-backed retirement route. A skill that
 // drifts from those facts is worse than no skill: it is confidently wrong at the
 // exact moment an agent is about to mutate `main`.
 //
@@ -15,6 +15,9 @@ import test from "node:test";
 const skill = fs.readFileSync(".agents/skills/branch-to-merge/SKILL.md", "utf8");
 const claude = fs.readFileSync("CLAUDE.md", "utf8");
 const agents = fs.readFileSync("AGENTS.md", "utf8");
+const workflow = fs.readFileSync("docs/workflows/github-work-tracking.md", "utf8");
+const claudeProse = claude.replace(/\s+/g, " ");
+const skillProse = skill.replace(/\s+/g, " ");
 
 // Derive the check list from CLAUDE.md rather than restating it.
 const NUMBER_WORDS = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE"];
@@ -23,24 +26,57 @@ function backticked(source) {
   return [...source.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
 }
 
-function documentedChecks() {
-  const bullet =
-    /- Required status checks — \*\*(?:all )?([A-Z]+)\*\* must pass[^:]*:(.*?)\. Routine PR CI/s.exec(
-      claude,
-    );
-  assert.ok(bullet, "CLAUDE.md no longer states the required status checks in the expected shape");
-  return { word: bullet[1], names: backticked(bullet[2]) };
+function documentedChecks(source = claude) {
+  const bullet = /^-[ \t]+Required status checks:[^\n]*(?:\n[ \t]+[^\n]*)*/m.exec(source);
+  assert.ok(bullet, "CLAUDE.md no longer states the required status-check policy");
+  const declaration =
+    /Required status checks:\s+\*\*(?:all\s+)?([A-Z]+)\*\*\s+must pass:\s+((?:`[^`]+`|[^`.])+)\./.exec(bullet[0]);
+  assert.ok(declaration, "the policy must state a check count and named required contexts");
+  return { word: declaration[1], names: backticked(declaration[2]) };
 }
 
-function skillChecks() {
-  const section = /required checks? must pass:\n\n```bash\n.*?```\n\n(.*?)\n\nCodeQL is retired/s.exec(
-    skill,
-  );
-  assert.ok(section, "skill no longer lists the required checks in the expected shape");
-  const word = /\n([A-Za-z]+) required checks? must pass:/.exec(skill)?.[1];
+function skillChecks(source = skill) {
+  const section = /## Phase 5:[^\n]*\n([\s\S]*?)\n## Phase 6:/.exec(source);
+  assert.ok(section, "skill no longer defines the checks and review phase");
+  const word = /^([A-Za-z]+)\s+required checks? must pass:/m.exec(section[1])?.[1];
   assert.ok(word, "skill no longer states how many checks are required");
-  return { word, names: backticked(section[1]) };
+  const names = [...section[1].matchAll(/^-[ \t]+`([^`\n]+)`[ \t]*$/gm)]
+    .map((match) => match[1]);
+  assert.ok(names.length > 0, "skill no longer lists named required checks");
+  return { word, names };
 }
+
+test("required-check derivation ignores wrapping and surrounding narrative", () => {
+  for (const source of [
+    "- Required status checks: **ONE** must pass: `Frontend build`.",
+    "- Required status checks:\n  **ONE** must pass:\n  `Frontend build`.\n  `CodeQL` is advisory.\n- Other policy facts.",
+  ]) {
+    assert.deepEqual(documentedChecks(source), {
+      word: "ONE",
+      names: ["Frontend build"],
+    });
+  }
+  assert.deepEqual(
+    documentedChecks("- Required status checks: **TWO** must pass: `frontend.build`, `native.build`."),
+    { word: "TWO", names: ["frontend.build", "native.build"] },
+  );
+  assert.deepEqual(skillChecks([
+    "## Phase 5: Checks and review",
+    "",
+    "One required check must pass:",
+    "",
+    "```bash",
+    "gh pr checks <#> --required",
+    "```",
+    "",
+    "- `Frontend build`",
+    "",
+    "Independent advisory-check narrative.",
+    "",
+    "## Phase 6: Merge",
+  ].join("\n")), { word: "One", names: ["Frontend build"] });
+  assert.throws(() => documentedChecks("- Other policy: `Frontend build`."));
+});
 
 test("skill declares a name and a trigger-bearing description", () => {
   assert.match(skill, /^---\nname: branch-to-merge\n/);
@@ -109,7 +145,7 @@ test("skill requires all checks on the exact current PR head", () => {
   assert.ok(skill.includes("set -euo pipefail"));
 });
 
-test("CLAUDE.md documents the same exact-head, patrol-safe merge", () => {
+test("CLAUDE.md documents the same exact-head merge without implicit cleanup", () => {
   const mergeCommands = claude.match(/^gh pr merge .*$/gm) ?? [];
   assert.ok(
     mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"'),
@@ -122,7 +158,7 @@ test("CLAUDE.md documents the same exact-head, patrol-safe merge", () => {
 
 test("skill mirrors the protected-main policy that governs its PR lifecycle", () => {
   assert.match(
-    claude,
+    claudeProse,
     /Commit signatures are \*\*NOT required\*\* \(`required_signatures: false`/,
     "CLAUDE.md no longer documents the optional-signature policy",
   );
@@ -130,33 +166,41 @@ test("skill mirrors the protected-main policy that governs its PR lifecycle", ()
   assert.ok(!skill.includes("Push rejected — unsigned commit"));
 
   assert.match(
-    claude,
+    claudeProse,
     /Branches do \*\*not\*\* need to be up to date with `main` \(`strict: false`\)/,
     "CLAUDE.md no longer documents non-strict required checks",
   );
   assert.match(skill, /Branch protection sets `strict: false`/);
 
   assert.match(
-    claude,
+    claudeProse,
     /Review conversations are \*\*no longer required to be resolved\*\*/,
     "CLAUDE.md no longer documents the review-conversation policy",
   );
-  assert.match(skill, /Conversation resolution is \*\*no longer\*\* a merge\ngate/);
+  assert.match(skillProse, /Conversation resolution is \*\*no longer\*\* a merge gate/);
 
   assert.match(
-    claude,
-    /If hasNextPage is true, page with `reviewThreads\(first:100, after:"<endCursor>"\)`/,
+    claudeProse,
+    /page with `reviewThreads\(first:100, after:"<endCursor>"\)` until false/,
     "CLAUDE.md no longer documents review-thread pagination",
   );
-  assert.match(skill, /Page with `reviewThreads\(first:100, after:"<endCursor>"\)` until `hasNextPage` is/);
+  assert.match(claudeProse, /Also page each thread's comments when its comment connection has another page/);
+  assert.match(skillProse, /Page with `reviewThreads\(first:100, after:"<endCursor>"\)` until `hasNextPage` is false/);
   assert.match(
-    skill,
-    /comments\(first:100\)\{pageInfo\{hasNextPage endCursor\}/,
-    "the initial review-thread query must read every comment on ordinary threads",
+    claudeProse,
+    /If gate-incomplete, preserve the unit\./,
+    "CLAUDE.md must retain fail-closed behavior for incomplete exclusion",
   );
+  for (const [name, source] of [["skill", skill], ["CLAUDE.md", claude]]) {
+    assert.match(
+      source,
+      /comments\(first:100\)\{pageInfo\{hasNextPage endCursor\}/,
+      `${name}'s initial review query must expose comment pagination`,
+    );
+  }
   assert.match(
-    skill,
-    /Also page any thread whose\n`comments` pageInfo has `hasNextPage: true`/,
+    skillProse,
+    /Also page any thread whose `comments` pageInfo has `hasNextPage: true`/,
     "the skill must not omit replies when a review thread has more than 100 comments",
   );
   assert.match(
@@ -166,11 +210,14 @@ test("skill mirrors the protected-main policy that governs its PR lifecycle", ()
   );
 
   assert.match(
-    claude,
-    /gate-incomplete, preserve the unit/,
-    "CLAUDE.md no longer documents the lifecycle gate-incomplete behavior",
+    workflow,
+    /missing legacy maintenance planes are not made safe by changing trackers/,
+    "the canonical workflow must not claim tracker migration implements exclusion",
   );
-  assert.match(skill, /or the gate as incomplete, \*\*preserve it\*\*/);
+  assert.match(skill, /automatic retirement still requires the full maintenance gate/);
+  assert.match(skill, /Preserve dirty state, foreign locks, inaccessible paths, and unknown\s+owners/);
+  assert.match(skill, /CodeQL can run[\s\S]*advisory, not required/);
+  assert.doesNotMatch(skill, /CodeQL is retired|code scanning is fully off/);
 });
 
 test("skill forbids the bypasses branch protection exists to stop", () => {
@@ -196,14 +243,15 @@ test("skill carries the repository's no-AI-attribution rule", () => {
   assert.ok(claude.includes("node scripts/pr-squash-message.mjs"));
 });
 
-test("skill uses the managed worktree command in its documented form", () => {
-  assert.ok(skill.includes("pnpm beads:worktrees:create --bead"));
-  assert.ok(
-    !skill.includes("beads:worktrees:create -- --bead"),
-    "the `--` form is rejected by the flag parser",
-  );
-  assert.ok(skill.includes("--exception-owner"));
-  assert.ok(skill.includes("--exception-expires-at"));
+test("skill uses issue-owned worktrees through the canonical GitHub guide", () => {
+  assert.ok(skill.includes("../../../docs/workflows/github-work-tracking.md"));
+  assert.ok(agents.includes("docs/workflows/github-work-tracking.md"));
+  assert.ok(claude.includes("docs/workflows/github-work-tracking.md"));
+  const create = "git worktree add --no-track -b <branch> .worktrees/<slug> origin/main";
+  assert.ok(skill.includes(create));
+  assert.ok(workflow.includes(create));
+  assert.match(skill, /Cave Project 9/);
+  assert.match(workflow, /orgs\/OpenCoven\/projects\/9/);
 });
 
 test("skill refreshes origin before creating a branch from origin/main", () => {
@@ -212,37 +260,60 @@ test("skill refreshes origin before creating a branch from origin/main", () => {
     skill.indexOf("## Phase 1:"),
   );
   const fetch = phaseZero.indexOf("git fetch origin");
-  const managedCreate = phaseZero.indexOf("pnpm beads:worktrees:create");
-  const fallbackCreate = phaseZero.indexOf("git worktree add -b <branch>");
+  const create = phaseZero.indexOf("git worktree add --no-track");
+  const ownershipReview = phaseZero.indexOf("28-worktree budget review");
 
   assert.ok(fetch !== -1, "Phase 0 must refresh origin before branching");
+  assert.ok(create !== -1, "Phase 0 must use the no-track creation path");
   assert.ok(
-    fetch < managedCreate && fetch < fallbackCreate,
-    "Phase 0 must refresh origin before either worktree creation path",
+    fetch < create && ownershipReview !== -1 && ownershipReview < create,
+    "Phase 0 must refresh origin and review ownership/budget before creation",
   );
 });
 
-test("skill retires local units through the patrol, never by improvisation", () => {
-  assert.ok(/^pnpm beads:worktrees(?:\s|$)/m.test(skill), "skill must run the report-only patrol");
-  assert.ok(skill.includes("pnpm beads:worktrees:apply"));
-  assert.ok(skill.includes("branch-curator"));
+test("skill separates completion from proof-backed local retirement", () => {
+  const closeout = skill.slice(
+    skill.indexOf("## Phase 7:"),
+    skill.indexOf("## Confirmation requirements"),
+  );
+  assert.match(closeout, /^pnpm wt:status$/m);
+  assert.match(closeout, /Local status is not ownership or deletion authority/);
+  assert.match(closeout, /Use \*\*branch-curator\*\* for any removal/);
+  assert.match(closeout, /current exact-candidate authority, a local\s+maintenance lease/);
+  assert.match(closeout, /fresh owner\/runtime evidence, and the complete deletion\s+proof/);
+  assert.match(closeout, /Never bypass `scripts\/worktree-guard\.mjs`/);
   assert.ok(
     skill.includes("git tag -s archive/"),
     "skill must document the archive-tag route for retained commits",
   );
+  assert.match(closeout, /A squash merge does not retain the branch's own commits/);
+  assert.match(closeout, /Verify the exact remote ref and OID/);
+  assert.match(closeout, /stale tracking ref or local-only tag does not count/);
 });
 
-test("skill bookends the work with Beads claim and close", () => {
-  assert.ok(skill.includes("bd update <id> --claim"));
-  assert.ok(skill.includes("bd close <id>"));
+test("skill uses GitHub ownership without claiming an atomic execution lease", () => {
+  assert.ok(skill.includes("gh issue view <issue-number> --repo OpenCoven/coven-cave --comments"));
+  assert.match(skill, /Reuse the issue and its existing worktree/);
+  assert.match(skill, /re-read ownership before acting/);
+  assert.match(skill, /GitHub assignment and comments\s+are not atomic execution leases/);
+  assert.match(skill, /Preserve human-authored dependencies and approvals/);
+  assert.match(skill, /Do not commit, push, or merge without the current request's authority/);
+  assert.match(skill, /A review-only request stays read-only/);
+  assert.match(skill, /A no-push instruction still wins/);
+  assert.match(skill, /canonical GitHub issue link/);
 });
 
-test("skill records the lifecycle patrol before closing the Bead", () => {
+test("skill records worktree disposition before issue and Project completion", () => {
   const closeout = skill.slice(skill.indexOf("## Phase 7:"));
   assert.ok(closeout.includes("before closing the PR-backed work"));
+  assert.match(closeout, /merged PR and exact head, branch, worktree, session, owner, and verification\s+evidence on the issue/);
+  assert.match(closeout, /removed and verified, or intentionally preserved with\s+an owner and reason/);
+  assert.match(closeout, /Only after merge or the issue's explicit completion criteria/);
+  assert.match(closeout, /close the issue and set Project `Done` when\s+authorized/);
+  assert.match(closeout, /Local-only or unmerged implementation is not completion/);
   assert.ok(
-    closeout.indexOf("pnpm beads:worktrees") < closeout.indexOf("bd close <id>"),
-    "the patrol evidence must be recorded before bd close",
+    closeout.indexOf("Record each worktree") < closeout.indexOf("close the issue"),
+    "worktree disposition must be recorded before issue closure",
   );
 });
 
@@ -278,28 +349,25 @@ test("every skill named as an integration point actually exists in this repo", (
   }
 });
 
-test("skill handles a managed-worktree inventory outage without forging metadata", () => {
-  const normalizedAgents = agents.replace(/\s+/g, " ");
-  assert.ok(
-    normalizedAgents.includes("lifecycle inventory") &&
-      normalizedAgents.includes("git worktree add -b <branch> .worktrees/<branch> origin/main"),
-    "AGENTS.md no longer documents the managed-worktree fallback",
-  );
-  assert.ok(skill.includes("git worktree add -b <branch> .worktrees/<branch> origin/main"));
-  assert.ok(skill.includes("can never retire it automatically"));
-  assert.ok(skill.includes("never hand-write lifecycle metadata onto the Bead"));
+test("skill retires Beads recipes without discarding legacy evidence", () => {
+  assert.doesNotMatch(skill, /\bbd\s+(?:prime|ready|show|list|create|update|close|sync)\b/);
+  assert.doesNotMatch(skill, /\bpnpm\s+beads:/);
+  assert.doesNotMatch(skill, /\bdolt\s+(?:push|pull|fetch)\b/);
+  assert.doesNotMatch(skill, /\| `beads` \|/);
+  assert.match(skill, /Preserve its historical records and refs/);
+  assert.match(skill, /Missing evidence or a\s+legacy status does not authorize takeover/);
+  assert.match(skill, /Do not manufacture legacy lifecycle\s+metadata or create a Bead/);
+  assert.match(skill, /Legacy `retire-after-gate` and `uncertain` classifications do not grant it/);
 });
 
-test("skill distinguishes a managed-worktree budget refusal from an inventory outage", () => {
-  assert.match(
-    skill,
-    /\| `worktree-lifecycle-create` budget refusal \| Rerun with the printed `--exception-\*` flags\. Do not fall back to `git worktree add` for a budget refusal\. \|/,
-    "a budget refusal must use its exception flags, while an inventory outage uses the documented fallback",
-  );
-  assert.ok(
-    skill.includes("If the command cannot build its complete lifecycle\n  inventory"),
-    "an inventory outage must retain the documented bare-worktree fallback",
-  );
+test("skill preserves budgets and uncertainty without reviving the legacy creator", () => {
+  assert.match(workflow, /28 registered worktrees/);
+  assert.match(workflow, /including its primary worktree/);
+  assert.match(workflow, /preserve existing units and\s+obtain an attributed, scoped exception on the issue before creating another/);
+  assert.match(skill, /Worktree budget reached \| Preserve existing units/);
+  assert.match(skill, /Legacy patrol reports `uncertain` or missing maintenance planes/);
+  assert.match(skill, /do not fabricate metadata or run Beads to clear it/);
+  assert.doesNotMatch(skill, /--exception-(?:owner|reason|expires-at|path)/);
 });
 
 test("skill refuses commits from the primary checkout", () => {

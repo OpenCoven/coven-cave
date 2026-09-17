@@ -17,6 +17,8 @@ const EXPECTED_HEAD = "a".repeat(40);
 const OTHER_HEAD = "b".repeat(40);
 const RUN_BASE = "c".repeat(40);
 const LIVE_BASE = "d".repeat(40);
+const RUN_ID = 12345;
+const RUN_ATTEMPT = 3;
 const ATTEMPT_STARTED_AT = "2026-08-29T10:00:00Z";
 const FRESH_STARTED_AT = "2026-08-29T10:01:00Z";
 const EVIDENCE_JOB_NAMES = [
@@ -30,6 +32,7 @@ const EVIDENCE_JOB_NAMES = [
   "Frontend validation (API tests)",
   "Frontend validation (mobile tests)",
   "Frontend validation (protocol conformance)",
+  "Frontend validation (Windows startup controls)",
   ...Array.from({ length: 8 }, (_, index) => `Frontend E2E (${index + 1}/8)`),
   "Frontend E2E (agentic)",
 ];
@@ -38,7 +41,8 @@ function job(
   name,
   {
     headSha = EXPECTED_HEAD,
-    attempt = 3,
+    runId = RUN_ID,
+    attempt = RUN_ATTEMPT,
     startedAt = FRESH_STARTED_AT,
     conclusion = "success",
     id = 1,
@@ -48,6 +52,7 @@ function job(
     id,
     name,
     head_sha: headSha,
+    run_id: runId,
     run_attempt: attempt,
     started_at: startedAt,
     conclusion,
@@ -57,6 +62,8 @@ function job(
 function context(overrides = {}) {
   return {
     expectedHeadSha: EXPECTED_HEAD,
+    expectedRunId: RUN_ID,
+    expectedRunAttempt: RUN_ATTEMPT,
     attemptStartedAt: ATTEMPT_STARTED_AT,
     runBaseRef: "main",
     runBaseSha: RUN_BASE,
@@ -75,6 +82,10 @@ function cli(input, overrides = {}) {
       values.expectedHeadSha,
       "--attempt-started-at",
       values.attemptStartedAt,
+      "--run-id",
+      String(values.expectedRunId),
+      "--run-attempt",
+      String(values.expectedRunAttempt),
       "--run-base-ref",
       values.runBaseRef,
       "--run-base-sha",
@@ -93,10 +104,21 @@ test("each validation and E2E leg is retained by its exact job name", () => {
   }));
   const latest = latestEvidenceJobs(jobs);
 
-  assert.equal(latest.size, 19);
+  assert.equal(latest.size, 20);
   assert.deepEqual([...latest.keys()], EVIDENCE_JOB_NAMES);
   assert.deepEqual(staleEvidence(jobs, context()), [
     `Frontend E2E (agentic) reported head ${OTHER_HEAD}; expected workflow head ${EXPECTED_HEAD}`,
+  ]);
+});
+
+test("Windows startup controls remain subject to exact-head and current-attempt evidence checks", () => {
+  const name = "Frontend validation (Windows startup controls)";
+  assert.deepEqual(staleEvidence([job(name, { headSha: OTHER_HEAD })], context()), [
+    `${name} reported head ${OTHER_HEAD}; expected workflow head ${EXPECTED_HEAD}`,
+  ]);
+  const startedAt = "2026-08-29T09:00:00Z";
+  assert.deepEqual(staleEvidence([job(name, { startedAt })], context()), [
+    `${name} started ${startedAt} before the current attempt started ${ATTEMPT_STARTED_AT}`,
   ]);
 });
 
@@ -150,13 +172,46 @@ test("fresh PR-head evidence passes without comparing to the synthetic merge SHA
   );
 });
 
-test("the gate refuses when the run base differs from the live base ref", () => {
+test("base ref drift alone does not invalidate fresh same-attempt evidence", () => {
   assert.deepEqual(
     staleEvidence(
       [job("Select validation")],
       context({ liveBaseSha: LIVE_BASE }),
     ),
-    [`base main moved: run recorded ${RUN_BASE}, live ref is ${LIVE_BASE}`],
+    [],
+  );
+});
+
+test("base drift cannot excuse a different head or carried-forward attempt timestamps", () => {
+  const result = staleEvidence([
+    job("Frontend validation (app tests)", { headSha: OTHER_HEAD }),
+    job("Frontend E2E (1/8)", { startedAt: "2026-08-29T09:00:00Z" }),
+  ], context({ liveBaseSha: LIVE_BASE }));
+
+  assert.equal(result.length, 2);
+  assert.ok(result.some((reason) => reason.includes(`reported head ${OTHER_HEAD}`)));
+  assert.ok(result.some((reason) => reason.includes("before the current attempt started")));
+});
+
+test("run provenance must match even when head, timestamps, and base-drift policy permit the jobs", () => {
+  const result = staleEvidence([
+    job("Frontend bundle", { runId: RUN_ID + 1 }),
+    job("Frontend validation (lint)", { attempt: RUN_ATTEMPT - 1 }),
+  ], context({ liveBaseSha: LIVE_BASE }));
+
+  assert.deepEqual(result, [
+    `Frontend bundle reported run ${RUN_ID + 1}; expected workflow run ${RUN_ID}`,
+    `Frontend validation (lint) reported attempt ${RUN_ATTEMPT - 1}; expected current attempt ${RUN_ATTEMPT}`,
+  ]);
+});
+
+test("missing run provenance fails closed", () => {
+  assert.deepEqual(
+    staleEvidence([job("Select validation", { runId: null, attempt: null })], context()),
+    [
+      `Select validation reported run unknown; expected workflow run ${RUN_ID}`,
+      `Select validation reported attempt unknown; expected current attempt ${RUN_ATTEMPT}`,
+    ],
   );
 });
 
@@ -323,6 +378,25 @@ test("the CLI passes a fresh gh api jobs envelope", () => {
   assert.match(result.stdout, /Frontend validation \(lint\):/);
 });
 
+test("the CLI reports base drift without invalidating complete fresh evidence", () => {
+  const result = cli({
+    total_count: EVIDENCE_JOB_NAMES.length,
+    jobs: EVIDENCE_JOB_NAMES.map((name, index) => job(name, { id: index + 1 })),
+  }, { liveBaseSha: LIVE_BASE });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, new RegExp(`Run base: main@${RUN_BASE}`));
+  assert.match(result.stdout, new RegExp(`Live base: main@${LIVE_BASE}`));
+  assert.match(result.stdout, /Base drift is informational under non-strict branch protection/);
+  assert.match(result.stdout, new RegExp(`Workflow run: ${RUN_ID}, attempt ${RUN_ATTEMPT}`));
+});
+
+test("the CLI refuses a wrong run even when its jobs match the requested head", () => {
+  const result = cli([job("Select validation", { runId: RUN_ID + 1 })]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /reported run .*expected workflow run/);
+});
+
 test("missing or malformed required CLI metadata is a usage error", () => {
   const missing = spawnSync(process.execPath, [SCRIPT], {
     input: "[]",
@@ -336,6 +410,17 @@ test("missing or malformed required CLI metadata is a usage error", () => {
   });
   assert.equal(malformedTime.status, 2);
   assert.match(malformedTime.stderr, /--attempt-started-at must be a valid timestamp/);
+
+  for (const [field, flag] of [
+    ["expectedRunId", "--run-id"],
+    ["expectedRunAttempt", "--run-attempt"],
+  ]) {
+    for (const value of [0, -1, 1.5, "unknown", undefined]) {
+      const result = cli([job("Select validation")], { [field]: value });
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, new RegExp(`${flag} must be a positive safe integer`));
+    }
+  }
 });
 
 test("evidence prefixes match every workflow family", () => {
@@ -367,6 +452,8 @@ test("the workflow supplies same-domain head, timestamp, and exact base evidence
     "github.sha is a synthetic merge SHA on pull_request and is the wrong comparison domain",
   );
   assert.match(build, /actions\/runs\/\$RUN_ID" > \/tmp\/cave-build-evidence-run\.json/);
+  assert.match(build, /RUN_ID: \$\{\{ github\.run_id \}\}/);
+  assert.match(build, /RUN_ATTEMPT: \$\{\{ github\.run_attempt \}\}/);
   assert.match(build, /\.run_started_at/);
   assert.match(build, /RUN_BASE_REF: \$\{\{ needs\.paths\.outputs\.run_base_ref \}\}/);
   assert.match(build, /RUN_BASE_SHA: \$\{\{ needs\.paths\.outputs\.run_base_sha \}\}/);
@@ -379,6 +466,8 @@ test("the workflow supplies same-domain head, timestamp, and exact base evidence
   for (const flag of [
     "--expected-head-sha",
     "--attempt-started-at",
+    "--run-id",
+    "--run-attempt",
     "--run-base-ref",
     "--run-base-sha",
     "--live-base-sha",

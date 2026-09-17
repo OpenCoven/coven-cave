@@ -162,34 +162,50 @@ assert.match(
 assert.doesNotMatch(
   source,
   /menu-bar__status|runningCount|ph:waveform/,
-  "the bar no longer hand-rolls the running-status markup (it lives in RunningActivityPopover)",
+  "the bar no longer hand-rolls the running-status markup (it lives in NeedsYouPopover)",
 );
 assert.doesNotMatch(
   source,
   /menu-bar__running-dot/,
   "the running status no longer uses a presence dot",
 );
-// Clicking the waveform trigger must SHOW the running activity: the workspace
-// feeds the popover the familiar roster plus navigation handlers, and the
-// popover fetches the aggregated activity itself.
-const runningActivityPopover = readFileSync(
-  new URL("./running-activity-popover.tsx", import.meta.url),
+// Clicking the bell must SHOW what is stopped on you: the workspace feeds the
+// inbox the live sessions plus navigation handlers, and the popover derives its
+// own rows (see lib/needs-you-inbox.ts).
+const needsYouPopover = readFileSync(
+  new URL("./needs-you-popover.tsx", import.meta.url),
   "utf8",
 );
 assert.match(
   workspace,
-  /runningStatus=\{\s*<RunningActivityPopover\s+familiars=\{familiars\}\s+onOpenItem=/,
-  "workspace mounts RunningActivityPopover in the menu bar's runningStatus slot with the familiar roster and item navigation",
+  /runningStatus=\{\s*<NeedsYouPopover\s+sessions=\{sessions\}\s+familiars=\{familiars\}/,
+  "workspace mounts NeedsYouPopover in the menu bar's runningStatus slot with the session list and familiar roster",
 );
+// `showFamiliarChatList`, not a bare `setMode("chat")`: it also clears the
+// active session and dispatches a `list` action, so "All sessions" lands on
+// the LIST rather than on whichever session happened to be open. The spec
+// sends this control to the browse surface, and only the former is that.
 assert.match(
   workspace,
-  /onViewAll=\{\(\) => setMode\("inbox"\)\}/,
-  "View all lands on Rituals, the closest existing activity surface",
+  /onOpenSessions=\{showFamiliarChatList\}/,
+  "All sessions lands on the session list, not merely the chat mode",
 );
 assert.match(
-  runningActivityPopover,
-  /className="menu-bar__status focus-ring"[\s\S]{0,200}?aria-haspopup="dialog"[\s\S]{0,120}?aria-expanded=\{open\}/,
-  "the popover trigger keeps the menu-bar status chrome and announces the popover",
+  needsYouPopover,
+  /className="menu-bar__status focus-ring needs-you-trigger"[\s\S]{0,400}?aria-haspopup="dialog"[\s\S]{0,160}?aria-expanded=\{open\}/,
+  "the trigger keeps the menu-bar status chrome and announces the popover",
+);
+// The badge counts ACTIONABLE work only. A count that is never zero is not a
+// signal, which is the whole reason the running-activity trigger was retired.
+assert.match(
+  needsYouPopover,
+  /count > 0 \? \(\s*<span[^>]*className="menu-bar__badge needs-you-trigger__badge"/,
+  "the badge renders only when something actually needs you",
+);
+assert.doesNotMatch(
+  needsYouPopover,
+  /glass-overlay/,
+  "the panel is opaque --bg-elevated, never glass: transcript text reading through this popover is the handoff's third P0 finding",
 );
 assert.match(
   notificationBell,

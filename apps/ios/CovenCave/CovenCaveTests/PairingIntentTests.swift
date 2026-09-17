@@ -162,11 +162,15 @@ final class PairingIntentTests: XCTestCase {
         app.handleDeepLink(tasksURL)
         app.connectionState = .connected
 
-        XCTAssertEqual(
-            app.pendingProjectNavigationIntent,
-            ProjectNavigationIntent(destination: .tasks)
-        )
-        XCTAssertNotEqual(app.pendingProjectNavigationIntent?.threadId, intent.threadId)
+        // Tasks is desktop-only: the newer navigation is rejected outright
+        // rather than staged, so nothing pending survives it.
+        XCTAssertNil(app.pendingProjectNavigationIntent)
+        // The essential property under test: the newer navigation must have
+        // cancelled the staged pairing destination, not merely left it
+        // unresolved. Prove it directly — resuming the original pairing
+        // intent must no longer produce its thread navigation.
+        app.resumePairingDestination(intent)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
     }
 
     func testPairingWithoutDestinationPreservesPendingProjectNavigation() {
@@ -193,7 +197,10 @@ final class PairingIntentTests: XCTestCase {
 
         app.handleDeepLink(url)
 
-        XCTAssertEqual(app.selectedTab, .tasks)
+        // Tasks is desktop-only on chat-only iOS: the deep link is decoded
+        // (so `deepLink` still records the legacy signal) but rejected before
+        // it can change the selected tab.
+        XCTAssertEqual(app.selectedTab, .settings)
         XCTAssertEqual(app.deepLink, .tasks)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.pendingPairingIntent)

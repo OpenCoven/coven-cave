@@ -2,7 +2,7 @@ import { useContext, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DocumentReader } from "@/components/document-reader";
 import { ImageCarousel } from "@/components/image-carousel";
-import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
+import { MarkdownReaderBlock } from "@/components/document-reader-markdown";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useAuthedImageState } from "@/lib/authed-image";
 import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";

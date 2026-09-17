@@ -1,0 +1,349 @@
+/* Needs-you PANEL — design handoff frame 2c.
+ *
+ * Loaded on demand: needs-you-panel.tsx imports this, and that module is
+ * dynamically imported by the trigger, so these bytes land in their own chunk
+ * rather than in first-load CSS. The trigger's own rules live in
+ * needs-you-trigger.css.
+ *
+ * Every colour derives from one solid token through the tint recipe
+ * (docs/coven-design-language.md §3), so the panel survives all 24
+ * theme × mode combinations with no hardcoded value.
+ */
+
+/* ── Panel ───────────────────────────────────────────────────────────────────
+ * 100% opaque, deliberately NOT the glass treatment. The handoff's third P0
+ * finding is drawer transcript text reading THROUGH this exact popover; a
+ * translucent panel over prose is two text layers competing for the same
+ * pixels.
+ *
+ * Qualified with .ui-popover for TWO reasons, both load-bearing:
+ *
+ *   1. Specificity. The base `.ui-popover` in globals/primitives.css is also a
+ *      single class, so which one wins would come down to sheet order — and
+ *      this sheet is component-imported precisely so it is NOT in that facade.
+ *      Matching both classes settles it regardless of load order.
+ *   2. `backdrop-filter` has to be cancelled explicitly. Overriding
+ *      `background` alone leaves the base's blur in place, which is the very
+ *      effect this panel exists to refuse; a blurred backdrop under an opaque
+ *      fill is invisible but still composites the transcript underneath. */
+.ui-popover.needs-you-panel {
+  display: flex;
+  flex-direction: column;
+  inline-size: 420px;
+  max-inline-size: calc(100vw - var(--space-6));
+  max-block-size: min(560px, calc(100vh - 96px));
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  backdrop-filter: none;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+/* ── Header (sticky) ─────────────────────────────────────────────────────── */
+.needs-you-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  block-size: 44px;
+  padding-inline: var(--space-3);
+  border-block-end: 1px solid var(--border-hairline);
+}
+
+.needs-you-head__mark {
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  flex: none;
+  border-radius: var(--radius-control);
+  color: var(--status-awaiting);
+  background: color-mix(in oklch, var(--status-awaiting) 14%, transparent);
+}
+
+.needs-you-head__title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.needs-you-head__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Says how the list is ordered, because "oldest first" is the one thing a
+   reader cannot infer from a list whose timestamps are relative. */
+.needs-you-head__order {
+  margin-inline-start: auto;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--text-muted);
+}
+
+.needs-you-head__seen {
+  display: grid;
+  place-items: center;
+  inline-size: 26px;
+  block-size: 26px;
+  flex: none;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.needs-you-head__seen:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.needs-you-head__seen:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Body (the only scroller) ────────────────────────────────────────────── */
+.needs-you-body {
+  min-block-size: 0;
+  overflow-y: auto;
+  background: var(--bg-base);
+  scroll-padding-block-start: var(--space-1);
+}
+
+.needs-you-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+}
+
+/* ── Row ─────────────────────────────────────────────────────────────────────
+ * Grid: kind glyph · title+meta · state+wait. The left edge and the underline
+ * are absolutely positioned so they never take a track. */
+.needs-you-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  inline-size: 100%;
+  block-size: 54px;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.needs-you-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+/* Row tint is spent on awaiting and blocked ONLY.
+ *
+ * Failed deliberately carries a badge and no field: a row-wide red across
+ * every failure is the alarm wall this redesign retires, and it spends the
+ * loudest treatment in the list on the one state that is already over. This
+ * mirrors SESSION_LIFECYCLE[...].rowTint in lib/session-lifecycle.ts — if that
+ * changes, this must change with it. */
+.needs-you-row[data-lifecycle="awaiting"] {
+  --row-tint: var(--status-awaiting);
+  border-color: color-mix(in oklch, var(--status-awaiting) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--status-awaiting) 14%, var(--bg-raised));
+}
+
+.needs-you-row[data-lifecycle="blocked"] {
+  --row-tint: var(--status-blocked);
+  border-color: color-mix(in oklch, var(--status-blocked) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--status-blocked) 14%, var(--bg-raised));
+}
+
+.needs-you-row[data-lifecycle="failed"] {
+  --row-tint: var(--status-failed);
+}
+
+.needs-you-row__edge {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 2px;
+  background: var(--row-tint);
+}
+
+.needs-you-row__kind {
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+}
+
+.needs-you-row__body {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.needs-you-row__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mono, because every part of it is an identifier the reader may need to
+   compare character by character: familiar, repo, branch. */
+.needs-you-row__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.needs-you-row__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.needs-you-row__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* Height rather than block padding: at --text-2xs the pill is ~14px on text
+     alone, and the one on-scale inline padding (--space-2) with a fixed 20px
+     box lands on the design's badge without spending an off-grid literal. */
+  block-size: 20px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklch, var(--row-tint) 38%, transparent);
+  background: color-mix(in oklch, var(--row-tint) 14%, transparent);
+  color: var(--row-tint);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.needs-you-row__wait {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The wait hairline. A comparative cue across this one list — the exact wait
+   is written above it in words, so this never has to be read as a value. */
+.needs-you-row__age {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  block-size: 2px;
+  background: var(--bg-sunken);
+}
+
+.needs-you-row__age-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--row-tint);
+  opacity: 0.7;
+}
+
+/* ── Footer (sticky) ─────────────────────────────────────────────────────── */
+.needs-you-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  block-size: 44px;
+  padding-inline: var(--space-3);
+  border-block-start: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.needs-you-foot__label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.needs-you-foot__stat {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.needs-you-foot__stat[data-tone="running"] {
+  color: var(--status-running);
+}
+
+.needs-you-foot__all {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  block-size: 26px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--accent-presence);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.needs-you-foot__all:hover {
+  border-color: var(--border-strong);
+}
+
+/* ── Reduced transparency ────────────────────────────────────────────────────
+ * The panel is already opaque; what remains translucent is the tint on a
+ * tinted row. Those resolve against --bg-raised rather than transparent, so
+ * the row keeps its state colour without compositing over whatever is behind
+ * the popover. */
+@media (prefers-reduced-transparency: reduce) {
+  .needs-you-row__badge {
+    background: color-mix(in oklch, var(--row-tint) 14%, var(--bg-raised));
+    border-color: color-mix(in oklch, var(--row-tint) 38%, var(--bg-raised));
+  }
+
+  .needs-you-head__mark {
+    background: color-mix(in oklch, var(--status-awaiting) 14%, var(--bg-elevated));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .needs-you-row,
+  .needs-you-head__seen,
+  .needs-you-foot__all {
+    transition: none;
+  }
+}

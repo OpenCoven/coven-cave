@@ -30,7 +30,7 @@ struct SettingsView: View {
     }
 
     /// Top level mirrors the design handoff's settings IA: profile hero, then
-    /// Appearance / Wards / Chats / Community / Legal groups and a centered
+    /// Appearance / Wards / Chats / Legal groups and a centered
     /// mono brand footer. Connection plumbing (address, re-check, disconnect)
     /// lives one level down behind the hero.
     var body: some View {
@@ -41,7 +41,6 @@ struct SettingsView: View {
                 wardsSection
                 securitySection
                 chatsSection
-                communitySection
                 legalSection
             }
             .themedListBackground()
@@ -342,25 +341,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Community & Legal
-
-    private var communitySection: some View {
-        Section("Community") {
-            HStack(spacing: 0) {
-                iconShelfLink(
-                    "Discord",
-                    systemImage: "bubble.left.and.bubble.right.fill",
-                    url: "https://discord.gg/opencoven"
-                )
-                iconShelfLink("X", systemImage: "at", url: "https://x.com/OpenCvn")
-                iconShelfLink("Docs", systemImage: "book.closed.fill", url: "https://docs.opencoven.ai")
-                iconShelfLink("Podcast", systemImage: "waveform", url: "https://pod.opencoven.ai")
-                iconShelfLink("Blog", systemImage: "text.page.fill", url: "https://mind.opencoven.ai")
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-        }
-    }
+    // MARK: - Legal
 
     private var legalSection: some View {
         Section {
@@ -396,7 +377,7 @@ struct SettingsView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(chrome.textPrimary)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .background(
                         chrome.bgElevated,
                         in: RoundedRectangle(cornerRadius: 13, style: .continuous)

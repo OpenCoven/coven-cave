@@ -103,7 +103,7 @@ final class DefaultCaveImageDataLoader: CaveImageDataLoading, @unchecked Sendabl
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
-        session = URLSession(configuration: configuration)
+        session = URLSession(configuration: configuration, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }
 
     func data(for source: CaveImageSource) async -> Data? {

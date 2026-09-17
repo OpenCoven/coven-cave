@@ -68,7 +68,7 @@ assert.match(
 
 assert.match(
   chat,
-  /guard let destination = app\.openFamiliarLandingThread\(\s*for: familiar\.id,\s*in: activeContext,\s*loadHistory: false\s*\) else \{[\s\S]*Switch to a registered project before forwarding[\s\S]*return[\s\S]*\}[\s\S]*destination\.send\(\s*prompt,[\s\S]*displayText: displayText,[\s\S]*client: client/,
+  /guard let destination = app\.openFamiliarLandingThread\(\s*for: familiar\.id,\s*in: activeContext,\s*loadHistory: false\s*\) else \{[\s\S]*Open New chat to choose project access for this familiar before forwarding[\s\S]*return[\s\S]*\}[\s\S]*destination\.send\(\s*prompt,[\s\S]*displayText: displayText,[\s\S]*client: client/,
   "forwarding should reuse or materialize the visible-thread landing thread synchronously before sending the context prompt with a compact visible label",
 );
 
@@ -137,5 +137,15 @@ assert.match(
   /app\.requestOpen\(destination\)/,
   "after forwarding, iOS should open the destination familiar thread",
 );
+
+const forwarding = chat.slice(chat.indexOf("private func forward("), chat.indexOf("private func reloadForwardedLandingHistoryIfConfirmed("));
+assert.match(forwarding, /app\.requireCurrentChatAccess\(projectRoot: thread\.projectRoot, familiarIds: \[familiar\.id\]\)/,
+  "the selected destination familiar needs an exact project grant before its landing thread is opened");
+assert.match(forwarding, /let destinationBinding = ChatDispatchBinding\(thread: destination\)/);
+assert.match(forwarding, /app\.requireCurrentChatAccess\(\s*projectRoot: destinationBinding\.projectRoot,\s*familiarIds: destinationBinding\.familiarIds/);
+assert.match(forwarding, /sourceBinding\.matches\(thread\),\s*dispatchIsCurrent\(destinationBinding, in: destination, lease: dispatchLease\)/,
+  "deferred forwarding cannot retarget the captured source or destination");
+assert.match(forwarding, /liveDispatchLeaseIsCurrent: \{\s*dispatchIsCurrent\(destinationBinding, in: destination, lease: dispatchLease\)/,
+  "the actual forward POST checks the destination grant, not only the source thread");
 
 console.log("ios-message-forwarding.test.mjs: ok");

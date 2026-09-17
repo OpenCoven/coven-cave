@@ -16,7 +16,13 @@ assert.doesNotMatch(
   "server does not import the deprecated node:url parser",
 );
 assert.doesNotMatch(src, /\bparse\(req\.url/, "server does not call deprecated url.parse for requests");
-assert.match(src, /void handle\(req, res\);/, "ordinary HTTP parsing stays owned by Next.js");
+assert.match(src, /if \(!handled\) return handle\(req, res\);/, "ordinary HTTP parsing stays owned by Next.js after device admission");
+assert.match(
+  src,
+  /wss\.handleUpgrade\(req, socket, head, \(ws: WebSocket\) => \{\s*if \(!isDirectLoopbackRequest\(req\)\) \{\s*remotePtyClients\.add\(ws\);[\s\S]+?handlePtyConnection\(ws,/,
+  "remote sockets are registered in the actual noServer upgrade callback, not an un-emitted connection event",
+);
+assert.match(src, /for \(const client of remotePtyClients\) client\.terminate\(\);/, "policy activation immediately terminates remote PTY sockets");
 assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
 assert.match(
   src,
@@ -739,7 +745,13 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     // suite — every parity and security check below — was silently absent on
     // Windows rather than failing loudly.
     entryPoints: [fileURLToPath(serverTsUrl)],
-    bundle: false,
+    absWorkingDir: fileURLToPath(new URL("../", import.meta.url)),
+    bundle: true,
+    packages: "external",
+    alias: { yaml: "./node_modules/yaml/dist/index.js" },
+    banner: {
+      js: "import { createRequire as __covenCreateRequire } from 'node:module'; const require = __covenCreateRequire(import.meta.url);",
+    },
     platform: "node",
     target: "node24",
     format: "esm",

@@ -48,8 +48,8 @@ assert.match(
 // --- thread.retry re-streams a single familiar in place ---------------------
 assert.match(
   thread,
-  /func retry\(_ messageId: String, client: CaveClient,[\s\S]{0,120}?onConnectionFailure: \(\(Error\) -> Void\)\? = nil,[\s\S]{0,80}?onChange: @escaping \(\) -> Void\)/,
-  "ChatThread should expose retry(messageId:client:onConnectionFailure:onChange:)",
+  /func retry\(_ messageId: String, client: CaveClient,\s*liveDispatchLeaseIsCurrent: @escaping \(\) -> Bool,\s*persistAfterRefusal: @escaping \(\) async -> Bool,\s*onRefusal: @escaping \(\) -> Void,[\s\S]{0,160}onChange: @escaping \(\) -> Void\) -> Task<Void, Never>\?/,
+  "retry requires a live dispatch lease and durable, visible refusal handling",
 );
 assert.match(
   thread,
@@ -58,8 +58,26 @@ assert.match(
 );
 assert.match(
   thread,
-  /func retry[\s\S]*?\$0\.text = ""; \$0\.isError = false; \$0\.streaming = true[\s\S]*?stream\(familiarId: familiarId/,
+  /func retry[\s\S]*?\$0\.text = ""; \$0\.isError = false; \$0\.streaming = true[\s\S]*?stream\(\s*familiarId: familiarId/,
   "retry should reset the bubble and re-stream only its familiar (not a full send fan-out)",
 );
+
+const retry = thread.slice(thread.indexOf("func retry("), thread.indexOf("/// Append an inline system note"));
+assert.match(retry, /ChatDispatchBinding\(thread: self, familiarIds: \[familiarId\]\)/);
+assert.match(retry, /binding\.matches\(self, includingSessions: true\),\s*liveDispatchLeaseIsCurrent\(\)/);
+assert.match(retry, /liveDispatchLeaseIsCurrent: mayDispatch/);
+assert.match(retry, /let previousReply = messages\[idx\]/);
+assert.match(retry, /guard refusedBeforeDispatch else \{ return \}[\s\S]*messages\[current\] == retryPlaceholder[\s\S]*messages\[current\] = previousReply[\s\S]*await persistAfterRefusal\(\)/);
+assert.match(view, /func retryAssistant[\s\S]*captureConnectionDispatchLease\(\)[\s\S]*thread\.retry\([\s\S]*liveDispatchLeaseIsCurrent: \{\s*dispatchIsCurrent\(dispatchBinding, in: thread, lease: dispatchLease\)/);
+const tests = await read("apps/ios/CovenCave/CovenCaveTests/ChatRetryDispatchTests.swift");
+for (const scenario of [
+  "testRevocationAfterRetryReturnsRestoresAndPersistsOriginalReply",
+  "testDeferredNetworkPreflightRechecksAuthorityAndRestoresOriginalReply",
+  "testRootSessionAndRosterDriftBeforeDeferredPOSTFailClosed",
+  "testRefusalDoesNotOverwriteANewerTranscriptEdit",
+  "testFrozenSendBindingAllowsSiblingSessionEstablishmentButNotRetargeting",
+]) {
+  assert.ok(tests.includes(`func ${scenario}(`), `native regression scenario ${scenario} is present`);
+}
 
 console.log("ios-message-retry: OK");

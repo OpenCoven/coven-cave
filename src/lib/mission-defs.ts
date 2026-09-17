@@ -24,7 +24,7 @@ export type MissionCategory = "coven" | "practice" | "memory";
 /**
  * Coven-wide signals a mission can be measured against. Each one is already
  * computed by the milestone watcher from the roster, the session list, and the
- * canonical-memory counts.
+ * workspace memory-file counts.
  */
 export type MissionSignals = {
   familiarCount: number;
@@ -32,11 +32,11 @@ export type MissionSignals = {
   sessionsTotal: number;
   /** Consecutive active days (covenStreak). */
   covenStreakDays: number;
-  /** Curated coven-memory entries across every familiar. */
+  /** Workspace memory files across every familiar. */
   memoryTotal: number;
   /** Familiars with at least one non-archived session. */
   familiarsWithSession: number;
-  /** Familiars with at least one curated memory entry. */
+  /** Familiars with at least one memory file. */
   familiarsWithMemory: number;
 };
 

@@ -1,5 +1,11 @@
 # Branch Cleanup Relaxation — Bounded Retirement for Clean Landed Work
 
+> **Historical proposal.** Beads development tracking and its package commands
+> were retired by #5399. The original design below is preserved as evidence,
+> not current operating instructions. Follow
+> [GitHub work tracking](workflows/github-work-tracking.md) for current
+> ownership, authorization, and worktree preservation requirements.
+
 > Bead: cave-jcdgb · Scope: design only (no code) · Status: proposed design
 > Companion artifacts: the approved design spec and implementation plan already live in
 > `docs/superpowers/specs/2026-08-04-administrative-cleanup-review-design.md` and

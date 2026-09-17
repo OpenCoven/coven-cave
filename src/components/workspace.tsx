@@ -99,15 +99,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
-import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
-import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
-import {
-  acknowledgePendingCanonicalMemorySelection,
-  isLatestFamiliarRosterRequest,
-  reconcilePendingCanonicalRosterSettlement,
-  rejectPendingCanonicalMemorySelection,
-  type PendingCanonicalMemorySelection,
-} from "@/lib/canonical-memory";
+import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
@@ -156,6 +148,7 @@ import {
   BoardView,
   BrowserPane,
   CalendarView,
+  ChatSurface,
   CommandPalette,
   FamiliarsView,
   FamiliarWorkQueueView,
@@ -175,9 +168,8 @@ import {
   SettingsShell,
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface } from "@/components/chat-surface";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
@@ -218,8 +210,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
-import { RunningActivityPopover } from "@/components/running-activity-popover";
-import type { RunningActivityItem } from "@/lib/running-activity";
+import { NeedsYouPopover } from "@/components/needs-you-popover";
+import { NEEDS_YOU_OPEN_EVENT } from "@/lib/needs-you-inbox";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -329,15 +321,8 @@ function requestedWorkspaceProjectId(
 }
 
 export function Workspace() {
-  const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
-  const localDaemonReady = acceptedLocalDaemonHealthy &&
-    canonicalMemoryLocalAccessEligible({
-      platform: tauriPlatform,
-      hostname: typeof window === "undefined" ? null : window.location.hostname,
-    });
-  useCanonicalMemoryWarmup(localDaemonReady);
   useSurfaceWarmup();
   const { announce } = useAnnouncer();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -751,16 +736,6 @@ export function Workspace() {
     window.addEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
     return () => window.removeEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
   }, []);
-  const [
-    pendingCanonicalMemorySelection,
-    setPendingCanonicalMemorySelection,
-  ] = useState<PendingCanonicalMemorySelection | null>(null);
-  const pendingCanonicalMemorySelectionRef =
-    useRef<PendingCanonicalMemorySelection | null>(null);
-  const [
-    rosterSettledPendingCanonicalMemorySelection,
-    setRosterSettledPendingCanonicalMemorySelection,
-  ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Back closes an overlay before it navigates. Opening records an entry;
   // Escape or the close button consumes it, so Back never reopens what the
@@ -1381,9 +1356,6 @@ export function Workspace() {
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (result.kind === "running") {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
-      setAcceptedLocalDaemonHealthy(result.targetMode === "local");
-    } else {
-      setAcceptedLocalDaemonHealthy(false);
     }
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
@@ -1770,8 +1742,6 @@ export function Workspace() {
         requestGeneration,
         loadFamiliarsReqRef.current,
       );
-    const pendingSelectionAtStart =
-      pendingCanonicalMemorySelectionRef.current;
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
@@ -1782,39 +1752,15 @@ export function Workspace() {
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         setFamiliarRosterLoadedSuccessfully(false);
-        setRosterSettledPendingCanonicalMemorySelection((settled) =>
-          reconcilePendingCanonicalRosterSettlement({
-            settled,
-            current: pendingCanonicalMemorySelectionRef.current,
-            startedFor: pendingSelectionAtStart,
-            succeeded: false,
-          })
-        );
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
       setFamiliarRosterLoadedSuccessfully(true);
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        reconcilePendingCanonicalRosterSettlement({
-          settled,
-          current: pendingCanonicalMemorySelectionRef.current,
-          startedFor: pendingSelectionAtStart,
-          succeeded: true,
-        })
-      );
     } catch (err) {
       if (!isCurrent()) return;
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
       setFamiliarRosterLoadedSuccessfully(false);
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        reconcilePendingCanonicalRosterSettlement({
-          settled,
-          current: pendingCanonicalMemorySelectionRef.current,
-          startedFor: pendingSelectionAtStart,
-          succeeded: false,
-        })
-      );
     } finally {
       if (isCurrent()) {
         setFamiliarsLoaded(true);
@@ -3521,6 +3467,15 @@ export function Workspace() {
         return;
       }
 
+      // ⇧⌘A → Needs you. The trigger's tooltip advertises this, and an
+      // advertised shortcut that does nothing is the same defect ⌘, above was
+      // wired to fix. The popover owns its open state and listens for the ask.
+      if (meta && e.shiftKey && !alt && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        window.dispatchEvent(new Event(NEEDS_YOU_OPEN_EVENT));
+        return;
+      }
+
       // ⌘N → new chat (only on Chat surface)
       if (meta && !alt && e.key.toLowerCase() === "n" && mode === "chat") {
         e.preventDefault();
@@ -3750,16 +3705,18 @@ export function Workspace() {
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
+      const root = intent.root;
       markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
+      // Same discipline for the destination WITHIN the tab. Set before the mode
+      // flips, so a lazily-mounted ProjectsView can consume it once its rows
+      // exist; the event below still covers the already-mounted, already-loaded
+      // case and fires first when it wins.
+      markProjectFocusPending(root);
       setMode("chat");
       shellRef.current?.dismissNavMobile();
-      const root = intent.root;
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-        window.setTimeout(
-          () => window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } })),
-          60,
-        );
+        window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } }));
       }, 0);
       return;
     }
@@ -3798,19 +3755,6 @@ export function Workspace() {
       })();
       return;
     }
-    if (intent.kind === "open-coven-memory") {
-      const selection = {
-        id: intent.id,
-        familiarId: intent.familiarId,
-      };
-      setRosterSettledPendingCanonicalMemorySelection(null);
-      pendingCanonicalMemorySelectionRef.current = selection;
-      setPendingCanonicalMemorySelection(selection);
-      void loadFamiliars();
-      setMode("agents");
-      shellRef.current?.dismissNavMobile();
-      return;
-    }
     if (intent.kind === "open-memory-file") {
       // Land on the Grimoire editor with the file selected. (The old
       // `#memory:` hash had no consumer anywhere — picking a memory result
@@ -3830,53 +3774,6 @@ export function Workspace() {
       return;
     }
   };
-
-  const acknowledgeCanonicalMemorySelection = useCallback(
-    (appliedId: string) => {
-      const expected = pendingCanonicalMemorySelection;
-      const current = pendingCanonicalMemorySelectionRef.current;
-      const next = acknowledgePendingCanonicalMemorySelection(
-        current,
-        expected,
-        appliedId,
-      );
-      if (next === current) return;
-      pendingCanonicalMemorySelectionRef.current = next;
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        settled === expected ? null : settled
-      );
-      setPendingCanonicalMemorySelection((selection) =>
-        acknowledgePendingCanonicalMemorySelection(
-          selection,
-          expected,
-          appliedId,
-        )
-      );
-    },
-    [pendingCanonicalMemorySelection],
-  );
-
-  const rejectUnavailableCanonicalMemorySelection = useCallback(
-    (expected: PendingCanonicalMemorySelection) => {
-      const current = pendingCanonicalMemorySelectionRef.current;
-      const next = rejectPendingCanonicalMemorySelection(
-        current,
-        expected,
-      );
-      if (next === current) return;
-      pendingCanonicalMemorySelectionRef.current = next;
-      setRosterSettledPendingCanonicalMemorySelection((settled) =>
-        settled === expected ? null : settled
-      );
-      setPendingCanonicalMemorySelection((selection) =>
-        rejectPendingCanonicalMemorySelection(selection, expected)
-      );
-      pushToast(
-        "Couldn't open memory — that familiar isn't available. Refresh Familiars and try again.",
-      );
-    },
-    [pushToast],
-  );
 
   // Map slash commands directly to local actions. Returns false for commands
   // this surface doesn't know so the chat composer can show its
@@ -4357,16 +4254,6 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         daemonRunning={daemonRunning}
-        localDaemonReady={localDaemonReady}
-        pendingRosterSettledSuccessfully={
-          rosterSettledPendingCanonicalMemorySelection ===
-          pendingCanonicalMemorySelection
-        }
-        pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
-        onCanonicalMemorySelectionApplied={acknowledgeCanonicalMemorySelection}
-        onCanonicalMemorySelectionUnavailable={
-          rejectUnavailableCanonicalMemorySelection
-        }
         responseNeeded={responseNeeded}
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
@@ -4392,7 +4279,6 @@ export function Workspace() {
         activeFamiliarId={activeId}
         selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
-        localDaemonReady={localDaemonReady}
         routerRef={routerRef}
         // The thread-rail suppression flag is deliberately NOT set any more.
         // It existed because the outer sidebar owned the project-grouped chat
@@ -4681,7 +4567,6 @@ export function Workspace() {
         <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
           <RailInspector
             familiar={active}
-            localDaemonReady={localDaemonReady}
             onOpenFullView={() => setMode("agents")}
           />
         </WorkspacePanePage>
@@ -4897,33 +4782,28 @@ export function Workspace() {
             </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              // Running activity: the waveform trigger opens the live activity
-              // popover — chats, Board tasks, ritual runs, Flow and Workflow
-              // runs — with direct navigation per row (cave-21rp).
+              // Needs you: the bell opens the attention inbox — sessions that
+              // are blocked, failed or awaiting you, oldest wait first — with
+              // the running count demoted to footer text (cave-21rp; the
+              // design handoff's frame 2c — the frame is named in
+              // docs/design-handoff/IMPLEMENTATION-STATUS.md and in
+              // needs-you-popover.tsx, because spelling it here would put the
+              // two-word brand in a file that owes the one-word one).
+              //
+              // This slot used to hold RunningActivityPopover, which listed
+              // everything in flight. The handoff's diagnosis was that such a
+              // list is never empty, so its badge stopped being a signal and
+              // the popover stopped being a popover. Running work is still
+              // counted here, in the footer, where it reads as context rather
+              // than as a demand.
               runningStatus={
-                <RunningActivityPopover
+                <NeedsYouPopover
+                  sessions={sessions}
                   familiars={familiars}
-                  onOpenItem={(item: RunningActivityItem) => {
-                    switch (item.kind) {
-                      case "session":
-                        openFamiliarSession(item.targetId, item.familiarId);
-                        return;
-                      case "board-task":
-                        onPaletteIntent({ kind: "focus-card", cardId: item.targetId });
-                        return;
-                      case "automation":
-                        setMode("inbox");
-                        return;
-                      case "flow":
-                      case "workflow":
-                        // Flow/Workflow surfaces are retired; a run backed by a
-                        // live chat jumps to that chat, otherwise to Rituals.
-                        if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                        else setMode("inbox");
-                        return;
-                    }
-                  }}
-                  onViewAll={() => setMode("inbox")}
+                  onOpenSession={(sessionId, familiarId) =>
+                    openFamiliarSession(sessionId, familiarId)
+                  }
+                  onOpenSessions={showFamiliarChatList}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile

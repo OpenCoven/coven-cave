@@ -98,25 +98,20 @@ describe("Familiar growth view", () => {
     assert.match(view, /if \(quiet && !silent\) announce\("Growth data refreshed\."\)/, "polls refresh without announcing; manual refresh still announces");
   });
 
-  it("combines canonical and workspace memory without reporting false zeroes", () => {
-    assert.match(
+  it("reads workspace memory without reporting false zeroes", () => {
+    // Growth combined the canonical vault with the workspace file scan. The
+    // vault is in the dedicated memory application now, so the file scan is the
+    // source — and the property that mattered survives unchanged: an
+    // unavailable read is reported as unavailable, never as a zero.
+    assert.doesNotMatch(
       view,
-      /loadCanonicalMemoryList\(\)/,
-      "background growth loads use the shared non-forced list cache",
-    );
-    assert.match(
-      view,
-      /memoryAvailability:\s*memoryJson\.state === "ready" \? "ready" : "unavailable"/,
+      /loadCanonicalMemoryList|covenEntries/,
+      "the retired vault loader and its entries are gone",
     );
     assert.match(view, /getJson<FileMemoryResponse>\("\/api\/memory"/);
     assert.match(
       view,
-      /fileMemoryAvailability:\s*fileMemoryReady \? "ready" : "unavailable"/,
-    );
-    assert.match(
-      view,
-      /covenEntries:\s*memoryJson\.state === "ready" \? memoryJson\.entries : \[\]/,
-      "only a ready canonical response contributes entries",
+      /memoryAvailability:\s*fileMemoryReady \? "ready" : "unavailable"/,
     );
     assert.match(
       report,

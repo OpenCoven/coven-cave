@@ -32,6 +32,7 @@ import {
   readCanonicalYamlStringSetting,
   replaceCanonicalYamlStringSetting,
 } from "./release-yaml-settings.mjs";
+import { continuityFailure, latestPublishedRelease } from "./check-version-continuity.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const IOS_MARKETING_VERSION_PATH = ["settings", "base", "MARKETING_VERSION"];
@@ -410,7 +411,7 @@ same fail-closed source check used by release CI.`);
   }
 
   const valueFlags = new Set(["--level", "--version"]);
-  const booleanFlags = new Set(["--dry-run", "--prepare-only", "--no-pr"]);
+  const booleanFlags = new Set(["--dry-run", "--prepare-only", "--no-pr", "--allow-version-gap"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (booleanFlags.has(arg)) continue;
@@ -466,6 +467,35 @@ same fail-closed source check used by release CI.`);
   if (compareVersions(next, current) <= 0) {
     console.error(`✗ release version must advance: current is ${current}, requested ${next}`);
     process.exit(1);
+  }
+
+  // `current` above is the STAMPED version, not the released one, and bumping
+  // from a stamp is how this repository reached 0.4.4 while users were still on
+  // 0.4.1: v0.4.2 and v0.4.3 were stamped and tagged, never published, and each
+  // later stamp inherited the drift. Anchor the check to what was actually
+  // released so an unpublished stamp cannot compound.
+  if (!flag("--allow-version-gap")) {
+    let published;
+    try {
+      published = latestPublishedRelease();
+    } catch (error) {
+      console.error(`✗ cannot confirm the latest published release: ${error.message}`);
+      console.error(
+        "  Pass --allow-version-gap to stamp anyway, and say why in the PR — this check " +
+          "exists because three consecutive versions shipped to nobody.",
+      );
+      process.exit(1);
+    }
+    const gap = continuityFailure(published, next);
+    if (gap) {
+      console.error(`✗ version continuity: ${gap}`);
+      console.error(
+        `  The stamped version is ${current}; the latest PUBLISHED release is ${published}. ` +
+          "Stamp the next number after the published one, or pass --allow-version-gap with a reason.",
+      );
+      process.exit(1);
+    }
+    console.log(`continuity: latest published ${published} → stamping ${next}`);
   }
 
   const branch = `release/stamp-v${next}`;

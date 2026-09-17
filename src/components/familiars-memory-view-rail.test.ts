@@ -46,8 +46,8 @@ assert.match(
 
 assert.match(
   source,
-  /const listPresentation = memoryListPresentation\(\{[\s\S]*?canonicalState: canonicalState\.state,[\s\S]*?filesState: filesState\.state,[\s\S]*?rowCount: unifiedRows\.length,[\s\S]*?\}\);[\s\S]*?\{listPresentation === "empty" \?/,
-  "Shared empty state renders only after both independent feeds settle successfully with no rows",
+  /const listPresentation = memoryListPresentation\(\{[\s\S]*?filesState: filesState\.state,[\s\S]*?rowCount: unifiedRows\.length,[\s\S]*?\}\);[\s\S]*?\{listPresentation === "empty" \?/,
+  "Shared empty state renders only after the feed settles successfully with no rows",
 );
 
 // ───────── Task 5: vertical stack / balanced columns ─────────

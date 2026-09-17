@@ -24,15 +24,18 @@ assert.match(
   "displayName falls back to \"You\" when the name is empty (empty profile reads as before)",
 );
 
-// --- Client: GET /api/profile + a query-authed avatar URL --------------------
+// --- Client: GET /api/profile + a header-authenticated avatar ----------------
 assert.match(client, /func operatorProfile\(\) async throws -> OperatorProfile/, "client fetches the profile");
 assert.match(client, /request\("api\/profile"\)/, "hits GET /api/profile");
-assert.match(client, /func operatorAvatarURL\(updatedAt: String\?\) -> URL\?/, "builds the avatar image URL");
+const avatarSource = client.slice(client.indexOf("func operatorAvatarSource("), client.indexOf("// MARK: - Sessions"));
+assert.match(avatarSource, /func operatorAvatarSource\(updatedAt: String\?\) -> CaveImageSource\?/, "builds the avatar image source");
 assert.match(
-  client,
-  /URLQueryItem\(name: "coven_access_token", value: token\)/,
-  "attaches the access token as a query param so a header-less image load still authenticates",
+  avatarSource,
+  /return \.authenticatedRemoteURL\(url, bearerToken: token\)/,
+  "routes credentials through the header-authenticated image loader",
 );
+assert.doesNotMatch(avatarSource, /coven_access_token|try\?/, "no URL credentials or silent auth downgrade");
+assert.match(avatarSource, /catch \{\s*return nil/, "credential failures use the initials fallback");
 assert.match(
   client,
   /URLQueryItem\(name: "v", value: updatedAt\)/,
@@ -70,7 +73,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /operatorName: app\.operatorDisplayName,\s*\n\s*operatorAvatarURL: app\.operatorAvatarURL/,
+  /operatorName: app\.operatorDisplayName,\s*\n\s*operatorAvatarSource: app\.operatorAvatarSource/,
   "the message bubble receives the operator name + avatar",
 );
 assert.match(chatsHome, /\\\(app\.operatorDisplayName\): /, "chat-list preview prefixes user turns with the operator name");
@@ -82,10 +85,13 @@ assert.match(model, /case \.user: who = "You"/, "export keeps the You/System sen
 assert.match(bubble, /var operatorName: String = "You"/, "bubble defaults operatorName to You");
 assert.match(
   bubble,
-  /if isUser, isGroup \{\s*\n\s*AvatarView\(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName\)/,
+  /if isUser, isGroup \{\s*\n\s*AvatarView\(familiar: nil, source: operatorAvatarSource, size: 28, fallbackName: operatorName\)/,
   "operator avatar renders at the trailing edge in group threads",
 );
 assert.match(avatar, /var fallbackName: String\? = nil/, "AvatarView gained a fallbackName for the record-less operator");
+assert.match(avatar, /source \?\? url\.map\(CaveImageSource\.remoteURL\)/, "authenticated sources coexist with existing remote avatars");
+assert.match(avatar, /CachedImageView\(\s*source: source,/, "passes authentication through to the image loader");
+assert.match(bubble, /lhs\.operatorAvatarSource == rhs\.operatorAvatarSource/, "credential rotation invalidates the bubble's image source");
 assert.match(
   avatar,
   /Theme\.initials\(familiar\?\.displayName \?\? fallbackName \?\? "\?"\)/,

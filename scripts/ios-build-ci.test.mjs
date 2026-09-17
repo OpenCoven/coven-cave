@@ -303,11 +303,47 @@ assert.notEqual(
   "compiling and running are separate steps so a compile failure is distinguishable from a test failure",
 );
 
+const testRun = String(testStep.run ?? "");
+
+// An unsigned simulator host can launch but cannot read its Keychain.
+// Managed-device reads deliberately fail closed on that error, so signing
+// must be fixed in CI rather than treating inaccessible storage as empty.
+for (const step of [compileStep, testStep]) {
+  const invocation = String(step.run ?? "")
+    .replace(/\\\r?\n\s*/g, " ")
+    .split("\n")
+    .find((line) => /^\s*xcodebuild\b/.test(line));
+  assert.ok(invocation, `${step.name} invokes xcodebuild directly`);
+  for (const setting of [
+    "CODE_SIGN_IDENTITY=-",
+    "CODE_SIGNING_ALLOWED=YES",
+    "CODE_SIGN_STYLE=Manual",
+    "DEVELOPMENT_TEAM=",
+  ]) {
+    assert.ok(
+      invocation.split(/\s+/).includes(setting),
+      `${step.name} uses ${setting} for a certificate-free, ad-hoc-signed simulator test host`,
+    );
+  }
+  assert.doesNotMatch(
+    invocation,
+    /CODE_SIGNING_ALLOWED=NO|-allowProvisioningUpdates/,
+    "simulator tests must neither disable Keychain-capable signing nor contact Apple provisioning",
+  );
+}
+const deviceCompileStep = stepRunning((run) => invokesXcodebuildAction(run, "build")
+  && run.includes("generic/platform=iOS"));
+assert.ok(deviceCompileStep, "the device compile gate remains separate from simulator testing");
+assert.match(
+  String(deviceCompileStep.run),
+  /CODE_SIGNING_ALLOWED=NO/,
+  "the device compile gate stays unsigned; simulator signing must not require device certificates",
+);
+
 // A test action needs a concrete, booted simulator. `generic/platform=iOS
 // Simulator` is a build-only destination: pointing the test action at it is the
 // cosmetic version of this fix, and it would fail rather than silently pass —
 // but pinning it here means nobody has to discover that on a red CI run.
-const testRun = String(testStep.run ?? "");
 assert.doesNotMatch(
   testRun,
   /-destination\s+["']?generic\//,

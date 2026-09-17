@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
 import { NextRequest } from "next/server";
@@ -1506,7 +1507,8 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
     "isDirectLoopbackRequest",
     "resolveTailnetPeer",
     "handle",
-    match[1],
+    "deviceAccess",
+    stripTypeScriptTypes(match[1]),
   );
   const request = {
     headers: {
@@ -1525,6 +1527,7 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
     () => true,
     () => null,
     () => undefined,
+    { handle: async () => false },
   );
 
   assert.equal(request.headers[LOCAL_PEER_HEADER], "trusted-loopback");

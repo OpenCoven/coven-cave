@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 // worktree-status.mjs — fast, local, network-free worktree dashboard.
 //
-// This is the "at a glance" companion to `beads:worktrees` (the lifecycle
-// patrol). The patrol is authoritative: it does live GitHub REST sweeps, a
-// maintenance gate, and drift detection before it will retire anything. That
-// makes it slow and network-bound. This script does none of that — it reads
-// only local git state (merge base, dirty tree, ahead/behind, lock reason) and
-// prints a verdict per worktree in well under a second. Use it to SEE the state
-// and to get an exact, copy-pasteable safe-prune command list; use the patrol
-// to actually retire under the gate.
+// Reads local Git state, not live ownership or authoritative remote retention.
+// Use the GitHub work-tracking and Branch Curator procedures before deletion;
+// a local verdict or printed command is not retirement authority.
 //
 //   node scripts/worktree-status.mjs            # human table
 //   node scripts/worktree-status.mjs --json      # machine-readable
@@ -27,7 +22,7 @@
 //   PRIMARY      the main checkout or the default branch — never a candidate.
 //
 // SAFE-RETIRE is the only verdict `--prune` emits commands for. Everything else
-// is left for a human or the gated patrol.
+// is left for a scoped ownership and retention review.
 //
 // Why WEDGED exists (cave-97svy): a worktree paused mid-merge looks exactly
 // like a worktree someone is actively editing — both are just "N dirty". So an
@@ -320,8 +315,10 @@ if (emitPrune) {
     process.exit(0);
   }
   process.stdout.write(
-    `# ${safe.length} SAFE-RETIRE worktree(s). Review, then run. Nothing is executed for you.\n` +
-      `# Each is merged into ${DEFAULT_BRANCH} (or identical) and has zero uncommitted changes.\n\n`,
+    `# ${safe.length} SAFE-RETIRE local-state candidate(s). Nothing is executed for you.\n` +
+      `# Each is merged into ${DEFAULT_BRANCH} (or identical) and has zero uncommitted changes.\n` +
+      `# Require current authorization, owner/runtime evidence, and remote retention before using these proposals.\n` +
+      `# Follow docs/workflows/github-work-tracking.md; local status is not deletion authority.\n\n`,
   );
   for (const r of safe) {
     if (r.locked) process.stdout.write(`git worktree unlock ${shq(r.path)}\n`);
@@ -378,10 +375,10 @@ for (const r of wedged) writeWedgeRemedy(r);
 
 const safeN = counts["SAFE-RETIRE"] || 0;
 process.stdout.write(
-  `\n${safeN ? `${safeN} safe to retire — see the exact commands with:\n   node scripts/worktree-status.mjs --prune\n` : "Nothing safe to auto-retire right now.\n"}`,
+  `\n${safeN ? `${safeN} local-state retirement candidate(s); inspect proposals with:\n   node scripts/worktree-status.mjs --prune\n` : "No local-state retirement candidates right now.\n"}`,
 );
 process.stdout.write(
-  `Full gated lifecycle (GitHub-aware): pnpm beads:worktrees / pnpm beads:worktrees:apply\n\n`,
+  `Ownership and retirement: docs/workflows/github-work-tracking.md (local status is not deletion authority)\n\n`,
 );
 
 function formatAge(hours) {

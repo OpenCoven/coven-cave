@@ -9,8 +9,6 @@ struct CaveNavigationDrawer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Binding var isOpen: Bool
-    var openProjectSwitcher: () -> Void
-    var openFamiliars: () -> Void
     var openThread: (ChatThread) -> Void
     var newChat: () -> Void
     var openSearch: () -> Void
@@ -18,7 +16,10 @@ struct CaveNavigationDrawer: View {
     @State private var recentsExpanded = true
 
     private var recentThreads: [ChatThread] {
-        app.projectRecentThreads(limit: 5)
+        Array(app.chatThreads.filter { !$0.archived }.sorted {
+            if $0.pinned != $1.pinned { return $0.pinned }
+            return $0.updatedAt > $1.updatedAt
+        }.prefix(5))
     }
 
     var body: some View {
@@ -69,20 +70,6 @@ struct CaveNavigationDrawer: View {
                 VStack(alignment: .leading, spacing: 4) {
                     DrawerNavRow(systemImage: "bubble.left", label: "Chats",
                                  active: app.selectedTab == .chats) { go(.chats) }
-                    DrawerNavRow(systemImage: "checkmark.square", label: "Tasks",
-                                 active: app.selectedTab == .tasks) { go(.tasks) }
-
-                    sectionLabel("Workspace")
-
-                    ProjectContextButton {
-                        close()
-                        openProjectSwitcher()
-                    }
-
-                    DrawerNavRow(systemImage: "cat", label: "Familiars") {
-                        close()
-                        openFamiliars()
-                    }
 
                     if !recentThreads.isEmpty {
                         Button {
@@ -91,7 +78,7 @@ struct CaveNavigationDrawer: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                Text("Recent Chats")
+                                Text("Recent chats")
                                     .font(.subheadline.weight(.semibold))
                                 Image(systemName: "chevron.down")
                                     .font(.caption2.weight(.semibold))
@@ -123,7 +110,7 @@ struct CaveNavigationDrawer: View {
                                         Spacer(minLength: 0)
                                     }
                                     .padding(.horizontal, 14)
-                                    .frame(minHeight: 42)
+                                    .frame(minHeight: 44)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.glassPress)
@@ -150,13 +137,6 @@ struct CaveNavigationDrawer: View {
         .overlay(alignment: .trailing) {
             Rectangle().fill(chrome.border.opacity(0.7)).frame(width: 1).ignoresSafeArea()
         }
-        .task {
-            if !app.projectMembershipLoaded {
-                await app.retryProjectContextLoad()
-            } else if !app.projectsLoaded {
-                await app.loadProjects()
-            }
-        }
         .gesture(
             DragGesture(minimumDistance: 24).onEnded { value in
                 if value.translation.width < -40 { close() }
@@ -180,7 +160,7 @@ struct CaveNavigationDrawer: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.glassPress)
-            .accessibilityLabel("Search everything")
+            .accessibilityLabel("Search chats")
         }
         .padding(.horizontal, 20)
     }
@@ -191,7 +171,7 @@ struct CaveNavigationDrawer: View {
                 close()
                 newChat()
             } label: {
-                Label("New Chat", systemImage: "square.and.pencil")
+                Label("New chat", systemImage: "square.and.pencil")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(chrome.bgBase)
                     .frame(minHeight: 44)
@@ -222,16 +202,6 @@ struct CaveNavigationDrawer: View {
         .overlay(alignment: .top) {
             Rectangle().fill(chrome.border.opacity(0.6)).frame(height: 1)
         }
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.top, 18)
-            .padding(.bottom, 6)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func close() { isOpen = false }

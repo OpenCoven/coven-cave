@@ -97,7 +97,7 @@ export const RENOWN_TIERS: readonly RenownTier[] = [
 export type RenownInput = {
   /** Non-archived sessions attributed to the familiar. */
   sessionsTotal: number;
-  /** Curated coven-memory entries. */
+  /** Workspace memory files attributed to the familiar. */
   memoryCount: number;
   /**
    * Bonus renown from completed missions (mission-defs.ts). Optional and
@@ -114,7 +114,8 @@ export type RenownInput = {
 /**
  * The renown score. Memories weigh 3× a session: curation is rarer than
  * running, and the ladder should reward tending the grimoire, not just
- * volume.
+ * volume. The weight survived the canonical vault's move to the dedicated
+ * memory application; what it counts is now the workspace memory files.
  */
 export function renownScore(input: RenownInput): number {
   return (

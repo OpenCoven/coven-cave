@@ -102,6 +102,21 @@ from its persisted root. Existing resumed sessions also send the root when it
 is known; the server's persisted conversation provenance remains
 authoritative.
 
+Queued turns also persist the project root, original recipients, and any
+already-established session IDs captured at composition. Reconnect must not
+retarget them to a replacement project or conversation. Older queued snapshots
+freeze recipients from the saved explicit list, delivery IDs, or saved roster,
+and capture their saved thread binding during restoration, before server
+metadata can reconcile the thread. A saved unknown root remains unknown; it cannot
+silently inherit later recovered access. Initially absent session IDs may become
+established normally. A refused turn keeps its content and delivery markers;
+the user can restore the original access or copy it into an explicitly selected
+new chat.
+
+A per-recipient refusal, including the last pre-POST check, leaves that recipient
+pending without withholding delivery to other permitted original recipients.
+Cancellation or loss of the connection lease still stops the whole replay.
+
 `ChatThread` rejects a network send locally when a new thread has no project.
 It does not append a user turn or create streaming placeholders in that state.
 This invariant protects any future constructor that bypasses the visible
@@ -124,34 +139,29 @@ new-chat and in-thread recovery flows.
 
 ### New Chat
 
-`NewChatView` keeps its familiar-first direct/group flow, but normal creation
-is now fixed to the shell's active registered project:
+`NewChatView` keeps its familiar-first direct/group flow. The project/access
+selection is local to the new conversation, never the shell:
 
-- the Project section shows the active project name and root, with copy that a
-  different root requires switching projects in Chats first;
-- the familiar roster comes only from `app.projectFamiliars`, so every new
-  chat participant already belongs to the active project context;
-- Markdown import captures the active project ID/root plus the explicit
-  familiar roster before presenting the document picker, then revalidates that
-  same context on callback; if the app switched projects, fell back to
-  Unassigned, or revoked any selected familiar while the picker was open, the
-  import aborts with actionable guidance instead of silently restoring under a
-  different roster or root;
-- Start/Create stays disabled when the active project is unavailable, when the
-  selected familiar leaves the active project, or when an Unassigned recovery
-  context is on screen.
+- the roster uses exact familiar IDs, independently of a legacy global filter;
+- the access choice contains only registered projects currently available to
+  every selected participant; changing participants revalidates that choice;
+- Markdown import captures the local project ID/root and explicit participant
+  roster before presenting the document picker, then revalidates the same
+  binding and current grants on callback; revoked access or changed selections
+  abort with actionable guidance rather than importing under another root;
+- Start/Create stays disabled while access is unknown, failed, revoked, or
+  empty. A stale global project selection is neither a default authority nor
+  a reason to hide the sheet.
 
-Unassigned is recovery-only. It still lists legacy projectless or
-unregistered-root chats, but it does not offer a normal New Chat flow.
-Actionable guidance tells the operator to refresh Chats or switch to a
-registered project instead.
+Unassigned remains recovery-only. A replacement uses the ordinary New chat
+flow with an explicit eligible binding; the old conversation is not rebound.
 
 ### Alternate entry points
 
 Every thread-creation path is explicit:
 
-- the Chats new-chat sheet passes the active registered root;
-- direct familiar shortcuts open the same fixed-root new-chat flow instead of
+- the Chats new-chat sheet passes its locally selected eligible root;
+- direct familiar shortcuts open the same locally scoped new-chat flow instead of
   creating a projectless thread;
 - familiar landing shortcuts outside `/new` (drawer roster, project-scoped
   familiar lists, slash-command switching, forwarding) reuse the local landing
@@ -161,14 +171,10 @@ Every thread-creation path is explicit:
   history reload waits for a confirmed successful send so queued, failed,
   cancelled, or otherwise unacknowledged local forward bubbles are never
   replaced; Unassigned never synthesizes a new landing chat;
-- global search familiar results resolve the familiar's global landing
-  conversation across every known context: prefer the most recent eligible
-  local landing thread, otherwise the newest server-only session, then route
-  through the canonical thread-open helper so the app switches into that
-  conversation's owning project or Unassigned before opening; only a familiar
-  that belongs to the current active registered project may synthesize a fresh
-  chat from global search, and every other no-history case surfaces actionable
-  guidance instead;
+- chat search resolves existing conversations across known contexts without
+  changing application scope. Familiar shortcuts reuse exact existing history
+  or open participant/access selection; they do not synthesize projectless
+  conversations;
 - the in-chat session picker passes the visible thread's explicit project
   context into `FamiliarThreadsView`, so its local rows, server-only rows,
   unread clears, counts, search, and replacement-chat affordances stay scoped
@@ -181,45 +187,34 @@ Every thread-creation path is explicit:
   returns a `sessionId`; chats whose root is missing, invalid, or Unassigned
   hide the call action and continue to surface project-recovery guidance
   instead of attempting a nil-root call;
-- every thread-open path (deep links, drawer recents, global search, task
-  chat opens, familiar landing, forwarding destinations, session switching)
+- every thread-open path (deep links, drawer recents, chat search,
+  familiar landing, forwarding destinations, session switching)
   resolves the thread root through the current registered-project resolver,
-  switches the app into that canonical project or Unassigned before
-  publishing the open intent, and surfaces actionable recovery guidance
-  instead of silently opening under the wrong project when metadata is
+  preserves the exact conversation binding when publishing the open intent,
+  and surfaces actionable recovery guidance instead of silently rebinding when metadata is
   malformed; ChatsHome and the in-chat session picker both validate the
   selected local or materialized server thread before presenting `ChatView`,
   and malformed dot-segment roots stay visible only as Unassigned recovery
   rows for inspect/export/delete flows;
-- group creation passes the active root;
-- `/new` starts in the active project only when every carried familiar still
-  belongs to that project; otherwise it blocks with actionable recovery
-  guidance rather than creating an invalid roster;
+- group creation passes its locally selected root;
+- `/new` preserves the current conversation's exact participants and eligible
+  root, or opens local selection when a fresh choice is required;
 - legacy projectless sessions offer a replacement-chat path rather than
   silently adopting the current project, and that replacement path applies the
   same roster validation as `/new`;
 - server-session materialization imports `project_root`;
 - session refresh backfills authoritative `project_root` values into restored
   local threads that already know a `sessionId`, so legacy snapshots leave
-  Unassigned as soon as the server can prove their root again — even when
-  task history fails — unless the operator explicitly selected Unassigned;
-- task entry points keep existing server-session `project_root` values, fetch
-  or reuse the authoritative session list before materializing a linked
-  session, prefer the server session's `familiarId` over any stale task or
-  caller fallback when rebuilding a local thread, only downgrade an existing
-  local copy to recovery-only after the linked session is confirmed missing or
-  confirmed projectless, preserve the local copy unchanged on transient linked
-  session load failures, and an unlinked task without a server session starts
-  in that task's registered project root after the app switches into the
-  matching project context;
-- Unassigned, deleted-project, or access-denied task launches block with
-  recovery guidance instead of creating a projectless thread.
+  recovery-only classification as soon as the server can prove their root
+  again; a failed refresh cannot silently replace a cached binding;
+- task entrypoints are retired on native iOS. Legacy task URLs, commands,
+  widgets, and intents must not hydrate a task or expose an operational
+  destination. This does not remove task functionality from desktop or web.
 
-Project/grants/familiars remain the fail-closed bootstrap boundary. Session
-and task history only help choose the default project context: if those
-best-effort history reads fail, iOS keeps the restored or alphabetical
-registered-project fallback and surfaces the stale/error signal without
-dropping back to the project-context gate.
+Project/grants/familiars remain the fail-closed write boundary, not the
+application's read/navigation boundary. Failed catalog or session refreshes
+surface honest errors while cached chats, Settings, and permission recovery
+remain reachable.
 
 `ChatView` also guards legacy or externally materialized projectless threads.
 Before the first send it loads projects for the thread's participants, selects
@@ -274,15 +269,10 @@ Add behavior tests that prove:
    behavior for malformed or oversized bodies.
 7. A project launch error before session creation reopens selection; a normal
    transport error does not.
-8. Task chat entry points use the task's registered root for direct and
-   familiar-picker launches, block Unassigned/deleted/inaccessible tasks, keep
-   mismatched server sessions on the server-authored root, and rebuild stale
-   local task threads with the server-authored familiar/session binding;
-   concurrent opens of the same authoritative task session still collapse onto
-   one repaired local thread and one stable task↔thread link; a confirmed
-   missing linked session or missing `project_root` may downgrade an existing
-   local copy to recovery-only, but a transient session-load failure must leave
-   any existing local thread unchanged.
+8. Retired task entrypoints are rejected before loading tasks or publishing
+   task navigation. Existing chat/session links preserve their exact
+   server-authored root and familiar identity without changing global scope;
+   a transient session-load failure leaves existing local history unchanged.
 9. Forwarding a just-materialized server-only landing chat reloads history only
    after an acknowledged send, while queued, failed, cancelled, and
    unacknowledged attempts preserve the local transcript.
@@ -293,10 +283,7 @@ Add behavior tests that prove:
     or `.done` arrives so a hangup mid-reply still resumes the same session;
     once the operator hangs up, late assistant transcript/audio/state updates
     stay suppressed even if that binding lands afterward;
-    when that first bound session belongs to a task-linked thread, iOS PATCHes
-    the card's `sessionId` immediately instead of waiting for a later text
-    reply; no production first-turn voice `SendBody` hardcodes
-    `projectRoot: nil`.
+    no production first-turn voice `SendBody` hardcodes `projectRoot: nil`.
 
 ### Linux CI contract
 

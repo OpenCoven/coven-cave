@@ -1,5 +1,6 @@
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import { truncateBranch } from "@/lib/truncate-middle";
 
 // Default branch names that carry no signal on their own: a chat rooted in the
 // primary checkout sitting on the repo's default branch. Nearly every ordinary
@@ -31,7 +32,11 @@ export function sessionRailTitle(session: SessionRow): string {
   const isWorktree = Boolean(session.git?.isWorktree);
   const branch = session.pullRequest?.branch ?? session.git?.branch;
   if (branch && (hasPr || isWorktree || !DEFAULT_BRANCHES.has(branch.toLowerCase()))) {
-    context.push(branch);
+    // Middle-truncated, because this suffix is what the row's END truncation
+    // eats first: "Persistent blo… -windows-acl" is one real row, and both the
+    // branch's class prefix and its subject were lost to keep a middle nobody
+    // reads. truncateBranch is a no-op for anything already short.
+    context.push(truncateBranch(branch));
   }
   if (isWorktree) context.push("worktree");
 

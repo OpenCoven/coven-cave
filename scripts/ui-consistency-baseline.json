@@ -28,16 +28,6 @@
     },
     {
       "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/messenger-surface.tsx",
-      "excerpt": "<select value={selected.channel} onChange={(e) => updateSelected({ channel: e.target.value as MessageChannel })} >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/messenger-surface.tsx",
-      "excerpt": "<select value={selected.tone} onChange={(e) => updateSelected({ tone: e.target.value })}>"
-    },
-    {
-      "rule": "components/no-native-select",
       "path": "src/components/role-surfaces/research-evidence-ledger.tsx",
       "excerpt": "<select value={source.status} disabled={busy} onChange={(event) => void act({ action: \"update-source\", sourceId: source.id, patch: { status: event.target.value as ResearchSourceRef[\"status\"] }, })} >"
     },

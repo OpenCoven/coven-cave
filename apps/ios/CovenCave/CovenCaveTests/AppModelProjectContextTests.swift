@@ -1,6 +1,52 @@
 import XCTest
 @testable import CovenCave
 
+private final class QueuedAccessURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var capturedRequests: [URLRequest] = []
+
+    static var requests: [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return capturedRequests
+    }
+
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        capturedRequests = []
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "queue-authorization.cave.test"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.capturedRequests.append(request)
+        Self.lock.unlock()
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let events = "data: {\"kind\":\"assistant_chunk\",\"text\":\"Allowed reply\"}\n\n"
+            + "data: {\"kind\":\"done\",\"isError\":false}\n\n"
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(events.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 private struct StubProjectContextClient: ProjectContextLoadingClient, @unchecked Sendable {
     var projectsResult: Result<[ProjectInfo], Error>
     var grantsResult: Result<ProjectGrantsResponse, Error>
@@ -1136,6 +1182,42 @@ final class AppModelProjectContextTests: XCTestCase {
         )
     }
 
+    private func queuedAccessClient() -> CaveClient {
+        QueuedAccessURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [QueuedAccessURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        addTeardownBlock {
+            session.invalidateAndCancel()
+        }
+        return CaveClient(
+            connection: CaveConnection(host: "https://queue-authorization.cave.test"),
+            session: session
+        )
+    }
+
+    @MainActor
+    private func replayQueue(
+        _ thread: ChatThread,
+        app: AppModel,
+        client: CaveClient,
+        persistBeforeDispatch: @escaping () async -> Bool = { true },
+        persistAfterRollback: @escaping () async -> Bool = { true },
+        onAccessRefused: @escaping (String?) -> Void = { _ in }
+    ) async {
+        await thread.replayQueued(
+            client: client,
+            dispatchLeaseIsCurrent: { true },
+            targetAccessIsCurrent: { root, familiarId in
+                app.chatAccessIsCurrent(projectRoot: root, familiarIds: [familiarId])
+            },
+            onAccessRefused: onAccessRefused,
+            persistBeforeDispatch: persistBeforeDispatch,
+            persistAfterRollback: persistAfterRollback,
+            onChange: {}
+        )
+    }
+
     private func projectAccessDeniedError(_ message: String) -> CaveError {
         .serverResponse(status: 403, code: "project_access_denied", message: message)
     }
@@ -1437,6 +1519,48 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertTrue(app.projectFamiliars.isEmpty)
     }
 
+    func testRestoredChatHistoryKeepsColdUnreachableShellReadable() async {
+        let snapshot = thread(
+            "offline-history",
+            familiarIds: ["nova"],
+            projectRoot: "/repos/alpha"
+        ).snapshot
+        let app = makeApp(
+            restoreLocalState: true,
+            threadSnapshotLoader: { [snapshot] },
+            baseURLDiscoverer: { _ in .unreachable(nil) }
+        )
+        _ = connect(app)
+        await waitFor { app.threads.contains { $0.id == snapshot.id } }
+
+        await app.refreshConnection()
+
+        XCTAssertTrue(app.hasLoadedSurfaces)
+        XCTAssertFalse(app.projectsLoaded)
+        XCTAssertFalse(app.projectMembershipLoaded)
+        XCTAssertFalse(app.chatAccessIsCurrent)
+        XCTAssertNil(app.projectContext)
+        let restored = app.threads.first { $0.id == snapshot.id }
+        XCTAssertNotNil(restored)
+        if let restored {
+            XCTAssertTrue(app.requestOpen(restored))
+            XCTAssertTrue(app.threadToOpen === restored)
+        }
+        if case .unreachable = app.connectionState {} else {
+            XCTFail("The unreachable desktop must not be reported as connected")
+        }
+    }
+
+    func testRetiredTaskDataAloneDoesNotMakeChatShellReady() {
+        let app = makeApp()
+        app.tasksLoaded = true
+        app.remindersLoaded = true
+        XCTAssertFalse(app.hasLoadedSurfaces)
+        app.sessionsLoaded = true
+        XCTAssertTrue(app.hasLoadedSurfaces)
+        XCTAssertFalse(app.chatAccessIsCurrent)
+    }
+
     func testTransientProjectContextFailureKeepsCachedScopeAndGlobalData() async {
         let app = makeApp()
         let connection = connect(app)
@@ -1468,7 +1592,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertEqual(app.projectContext, .project(project("alpha", "Alpha")))
         XCTAssertEqual(app.projectContextError, "Grant refresh failed")
-        XCTAssertTrue(app.projectMembershipLoaded)
+        XCTAssertFalse(app.projectMembershipLoaded)
         XCTAssertEqual(app.projects.map(\.id), ["alpha"])
         XCTAssertEqual(app.familiars.map(\.id), ["nova"])
         XCTAssertEqual(app.projectMembership.familiarIDs(forProjectID: "alpha"), Set(["nova"]))
@@ -1559,7 +1683,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.pendingProjectNavigationIntent, expectedIntent)
     }
 
-    func testRequestOpenSwitchesToThreadProjectBeforeOpening() {
+    func testRequestOpenPreservesAmbientProjectBeforeOpening() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -1579,13 +1703,14 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpen(destination))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext(for: destination), .project(beta))
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertTrue(app.threadToOpen === destination)
         XCTAssertNil(app.toast)
     }
 
-    func testRequestOpenSwitchesToUnassignedForProjectlessThread() {
+    func testRequestOpenPreservesAmbientProjectForProjectlessThread() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let destination = thread("legacy-thread", familiarIds: ["nova"], projectRoot: nil)
@@ -1596,7 +1721,8 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpen(destination))
 
-        XCTAssertEqual(app.projectContext, .unassigned)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext(for: destination), .unassigned)
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertTrue(app.threadToOpen === destination)
         XCTAssertNil(app.toast)
@@ -1618,7 +1744,8 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpen(destination))
 
-        XCTAssertEqual(app.projectContext, .project(nested))
+        XCTAssertEqual(app.projectContext, .project(parent))
+        XCTAssertEqual(app.projectContext(for: destination), .project(nested))
         XCTAssertTrue(app.threadToOpen === destination)
         XCTAssertNil(app.toast)
     }
@@ -1637,7 +1764,8 @@ final class AppModelProjectContextTests: XCTestCase {
             app.threads = [destination]
 
             XCTAssertTrue(app.requestOpen(destination))
-            XCTAssertEqual(app.projectContext, .unassigned)
+            XCTAssertEqual(app.projectContext, .project(alpha))
+            XCTAssertEqual(app.projectContext(for: destination), .unassigned)
             XCTAssertTrue(app.threadToOpen === destination)
             XCTAssertNil(app.toast)
 
@@ -1645,7 +1773,7 @@ final class AppModelProjectContextTests: XCTestCase {
         }
     }
 
-    func testRequestOpenTaskSwitchesToTaskProjectBeforeOpening() {
+    func testRequestOpenTaskRejectsDesktopOnlyDestination() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -1657,16 +1785,16 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectContext = .project(alpha)
         app.selectedTab = .settings
 
-        XCTAssertTrue(app.requestOpenTask(destination))
+        XCTAssertFalse(app.requestOpenTask(destination))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
-        XCTAssertEqual(app.selectedTab, .tasks)
-        XCTAssertEqual(app.cardToOpen?.id, destination.id)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.selectedTab, .settings)
+        XCTAssertNil(app.cardToOpen)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
-    func testRequestOpenTaskSwitchesToUnassignedForProjectlessTask() {
+    func testRequestOpenProjectlessTaskDoesNotRescope() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let destination = card("legacy-task", familiarId: "nova", projectId: nil)
@@ -1676,16 +1804,16 @@ final class AppModelProjectContextTests: XCTestCase {
         app.tasksLoaded = true
         app.projectContext = .project(alpha)
 
-        XCTAssertTrue(app.requestOpenTask(destination))
+        XCTAssertFalse(app.requestOpenTask(destination))
 
-        XCTAssertEqual(app.projectContext, .unassigned)
-        XCTAssertEqual(app.selectedTab, .tasks)
-        XCTAssertEqual(app.cardToOpen?.id, destination.id)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertNil(app.cardToOpen)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
-    func testRequestOpenProjectSearchResultKeepsProjectScopedDestination() {
+    func testRetiredProjectSearchResultDoesNotRescopeDestination() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -1694,15 +1822,15 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectContext = .project(alpha)
         app.selectedTab = .tasks
 
-        XCTAssertTrue(app.requestOpenProjectSearchResult(beta))
+        XCTAssertFalse(app.requestOpenProjectSearchResult(beta))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
-    func testRequestOpenProjectSearchResultFallsBackToChatsFromSettings() {
+    func testRetiredProjectSearchResultPreservesSettings() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -1711,15 +1839,15 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectContext = .project(alpha)
         app.selectedTab = .settings
 
-        XCTAssertTrue(app.requestOpenProjectSearchResult(beta))
+        XCTAssertFalse(app.requestOpenProjectSearchResult(beta))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
-        XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.selectedTab, .settings)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
-    func testRequestOpenServerSessionSwitchesToSessionProjectBeforeOpening() {
+    func testRequestOpenServerSessionPreservesAmbientProjectBeforeOpening() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -1732,7 +1860,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpenServerSession(destination, fallbackFamiliarId: "nova"))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertEqual(app.threadToOpen?.sessionIds, ["nova": destination.id])
         XCTAssertEqual(app.threadToOpen?.projectRoot, beta.root)
@@ -1740,7 +1868,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertNil(app.toast)
     }
 
-    func testRequestOpenTaskTreatsUnknownProjectAsUnassignedRecovery() {
+    func testRequestOpenTaskRejectsUnknownProjectWithoutRecoveryNavigation() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let destination = card("ghost-task", familiarId: "nova", projectId: "ghost")
@@ -1751,13 +1879,13 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectContext = .project(alpha)
         app.selectedTab = .settings
 
-        XCTAssertTrue(app.requestOpenTask(destination))
+        XCTAssertFalse(app.requestOpenTask(destination))
 
-        XCTAssertEqual(app.selectedTab, .tasks)
-        XCTAssertEqual(app.projectContext, .unassigned)
-        XCTAssertEqual(app.cardToOpen?.id, destination.id)
+        XCTAssertEqual(app.selectedTab, .settings)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertNil(app.cardToOpen)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
     func testRequestOpenTaskFailsExplicitlyWhenProjectIDIsMalformed() {
@@ -1776,16 +1904,16 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .settings)
         XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertNil(app.cardToOpen)
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, destination.id)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         assertToast(
             app,
-            text: "This task is no longer linked to a registered project. Refresh Tasks or reassign it on your desktop, then try again.",
-            systemImage: "folder.badge.questionmark"
+            text: "Tasks is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer"
         )
     }
 
     @MainActor
-    func testMoveTaskToProjectSwitchesToDestinationTaskContextOnSuccess() async {
+    func testLegacyTaskMovePreservesNavigationWhileUpdatingBackendOwnership() async {
         let alpha = project("alpha", "Alpha")
         let task = card("recover-task", familiarId: "nova", projectId: nil)
         let controlledClient = ControlledCoreClient(
@@ -1806,10 +1934,10 @@ final class AppModelProjectContextTests: XCTestCase {
         await app.moveTaskToProject(task, project: alpha)
 
         XCTAssertEqual(app.tasks.first?.projectId, alpha.id)
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .unassigned)
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.cardToOpen?.id, task.id)
-        XCTAssertEqual(app.projectTasks.map(\.id), [task.id])
+        XCTAssertTrue(app.projectTasks.isEmpty)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.tasksError)
         assertToast(app, text: "Moved to Alpha", systemImage: "folder.badge.plus")
@@ -1929,7 +2057,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         let moved = try XCTUnwrap(app.tasks.first)
         XCTAssertEqual(moved.projectId, alpha.id)
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .unassigned)
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.cardToOpen?.id, task.id)
         XCTAssertNil(app.cardThreadLinks[task.id])
@@ -1938,11 +2066,9 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertNil(app.tasksError)
 
         let opened = await app.openChat(for: moved)
-        let unwrapped = try XCTUnwrap(opened)
-        XCTAssertFalse(unwrapped === legacyThread)
-        XCTAssertEqual(unwrapped.projectRoot, alpha.root)
-        XCTAssertEqual(app.cardThreadLinks[task.id], unwrapped.id)
-        XCTAssertTrue(app.linkedThread(for: moved) === unwrapped)
+        XCTAssertNil(opened, "legacy task mutation cannot implicitly select new-chat access")
+        XCTAssertNil(app.cardThreadLinks[task.id])
+        XCTAssertEqual(app.threads.map(\.id), [legacyThread.id])
     }
 
     @MainActor
@@ -1979,7 +2105,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         let moved = try XCTUnwrap(app.tasks.first)
         XCTAssertEqual(moved.projectId, alpha.id)
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .unassigned)
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.cardToOpen?.id, task.id)
         XCTAssertEqual(app.cardThreadLinks[task.id], linked.id)
@@ -2030,7 +2156,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         let moved = try XCTUnwrap(app.tasks.first)
         XCTAssertEqual(moved.projectId, alpha.id)
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .unassigned)
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.cardToOpen?.id, task.id)
         XCTAssertNil(moved.sessionId)
@@ -2045,11 +2171,9 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertNil(sessionUpdates.first?.sessionId)
 
         let opened = await app.openChat(for: moved)
-        let unwrapped = try XCTUnwrap(opened)
-        XCTAssertFalse(unwrapped === legacyThread)
-        XCTAssertEqual(unwrapped.projectRoot, alpha.root)
-        XCTAssertEqual(app.cardThreadLinks[task.id], unwrapped.id)
-        XCTAssertTrue(app.linkedThread(for: moved) === unwrapped)
+        XCTAssertNil(opened, "a task move must not silently create a conversation in another project")
+        XCTAssertNil(app.cardThreadLinks[task.id])
+        XCTAssertEqual(app.threads.map(\.id), [legacyThread.id])
     }
 
     @MainActor
@@ -2118,7 +2242,7 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
-    func testMoveTaskToProjectAllowsImmediateChatOpenAfterSwitchingContext() async throws {
+    func testLegacyTaskMoveDoesNotImplicitlyAuthorizeANewChat() async throws {
         let alpha = project("alpha", "Alpha")
         let task = card("recover-task", familiarId: "nova", projectId: nil)
         let controlledClient = ControlledCoreClient(
@@ -2145,16 +2269,16 @@ final class AppModelProjectContextTests: XCTestCase {
         await app.moveTaskToProject(task, project: alpha)
 
         let moved = try XCTUnwrap(app.tasks.first)
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .unassigned)
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.cardToOpen?.id, task.id)
 
         let opened = await app.openChat(for: moved)
-        let unwrapped = try XCTUnwrap(opened)
-        XCTAssertEqual(unwrapped.projectRoot, alpha.root)
-        XCTAssertEqual(app.cardThreadLinks[task.id], unwrapped.id)
-        XCTAssertTrue(app.threadToOpen === unwrapped)
-        XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertNil(opened)
+        XCTAssertNil(app.cardThreadLinks[task.id])
+        XCTAssertNil(app.threadToOpen)
+        XCTAssertTrue(app.threads.isEmpty)
+        XCTAssertEqual(app.projectContext, .unassigned)
     }
 
     @MainActor
@@ -2528,11 +2652,13 @@ final class AppModelProjectContextTests: XCTestCase {
         let destination = thread("alpha-thread", familiarIds: ["nova"], projectRoot: "/repos/alpha")
 
         XCTAssertNil(app.validatedOpenContext(for: destination))
-        XCTAssertFalse(app.canOpen(destination))
-        XCTAssertEqual(
-            app.threadOpenFailure(for: destination),
-            AppModel.ThreadOpenFailure.projectCatalogUnavailable
-        )
+        XCTAssertTrue(app.canOpen(destination))
+        XCTAssertNil(app.threadOpenFailure(for: destination))
+        app.threads = [destination]
+        XCTAssertTrue(app.requestOpen(destination))
+        XCTAssertTrue(app.threadToOpen === destination)
+        XCTAssertNil(app.projectContext)
+        XCTAssertFalse(app.projectMembershipLoaded)
     }
 
     func testValidatedOpenContextRejectsMalformedDotSegmentRoots() {
@@ -2606,23 +2732,23 @@ final class AppModelProjectContextTests: XCTestCase {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
-        let destination = card("beta-task", familiarId: "nova", projectId: beta.id)
+        let destination = thread("beta-thread", familiarIds: ["nova"], projectRoot: beta.root)
         app.projects = [alpha, beta]
         app.projectsLoaded = true
-        app.tasks = [destination]
-        app.tasksLoaded = true
+        app.threads = [destination]
         app.projectContext = .project(alpha)
         app.pendingProjectNavigationIntent = ProjectNavigationIntent(
-            entity: .task(id: destination.id),
-            destination: .tasks,
+            entity: .thread(id: destination.id),
+            destination: .chats,
             projectId: alpha.id
         )
 
         XCTAssertTrue(app.resolvePendingProjectNavigationIntent())
 
-        XCTAssertEqual(app.projectContext, .project(beta))
-        XCTAssertEqual(app.selectedTab, .tasks)
-        XCTAssertEqual(app.cardToOpen?.id, destination.id)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertTrue(app.threadToOpen === destination)
+        XCTAssertEqual(destination.projectRoot, beta.root)
         XCTAssertNil(app.pendingProjectNavigationIntent)
     }
 
@@ -2638,19 +2764,16 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertEqual(app.selectedTab, .settings)
         XCTAssertEqual(app.deepLink, .tasks)
-        XCTAssertEqual(
-            app.pendingProjectNavigationIntent,
-            ProjectNavigationIntent(destination: .tasks, projectId: "ghost")
-        )
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
         assertToast(
             app,
-            text: "This project is no longer registered on this device. Refresh Chats or choose another project, then try again.",
-            systemImage: "folder.badge.questionmark"
+            text: "Tasks is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer"
         )
     }
 
-    func testProjectChatsDeepLinkSwitchesProjectAndPreservesDestination() throws {
+    func testRetiredProjectChatsDeepLinkDoesNotSwitchProjectOrDestination() throws {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -2662,13 +2785,13 @@ final class AppModelProjectContextTests: XCTestCase {
 
         app.handleDeepLink(url)
 
-        XCTAssertEqual(app.projectContext, .project(beta))
-        XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.selectedTab, .settings)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
     }
 
-    func testPendingTaskNavigationSurvivesFailedHydration() {
+    func testPendingTaskNavigationIsRejectedBeforeHydration() {
         let app = makeApp()
         let expectedIntent = ProjectNavigationIntent(
             entity: .task(id: "missing-task"),
@@ -2679,12 +2802,12 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertFalse(app.resolvePendingProjectNavigationIntent())
 
-        XCTAssertEqual(app.pendingProjectNavigationIntent, expectedIntent)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
         assertToast(
             app,
-            text: "This task is not available on this device yet. Refresh Tasks and try again.",
-            systemImage: "checklist"
+            text: "Tasks is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer"
         )
     }
 
@@ -2718,7 +2841,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpenGlobalFamiliarLandingThread(for: "nova"))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertTrue(app.threadToOpen === betaLanding)
         XCTAssertNil(app.toast)
     }
@@ -2751,13 +2874,13 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertTrue(app.requestOpenGlobalFamiliarLandingThread(for: "nova"))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertEqual(app.threadToOpen?.sessionIds, ["nova": "beta-server"])
         XCTAssertEqual(app.threadToOpen?.projectRoot, beta.root)
         XCTAssertNil(app.toast)
     }
 
-    func testRequestOpenGlobalFamiliarLandingThreadCreatesFreshChatInActiveProjectWhenNoHistoryExists() {
+    func testGlobalFamiliarWithoutHistoryRequiresChatLocalConfiguration() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         app.projects = [alpha]
@@ -2769,12 +2892,12 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectMembershipLoaded = true
         app.projectContext = .project(alpha)
 
-        XCTAssertTrue(app.requestOpenGlobalFamiliarLandingThread(for: "nova"))
+        XCTAssertFalse(app.requestOpenGlobalFamiliarLandingThread(for: "nova"))
 
         XCTAssertEqual(app.projectContext, .project(alpha))
-        XCTAssertEqual(app.threadToOpen?.projectRoot, alpha.root)
-        XCTAssertEqual(app.threadToOpen?.familiarIds, ["nova"])
-        XCTAssertNil(app.toast)
+        XCTAssertNil(app.threadToOpen)
+        XCTAssertTrue(app.threads.isEmpty)
+        XCTAssertTrue(app.toast?.text.contains("New chat") == true)
     }
 
     func testRequestOpenGlobalFamiliarLandingThreadShowsGuidanceWhenFamiliarBelongsToDifferentProject() {
@@ -2796,8 +2919,8 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertNil(app.threadToOpen)
         assertToast(
             app,
-            text: "Nova has no chats in Alpha. Switch to Beta in Chats to start one.",
-            systemImage: "folder.badge.questionmark"
+            text: "Open New chat to choose this familiar and its project access.",
+            systemImage: "bubble.left.and.bubble.right"
         )
     }
 
@@ -3050,7 +3173,7 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
-    func testFamiliarsListPresentationKeepsAccessScopedRosterDuringCachedRefreshFailure() {
+    func testFamiliarsListPresentationKeepsGlobalRosterWithoutImplyingAccess() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         app.projects = [alpha]
@@ -3064,18 +3187,20 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectMembership = ProjectMembershipIndex(
             familiarIDsByProjectID: ["alpha": Set(["nova"])]
         )
-        app.projectMembershipLoaded = true
+        app.projectMembershipLoaded = false
+        app.projectContextError = "Grant refresh failed"
         app.familiarsError = "Grant refresh failed"
 
         let presentation = FamiliarsListPresentation(app: app)
 
-        XCTAssertEqual(presentation.visibleFamiliars.map(\.id), ["nova"])
+        XCTAssertEqual(presentation.visibleFamiliars.map(\.id), ["nova", "sage"])
         XCTAssertTrue(presentation.showsCachedAccessBanner)
         XCTAssertEqual(presentation.mode, .list)
+        XCTAssertFalse(app.chatAccessIsCurrent)
     }
 
     @MainActor
-    func testFamiliarsListPresentationUsesRecoveryCopyWhenCachedScopeIsEmpty() {
+    func testFamiliarsListPresentationShowsLoadErrorWithoutAnAmbientScope() {
         let app = makeApp()
         app.projectContext = .unassigned
         app.projectMembershipLoaded = true
@@ -3084,15 +3209,15 @@ final class AppModelProjectContextTests: XCTestCase {
         let presentation = FamiliarsListPresentation(app: app)
 
         XCTAssertTrue(presentation.visibleFamiliars.isEmpty)
-        XCTAssertTrue(presentation.showsCachedAccessBanner)
+        XCTAssertFalse(presentation.showsCachedAccessBanner)
         XCTAssertEqual(
             presentation.mode,
-            .empty(title: "No recovery familiars", message: ProjectContextCopy.unassignedRecovery)
+            .firstLoadError("Grant refresh failed")
         )
     }
 
     @MainActor
-    func testFamiliarDetailStatsStayScopedAndUseNoActivityFallback() {
+    func testFamiliarChatHistoryIgnoresLegacyTaskAnalyticsAndAmbientProject() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
@@ -3121,15 +3246,14 @@ final class AppModelProjectContextTests: XCTestCase {
             ),
         ]
 
-        let alphaStats = FamiliarDetailStatsModel.make(app: app, familiar: shared, context: .project(alpha))
-        let quietStats = FamiliarDetailStatsModel.make(app: app, familiar: quiet, context: .project(alpha))
-
-        XCTAssertEqual(alphaStats.chats, "1")
-        XCTAssertEqual(alphaStats.tasks, "1")
-        XCTAssertNotEqual(alphaStats.activity, "No activity yet")
-        XCTAssertEqual(quietStats.chats, "0")
-        XCTAssertEqual(quietStats.tasks, "0")
-        XCTAssertEqual(quietStats.activity, "No activity yet")
+        app.projectContext = .project(alpha)
+        XCTAssertEqual(app.globalThreadCount(for: shared.id), 2)
+        XCTAssertEqual(app.globalLastActivity(for: shared.id), Date(timeIntervalSince1970: 80))
+        XCTAssertEqual(app.globalThreadCount(for: quiet.id), 0)
+        XCTAssertNil(app.globalLastActivity(for: quiet.id))
+        app.projectContext = .project(beta)
+        XCTAssertEqual(app.globalThreadCount(for: shared.id), 2)
+        XCTAssertEqual(app.globalLastActivity(for: shared.id), Date(timeIntervalSince1970: 80))
     }
 
     func testTasksViewDropsLegacyProjectGroupingAndScopesPendingOpenCards() {
@@ -3507,7 +3631,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertEqual(unwrapped.projectRoot, alpha.root)
         XCTAssertEqual(unwrapped.familiarIds, ["nova"])
-        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(app.projectContext, .project(beta))
         XCTAssertEqual(app.cardThreadLinks[task.id], unwrapped.id)
         XCTAssertTrue(app.threadToOpen === unwrapped)
         XCTAssertEqual(app.selectedTab, .chats)
@@ -3699,7 +3823,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertEqual(unwrapped.sessionIds["nova"], "session-1")
         XCTAssertEqual(unwrapped.projectRoot, beta.root)
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertNil(app.cardThreadLinks[task.id])
         XCTAssertNil(app.linkedThread(for: task))
         assertToast(
@@ -3756,7 +3880,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertFalse(unwrapped === staleLocal)
         XCTAssertEqual(unwrapped.sessionIds["nova"], "session-1")
         XCTAssertEqual(unwrapped.projectRoot, beta.root)
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertEqual(app.cardThreadLinks[task.id], staleLocal.id)
         XCTAssertNil(app.linkedThread(for: task))
     }
@@ -4629,6 +4753,455 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
+    func testChatLocalLaunchSurvivesAmbientChangeAndAccessRefresh() async throws {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        let beta = project("beta", "Beta")
+        let launch = try XCTUnwrap(NewChatImportLaunchContext(
+            selectedProject: alpha,
+            selectedFamiliarIds: ["nova"]
+        ))
+        app.projectContext = .project(beta)
+        let accessClient = ControlledCoreClient(
+            projects: [alpha, beta],
+            grants: grants(grants: [
+                ProjectGrant(familiarId: "nova", projectId: alpha.id, access: .write),
+            ]),
+            familiars: [familiar("nova", "Nova")]
+        )
+
+        await app.loadProjectContext(using: accessClient, preservingSelection: true)
+
+        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(launch.validate(
+            registeredProjects: app.projects,
+            accessibleProjects: [alpha],
+            projectMembership: app.projectMembership,
+            membershipLoaded: app.projectMembershipLoaded
+        ), .valid)
+        let created = try XCTUnwrap(app.startFreshThread(
+            in: .project(alpha), familiarIds: launch.familiarIds
+        ))
+        XCTAssertEqual(created.projectRoot, alpha.root)
+        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertTrue(app.requestOpen(created))
+        XCTAssertEqual(app.projectContext, .project(beta))
+        let calls = await accessClient.callLog.snapshot()
+        XCTAssertEqual(calls.tasks, 0)
+    }
+
+    @MainActor
+    func testBoundThreadLaunchFailsClosedAfterGrantRefreshFailure() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        app.projectMembershipLoaded = true
+        await app.loadProjectContext(
+            using: failingClient(message: "Grant refresh failed"),
+            preservingSelection: true
+        )
+        XCTAssertFalse(app.projectMembershipLoaded)
+        XCTAssertNil(app.startFreshThread(in: .project(alpha), familiarIds: ["nova"]))
+        XCTAssertTrue(app.threads.isEmpty)
+        XCTAssertTrue(app.toast?.text.contains("project access") == true)
+    }
+
+    @MainActor
+    func testChatWriteAccessUsesBoundProjectAndExactRosterNotReadability() {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        let beta = project("beta", "Beta")
+        let cached = thread("cached-access", familiarIds: ["nova"], projectRoot: alpha.root)
+        XCTAssertNil(app.threadOpenFailure(for: cached))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]))
+
+        app.projects = [alpha, beta]
+        app.projectsLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: [
+            "alpha": ["nova", "sage"],
+            "beta": ["sage"],
+        ])
+        app.projectMembershipLoaded = true
+        app.projectContext = .project(beta)
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova", "sage"]))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: beta.root, familiarIds: ["nova"]))
+        app.projectContext = nil
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]))
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova", "nova"]))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: []))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: [""]))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: [" nova"]))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova", "missing"]))
+        let invalidRoots: [String?] = [
+            nil, "", "relative/project", "/repos/unknown",
+            "\(alpha.root)/.worktrees/branch", " \(alpha.root)", "\(alpha.root)/",
+        ]
+        for root in invalidRoots {
+            XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: root, familiarIds: ["nova"]))
+        }
+
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        XCTAssertTrue(app.chatAccessIsCurrent)
+        XCTAssertFalse(app.requireCurrentChatAccess(projectRoot: alpha.root, familiarIds: ["nova", "sage"]))
+        XCTAssertTrue(app.toast?.text.contains("every participant") == true)
+        XCTAssertNil(app.threadOpenFailure(for: cached))
+        app.projectContextError = "Refresh failed"
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]))
+        app.projectContextError = nil
+        app.projectMembershipLoaded = false
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]))
+    }
+
+    @MainActor
+    func testRevokedQueuedRecipientCannotBeReplacedByCurrentRosterAccess() async {
+        let app = makeApp()
+        _ = connect(app)
+        app.connectionState = .connected
+        let alpha = project("alpha", "Alpha")
+        let pending = thread("revoked-queue", familiarIds: ["nova"], projectRoot: alpha.root)
+        pending.enqueue("Keep the original recipient")
+        pending.familiarIds = ["sage"]
+        app.threads = [pending]
+        app.threadDrafts[pending.id] = "Keep this draft"
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["sage"]])
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: pending.familiarIds))
+        XCTAssertFalse(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]))
+
+        app.flushQueuedMessages()
+        await waitFor { app.toast?.text.contains("Queued chat access") == true }
+
+        XCTAssertEqual(pending.messages.count, 1)
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertEqual(pending.messages.first?.queuedTargetFamiliarIds, ["nova"])
+        XCTAssertNil(pending.messages.first?.queuedAttemptedFamiliarIds)
+        XCTAssertEqual(pending.projectRoot, alpha.root)
+        XCTAssertEqual(app.threadDrafts[pending.id], "Keep this draft")
+
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["nova"]),
+                      "restored access is evaluated against the original queued recipient")
+    }
+
+    @MainActor
+    func testQueuedAccessPreservesLegacyRunRecipientFallback() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["sage"]])
+        let pending = thread("legacy-queue", familiarIds: ["sage"], projectRoot: alpha.root)
+        pending.enqueue("Legacy delivery")
+        pending.messages[0].queuedTargetFamiliarIds = nil
+        pending.messages[0].queuedRunIdsByFamiliarId = ["nova": "original-run"]
+        let transport = queuedAccessClient()
+        let before = pending.messages
+        var refused: [String?] = []
+        await replayQueue(pending, app: app, client: transport, onAccessRefused: { refused.append($0) })
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertEqual(pending.messages, before)
+        XCTAssertTrue(QueuedAccessURLProtocol.requests.isEmpty)
+    }
+
+    @MainActor
+    func testSuccessfulGrantRefreshRevocationLeavesQueuedRecipientUnsent() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]])
+        let pending = thread("refresh-revoked", familiarIds: ["nova"], projectRoot: alpha.root)
+        pending.enqueue("Never replace Nova with Sage")
+        let before = pending.messages
+        let transport = queuedAccessClient()
+        await app.loadProjectContext(using: client(
+            projects: [alpha],
+            grants: grants(grants: [ProjectGrant(familiarId: "sage", projectId: alpha.id, access: .write)]),
+            familiars: [familiar("nova", "Nova"), familiar("sage", "Sage")]
+        ), preservingSelection: true)
+        XCTAssertTrue(app.chatAccessIsCurrent)
+        XCTAssertTrue(app.chatAccessIsCurrent(projectRoot: alpha.root, familiarIds: ["sage"]))
+        var checkpoints = 0
+        var refused: [String?] = []
+        await replayQueue(pending, app: app, client: transport, persistBeforeDispatch: {
+            checkpoints += 1
+            return true
+        }, onAccessRefused: { refused.append($0) })
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertEqual(checkpoints, 0)
+        XCTAssertTrue(QueuedAccessURLProtocol.requests.isEmpty)
+        XCTAssertEqual(pending.messages, before)
+    }
+
+    @MainActor
+    func testFrozenQueuedGroupSkipsRevokedTargetWithoutStarvingAllowedRecipient() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["sage", "new-member"]])
+        let pending = thread("partial-queue", familiarIds: ["nova", "sage"], projectRoot: alpha.root)
+        pending.enqueue("Only original recipients")
+        pending.familiarIds = ["new-member"]
+        let transport = queuedAccessClient()
+        var refused: [String?] = []
+        await replayQueue(pending, app: app, client: transport, onAccessRefused: { refused.append($0) })
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.filter { $0.httpMethod == "POST" }.count, 1)
+        XCTAssertEqual(pending.messages.first?.queuedTargetFamiliarIds, ["nova", "sage"])
+        XCTAssertEqual(pending.messages.first?.queuedCompletedFamiliarIds, ["sage"])
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertEqual(pending.messages.first?.queuedContext?.projectRoot, alpha.root)
+        XCTAssertEqual(pending.messages.filter { $0.role == .assistant }.map(\.familiarId), ["sage"])
+        XCTAssertEqual(pending.messages.last?.text, "Allowed reply")
+        XCTAssertFalse(pending.messages.last?.isError == true)
+        XCTAssertEqual(pending.familiarIds, ["new-member"])
+    }
+
+    @MainActor
+    func testCompletedQueuedDeliveryClearsItsOriginalContext() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        let pending = thread("complete-queue", familiarIds: ["nova"], projectRoot: alpha.root)
+        pending.enqueue("Deliver to the original chat")
+        let transport = queuedAccessClient()
+
+        await replayQueue(pending, app: app, client: transport)
+
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.filter { $0.httpMethod == "POST" }.count, 1)
+        XCTAssertFalse(pending.messages.first?.isQueued == true)
+        XCTAssertNil(pending.messages.first?.queuedContext)
+        XCTAssertNil(pending.messages.first?.queuedTargetFamiliarIds)
+        XCTAssertEqual(pending.messages.last?.text, "Allowed reply")
+        XCTAssertFalse(pending.messages.last?.isError == true)
+    }
+
+    @MainActor
+    func testQueuedStreamResumeUsesTheSameInjectedTransport() async throws {
+        let transport = queuedAccessClient()
+        var reply = ""
+        for try await frame in transport.resumeStream(runId: "original-run", cursor: 7) {
+            if case .assistantChunk(let text) = frame.event { reply += text }
+        }
+
+        XCTAssertEqual(reply, "Allowed reply")
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.count, 1)
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.first?.httpMethod, "GET")
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.first?.url?.path, "/api/chat/stream")
+        XCTAssertEqual(
+            QueuedAccessURLProtocol.requests.first?.url?.query,
+            "runId=original-run&cursor=7"
+        )
+    }
+
+    @MainActor
+    func testGrantRevocationDuringQueuedPersistenceRollsBackWithoutPost() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        let pending = thread("checkpoint-revoked", familiarIds: ["nova"], projectRoot: alpha.root)
+        pending.enqueue("Keep pending")
+        let before = pending.messages
+        let transport = queuedAccessClient()
+        var rollbacks = 0
+        var refused: [String?] = []
+        await replayQueue(pending, app: app, client: transport, persistBeforeDispatch: {
+            await app.loadProjectContext(using: self.client(
+                projects: [alpha],
+                grants: self.grants(),
+                familiars: [self.familiar("nova", "Nova")]
+            ), preservingSelection: true)
+            return true
+        }, persistAfterRollback: {
+            rollbacks += 1
+            return true
+        }, onAccessRefused: { refused.append($0) })
+        XCTAssertTrue(app.chatAccessIsCurrent)
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertEqual(rollbacks, 1)
+        XCTAssertTrue(QueuedAccessURLProtocol.requests.isEmpty)
+        XCTAssertEqual(pending.messages, before)
+    }
+
+    @MainActor
+    func testQueuedGrantRevocationAtNetworkPreflightPreservesPendingLeg() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]])
+        let pending = thread("late-revoked", familiarIds: ["nova"], projectRoot: alpha.root)
+        pending.enqueue("Keep pending at the last boundary")
+        let transport = queuedAccessClient()
+        var accessProbes = 0
+        var refused: [String?] = []
+        await pending.replayQueued(
+            client: transport,
+            dispatchLeaseIsCurrent: { true },
+            targetAccessIsCurrent: { root, recipient in
+                XCTAssertEqual(root, alpha.root)
+                XCTAssertEqual(recipient, "nova")
+                accessProbes += 1
+                // Leg admission, checkpoint, stream entry, then URLSession preflight.
+                if accessProbes == 4 {
+                    app.projectMembership = ProjectMembershipIndex()
+                }
+                return app.chatAccessIsCurrent(projectRoot: root, familiarIds: [recipient])
+            },
+            onAccessRefused: { refused.append($0) },
+            persistBeforeDispatch: { true },
+            persistAfterRollback: { true },
+            onChange: {}
+        )
+        XCTAssertEqual(accessProbes, 4)
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertTrue(QueuedAccessURLProtocol.requests.isEmpty)
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertNil(pending.messages.first?.queuedAttemptedFamiliarIds)
+        XCTAssertNil(pending.messages.first?.queuedRunIdsByFamiliarId)
+        XCTAssertEqual(pending.messages.first?.queuedTargetFamiliarIds, ["nova"])
+    }
+
+    @MainActor
+    func testQueuedFinalPreflightRefusalDoesNotStarveAllowedSibling() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]])
+        let pending = thread("late-group-revocation", familiarIds: ["nova", "sage"], projectRoot: alpha.root)
+        pending.enqueue("Keep both original recipients")
+        let transport = queuedAccessClient()
+        var novaProbes = 0
+        var refused: [String?] = []
+        await pending.replayQueued(
+            client: transport,
+            dispatchLeaseIsCurrent: { true },
+            targetAccessIsCurrent: { root, recipient in
+                if recipient == "nova" {
+                    novaProbes += 1
+                    if novaProbes == 4 {
+                        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["sage"]])
+                    }
+                }
+                return app.chatAccessIsCurrent(projectRoot: root, familiarIds: [recipient])
+            },
+            onAccessRefused: { refused.append($0) },
+            persistBeforeDispatch: { true },
+            persistAfterRollback: { true },
+            onChange: {}
+        )
+
+        XCTAssertEqual(novaProbes, 4)
+        XCTAssertEqual(refused, ["nova"])
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.filter { $0.httpMethod == "POST" }.count, 1)
+        XCTAssertEqual(pending.messages.first?.queuedCompletedFamiliarIds, ["sage"])
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertFalse(pending.messages.first?.queuedAttemptedFamiliarIds?.contains("nova") == true)
+        XCTAssertEqual(pending.messages.last?.familiarId, "sage")
+        XCTAssertEqual(pending.messages.last?.text, "Allowed reply")
+    }
+
+    @MainActor
+    func testQueuedCheckpointRefusalDoesNotStarveAllowedSibling() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+        app.projectMembershipLoaded = true
+        app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]])
+        let pending = thread("checkpoint-group-revocation", familiarIds: ["nova", "sage"], projectRoot: alpha.root)
+        pending.enqueue("Keep both original recipients")
+        let transport = queuedAccessClient()
+        var checkpoints = 0
+        var rollbacks = 0
+        await replayQueue(pending, app: app, client: transport, persistBeforeDispatch: {
+            checkpoints += 1
+            app.projectMembership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["sage"]])
+            return true
+        }, persistAfterRollback: {
+            rollbacks += 1
+            return true
+        })
+
+        XCTAssertEqual(checkpoints, 2)
+        XCTAssertEqual(rollbacks, 1)
+        XCTAssertEqual(QueuedAccessURLProtocol.requests.filter { $0.httpMethod == "POST" }.count, 1)
+        XCTAssertEqual(pending.messages.first?.queuedCompletedFamiliarIds, ["sage"])
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertEqual(pending.messages.last?.familiarId, "sage")
+        XCTAssertEqual(pending.messages.last?.text, "Allowed reply")
+    }
+
+    @MainActor
+    func testQueuedConnectionRevocationStillStopsAllRecipients() async {
+        let alpha = project("alpha", "Alpha")
+        let pending = thread("connection-revoked-group", familiarIds: ["nova", "sage"], projectRoot: alpha.root)
+        pending.enqueue("Wait for the original connection")
+        let transport = queuedAccessClient()
+        var connectionIsCurrent = true
+        var considered: [String] = []
+        await pending.replayQueued(
+            client: transport,
+            dispatchLeaseIsCurrent: { connectionIsCurrent },
+            targetAccessIsCurrent: { _, recipient in
+                considered.append(recipient)
+                return true
+            },
+            onAccessRefused: { _ in XCTFail("The endpoint, not a target grant, was revoked.") },
+            persistBeforeDispatch: { connectionIsCurrent = false; return true },
+            persistAfterRollback: { true },
+            onChange: {}
+        )
+
+        XCTAssertEqual(considered, ["nova"])
+        XCTAssertTrue(QueuedAccessURLProtocol.requests.isEmpty)
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertEqual(pending.messages.first?.queuedTargetFamiliarIds, ["nova", "sage"])
+        XCTAssertNil(pending.messages.first?.queuedCompletedFamiliarIds)
+    }
+
+    @MainActor
+    func testUnavailableChatAccessPreservesQueuedTargetAndDraft() async {
+        let app = makeApp()
+        _ = connect(app)
+        app.connectionState = .connected
+        let pending = thread("queued", familiarIds: ["nova"], projectRoot: "/repos/alpha")
+        pending.enqueue("Keep this exact target")
+        app.threads = [pending]
+        app.threadDrafts[pending.id] = "Unsent draft"
+        let targets = pending.messages.first?.queuedTargetFamiliarIds
+        let lease = app.captureConnectionDispatchLease()
+
+        app.flushQueuedMessages()
+        let checkpointAccepted = await app.persistThreadsBeforeDispatch(for: lease)
+
+        XCTAssertFalse(checkpointAccepted)
+        XCTAssertEqual(pending.messages.count, 1)
+        XCTAssertTrue(pending.messages.first?.isQueued == true)
+        XCTAssertEqual(pending.messages.first?.queuedTargetFamiliarIds, targets)
+        XCTAssertEqual(pending.projectRoot, "/repos/alpha")
+        XCTAssertEqual(app.threadDrafts[pending.id], "Unsent draft")
+        XCTAssertTrue(app.toast?.text.contains("Chat access is unavailable") == true)
+    }
+
+    @MainActor
     func testStartFreshThreadInActiveProjectBlocksRosterOutsideActiveProject() {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
@@ -4651,7 +5224,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertTrue(app.threads.isEmpty)
         assertToast(
             app,
-            text: "Sage can’t access Alpha. Open New Chat to choose a valid roster or switch projects, then try again.",
+            text: "Sage can’t access Alpha. Open New chat to choose a project and valid roster, then try again.",
             systemImage: "person.crop.circle.badge.exclamationmark"
         )
     }
@@ -4755,7 +5328,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.projectSwitcherState, .emptyNoProjects)
     }
 
-    func testRefreshConnectionFailedInitialProjectContextLoadUsesProjectContextRequiredState() async {
+    func testRefreshConnectionKeepsChatShellAvailableWhenInitialCatalogFails() async {
         let message = "Choose a project in Cave before opening it on this device."
         let foundURL = URL(string: "http://cave.test:3000")!
         let retryingClient = RetryingProjectContextCoreClient(
@@ -4775,7 +5348,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         await app.refreshConnection()
 
-        XCTAssertEqual(app.connectionState, .projectContextRequired)
+        XCTAssertEqual(app.connectionState, .connected)
         XCTAssertNil(app.projectContext)
         XCTAssertFalse(app.projectMembershipLoaded)
         XCTAssertEqual(app.projectContextError, message)
@@ -4800,7 +5373,7 @@ final class AppModelProjectContextTests: XCTestCase {
         app.connection = CaveConnection(host: foundURL.absoluteString)
 
         await app.connectWithRetry()
-        XCTAssertEqual(app.connectionState, .projectContextRequired)
+        XCTAssertEqual(app.connectionState, .connected)
         XCTAssertEqual(app.projectContextError, message)
 
         await app.connectWithRetry()
@@ -4847,17 +5420,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(calls.grants, 1)
         XCTAssertEqual(calls.familiars, 1)
         XCTAssertEqual(calls.sessions, 1)
-        // Task history IS consulted here, and one fetch is correct. The cold
-        // selection is staged local threads -> server sessions -> task history
-        // -> alphabetical, and `shouldFetchTaskHistoryForProjectContextSelection`
-        // fetches whenever the decision would otherwise land on the alphabetical
-        // or unassigned fallback. This client serves an EMPTY session list, so
-        // sessions succeed without identifying a registered project and the
-        // task-history stage runs — which is the point of that stage: it picks
-        // the project the operator actually worked in instead of the one that
-        // happens to sort first. Asserting 0 here asserted that the fallback
-        // never runs, which was never true; it had simply never executed.
-        XCTAssertEqual(calls.tasks, 1)
+        XCTAssertEqual(calls.tasks, 0)
     }
 
     func testColdLaunchChoosesMostRecentHydratedLocalThreadProjectBeforeServerHistory() async {
@@ -5010,7 +5573,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(historyOrder, [.sessions])
     }
 
-    func testColdLaunchUsesRecentTaskProjectBeforeAlphabeticalFallback() async {
+    func testColdLaunchNeverHydratesTasksForChatBrowsing() async {
         let foundURL = URL(string: "http://cave.test:3000")!
         let controlledClient = ControlledCoreClient(
             projects: [
@@ -5039,19 +5602,19 @@ final class AppModelProjectContextTests: XCTestCase {
         await app.refreshConnection()
 
         XCTAssertEqual(app.connectionState, .connected)
-        XCTAssertEqual(app.projectContext, .project(project("zulu", "Zulu")))
+        XCTAssertEqual(app.projectContext, .project(project("alpha", "Alpha")))
         XCTAssertTrue(app.sessionsLoaded)
-        XCTAssertTrue(app.tasksLoaded)
+        XCTAssertFalse(app.tasksLoaded)
         XCTAssertEqual(app.serverSessions, [])
-        XCTAssertEqual(app.tasks.map(\.id), ["alpha-task", "zulu-task"])
+        XCTAssertTrue(app.tasks.isEmpty)
         let calls = await controlledClient.callLog.snapshot()
         XCTAssertEqual(calls.sessions, 1)
-        XCTAssertEqual(calls.tasks, 1)
+        XCTAssertEqual(calls.tasks, 0)
         let historyOrder = await controlledClient.callLog.historyOrderSnapshot()
-        XCTAssertEqual(historyOrder, [.sessions, .tasks])
+        XCTAssertEqual(historyOrder, [.sessions])
     }
 
-    func testLoadProjectContextWaitsForSuccessfulSessionHistoryBeforeFetchingTasks() async {
+    func testLoadProjectContextLoadsSessionHistoryWithoutFetchingTasks() async {
         let sessionStarted = Gate()
         let sessionRelease = Gate()
         let controlledClient = ControlledCoreClient(
@@ -5086,9 +5649,9 @@ final class AppModelProjectContextTests: XCTestCase {
         await sessionRelease.open()
         await loadTask.value
 
-        XCTAssertEqual(app.projectContext, .project(project("zulu", "Zulu")))
+        XCTAssertEqual(app.projectContext, .project(project("alpha", "Alpha")))
         let historyOrder = await controlledClient.callLog.historyOrderSnapshot()
-        XCTAssertEqual(historyOrder, [.sessions, .tasks])
+        XCTAssertEqual(historyOrder, [.sessions])
     }
 
     func testLoadProjectContextSkipsTaskHistoryWhenLocalThreadAlreadyDeterminesContext() async {
@@ -5126,7 +5689,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(calls.tasks, 0)
     }
 
-    func testColdLaunchFallsBackToAlphabeticalProjectWhenTaskHistoryFails() async {
+    func testChatBootstrapDoesNotConsultFailingTaskHistory() async {
         let message = "Recent tasks unavailable"
         let foundURL = URL(string: "http://cave.test:3000")!
         let controlledClient = ControlledCoreClient(
@@ -5163,13 +5726,13 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertTrue(app.sessionsLoaded)
         XCTAssertTrue(app.serverSessions.isEmpty)
         XCTAssertFalse(app.tasksLoaded)
-        XCTAssertEqual(app.tasksError, message)
+        XCTAssertNil(app.tasksError)
         XCTAssertNil(app.projectContextError)
         let calls = await controlledClient.callLog.snapshot()
         XCTAssertEqual(calls.sessions, 1)
-        XCTAssertEqual(calls.tasks, 1)
+        XCTAssertEqual(calls.tasks, 0)
         let historyOrder = await controlledClient.callLog.historyOrderSnapshot()
-        XCTAssertEqual(historyOrder, [.sessions, .tasks])
+        XCTAssertEqual(historyOrder, [.sessions])
     }
 
     func testUserSwitchDuringHistoryBootstrapIsNotOverwritten() async {
@@ -5299,7 +5862,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.familiarsError, message)
         XCTAssertEqual(app.projects.map(\.id), ["alpha"])
         XCTAssertEqual(app.familiars.map(\.id), ["nova"])
-        XCTAssertTrue(app.projectMembershipLoaded)
+        XCTAssertFalse(app.projectMembershipLoaded)
     }
 
     func testReconnectRefreshFailureMirrorsCachedProjectContextErrorToEmptyProjectsAndRetryClearsIt() async {
@@ -5406,7 +5969,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.projectContext, .project(project("alpha", "Alpha")))
     }
 
-    func testPendingTaskIntentWaitsForRelocatedBootstrapBeforeHydrating() async throws {
+    func testRetiredTaskIntentIsRejectedBeforeRelocatedBootstrap() async throws {
         let alpha = project("alpha", "Alpha")
         let target = card("relocated-task", familiarId: "nova", projectId: alpha.id)
         let historyStarted = Gate()
@@ -5433,9 +5996,9 @@ final class AppModelProjectContextTests: XCTestCase {
 
         let preBootstrapCalls = await controlledClient.callLog.snapshot()
         XCTAssertEqual(preBootstrapCalls.tasks, 0)
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, target.id)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
 
         let refreshTask = Task { await app.refreshConnection() }
         let started = expectation(description: "post-bootstrap task hydration started")
@@ -5452,27 +6015,24 @@ final class AppModelProjectContextTests: XCTestCase {
         let postBootstrapCalls = await controlledClient.callLog.snapshot()
         XCTAssertEqual(postBootstrapCalls.sessions, 1)
         XCTAssertEqual(postBootstrapCalls.tasks, 0)
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, target.id)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
         assertOnlyPortRelocationNoticeToast(app, port: 4000)
 
         await historyRelease.open()
         await refreshTask.value
-        await waitFor { app.cardToOpen?.id == target.id }
+        XCTAssertNil(app.cardToOpen)
 
         XCTAssertEqual(app.connection?.baseURL, foundURL)
         XCTAssertEqual(app.projectContext, .project(alpha))
-        XCTAssertEqual(app.selectedTab, .tasks)
+        XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         assertOnlyPortRelocationNoticeToast(app, port: 4000)
-        // The hydration the mid-flight snapshot was too early to see: once the
-        // release gate opens, the staged task fetch does run, and it is what
-        // resolves `cardToOpen` above.
         let hydratedCalls = await controlledClient.callLog.snapshot()
-        XCTAssertEqual(hydratedCalls.tasks, 1)
+        XCTAssertEqual(hydratedCalls.tasks, 0)
     }
 
-    func testPendingTaskIntentFailsOnlyAfterSuccessfulCurrentGenerationTaskLoad() async throws {
+    func testRetiredTaskIntentFailsWithoutWaitingForCurrentGenerationLoad() async throws {
         let alpha = project("alpha", "Alpha")
         let historyStarted = Gate()
         let historyRelease = Gate()
@@ -5495,32 +6055,32 @@ final class AppModelProjectContextTests: XCTestCase {
 
         app.handleDeepLink(try XCTUnwrap(URL(string: "covencave://task/missing-task")))
         await Task.yield()
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
 
         let refreshTask = Task { await app.refreshConnection() }
         let started = expectation(description: "missing-task hydration started")
         Task { await historyStarted.wait(); started.fulfill() }
         await fulfillment(of: [started], timeout: 1)
 
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, "missing-task")
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
-        XCTAssertNil(app.toast)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
 
         await historyRelease.open()
         await refreshTask.value
         await waitFor { app.toast != nil }
 
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, "missing-task")
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.cardToOpen)
         assertToast(
             app,
-            text: "This task is not available on this device yet. Refresh Tasks and try again.",
-            systemImage: "checklist"
+            text: "Tasks is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer"
         )
     }
 
     @MainActor
-    func testPendingTaskHydrationFailureRetainsIntentUntilExplicitRetrySucceeds() async throws {
+    func testLegacyTaskRefreshCannotReviveRetiredNavigation() async throws {
         let failingClient = ControlledCoreClient(
             projects: [],
             grants: grants(),
@@ -5547,13 +6107,13 @@ final class AppModelProjectContextTests: XCTestCase {
 
         await app.loadTasks(using: failingClient)
 
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, recoveredTask.id)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertEqual(app.tasksError, "Task history is offline")
         XCTAssertNil(app.cardToOpen)
         assertToast(
             app,
-            text: "Couldn’t load Tasks while opening task retry-task. Refresh Tasks or reconnect, then try again.",
-            systemImage: "checklist"
+            text: "Tasks is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer"
         )
         let firstToastID = try XCTUnwrap(app.toast?.id)
 
@@ -5567,10 +6127,10 @@ final class AppModelProjectContextTests: XCTestCase {
         await app.loadTasks(using: retryClient)
 
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertEqual(app.cardToOpen?.id, recoveredTask.id)
-        XCTAssertEqual(app.selectedTab, .tasks)
+        XCTAssertNil(app.cardToOpen)
+        XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertNil(app.tasksError)
-        XCTAssertNil(app.toast)
+        XCTAssertEqual(app.toast?.id, firstToastID)
         let retryCalls = await retryClient.callLog.snapshot()
         XCTAssertEqual(retryCalls.tasks, 1)
     }
@@ -5708,7 +6268,7 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
-    func testReconnectPendingTaskHydrationSupersedesStaleGenerationWithoutRetryLoop() async throws {
+    func testReconnectDoesNotHydrateOrReopenRetiredTaskIntent() async throws {
         let alpha = project("alpha", "Alpha")
         let staleStarted = Gate()
         let staleRelease = Gate()
@@ -5753,10 +6313,10 @@ final class AppModelProjectContextTests: XCTestCase {
             destination: .tasks
         )
         XCTAssertFalse(app.resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true))
-        await staleStarted.wait()
+        XCTAssertNil(app.pendingProjectNavigationIntent)
+        XCTAssertTrue(app.toast?.text.contains("desktop-only") == true)
 
         let reconnect = Task { await app.configure(host: foundURL.absoluteString) }
-        await currentStarted.wait()
         await reconnect.value
 
         await staleRelease.open()
@@ -5764,27 +6324,25 @@ final class AppModelProjectContextTests: XCTestCase {
         await Task.yield()
 
         let midCalls = await client.callLog.snapshot()
-        XCTAssertEqual(midCalls.tasks, 2)
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, reopened.id)
+        XCTAssertEqual(midCalls.tasks, 0)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertTrue(app.tasks.isEmpty)
         XCTAssertNil(app.cardToOpen)
-        assertOnlyReconnectNoticeToast(app)
 
         await currentRelease.open()
-        await waitFor { app.cardToOpen?.id == reopened.id }
+        XCTAssertNil(app.cardToOpen)
 
         let finalCalls = await client.callLog.snapshot()
-        XCTAssertEqual(finalCalls.tasks, 2)
-        XCTAssertEqual(app.tasks.map(\.id), [reopened.id])
+        XCTAssertEqual(finalCalls.tasks, 0)
+        XCTAssertTrue(app.tasks.isEmpty)
         XCTAssertEqual(app.projectContext, .project(alpha))
-        XCTAssertEqual(app.selectedTab, .tasks)
+        XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.tasksError)
-        assertOnlyReconnectNoticeToast(app)
     }
 
     @MainActor
-    func testPendingProjectHydrationFailureRetainsIntentUntilExplicitRetrySucceeds() async throws {
+    func testCachedChatCanOpenWhenProjectHydrationFailsWithoutRescoping() async throws {
         let alpha = project("alpha", "Alpha")
         let failingClient = ControlledCoreClient(
             projects: [],
@@ -5803,22 +6361,22 @@ final class AppModelProjectContextTests: XCTestCase {
         )
         let app = makeApp()
         _ = connect(app, host: "http://127.0.0.1:1")
+        let cached = thread("cached", familiarIds: ["nova"], projectRoot: alpha.root)
+        app.threads = [cached]
         app.pendingProjectNavigationIntent = ProjectNavigationIntent(
-            destination: .tasks,
+            entity: .thread(id: cached.id),
+            destination: .chats,
             projectId: alpha.id
         )
 
         await app.loadProjectContext(using: failingClient)
 
-        XCTAssertEqual(app.pendingProjectNavigationIntent?.projectId, alpha.id)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertEqual(app.projectContextError, "Project context is offline")
         XCTAssertNil(app.projectContext)
-        assertToast(
-            app,
-            text: "Couldn’t load project context while opening project alpha. Refresh Chats or reconnect, then try again.",
-            systemImage: "folder.badge.questionmark"
-        )
-        let firstToastID = try XCTUnwrap(app.toast?.id)
+        XCTAssertTrue(app.threadToOpen === cached)
+        XCTAssertFalse(app.projectMembershipLoaded)
+        XCTAssertNil(app.toast)
 
         XCTAssertFalse(app.resolvePendingProjectNavigationIntent())
         XCTAssertFalse(app.resolvePendingProjectNavigationIntent())
@@ -5827,13 +6385,14 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(failedCalls.projects, 1)
         XCTAssertEqual(failedCalls.grants, 1)
         XCTAssertEqual(failedCalls.familiars, 1)
-        XCTAssertEqual(app.toast?.id, firstToastID)
+        XCTAssertNil(app.toast)
 
-        await app.loadProjectContext(using: retryClient)
+        await app.loadProjectContext(using: retryClient, preservingSelection: true)
 
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertEqual(app.projectContext, .project(alpha))
-        XCTAssertEqual(app.selectedTab, .tasks)
+        XCTAssertNil(app.projectContext)
+        XCTAssertTrue(app.threadToOpen === cached)
+        XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertNil(app.projectContextError)
         XCTAssertNil(app.projectsError)
         XCTAssertNil(app.toast)
@@ -6032,8 +6591,8 @@ final class AppModelProjectContextTests: XCTestCase {
             familiars: [familiar("nova", "Nova")],
             sessions: [],
             tasks: [card("context-task", familiarId: "nova", projectId: alpha.id)],
-            taskStarted: contextStarted,
-            taskRelease: contextRelease
+            contextStarted: contextStarted,
+            contextRelease: contextRelease
         )
         let app = makeApp(coreResourceClientFactory: { _ in standaloneClient })
         _ = connect(app, host: "http://127.0.0.1:1")
@@ -6081,8 +6640,8 @@ final class AppModelProjectContextTests: XCTestCase {
                 code: 81,
                 userInfo: [NSLocalizedDescriptionKey: "Task history is offline"]
             )),
-            taskStarted: taskStarted,
-            taskRelease: taskRelease
+            sessionStarted: taskStarted,
+            sessionRelease: taskRelease
         )
         let app = makeApp(coreResourceClientFactory: { _ in staleLoad })
         _ = connect(app, host: "http://127.0.0.1:1")
@@ -6105,7 +6664,7 @@ final class AppModelProjectContextTests: XCTestCase {
 
         XCTAssertEqual(app.serverSessions.map(\.id), ["beta-session"])
         XCTAssertEqual(app.projectContext, .project(beta))
-        XCTAssertEqual(app.tasksError, "Task history is offline")
+        XCTAssertNil(app.tasksError)
     }
 
     @MainActor
@@ -6123,8 +6682,8 @@ final class AppModelProjectContextTests: XCTestCase {
             familiars: [familiar("nova", "Nova")],
             sessions: [],
             tasks: [card("alpha-task", familiarId: "nova", projectId: alpha.id)],
-            taskStarted: taskStarted,
-            taskRelease: taskRelease
+            sessionStarted: taskStarted,
+            sessionRelease: taskRelease
         )
         let app = makeApp(coreResourceClientFactory: { _ in staleLoad })
         _ = connect(app, host: "http://127.0.0.1:1")
@@ -6149,12 +6708,10 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
-    func testNewerStandaloneTasksLoadWinsOverOlderSuccessfulTaskSnapshot() async {
+    func testProjectBootstrapNeverFetchesLegacyTaskSnapshots() async {
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
-        let taskStarted = Gate()
-        let taskRelease = Gate()
-        let staleLoad = ControlledCoreClient(
+        let bootstrap = ControlledCoreClient(
             projects: [alpha, beta],
             grants: grants(grants: [
                 ProjectGrant(familiarId: "nova", projectId: alpha.id, access: .write),
@@ -6162,31 +6719,20 @@ final class AppModelProjectContextTests: XCTestCase {
             ]),
             familiars: [familiar("nova", "Nova")],
             sessions: [],
-            tasks: [card("alpha-task", familiarId: "nova", projectId: alpha.id)],
-            taskStarted: taskStarted,
-            taskRelease: taskRelease
+            tasks: [card("alpha-task", familiarId: "nova", projectId: alpha.id)]
         )
-        let app = makeApp(coreResourceClientFactory: { _ in staleLoad })
+        let app = makeApp(coreResourceClientFactory: { _ in bootstrap })
         _ = connect(app, host: "http://127.0.0.1:1")
 
-        let staleTask = Task { await app.loadProjectContext(using: staleLoad) }
-        await taskStarted.wait()
+        await app.loadProjectContext(using: bootstrap)
 
-        await app.loadTasks(using: client(
-            projects: [alpha, beta],
-            grants: grants(),
-            familiars: [familiar("nova", "Nova")],
-            tasks: [card("beta-task", familiarId: "nova", projectId: beta.id)]
-        ))
-
-        XCTAssertEqual(app.tasks.map(\.id), ["beta-task"])
-        XCTAssertNil(app.projectContext)
-
-        await taskRelease.open()
-        await staleTask.value
-
-        XCTAssertEqual(app.tasks.map(\.id), ["beta-task"])
-        XCTAssertEqual(app.projectContext, .project(beta))
+        let calls = await bootstrap.callLog.snapshot()
+        XCTAssertEqual(calls.tasks, 0)
+        XCTAssertTrue(app.tasks.isEmpty)
+        XCTAssertFalse(app.tasksLoaded)
+        XCTAssertTrue(app.projectsLoaded)
+        XCTAssertTrue(app.familiarsLoaded)
+        XCTAssertTrue(app.sessionsLoaded)
     }
 
     @MainActor

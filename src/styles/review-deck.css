@@ -1,8 +1,0 @@
-/* Review Deck facade. Keep the focused review run split by responsibility. */
-@import "./review-deck/base.css";
-@import "./review-deck/layout.css";
-@import "./review-deck/queue.css";
-@import "./review-deck/diff.css";
-@import "./review-deck/inspector.css";
-@import "./review-deck/verdict.css";
-@import "./review-deck/responsive.css";

@@ -3,21 +3,9 @@ import PhotosUI
 import UIKit
 
 enum FamiliarsListCopy {
-    static let cachedAccessBanner = "Showing cached familiar access"
-
-    static func emptyState(for context: ProjectContext?) -> (title: String, message: String) {
-        switch context {
-        case .project(let project):
-            return (
-                "No familiars have access",
-                "No familiars have access to \(project.name) yet."
-            )
-        case .unassigned:
-            return ("No recovery familiars", ProjectContextCopy.unassignedRecovery)
-        case nil:
-            return ("Choose a project", "Choose a project in Chats to see its familiar roster.")
-        }
-    }
+    static let cachedAccessBanner = "Showing cached familiars"
+    static let emptyTitle = "No familiars available"
+    static let emptyMessage = "Connect to your Cave in Settings, then refresh familiars."
 }
 
 @MainActor
@@ -34,10 +22,10 @@ struct FamiliarsListPresentation {
     let mode: Mode
 
     init(app: AppModel) {
-        visibleFamiliars = app.projectFamiliars
-        showsCachedAccessBanner = app.projectMembershipLoaded && app.familiarsError != nil
+        visibleFamiliars = app.familiars
+        showsCachedAccessBanner = app.familiarsLoaded && app.familiarsError != nil && !app.familiars.isEmpty
 
-        guard app.projectMembershipLoaded else {
+        guard app.familiarsLoaded else {
             if let error = app.familiarsError {
                 mode = .firstLoadError(error)
             } else {
@@ -47,61 +35,25 @@ struct FamiliarsListPresentation {
         }
 
         if visibleFamiliars.isEmpty {
-            let copy = FamiliarsListCopy.emptyState(for: app.projectContext)
-            mode = .empty(title: copy.title, message: copy.message)
+            if let error = app.familiarsError {
+                mode = .firstLoadError(error)
+            } else {
+                mode = .empty(title: FamiliarsListCopy.emptyTitle, message: FamiliarsListCopy.emptyMessage)
+            }
         } else {
             mode = .list
         }
     }
 }
 
-@MainActor
-struct FamiliarDetailStatsModel {
-    let chats: String
-    let activity: String
-    let tasks: String
-    let memory: String
-
-    static func make(
-        app: AppModel,
-        familiar: Familiar,
-        context: ProjectContext?
-    ) -> FamiliarDetailStatsModel {
-        let chatCount = context.map { app.threadCount(for: familiar.id, in: $0) } ?? 0
-        let assignedTasks = context.map { scopedContext in
-            app.tasks.filter {
-                scopedContext.matches(task: $0, registeredProjects: app.projects)
-                    && $0.familiarId == familiar.id
-                    && $0.status.isActive
-            }
-        } ?? []
-        let taskValue = app.tasksError == nil
-            ? "\(assignedTasks.count)"
-            : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached"
-
-        return FamiliarDetailStatsModel(
-            chats: "\(chatCount)",
-            activity: activityValue(for: context.flatMap { app.lastActivity(for: familiar.id, in: $0) }),
-            tasks: taskValue,
-            memory: familiar.memoryFreshness ?? "Unknown"
-        )
-    }
-
-    static func activityValue(for lastActivity: Date?) -> String {
-        guard let lastActivity else { return "No activity yet" }
-        return lastActivity.formatted(date: .abbreviated, time: .shortened)
-    }
-}
-
-/// The all-familiars roster (design: "Familiars" drawer destination): every
-/// summoned familiar with its avatar, role, and live presence. Tapping one
-/// dismisses the sheet and routes to that familiar's threads.
+/// A participant picker for New chat, not a familiar dashboard.
 struct FamiliarsListView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.dismiss) private var dismiss
+    @State private var permissionsFamiliar: Familiar?
 
-    /// Host-supplied: route to the familiar's surface after dismissal.
+    /// Host-supplied: select this chat participant after dismissal.
     var openFamiliar: (Familiar) -> Void
 
     var body: some View {
@@ -124,23 +76,29 @@ struct FamiliarsListView: View {
                     }
                 case .empty(let title, let message):
                     ContentUnavailableView {
-                        Label(title, systemImage: app.projectContext == .unassigned ? "tray.full" : "cat")
+                        Label(title, systemImage: "cat")
                     } description: {
                         Text(message)
+                    } actions: {
+                        Button("Refresh familiars") { Task { await app.loadFamiliars() } }
+                            .buttonStyle(.bordered)
                     }
                 case .list:
                     List(presentation.visibleFamiliars) { familiar in
-                        NavigationLink {
-                            // The roster opens the unified hub (cave-9rwd.2).
-                            // The Chats hand-off is unchanged: the hub's Chat
-                            // action runs the exact same closure the detail
-                            // page's button used to.
-                            FamiliarHubView(familiar: familiar) {
-                                dismiss()
-                                openFamiliar(familiar)
-                            }
+                        Button {
+                            dismiss()
+                            openFamiliar(familiar)
                         } label: {
                             FamiliarRosterRow(familiar: familiar)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Permissions", systemImage: "lock.shield") {
+                                permissionsFamiliar = familiar
+                            }
+                        }
+                        .accessibilityAction(named: Text("Permissions")) {
+                            permissionsFamiliar = familiar
                         }
                         .listRowBackground(Color.clear)
                         .listRowSeparatorTint(chrome.border.opacity(0.6))
@@ -167,7 +125,7 @@ struct FamiliarsListView: View {
                     .background(chrome.bgRaised)
                 }
             }
-            .navigationTitle("Familiars")
+            .navigationTitle("Choose a familiar")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -176,6 +134,13 @@ struct FamiliarsListView: View {
             }
         }
         .themedSheetBackground()
+        .task {
+            if !app.familiarsLoaded { await app.loadFamiliars() }
+        }
+        .refreshable { await app.loadFamiliars() }
+        .sheet(item: $permissionsFamiliar) { familiar in
+            FamiliarPermissionsSheet(familiar: familiar)
+        }
     }
 }
 
@@ -222,7 +187,7 @@ private struct FamiliarRosterRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .accessibilityLabel("\(familiar.displayName), \(presenceLabel)")
-        .accessibilityHint(Text("Opens this familiar's details."))
+        .accessibilityHint("Selects this familiar for chat.")
     }
 }
 
@@ -320,7 +285,6 @@ struct FamiliarDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: modelLoadTarget) {
-            if !app.tasksLoaded { await app.loadTasks() }
             await loadModel()
         }
         .sheet(isPresented: $showModelPicker) {

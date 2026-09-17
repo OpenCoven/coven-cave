@@ -25,9 +25,12 @@ struct MessageBubble: View {
     /// group threads (mirrors the familiar name row). Defaults to "You" so a
     /// missing profile reads exactly as before.
     var operatorName: String = "You"
-    /// The operator's server avatar image URL for that same row; nil falls back
+    /// The operator's server avatar image source for that same row; nil falls back
     /// to name initials.
-    var operatorAvatarURL: URL? = nil
+    var operatorAvatarSource: CaveImageSource? = nil
+    /// Rich markdown rows report height settlement so ChatView can preserve
+    /// bottom-follow without treating WebKit measurement as a reader gesture.
+    var onContentHeightChange: (() -> Void)? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -353,11 +356,12 @@ struct MessageBubble: View {
             // Operator avatar sits at the trailing edge, mirroring the familiar
             // avatar on the leading edge for assistant bubbles.
             if isUser, isGroup {
-                AvatarView(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName)
+                AvatarView(familiar: nil, source: operatorAvatarSource, size: 28, fallbackName: operatorName)
             }
 
             if !isUser { Spacer(minLength: 48) }
         }
+        .accessibilityIdentifier("Message bubble \(message.id)")
     }
 
     @ViewBuilder private var responseControlStatus: some View {
@@ -498,22 +502,30 @@ struct MessageBubble: View {
                 }
             }
         } else if rendersMarkdown(projection) {
-            MarkdownWebView(markdown: projection.visible, height: $mdHeight,
-                            streaming: message.streaming && !isUser,
-                            theme: colorScheme == .light ? .light : .dark,
-                            accentHex: chrome.accentHex,
-                            onFailure: { markdownFailed = true },
-                            onRenderStart: reportsRichRender ? onRichRenderStart : nil,
-                            onRenderComplete: reportsRichRender ? {
-                                richRenderCompletionPending = true
-                                richRenderRevision &+= 1
-                            } : nil,
-                            onRenderCancelled: reportsRichRender ? {
-                                richRenderCompletionPending = false
-                                richRenderRevision &+= 1
-                                onRichRenderCancel?()
-                            } : nil)
-                .frame(height: max(mdHeight, 1))
+            let ready = mdHeight > 1
+            ZStack(alignment: .topLeading) {
+                MarkdownWebView(markdown: projection.visible, height: $mdHeight,
+                                streaming: message.streaming && !isUser,
+                                theme: colorScheme == .light ? .light : .dark,
+                                accentHex: chrome.accentHex,
+                                onFailure: { markdownFailed = true },
+                                onRenderStart: reportsRichRender ? onRichRenderStart : nil,
+                                onRenderComplete: reportsRichRender ? {
+                                    richRenderCompletionPending = true
+                                    richRenderRevision &+= 1
+                                } : nil,
+                                onRenderCancelled: reportsRichRender ? {
+                                    richRenderCompletionPending = false
+                                    richRenderRevision &+= 1
+                                    onRichRenderCancel?()
+                                } : nil)
+                    .frame(height: max(mdHeight, 1))
+                    .opacity(ready ? 1 : 0)
+                    .accessibilityHidden(!ready)
+                if !ready {
+                    markdownLoadingPlaceholder(projection)
+                }
+            }
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
                 .background {
@@ -548,6 +560,10 @@ struct MessageBubble: View {
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming && !isUser { StreamingDot().padding(6) }
                 }
+                .onChange(of: mdHeight) { _, newHeight in
+                    guard newHeight > 1 else { return }
+                    onContentHeightChange?()
+                }
         } else {
             Text(projection.visible.isEmpty ? " " : projection.visible)
                 .textSelection(.enabled)
@@ -560,6 +576,15 @@ struct MessageBubble: View {
                     }
                 }
         }
+    }
+
+    private func markdownLoadingPlaceholder(_ projection: AssistantResponseProjection) -> some View {
+        Text(projection.visible)
+            .textSelection(.enabled)
+            .foregroundStyle(Color.primary)
+            .lineLimit(12)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(projection.visible)
     }
 
     private var bubbleShape: UnevenRoundedRectangle {
@@ -805,7 +830,7 @@ extension MessageBubble: Equatable {
             && lhs.familiar == rhs.familiar
             && lhs.isLast == rhs.isLast
             && lhs.operatorName == rhs.operatorName
-            && lhs.operatorAvatarURL == rhs.operatorAvatarURL
+            && lhs.operatorAvatarSource == rhs.operatorAvatarSource
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
             && (lhs.onDelete == nil) == (rhs.onDelete == nil)
@@ -818,5 +843,6 @@ extension MessageBubble: Equatable {
             && (lhs.onRichRenderStart == nil) == (rhs.onRichRenderStart == nil)
             && (lhs.onRichRenderComplete == nil) == (rhs.onRichRenderComplete == nil)
             && (lhs.onRichRenderCancel == nil) == (rhs.onRichRenderCancel == nil)
+            && (lhs.onContentHeightChange == nil) == (rhs.onContentHeightChange == nil)
     }
 }

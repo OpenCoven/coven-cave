@@ -43,8 +43,8 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /dispatchOpenClawGatewayTurn\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\),[\s\S]*?agentId,[\s\S]*?message: args\.harnessPrompt/,
-  "OpenClaw uses the Gateway-owned dispatcher with the canonical session key and agent id before selecting the CLI fallback",
+  /dispatchOpenClawGatewayTurn\([\s\S]*?sessionKey: gatewaySessionKey,[\s\S]*?agentId,[\s\S]*?message: args\.harnessPrompt/,
+  "OpenClaw uses the Gateway-owned dispatcher with the selected safe session key and agent id before selecting the CLI fallback",
 );
 assert.match(
   chatRoute,

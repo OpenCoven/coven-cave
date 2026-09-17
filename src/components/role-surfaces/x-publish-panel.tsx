@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * X publishing, inside Comms Operations.
+ * Live X publishing, inside X Comms.
  *
  * The server side of this landed first (`/api/x/publish`, PR #4823) and had no
  * surface at all, so the only way to post was a hand-written request. This is

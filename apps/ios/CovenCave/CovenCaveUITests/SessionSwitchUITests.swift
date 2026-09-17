@@ -13,9 +13,12 @@ final class SessionSwitchUITests: XCTestCase {
     private let firstThread = "Chat with Nyx on Jul 26"
     private let secondThread = "Chat with Nyx on Jul 27"
 
-    private func launchInFirstThread() -> XCUIApplication {
+    private func launchInFirstThread(clearDraft: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-empty-chat", "--ui-preview-second-thread"]
+        if clearDraft {
+            app.launchArguments += ["-cave.chat.draft.ui-preview-empty-chat", ""]
+        }
         app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
         app.launch()
         XCTAssertTrue(app.navigationBars[firstThread].waitForExistence(timeout: 15),
@@ -35,6 +38,77 @@ final class SessionSwitchUITests: XCTestCase {
         let sessionRow = app.buttons["Switch session"].firstMatch
         XCTAssertTrue(sessionRow.waitForExistence(timeout: 10), "the details card offers Conversation")
         sessionRow.tap()
+    }
+
+    @MainActor
+    private func openComposerActions(_ app: XCUIApplication) {
+        let attach = app.buttons["Attach or run a tool"]
+        XCTAssertTrue(attach.waitForExistence(timeout: 10), "the explicit launch opens the chat composer")
+        attach.tap()
+    }
+
+    @MainActor
+    func testComposerOffersChatActionsWithoutTaskOrMarketplaceManagement() {
+        let app = launchInFirstThread()
+        openComposerActions(app)
+
+        for action in ["Camera", "Photos", "Files", "Dictate", "Commands"] {
+            XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 5),
+                          "the composer retains \(action)")
+        }
+        for retired in ["Link a task", "Create task", "Tasks", "Plugins"] {
+            XCTAssertFalse(app.buttons[retired].exists, "the composer must not offer \(retired)")
+        }
+        XCTAssertFalse(app.staticTexts["What tasks need attention?"].exists)
+        XCTAssertFalse(app.staticTexts["Work on the next priority"].exists)
+    }
+
+    @MainActor
+    func testCommandReferenceDoesNotOfferRetiredTaskNavigation() {
+        let app = launchInFirstThread()
+        openComposerActions(app)
+        app.buttons["Commands"].tap()
+
+        XCTAssertTrue(app.navigationBars["Commands"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["/help"].waitForExistence(timeout: 5),
+                      "native chat commands remain available")
+
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("/board")
+
+        XCTAssertFalse(app.staticTexts["/board"].exists, "task navigation is not an offered command")
+        XCTAssertFalse(app.staticTexts["/help"].exists, "the search has filtered the catalog")
+        XCTAssertTrue(app.navigationBars["Commands"].exists, "search cannot navigate to Tasks")
+        app.navigationBars["Commands"].buttons["Close"].tap()
+        let done = app.navigationBars["Commands"].buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
+        XCTAssertTrue(app.navigationBars[firstThread].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testTypedLegacyTaskCommandExplainsDesktopOnlyAndKeepsTheChat() {
+        let app = launchInFirstThread(clearDraft: true)
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("/board")
+
+        let run = app.buttons["Run command"]
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        XCTAssertTrue(run.isEnabled)
+        run.tap()
+
+        let explanation = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Tasks", "desktop")
+        ).firstMatch
+        XCTAssertTrue(explanation.waitForExistence(timeout: 5),
+                      "the legacy command explains where Tasks is available")
+        XCTAssertTrue(app.navigationBars[firstThread].exists, "legacy commands do not leave the chat")
+        XCTAssertFalse(app.navigationBars["Tasks"].exists)
+        XCTAssertTrue(app.buttons["Session controls"].exists)
     }
 
     @MainActor

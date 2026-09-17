@@ -10,6 +10,7 @@ import {
   assertExclusivePathOwnershipSync,
   CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
   ClientV1PathOwnershipError,
+  createClientV1WindowsAclProbe,
   parseClientV1WindowsAclReport,
   probeWindowsAcl,
   resetClientV1PathOwnershipCache,
@@ -20,6 +21,7 @@ import {
 const SELF_SID = "S-1-5-21-11-22-33-1001";
 const SYSTEM_SID = "S-1-5-18";
 const ADMINISTRATORS_SID = "S-1-5-32-544";
+const OWNER_RIGHTS_SID = "S-1-3-4";
 /** BUILTIN\Users — the shape of ACE a machine-wide profile policy inherits. */
 const USERS_SID = "S-1-5-32-545";
 
@@ -33,9 +35,9 @@ function report(
     repaired: false,
     removed: [],
     aces: [
-      { sid: SELF_SID, type: "Allow" },
-      { sid: SYSTEM_SID, type: "Allow" },
-      { sid: ADMINISTRATORS_SID, type: "Allow" },
+      { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+      { sid: SYSTEM_SID, type: "Allow", rights: 0x001f_01ff },
+      { sid: ADMINISTRATORS_SID, type: "Allow", rights: 0x001f_01ff },
     ],
     ...overrides,
   };
@@ -135,8 +137,8 @@ test("refuses a Windows path a foreign principal can write", async () => {
         probeWindowsAcl: async () =>
           report({
             aces: [
-              { sid: SELF_SID, type: "Allow" },
-              { sid: USERS_SID, type: "Allow" },
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
             ],
           }),
       }),
@@ -182,10 +184,56 @@ test("refuses a Windows path carrying a Deny entry for an untrusted principal", 
       "discovery root",
       windows({
         probeWindowsAcl: async () =>
-          report({ aces: [{ sid: SELF_SID, type: "Allow" }, { sid: USERS_SID, type: "Deny" }] }),
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Deny", rights: 0x0013_01bf },
+            ],
+          }),
       }),
     ),
     new RegExp(`Deny:${USERS_SID}`),
+  );
+});
+
+test("admits a protected Windows path whose OWNER RIGHTS entry is read-only", async () => {
+  await assert.doesNotReject(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "discovery root",
+      windows({
+        probeWindowsAcl: async () =>
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x0013_01bf },
+              { sid: SYSTEM_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: ADMINISTRATORS_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: OWNER_RIGHTS_SID, type: "Allow", rights: 0x0002_0000 },
+            ],
+          }),
+      }),
+    ),
+  );
+});
+
+test("refuses a Windows path whose OWNER RIGHTS entry can rewrite its DACL", async () => {
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "discovery root",
+      windows({
+        probeWindowsAcl: async () =>
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x0013_01bf },
+              { sid: OWNER_RIGHTS_SID, type: "Allow", rights: 0x0004_0000 },
+            ],
+          }),
+      }),
+    ),
+    new RegExp(`Allow:${OWNER_RIGHTS_SID}`),
   );
 });
 
@@ -341,7 +389,12 @@ test("refusals carry the distinct ownership error class, and a cache hit re-thro
       windows({
         now: () => 1_000,
         probeWindowsAcl: async () =>
-          report({ aces: [{ sid: SELF_SID, type: "Allow" }, { sid: USERS_SID, type: "Allow" }] }),
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
+            ],
+          }),
       }),
     ),
     ClientV1PathOwnershipError,
@@ -417,6 +470,101 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
   }
 });
 
+test("the real Windows probe preserves read-only OWNER RIGHTS while removing unsafe grants", async (
+  t: TestContext,
+) => {
+  if (process.platform !== "win32") {
+    t.skip("the supervisor-shaped OWNER RIGHTS regression requires a real Windows DACL");
+    return;
+  }
+
+  const root = await mkdtemp(join(tmpdir(), "cave-client-v1-owner-rights-"));
+  try {
+    execFileSync(
+      join(
+        process.env.SystemRoot || process.env.windir || "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      ),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `
+$ErrorActionPreference = 'Stop'
+$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+$acl = $item.GetAccessControl('Access')
+$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = New-Object System.Security.Principal.SecurityIdentifier('${SYSTEM_SID}')
+$admins = New-Object System.Security.Principal.SecurityIdentifier('${ADMINISTRATORS_SID}')
+$ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${OWNER_RIGHTS_SID}')
+$acl.SetOwner($me)
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
+$inheritance = 'ContainerInherit, ObjectInherit'
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $system, 'FullControl', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $admins, 'FullControl', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $me, 'Modify', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $me, 'FullControl', $inheritance, 'InheritOnly', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $ownerRights, 'ReadPermissions', $inheritance, 'None', 'Allow')))
+$users = New-Object System.Security.Principal.SecurityIdentifier('${USERS_SID}')
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $users, 'Write', $inheritance, 'None', 'Allow')))
+$item.SetAccessControl($acl)
+`,
+      ],
+      {
+        env: {
+          COVEN_CAVE_CLIENT_V1_ACL_PATH: root,
+          NODE_ENV: process.env.NODE_ENV,
+          SystemRoot: process.env.SystemRoot,
+          windir: process.env.windir,
+          PATH: process.env.PATH,
+          PATHEXT: process.env.PATHEXT,
+          TEMP: process.env.TEMP,
+          TMP: process.env.TMP,
+        },
+        encoding: "utf8",
+        windowsHide: true,
+      },
+    );
+
+    const observed = await probeWindowsAcl(root);
+    assert.equal(observed.repaired, true, "the unsafe Users grant must trigger ACL repair");
+    assert.ok(
+      observed.removed.includes(USERS_SID),
+      "the unsafe Users grant must be reported as removed",
+    );
+    assert.equal(
+      observed.aces.some((ace) => ace.sid === USERS_SID),
+      false,
+      "the unsafe Users grant must be absent after repair",
+    );
+    assert.ok(
+      observed.aces.some((ace) =>
+        ace.sid === OWNER_RIGHTS_SID
+        && ace.type === "Allow"
+        && ace.rights === 0x0002_0000
+      ),
+      "the read-only OWNER RIGHTS entry must remain intact",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a malformed probe report is refused rather than read as an empty DACL", () => {
   const exclusive = {
     self: SELF_SID,
@@ -424,11 +572,15 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
     protected: true,
     repaired: false,
     removed: [] as unknown[],
-    aces: [{ sid: SELF_SID, type: "Allow" }] as unknown[],
+    aces: [{ sid: SELF_SID, type: "Allow", rights: 0x001f_01ff }] as unknown[],
   };
   assert.deepEqual(
     parseClientV1WindowsAclReport(JSON.stringify(exclusive)),
-    { ...exclusive, removed: [], aces: [{ sid: SELF_SID, type: "Allow" }] },
+    {
+      ...exclusive,
+      removed: [],
+      aces: [{ sid: SELF_SID, type: "Allow", rights: 0x001f_01ff }],
+    },
   );
 
   // `aces` carries the whole access decision. Coercing an unreadable one to `[]`
@@ -440,6 +592,22 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
       ["aces absent", JSON.stringify({ ...exclusive, aces: undefined })],
       ["aces a bare object", JSON.stringify({ ...exclusive, aces: { sid: USERS_SID, type: "Allow" } })],
       ["aces a string", JSON.stringify({ ...exclusive, aces: "Allow" })],
+      ["ACE rights absent", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow" }],
+      })],
+      ["ACE rights negative", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: -1 }],
+      })],
+      ["ACE rights fractional", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: 1.5 }],
+      })],
+      ["ACE rights above uint32", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: 0x1_0000_0000 }],
+      })],
       ["removed absent", JSON.stringify({ ...exclusive, removed: undefined })],
       ["self absent", JSON.stringify({ ...exclusive, self: undefined })],
       ["self empty", JSON.stringify({ ...exclusive, self: "" })],
@@ -462,13 +630,85 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
 
   // An entry the probe could not name is untrusted, never trusted-by-omission.
   const nameless = parseClientV1WindowsAclReport(
-    JSON.stringify({ ...exclusive, aces: [{}, null, { sid: USERS_SID }] }),
+    JSON.stringify({
+      ...exclusive,
+      aces: [
+        { rights: 0 },
+        { rights: 0 },
+        { sid: USERS_SID, rights: 0 },
+      ],
+    }),
   );
   assert.deepEqual(nameless.aces, [
-    { sid: "", type: "" },
-    { sid: "", type: "" },
-    { sid: USERS_SID, type: "" },
+    { sid: "", type: "", rights: 0 },
+    { sid: "", type: "", rights: 0 },
+    { sid: USERS_SID, type: "", rights: 0 },
   ]);
+});
+
+test("the Windows ACL probe retries one timed-out cold start within the launch budget", async () => {
+  let attempts = 0;
+  const probe = createClientV1WindowsAclProbe(async (_file, _args, options) => {
+    attempts += 1;
+    assert.equal(options.timeout, 12_000);
+    if (attempts === 1) {
+      throw Object.assign(new Error("private timed-out probe"), {
+        killed: true,
+        signal: "SIGTERM",
+      });
+    }
+    return { stdout: JSON.stringify(report()) };
+  });
+
+  assert.deepEqual(await probe("C:\\private\\discovery"), report());
+  assert.equal(attempts, 2);
+});
+
+test("the Windows ACL probe never retries a non-timeout or a third attempt", async () => {
+  const accessFailure = Object.assign(new Error("private access failure"), { code: "EACCES" });
+  let attempts = 0;
+  let probe = createClientV1WindowsAclProbe(async () => {
+    attempts += 1;
+    throw accessFailure;
+  });
+  await assert.rejects(probe("C:\\private\\discovery"), accessFailure);
+  assert.equal(attempts, 1);
+
+  attempts = 0;
+  probe = createClientV1WindowsAclProbe(async () => {
+    attempts += 1;
+    throw Object.assign(new Error("private repeated timeout"), {
+      code: "ETIMEDOUT",
+      killed: true,
+      signal: "SIGTERM",
+      cmd: "private command",
+      stderr: "acl-probe:start\nacl-probe:read-state\nprivate stderr",
+    });
+  });
+  await assert.rejects(
+    probe("C:\\private\\discovery"),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, "Windows ACL probe timed out at read-state.");
+      assert.equal((error as NodeJS.ErrnoException).code, "ETIMEDOUT");
+      assert.equal("cmd" in error, false);
+      assert.equal("stderr" in error, false);
+      assert.doesNotMatch(error.stack ?? "", /private/u);
+      return true;
+    },
+  );
+  assert.equal(attempts, 2);
+});
+
+test("the Windows ACL probe never retries a malformed successful report", async () => {
+  let attempts = 0;
+  const probe = createClientV1WindowsAclProbe(async () => {
+    attempts += 1;
+    return { stdout: "private malformed report" };
+  });
+
+  await assert.rejects(probe("C:\\private\\discovery"), SyntaxError);
+  assert.equal(attempts, 1);
 });
 
 // ── The unverified-ownership waiver (cave-37fxr) ─────────────────────────────
@@ -553,8 +793,8 @@ test("the waiver never covers a DACL that was read and found shared", async () =
         probeWindowsAcl: async () =>
           report({
             aces: [
-              { sid: SELF_SID, type: "Allow" },
-              { sid: USERS_SID, type: "Allow" },
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
             ],
           }),
       }),
@@ -741,6 +981,103 @@ test("the ACL probe is spawned without this process's environment", async () => 
       block![0],
       /COVEN_CAVE_(?!CLIENT_V1_ACL_PATH)/,
       `${file}: only the path under test may cross into the probe from the COVEN_CAVE namespace`,
+    );
+  }
+});
+
+test("the ACL probe reads access rules as SIDs without account translation", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+
+  for (const file of [
+    "src/lib/server/client-v1/path-ownership.ts",
+    "server.ts",
+  ]) {
+    const source = await readFile(resolve(process.cwd(), file), "utf8");
+    const script = /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/u.exec(source);
+    assert.ok(script, `${file} must define the Windows ACL probe`);
+    assert.match(
+      script![1],
+      /\$acl\.GetAccessRules\(\s*\$true,\s*\$true,\s*\[System\.Security\.Principal\.SecurityIdentifier\]\s*\)/u,
+      `${file} must request SID-backed rules directly`,
+    );
+    assert.doesNotMatch(
+      script![1],
+      /\.IdentityReference\.Translate\(/u,
+      `${file} must not perform blocking account-name translation`,
+    );
+    assert.doesNotMatch(
+      script![1],
+      /\$acl\.Access\b/u,
+      `${file} must not enumerate the account-translating Access property`,
+    );
+    assert.doesNotMatch(
+      script![1],
+      /\bGet-Item\b/u,
+      `${file} must not initialize the PowerShell filesystem provider to resolve the path`,
+    );
+    assert.match(
+      script![1],
+      /\[System\.IO\.Directory\]::Exists\(\$path\)[\s\S]*?\[System\.IO\.DirectoryInfo\]::new\(\$path\)[\s\S]*?\[System\.IO\.File\]::Exists\(\$path\)[\s\S]*?\[System\.IO\.FileInfo\]::new\(\$path\)/u,
+      `${file} must resolve the existing path through direct .NET filesystem APIs`,
+    );
+    assert.match(
+      script![1],
+      /\$rule\.IdentityReference\.Value -eq \$ownerRights\.Value[\s\S]*?\$rule\.FileSystemRights -band \$writableRights\) -eq 0[\s\S]*?continue/u,
+      `${file} must preserve a read-only OWNER RIGHTS rule while removing unsafe rules`,
+    );
+  }
+});
+
+test("the ACL probe invokes no PowerShell cmdlets at all", async () => {
+  // v0.4.2-rc.5 stalled on `Get-Item`; rc.6 moved the stall one statement on,
+  // to `New-Object`. The common factor is the first CMDLET: command discovery
+  // in the stripped probe environment never returns, while direct .NET member
+  // calls never wait on it. So the script may use language keywords, operators
+  // and .NET types only — every Verb-Noun token must be a function it defines.
+  const { readFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+
+  // PowerShell command names are case-insensitive, so `get-item` would stall
+  // exactly like `Get-Item`: compare every Verb-Noun token lower-cased, after
+  // dropping comments and string literals, which cannot invoke anything.
+  const undefinedCommands = (script: string) => {
+    const code = script
+      .replace(/'(?:[^']|'')*'/gu, "''")
+      .replace(/"(?:[^"\\]|\\.)*"/gu, '""')
+      .replace(/#.*$/gmu, "");
+    const defined = new Set(
+      [...code.matchAll(/^function ([A-Za-z]+-[A-Za-z]+)/gimu)].map((m) => m[1]!.toLowerCase()),
+    );
+    return [
+      ...new Set(
+        [...code.matchAll(/(?<![\w$'"-])([A-Za-z]+-[A-Za-z]+)\b/gu)]
+          .map((m) => m[1]!)
+          .filter((name) => !defined.has(name.toLowerCase())),
+      ),
+    ];
+  };
+  assert.deepEqual(
+    undefinedCommands("function Read-State { }\n$x = get-item foo # Get-Item\n'Set-Acl'"),
+    ["get-item"],
+    "the detector must catch lower-case cmdlet spellings and ignore comments and strings",
+  );
+
+  for (const file of [
+    "src/lib/server/client-v1/path-ownership.ts",
+    "server.ts",
+  ]) {
+    const source = await readFile(resolve(process.cwd(), file), "utf8");
+    const script = /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/u.exec(source)![1]!;
+    assert.deepEqual(
+      undefinedCommands(script),
+      [],
+      `${file} must not invoke cmdlets; each one triggers PowerShell command discovery`,
+    );
+    assert.doesNotMatch(
+      script,
+      /\|\s*(ForEach|Where|Select|ConvertTo|Sort)-/u,
+      `${file} must not pipe through cmdlets`,
     );
   }
 });

@@ -99,10 +99,13 @@ assert.match(inline, /className="familiar-studio-control__stats"/, "Renders prod
 assert.match(inline, /Open chat/, "Hero exposes the primary chat action");
 assert.match(inline, /Test run/, "Hero exposes the smoke-test action");
 assert.match(inline, /breadcrumb=\{\["Familiars", familiar\.display_name, "Test run"\]\}/, "Smoke test opens in the shared modal");
+// Two memory sources collapsed to one when the canonical vault moved to the
+// dedicated memory application. The guarantee is untouched and is the whole
+// point of the assertion: a failed read is UNKNOWN, never a reported zero.
 assert.match(
   inline,
-  /if \(canonical\.state !== "ready" \|\| !files\.ok\) \{\s*setCount\(\{ state: "unavailable" \}\)/,
-  "Failed memory APIs stay unknown instead of being reported as zero entries",
+  /if \(!files\.ok\) \{\s*setCount\(\{ state: "unavailable" \}\)/,
+  "A failed memory read stays unknown instead of being reported as zero entries",
 );
 assert.match(inline, /<VaultPanel familiarId=\{familiar\.id\}/, "Vault receives the selected familiar scope");
 assert.match(vault, /export function VaultPanel\(\{ familiarId \}/, "Vault accepts a familiar scope");

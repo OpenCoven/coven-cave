@@ -17,6 +17,7 @@ import { CODE_SURFACE_ID } from "../components/role-surfaces/ids.ts";
 const CODE = CODE_SURFACE_ID;
 const RESEARCH = "researcher-desk";
 const CHART = "navigator-chart-room";
+const X_COMMS = "x-comms";
 
 const repoFile = (relative: string) =>
   readFileSync(fileURLToPath(new URL(`../../${relative}`, import.meta.url)), "utf8");
@@ -24,10 +25,50 @@ const repoFile = (relative: string) =>
 const dev: RoomVisibilityEnv = { production: false };
 const prod: RoomVisibilityEnv = { production: true };
 
-test("a production build ships the Research Desk and the Chart Room, and nothing else", () => {
-  assert.deepEqual([...PRODUCTION_ROOM_IDS], [RESEARCH, CHART]);
+test("a production build ships the Research Desk, the Chart Room and X Comms, and nothing else", () => {
+  assert.deepEqual([...PRODUCTION_ROOM_IDS], [RESEARCH, CHART, X_COMMS]);
   const shown = filterEnabledRoomIds(prod, KNOWN_ROOM_IDS);
-  assert.deepEqual(shown, [RESEARCH, CHART], "unfinished rooms stay out of production");
+  assert.deepEqual(shown, [RESEARCH, CHART, X_COMMS], "unfinished rooms stay out of production");
+  // The Coding Desk is the control: still registered, still dev-only.
+  assert.equal(resolveRoomVisibility(prod)(CODE), false);
+});
+
+test("X Comms ships with the disclosure that makes shipping it honest", () => {
+  // Its drafts are fixtures and its Approve schedules nothing, so the room is
+  // only fit for a production build while it says that first and says it in
+  // the room. This is the condition PRODUCTION_ROOM_IDS' entry depends on.
+  const room = repoFile("src/components/role-surfaces/x-comms-surface.tsx");
+  assert.match(room, /Demo room\./, "the banner leads with what the room is");
+  assert.match(room, /X_DEMO_NOTICE/, "and carries the notice text");
+  const notice = repoFile("src/components/role-surfaces/x-comms/fixtures.ts");
+  assert.match(
+    notice,
+    /nothing reaches X/,
+    "the notice says plainly that nothing is published",
+  );
+
+  // And promotion widened the build gate only — the capability gate stands, so
+  // the room reaches familiars granted X publishing and nobody else.
+  const register = repoFile("src/components/role-surfaces/register.tsx");
+  assert.match(
+    register,
+    /shouldDisplay: \(context\) => context\.activeFamiliar\?\.xPublishEnabled === true/,
+    "X Comms still renders only for a familiar with the X publish capability",
+  );
+
+  // The account-state switch is a dev affordance: in a production build it
+  // would let someone flip their own room into a red "X disconnected" banner
+  // that says nothing true about their account. It must stay gated.
+  assert.match(
+    room,
+    /const SHOW_ACCOUNT_STATE_SWITCH = process\.env\.NODE_ENV !== "production";/,
+    "the demo account-state switch is gated out of production builds",
+  );
+  assert.match(
+    room,
+    /\{SHOW_ACCOUNT_STATE_SWITCH \? \(/,
+    "…and the gate actually wraps the control rather than sitting unused",
+  );
 });
 
 test("a dev build shows every registered room, including the Coding familiar's", () => {
@@ -183,4 +224,16 @@ test("a room this build doesn't ship reads as under construction, not as a role 
     constructionAt < roleMismatchAt,
     "the build gate answers first — a role manifest can't change its verdict",
   );
+});
+
+
+test("retired desks are absent from the registry and every build's room inventory", () => {
+  const register = repoFile("src/components/role-surfaces/register.tsx");
+  assert.doesNotMatch(register, /MessengerSurface|ReviewerSurface|MESSENGER_SURFACE_ID|REVIEWER_SURFACE_ID/);
+  for (const env of [dev, prod, { production: true, rooms: "all" }]) {
+    const rooms = filterEnabledRoomIds(env, KNOWN_ROOM_IDS);
+    assert.ok(!rooms.includes("messenger-ops"));
+    assert.ok(!rooms.includes("reviewer-review-deck"));
+    assert.ok(rooms.includes(X_COMMS));
+  }
 });

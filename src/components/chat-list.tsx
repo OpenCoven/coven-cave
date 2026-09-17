@@ -11,6 +11,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
+import { truncateBranch } from "@/lib/truncate-middle";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -934,7 +935,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                   title={option.title}
                   onClick={() => setGroupBy(option.id)}
                   className={[
-                    "focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
+                    "focus-ring relative inline-flex flex-none items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
                     selected
                       ? "bg-[var(--bg-raised)] text-[var(--text-primary)] border-[var(--border-strong)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -1631,7 +1632,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                               {workBranch ? (
                                 <span className="chat-session-branch hidden sm:inline-flex" title={`Branch ${workBranch}`}>
                                   <Icon name="ph:git-branch" width={9} aria-hidden />
-                                  {workBranch}
+                                  {truncateBranch(workBranch)}
                                 </span>
                               ) : null}
                               {project ? (

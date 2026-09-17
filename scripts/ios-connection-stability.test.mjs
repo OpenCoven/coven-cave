@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
+const permissionsClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient+Permissions.swift");
 const devClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient+Dev.swift");
 const connection = await read("apps/ios/CovenCave/CovenCave/Networking/CaveConnection.swift");
 const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
@@ -15,6 +16,41 @@ const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift")
 const app = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const rootView = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const connectView = await read("apps/ios/CovenCave/CovenCave/Views/ConnectionView.swift");
+const deviceAccess = await read("apps/ios/CovenCave/CovenCave/Networking/DeviceAccess.swift");
+const devicePairing = await read("apps/ios/CovenCave/CovenCave/State/DevicePairingModel.swift");
+const keychain = await read("apps/ios/CovenCave/CovenCave/Networking/KeychainStore.swift");
+
+// Managed grants are durable authority, not malformed or expiring legacy invites.
+assert.match(model, /guard CaveConnection\.shouldRefreshAccessToken\(token\) else \{ return \}/);
+assert.match(client, /func refreshAccessToken\(\)[\s\S]*?guard CaveConnection\.shouldRefreshAccessToken/);
+assert.match(connection, /token\?\.hasPrefix\("cave-device-v1\."\) == true/);
+assert.match(connection, /try DeviceAccessStore\.loadActive\(\)/);
+assert.match(deviceAccess, /request\.setValue\(origin, forHTTPHeaderField: "Origin"\)/);
+assert.match(client, /if CaveConnection\.isManagedDeviceCredential\(token\) \{\s*req\.setValue\(try DeviceAccessClient\.origin\(for: baseURL\), forHTTPHeaderField: "Origin"\)/);
+assert.match(permissionsClient, /func permissionsRequest\([\s\S]*?try request\(path, method: method, body: body\)/,
+  "permission writes share the origin-pinned managed request builder");
+assert.match(deviceAccess, /api\/device-access\/requests/);
+assert.match(deviceAccess, /api\/device-access\/status/);
+assert.match(deviceAccess, /if http\.statusCode == 404 \{ throw DeviceAccessError\.legacyDesktop \}/);
+assert.match(deviceAccess, /String\(id\.suffix\(8\)\)/);
+assert.match(deviceAccess, /pending\.device\.status == \.allowed/);
+assert.match(deviceAccess, /Origin and credential are one atomic Keychain item/);
+assert.match(keychain, /kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly/);
+assert.match(keychain, /kSecAttrSynchronizable as String: false/);
+assert.match(devicePairing, /maximumWait: Duration = \.seconds\(300\)/);
+assert.match(devicePairing, /defer \{ group\.cancelAll\(\) \}/);
+assert.match(devicePairing, /return device\.status == \.allowed \? result : nil/);
+assert.match(connectView, /"Resume request" : "Request access"/);
+assert.match(connectView, /\.task\(id: accessOperation\)/);
+assert.match(connectView, /\.onDisappear \{ accessOperation = nil \}/);
+assert.match(connectView, /!Task\.isCancelled, accessOperation == operation else \{ return \}/);
+assert.match(deviceAccess, /value\(forHTTPHeaderField: "x-coven-device-pairing"\) == "1"/);
+assert.match(model, /DeviceAccessClient\.isManagedResponse\(http\)[\s\S]*?return \.managedPairingRequired/);
+assert.match(model, /case \.managedPairingRequired: return \.pairingRequired\(candidates\[index\]\)/);
+assert.match(connectView, /DeviceAccessClient\.handoffOrigin\(cleanHost\(input\)\)/);
+assert.match(deviceAccess, /components\.path == "\/connect"/);
+assert.match(deviceAccess, /refusal\.error == "disabled"/);
+assert.match(devicePairing, /\|\| \(error as\? DeviceAccessError\) == \.disabled/);
 
 // --- Shared URLSessions: sessions are never deallocated, so per-request
 // construction leaked them and re-negotiated TLS on every call ---------------
@@ -53,8 +89,8 @@ assert.match(
 );
 assert.match(
   client,
-  /Self\.streamSession\.bytes\(for: req\)/,
-  "sendStream should use the dedicated streaming session",
+  /\(injectedSession \?\? Self\.streamSession\)\.bytes\(for: req\)/,
+  "sendStream defaults to the dedicated streaming session while honoring an explicitly supplied transport",
 );
 assert.doesNotMatch(
   client,

@@ -8,7 +8,9 @@ const shellSource = readFileSync(
 );
 const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
 const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
-const source = `${shellSource}\n${daemonSource}`;
+const appearanceSource = readFileSync(new URL("./settings-appearance.tsx", import.meta.url), "utf8");
+const layoutSource = readFileSync(new URL("./settings-layout.tsx", import.meta.url), "utf8");
+const source = `${shellSource}\n${daemonSource}\n${appearanceSource}\n${layoutSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -119,7 +121,7 @@ assert.match(
 );
 assert.match(
   shellSource,
-  /import \{ SettingsClientAccess \} from "\.\/settings-client-access"/,
+  /const SettingsClientAccess = dynamic\(\(\) => import\("\.\/settings-client-access"\)/,
   "SettingsShell imports the focused Client access section",
 );
 assert.match(
@@ -407,23 +409,9 @@ assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reac
 assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
 assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
 assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remain discoverable");
-assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
-assert.match(
-  workspacePathField,
-  /fetch\("\/api\/config\/workspace-path", \{ cache: "no-store", signal: ctl\.signal \}\)/,
-  "the workspace path field should read the narrow workspace-path route",
-);
-assert.doesNotMatch(
-  workspacePathField,
-  /\/api\/daemon\/status/,
-  "the workspace path field should not mount a full daemon-status read just to render workspacePath",
-);
-assert.match(
-  workspacePathField,
-  /if \(ctl\.signal\.aborted\) return;/,
-  "the workspace path field should stay silent after unmount while applying workspacePath",
-);
-assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
+assert.match(workspacePathField, /useGeneralSettingsData/, "workspace data is shared with the summary");
+assert.doesNotMatch(workspacePathField, /new AbortController|\/api\/daemon\/status/, "the field does not start a second read");
+assert.match(workspacePathField, /workspace\.publish/, "saved paths publish to the shared state");
 
 // Browse used to mean "hand the path to the OS file manager": a no-op on the
 // web build, and never a way to CHANGE the root. It now opens the in-app
@@ -593,16 +581,6 @@ assert.match(
 );
 assert.match(
   dashboardCss,
-  /\.settings-startup-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*150px\),\s*1fr\)\)[\s\S]*?gap:\s*var\(--space-2\)/,
-  "startup cells preserve the source's responsive two-cell grid and compact gap",
-);
-assert.equal(
-  dashboardCss.match(/\.settings-startup-grid\s*\{/g)?.length,
-  1,
-  "startup auto-fit behavior is not replaced by a premature one-column breakpoint",
-);
-assert.match(
-  dashboardCss,
   /@container settings-general \(max-width:/,
   "narrow General layout uses a container query",
 );
@@ -621,16 +599,9 @@ assert.match(
   /SettingsGroup label="Progression" variant="ruled"[\s\S]*settings-progression-card/,
   "Progression uses the ruled full-width composition",
 );
-assert.match(
-  source,
-  /SettingsGroup label="Startup" variant="ruled"[\s\S]*settings-startup-grid/,
-  "Startup uses the ruled two-cell composition",
-);
-assert.match(
-  dashboardCss,
-  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-hairline\)/,
-  "Soon cells use the quiet dashed affordance language",
-);
+assert.doesNotMatch(source, /SettingsGroup label="Startup"/, "unavailable Startup controls are not advertised");
+assert.doesNotMatch(sections, /group: "Startup"/, "search does not offer unavailable Startup controls");
+assert.doesNotMatch(dashboardCss, /\.settings-startup-/, "removed placeholder styles are retired");
 assert.match(
   source,
   /<SettingsGroup label="Backup" variant="ruled"[\s\S]*settings-backup-grid/,
@@ -668,12 +639,12 @@ assert.match(
 );
 assert.match(
   source,
-  /syncLoadState === "error"[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
+  /!overview[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
   "scheduled sync does not disguise request failures as an empty panel",
 );
 assert.match(
   source,
-  /syncLoadState === "error"[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
+  /!overview[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
   "scheduled sync retains an accessible section name when loading fails",
 );
 assert.match(
@@ -683,7 +654,7 @@ assert.match(
 );
 assert.match(
   source,
-  /setOverview\(json as BackupSyncOverview\)[\s\S]{0,160}dispatchEvent\(new Event\("cave:backup-sync-refresh"\)\)/,
+  /publish: setOverview[\s\S]*setOverview\(json as BackupSyncOverview\)/,
   "successful scheduled-sync mutations refresh the General summary",
 );
 assert.match(

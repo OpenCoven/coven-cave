@@ -43,20 +43,27 @@ test("continuity corpus retains complete, unique, bounded rehearsal cases", () =
   assert.deepEqual(new Set(corpus.map((item) => item.expected.coverage)), coverages);
 });
 
-test("Board-only coverage cannot turn Beads absence into execution clearance", () => {
+test("Board-only coverage cannot turn GitHub absence into execution clearance", () => {
   for (const text of [skill, workflow]) {
-    assert.match(text, /Beads-only absence does not cover Cave Board\/task records/);
+    assert.match(text, /GitHub-only absence does not cover Cave Board\/task records/);
     assert.match(text, /coverage `partial` or `unknown`/);
     assert.match(text, /`unknown`, not `no-match-in-scope`/);
   }
   const missing = corpus.find((item) => item.id === "board-coverage-missing");
   assert.equal(missing.expected.relationship, "unknown");
   assert.equal(missing.expected.coverage, "partial");
-  assert.ok(missing.expected.forbidden.includes("declare no match from Beads alone"));
+  assert.ok(missing.expected.forbidden.includes("declare no match from GitHub alone"));
   const absent = corpus.find((item) => item.id === "no-match-bounded");
-  assert.match(absent.evidence, /Beads and relevant Board\/task records/);
+  assert.match(absent.evidence, /GitHub issues[\s\S]*relevant Board\/task records/);
   assert.equal(absent.expected.relationship, "no-match-in-scope");
   assert.equal(absent.expected.coverage, "scoped");
+});
+
+test("discovery examples include completed GitHub work before declaring absence", () => {
+  for (const guide of [workflow, read("docs/workflows/github-work-tracking.md")]) {
+    assert.match(guide, /gh issue list --repo OpenCoven\/coven-cave --state (?:all|closed)\b/);
+    assert.match(guide, /gh pr list --repo OpenCoven\/coven-cave --state all\b/);
+  }
 });
 
 test("continuity procedure preserves access, ownership, approvals, and receipt boundaries", () => {

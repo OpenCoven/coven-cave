@@ -46,7 +46,8 @@ export function appleUrl(value) {
     throw new ReceiptError("UNSAFE_API_URL");
   }
   requireValue(url.origin === ORIGIN && !url.username && !url.password && !url.hash
-    && /^\/v1\/(?:apps|preReleaseVersions|builds|betaGroups)(?:\/[A-Za-z0-9-]+(?:\/(?:buildBetaDetail|relationships\/betaTesters))?)?$/.test(url.pathname),
+    && (/^\/v1\/(?:apps|preReleaseVersions|builds|betaGroups)(?:\/[A-Za-z0-9-]+(?:\/(?:buildBetaDetail|relationships\/betaTesters))?)?$/.test(url.pathname)
+      || /^\/v1\/builds\/[A-Za-z0-9-]+\/relationships\/buildBetaDetail$/.test(url.pathname)),
   "UNSAFE_API_URL");
   return url;
 }
@@ -54,7 +55,11 @@ export function appleUrl(value) {
 export function tokenSigner(env) {
   const keyId = env.APPLE_API_KEY;
   const subject = env.APPLE_API_KEY_SUBJECT || "";
-  requireValue(typeof keyId === "string" && /^[A-Z0-9]{10}$/.test(keyId), "INVALID_KEY_ID");
+  // Apple's example is ten characters, not a key-ID length contract.
+  requireValue(
+    typeof keyId === "string" && keyId.length > 0 && keyId.length <= 128 && !/[^A-Za-z0-9_-]/.test(keyId),
+    "INVALID_KEY_ID",
+  );
   requireValue(subject === "" || subject === "user", "INVALID_KEY_SUBJECT");
   requireValue(subject === "user" || /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(env.APPLE_API_ISSUER || ""),
     "INVALID_TEAM_ISSUER");
@@ -167,12 +172,14 @@ export function appleClient(signer, { fetchImpl = fetch, pause = sleep, now = Da
 }
 
 function resource(value, type) {
-  requireValue(value?.type === type && typeof value.id === "string"
-    && /^[A-Za-z0-9-]{1,100}$/.test(value.id));
+  requireValue(value?.type === type, "INVALID_RESOURCE_TYPE");
+  requireValue(typeof value.id === "string"
+    && /^[A-Za-z0-9-]{1,100}$/.test(value.id), "INVALID_RESOURCE_ID");
   return value;
 }
 
 function relationship(value, name, type, id) {
+  requireValue(value.relationships?.[name]?.data !== undefined, "MISSING_RELATIONSHIP_DATA");
   requireValue(resource(value.relationships?.[name]?.data, type).id === id, "IDENTITY_MISMATCH");
 }
 
@@ -222,12 +229,23 @@ export async function collectReceipt(receipt, api) {
   const expiration = Date.parse(build.attributes.expirationDate);
   requireValue(Number.isFinite(expiration), "INVALID_RESPONSE");
   receipt.expirationDate = new Date(expiration).toISOString();
+  // The inverse build relationship is optional; bind the detail through the exact build instead.
+  const detailLinkResponse = await api.get(
+    `/v1/builds/${build.id}/relationships/buildBetaDetail`,
+  );
+  requireValue(detailLinkResponse?.data !== undefined, "MISSING_RELATIONSHIP_DATA");
+  const detailLink = resource(detailLinkResponse.data, "buildBetaDetails");
   const detail = resource((await api.get(`/v1/builds/${build.id}/buildBetaDetail?${new URLSearchParams({
     include: "build", "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
     "fields[builds]": "version",
   })}`)).data, "buildBetaDetails");
-  relationship(detail, "build", "builds", build.id);
+  requireValue(detail.id === detailLink.id, "IDENTITY_MISMATCH");
   receipt.buildBetaDetailId = detail.id;
+  const inverseBuild = detail.relationships?.build?.data;
+  receipt.buildBetaDetailBuildLinkageState = inverseBuild === null ? "empty"
+    : inverseBuild === undefined ? "omitted" : "present";
+  receipt.buildBetaDetailHasBuildLinkage = inverseBuild !== undefined && inverseBuild !== null;
+  if (receipt.buildBetaDetailHasBuildLinkage) relationship(detail, "build", "builds", build.id);
   receipt.internalBuildState = state(detail.attributes?.internalBuildState, INTERNAL);
   receipt.externalBuildState = state(detail.attributes?.externalBuildState, EXTERNAL);
   const groups = await api.list("/v1/betaGroups", {

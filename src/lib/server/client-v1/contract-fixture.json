@@ -130,7 +130,7 @@
       "requestIdCharacters": 64,
       "revisionTokenCharacters": 128
     },
-    "minimumClientVersion": "0.1.0",
+    "minimumClientVersion": "0.0.1",
     "operations": [
       {
         "binding": "none",
@@ -411,7 +411,7 @@
         "message": "Client state must be reconciled.",
         "retryable": true
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",
@@ -456,7 +456,7 @@
         "pairingRequired": true,
         "releaseVersion": "0.0.0"
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",
@@ -500,7 +500,7 @@
         "requestId": "018f4f1a-77c2-7a31-8a15-55a25aaba001",
         "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",
@@ -550,7 +550,7 @@
           ]
         }
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",
@@ -589,7 +589,7 @@
         "id": "018f4f1a-77c2-7a31-8a15-55a25aaba001",
         "status": "approved"
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",
@@ -643,7 +643,7 @@
         "id": "conversation-example",
         "kind": "conversation"
       },
-      "minimumClientVersion": "0.1.0",
+      "minimumClientVersion": "0.0.1",
       "operations": [
         "health.read",
         "pairing.create",

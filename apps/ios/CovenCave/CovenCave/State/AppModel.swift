@@ -6,24 +6,16 @@ import UIKit
 #endif
 import WidgetKit
 
-/// The application destinations. Lifted out of the drawer shell so slash commands
-/// (`/board`, `/chats`) can drive selection from anywhere.
+/// Tasks remains decodable for legacy links, but is not a native destination.
 enum AppTab: String, CaseIterable, Sendable { case chats, tasks, settings }
 
 extension AppTab {
-    static let drawerDestinations: [AppTab] = [.chats, .tasks]
-    static let shortcutOrder: [AppTab] = [.chats, .tasks, .settings]
+    static let drawerDestinations: [AppTab] = [.chats, .settings]
+    static let shortcutOrder: [AppTab] = [.chats, .settings]
 
-    /// Project search returns to the active project-scoped destination when it
-    /// has one; settings falls back to Chats because it does not render
-    /// project-scoped content of its own.
+    /// Retained for legacy search callers; project navigation is rejected below.
     var projectSearchReturnDestination: AppTab {
-        switch self {
-        case .settings:
-            return .chats
-        case .chats, .tasks:
-            return self
-        }
+        .chats
     }
 }
 
@@ -390,6 +382,7 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
+    private(set) var managedPairingBaseURL: URL?
     /// Per-Familiar hub dashboards (`cave-9rwd.2`). Owned here rather than by
     /// the hub view so flipping between two Familiars in the roster does not
     /// re-fetch what was read seconds ago. In-memory only, bounded by its own
@@ -1199,12 +1192,11 @@ final class AppModel {
         for intent: ProjectNavigationIntent
     ) -> Bool {
         switch surface {
-        case .projects:
-            return intent.projectId != nil || intent.entity != nil
+        case .projects, .tasks:
+            return false
         case .sessions:
-            return intent.threadId != nil
-        case .tasks:
-            return intent.taskId != nil
+            guard let id = intent.threadId else { return false }
+            return !threads.contains { $0.id == id }
         }
     }
 
@@ -1261,6 +1253,9 @@ final class AppModel {
             !projectRoot.isEmpty else {
             return .success(.unassigned)
         }
+        guard ProjectContext.openContext(for: projectRoot, in: []) != nil else {
+            return .failure(.invalidProjectMetadata)
+        }
         guard projectsLoaded || !projects.isEmpty else {
             return .failure(.projectCatalogUnavailable)
         }
@@ -1314,12 +1309,15 @@ final class AppModel {
     }
 
     func canOpen(_ thread: ChatThread) -> Bool {
-        validatedOpenContext(for: thread) != nil
+        threadOpenFailure(for: thread) == nil
     }
 
     func threadOpenFailure(for thread: ChatThread) -> ThreadOpenFailure? {
         switch requestOpenContext(for: thread) {
         case .success:
+            return nil
+        case .failure(.projectCatalogUnavailable):
+            // Cached history stays readable; dispatch has a separate access gate.
             return nil
         case .failure(let failure):
             return failure
@@ -1351,18 +1349,9 @@ final class AppModel {
     }
 
     private func hydrateProjectNavigationIfNeeded(for intent: ProjectNavigationIntent) {
+        guard intent.resolvedDestination != .tasks else { return }
         let generation = currentProjectNavigationConnectionGeneration()
         let canHydrateRemotely = isProjectNavigationConnectionKnownGood(generation: generation)
-
-        if canHydrateRemotely,
-           projectNavigationIntentNeedsHydration(.projects, for: intent),
-           !projectNavigationSurfaceAttemptedCurrentGeneration(.projects, generation: generation),
-           !projectNavigationSurfaceHydratingCurrentGeneration(.projects, generation: generation),
-           coreResourceClient != nil {
-            launchProjectNavigationHydration(.projects, generation: generation) { app in
-                await app.loadProjects()
-            }
-        }
 
         if canHydrateRemotely,
            projectNavigationIntentNeedsHydration(.sessions, for: intent),
@@ -1370,17 +1359,7 @@ final class AppModel {
            !projectNavigationSurfaceHydratingCurrentGeneration(.sessions, generation: generation),
            sessionLoadingClient != nil {
             launchProjectNavigationHydration(.sessions, generation: generation) { app in
-                await app.loadSessions()
-            }
-        }
-
-        if canHydrateRemotely,
-           projectNavigationIntentNeedsHydration(.tasks, for: intent),
-           !projectNavigationSurfaceAttemptedCurrentGeneration(.tasks, generation: generation),
-           !projectNavigationSurfaceHydratingCurrentGeneration(.tasks, generation: generation),
-           taskLoadingClient != nil {
-            launchProjectNavigationHydration(.tasks, generation: generation) { app in
-                await app.loadTasks()
+                await app.loadSessions(preservingSelection: true)
             }
         }
     }
@@ -1399,6 +1378,17 @@ final class AppModel {
         attemptHydrationIfNeeded: Bool = false
     ) -> Bool {
         guard let intent = pendingProjectNavigationIntent else { return false }
+        guard intent.resolvedDestination != .tasks else {
+            pendingProjectNavigationIntent = nil
+            cardToOpen = nil
+            showDesktopOnlyDestination()
+            return false
+        }
+        if intent.entity == nil, intent.projectId != nil {
+            pendingProjectNavigationIntent = nil
+            showDesktopOnlyDestination("Project navigation")
+            return false
+        }
         if attemptHydrationIfNeeded {
             hydrateProjectNavigationIfNeeded(for: intent)
         }
@@ -1452,28 +1442,14 @@ final class AppModel {
                 }
                 return threadsHydrated ? .failed(.threadUnavailable) : .pending
             }
-            if navigationGeneration != nil,
-               thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-               projectNavigationSurfaceFailedCurrentGeneration(
-                .projects,
-                generation: navigationGeneration
-               ) {
-                return .failed(projectNavigationHydrationFailure(.projects, for: intent))
-            }
-            if navigationGeneration != nil,
-               thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-               !projectNavigationSurfaceSucceededCurrentGeneration(
-                .projects,
-                generation: navigationGeneration
-               ) {
-                return .pending
-            }
             switch requestOpenContext(for: thread) {
             case .success(let context):
                 completeProjectNavigation(intent, context: context, thread: thread)
                 return .resolved
             case .failure(.projectCatalogUnavailable):
-                return .pending
+                // Reading a cached transcript is not send authorization.
+                completeProjectNavigation(intent, context: nil, thread: thread)
+                return .resolved
             case .failure(let failure):
                 return .failed(ProjectNavigationFailure(
                     toastText: failure.toastText,
@@ -1535,32 +1511,8 @@ final class AppModel {
             }
 
         case nil:
-            if navigationGeneration != nil,
-               projectNavigationSurfaceFailedCurrentGeneration(
-                .projects,
-                generation: navigationGeneration
-               ) {
-                return .failed(projectNavigationHydrationFailure(.projects, for: intent))
-            }
-            if navigationGeneration != nil,
-               !projectNavigationSurfaceSucceededCurrentGeneration(
-                .projects,
-                generation: navigationGeneration
-               ) {
-                return .pending
-            }
-            switch requestOpenContext(forProjectID: intent.projectId) {
-            case .success(let context):
-                completeProjectNavigation(intent, context: context)
-                return .resolved
-            case .failure(.projectCatalogUnavailable):
-                return .pending
-            case .failure(let failure):
-                return .failed(ProjectNavigationFailure(
-                    toastText: failure.toastText,
-                    systemImage: failure.systemImage
-                ))
-            }
+            completeProjectNavigation(intent, context: nil)
+            return .resolved
         }
     }
 
@@ -1570,19 +1522,12 @@ final class AppModel {
         thread: ChatThread? = nil,
         card: BoardCard? = nil
     ) {
-        let didSwitchProject = context.map { $0.id != projectContext?.id } ?? false
-        if let context, didSwitchProject {
-            switchProject(to: context)
-        }
         selectedTab = intent.resolvedDestination
         if let thread {
             threadToOpen = thread
         }
         if let card {
             cardToOpen = card
-        }
-        if didSwitchProject, let context {
-            announceProjectNavigationSwitch(to: context, for: intent)
         }
     }
 
@@ -1604,8 +1549,7 @@ final class AppModel {
 #endif
     }
 
-    /// Ask the chat list to open a thread, first aligning the canonical app
-    /// project context that owns it.
+    /// Open the bound object without changing the ambient legacy project filter.
     @discardableResult
     func requestOpen(_ thread: ChatThread) -> Bool {
         beginProjectNavigation(ProjectNavigationIntent(
@@ -1650,6 +1594,14 @@ final class AppModel {
             destination: destination,
             projectId: projectId
         ))
+    }
+
+    func showDesktopOnlyDestination(_ destination: String = "Tasks") {
+        showToast(
+            "\(destination) is desktop-only. Open Coven Cave on your desktop; iOS supports Chats and Settings.",
+            systemImage: "desktopcomputer",
+            style: .warning
+        )
     }
 
     @discardableResult
@@ -1725,6 +1677,50 @@ final class AppModel {
     var projectMembershipLoaded = false
     @ObservationIgnored private var projectContextSelectionSource: ProjectContextSelectionSource?
 
+    var chatAccessIsCurrent: Bool {
+        projectsLoaded && projectMembershipLoaded && projectContextError == nil
+    }
+
+    func chatAccessIsCurrent(projectRoot: String?, familiarIds: [String]) -> Bool {
+        let targets = Set(familiarIds)
+        guard chatAccessIsCurrent,
+              let projectRoot,
+              projectRoot == projectRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+              !targets.isEmpty,
+              targets.allSatisfy({ !$0.isEmpty && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+              case .project(let project)? = ProjectContext.openContext(for: projectRoot, in: projects),
+              project.root == projectRoot
+        else { return false }
+        return targets.allSatisfy { projectMembership.contains($0, in: project) }
+    }
+
+    @discardableResult
+    func requireCurrentChatAccess() -> Bool {
+        guard chatAccessIsCurrent else {
+            showToast(
+                "Chat access is unavailable. Refresh Chats to verify project access, then try again.",
+                systemImage: "arrow.clockwise",
+                style: .warning
+            )
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func requireCurrentChatAccess(projectRoot: String?, familiarIds: [String]) -> Bool {
+        guard requireCurrentChatAccess() else { return false }
+        guard chatAccessIsCurrent(projectRoot: projectRoot, familiarIds: familiarIds) else {
+            showToast(
+                "This chat's project access could not be verified for every participant. Refresh access or open New chat to choose a project.",
+                systemImage: "lock.shield",
+                style: .warning
+            )
+            return false
+        }
+        return true
+    }
+
     var activeProject: ProjectInfo? {
         guard case .project(let selected)? = projectContext else { return nil }
         return projects.first { $0.id == selected.id } ?? selected
@@ -1735,7 +1731,8 @@ final class AppModel {
     }
 
     var canStartProjectChats: Bool {
-        activeProjectRoot != nil
+        // Presentation is always available; New Chat verifies its own access.
+        true
     }
 
     func projectContext(for thread: ChatThread) -> ProjectContext {
@@ -2036,11 +2033,11 @@ final class AppModel {
     /// Name to show for the operator's messages — the profile name, or "You".
     var operatorDisplayName: String { operatorProfile?.displayName ?? "You" }
 
-    /// Server avatar image URL for the operator, or `nil` when none is set (the
+    /// Server avatar image source for the operator, or `nil` when none is set (the
     /// UI falls back to name initials). Cache-busted by the profile's mtime.
-    var operatorAvatarURL: URL? {
+    var operatorAvatarSource: CaveImageSource? {
         guard let client, operatorProfile?.avatarPresent == true else { return nil }
-        return client.operatorAvatarURL(updatedAt: operatorProfile?.avatarUpdatedAt)
+        return client.operatorAvatarSource(updatedAt: operatorProfile?.avatarUpdatedAt)
     }
 
     /// Fetch the operator profile. Best-effort: on failure the last snapshot
@@ -2216,6 +2213,7 @@ final class AppModel {
     /// familiarId → when its chats were last viewed. A familiar reads as
     /// "unread" when its latest activity is newer than this. Persisted.
     var familiarViews: [String: Date] = [:]
+    var threadViews: [String: Date] = [:]
 
     private func familiarViewKey(for familiarId: String, in context: ProjectContext?) -> String {
         guard let context else { return familiarId }
@@ -2291,6 +2289,42 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-design-closeout") {
             isConnectingPreview = true
             configureDesignCloseoutPreview()
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-long-chat-scroll-jump") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(
+                id: "ui-preview-long-chat-scroll-jump",
+                title: "Long Scroll Jump Chat",
+                delayedHistory: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-long-chat-scroll") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(
+                id: "ui-preview-long-chat-scroll",
+                title: "Long Scroll Chat",
+                delayedHistory: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-delayed-long-chat-scroll") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(
+                id: "ui-preview-delayed-long-chat-scroll",
+                title: "Delayed Scroll Chat",
+                delayedHistory: true
+            )
             _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
             return
@@ -2462,6 +2496,109 @@ final class AppModel {
         }
 
         connectionState = .connected
+    }
+
+    private func configureLongChatScrollPreview(id: String, title: String, delayedHistory: Bool) {
+        configureEmptyChatPreview()
+        let projectRoot = projects.first?.root
+        let messages = delayedHistory ? [] : Self.longChatScrollPreviewMessages()
+        let thread = ChatThread(
+            id: id,
+            title: title,
+            familiarIds: ["nyx"],
+            projectRoot: projectRoot,
+            messages: messages
+        )
+        if let latest = messages.last?.createdAt {
+            thread.updatedAt = latest
+        }
+        threads = [thread]
+        let seen = Self.longChatScrollPreviewSeenBoundary()
+        threadViews[id] = seen
+        projectContextDefaults.set(seen, forKey: Self.threadViewKey(id))
+
+        guard delayedHistory else { return }
+        Task { @MainActor [weak self, weak thread] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, let thread, thread.messages.isEmpty else { return }
+            let loaded = Self.longChatScrollPreviewMessages()
+            thread.messages = loaded
+            if let latest = loaded.last?.createdAt {
+                thread.updatedAt = latest
+            }
+            self.touch(thread)
+        }
+    }
+
+    private static func longChatScrollPreviewSeenBoundary() -> Date {
+        Date(timeIntervalSince1970: 1_786_000_000 + 9 * 60)
+    }
+
+    private static func longChatScrollPreviewMessages() -> [DisplayMessage] {
+        let base = Date(timeIntervalSince1970: 1_786_000_000)
+        var messages: [DisplayMessage] = []
+        messages.reserveCapacity(19)
+        messages.append(
+            DisplayMessage(
+                id: "scroll-top-marker",
+                role: .user,
+                familiarId: nil,
+                text: "Top scroll marker p7h8u",
+                createdAt: base
+            )
+        )
+        for index in 1...17 {
+            let created = base.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 2) {
+                messages.append(
+                    DisplayMessage(
+                        id: "scroll-assistant-\(index)",
+                        role: .assistant,
+                        familiarId: "nyx",
+                        text: """
+                        ### Scroll fixture reply \(index)
+
+                        This reply has enough markdown to settle after the native row appears.
+
+                        - It keeps the row height varied.
+                        - It exercises the lazy WebView renderer.
+                        - It must not pull the reader away from an intentional scroll.
+                        """,
+                        createdAt: created
+                    )
+                )
+            } else {
+                messages.append(
+                    DisplayMessage(
+                        id: "scroll-user-\(index)",
+                        role: .user,
+                        familiarId: nil,
+                        text: "Operator checkpoint \(index) in the long scroll fixture",
+                        createdAt: created
+                    )
+                )
+            }
+        }
+        messages.append(
+            DisplayMessage(
+                id: "scroll-latest-rich",
+                role: .assistant,
+                familiarId: "nyx",
+                text: """
+                ## A reply longer than the viewport
+
+                The newest answer is a markdown-rendered reply. Jumping to latest must show this text immediately instead of parking on a blank transcript while WebKit finishes measuring.
+
+                \(Array(repeating: "This paragraph makes the final reply taller than one screen. Its measured height arrives asynchronously; following latest must reach the end of the reply rather than merely its heading.", count: 8).joined(separator: "\n\n"))
+
+                Latest rich reply bottom marker p7h8u
+
+                [Scroll fixture link](https://example.com/scroll-fixture)
+                """,
+                createdAt: base.addingTimeInterval(18 * 60)
+            )
+        )
+        return messages
     }
 
     /// Screenshot fixture for the remaining compatible Claude Design affordances:
@@ -3998,19 +4135,6 @@ final class AppModel {
         }
     }
 
-    private func shouldFetchTaskHistoryForProjectContextSelection(
-        _ decision: ProjectContext.SelectionDecision,
-        hasUsableTasks: Bool
-    ) -> Bool {
-        guard !hasUsableTasks else { return false }
-        switch decision.reason {
-        case .suppliedSelection, .localThread, .serverSession, .taskHistory:
-            return false
-        case .alphabeticalFallback, .unassignedFallback, .none:
-            return true
-        }
-    }
-
     private func needsAuthoritativeSessionHistoryForProjectContextSelection(
         explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
         projects: [ProjectInfo]
@@ -4040,7 +4164,7 @@ final class AppModel {
         let haveUsableSessions = sessionsLoaded && sessionsError == nil
         let haveUsableTasks = tasksLoaded && tasksError == nil
         var resolvedSessions = haveUsableSessions ? serverSessions : []
-        var resolvedTasks = haveUsableTasks ? tasks : []
+        let resolvedTasks = haveUsableTasks ? tasks : []
         var explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
         let needsAuthoritativeSessionHistory = !haveUsableSessions
             && needsAuthoritativeSessionHistoryForProjectContextSelection(
@@ -4075,9 +4199,7 @@ final class AppModel {
             )
         }
 
-        // Cold/default selection is intentionally staged: local threads first,
-        // then eligible server sessions, then task history only if sessions
-        // succeeded without identifying a registered project.
+        // Legacy default selection may consult chat history, never task APIs.
         var fetchedSessions: [SessionRow]?
         var sessionsError: String?
         var sessionsLoadToken: CoordinatedLoadToken?
@@ -4124,39 +4246,6 @@ final class AppModel {
             )
         }
 
-        let postSessionDecision = resolvedProjectContextSelectionDecision(
-            explicitSelection: explicitSelection,
-            projects: nextProjects,
-            threads: postSessionThreads,
-            sessions: resolvedSessions,
-            tasks: [],
-            allowAlphabeticalFallback: false
-        )
-
-        var fetchedTasks: [BoardCard]?
-        var tasksError: String?
-        var tasksLoadToken: CoordinatedLoadToken?
-        if shouldFetchTaskHistoryForProjectContextSelection(
-            postSessionDecision,
-            hasUsableTasks: haveUsableTasks
-        ) {
-            let loadedTasks = await coordinatedTasksLoad(
-                using: client,
-                generation: navigationGeneration,
-                scope: .projectContext
-            )
-            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
-                throw CancellationError()
-            }
-            tasksLoadToken = loadedTasks.token
-            switch loadedTasks.result {
-            case .success(let nextTasks):
-                resolvedTasks = nextTasks
-                fetchedTasks = nextTasks
-            case .failure(let error):
-                tasksError = handleSurfaceError(error)
-            }
-        }
         guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
             throw CancellationError()
         }
@@ -4173,10 +4262,7 @@ final class AppModel {
             sessions: resolvedSessions,
             tasks: resolvedTasks,
             fetchedSessions: fetchedSessions,
-            fetchedTasks: fetchedTasks,
-            tasksError: tasksError,
-            sessionsLoadToken: sessionsLoadToken,
-            tasksLoadToken: tasksLoadToken
+            sessionsLoadToken: sessionsLoadToken
         )
     }
 
@@ -4235,6 +4321,11 @@ final class AppModel {
         await loadProjectContext(using: client)
     }
 
+    func refreshChatAccess() async {
+        guard let client = coreResourceClient else { return }
+        await loadProjectContext(using: client, preservingSelection: true)
+    }
+
     func loadProjects() async {
         guard let client = coreResourceClient else { return }
         await loadProjectContext(using: client, mirrorFailuresTo: [.projects])
@@ -4242,13 +4333,15 @@ final class AppModel {
 
     func loadProjectContext(
         using client: any ProjectContextLoadingClient,
-        mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = []
+        mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = [],
+        preservingSelection: Bool = false
     ) async {
         let navigationGeneration = currentProjectNavigationConnectionGeneration()
         noteProjectNavigationSurfaceAttempt(.projects, generation: navigationGeneration)
         projectContextLoadNonce &+= 1
         let loadNonce = projectContextLoadNonce
-        let hadMembership = projectMembershipLoaded
+        let hadMembership = projectMembershipLoaded || projectsLoaded
+        projectMembershipLoaded = false
 
         do {
             async let loadedProjects = client.projects()
@@ -4339,7 +4432,8 @@ final class AppModel {
                 state: tasksLoadState
             )
 
-            if selectionResolution.usedHistoryFallback
+            if !preservingSelection,
+                selectionResolution.usedHistoryFallback
                 && canUseSessionsFallbackSelection
                 && canUseTasksFallbackSelection {
                 applyProjectContextSelection(
@@ -4349,7 +4443,7 @@ final class AppModel {
                 if selectionResolution.persistSelection {
                     persistProjectContextSelection(selectionResolution.context)
                 }
-            } else {
+            } else if !preservingSelection {
                 refreshProjectContextSelectionFromCurrentData()
             }
             projectContextError = nil
@@ -4360,13 +4454,14 @@ final class AppModel {
             let message = handleSurfaceError(error)
             noteProjectNavigationSurfaceFailure(.projects, generation: navigationGeneration)
             projectContextError = message
+            projectMembershipLoaded = false
             if mirroredSurfaces.contains(.projects) {
                 projectsError = message
             }
             if mirroredSurfaces.contains(.familiars) {
                 familiarsError = message
             }
-            if !hadMembership {
+            if !hadMembership && !preservingSelection {
                 applyProjectContextSelection(nil, source: nil)
                 if projects.isEmpty { projectsError = message }
                 if familiars.isEmpty { familiarsError = message }
@@ -4773,6 +4868,7 @@ final class AppModel {
 
     @discardableResult
     func configure(host: String, token: String? = nil) async -> ConnectionDispatchLease? {
+        guard !Task.isCancelled else { return nil }
         // Revoke every owner of the previous authority before touching its
         // credential. A refresh can already be past discovery and suspended in
         // bootstrap/token renewal, where cancelling the coordinator alone no
@@ -4788,16 +4884,26 @@ final class AppModel {
         // A newer configure/disconnect may have taken ownership while actor
         // cancellation suspended this call. The older transition must not save
         // credentials or overwrite the newer endpoint when it resumes.
+        guard !Task.isCancelled else { return nil }
         guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return nil }
 
         let conn = CaveConnection(host: host)
+        managedPairingBaseURL = nil
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let hostIsExplicitURL = trimmedHost.lowercased().hasPrefix("http://") || trimmedHost.lowercased().hasPrefix("https://")
         let hostHasExplicitPort = !hostIsExplicitURL && trimmedHost.contains(":")
         let isSameEndpoint = (hostIsExplicitURL || hostHasExplicitPort)
             ? (connection?.baseURL == conn.baseURL)
             : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
-        if let token {
+        if let token, CaveConnection.isManagedDeviceCredential(token) {
+            do {
+                guard let baseURL = conn.baseURL else { throw CaveError.notConfigured }
+                try DeviceAccessStore.activate(credential: token, baseURL: baseURL)
+            } catch {
+                connectionState = .needsAuth(error.localizedDescription)
+                return nil
+            }
+        } else if let token {
             CaveConnection.saveAccessToken(token, for: conn.baseURL)
         } else if CaveConnection.shouldClearStoredCredential(
             suppliedToken: token,
@@ -4872,6 +4978,7 @@ final class AppModel {
         invalidateProjectNavigationHydrations()
         invalidateProjectContextLoads()
         CaveConnection.clear(defaults: projectContextDefaults)
+        managedPairingBaseURL = nil
         connection = nil
         familiars = []
         familiarsLoaded = false
@@ -5003,9 +5110,10 @@ final class AppModel {
     /// Rollback persistence deliberately uses `flushThreadsAndWait()` directly
     /// instead, because it must still land after this lease is revoked.
     func persistThreadsBeforeDispatch(for lease: ConnectionDispatchLease) async -> Bool {
-        guard connectionDispatchLeaseIsCurrent(lease) else { return false }
+        guard connectionDispatchLeaseIsCurrent(lease),
+              requireCurrentChatAccess() else { return false }
         let persisted = await flushThreadsAndWait()
-        return persisted && connectionDispatchLeaseIsCurrent(lease)
+        return persisted && connectionDispatchLeaseIsCurrent(lease) && requireCurrentChatAccess()
     }
 
     private func refreshLeaseIsCurrent(
@@ -5130,12 +5238,11 @@ final class AppModel {
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    /// Any surface has completed a load — real data or an intentional empty
-    /// state — so the primary shell is worth keeping mounted through a
-    /// connection drop (RootView shows the reconnect pill over it instead of
-    /// tearing down to the Connect screen).
+    /// Restored conversations are readable without a live catalog. This is
+    /// shell readiness only; chatAccessIsCurrent separately gates dispatch.
     var hasLoadedSurfaces: Bool {
-        familiarsLoaded || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded
+        !chatThreads.isEmpty || !chatServerSessions.isEmpty
+            || familiarsLoaded || sessionsLoaded || projectsLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
@@ -5149,17 +5256,15 @@ final class AppModel {
         }
         return surfaces
     }
-    /// A first shell mount waits for a successfully loaded membership snapshot
-    /// plus either a concrete selection or the intentional "no projects yet"
-    /// empty state (`projectsLoaded && projects.isEmpty`).
-    private var isProjectContextReadyForShellGate: Bool {
-        guard projectMembershipLoaded else { return false }
-        return projectContext != nil || (projectsLoaded && projects.isEmpty)
-    }
-
     private func pairingMessage() -> String {
-        CaveConnection.accessToken == nil
-            ? "This desktop requires pairing. Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here."
+        if CaveConnection.isManagedDeviceCredential(CaveConnection.accessToken) {
+            return DeviceAccessStatus.revoked.message
+        }
+        if managedPairingBaseURL != nil {
+            return "This desktop requires approval. Request access below and approve it on the desktop."
+        }
+        return CaveConnection.accessToken == nil
+            ? "This desktop requires pairing. Scan its QR code or paste its invite link."
             : "Your pairing has expired. Open Cave on the desktop → “Open on phone” and scan the QR code (or paste the invite link) to pair again."
     }
 
@@ -5267,8 +5372,6 @@ final class AppModel {
                 )
             }
             if sessionsLoaded { group.addTask { await self.loadSessions() } }
-            if tasksLoaded { group.addTask { await self.loadTasks() } }
-            if remindersLoaded { group.addTask { await self.loadReminders() } }
         }
     }
 
@@ -5307,6 +5410,7 @@ final class AppModel {
             switch outcome {
             case .found(let url): return .found(url)
             case .unauthorized: return .unauthorized
+            case .pairingRequired(let url): return .pairingRequired(url)
             case .credentialFailure(let message): return .credentialFailure(message)
             case .unreachable(let failure): return .unreachable(failure)
             }
@@ -5375,8 +5479,8 @@ final class AppModel {
             markProjectNavigationConnectionKnownGood(
                 generation: currentProjectNavigationConnectionGeneration()
             )
-            let shouldGateShell = !hasLoadedSurfaces
-            if shouldGateShell {
+            let shouldLoadCoreBeforeDispatch = !chatAccessIsCurrent
+            if shouldLoadCoreBeforeDispatch {
                 if refresh.surfaceReloadRequested {
                     await refreshLoadedSurfaces(
                         configurationGeneration: configurationGeneration
@@ -5391,12 +5495,6 @@ final class AppModel {
                     configurationGeneration: configurationGeneration
                 ) else { return }
                 if case .needsAuth = connectionState {
-                    return
-                }
-                guard isProjectContextReadyForShellGate else {
-                    if projectContextError != nil {
-                        connectionState = .projectContextRequired
-                    }
                     return
                 }
             }
@@ -5416,7 +5514,7 @@ final class AppModel {
                 configurationGeneration: configurationGeneration
             ) else { return }
             flushQueuedMessages()
-            if !shouldGateShell {
+            if !shouldLoadCoreBeforeDispatch {
                 guard refreshLeaseIsCurrent(
                     supervisorGeneration,
                     configurationGeneration: configurationGeneration
@@ -5437,6 +5535,10 @@ final class AppModel {
                 ) else { return }
             }
         case .unauthorized:
+            managedPairingBaseURL = nil
+            connectionState = .needsAuth(pairingMessage())
+        case .pairingRequired(let url):
+            managedPairingBaseURL = url
             connectionState = .needsAuth(pairingMessage())
         case .credentialFailure(let message):
             connectionState = .unreachable(.credentialFailure(message))
@@ -5466,6 +5568,7 @@ final class AppModel {
         guard let client, !flushingQueued else { return }
         let pending = threads.filter { thread in thread.messages.contains { $0.isQueued } }
         guard !pending.isEmpty else { return }
+        guard requireCurrentChatAccess() else { return }
         let configurationGeneration = connectionConfigurationGeneration
         let dispatchLease = captureConnectionDispatchLease()
         let flushID = UUID()
@@ -5483,8 +5586,10 @@ final class AppModel {
             for thread in pending {
                 guard self.queuedMessageFlushID == flushID,
                       self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
-                      self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                      self.connectionDispatchLeaseIsCurrent(dispatchLease),
+                      self.requireCurrentChatAccess()
                 else { return }
+                let binding = ChatDispatchBinding(thread: thread)
                 await thread.replayQueued(
                     client: client,
                     onConnectionFailure: { [weak self] error in
@@ -5499,6 +5604,23 @@ final class AppModel {
                         guard let self else { return false }
                         return self.queuedMessageFlushID == flushID
                             && self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                            && binding.matches(thread)
+                            && self.chatAccessIsCurrent
+                    },
+                    targetAccessIsCurrent: { [weak self] projectRoot, familiarId in
+                        self?.chatAccessIsCurrent(
+                            projectRoot: projectRoot,
+                            familiarIds: [familiarId]
+                        ) ?? false
+                    },
+                    onAccessRefused: { [weak self] familiarId in
+                        self?.showToast(
+                            familiarId == nil
+                                ? "Queued messages kept: their original chat could not be verified. Copy the message into a new chat to choose a different project or conversation."
+                                : "Queued chat access could not be verified. Refresh access before retrying; the original recipients have been kept.",
+                            systemImage: "lock.shield",
+                            style: .warning
+                        )
                     },
                     persistBeforeDispatch: { [weak self] in
                         // Stable queued run identity must reach the atomic
@@ -5507,13 +5629,17 @@ final class AppModel {
                         guard let self,
                               self.queuedMessageFlushID == flushID,
                               self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
-                              self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                              self.connectionDispatchLeaseIsCurrent(dispatchLease),
+                              self.requireCurrentChatAccess(),
+                              binding.matches(thread)
                         else { return false }
                         let persisted = await self.flushThreadsAndWait()
                         return persisted
                             && self.queuedMessageFlushID == flushID
                             && self.connectionConfigurationLeaseIsCurrent(configurationGeneration)
                             && self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                            && self.requireCurrentChatAccess()
+                            && binding.matches(thread)
                     },
                     persistAfterRollback: { [weak self] in
                         // Deliberately endpoint-unfenced: replay has already
@@ -5544,6 +5670,7 @@ final class AppModel {
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
     private func refreshAccessTokenIfNeeded(onlyWhile isCurrent: (() -> Bool)? = nil) async {
         guard let client = coreResourceClient, let token = CaveConnection.accessToken else { return }
+        guard CaveConnection.shouldRefreshAccessToken(token) else { return }
         guard let expiry = CaveInvite.tokenExpiry(token) else {
             // Legacy raw-secret pairing: no expiry, so the rolling renewal
             // below can never fire and the device stays on a never-expiring
@@ -5578,6 +5705,8 @@ final class AppModel {
 
     enum DiscoveryOutcome: Equatable {
         case found(URL)
+        /// Credential-free preview retains the exact endpoint that asked to pair.
+        case pairingRequired(URL)
         /// At least one candidate was a live Cave server that rejected our
         /// credential — pairing is the fix, not another address.
         case unauthorized
@@ -5617,6 +5746,7 @@ final class AppModel {
         switch await Self.probe(preferred) {
         case .ok: return .found(preferred)
         case .unauthorized: return .unauthorized
+        case .managedPairingRequired: return .pairingRequired(preferred)
         case .credentialFailure(let message): return .credentialFailure(message)
         case .failed(let failure): strongest = failure
         }
@@ -5669,6 +5799,7 @@ final class AppModel {
             switch await Self.probe(base) {
             case .ok: return .found(base)
             case .unauthorized: return .unauthorized
+            case .managedPairingRequired: return .pairingRequired(base)
             case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             }
@@ -5689,6 +5820,7 @@ final class AppModel {
             switch result {
             case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
+            case .managedPairingRequired: return .pairingRequired(candidates[index])
             case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             default: continue
@@ -5728,6 +5860,7 @@ final class AppModel {
     private enum ProbeResult {
         case ok
         case unauthorized
+        case managedPairingRequired
         case credentialFailure(String)
         case failed(ProbeFailure)
     }
@@ -5740,7 +5873,7 @@ final class AppModel {
         config.timeoutIntervalForRequest = 6
         config.timeoutIntervalForResource = 10
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     /// Reachability check that requires a *real* Cave API response — a 2xx whose
@@ -5773,6 +5906,10 @@ final class AppModel {
             return .failed(ProbeFailure(classifying: error))
         }
         guard let http = resp as? HTTPURLResponse else { return .failed(.transport) }
+        if (http.statusCode == 401 || http.statusCode == 403),
+           DeviceAccessClient.isManagedResponse(http) {
+            return .managedPairingRequired
+        }
         if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
         guard (200..<300).contains(http.statusCode),
               (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil
@@ -5802,16 +5939,29 @@ final class AppModel {
         return activity > seen
     }
 
-    /// Earliest "last viewed" date across a thread's familiars — the boundary
-    /// the "New Messages" divider is placed against. nil when untracked.
+    /// A conversation's read acknowledgement, with the old familiar-wide
+    /// boundary retained only for history that predates per-chat tracking.
     func seenBoundary(for thread: ChatThread) -> Date? {
+        if let seen = threadViews[thread.id]
+            ?? (projectContextDefaults.object(forKey: Self.threadViewKey(thread.id)) as? Date) {
+            return seen
+        }
         let context = projectContext(for: thread)
         return thread.familiarIds.compactMap {
             familiarViewDate(for: $0, in: context)
         }.min()
     }
 
-    /// Mark a familiar's chats as read (call when opening them).
+    static func threadViewKey(_ threadId: String) -> String { "cave.chat.viewed.\(threadId)" }
+
+    func markThreadViewed(_ thread: ChatThread, through activityAt: Date? = nil) {
+        let seen = max(Date(), max(thread.updatedAt, activityAt ?? thread.updatedAt))
+        threadViews[thread.id] = seen
+        projectContextDefaults.set(seen, forKey: Self.threadViewKey(thread.id))
+    }
+
+    /// Legacy familiar-wide acknowledgement. Conversation surfaces use
+    /// `markThreadViewed` so opening one chat cannot clear a sibling's unread state.
     func markFamiliarViewed(_ ids: [String]) {
         markFamiliarViewed(ids, in: projectContext)
     }
@@ -5890,12 +6040,15 @@ final class AppModel {
     var sessionsError: String?
     var sessionsLoaded = false
 
-    func loadSessions() async {
+    func loadSessions(preservingSelection: Bool = false) async {
         guard let client = sessionLoadingClient else { return }
-        await loadSessions(using: client)
+        await loadSessions(using: client, preservingSelection: preservingSelection)
     }
 
-    func loadSessions(using client: any ProjectContextLoadingClient) async {
+    func loadSessions(
+        using client: any ProjectContextLoadingClient,
+        preservingSelection: Bool = false
+    ) async {
         let navigationGeneration = currentProjectNavigationConnectionGeneration()
         noteProjectNavigationSurfaceAttempt(.sessions, generation: navigationGeneration)
         let load = await coordinatedSessionsLoad(
@@ -5908,7 +6061,7 @@ final class AppModel {
 
         switch load.result {
         case .success(let sessions):
-            applyLoadedSessions(sessions)
+            applyLoadedSessions(sessions, refreshProjectContextSelection: !preservingSelection)
             noteProjectNavigationSurfaceSuccess(.sessions, generation: navigationGeneration)
             _ = resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
         case .failure(let error):
@@ -6348,23 +6501,17 @@ final class AppModel {
         familiarId: String,
         loadHistory shouldLoadHistory: Bool = true
     ) -> ChatThread {
-        let changed = backfillThreadProjectRoots(from: [row])
+        _ = backfillThreadProjectRoots(from: [row])
         if let existing = threads.first(where: { $0.sessionIds.values.contains(row.id) }) {
             if row.isFlowRun && existing.flowSessionIds.insert(row.id).inserted {
                 persistThreads()
             }
-            let repair = repairThreadSessionBinding(
+            _ = repairThreadSessionBinding(
                 existing,
                 with: row,
                 fallbackFamiliarID: familiarId
             )
-            if changed || repair.changed {
-                refreshProjectContextSelectionFromCurrentData()
-            }
             return existing
-        }
-        if changed {
-            refreshProjectContextSelectionFromCurrentData()
         }
         let resolvedFamiliarID = authoritativeFamiliarID(from: row, fallback: familiarId) ?? familiarId
         let title = row.title.isEmpty
@@ -6999,7 +7146,16 @@ final class AppModel {
         switch context {
         case .project(let project):
             let allowed = projectMembership.familiarIDs(forProjectID: project.id)
-            guard allowed.contains(familiarId) else { return nil }
+            guard projectMembershipLoaded, projectContextError == nil,
+                  projects.contains(where: { $0.id == project.id && $0.root == project.root }),
+                  allowed.contains(familiarId) else {
+                showToast(
+                    "Could not verify this chat's project access. Refresh access in New chat and try again.",
+                    systemImage: "folder.badge.questionmark",
+                    style: .warning
+                )
+                return nil
+            }
             let name = familiar(familiarId)?.displayName ?? familiarId
             let thread = ChatThread(
                 title: name,
@@ -7097,9 +7253,7 @@ final class AppModel {
         )
     }
 
-    /// Global familiar opens prefer the latest local landing chat across all
-    /// contexts, then any unmaterialized server session, and only then a fresh
-    /// active-project chat when that familiar is available there.
+    /// Global familiar opens reuse history; fresh chats require local configuration.
     @discardableResult
     func requestOpenGlobalFamiliarLandingThread(for familiarId: String) -> Bool {
         if let existing = globalLandingDirectThread(for: familiarId) {
@@ -7111,24 +7265,38 @@ final class AppModel {
             return requestOpen(thread)
         }
 
-        guard let activeProject,
-              projectMembershipLoaded,
-              projectMembership.contains(familiarId, in: activeProject),
-              let fresh = directThread(for: familiarId, in: .project(activeProject))
-        else {
-            reportGlobalFamiliarOpenFailure(for: familiarId)
-            return false
-        }
-
-        return requestOpen(fresh)
+        showToast(
+            "Open New chat to choose this familiar and its project access.",
+            systemImage: "bubble.left.and.bubble.right",
+            style: .warning
+        )
+        return false
     }
 
     func startFreshThreadInActiveProject(
         familiarIds: [String],
         title: String? = nil
     ) -> ChatThread? {
-        guard let activeProject, let activeProjectRoot else { return nil }
-        guard projectMembershipLoaded else {
+        startFreshThread(in: projectContext, familiarIds: familiarIds, title: title)
+    }
+
+    func startFreshThread(
+        in context: ProjectContext?,
+        familiarIds: [String],
+        title: String? = nil
+    ) -> ChatThread? {
+        guard case .project(let boundProject)? = context,
+              let boundProject = projects.first(where: {
+                  $0.id == boundProject.id && $0.root == boundProject.root
+              }) else {
+            showToast(
+                "Choose a registered project in New chat to start a replacement chat.",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return nil
+        }
+        guard projectMembershipLoaded, projectContextError == nil else {
             showToast(
                 "Refresh Chats to load project access, then try again.",
                 systemImage: "arrow.clockwise",
@@ -7136,8 +7304,12 @@ final class AppModel {
             )
             return nil
         }
+        guard !familiarIds.isEmpty else {
+            showToast("Choose a familiar in New chat.", style: .warning)
+            return nil
+        }
         let invalidFamiliarIDs = familiarIds.filter {
-            !projectMembership.contains($0, in: activeProject)
+            !projectMembership.contains($0, in: boundProject)
         }
         guard invalidFamiliarIDs.isEmpty else {
             let invalidNames = invalidFamiliarIDs.map {
@@ -7147,7 +7319,7 @@ final class AppModel {
                 ? invalidNames[0]
                 : "Some participants"
             showToast(
-                "\(subject) can’t access \(activeProject.name). Open New Chat to choose a valid roster or switch projects, then try again.",
+                "\(subject) can’t access \(boundProject.name). Open New chat to choose a project and valid roster, then try again.",
                 systemImage: "person.crop.circle.badge.exclamationmark",
                 style: .warning
             )
@@ -7156,7 +7328,7 @@ final class AppModel {
         return startFreshThread(
             familiarIds: familiarIds,
             title: title,
-            projectRoot: activeProjectRoot
+            projectRoot: boundProject.root
         )
     }
 

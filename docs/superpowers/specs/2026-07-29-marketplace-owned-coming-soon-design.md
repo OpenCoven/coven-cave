@@ -1,7 +1,8 @@
 # User-owned Marketplace and curated Skills preview
 
 **Date:** 2026-07-29
-**Status:** Approved for implementation
+**Status:** Implemented in #4061. The Skills preview and its navigation contract
+are superseded by #5425; owned inventory and local authoring remain in effect.
 **Bead:** `cave-ehhmi`
 **Surface:** `MarketplaceViewSurface`
 

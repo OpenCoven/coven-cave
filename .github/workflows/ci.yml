@@ -277,6 +277,10 @@ jobs:
       # and never runs is a check that certifies its tests parse rather than
       # pass (cave-ac372). Building for the concrete destination the test action
       # will use keeps the two steps in agreement about architecture and SDK.
+      # The simulator host needs ad-hoc signing for Keychain access. Disabling
+      # signing makes fail-closed managed-device reads throw `storage` before
+      # even mocked API requests dispatch. No Apple certificate or team is
+      # needed; the device compile gate above remains unsigned.
       - name: Compile the iOS test bundles
         working-directory: apps/ios/CovenCave
         run: |
@@ -284,7 +288,10 @@ jobs:
           xcodebuild -scheme CovenCave \
             -destination "id=$IOS_SIMULATOR_UDID" \
             -derivedDataPath "$IOS_DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
             build-for-testing
 
       # Only the unit bundle runs here. CovenCaveUITests drives the app through
@@ -333,7 +340,10 @@ jobs:
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 180 \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
             test-without-building
 
       # xcodebuild's exit status covers "did every executed test pass". It does
@@ -414,6 +424,46 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm ${{ matrix.validation.command }}
+
+  windows-conformance:
+    name: Frontend validation (Windows startup controls)
+    needs: paths
+    if: needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard; refusing stale Windows validation."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Validate Windows startup controls
+        run: node --experimental-strip-types --test --test-concurrency=1 scripts/client-v1-conformance.test.mjs
 
   frontend-bundle:
     name: Frontend bundle
@@ -596,7 +646,7 @@ jobs:
 
   build:
     name: Frontend build
-    needs: [paths, ios, frontend-validation, frontend-bundle, frontend-e2e, frontend-e2e-agentic]
+    needs: [paths, ios, frontend-validation, frontend-bundle, frontend-e2e, frontend-e2e-agentic, windows-conformance]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -620,6 +670,7 @@ jobs:
           FRONTEND_ENABLED: ${{ needs.paths.outputs.frontend }}
           FRONTEND_VALIDATION_RESULT: ${{ needs.frontend-validation.result }}
           FRONTEND_BUNDLE_RESULT: ${{ needs.frontend-bundle.result }}
+          WINDOWS_CONFORMANCE_RESULT: ${{ needs.windows-conformance.result }}
           E2E_ENABLED: ${{ needs.paths.outputs.e2e }}
           FRONTEND_E2E_RESULT: ${{ needs.frontend-e2e.result }}
           FRONTEND_E2E_AGENTIC_RESULT: ${{ needs.frontend-e2e-agentic.result }}
@@ -631,6 +682,7 @@ jobs:
           if [ "$FRONTEND_ENABLED" = "true" ]; then
             test "$FRONTEND_VALIDATION_RESULT" = "success"
             test "$FRONTEND_BUNDLE_RESULT" = "success"
+            test "$WINDOWS_CONFORMANCE_RESULT" = "success"
           fi
           if [ "$E2E_ENABLED" = "true" ]; then
             test "$FRONTEND_E2E_RESULT" = "success"
@@ -676,6 +728,7 @@ jobs:
           RUN_BASE_REF: ${{ needs.paths.outputs.run_base_ref }}
           RUN_BASE_SHA: ${{ needs.paths.outputs.run_base_sha }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           # The jobs API reports the PR head SHA, not github.sha's synthetic
@@ -686,13 +739,15 @@ jobs:
           ATTEMPT_STARTED_AT="$(jq -er '.run_started_at | select(type == "string" and length > 0)' /tmp/cave-build-evidence-run.json)"
 
           # Select validation froze this pair before any validation lane ran.
-          # Resolve the branch tip again now; missing selector outputs fail
+          # Report the live branch tip for diagnostics; missing selector outputs fail
           # closed in check-build-evidence's argument validation.
           LIVE_BASE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RUN_BASE_REF" --jq .object.sha)"
 
           node scripts/check-build-evidence.mjs \
             --expected-head-sha "$EXPECTED_HEAD_SHA" \
             --attempt-started-at "$ATTEMPT_STARTED_AT" \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT" \
             --run-base-ref "$RUN_BASE_REF" \
             --run-base-sha "$RUN_BASE_SHA" \
             --live-base-sha "$LIVE_BASE_SHA" \

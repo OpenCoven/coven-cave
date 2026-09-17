@@ -3,6 +3,28 @@ import XCTest
 
 @MainActor
 final class CaveVoiceTurnSenderTests: XCTestCase {
+    func testRealClientRechecksVoiceAuthorityAtDeferredPOSTPreflight() async {
+        var preflights = 0
+        let sender = CaveVoiceTurnSender(
+            client: CaveClient(connection: CaveConnection(host: "http://127.0.0.1:9")),
+            liveDispatchLeaseIsCurrent: {
+                preflights += 1
+                return false
+            }
+        )
+        do {
+            _ = try await sender.sendRecognizedTurn(
+                "Do not send", familiarId: "nova",
+                sessionId: "captured-session", projectRoot: "/repos/cave"
+            )
+            XCTFail("Revoked voice authority must refuse before a POST.")
+        } catch is CaveClient.SendPreflightRevoked {
+            XCTAssertEqual(preflights, 1)
+        } catch {
+            XCTFail("Expected a provably-unsent preflight refusal, got \(error)")
+        }
+    }
+
     func testFreshRegisteredProjectTurnSendsProjectRootAndBindsReturnedSession() async throws {
         var sentBody: CaveClient.SendBody?
         let sender = CaveVoiceTurnSender { body in

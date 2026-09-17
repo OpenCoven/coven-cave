@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 // On iPad the Chats tab should be a two-column NavigationSplitView: the home list
-// of familiars in the sidebar, and the selected familiar's conversation in the
+// of conversations in the sidebar, and the selected conversation in the
 // detail column. NavigationSplitView collapses to a single stack on iPhone, so
-// the familiar→chat drill is unchanged there. This locks the conversion.
+// list-to-chat drill stays native there.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const src = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
 
 assert.match(
   src,
-  /NavigationSplitView \{[\s\S]*\} detail: \{[\s\S]*detailColumn/,
+  /NavigationSplitView\(preferredCompactColumn: \$preferredCompactColumn\) \{[\s\S]*\} detail: \{[\s\S]*detailColumn/,
   "ChatsHomeView should use NavigationSplitView with a detail column",
 );
 assert.doesNotMatch(
@@ -31,7 +31,7 @@ assert.match(
   /private func open\(_ route: ChatRoute\) \{\s*\n\s*detailPath = \[\]\s*\n\s*selection = route/,
   "programmatic opens should drive the selection",
 );
-assert.match(src, /\.tag\(ChatRoute\.familiar\(familiar\)\)/, "familiar rows should be tagged for selection");
+assert.match(src, /\.tag\(ChatRoute\.thread\(thread\)\)/, "conversation rows should be tagged for selection");
 
 // Detail column: familiar → its chat (its other sessions are reachable from
 // ChatView's config card, which pushes onto detailPath), a thread → the chat,
@@ -54,7 +54,7 @@ assert.match(
 // New selection resets the detail navigation.
 assert.match(
   src,
-  /\.onChange\(of: selection\) \{ _, _ in detailPath = \[\] \}/,
+  /\.onChange\(of: selection\) \{ _, selected in\s*detailPath = \[\]\s*preferredCompactColumn = selected == nil \? \.sidebar : \.detail/,
   "changing the sidebar selection should reset the detail navigation",
 );
 // Balanced style keeps the list visible on iPad.

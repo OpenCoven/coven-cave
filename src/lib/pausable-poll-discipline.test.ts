@@ -42,6 +42,7 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/coven-run-header.tsx", "1s elapsed ticker on the coven run header, mounted only while the run is active; reads the clock only, issues no request"],
   ["components/status-bar.tsx", "1s elapsed ticker on the coven run pill, armed only while a run is genuinely live; reads the clock only, issues no request"],
   ["components/familiar-studio-projects-tab.tsx", "30s grant-undo countdown while an accepting row is visible; no network"],
+  ["components/role-surfaces/x-comms-surface.tsx", "two local tickers, no network: a 60s clock so the room's slot labels and countdowns age honestly, and the 8s undo countdown on the toast — the same shapes calendar-view-primitives.tsx and familiar-studio-projects-tab.tsx carry above. The room issues no requests at all; its drafts are demo fixtures held in component state"],
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],
   ["components/familiar-x-section.tsx", "attempt-scoped X OAuth completion poll; the user is necessarily in ANOTHER window authorizing, so this is the one poll that must keep running while our tab is hidden — it is bounded by the attempt deadline and cancelled on unmount"],

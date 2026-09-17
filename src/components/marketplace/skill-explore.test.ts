@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(hub, /key=\{exploreSkill\?\.local\?\.path \?\? exploreSkill\?\.path \?\? exploreSkill\?\.id \?\? "none"\}/, "the owned skill drawer remounts when a duplicate-id local path changes");
 assert.match(hub, /<SkillExploreDrawer\b/, "opening a skill card shows the owned-skill drawer");
-assert.match(hub, /<SkillsComingSoon\b/, "Skills has a dedicated Coming Soon destination");
-assert.match(hub, /const viewOwnedSkills = useCallback/, "Coming Soon and Build can return to owned skills");
+assert.doesNotMatch(hub, /SkillsComingSoon/, "the unavailable Skills preview is removed");
+assert.match(hub, /const viewOwnedSkills = useCallback/, "Build can return to owned skills");
 assert.match(hub, /readSurfaceResource<[\s\S]*>\("marketplace:skills", force\)/, "Marketplace loads skills only from its local warm resource");
 assert.doesNotMatch(hub, /\/api\/skills\/directory\?q=|toggleSkill|onToggleInstall/, "Marketplace has no remote search or skill installation path");
 assert.match(

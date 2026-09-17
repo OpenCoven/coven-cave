@@ -13,7 +13,7 @@ extension CaveClient {
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = true
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     private func permissionsRequest(
@@ -21,26 +21,19 @@ extension CaveClient {
         method: String = "GET",
         body: Data? = nil
     ) throws -> URLRequest {
-        guard let base = connection.baseURL else { throw CaveError.notConfigured }
-        let url = base.appendingPathComponent(path)
-        var req = URLRequest(url: url)
-        req.httpMethod = method
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = try CaveConnection.credentialForRequest(to: url) {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        if let body {
-            req.httpBody = body
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        return req
+        try request(path, method: method, body: body)
     }
 
     private func permissionsData(_ req: URLRequest) async throws -> Data {
         // 4xx bodies are structured `{ ok:false, error }` — return them so
         // callers can show the server's own message (e.g. "enable … in
         // desktop Settings") instead of a generic failure.
-        let (data, _) = try await Self.permissionsSharedSession.data(for: req)
+        let (data, response) = try await Self.permissionsSharedSession.data(for: req)
+        if CaveConnection.isManagedDeviceCredential(CaveConnection.accessToken),
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 401 || http.statusCode == 403 {
+            throw CaveError.badResponse(http.statusCode)
+        }
         return data
     }
 

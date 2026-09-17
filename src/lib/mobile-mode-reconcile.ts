@@ -6,6 +6,7 @@ export type MobileModeResponse = {
   nativeHost?: string | null;
   inviteUrl?: string | null;
   appInviteUrl?: string | null;
+  pairingMode?: "device-approval";
   qrSvg?: string | null;
   lastSeenAt?: number | null;
   /** Guided pairing ladder (cave-jr4r.1) — present on success and

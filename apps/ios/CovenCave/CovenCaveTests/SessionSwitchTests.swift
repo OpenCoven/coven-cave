@@ -80,8 +80,8 @@ final class SessionSwitchTests: XCTestCase {
         XCTAssertNil(app.pendingProjectNavigationIntent)
     }
 
-    /// Switching sessions must also land in the chosen thread's owning project.
-    func testSwitchingSessionAlignsProjectContext() {
+    /// Switching sessions follows the object without rescoping the shell.
+    func testSwitchingSessionPreservesAmbientProjectContext() {
         let app = makeApp()
         let alpha = project("alpha")
         let beta = project("beta")
@@ -98,7 +98,8 @@ final class SessionSwitchTests: XCTestCase {
 
         XCTAssertTrue(app.switchConversation(to: chosen, currentThreadId: "alpha-session"))
 
-        XCTAssertEqual(app.projectContext, .project(beta))
+        XCTAssertEqual(app.projectContext, .project(alpha))
+        XCTAssertEqual(chosen.projectRoot, beta.root)
         XCTAssertTrue(app.threadToOpen === chosen)
         XCTAssertNil(app.pendingProjectNavigationIntent)
     }

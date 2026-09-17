@@ -23,6 +23,9 @@ type PreferencesResponse = {
 async function writePersistedScreenScale(request: APIRequestContext, scale: number) {
   const response = await request.patch("/api/preferences", {
     data: { appearance: { screenScale: scale } },
+    // Restoring the fixture after browser navigation can hit ECONNRESET.
+    // Repeating this scale assignment is safe; HTTP errors still fail below.
+    maxRetries: 2,
   });
   const body = await response.json() as PreferencesResponse;
   expect(response.ok(), `preference PATCH failed: ${JSON.stringify(body)}`).toBe(true);

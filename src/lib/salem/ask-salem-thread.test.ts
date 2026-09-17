@@ -135,22 +135,6 @@ test("buildAskSalemContext scores corpora against the question", () => {
       { title: "Prepare release checklist", status: "doing", priority: "high", labels: ["release"] },
       { title: "Water the plants", status: "todo", priority: "low", labels: [] },
     ],
-    covenMemory: [
-      {
-        title: "Release ritual notes",
-        familiarId: "ada",
-        excerpt: "Release checklist and verification",
-        sourceLabel: "Familiar memory",
-        verificationState: "verified",
-      },
-      {
-        title: "Unrelated lore",
-        familiarId: "bo",
-        excerpt: "Garden notes",
-        sourceLabel: "Familiar memory",
-        verificationState: "needs-review",
-      },
-    ],
     fsMemory: [
       { relPath: "docs/release-checklist.md", rootLabel: "workspace" },
       { relPath: "recipes/soup.md", rootLabel: "workspace" },
@@ -161,33 +145,16 @@ test("buildAskSalemContext scores corpora against the question", () => {
   assert.equal(context.query, "release checklist");
   const titles = context.matches.map((m) => m.title);
   assert.ok(titles.includes("Prepare release checklist"));
-  assert.ok(titles.includes("Release ritual notes"));
   assert.ok(titles.includes("docs/release-checklist.md"));
   assert.ok(!titles.includes("Water the plants"), "zero-overlap rows are excluded");
   assert.ok(!titles.includes("recipes/soup.md"));
-  const canonical = context.matches.find((match) => match.title === "Release ritual notes");
-  assert.equal(
-    canonical?.detail,
-    "ada · Familiar memory · verified",
-    "canonical display detail is summary-only and path-free",
-  );
-  assert.doesNotMatch(JSON.stringify(canonical), /\bpath\b/i);
-});
-
-test("canonical scoring uses familiar, source, excerpt, and verification metadata", () => {
-  const context = buildAskSalemContext("cody incident needs-review", {
-    covenMemory: [
-      {
-        title: "Weekly note",
-        familiarId: "cody",
-        excerpt: "Incident response follow-up",
-        sourceLabel: "Familiar memory",
-        verificationState: "needs-review",
-      },
-    ],
-  });
-  assert.ok(context);
-  assert.equal(context.matches[0].title, "Weekly note");
+  // The canonical vault was a fourth corpus and carried a path-free display
+  // detail — its summaries reached Salem without revealing where a memory
+  // lived. The store moved to the dedicated memory application; the file
+  // corpus below keeps its own relPath display, which is deliberate, because a
+  // local file the user already owns is not a disclosure.
+  const fileMatch = context.matches.find((match) => match.title === "docs/release-checklist.md");
+  assert.equal(fileMatch?.type, "memory-file");
 });
 
 test("conversation hits are always included and rank by matchCount", () => {

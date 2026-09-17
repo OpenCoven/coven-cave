@@ -30,7 +30,7 @@ const broadTraceWarning = "Dynamic filesystem access causes tracing of the whole
 const healthPath = "/api/client/v1/health";
 const successMetadata = {
   apiVersion: "1.0",
-  minimumClientVersion: "0.1.0",
+  minimumClientVersion: "0.0.1",
 };
 
 function sleep(milliseconds) {
@@ -348,7 +348,8 @@ test("builds and launches normal and conformance packaged Client v1 artifacts", 
     await snapshotBuild(conformanceArtifact);
 
     for (const [selector, apiVersion, minimumClientVersion] of [
-      ["api-major", "2.0", "0.1.0"],
+      [undefined, "1.0", "0.0.1"],
+      ["api-major", "2.0", "0.0.1"],
       ["minimum-client", "1.0", "999.0.0"],
     ]) {
       server = null;

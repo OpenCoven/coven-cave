@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,7 @@ import { createClientV1HpkeTestClient } from "../src/lib/server/client-v1/testin
 import {
   ADMIN_TOKEN_HEADER,
   AUTHORITY_TAKEOVER_ASSERTION_IDS,
+  createConformanceFixtureRoot,
   freePort,
   requestOnce,
   seedIsolatedCaveHomes,
@@ -568,6 +569,10 @@ async function fixedAssertion(assertionId, reason, action) {
   }
 }
 
+export function createAuthorityTakeoverScratchRoot() {
+  return createConformanceFixtureRoot();
+}
+
 export async function runAuthorityTakeoverProof() {
   if (
     !existsSync(path.join(repositoryRoot, "server.mjs"))
@@ -579,12 +584,7 @@ export async function runAuthorityTakeoverProof() {
     );
   }
 
-  const scratchRoot = await mkdtemp(
-    path.join(
-      repositoryRoot,
-      ".scratch-client-v1-authority-takeover-",
-    ),
-  );
+  const scratchRoot = await createAuthorityTakeoverScratchRoot();
   let cave = null;
   let replacement = null;
   let cleanupFailed = false;

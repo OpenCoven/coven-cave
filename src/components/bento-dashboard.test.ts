@@ -70,4 +70,6 @@ assert.doesNotMatch(
   "wider short-history cells do not make the activity section taller",
 );
 
+assert.match(css, /\.bento-dash \.bd-empty a \{\s*text-decoration: underline;/, "recovery links override the dashboard text-only link reset");
+
 console.log("bento-dashboard.test.ts: ok");

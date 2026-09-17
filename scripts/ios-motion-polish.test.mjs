@@ -29,7 +29,7 @@ test("ChatsHomeView owns the zoom namespace and applies the zoom push", () => {
 test("zoom transition is gated on Reduce Motion", () => {
   assert.match(
     chatsHome,
-    /if reduceMotion \{\s*ChatView\(thread: thread\)\s*\} else \{/,
+    /if reduceMotion \{\s*ChatView\(thread: thread\)\s*\.id\(thread\.id\)\s*\} else \{/,
     "Reduce Motion must keep the standard push (no navigationTransition)",
   );
 });

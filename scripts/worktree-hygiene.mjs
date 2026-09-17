@@ -302,22 +302,8 @@ function report(root, mode, options = {}) {
   if (detached > SOFT_TARGETS.detachedWorktrees) warnings.push(`detached worktrees ${detached} > target ${SOFT_TARGETS.detachedWorktrees}`);
   if (localBranchCount > SOFT_TARGETS.localBranches) warnings.push(`local branches ${localBranchCount} > target ${SOFT_TARGETS.localBranches}`);
   const urgent = items.filter((item) => item.verdict === "WEDGED" || item.verdict === "SALVAGE");
-  let authoritativeLifecycle = null;
   let remoteHygiene = null;
   if (mode === "weekly") {
-    const lifecycle = exec(
-      "node",
-      ["--experimental-strip-types", path.join(path.dirname(repoScript), "worktree-lifecycle-patrol.ts"), "--repo", "OpenCoven/coven-cave", "--root", root, "--json"],
-      root,
-      { timeout: 90_000 },
-    );
-    if (lifecycle.ok) {
-      try { authoritativeLifecycle = { ok: true, report: JSON.parse(lifecycle.stdout) }; }
-      catch { authoritativeLifecycle = { ok: false, error: "lifecycle patrol returned malformed JSON" }; }
-    } else {
-      authoritativeLifecycle = { ok: false, error: lifecycle.stderr || lifecycle.stdout || "lifecycle patrol unavailable" };
-    }
-
     const remoteAudit = exec("node", [path.join(path.dirname(repoScript), "remote-hygiene.mjs"), "--json"], root, { timeout: 30_000 });
     if (remoteAudit.ok || remoteAudit.stdout) {
       try { remoteHygiene = { ok: remoteAudit.ok, report: JSON.parse(remoteAudit.stdout) }; }
@@ -336,7 +322,8 @@ function report(root, mode, options = {}) {
     warnings,
     urgent,
     items,
-    authoritativeLifecycle,
+    authoritativeLifecycle: null,
+    retirementAuthority: "unavailable",
     remoteHygiene,
   };
 }
@@ -354,6 +341,7 @@ function printReport(value, json) {
     console.log(`${String(item.verdict).padEnd(12)} ${size.padStart(9)}  ${item.branch ?? "(detached)"}  ${item.path}`);
   }
   if (value.urgent.length) console.log(`\nUrgent: ${value.urgent.length} wedged/salvage unit(s) require human disposition.`);
+  console.log("Local report only; no owner or retirement authority. See docs/workflows/github-work-tracking.md.");
 }
 
 function mutateThin(root, options) {
@@ -596,6 +584,9 @@ function parseArgs(argv) {
 function main(argv = process.argv.slice(2)) {
   try {
     const { action, options } = parseArgs(argv);
+    if (options.apply && (action === "park" || action === "unpark")) {
+      throw new Error(`${action} --apply unavailable: the Beads lifecycle proof is retired; preserve the unit and use the GitHub work-tracking retirement procedure`);
+    }
     const root = requiredGit(options.root, ["rev-parse", "--show-toplevel"], "resolve repository root");
     if (action === "daily" || action === "weekly" || action === "scheduled") {
       const effective = action === "scheduled" && new Date().getDay() === 0 ? "weekly" : action === "scheduled" ? "daily" : action;

@@ -1,11 +1,12 @@
 // Global "show thinking" preference for the chat transcript.
 //
-// Reasoning (`<thinking>`/`<reasoning>`) blocks default to collapsed so the
-// transcript reads as clean prose. A single global toggle lets the user expand
-// every reasoning block at once — the preference is persisted in localStorage
-// and broadcast via a custom event so the toggle control and all on-screen
-// ReasoningBlocks (which live deep inside memoised turn rows) stay in sync
-// without threading state through every parent.
+// Reasoning (`<thinking>`/`<reasoning>`) blocks open by default so a reply's
+// working is read alongside its answer (#5454). A single global toggle lets the
+// user fold every reasoning block at once — the preference is persisted in
+// localStorage and broadcast via a custom event so the toggle control and all
+// on-screen ReasoningBlocks (which live deep inside memoised turn rows) stay in
+// sync without threading state through every parent. Only a stored "0" hides
+// them; an absent or unrecognised value falls back to the default.
 
 "use client";
 
@@ -14,12 +15,18 @@ import { useEffect, useState } from "react";
 const STORAGE_KEY = "cave:chat:show-thinking";
 const EVENT = "cave:show-thinking-change";
 
+/** Reasoning blocks are open unless the user has folded them. */
+export const DEFAULT_SHOW_THINKING = true;
+
 export function readShowThinking(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return DEFAULT_SHOW_THINKING;
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "1";
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+    return DEFAULT_SHOW_THINKING;
   } catch {
-    return false;
+    return DEFAULT_SHOW_THINKING;
   }
 }
 
@@ -38,7 +45,7 @@ export function writeShowThinking(value: boolean): void {
  * and a setter that persists + broadcasts the change to every subscriber.
  */
 export function useShowThinking(): [boolean, (value: boolean) => void] {
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState(DEFAULT_SHOW_THINKING);
 
   useEffect(() => {
     setShow(readShowThinking());
