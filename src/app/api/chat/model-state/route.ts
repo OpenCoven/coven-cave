@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import { bindingFor, loadConfig, loadState, saveConfig } from "@/lib/cave-config";
 import {
   isSafeConversationSessionId,
   loadConversation,
@@ -268,24 +268,61 @@ export async function PATCH(req: Request) {
     if (targetHarness !== canonicalHarnessId(binding.harness)) {
       return jsonError("runtime must match the familiar binding", 409);
     }
+    // A session-scoped model belongs to its previous runtime. Selecting a
+    // runtime is an explicit request for that runtime's default unless the
+    // user makes a new model pick after the handoff.
+    const handoffModelIntent = {
+      model: "",
+      source: "session" as const,
+      applicationState: "saved" as const,
+      reason: "Using the target runtime's configured default model.",
+    };
+    const requestedAt = new Date().toISOString();
     const updated = await withConversationLock(sessionId, async () => {
       const conversation = await loadConversation(sessionId);
-      if (!conversation || conversation.familiarId !== familiarId) return false;
-      conversation.pendingRuntimeHandoff = {
-        fromHarness: canonicalHarnessId(conversation.harness),
-        toHarness: targetHarness,
-        requestedAt: new Date().toISOString(),
-      };
-      // A session-scoped model belongs to its previous runtime. Selecting a
-      // runtime is an explicit request for that runtime's default unless the
-      // user makes a new model pick after the handoff.
-      conversation.modelIntent = {
-        model: "",
-        source: "session",
-        applicationState: "saved",
-        reason: "Using the target runtime's configured default model.",
-      };
-      await saveConversation(conversation);
+      if (conversation) {
+        if (conversation.familiarId !== familiarId) return false;
+        conversation.pendingRuntimeHandoff = {
+          fromHarness: canonicalHarnessId(conversation.harness),
+          toHarness: targetHarness,
+          requestedAt,
+        };
+        conversation.modelIntent = handoffModelIntent;
+        await saveConversation(conversation);
+        return true;
+      }
+      // Sessions displayed straight from the daemon have no Cave transcript,
+      // and the send route supports that. Refusing here used to 404 *after*
+      // /api/config had already rebound the familiar, leaving the thread
+      // unable to send. Persist the boundary instead: without a record there
+      // is no marker for the next send to honor, and both native resume paths
+      // fall back to the session id (`resumeTarget`, and the OpenCode
+      // `harnessSessionId` announcement), which is exactly the previous
+      // runtime's session this handoff exists to leave behind.
+      //
+      // Ownership follows the recorded familiar when there is one; an
+      // unattributed daemon session is claimed the same way a first send
+      // claims it.
+      const ownerFamiliarId = (await loadState()).sessionFamiliar[sessionId];
+      if (ownerFamiliarId && ownerFamiliarId !== familiarId) return false;
+      // The prior runtime is not recoverable — nothing server-side records a
+      // daemon-only session's harness — so provenance names the target rather
+      // than inventing a source. `startsFresh` is what enforces the boundary,
+      // and it holds either way.
+      await saveConversation({
+        sessionId,
+        familiarId,
+        harness: targetHarness,
+        pendingRuntimeHandoff: {
+          fromHarness: targetHarness,
+          toHarness: targetHarness,
+          requestedAt,
+        },
+        modelIntent: handoffModelIntent,
+        createdAt: requestedAt,
+        updatedAt: requestedAt,
+        turns: [],
+      });
       return true;
     });
     if (!updated) return jsonError("not found", 404);

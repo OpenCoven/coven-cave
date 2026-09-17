@@ -65,8 +65,16 @@ assert.match(
 assert.match(route, /scope !== "familiar-default" && scope !== "session" && scope !== "runtime-handoff"/);
 assert.match(
   route,
-  /if \(scope === "runtime-handoff"\)[\s\S]*?runtime must match the familiar binding[\s\S]*?conversation\.pendingRuntimeHandoff = \{[\s\S]*?fromHarness:[\s\S]*?toHarness:[\s\S]*?requestedAt:[\s\S]*?conversation\.modelIntent = \{[\s\S]*?model: ""/,
+  /if \(scope === "runtime-handoff"\)[\s\S]*?runtime must match the familiar binding[\s\S]*?const handoffModelIntent = \{[\s\S]*?model: "",[\s\S]*?source: "session"[\s\S]*?conversation\.pendingRuntimeHandoff = \{[\s\S]*?fromHarness:[\s\S]*?toHarness:[\s\S]*?requestedAt,[\s\S]*?conversation\.modelIntent = handoffModelIntent/,
   "runtime handoff is persisted only for the configured target and clears a foreign session model to the target default",
+);
+// A session displayed from the daemon alone has no Cave transcript. The
+// boundary is still recorded, or the next send has no marker to honor and
+// resumes the runtime this handoff exists to leave.
+assert.match(
+  route,
+  /const ownerFamiliarId = \(await loadState\(\)\)\.sessionFamiliar\[sessionId\];[\s\S]*?if \(ownerFamiliarId && ownerFamiliarId !== familiarId\) return false;[\s\S]*?await saveConversation\(\{[\s\S]*?harness: targetHarness,[\s\S]*?pendingRuntimeHandoff: \{[\s\S]*?toHarness: targetHarness,[\s\S]*?requestedAt,[\s\S]*?modelIntent: handoffModelIntent,[\s\S]*?turns: \[\],/,
+  "an unrecorded daemon session gets a boundary record instead of a 404 after the familiar was rebound",
 );
 assert.match(route, /next-message scope is composer-local/);
 assert.match(route, /const clearModel = body\.model === null \|\| body\.model === ""/);
