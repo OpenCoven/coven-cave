@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/globals/surface-research-library.css";
+
 /**
  * Library tab (cave-dl74, Phase B3) — every mission's artifacts, flattened
  * into one newest-first shelf (design lines 261–307 / 1260–1292).
