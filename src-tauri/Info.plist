@@ -9,9 +9,19 @@
 	local engine) and transcribe with SFSpeechRecognizer — macOS kills
 	the process on first use of either without these usage descriptions.
 	-->
+	<!--
+	The bundle file stays CovenCave.app — renaming it would put a space in
+	every DMG, MSI and AppImage filename and break the release scripts that
+	construct those names. This key is the user-visible name only: Finder,
+	the menu bar, and the process name Discord reads for its detected-activity
+	entry, which is a separate surface from the Rich Presence card in
+	src-tauri/src/discord_presence.rs.
+	-->
+	<key>CFBundleDisplayName</key>
+	<string>Coven Cave</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>CovenCave uses the microphone for voice calls with your familiars.</string>
+	<string>Coven Cave uses the microphone for voice calls with your familiars.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>CovenCave transcribes your voice on this Mac so local voice calls work without any cloud service.</string>
+	<string>Coven Cave transcribes your voice on this Mac so local voice calls work without any cloud service.</string>
 </dict>
 </plist>

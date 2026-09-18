@@ -13,7 +13,23 @@ use std::{
 };
 
 const DISCORD_APPLICATION_ID: Option<&str> = option_env!("COVENCAVE_DISCORD_APPLICATION_ID");
-const ASSET_KEY: &str = "covencave";
+
+/// The product's name as a person reads it. Discord titles the card with the
+/// Developer Portal application name unless the payload carries its own `name`,
+/// and that application is registered as `CovenCave` — so without this the card
+/// says "CovenCave", which is the repository slug, not the product.
+const DISPLAY_NAME: &str = "Coven Cave";
+
+/// The Coven crown, served from the public repository.
+///
+/// Discord resolves an `assets.large_image` that is an `https` URL by proxying
+/// it, so the art no longer depends on a Rich Presence Art Asset having been
+/// uploaded in the Developer Portal. It had not been: every card rendered
+/// Discord's grey placeholder instead of the logo. An asset key is one manual
+/// step in a web UI that nothing in this repository can verify or repair; a URL
+/// is checked by the test below and fixed by committing a file.
+const ASSET_URL: &str =
+    "https://raw.githubusercontent.com/OpenCoven/coven-cave/main/assets/brand/cave-icon.png";
 const RETRY_DELAY: Duration = Duration::from_secs(15);
 const REFRESH_DELAY: Duration = Duration::from_secs(60);
 const DISCORD_IPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -27,13 +43,14 @@ fn unix_now() -> i64 {
 
 fn build_activity(started_at: i64) -> activity::Activity<'static> {
     activity::Activity::new()
+        .name(DISPLAY_NAME)
         .details("Summoning familiars")
         .state("In the Cave")
         .timestamps(activity::Timestamps::new().start(started_at))
         .assets(
             activity::Assets::new()
-                .large_image(ASSET_KEY)
-                .large_text("CovenCave")
+                .large_image(ASSET_URL)
+                .large_text(DISPLAY_NAME)
                 // Discord caps an activity at two buttons, so the repository
                 // link lives on the clickable art asset and both buttons stay
                 // free for the two destinations that recruit.
@@ -170,7 +187,7 @@ pub fn start() {
                     match result {
                         Ok(()) => {
                             if first_publish {
-                                log::info!("[discord-presence] CovenCave presence published");
+                                log::info!("[discord-presence] Coven Cave presence published");
                                 first_publish = false;
                             }
                         }
@@ -192,7 +209,7 @@ pub fn start() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_activity, publish_activity, run_bounded_operation, ASSET_KEY};
+    use super::{build_activity, publish_activity, run_bounded_operation, ASSET_URL, DISPLAY_NAME};
     use discord_rich_presence::{activity, error::Error, DiscordIpc};
     use serde_json::{json, Value};
     use std::{
@@ -271,13 +288,68 @@ mod tests {
     }
 
     #[test]
-    fn activity_is_generic_and_uses_the_stable_cave_asset_key() {
+    fn activity_is_titled_for_a_reader_not_for_the_repository_slug() {
+        let activity = build_activity(1_700_000_000);
+        let serialized = serde_json::to_value(activity).expect("activity should serialize");
+
+        // Without an explicit name Discord falls back to the Developer Portal
+        // application name, which is "CovenCave".
+        assert_eq!(serialized["name"], DISPLAY_NAME);
+        assert_eq!(serialized["assets"]["large_text"], DISPLAY_NAME);
+        assert_eq!(DISPLAY_NAME, "Coven Cave");
+        assert!(
+            !serialized.to_string().contains("CovenCave"),
+            "no payload field may show the repository slug to a reader"
+        );
+    }
+
+    #[test]
+    fn activity_art_is_a_resolvable_url_rather_than_an_unverifiable_asset_key() {
+        let activity = build_activity(1_700_000_000);
+        let serialized = serde_json::to_value(activity).expect("activity should serialize");
+
+        let large_image = serialized["assets"]["large_image"]
+            .as_str()
+            .expect("the activity must carry large_image");
+        assert!(
+            large_image.starts_with("https://"),
+            "an asset key silently renders Discord's placeholder when the \
+             Developer Portal upload is missing; a URL fails visibly instead"
+        );
+        assert_eq!(large_image, ASSET_URL);
+        assert!(
+            large_image.ends_with(".png"),
+            "Discord proxies a direct image URL, not an HTML page"
+        );
+    }
+
+    #[test]
+    fn activity_art_url_points_at_a_file_this_repository_actually_carries() {
+        // The URL is only as good as the path it names. A rename that lands
+        // without updating this constant would otherwise ship a broken card
+        // that nothing here notices.
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri has a parent");
+        let suffix = ASSET_URL
+            .split("/main/")
+            .nth(1)
+            .expect("the asset URL pins a branch path");
+        let on_disk = repo_root.join(suffix);
+        assert!(
+            on_disk.is_file(),
+            "{} is served by the presence card but missing from the repository",
+            on_disk.display()
+        );
+    }
+
+    #[test]
+    fn activity_is_generic_and_carries_no_user_content() {
         let activity = build_activity(1_700_000_000);
         let serialized = serde_json::to_value(activity).expect("activity should serialize");
 
         assert_eq!(serialized["details"], "Summoning familiars");
         assert_eq!(serialized["state"], "In the Cave");
-        assert_eq!(serialized["assets"]["large_image"], ASSET_KEY);
         assert_eq!(
             serialized["assets"]["large_url"],
             "https://github.com/OpenCoven/coven-cave"

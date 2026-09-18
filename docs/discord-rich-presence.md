@@ -1,16 +1,36 @@
 # Discord Rich Presence
 
-CovenCave publishes a generic, privacy-safe activity to a locally running
+Coven Cave publishes a generic, privacy-safe activity to a locally running
 Discord desktop client. It does not require a bot, OAuth, a client secret, or
 any user content.
+
+## What the card must say
+
+The card reads **Coven Cave** and shows the Coven crown. Both are set by the
+payload in [`src-tauri/src/discord_presence.rs`](../src-tauri/src/discord_presence.rs)
+and covered by its tests, so neither depends on Developer Portal state:
+
+- **Name.** Discord titles the card with the Developer Portal application name
+  unless the activity carries its own `name`. That application is registered as
+  `CovenCave`, so the payload sets `name` to `Coven Cave`. Renaming the portal
+  application is still worth doing, but it is no longer what the card depends on.
+- **Art.** `assets.large_image` is the `https` URL of
+  [`assets/brand/cave-icon.png`](../assets/brand/cave-icon.png) in this public
+  repository, which Discord proxies. It was previously a Rich Presence Art Asset
+  key, `covencave`, that was never uploaded — so every card rendered Discord's
+  grey placeholder. An asset key is a manual step in a web UI that nothing here
+  can verify or repair; a URL is checked by a test and fixed by committing a
+  file.
 
 ## One-time Discord setup
 
 1. In the Discord Developer Portal, create an OpenCoven-managed application
-   named `CovenCave`.
-2. Use [`assets/brand/cave-icon.png`](../assets/brand/cave-icon.png) as both
-   its application icon and a Rich Presence Art Asset named `covencave`.
-   Discord lowercases asset keys; keep this key stable.
+   named `Coven Cave`.
+2. Use [`assets/brand/cave-icon.png`](../assets/brand/cave-icon.png) as its
+   application icon. A Rich Presence Art Asset is **not** required: the payload
+   carries the art as a URL. Uploading one changes nothing unless the payload is
+   changed back to an asset key, which would reintroduce the placeholder the
+   moment the upload is missing.
 3. Set the application website to `https://opencoven.ai` and repository to
    `https://github.com/OpenCoven/coven-cave`.
 4. Record its public Application ID as the `DEFAULT_APPLICATION_ID` constant in
@@ -33,7 +53,7 @@ application):
 COVENCAVE_DISCORD_APPLICATION_ID=<other-public-application-id> pnpm dev:app
 ```
 
-Set it to the empty string to build presence out deliberately; CovenCave then
+Set it to the empty string to build presence out deliberately; Coven Cave then
 continues normally and logs that Discord activity is disabled.
 
 Release builds still pass the `COVENCAVE_DISCORD_APPLICATION_ID` repository
@@ -63,8 +83,11 @@ means that build shipped without it.
 1. Start the installed Discord desktop client and enable detected-activity
    sharing in its Activity Privacy settings.
 2. Run `cargo check --manifest-path src-tauri/Cargo.toml`.
-3. Launch CovenCave with `pnpm dev:app` and inspect its Discord profile card.
-   It should show the Cave icon, generic status, and elapsed time.
+3. Launch Coven Cave with `pnpm dev:app` and inspect its Discord profile card.
+   It must read **Coven Cave** — not `CovenCave` — and show the Coven crown, the
+   generic status, and elapsed time. A grey placeholder where the crown belongs
+   means Discord did not resolve the art URL; confirm the URL in
+   `discord_presence.rs` still returns `200` and `image/png`.
 4. From a second Discord account, confirm the two public buttons — **Join the
    Coven** (`https://discord.gg/opencoven`) and **Enter the Cave**
    (`https://opencoven.ai`) — and that clicking the Cave art asset opens the
