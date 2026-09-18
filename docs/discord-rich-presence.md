@@ -22,6 +22,14 @@ and covered by its tests, so neither depends on Developer Portal state:
   can verify or repair; a URL is checked by a test and fixed by committing a
   file.
 
+  The URL pins a **commit**, not `main`. This string is baked into shipped
+  binaries, so a branch ref would let a later rename of the file blank the art
+  on every release already in the wild — the same silent failure as the missing
+  asset key, only delayed. Moving or replacing the art therefore means editing
+  `ASSET_COMMIT` and `ASSET_PATH` in `discord_presence.rs` and cutting a new
+  release. Tests assert the pin is a full hex SHA, that the URL agrees with both
+  constants, and that the path still names a file this repository carries.
+
 ## One-time Discord setup
 
 1. In the Discord Developer Portal, create an OpenCoven-managed application
@@ -55,6 +63,12 @@ COVENCAVE_DISCORD_APPLICATION_ID=<other-public-application-id> pnpm dev:app
 
 Set it to the empty string to build presence out deliberately; Coven Cave then
 continues normally and logs that Discord activity is disabled.
+
+`option_env!` cannot tell "unset" from "set to empty" — an empty value arrives
+as `Some("")`, not `None` — so `start()` checks for a blank ID explicitly rather
+than relying on the `Option` alone. Without that check this paragraph was
+false: an empty variable produced a build that reconnected against an empty
+application ID forever instead of disabling presence.
 
 Release builds still pass the `COVENCAVE_DISCORD_APPLICATION_ID` repository
 variable through the `build` job in

@@ -20,16 +20,31 @@ const DISCORD_APPLICATION_ID: Option<&str> = option_env!("COVENCAVE_DISCORD_APPL
 /// says "CovenCave", which is the repository slug, not the product.
 const DISPLAY_NAME: &str = "Coven Cave";
 
-/// The Coven crown, served from the public repository.
+/// The commit this binary's art is pinned to, and the path it serves.
+///
+/// Split out so the test below can rebuild the URL and check the path against
+/// the working tree without re-parsing the constant.
+const ASSET_COMMIT: &str = "19db1c670ffa374d3a25cca014a8e184c0e54c5e";
+const ASSET_PATH: &str = "assets/brand/cave-icon.png";
+
+/// The Coven crown, served from the public repository at an immutable commit.
 ///
 /// Discord resolves an `assets.large_image` that is an `https` URL by proxying
-/// it, so the art no longer depends on a Rich Presence Art Asset having been
+/// it, so the art does not depend on a Rich Presence Art Asset having been
 /// uploaded in the Developer Portal. It had not been: every card rendered
 /// Discord's grey placeholder instead of the logo. An asset key is one manual
 /// step in a web UI that nothing in this repository can verify or repair; a URL
-/// is checked by the test below and fixed by committing a file.
-const ASSET_URL: &str =
-    "https://raw.githubusercontent.com/OpenCoven/coven-cave/main/assets/brand/cave-icon.png";
+/// is checked by the tests below and fixed by committing a file.
+///
+/// The commit is pinned rather than tracking `main` because this string is
+/// baked into shipped binaries. A branch ref would let a later rename of the
+/// file silently blank the art on every release already in the wild, which is
+/// the same failure mode as the missing asset key, just delayed. Moving the art
+/// therefore means a new release, which is the honest cost of shipping a URL.
+/// Written out rather than concatenated from the two constants above, which
+/// would need a new dependency to do in a `const`. The test below asserts the
+/// literal still agrees with both halves, so they cannot drift apart.
+const ASSET_URL: &str = "https://raw.githubusercontent.com/OpenCoven/coven-cave/19db1c670ffa374d3a25cca014a8e184c0e54c5e/assets/brand/cave-icon.png";
 const RETRY_DELAY: Duration = Duration::from_secs(15);
 const REFRESH_DELAY: Duration = Duration::from_secs(60);
 const DISCORD_IPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -141,11 +156,20 @@ where
 /// The payload is intentionally generic: it never publishes local projects,
 /// repositories, prompts, terminal output, memory, or conversation content.
 pub fn start() {
-    let Some(application_id) = DISCORD_APPLICATION_ID else {
-        log::warn!(
-            "[discord-presence] COVENCAVE_DISCORD_APPLICATION_ID is not configured; Discord activity is disabled"
-        );
-        return;
+    // `option_env!` cannot distinguish "unset" from "set to empty": an empty
+    // value arrives as `Some("")`, not `None`. Treating that as configured
+    // would hand Discord an empty application ID and reconnect against it
+    // forever, while the documented way to build presence out deliberately —
+    // setting the variable to the empty string — silently did the opposite of
+    // what it promised.
+    let application_id = match DISCORD_APPLICATION_ID {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            log::warn!(
+                "[discord-presence] COVENCAVE_DISCORD_APPLICATION_ID is not configured; Discord activity is disabled"
+            );
+            return;
+        }
     };
 
     if let Err(error) = thread::Builder::new()
@@ -209,7 +233,10 @@ pub fn start() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_activity, publish_activity, run_bounded_operation, ASSET_URL, DISPLAY_NAME};
+    use super::{
+        build_activity, publish_activity, run_bounded_operation, ASSET_COMMIT, ASSET_PATH,
+        ASSET_URL, DISPLAY_NAME,
+    };
     use discord_rich_presence::{activity, error::Error, DiscordIpc};
     use serde_json::{json, Value};
     use std::{
@@ -331,16 +358,29 @@ mod tests {
         let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("src-tauri has a parent");
-        let suffix = ASSET_URL
-            .split("/main/")
-            .nth(1)
-            .expect("the asset URL pins a branch path");
-        let on_disk = repo_root.join(suffix);
+        let on_disk = repo_root.join(ASSET_PATH);
         assert!(
             on_disk.is_file(),
             "{} is served by the presence card but missing from the repository",
             on_disk.display()
         );
+    }
+
+    #[test]
+    fn activity_art_url_is_pinned_to_an_immutable_commit() {
+        // A branch ref would let a later rename blank the art on every release
+        // already shipped, since this string is baked into the binary.
+        assert!(
+            !ASSET_URL.contains("/main/"),
+            "the art URL must not track a moving branch: {ASSET_URL}"
+        );
+        assert_eq!(ASSET_COMMIT.len(), 40, "pin a full commit SHA");
+        assert!(
+            ASSET_COMMIT.chars().all(|c| c.is_ascii_hexdigit()),
+            "the pinned commit must be a hex SHA"
+        );
+        assert!(ASSET_URL.contains(ASSET_COMMIT));
+        assert!(ASSET_URL.ends_with(ASSET_PATH));
     }
 
     #[test]
