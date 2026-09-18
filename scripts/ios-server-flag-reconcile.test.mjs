@@ -84,7 +84,7 @@ assert.match(
 );
 assert.match(
   hostReset,
-  /for write in serverSessionWrites\.values \{ write\.cancel\(\) \}/,
+  /for write in serverSessionWrites\.values \{ write\.task\.cancel\(\) \}/,
   "in-flight server-session writes hold the old endpoint's client and must be cancelled",
 );
 
