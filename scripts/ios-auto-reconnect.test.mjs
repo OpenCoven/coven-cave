@@ -113,8 +113,8 @@ assert.match(
 );
 assert.match(
   model,
-  /private func resetHostScopedStateForNewConnection\(\)[\s\S]*?serverSessions = \[\][\s\S]{0,180}sessionsError = nil[\s\S]{0,180}lastSessionsLoadedAt = nil[\s\S]*?operatorProfile = nil/,
-  "pairing a different host must clear the previous host's sessions and operator identity before new loads can fail",
+  /private func resetHostScopedStateForNewConnection\(\)[\s\S]*?serverSessions = \[\][\s\S]{0,600}archivedServerSessions = \[\][\s\S]{0,600}sessionsError = nil[\s\S]{0,180}lastSessionsLoadedAt = nil[\s\S]*?operatorProfile = nil/,
+  "pairing a different host must clear the previous host's sessions — active and archived alike (#5430) — and operator identity before new loads can fail",
 );
 assert.match(
   model,

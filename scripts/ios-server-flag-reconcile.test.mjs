@@ -64,8 +64,36 @@ const apply = blockAfter(model, "private func applyLoadedSessions(");
 assert.ok(apply, "applyLoadedSessions must exist");
 assert.match(
   apply,
-  /serverSessions = sessions\.filter \{ \$0\.archivedAt == nil \}/,
-  "serverSessions must stay the active-only view consumers already expect",
+  /serverSessions = partitioned\.active\s*\n\s*archivedServerSessions = partitioned\.archived/,
+  "serverSessions must stay the active-only view consumers already expect; archived rows live apart (#5430)",
+);
+// The archived store is host-scoped exactly like the active one. Clearing only
+// serverSessions on a new connection leaves the previous Cave's archived rows
+// in the list, and a failed first load leaves them there (#5430).
+const hostReset = blockAfter(model, "private func resetHostScopedStateForNewConnection(");
+assert.ok(hostReset, "resetHostScopedStateForNewConnection must exist");
+assert.match(
+  hostReset,
+  /serverSessions = \[\]/,
+  "the host reset must clear the active server list",
+);
+assert.match(
+  hostReset,
+  /archivedServerSessions = \[\]/,
+  "the host reset must clear the archived server list alongside the active one",
+);
+assert.match(
+  hostReset,
+  /for write in serverSessionWrites\.values \{ write\.task\.cancel\(\) \}/,
+  "in-flight server-session writes hold the old endpoint's client and must be cancelled",
+);
+
+const partition = blockAfter(model, "static func partitioningLoadedSessions(");
+assert.ok(partition, "partitioningLoadedSessions must exist");
+assert.match(
+  partition,
+  /if row\.archivedAt == nil \{\s*nextActive\.append\(row\)\s*\} else \{\s*nextArchived\.append\(row\)/,
+  "the partition keys on archivedAt, so the active list never carries an archived row",
 );
 assert.match(
   apply,
