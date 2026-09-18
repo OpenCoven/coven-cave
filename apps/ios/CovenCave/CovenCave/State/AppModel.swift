@@ -213,6 +213,15 @@ protocol AccessTokenRefreshingClient: Sendable {
 
 /// Lets task↔chat reconciliation patch a card's canonical `sessionId`
 /// without forcing tests through a live desktop HTTP client.
+/// Lets server-only conversation archive/pin/delete exercise their optimistic
+/// rollback and Retry paths in tests without a process-global URLProtocol shim.
+/// #5430 requires a refused mutation to restore the row and report; that
+/// contract is only real if a failing client can be driven through it.
+protocol ServerSessionMutatingClient: Sendable {
+    func setSessionFlags(sessionId: String, archived: Bool?, pinned: Bool?) async throws
+    func deleteSession(sessionId: String) async throws
+}
+
 protocol TaskSessionUpdatingClient: Sendable {
     func updateTaskSession(cardId: String, sessionId: String?) async throws -> BoardCard
 }
@@ -264,6 +273,7 @@ typealias AppModelCoreResourceClient =
     ProjectContextLoadingClient & CaveBootstrapClient & AccessTokenRefreshingClient
 
 extension CaveClient: ProjectContextLoadingClient, AccessTokenRefreshingClient, @unchecked Sendable {}
+extension CaveClient: ServerSessionMutatingClient {}
 extension CaveClient: TaskSessionUpdatingClient {}
 extension CaveClient: TaskFieldsUpdatingClient {}
 extension CaveClient: TaskProjectUpdatingClient {}
@@ -2063,6 +2073,16 @@ final class AppModel {
 
     private var taskLoadingClient: (any ProjectContextLoadingClient)? {
         if let coreResourceClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var serverSessionMutatingClient: (any ServerSessionMutatingClient)? {
+        if let coreResourceClient = coreResourceClient as? any ServerSessionMutatingClient {
             return coreResourceClient
         }
         if let client {
@@ -4855,6 +4875,15 @@ final class AppModel {
         familiarsError = nil
         familiarsLoaded = false
         serverSessions = []
+        // The archived store is host-scoped exactly like the active one. Leaving
+        // it behind would show the previous Cave's archived conversations under
+        // the new host, and leave them there if the first load fails (#5430).
+        archivedServerSessions = []
+        // These tasks hold a CaveClient for the endpoint being left. Their
+        // results are moot now, and the generation fence below stops a late one
+        // from writing into the new host's state.
+        for write in serverSessionWrites.values { write.cancel() }
+        serverSessionWrites = [:]
         sessionsError = nil
         sessionsLoaded = false
         lastSessionsLoadedAt = nil
@@ -7435,7 +7464,7 @@ final class AppModel {
             next.archivedAt = stamp
             return next
         } call: { client, sessionId in
-            try await client.setSessionFlags(sessionId: sessionId, archived: archived)
+            try await client.setSessionFlags(sessionId: sessionId, archived: archived, pinned: nil)
         } retry: { [weak self] in
             self?.setServerSessionArchived(session, archived)
         }
@@ -7448,7 +7477,7 @@ final class AppModel {
             next.pinned = pinned
             return next
         } call: { client, sessionId in
-            try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
+            try await client.setSessionFlags(sessionId: sessionId, archived: nil, pinned: pinned)
         } retry: { [weak self] in
             self?.setServerSessionPinned(session, pinned)
         }
@@ -7459,7 +7488,7 @@ final class AppModel {
     /// Applied locally first, like `deleteThread`. A refusal puts the row back
     /// rather than leaving a delete that did not happen looking like it did.
     func deleteServerSession(_ session: SessionRow) {
-        guard let client else { return }
+        guard let client = serverSessionMutatingClient else { return }
         let id = session.id
         let removal = Self.removingServerSession(
             active: serverSessions,
@@ -7472,16 +7501,23 @@ final class AppModel {
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
         serverSessionWrites[id]?.cancel()
+        // Bound this write to the endpoint that issued it. `disconnect()` and a
+        // new configuration both bump this counter before resetting host state,
+        // so a mismatch means the row and the list this result refers to are
+        // gone (#5430).
+        let writeGeneration = connectionConfigurationGeneration
         serverSessionWrites[id] = Task { [weak self] in
             do {
                 try await client.deleteSession(sessionId: id)
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled,
+                      self.connectionConfigurationGeneration == writeGeneration else { return }
                 // A refresh can have landed while the DELETE was in flight and
                 // put the row back. The delete did land, so drop it again.
                 self.serverSessions.removeAll { $0.id == id }
                 self.archivedServerSessions.removeAll { $0.id == id }
             } catch {
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled,
+                      self.connectionConfigurationGeneration == writeGeneration else { return }
                 let restored = Self.placingServerSession(
                     active: self.serverSessions,
                     archived: self.archivedServerSessions,
@@ -7496,7 +7532,8 @@ final class AppModel {
                     self?.deleteServerSession(removed)
                 }
             }
-            self?.serverSessionWrites[id] = nil
+            guard let self, self.connectionConfigurationGeneration == writeGeneration else { return }
+            self.serverSessionWrites[id] = nil
         }
     }
 
@@ -7505,10 +7542,10 @@ final class AppModel {
         _ session: SessionRow,
         verb: String,
         transform: (SessionRow) -> SessionRow,
-        call: @escaping @Sendable (CaveClient, String) async throws -> Void,
+        call: @escaping @Sendable (any ServerSessionMutatingClient, String) async throws -> Void,
         retry: (@MainActor () -> Void)? = nil
     ) {
-        guard let client else { return }
+        guard let client = serverSessionMutatingClient else { return }
         let id = session.id
         // Read the cached row rather than trusting the one the view handed
         // over: a list rendered before the last refresh can carry stale flags,
@@ -7526,11 +7563,16 @@ final class AppModel {
         serverSessions = applied.active
         archivedServerSessions = applied.archived
         serverSessionWrites[id]?.cancel()
+        // Same endpoint fence as deleteServerSession: host A refusing a flag
+        // says nothing about host B's list, and rolling back into it would
+        // resurrect an unrelated row behind an unrelated toast (#5430).
+        let writeGeneration = connectionConfigurationGeneration
         serverSessionWrites[id] = Task { [weak self] in
             do {
                 try await call(client, id)
             } catch {
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled,
+                      self.connectionConfigurationGeneration == writeGeneration else { return }
                 // Rolling back is the same move as applying: put the row the
                 // server never accepted back where it came from.
                 let rolledBack = Self.placingServerSession(
@@ -7542,7 +7584,8 @@ final class AppModel {
                 self.archivedServerSessions = rolledBack.archived
                 self.reportServerSessionFailure(verb: verb, retry: retry)
             }
-            self?.serverSessionWrites[id] = nil
+            guard let self, self.connectionConfigurationGeneration == writeGeneration else { return }
+            self.serverSessionWrites[id] = nil
         }
     }
 
