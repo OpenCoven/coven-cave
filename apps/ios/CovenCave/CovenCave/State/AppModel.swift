@@ -4882,7 +4882,7 @@ final class AppModel {
         // These tasks hold a CaveClient for the endpoint being left. Their
         // results are moot now, and the generation fence below stops a late one
         // from writing into the new host's state.
-        for write in serverSessionWrites.values { write.cancel() }
+        for write in serverSessionWrites.values { write.task.cancel() }
         serverSessionWrites = [:]
         sessionsError = nil
         sessionsLoaded = false
@@ -6444,6 +6444,10 @@ final class AppModel {
                 with: row,
                 fallbackFamiliarID: familiarId
             )
+            let changed = applyServerSessionFlags(from: row, to: existing)
+            if changed {
+                persistThreads()
+            }
             return existing
         }
         let resolvedFamiliarID = authoritativeFamiliarID(from: row, fallback: familiarId) ?? familiarId
@@ -6453,6 +6457,7 @@ final class AppModel {
         let thread = ChatThread(title: title, familiarIds: [resolvedFamiliarID],
                                 sessionIds: [resolvedFamiliarID: row.id],
                                 projectRoot: row.projectRoot)
+        _ = applyServerSessionFlags(from: row, to: thread)
         if row.isFlowRun { thread.flowSessionIds.insert(row.id) }
         threads.insert(thread, at: 0)
         persistThreads()
@@ -7454,7 +7459,13 @@ final class AppModel {
     /// cannot let the older result land last, and so a refresh that arrives
     /// mid-write does not clobber the optimistic value (see
     /// `partitioningLoadedSessions`). Same hazard as `threadFlagWrites`.
-    @ObservationIgnored private var serverSessionWrites: [String: Task<Void, Never>] = [:]
+    private struct ServerSessionWrite {
+        let token: UInt64
+        let task: Task<Void, Never>
+    }
+
+    @ObservationIgnored private var serverSessionWrites: [String: ServerSessionWrite] = [:]
+    @ObservationIgnored private var nextServerSessionWriteToken: UInt64 = 0
 
     /// Archive or unarchive a server-only conversation.
     func setServerSessionArchived(_ session: SessionRow, _ archived: Bool) {
@@ -7500,16 +7511,19 @@ final class AppModel {
         archivedServerSessions = removal.archived
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
-        serverSessionWrites[id]?.cancel()
+        serverSessionWrites[id]?.task.cancel()
         // Bound this write to the endpoint that issued it. `disconnect()` and a
         // new configuration both bump this counter before resetting host state,
         // so a mismatch means the row and the list this result refers to are
         // gone (#5430).
         let writeGeneration = connectionConfigurationGeneration
-        serverSessionWrites[id] = Task { [weak self] in
+        let writeToken = nextServerSessionWriteToken &+ 1
+        nextServerSessionWriteToken = writeToken
+        let task = Task { @MainActor [weak self] in
             do {
                 try await client.deleteSession(sessionId: id)
                 guard let self, !Task.isCancelled,
+                      self.serverSessionWriteIsCurrent(id: id, token: writeToken),
                       self.connectionConfigurationGeneration == writeGeneration else { return }
                 // A refresh can have landed while the DELETE was in flight and
                 // put the row back. The delete did land, so drop it again.
@@ -7517,6 +7531,7 @@ final class AppModel {
                 self.archivedServerSessions.removeAll { $0.id == id }
             } catch {
                 guard let self, !Task.isCancelled,
+                      self.serverSessionWriteIsCurrent(id: id, token: writeToken),
                       self.connectionConfigurationGeneration == writeGeneration else { return }
                 let restored = Self.placingServerSession(
                     active: self.serverSessions,
@@ -7532,9 +7547,9 @@ final class AppModel {
                     self?.deleteServerSession(removed)
                 }
             }
-            guard let self, self.connectionConfigurationGeneration == writeGeneration else { return }
-            self.serverSessionWrites[id] = nil
+            self?.finishServerSessionWrite(id: id, token: writeToken, generation: writeGeneration)
         }
+        serverSessionWrites[id] = ServerSessionWrite(token: writeToken, task: task)
     }
 
     /// Shared optimistic tail for a server-row flag change.
@@ -7562,16 +7577,19 @@ final class AppModel {
         )
         serverSessions = applied.active
         archivedServerSessions = applied.archived
-        serverSessionWrites[id]?.cancel()
+        serverSessionWrites[id]?.task.cancel()
         // Same endpoint fence as deleteServerSession: host A refusing a flag
         // says nothing about host B's list, and rolling back into it would
         // resurrect an unrelated row behind an unrelated toast (#5430).
         let writeGeneration = connectionConfigurationGeneration
-        serverSessionWrites[id] = Task { [weak self] in
+        let writeToken = nextServerSessionWriteToken &+ 1
+        nextServerSessionWriteToken = writeToken
+        let task = Task { @MainActor [weak self] in
             do {
                 try await call(client, id)
             } catch {
                 guard let self, !Task.isCancelled,
+                      self.serverSessionWriteIsCurrent(id: id, token: writeToken),
                       self.connectionConfigurationGeneration == writeGeneration else { return }
                 // Rolling back is the same move as applying: put the row the
                 // server never accepted back where it came from.
@@ -7584,9 +7602,9 @@ final class AppModel {
                 self.archivedServerSessions = rolledBack.archived
                 self.reportServerSessionFailure(verb: verb, retry: retry)
             }
-            guard let self, self.connectionConfigurationGeneration == writeGeneration else { return }
-            self.serverSessionWrites[id] = nil
+            self?.finishServerSessionWrite(id: id, token: writeToken, generation: writeGeneration)
         }
+        serverSessionWrites[id] = ServerSessionWrite(token: writeToken, task: task)
     }
 
     private func reportServerSessionFailure(
@@ -7606,8 +7624,35 @@ final class AppModel {
     /// Optimistic `archived_at` for a row the server has not answered for yet.
     /// Only its presence is read, but keep it a real instant so a value that
     /// does reach a parser is not garbage.
-    static func serverSessionArchiveStamp(_ now: Date = Date()) -> String {
-        ISO8601DateFormatter().string(from: now)
+    @MainActor private static let serverSessionArchiveFormatter = ISO8601DateFormatter()
+
+    @MainActor static func serverSessionArchiveStamp(_ now: Date = Date()) -> String {
+        serverSessionArchiveFormatter.string(from: now)
+    }
+
+    private func applyServerSessionFlags(from row: SessionRow, to thread: ChatThread) -> Bool {
+        let archived = row.archivedAt != nil
+        let pinned = row.pinned == true
+        var changed = false
+        if thread.archived != archived {
+            thread.archived = archived
+            changed = true
+        }
+        if thread.pinned != pinned {
+            thread.pinned = pinned
+            changed = true
+        }
+        return changed
+    }
+
+    private func serverSessionWriteIsCurrent(id: String, token: UInt64) -> Bool {
+        serverSessionWrites[id]?.token == token
+    }
+
+    private func finishServerSessionWrite(id: String, token: UInt64, generation: UInt64) {
+        guard connectionConfigurationGeneration == generation,
+              serverSessionWriteIsCurrent(id: id, token: token) else { return }
+        serverSessionWrites[id] = nil
     }
 
     /// Put a server row in whichever list its `archivedAt` says it belongs to,

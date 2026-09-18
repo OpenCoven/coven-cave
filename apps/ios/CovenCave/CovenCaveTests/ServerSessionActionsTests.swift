@@ -51,6 +51,17 @@ final class ServerSessionActionsTests: XCTestCase {
         XCTAssertEqual(placed.archived.first?.pinned, true)
     }
 
+    func testOpeningServerSessionSeedsArchivedAndPinnedFlagsOntoTheThread() {
+        let app = AppModel(restoreLocalState: false)
+        var row = archiving(session("s1"))
+        row.pinned = true
+
+        let thread = app.openServerSession(row, familiarId: "nyx", loadHistory: false)
+
+        XCTAssertTrue(thread.archived)
+        XCTAssertTrue(thread.pinned)
+    }
+
     func testPlacingReplacesRatherThanDuplicatingAnExistingRow() {
         let row = session("s1")
 
