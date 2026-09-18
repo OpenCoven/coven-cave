@@ -120,7 +120,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(trackedFamiliarIdRef\.current !== activeFamiliar\.id\) \{[\s\S]*?\n\s*\}\n\n\s*if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
+  /if \(trackedFamiliarIdRef\.current !== activeFamiliar\.id\) \{[\s\S]*?\n\s*\}\n\n\s*if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError \|\| !routerReady\) return;/,
   "familiar-identity tracking/invalidation runs BEFORE the loading/error readiness guard (cave-rl980 Task 4 review), so a transition during an active error is never missed",
 );
 // Applied-session-scope contract (cave-rl980 Task 4 review): `sessions` can
@@ -131,9 +131,11 @@ assert.match(
 // until the caller confirms `sessions` corresponds to THIS familiar.
 assert.match(
   source,
-  /if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;\s*\n\s*if \(!sessionsScopeCurrent\) return;/,
+  /if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError \|\| !routerReady\) return;\s*\n\s*if \(!sessionsScopeCurrent\) return;/,
   "the resolve/reconcile is additionally gated on the applied-session-scope contract, checked immediately after readiness/errors",
 );
+assert.match(source, /className="right-chat__thread-switcher"[\s\S]{0,500}disabled=\{!routerReady\}/, "the first-open thread switcher cannot drop an action before ChatRouter is ready");
+assert.match(source, /aria-label="New Chat panel chat"[\s\S]{0,300}disabled=\{!routerReady\}/, "the first-open New Chat action cannot drop an action before ChatRouter is ready");
 
 // Every familiar-identity transition invalidates retained resolution and
 // selection ownership regardless of `open` (cave-rl980 Task 4 spec review),
@@ -448,7 +450,7 @@ assert.match(workspaceSource, /onRightChatOpenChange=\{setRightChatOpen\}/, "She
 assert.doesNotMatch(workspaceSource, /mode === "chat" \? rightChat/, "the auxiliary panel is not limited to the Chat destination");
 assert.match(
   source,
-  /<\/ChatRouter>|\/>\s*\n\s*<\/div>\s*\n\s*<\/FocusTrapOwnerHiddenContext\.Provider>/,
+  /<\/ChatRouter>|\/>\s*:\s*null\}\s*<\/div>\s*\n\s*<\/FocusTrapOwnerHiddenContext\.Provider>/,
   "ChatRouter (and any child dialog it renders) sits INSIDE the owner-hidden boundary, not beside it",
 );
 

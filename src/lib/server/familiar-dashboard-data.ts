@@ -64,8 +64,7 @@ import {
   type OverviewTaskInput,
 } from "@/lib/familiar-dashboard";
 import { bindingFor, loadConfig, type CaveConfig } from "@/lib/cave-config";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { canonicalMemoryList } from "@/lib/server/canonical-memory-gateway";
+import { listMemoryFileEntries } from "@/lib/server/memory-file-inventory";
 import { evaluateFamiliarContract, type ContractReport } from "@/lib/familiar-contract";
 import { deriveHealRequests } from "@/lib/familiar-heal-requests";
 import { readFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
@@ -100,7 +99,9 @@ export type FamiliarDashboardDependencies = {
   loadSessions: (familiarId: string) => Promise<FamiliarDashboardSessions>;
   loadTasks: () => Promise<Card[]>;
   loadReminders: () => Promise<InboxItem[]>;
-  loadMemory: () => Promise<CanonicalMemorySummary[]>;
+  /** `familiarId` scopes the overview to one familiar; it is not part of the
+   *  overview input itself. */
+  loadMemory: () => Promise<(OverviewMemoryInput & { familiarId?: string })[]>;
   loadContract: (familiarId: string) => Promise<ContractReport>;
   loadSelfReports: (
     familiarId: string,
@@ -132,7 +133,18 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
         degraded: result.payload.degraded === true,
       };
     },
-    loadMemory: canonicalMemoryList,
+    // The canonical vault supplied this; it lives in the dedicated memory
+    // application now. The MEMORY.md scan is the remaining source, so the
+    // dashboard's memory overview keeps counting something real rather than
+    // reporting a flat zero. `verification` was a vault concept and has no
+    // file equivalent, so it is omitted rather than faked.
+    loadMemory: async () =>
+      (await listMemoryFileEntries()).map((entry) => ({
+        id: entry.fullPath,
+        title: entry.relPath,
+        updatedAt: entry.modified,
+        familiarId: entry.familiarId,
+      })),
     loadTasks: async () => (await loadBoard()).cards,
     loadReminders: async () => (await loadInbox()).items,
     loadContract: async (familiarId: string) => {

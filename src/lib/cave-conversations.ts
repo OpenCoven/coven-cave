@@ -10,6 +10,8 @@ import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
+import type { PendingRuntimeHandoff } from "./chat-runtime-handoff.ts";
+import { canonicalHarnessId } from "./harness-adapters.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import {
@@ -117,6 +119,8 @@ export type ConversationFile = {
   runtimeAccessFingerprint?: string;
   familiarId: string;
   harness: string;
+  /** A user-selected runtime change waiting for its first fresh native turn. */
+  pendingRuntimeHandoff?: PendingRuntimeHandoff;
   /** Non-secret inference connection used by the latest successful launch. */
   inferenceRouteId?: string;
   /** Launch-authority fingerprint used to prevent cross-route native resume. */
@@ -685,6 +689,13 @@ export type QueuedOfflineConversationSeed = {
   modelIntent?: ConversationModelIntent;
   createdAt: string;
   harnessSessionId?: string;
+  /**
+   * Set only once the queued turn has actually run on `harness`. Queue
+   * acceptance persists the same seed before anything runs, and a marker
+   * cleared there would let the next send resume the runtime the user handed
+   * the conversation away from.
+   */
+  settlesRuntimeHandoff?: boolean;
   userTurn: {
     id: string;
     text: string;
@@ -796,6 +807,16 @@ export async function persistQueuedOfflineConversation(
     if (!conv.origin && seed.origin) conv.origin = seed.origin;
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
     if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
+    // A replayed turn that reached its target runtime completes the handoff.
+    // Without this the marker outlives the transition it described and every
+    // later send keeps starting fresh instead of resuming the new runtime.
+    if (
+      seed.settlesRuntimeHandoff &&
+      conv.pendingRuntimeHandoff &&
+      canonicalHarnessId(conv.pendingRuntimeHandoff.toHarness) === canonicalHarnessId(seed.harness)
+    ) {
+      delete conv.pendingRuntimeHandoff;
+    }
 
     const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
     if (!existingTurn) {

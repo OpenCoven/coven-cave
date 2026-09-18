@@ -116,11 +116,16 @@ test("onNavigate selects missions and routes Prompt modes per the contract", () 
   assert.match(promptTab, /initialMode\?: ResearchMissionMode/);
 });
 
-test("all five tab CSS modules ride with the surface, not the root bundle", () => {
-  // The mode-gated surface imports its own sheets so home first-load stays
-  // inside the CSS bundle budget (#3264 pattern) — never via globals.css.
+test("inactive tab modules and styles load on demand, outside the root bundle", () => {
+  // Each deferred tab owns its sheet; Desk stays immediately available.
+  // Neither the root bundle nor the host should eagerly pull inactive tabs.
   for (const name of ["desk", "prompt", "library", "studio", "resources"]) {
-    assert.match(surface, new RegExp(`import "@/styles/globals/surface-research-${name}\\.css"`));
+    const owner = name === "desk" ? surface : readFileSync(new URL(`./research-tab-${name}.tsx`, import.meta.url), "utf8");
+    assert.match(owner, new RegExp(`import "@/styles/globals/surface-research-${name}\\.css"`));
+    if (name !== "desk") {
+      assert.doesNotMatch(surface, new RegExp(`import .* from "\\./research-tab-${name}"`));
+      assert.match(surface, new RegExp(`dynamic\\(\\(\\) => import\\("\\./research-tab-${name}"\\)`));
+    }
     assert.ok(
       !rootCss.includes(`surface-research-${name}.css`),
       `surface-research-${name}.css must not enter the root globals.css bundle`,

@@ -112,10 +112,6 @@ async function installAnalyticsRoutes(page: Page) {
       await route.fulfill({ json: { ok: true, sessions: SESSIONS } });
       return;
     }
-    if (pathname === "/api/coven-memory") {
-      await route.fulfill({ json: { ok: true, entries: [] } });
-      return;
-    }
     if (pathname === "/api/retro-runs") {
       await route.fulfill({ json: { ok: true, snapshot: RETRO_SNAPSHOT } });
       return;

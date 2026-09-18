@@ -283,6 +283,11 @@ assert.equal(
   true,
   "OpenClaw bridge adds --local only for an explicit embedded attempt",
 );
+assert.equal(
+  openClawAgentArgs("hi", "nova", "ABC_123", "gateway", "cave-handoff").at(-1),
+  "cave-handoff",
+  "OpenClaw CLI fallback must honor a fresh handoff session key",
+);
 assert.equal(openClawCliExecutionMode({}), "gateway");
 assert.equal(openClawCliExecutionMode({ OPENCLAW_EMBEDDED_LOCAL: "true" }), "local");
 assert.equal(

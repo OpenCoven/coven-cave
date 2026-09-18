@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { DocumentReader } from "@/components/document-reader";
-import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
+import { MarkdownReaderBlock } from "@/components/document-reader-markdown";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { openGrimoireDoc } from "@/lib/grimoire-link";

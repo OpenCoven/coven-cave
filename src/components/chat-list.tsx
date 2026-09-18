@@ -935,7 +935,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                   title={option.title}
                   onClick={() => setGroupBy(option.id)}
                   className={[
-                    "focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
+                    "focus-ring relative inline-flex flex-none items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
                     selected
                       ? "bg-[var(--bg-raised)] text-[var(--text-primary)] border-[var(--border-strong)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",

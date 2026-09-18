@@ -10,7 +10,7 @@ import { parse, type Block, type TextSpan } from "@create-markdown/core";
 import { copyText } from "@/lib/clipboard";
 import { useAnnouncer } from "@/components/ui/live-region";
 
-type CanonicalMemoryMarkdownProps = {
+type DocumentReaderMarkdownProps = {
   content: string;
   mode?: "rendered" | "raw";
   className?: string;
@@ -283,11 +283,11 @@ export function MarkdownReaderBlock({
   return renderBlockNode(block, blockKey);
 }
 
-export function CanonicalMemoryMarkdown({
+export function DocumentReaderMarkdown({
   content,
   mode = "rendered",
   className,
-}: CanonicalMemoryMarkdownProps) {
+}: DocumentReaderMarkdownProps) {
   if (mode === "raw") {
     return createElement(
       "pre",

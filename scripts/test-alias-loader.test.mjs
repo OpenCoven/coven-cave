@@ -11,13 +11,18 @@ function nextLoad() {
 
 test("repo-owned TSX remains compatible with the Node test loader", async () => {
   const result = await load(
-    new URL("../src/components/canonical-memory-overview.tsx", import.meta.url).href,
+    // Any repo-owned TSX works here — this asserts the LOADER, not the
+    // component. It used to point at a canonical-memory file that was only ever
+    // a convenient specimen; when that module was deleted with the vault this
+    // test broke for a reason unrelated to what it checks. A shared primitive
+    // is a steadier specimen.
+    new URL("../src/components/ui/empty-state.tsx", import.meta.url).href,
     {},
     nextLoad,
   );
   assert.equal(result.format, "module");
   assert.equal(result.shortCircuit, true);
-  assert.match(String(result.source), /CanonicalMemoryOverviewPanel/);
+  assert.match(String(result.source), /EmptyState/);
 });
 
 test("repo-owned JSON remains compatible with the Node test loader", async () => {

@@ -4,7 +4,7 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-view";
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
@@ -61,6 +61,9 @@ type View =
   | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
+  /** Imperative-handle bridge for a next/dynamic consumer. `next/dynamic`
+   * does not forward element refs, but normal props pass through unchanged. */
+  handleRef?: Ref<ChatRouterHandle>;
   familiar: Familiar | null;
   familiars?: Familiar[];
   sessions: SessionRow[];
@@ -157,6 +160,7 @@ function selectionForProjectRoot(
 
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
   {
+    handleRef,
     familiar,
     familiars = [],
     sessions,
@@ -630,8 +634,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     );
   }, [familiar?.id, visibleFamiliars.length]);
 
-  useImperativeHandle(
-    ref,
+  const imperativeHandle = useMemo<ChatRouterHandle>(
     () => ({
       goToList: () => setView({ kind: "list" }),
       newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
@@ -674,6 +677,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     }),
     [advanceComposeInstance, fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
   );
+  useImperativeHandle(ref, () => imperativeHandle, [imperativeHandle]);
+  useImperativeHandle(handleRef, () => imperativeHandle, [imperativeHandle]);
 
   if (familiars.length === 0 && !familiar) {
     // While the roster fetch is still in flight, hold a quiet frame — the

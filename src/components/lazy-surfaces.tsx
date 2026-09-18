@@ -63,6 +63,7 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // warm-up must call the loaders directly to fetch a sidebar's chunks without
 // mounting the surface (and therefore without running any of its effects).
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
+const loadChatSurface = () => import("@/components/chat-surface").then((m) => m.ChatSurface);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
 const loadMarketplaceView = () =>
   import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface);
@@ -96,6 +97,13 @@ export type WarmableSidebarSurface =
 
 export const CalendarView = dynamic(
   timed("calendar", loadCalendarView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// Home is the default workspace mode. Keep the Chat graph out of Home's
+// initial bundle; Chat already owns its loading state while its chunk arrives.
+export const ChatSurface = dynamic(
+  timed("chat", loadChatSurface),
   { ssr: false, loading: SurfaceFallback },
 );
 

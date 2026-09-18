@@ -1,12 +1,10 @@
 import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type MemoryAvailability,
   type FamiliarFileMemoryStat,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
 import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
@@ -67,10 +65,8 @@ export type FamiliarAnalyticsData = {
   familiars: Familiar[];
   contractReport: ContractReport | null;
   sessions: SessionRow[];
-  covenEntries: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   fileEntries: FamiliarFileMemoryStat[];
-  fileMemoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
   /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
@@ -107,7 +103,7 @@ export type FamiliarAnalyticsModel = {
   progression: {
     renown: FamiliarRenown;
     streakDays: number;
-    memoryAvailability: CanonicalMemoryAvailability;
+    memoryAvailability: MemoryAvailability;
   } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
@@ -135,7 +131,7 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
 };
 
 function emptyStats(
-  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+  memoryAvailability: MemoryAvailability = "unavailable",
 ): FamiliarCardStats {
   return {
     memoryCount: 0,
@@ -185,7 +181,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiarsJson,
     contractJson,
     sessionsJson,
-    memoryJson,
     fileMemoryJson,
     retroJson,
     selfReportsJson,
@@ -199,7 +194,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     // including archived sessions. Restricting at the route keeps the larger
     // session response local to the familiar being inspected.
     fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
-    loadCanonicalMemoryList(),
     fetchResource<FileMemoryResponse>(`/api/memory?familiarId=${encodedId}`, { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     // The workbench's ALL window and report ledger are complete evidence, not a
@@ -216,9 +210,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(familiarsJson, "familiars unavailable"),
     responseError(contractJson, "contract unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
-    memoryJson.state === "error"
-      ? `canonical memory unavailable (${memoryJson.error.code})`
-      : null,
     fileMemoryJson.ok
       ? fileMemoryReady ? null : "workspace memory returned invalid payload"
       : responseError(fileMemoryJson, "workspace memory unavailable"),
@@ -233,13 +224,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiars: familiarsJson.familiars ?? [],
     contractReport: contractJson.report ?? null,
     sessions: sessionsJson.sessions ?? [],
-    covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
-    memoryAvailability:
-      memoryJson.state === "ready" ? "ready" : "unavailable",
+    memoryAvailability: fileMemoryReady ? "ready" : "unavailable",
     fileEntries: fileMemoryReady
       ? fileMemoryJson.entries
       : [],
-    fileMemoryAvailability: fileMemoryReady ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     // `ok: true` says the request succeeded, not that the payload has the shape
     // its type claims — SelfReportsResponse is erased at runtime. Check it here
@@ -264,10 +252,8 @@ export function buildFamiliarAnalyticsModel(
     ? buildFamiliarCardStats({
         familiars: [familiar],
         sessions: familiarSessions,
-        covenEntries: data.covenEntries.filter((entry) => entry.familiarId === familiar.id),
         memoryAvailability: data.memoryAvailability,
         fileEntries: data.fileEntries,
-        fileMemoryAvailability: data.fileMemoryAvailability,
         now,
       }).get(familiar.id) ?? emptyStats(data.memoryAvailability)
     : emptyStats(data.memoryAvailability);

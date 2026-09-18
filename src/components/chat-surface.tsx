@@ -80,7 +80,6 @@ type Props = {
   activeFamiliarId: string | null;
   selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
-  localDaemonReady: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
@@ -125,7 +124,6 @@ export function ChatSurface({
   activeFamiliarId,
   selectedFamiliarIds,
   daemonRunning,
-  localDaemonReady,
   routerRef,
   sessionsLoaded,
   sessionsError,
@@ -645,7 +643,6 @@ export function ChatSurface({
                 familiarsLoaded={familiarsLoaded}
                 familiarsError={familiarsError}
                 daemonRunning={daemonRunning}
-                localDaemonReady={localDaemonReady}
                 onRetryFamiliars={onRetryFamiliars}
                 onCreateFamiliar={requestSummonFamiliar}
                 onOpenOnboarding={onOpenOnboarding}

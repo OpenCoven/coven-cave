@@ -34,6 +34,21 @@ assert.match(
   /<script id="theme-init" src="\/scripts\/theme-init\.js" \/>/,
   "ThemeScript should load the external parser-blocking initializer",
 );
+// React warns about this tag in development ("Encountered a script tag while
+// rendering React component"). The string exists only in react-dom's
+// *.development.js bundles, so production never emits it, and the tag works:
+// the browser runs it parser-blocking from the SSR <head>, before first paint.
+//
+// next/script with strategy="beforeInteractive" is the obvious-looking remedy
+// and is a regression. Measured on Next 16.3.3 it emits no parser-blocking tag
+// - just a preload hint and a `self.__next_s` queue push that Next's client
+// runtime drains after hydration starts. That guarantees a flash of the wrong
+// appearance in production to silence a message only developers ever saw.
+assert.doesNotMatch(
+  component,
+  /from "next\/script"|<Script\b/,
+  "ThemeScript must not route the initializer through next/script: beforeInteractive defers it past first paint (issue #5441)",
+);
 
 assert.match(
   layout,

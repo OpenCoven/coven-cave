@@ -272,7 +272,7 @@ export type FamiliarOverview = {
   };
   memory: {
     entries: BoundedList<FamiliarDashboardMemoryEntry>;
-    /** Newest canonical-memory update for this familiar, or null. */
+    /** Newest memory-file update for this familiar, or null. */
     freshestAt: string | null;
   };
   attention: BoundedList<FamiliarDashboardAttention>;
