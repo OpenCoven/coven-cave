@@ -486,55 +486,10 @@
   color: var(--text-muted);
 }
 
-/* ---- AI toggle (Manual ↔ Agent) ---------------------------- */
-.ui-ai-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-base);
-  color: var(--muted-foreground);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  cursor: pointer;
-  border: 1px solid var(--border-hairline);
-  transition: color 0.12s ease;
-}
-
-.ui-ai-toggle:hover {
-  color: var(--foreground);
-}
-
-.ui-ai-toggle:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: var(--ring-offset);
-}
-
-/* When in Agent mode, replace the hairline border with a lavender
-   gradient stroke. Implemented as a doubled background so the inner
-   tile keeps the bg colour while the outer pseudo carries the
-   gradient. */
-.ui-ai-toggle--agent {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--bg-base), var(--bg-base)) padding-box,
-    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
-  color: var(--foreground);
-}
-
-.ui-ai-toggle--agent:hover {
-  background:
-    linear-gradient(var(--muted), var(--muted)) padding-box,
-    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
-}
-
 /* ============================================================
    Worldclass primitives — Button, IconButton, EmptyState,
    Skeleton, ViewHeader, SearchInput, Popover, Tooltip,
-   ListRowCard, SeparatorHandle, ThinkingIndicator.
+   SeparatorHandle, ThinkingIndicator.
    Class prefix `.ui-` continues the issue-#22 convention.
    ============================================================ */
 
@@ -1702,102 +1657,6 @@ html[data-backdrop-on] .glass-overlay {
 @keyframes ui-tooltip-enter {
   from { opacity: 0; transform: translateY(2px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ---- ListRowCard ------------------------------------------- */
-.ui-row-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-  width: 100%;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-  outline: none;
-}
-.ui-row-card:hover {
-  background: var(--bg-hover);
-}
-.ui-row-card:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: var(--ring-offset-inset);
-}
-.ui-row-card--selected {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
-}
-.ui-row-card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
-  border: 1px solid var(--border-hairline);
-  color: var(--text-primary);
-  flex-shrink: 0;
-}
-.ui-row-card-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ui-row-card-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.ui-row-card-name {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.ui-row-card-meta {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-eyebrow);
-  white-space: nowrap;
-}
-.ui-row-card-description {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-row-card-trailing {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-.ui-row-card-arrow {
-  opacity: 0;
-  transform: translateX(-2px);
-  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
-}
-.ui-row-card:hover .ui-row-card-arrow,
-.ui-row-card:focus-visible .ui-row-card-arrow {
-  opacity: 1;
-  transform: translateX(0);
 }
 
 /* ---- SeparatorHandle (resize) ------------------------------- */
