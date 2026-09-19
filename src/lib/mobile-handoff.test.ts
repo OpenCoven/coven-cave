@@ -17,6 +17,7 @@ import {
   serveRouteFailure,
   tailnetDiscoveryProof,
   tailscaleIpHost,
+  tailscaleSpawnEnv,
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
 
@@ -1518,6 +1519,30 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(bin, "tailscale");
 }
 
+// tailscaleSpawnEnv guarantees TERM (#5438): a GUI-launched sidecar inherits
+// none, and the macOS Tailscale.app CLI then answers every probe with "The
+// Tailscale GUI failed to start" on stdout and exit 0.
+{
+  const original = process.env.TERM;
+  try {
+    delete process.env.TERM;
+    assert.equal(tailscaleSpawnEnv().TERM, "dumb", "a missing TERM is filled in");
+
+    process.env.TERM = "   ";
+    assert.equal(tailscaleSpawnEnv().TERM, "dumb", "a blank TERM is treated as missing");
+
+    process.env.TERM = "xterm-256color";
+    assert.equal(
+      tailscaleSpawnEnv().TERM,
+      "xterm-256color",
+      "a real terminal keeps its own TERM",
+    );
+  } finally {
+    if (original === undefined) delete process.env.TERM;
+    else process.env.TERM = original;
+  }
+}
+
 {
   const url = buildInviteUrl({
     baseUrl: serveUrl,
@@ -1866,11 +1891,42 @@ console.log("mobile-handoff.test.ts OK");
     "not-running",
     "Stopped asks to start Tailscale",
   );
+  const unparseable = classifyTailscaleSelf({ ok: true, stdout: "not json", stderr: "" });
   assert.equal(
-    classifyTailscaleSelf({ ok: true, stdout: "not json", stderr: "" }).kind,
-    "not-running",
-    "an unparseable status reads as not-running, never a crash",
+    unparseable.kind,
+    "cli-unusable",
+    "exit 0 with output that is not status JSON means unknown, not stopped",
   );
+  assert.match(
+    unparseable.kind === "cli-unusable" ? unparseable.detail : "",
+    /not json/,
+    "the CLI's own line survives into the detail — it is the only evidence there is",
+  );
+  // The TERM-less GUI launch verbatim: stdout carries the excuse, exit is 0,
+  // stderr is empty. Calling that "not running" restarts a healthy tunnel.
+  const guiFailed = classifyTailscaleSelf({
+    ok: true,
+    stdout: "The Tailscale GUI failed to start: The operation couldn’t be completed. (Tailscale.CLIError error 3.)\n",
+    stderr: "",
+  });
+  assert.equal(guiFailed.kind, "cli-unusable", "a GUI-start failure is a CLI fault, not a stopped tunnel");
+  assert.match(
+    guiFailed.kind === "cli-unusable" ? guiFailed.detail : "",
+    /GUI failed to start/,
+    "the operator gets the sentence the CLI printed",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: true, stdout: "", stderr: "" }).kind,
+    "cli-unusable",
+    "exit 0 with no output at all is equally unusable",
+  );
+  for (const nonStatusJson of [{}, []]) {
+    assert.equal(
+      classifyTailscaleSelf({ ok: true, stdout: JSON.stringify(nonStatusJson), stderr: "" }).kind,
+      "cli-unusable",
+      "valid JSON without a string BackendState is unusable status output",
+    );
+  }
   assert.equal(
     classifyTailscaleSelf({ ok: false, stdout: "", stderr: "Tailscale CLI not found. Install Tailscale…" }).kind,
     "not-installed",

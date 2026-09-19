@@ -54,6 +54,23 @@ test("reads recoverability from structured pairing-step details", () => {
   assert.equal(isRecoverableTailscaleFailure(attempt), true);
 });
 
+test("keeps unusable CLI status non-recoverable", () => {
+  const attempt = {
+    ok: false,
+    error: "Tailscale CLI could not report status",
+    steps: [
+      {
+        id: "tailscale" as const,
+        label: "Tailscale connected",
+        state: "fail" as const,
+        detail: "The Tailscale CLI did not return status JSON, so the tunnel state is unknown.",
+      },
+    ],
+  };
+  assert.equal(pairingRecoveryFailureKind(attempt), "cli-unusable");
+  assert.equal(isRecoverableTailscaleFailure(attempt), false);
+});
+
 test("bounded recovery retries until the signed pairing response is ready", async () => {
   let calls = 0;
   const delays: number[] = [];

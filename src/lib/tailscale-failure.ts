@@ -3,6 +3,7 @@ export type TailscaleFailureKind =
   | "not-installed"
   | "signed-out"
   | "not-running"
+  | "cli-unusable"
   | "serve-permission"
   | "serve-failed"
   | "unknown";
@@ -18,6 +19,12 @@ export function classifyTailscaleFailureKind(raw: string): TailscaleFailureKind 
   }
   if (text.includes("tailscale") && (text.includes("signed out") || text.includes("logged out"))) {
     return "signed-out";
+  }
+  if (
+    text.includes("tailscale cli") &&
+    (text.includes("could not report status") || text.includes("did not return status json"))
+  ) {
+    return "cli-unusable";
   }
   if (
     text.includes("tailscale") &&
