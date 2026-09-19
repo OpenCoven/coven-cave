@@ -338,9 +338,17 @@ test("conversation loading persists live history and falls back to a labelled re
     /readOfflineCache<ConversationHistoryPayload>\("conversation", sessionId\)/,
   );
   assert.match(chatView, /writeOfflineCache\(\s*"conversation",\s*sessionId,\s*json,/);
+  // The durable copy is painted through `paintDurable` now, so that the local
+  // system turns added while the load was in flight survive the repaint. What
+  // this pin protects is unchanged: the durable payload reaches
+  // applyConversationPayload and the surface is then labelled offline.
   assert.match(
     chatView,
-    /applyConversationPayload\(durableConversation\);\s*setHistoryState\("offline"\)/,
+    /const paintDurable = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?durableConversation = payload;[\s\S]*?paintHistory\(durableConversation\);\s*setHistoryState\("offline"\);/,
+  );
+  assert.match(
+    chatView,
+    /const paintHistory = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?applyConversationPayload\(payload, localSystemTurns\);/,
   );
   assert.match(chatView, /Offline copy · Read only/);
   assert.match(chatView, /historyState === "offline" && sessionId/);

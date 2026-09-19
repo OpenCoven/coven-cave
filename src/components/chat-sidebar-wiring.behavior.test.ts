@@ -207,7 +207,14 @@ test("workspace project browsing masks other roots, hosts, loading and revoked p
     onDeleteSession: async () => undefined,
   };
   let renderer!: ReactTestRenderer;
-  const titles = () => renderer.root.findAllByProps({ className: "cnav__thread-title" }).map((row) => textContent(row.children));
+  // Read the title prop, not the rendered text: ChatRowTitle paints the title
+  // twice on purpose — once in an .sr-only span and once split head/tail for
+  // truncation — so concatenating its text yields "Alpha chatAlpha chat".
+  // Same convention as the lookup in sectionByLabel above.
+  const titles = () =>
+    renderer.root
+      .findAllByProps({ className: "cnav__thread-title" })
+      .map((row) => String(row.props.title ?? ""));
   await act(async () => { renderer = create(createElement(SidebarChatsSection, props)); });
   expect(titles()).toEqual(["Alpha chat"]);
   mockProjects.state.loading = true;

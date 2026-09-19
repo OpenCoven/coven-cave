@@ -443,7 +443,10 @@ assert.match(
 );
 assert.match(
   source,
-  /catch \(error\) \{[\s\S]*if \(!cancelled\) \{[\s\S]*if \(keepLiveSession\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
+  // The guard also bails on a newer transcript generation now, so allow further
+  // disjuncts. What must not change is that the catch returns early, leaving
+  // the in-flight transcript loaded rather than cleared.
+  /catch \(error\) \{[\s\S]*if \(!cancelled\) \{[\s\S]*if \(keepLiveSession\(\)[^{]*\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
   "A stale missing-history response must not clear an in-flight transcript for the same promoted session",
 );
 assert.match(
@@ -909,8 +912,10 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(followingRef\.current\) return;[\s\S]{0,200}gap <= 4\) updateFollowing\(true\)/,
-  "Re-pin only on user scrolls reaching the true bottom (small epsilon); pin's own scroll events are no-ops while following",
+  // Reaching the bottom of a partially mounted window is not the true bottom,
+  // so re-pinning now also requires the mounted window to reach the last group.
+  /if \(followingRef\.current\) return;[\s\S]{0,600}if \(gap <= 4 && mountedWindow\.end === transcriptGroupCountRef\.current\) updateFollowing\(true\)/,
+  "Re-pin only on user scrolls reaching the true bottom of the full transcript; pin's own scroll events are no-ops while following",
 );
 // — CHAT-D10-03: released-reader response control stays boolean, not a badge —
 assert.match(

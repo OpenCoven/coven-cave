@@ -131,7 +131,9 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if \(isThreadSwitch\) \{[\s\S]{0,600}?setTurns\(\[\]\);\s*\n\s*turnsRef\.current = \[\];\s*\n\s*setActiveLeafId\(""\);/,
+  // State and ref share one array now, so the transcript window's identity
+  // checks see the same empty reference on both sides of the switch.
+  /\} else if \(isThreadSwitch\) \{[\s\S]{0,700}?const emptyTurns: Turn\[\] = \[\];\s*\n\s*setTurns\(emptyTurns\);\s*\n\s*turnsRef\.current = emptyTurns;\s*\n\s*setActiveLeafId\(""\);/,
   "ChatView blanks turns/turnsRef synchronously on thread switch so the skeleton shows instead of stale messages",
 );
 assert.match(
