@@ -99,10 +99,12 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
     { name: "cave_onboarding_dismissed", value: "1", url: page.url() },
   ]);
   await page.goto("/?mode=chat");
-  // Chat surfaces are deferred until opened (#5451), and the reload above lands
-  // on Home, so ask for the panel rather than racing the lazy boundary.
-  const chatPanel = page.getByRole("button", { name: "Open Chat panel" });
-  if (await chatPanel.count()) await chatPanel.first().click();
+  // Chat surfaces are deferred until opened (#5451) and the shell lands on Home,
+  // so the surface has to be asked for. `click()` auto-waits for hydration; a
+  // bare `count()` check runs before the shell has painted and silently skips.
+  if (!(await page.locator(".chat-surface").count())) {
+    await page.getByRole("button", { name: "Open Chat panel" }).first().click({ timeout: 30_000 });
+  }
   await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
   if (!pendingSessions) {
     await expect(page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first()).toBeVisible();

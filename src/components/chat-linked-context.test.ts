@@ -16,6 +16,7 @@ const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url),
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
 const contextLib = await source(new URL("../lib/chat-linked-context.ts", import.meta.url));
+const browseScope = await source(new URL("../lib/chat-browse-scope.ts", import.meta.url));
 
 assert.match(
   contextLib,
@@ -49,8 +50,16 @@ assert.match(
 
 assert.match(
   chatRouter,
-  /const activeSession = view\.kind === "chat" && view\.sessionId[\s\S]*sessions\.find\(\(s\) => s\.id === view\.sessionId\)/,
-  "ChatRouter should pass the opened session row into ChatView",
+  /const activeSession = retainOpenChatSession\(retainedSessionRef\.current, sessions, activeSessionId\);/,
+  "ChatRouter should resolve the opened session row through retainOpenChatSession",
+);
+// The lookup moved into a helper because project browsing can filter the open
+// conversation out of `sessions`, and the open chat must not come unbound when
+// it does. Pin both halves: the find, and the retention that backs it up.
+assert.match(
+  browseScope,
+  /if \(!sessionId\) return null;\s*\n\s*return sessions\.find\(\(session\) => session\.id === sessionId\)\s*\n?\s*\?\? \(previous\?\.id === sessionId \? previous : null\);/,
+  "retainOpenChatSession finds the row by id and keeps the previous one when browsing filters it out",
 );
 
 assert.match(
