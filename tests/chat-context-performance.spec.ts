@@ -1,6 +1,26 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  createOnboardingBootstrapState,
+  ONBOARDING_BOOTSTRAP_BOUNDARIES,
+  type OnboardingBootstrapState,
+} from "../src/lib/onboarding-bootstrap";
 
 const now = new Date().toISOString();
+// `cave:onboarding:dismissed` alone is not enough: the workspace still asks the
+// bootstrap endpoint whether setup is needed, and an unmocked answer mounts the
+// setup flow where .chat-surface should be. Serve a completed state instead.
+const initialBootstrap = createOnboardingBootstrapState(true);
+const completedBootstrap: OnboardingBootstrapState = {
+  ...initialBootstrap,
+  complete: true,
+  needsSetup: false,
+  status: "complete",
+  stages: initialBootstrap.stages.map((stage) => ({
+    ...stage,
+    status: "complete",
+    detail: "Ready in the chat fixture.",
+  })),
+};
 const familiars = [
   { id: "cody", display_name: "Cody", role: "Code Familiar", status: "active", icon: "ph:code" },
   { id: "sage", display_name: "Sage", role: "Research Familiar", status: "active", icon: "ph:book-open" },
@@ -23,6 +43,10 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
   await page.addInitScript((betaFamiliar) => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
+    // Chat surfaces mount lazily now (#5451), so the familiar has to already
+    // own chat as its last surface or `?mode=chat` lands on a shell that never
+    // renders .chat-surface. Same seed the split-pane spec uses.
+    localStorage.setItem("cave:familiar:cody:last-surface", "chat");
     localStorage.setItem("cave:shell:nav-open", "1");
     localStorage.setItem("cave:workspace:familiar-scope-by-project:v1",
       JSON.stringify({ "__all-projects__": ["cody"], alpha: ["cody"], beta: [betaFamiliar] }));
@@ -35,7 +59,11 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
       return;
     }
     let payload: object = { ok: true };
-    if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
+    if (url.pathname === "/api/onboarding/bootstrap") {
+      payload = { ok: true, ...completedBootstrap, boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
+    }
+    else if (url.pathname === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
+    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
     else if (url.pathname === "/api/projects") payload = { ok: true, projects };
     else if (url.pathname === "/api/sessions/list") {
       if (pendingSessions) await pendingSessions;
@@ -61,7 +89,20 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
     }
     await route.fulfill({ json: payload });
   });
+  // The root route resolves bootstrap state on the SERVER, before Playwright can
+  // intercept any client API call, and it reads a cookie — not localStorage. So
+  // `cave:onboarding:dismissed` alone leaves the first-run "Set up Cave" dialog
+  // covering the surface and .chat-surface never mounts. Seed the
+  // server-readable dismissal first, exactly as onboarding-wizard.spec.ts does.
+  await page.goto("/");
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", url: page.url() },
+  ]);
   await page.goto("/?mode=chat");
+  // Chat surfaces are deferred until opened (#5451), and the reload above lands
+  // on Home, so ask for the panel rather than racing the lazy boundary.
+  const chatPanel = page.getByRole("button", { name: "Open Chat panel" });
+  if (await chatPanel.count()) await chatPanel.first().click();
   await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
   if (!pendingSessions) {
     await expect(page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first()).toBeVisible();

@@ -45,8 +45,10 @@ assert.match(
 //    even a directly-mounted list can't show another familiar's threads.
 assert.match(
   chatList,
-  /return visibleChatSessions\(sessions, familiar\?\.id \?\? null, \{/,
-  "ChatList must filter its visible rows by the familiar",
+  // The browse scope narrows the familiar-scoped set, never the raw sessions,
+  // so the familiar filter cannot be bypassed by the project selection.
+  /const visible = visibleChatSessions\(sessions, familiar\?\.id \?\? null, \{[\s\S]{0,300}?\}\);\s*\n\s*return scopeChatBrowseSessions\(visible,/,
+  "ChatList must filter its visible rows by the familiar before any browse scoping",
 );
 
 // 5. The chat-mode session navigator receives the same familiar scope.
