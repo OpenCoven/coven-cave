@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import type { TranscriptHit } from "@/lib/transcript-find";
 import type { Familiar } from "@/lib/types";
 
@@ -11,10 +12,12 @@ import type { Familiar } from "@/lib/types";
  *
  * The design promotes find from an icon in the header action cluster to a band
  * that slides open under the title row: a control row over a scrollable list
- * of every hit. The list is the point — a bare "3 / 17" makes you press Next
+ * with access to every hit. The list is the point — a bare "3 / 17" makes you press Next
  * seventeen times to find out which one you wanted, while rows let you read
  * the matches and jump straight to the right one.
  */
+
+export const CHAT_FIND_HIT_WINDOW_SIZE = 40;
 
 function HitText({ hit }: { hit: TranscriptHit }) {
   const before = hit.snippet.slice(0, hit.snippetStart);
@@ -35,7 +38,7 @@ export function ChatFindBand({
   open,
   query,
   hits,
-  activeIndex,
+  activeIndex: requestedActiveIndex,
   matchCase,
   wholeWord,
   focusNonce,
@@ -70,6 +73,17 @@ export function ChatFindBand({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  // Keep global result indexes/counts, but mount only a window around the
+  // selected occurrence. Even a query matching every turn stays bounded.
+  const activeIndex = Math.max(0, Math.min(requestedActiveIndex, hits.length - 1));
+  const windowStart = Math.max(0, Math.min(
+    activeIndex - Math.floor(CHAT_FIND_HIT_WINDOW_SIZE / 2),
+    hits.length - CHAT_FIND_HIT_WINDOW_SIZE,
+  ));
+  const windowEnd = Math.min(hits.length, windowStart + CHAT_FIND_HIT_WINDOW_SIZE);
+  const visibleHits = hits.slice(windowStart, windowEnd);
+  const activeHit = hits[activeIndex];
+  const activeHitKey = activeHit ? `${activeHit.turnId}-${activeHit.occurrenceInTurn}` : null;
 
   useEffect(() => {
     if (!open) return;
@@ -82,8 +96,8 @@ export function ChatFindBand({
   useEffect(() => {
     if (!open) return;
     const row = listRef.current?.querySelector<HTMLElement>('[data-active="true"]');
-    row?.scrollIntoView({ block: "nearest" });
-  }, [open, activeIndex, hits.length]);
+    row?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [open, activeIndex, hits.length, activeHitKey]);
 
   if (!open) return null;
 
@@ -185,50 +199,88 @@ export function ChatFindBand({
 
       {hasQuery ? (
         hits.length > 0 ? (
-          <ul className="cave-find-band__list" ref={listRef}>
-            {hits.map((hit, index) => (
-              <li key={`${hit.turnId}-${hit.occurrenceInTurn}`}>
-                <button
-                  type="button"
-                  className="cave-find-hit focus-ring"
-                  data-active={index === activeIndex ? "true" : undefined}
-                  aria-current={index === activeIndex ? "true" : undefined}
-                  onClick={() => onSelectHit(index)}
-                >
-                  <span className="cave-find-hit__who">
-                    {/* Non-interactive avatars only: the whole row is already
-                        a button, and UserChatAvatar is itself a button that
-                        navigates to settings — nesting it would be invalid
-                        markup and would steal the row's click. */}
-                    {hit.role === "user" ? (
-                      <span className="cave-find-hit__initial" aria-hidden>
-                        {operatorName.trim().charAt(0).toUpperCase() || "?"}
-                      </span>
-                    ) : (
-                      <FamiliarIcon familiar={familiar} size="sm" />
-                    )}
-                    <span
-                      className="cave-find-hit__name"
-                      data-role={hit.role}
+          <>
+            <ul className="cave-find-band__list" ref={listRef} aria-label="Search results">
+              {visibleHits.map((hit, offset) => {
+                const index = windowStart + offset;
+                return (
+                  <li
+                    key={`${hit.turnId}-${hit.occurrenceInTurn}`}
+                    aria-posinset={index + 1}
+                    aria-setsize={hits.length}
+                  >
+                    <button
+                      type="button"
+                      className="cave-find-hit focus-ring"
+                      data-active={index === activeIndex ? "true" : undefined}
+                      aria-current={index === activeIndex ? "true" : undefined}
+                      onClick={() => onSelectHit(index)}
                     >
-                      {hit.role === "user" ? operatorName : familiar.display_name}
-                    </span>
-                  </span>
-                  <HitText hit={hit} />
-                  <span className="cave-find-hit__where">
-                    {/* Where in the thread, and which hit inside that turn when
-                        the turn holds more than one. */}
-                    <span className="cave-find-hit__step">#{hit.turnIndex + 1}</span>
-                    {hit.occurrencesInTurn > 1 ? (
-                      <span className="cave-find-hit__nth">
-                        {hit.occurrenceInTurn}/{hit.occurrencesInTurn}
+                      <span className="cave-find-hit__who">
+                        {/* Non-interactive avatars only: the whole row is already
+                            a button, and UserChatAvatar is itself a button that
+                            navigates to settings — nesting it would be invalid
+                            markup and would steal the row's click. */}
+                        {hit.role === "user" ? (
+                          <span className="cave-find-hit__initial" aria-hidden>
+                            {operatorName.trim().charAt(0).toUpperCase() || "?"}
+                          </span>
+                        ) : (
+                          <FamiliarIcon familiar={familiar} size="sm" />
+                        )}
+                        <span
+                          className="cave-find-hit__name"
+                          data-role={hit.role}
+                        >
+                          {hit.role === "user" ? operatorName : familiar.display_name}
+                        </span>
                       </span>
-                    ) : null}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+                      <HitText hit={hit} />
+                      <span className="cave-find-hit__where">
+                        {/* Where in the thread, and which hit inside that turn when
+                            the turn holds more than one. */}
+                        <span className="cave-find-hit__step">#{hit.turnIndex + 1}</span>
+                        {hit.occurrencesInTurn > 1 ? (
+                          <span className="cave-find-hit__nth">
+                            {hit.occurrenceInTurn}/{hit.occurrencesInTurn}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {hits.length > CHAT_FIND_HIT_WINDOW_SIZE ? (
+              <div className="flex flex-wrap items-center justify-center gap-2 px-3 py-2" role="group" aria-label="Search result pages">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="focus-ring"
+                  aria-disabled={windowStart === 0}
+                  onClick={() => {
+                    if (windowStart > 0) onSelectHit(Math.max(0, activeIndex - CHAT_FIND_HIT_WINDOW_SIZE));
+                  }}
+                >
+                  Earlier matches
+                </Button>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Matches {windowStart + 1}–{windowEnd} of {hits.length}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="focus-ring"
+                  aria-disabled={windowEnd === hits.length}
+                  onClick={() => {
+                    if (windowEnd < hits.length) onSelectHit(Math.min(hits.length - 1, activeIndex + CHAT_FIND_HIT_WINDOW_SIZE));
+                  }}
+                >
+                  Later matches
+                </Button>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="cave-find-band__empty" role="status">
             <span className="cave-find-band__empty-title">No matches in this chat</span>

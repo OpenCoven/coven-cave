@@ -187,11 +187,13 @@ test("chat-view: voice call button disables itself while a mint is in flight, an
 test("chat-view: openVoiceCall always clears the pending flag, even on failure or an early bail", () => {
   assert.match(
     chatView,
-    /if \(voiceCallPending\) return;\s*\n\s*setVoiceCallPending\(true\);\s*\n\s*try \{[\s\S]*?\} finally \{\s*\n\s*setVoiceCallPending\(false\);\s*\n\s*\}/,
+    /if \(voiceCallPending\) return;\s*freezeComposeContext\(\);\s*setVoiceCallPending\(true\);\s*\n\s*try \{[\s\S]*?\} finally \{\s*\n\s*setVoiceCallPending\(false\);\s*\n\s*\}/,
   );
 });
 
 test("chat-view: openVoiceCall bails before promoting a mint onto a switched familiar", () => {
+  assert.match(chatView, /if \(currentDraftKeyRef\.current !== scopedDraftKey\) return;[\s\S]*?promoteDraft\(result\.sessionId\);[\s\S]*?onVoiceSessionCreated/,
+    "voice mint also checks draft scope and transfers only its owned text before promotion");
   // requestedFamiliarId is captured at click time (before the await); if the
   // familiar the view is showing has moved on by the time the mint resolves,
   // promoting would silently swap the NEW compose view onto the OLD

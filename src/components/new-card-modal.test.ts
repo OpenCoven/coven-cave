@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const modal = readFileSync(new URL("./new-card-modal.tsx", import.meta.url), "utf8");
 const projectFamiliars = readFileSync(new URL("../lib/use-project-familiars.ts", import.meta.url), "utf8");
+const projectRequests = readFileSync(new URL("../lib/project-crew-requests.ts", import.meta.url), "utf8");
 
 assert.ok(modal.includes('import { Button } from "@/components/ui/button"'), "new-card modal action buttons use the shared Button primitive");
 assert.ok(modal.includes('import { StandardSelect } from "@/components/ui/select"'), "new-card modal dropdowns use StandardSelect");
@@ -75,21 +76,21 @@ assert.match(
 );
 assert.match(
   projectFamiliars,
-  /const \[loadedProjectId, setLoadedProjectId\] = useState<string \| null>\(null\)/,
+  /state\?\.identity === identity \? state\.results : EMPTY_RESULTS/,
   "project-scoped familiar results retain the project that produced them",
 );
 assert.match(
   projectFamiliars,
-  /loadedSuccessfully: enabled && projectId !== null && loadedProjectId === projectId/,
+  /loadedSuccessfully: result\?\.status === "loaded"/,
   "a familiar roster from the previous project never enables the picker during a project change",
 );
 assert.match(
-  projectFamiliars,
+  projectRequests,
   /catch \{[\s\S]{0,220}finally/,
   "a failed familiar request leaves the dependent picker in its load-failure state without an unhandled rejection",
 );
 assert.match(
-  projectFamiliars,
+  projectRequests,
   /for \(const projectId of ids\) search\.append\("projectId", projectId\)/,
   "table project rosters are requested together so remote/hub installs do not repeat daemon lookups per project",
 );

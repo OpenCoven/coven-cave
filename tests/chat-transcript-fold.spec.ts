@@ -59,6 +59,14 @@ const foldTrigger = (page: Page) => page.locator(".cave-chat-fold__trigger");
 const turns = (page: Page) => page.locator("[data-turn-id]");
 
 async function openFoldedThread(page: Page) {
+  await page.context().routeWebSocket("**/*", (socket) => socket.close());
+  await page.route("**/api/**", (route) => route.fulfill({
+    status: route.request().method() === "GET" ? 200 : 403,
+    json: { ok: route.request().method() === "GET" },
+  }));
+  const project = { id: "fold-project", name: "Fold project", root: "/repo", access: "write", createdAt: iso(500), updatedAt: iso(1) };
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
+  await page.route("**/api/queue/project", (route) => route.fulfill({ json: { ok: true, projectId: project.id, project } }));
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -111,7 +119,7 @@ test.describe("earlier-turns fold", () => {
     await expect(foldTrigger(page)).toHaveText("");
 
     // The accessible name is a sentence, not the terse mono chrome.
-    await expect(foldTrigger(page)).toHaveAttribute("aria-label", /^Show \d+ earlier turns?$/);
+    await expect(foldTrigger(page)).toHaveAttribute("aria-label", /^Browse \d+ earlier turns?$/);
 
     // Open: every turn is reachable, and the accessible copy names the way
     // back rather than claiming turns are hidden while they are on screen.
@@ -165,8 +173,9 @@ test.describe("earlier-turns fold", () => {
     // Find searches the WHOLE transcript and jumps by resolving [data-turn-id]
     // in the DOM. With the fold closed, a hit in a folded turn would be
     // reported and then jump nowhere, because that row was never rendered.
-    // Find therefore has to clear the fold as well as the render cap.
+    // A match mounts its target window before jumping into the earlier history.
     await page.keyboard.press(process.platform === "darwin" ? "Meta+f" : "Control+f");
+    await page.getByPlaceholder("Find in chat…").fill("Question 1");
 
     await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "true", { timeout: 10_000 });
     await expect(turns(page)).toHaveCount(TURNS.length);

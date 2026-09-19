@@ -225,7 +225,9 @@ assert.match(
   /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
   "chat-view should route initial adoption clears through the shared helper",
 );
-const applyConversationPayloadBlock = chatView.match(/const applyConversationPayload = \(json: ConversationHistoryPayload\) => \{[\s\S]*?\n    \};/)?.[0] ?? "";
+// The signature takes further parameters now (local system turns). What this
+// pin protects is the body, so match the helper regardless of its arity.
+const applyConversationPayloadBlock = chatView.match(/const applyConversationPayload = \(json: ConversationHistoryPayload[^)]*\) => \{[\s\S]*?\n    \};/)?.[0] ?? "";
 assert.ok(applyConversationPayloadBlock, "chat-view should define the conversation payload apply helper");
 assert.doesNotMatch(
   applyConversationPayloadBlock,
