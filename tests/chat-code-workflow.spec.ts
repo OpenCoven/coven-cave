@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { buildChatUsagePlanSnapshot } from "../src/lib/chat-usage-plan";
 import { createDefaultPreferences } from "../src/lib/preferences-schema";
 import { catalogForRuntime, runtimeModelInventoryScope } from "../src/lib/runtime-models";
+import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
 
 const ISO = "2026-08-11T05:00:00.000Z";
 const PROJECT_ROOT = "/repo/alpha";
@@ -743,7 +744,10 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
   const composer = page.getByRole("textbox", { name: "Message" });
   await composer.fill(DRAFT);
   await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("cave:chat-composer-draft:v1")))
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), chatComposerDraftKey(
+      "cave:chat-composer-draft:v1",
+      { familiarId: "nova", sessionId: SESSION_ID, project: PROJECT_ROOT, host: "local" },
+    )))
     .toBe(DRAFT);
 
   fixture.changeCount = 2;

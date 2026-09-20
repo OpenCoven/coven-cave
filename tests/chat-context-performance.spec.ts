@@ -94,17 +94,16 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
   // `cave:onboarding:dismissed` alone leaves the first-run "Set up Cave" dialog
   // covering the surface and .chat-surface never mounts. Seed the
   // server-readable dismissal first, exactly as onboarding-wizard.spec.ts does.
-  await page.goto("/");
   await page.context().addCookies([
-    { name: "cave_onboarding_dismissed", value: "1", url: page.url() },
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
   ]);
   await page.goto("/?mode=chat");
-  // Chat surfaces are deferred until opened (#5451) and the shell lands on Home,
-  // so the surface has to be asked for. `click()` auto-waits for hydration; a
-  // bare `count()` check runs before the shell has painted and silently skips.
-  if (!(await page.locator(".chat-surface").count())) {
-    await page.getByRole("button", { name: "Open Chat panel" }).first().click({ timeout: 30_000 });
-  }
+  // The side panel is a separate conversation surface. Open the main Chat
+  // destination after hydration, as the Chat/Code workflow fixture does.
+  await page.waitForFunction(() => {
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+    return document.querySelector(".chat-surface") !== null;
+  }, undefined, { timeout: 30_000 });
   await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
   if (!pendingSessions) {
     await expect(page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first()).toBeVisible();
@@ -228,7 +227,9 @@ test("project browsing filters the rail without rebinding the open conversation 
   await expect(composer).toHaveValue("Draft only for B");
 
   await switchProject(page, "alpha");
-  await expect(page.locator(".chat-inner-rail .cnav__thread-title")).toHaveText(["Context thread A"]);
+  const filteredTitles = page.locator(".chat-inner-rail .cnav__thread-title");
+  await expect(filteredTitles).toHaveCount(1);
+  await expect(filteredTitles).toHaveAttribute("title", "Context thread A");
   await expect(composer).toHaveValue("Draft only for B");
   await expect(page.getByTestId("chat-main").locator('[data-turn-id="context-b-999"]')).toBeAttached();
   await page.screenshot({ path: test.info().outputPath("project-browse.png") });
@@ -274,6 +275,32 @@ test("slash completion uses the current draft after navigating between threads",
   await composer.fill("/hel");
   await composer.press("Tab");
   await expect(composer).toHaveValue(/^\/help\s*$/);
+});
+
+test("Escape closes find from its controls, results and paging without losing composer focus", async ({ page }) => {
+  await setup(page);
+  await openThread(page, "A");
+  const main = page.getByTestId("chat-main");
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  const search = main.getByRole("search", { name: "Find in conversation" });
+  // A staged reply keeps the composer mounted while Find jumps into history.
+  // An empty composer intentionally releases its space when reading old turns.
+  await composer.fill("Keep this reply while searching");
+  for (const target of ["toggle", "result", "page"] as const) {
+    await composer.focus();
+    await composer.press("ControlOrMeta+f");
+    await search.getByRole("textbox", { name: "Find in conversation" }).fill("context-a message");
+    await expect(search.locator(".cave-find-hit")).toHaveCount(40);
+    const control = target === "toggle" ? search.getByRole("button", { name: "Match case", exact: true })
+      : target === "result" ? search.locator(".cave-find-hit").first()
+        : search.getByRole("button", { name: "Later matches", exact: true });
+    await control.focus();
+    await control.press("Escape");
+    await expect(search).toHaveCount(0);
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue("Keep this reply while searching");
+    await expect(main.locator('[data-turn-id="context-a-0"]')).toBeAttached();
+  }
 });
 
 test("blank project drafts stay isolated and first-send context freezes before session creation", async ({ page }) => {

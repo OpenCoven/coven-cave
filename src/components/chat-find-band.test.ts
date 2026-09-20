@@ -174,12 +174,15 @@ async function mountBand(initialIndex = 0, count = 1000) {
     pageButton: (label: string) => renderer.root.find((node) => node.type === "button" && node.children.includes(label)),
     async key(key: string, shiftKey = false) {
       let prevented = false;
+      let stopped = false;
       await act(async () => {
-        renderer.root.findByType("input").props.onKeyDown({
+        const event = {
           key, shiftKey,
           preventDefault: () => { prevented = true; },
-          stopPropagation() {},
-        });
+          stopPropagation: () => { stopped = true; },
+        };
+        renderer.root.findByType("input").props.onKeyDown(event);
+        if (!stopped) renderer.root.findByProps({ role: "search" }).props.onKeyDown?.(event);
       });
       assert.equal(prevented, true);
     },

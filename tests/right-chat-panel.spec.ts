@@ -50,7 +50,30 @@ const sessions = [
   },
 ];
 
+async function isolateRuntime(page: Page) {
+  await page.context().routeWebSocket("**/*", (socket) => socket.close());
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
+  await page.route("**/api/**", (route) => route.fulfill({
+    status: route.request().method() === "GET" ? 200 : 403,
+    json: { ok: route.request().method() === "GET" },
+  }));
+  await page.route("**/api/daemon/connection", (route) => route.fulfill({
+    json: { ok: true, running: true, connected: true, target: { mode: "local" } },
+  }));
+}
+
 async function boot(page: Page) {
+  await isolateRuntime(page);
+  const project = {
+    id: "panel-project", name: "Panel project", root: "/repo", access: "write",
+    createdAt: "2026-08-01T10:00:00.000Z", updatedAt: "2026-08-01T10:00:00.000Z",
+  };
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
+  await page.route("**/api/queue/project", (route) => route.fulfill({
+    json: { ok: true, projectId: project.id, project },
+  }));
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
@@ -173,6 +196,8 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await page.getByRole("menu", { name: /^Switch Chat panel thread, current: .* options$/ }).getByText("Older Cody chat", { exact: true }).click();
   await expect(reopenedPanel).toHaveAttribute("data-session-id", "cody-old");
   await expect(page).toHaveURL(/#chat-cody-new$/);
+  await expect(reopenedPanel.getByRole("textbox", { name: "Message" })).toHaveValue("");
+  await reopenedPanel.getByRole("textbox", { name: "Message" }).fill("Draft for the older Cody chat");
 
   await page.getByRole("button", { name: "Close Chat panel" }).first().click();
   await expect(reopenedPanel).toHaveAttribute("aria-hidden", "true");
@@ -181,6 +206,9 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   const reopenedAgainPanel = page.locator(".right-chat").first();
   await expect(reopenedAgainPanel).toHaveAttribute("aria-hidden", "false");
   await expect(reopenedAgainPanel).toHaveAttribute("data-session-id", "cody-old");
+  await expect(reopenedAgainPanel.getByRole("textbox", { name: "Message" })).toHaveValue("Draft for the older Cody chat");
+  await reopenedAgainPanel.locator('button[aria-label^="Switch Chat panel thread, current:"]').click();
+  await page.getByRole("menu", { name: /^Switch Chat panel thread, current: .* options$/ }).getByText("Newest Cody chat", { exact: true }).click();
   await expect(reopenedAgainPanel.getByRole("textbox", { name: "Message" })).toHaveValue("Keep this Cody draft");
 
   await page.getByRole("button", { name: "Close Chat panel" }).first().click();
@@ -285,6 +313,7 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
 });
 
 async function bootFixThread(page: Page, options: { selectedProjectId?: string | null; denyNovaAlpha?: boolean } = {}) {
+  await isolateRuntime(page);
   const selectedProjectId = options.selectedProjectId === undefined ? "fix-project" : options.selectedProjectId;
   const sends: Array<Record<string, unknown>> = [];
   const projectAuthorityReads: Array<string | null> = [];

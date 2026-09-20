@@ -105,7 +105,21 @@ export function ChatFindBand({
   const hasQuery = trimmed.length > 0;
 
   return (
-    <div className="cave-find-band" role="search" aria-label="Find in conversation">
+    <div
+      className="cave-find-band"
+      role="search"
+      aria-label="Find in conversation"
+      onKeyDown={(e) => {
+        // Filters, result rows and paging controls share the same dismissal
+        // as the query field. Keep Escape inside this surface so it cannot
+        // also close an enclosing Chat drawer.
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <div className="cave-find-band__controls">
         <Icon name="ph:magnifying-glass" width={12} className="cave-find-band__glyph" aria-hidden />
         <input
@@ -119,12 +133,6 @@ export function ChatFindBand({
               e.stopPropagation();
               if (e.shiftKey) onPrev();
               else onNext();
-              return;
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
               return;
             }
             // Walk the hit list without leaving the input.
