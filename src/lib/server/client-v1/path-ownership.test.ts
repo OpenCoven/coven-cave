@@ -671,7 +671,7 @@ test("the Windows ACL probe never retries a non-timeout or a third attempt", asy
     attempts += 1;
     throw accessFailure;
   });
-  await assert.rejects(probe("C:\\private\\discovery"), accessFailure);
+  await assert.rejects(probe("C:\\private\\discovery"), { code: "EACCES" });
   assert.equal(attempts, 1);
 
   attempts = 0;
@@ -698,6 +698,24 @@ test("the Windows ACL probe never retries a non-timeout or a third attempt", asy
     },
   );
   assert.equal(attempts, 2);
+});
+
+test("a fast-failing Windows ACL probe keeps process diagnostics in its safe message", async () => {
+  const probe = createClientV1WindowsAclProbe(async () => {
+    throw Object.assign(new Error("private command " + "script".repeat(10_000)), {
+      code: 1, status: 1, signal: null, killed: false,
+      stdout: "", stderr: "acl-probe:start\nacl-probe:identity\n",
+    });
+  });
+  await assert.rejects(probe("C:\\private\\discovery"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /code=1, status=1, signal=null, killed=false/);
+    assert.match(error.message, /stage=identity/);
+    assert.match(error.message, /stdoutBytes=0, stderrBytes=35/);
+    assert.ok(error.message.length < 300);
+    assert.doesNotMatch(error.stack ?? "", /private command|scriptscript/);
+    return true;
+  });
 });
 
 test("the Windows ACL probe never retries a malformed successful report", async () => {
