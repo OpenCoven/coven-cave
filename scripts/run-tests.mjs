@@ -2259,6 +2259,7 @@ const ALIAS_LOADER = new Set([
   // imports the store, which resolves "@/lib/coven-paths" and "@/lib/server/…".
   "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
+  "src/app/api/proposals/submit/route.test.ts",
   "src/app/api/daemon/travel/reconcile/route.test.ts",
   "src/app/api/chat/stop/route.test.ts",
   "src/app/api/sessions/list/route.test.ts",
