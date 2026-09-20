@@ -116,7 +116,11 @@ For each report, retain a sanitized receipt with the build/run identity,
 observation timestamp, event classification, collection source, reproduction
 steps, and matching symbol coverage. Follow the
 [dSYM coverage procedure](../ios-webrtc-dsym-symbolication.md); record uncovered
-vendor frames as a diagnostic gap instead of inventing symbolication.
+vendor frames as a diagnostic gap instead of inventing symbolication. The
+existing documented WebRTC vendor gap is warn-only for upload; verify its
+identity in the candidate audit and carry the limitation into the cohort decision.
+Required app/extension symbols must match. A successful upload or known vendor
+warning does not establish that incident diagnostics are sufficient for expansion.
 
 | Observation | Required disposition |
 | --- | --- |
@@ -166,8 +170,11 @@ channel controls when any of these conditions exists:
 - Candidate-attributable crash, jetsam/watchdog, repeated renderer failure,
   or recurrence of progressive lag.
 - Failed device budget or unexplained p95/peak-memory regression.
-- Missing or mismatched archive, symbols, diagnostic attribution, or cohort
-  coverage; unknown compatibility; unresolved incident hold.
+- Missing or mismatched archive, required app/extension symbols, diagnostic
+  attribution, or cohort coverage; unknown compatibility; unresolved incident hold.
+  Record the documented WebRTC vendor gap separately under the existing
+  warn-only upload policy. If that gap prevents classifying a candidate incident,
+  keep expansion on HOLD until the maintainer resolves the diagnostic limitation.
 
 Name one primary blocker, an imperative next step, and its responsible operator.
 Preserve the full unresolved dependency list. A HOLD is not permission to expire,
