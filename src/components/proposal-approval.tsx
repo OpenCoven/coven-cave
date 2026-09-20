@@ -418,10 +418,13 @@ export function ProposalApproval() {
   const [narrowPane, setNarrowPane] = useState<"list" | "detail">("list");
   const responseState = useResponseEnvelopeFreshness(state);
 
+  const loadGeneration = useRef(0);
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     const covered = unconfirmedRef.current;
     setState({ kind: "loading" });
     const next = await fetchProposals();
+    if (generation !== loadGeneration.current) return;
     reconcileOutcomes({ kind: "refresh", state: next, covered });
     setState(next);
   }, [reconcileOutcomes]);

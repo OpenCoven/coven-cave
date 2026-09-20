@@ -139,3 +139,6 @@ assert.match(page, /data, not authority/, "page states the staged-write rule");
 assert.match(page, /never applies edits\s+itself/, "page denies a UI write path");
 
 console.log("proposal-approval wiring: all assertions passed");
+
+assert.match(flow, /const generation = \+\+loadGeneration\.current/, "each read owns a monotonically ordered generation");
+assert.match(flow, /if \(generation !== loadGeneration\.current\) return;\s*reconcileOutcomes/, "superseded reads cannot publish or reconcile state");
