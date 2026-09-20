@@ -65,8 +65,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatList[\s\S]*selection=\{selection\}[\s\S]*onSelectionChange=\{setSelection\}/,
-  "ChatRouter passes its project selection into ChatList",
+  /<ChatList[\s\S]*selection=\{browseScope\?\.selection \?\? selection\}[\s\S]*onSelectionChange=\{updateListSelection\}/,
+  "ChatRouter passes the workspace browse selection without a list-local reset",
 );
 assert.match(
   chatList,

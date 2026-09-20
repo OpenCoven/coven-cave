@@ -23,7 +23,7 @@ const messageMarkdownStreamSource = readFileSync(
   "utf8",
 );
 
-const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const caveChatCss = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/transcript"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -132,8 +132,8 @@ assert.match(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 6: turns are render-virtualized via content-visibility (CHAT-D3-07) so
-// the browser skips layout/paint for rows scrolled out of view on long threads.
+// Test 6: mounted turns still skip offscreen layout/paint (CHAT-D3-07).
+// This complements, but does not replace, the hard transcript window budget.
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.match(

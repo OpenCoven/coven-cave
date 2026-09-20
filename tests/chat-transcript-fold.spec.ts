@@ -59,6 +59,21 @@ const foldTrigger = (page: Page) => page.locator(".cave-chat-fold__trigger");
 const turns = (page: Page) => page.locator("[data-turn-id]");
 
 async function openFoldedThread(page: Page) {
+  // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
+  await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
+  await page.route("**/api/**", (route) => route.fulfill({
+    status: route.request().method() === "GET" ? 200 : 403,
+    json: { ok: route.request().method() === "GET" },
+  }));
+  await page.route("**/api/daemon/connection", (route) => route.fulfill({
+    json: { ok: true, running: true, connected: true, target: { mode: "local" } },
+  }));
+  const project = { id: "fold-project", name: "Fold project", root: "/repo", access: "write", createdAt: iso(500), updatedAt: iso(1) };
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
+  await page.route("**/api/queue/project", (route) => route.fulfill({ json: { ok: true, projectId: project.id, project } }));
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -78,18 +93,14 @@ async function openFoldedThread(page: Page) {
       : r.fulfill({ json: { ok: true } }),
   );
   await page.goto("/");
-  await page.waitForSelector(".shell-frame", { timeout: 30_000 });
+  await page.waitForSelector(".shell-frame[data-settled]", { timeout: 30_000 });
   // cave:agents-open-session is handled by ChatSurface, so the surface has to
   // be MOUNTED before the event is dispatched — the app boots on home, where
   // that listener does not exist yet and the event lands on nothing.
-  await page.waitForFunction(
-    () => {
-      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
-      return document.querySelector(".chat-surface") !== null;
-    },
-    undefined,
-    { timeout: 30_000 },
-  );
+  // Navigate once after hydration; repeated landing events can interrupt the
+  // lazy surface while it is loading.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } })));
+  await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
   await page.evaluate((id) =>
     window.dispatchEvent(
       new CustomEvent("cave:agents-open-session", { detail: { sessionId: id, familiarId: "nova" } }),
@@ -111,7 +122,7 @@ test.describe("earlier-turns fold", () => {
     await expect(foldTrigger(page)).toHaveText("");
 
     // The accessible name is a sentence, not the terse mono chrome.
-    await expect(foldTrigger(page)).toHaveAttribute("aria-label", /^Show \d+ earlier turns?$/);
+    await expect(foldTrigger(page)).toHaveAttribute("aria-label", /^Browse \d+ earlier turns?$/);
 
     // Open: every turn is reachable, and the accessible copy names the way
     // back rather than claiming turns are hidden while they are on screen.
@@ -165,8 +176,9 @@ test.describe("earlier-turns fold", () => {
     // Find searches the WHOLE transcript and jumps by resolving [data-turn-id]
     // in the DOM. With the fold closed, a hit in a folded turn would be
     // reported and then jump nowhere, because that row was never rendered.
-    // Find therefore has to clear the fold as well as the render cap.
+    // A match mounts its target window before jumping into the earlier history.
     await page.keyboard.press(process.platform === "darwin" ? "Meta+f" : "Control+f");
+    await page.getByPlaceholder("Find in chat…").fill("Question 1");
 
     await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "true", { timeout: 10_000 });
     await expect(turns(page)).toHaveCount(TURNS.length);

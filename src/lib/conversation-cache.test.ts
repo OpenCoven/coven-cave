@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
+import { getPerfMeasures, startSpan } from "./perf/marks.ts";
 import {
   cancelHoverPrefetch,
   clearConversationCache,
@@ -35,6 +36,25 @@ function stubFetch(impl) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("concurrent transcript spans retain their own start time", () => {
+  const originalPerformance = globalThis.performance;
+  let now = 10;
+  globalThis.performance = { mark() {}, now: () => now };
+  try {
+    const first = startSpan("chat:transcript-fetch");
+    now = 20;
+    const second = startSpan("chat:transcript-fetch");
+    now = 50;
+    assert.equal(first(), 40);
+    now = 80;
+    assert.equal(second(), 60);
+    assert.equal(first(), null, "closing twice must not record a duplicate sample");
+    assert.deepEqual(getPerfMeasures().slice(-2).map((entry) => entry.duration), [40, 60]);
+  } finally {
+    globalThis.performance = originalPerformance;
+  }
+});
 
 test.beforeEach(() => {
   clearConversationCache();

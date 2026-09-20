@@ -19,18 +19,21 @@ assert.match(
 // ── Debounce (extracted verbatim from the two composers) ─────────────────────
 assert.match(
   src,
-  /useEffect\(\(\) => \{\s*latestRef\.current = enabled \? \{ key, value \} : null;\s*if \(!enabled\) return;\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(key, value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs, enabled\]\);/,
+  // Both halves must survive: `enabled` gates persistence entirely (so the ref
+  // is nullable), and the key check inside the timer stops a debounce queued
+  // for the previous scope from writing its text under the new key.
+  /useEffect\(\(\) => \{\s*latestRef\.current = enabled \? \{ key, value \} : null;\s*if \(!enabled\) return;\s*const timer = window\.setTimeout\(\(\) => \{[\s\S]*?const latest = latestRef\.current;\s*if \(latest\?\.key === key\) writeComposerDraft\(key, latest\.value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs, enabled\]\);/,
   "draft writes are debounced so mobile typing does not hit localStorage per keystroke",
 );
 
 // ── Flush on unmount ─────────────────────────────────────────────────────────
 // The debounce cleanup CANCELS a pending write, so an unmount within delayMs
 // of the last keystroke dropped the draft's tail (pane-set remounts, mode
-// switches). A ref-driven empty-dep cleanup flushes the latest value instead.
+// switches). A ref-driven key cleanup flushes the departing value instead.
 assert.match(
   src,
-  /useEffect\(\s*\(\) => \(\) => \{\s*if \(latestRef\.current\) writeComposerDraft\(latestRef\.current\.key, latestRef\.current\.value\);\s*\},\s*\[\],\s*\);/,
-  "unmount flushes only a restored draft, never the empty SSR placeholder",
+  /useEffect\(\s*\(\) => \(\) => \{\s*if \(latestRef\.current\) writeComposerDraft\(latestRef\.current\.key, latestRef\.current\.value\);\s*\},\s*\[key\],\s*\);/,
+  "unmount and scope changes flush the latest restored draft, never the empty SSR placeholder",
 );
 const home = readFileSync(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
 assert.match(home, /useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS, \{\s*enabled: draftRestored,/);
@@ -38,7 +41,7 @@ assert.match(home, /useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_
 // the same tick would flush the PRE-send text — resurrecting the sent prompt.
 assert.match(
   src,
-  /const clearNow = useCallback\(\(\) => \{\s*latestRef\.current = \{ key, value: "" \};\s*writeComposerDraft\(key, ""\);\s*\}, \[key\]\);/,
+  /const clearNow = useCallback\(\(\) => \{[\s\S]*?if \(latestRef\.current && latestRef\.current\.key !== key\) return;\s*latestRef\.current = \{ key, value: "" \};\s*writeComposerDraft\(key, ""\);\s*\}, \[key\]\);/,
   "clearNow updates latestRef so a send-then-unmount flushes empty, never pre-send text",
 );
 
