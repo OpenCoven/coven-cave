@@ -1041,7 +1041,7 @@ test("the ACL probe reads access rules as SIDs without account translation", asy
     );
     assert.match(
       script![1],
-      /\$rule\.IdentityReference\.Value -eq \$ownerRights\.Value[\s\S]*?\$rule\.FileSystemRights -band \$writableRights\) -eq 0[\s\S]*?continue/u,
+      /\$rule\.IdentityReference\.Value -eq \$ownerRights\.Value[\s\S]*?\$rule\.FileSystemRights\), 0\) -band \$writableRights\) -eq 0[\s\S]*?continue/u,
       `${file} must preserve a read-only OWNER RIGHTS rule while removing unsafe rules`,
     );
   }

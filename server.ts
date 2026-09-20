@@ -416,7 +416,9 @@ function Read-State {
     $aces += [pscustomobject]@{
       sid = $entry.IdentityReference.Value
       type = [string]$entry.AccessControlType
-      rights = [uint32]$entry.FileSystemRights
+      # FileSystemRights is signed; generic rights can set its sign bit.
+      # Reinterpret the bits rather than using a checked numeric conversion.
+      rights = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$entry.FileSystemRights), 0)
     }
   }
   [Console]::Error.WriteLine('acl-probe:rules')
@@ -487,7 +489,7 @@ if (-not (Test-Exclusive $state)) {
     if (
       $rule.IdentityReference.Value -eq $ownerRights.Value -and
       [string]$rule.AccessControlType -eq 'Allow' -and
-      (([uint32]$rule.FileSystemRights -band $writableRights) -eq 0)
+      (([BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$rule.FileSystemRights), 0) -band $writableRights) -eq 0)
     ) {
       continue
     }

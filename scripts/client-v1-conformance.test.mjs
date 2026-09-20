@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import { readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -1585,6 +1585,40 @@ test("the fixture roster covers the optional familiar fields and enough rows to 
   assert.equal(rich.active_sessions, 2);
   const sparse = FIXTURE_ROSTER.find((entry) => entry.id === "brewer");
   assert.deepEqual(Object.keys(sparse).sort(), ["display_name", "id", "role"]);
+});
+
+test("Windows ACL access masks preserve signed generic-rights bits", async (t) => {
+  const executable = process.platform === "win32"
+    ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    : "pwsh";
+  // FileSystemRights uses a signed Int32, including when generic access bits
+  // arrive from inherited ACLs. Enum.ToObject models those unnamed enum bits.
+  const cases = [-536805376, -2147483648, -1, 0, 131072, 268435456];
+  for (const file of ["src/lib/server/client-v1/path-ownership.ts", "server.ts"]) {
+    const source = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
+    const script = /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/u.exec(source)?.[1];
+    assert.ok(script, `${file}: ACL script exists`);
+    const readMask = /rights = (.+)/u.exec(script)?.[1];
+    const repairMask = /\(\(([^\n]+\$rule\.FileSystemRights[^\n]*?) -band \$writableRights\) -eq 0\)/u.exec(script)?.[1];
+    assert.ok(readMask && repairMask, `${file}: both ACL mask consumers are exercised`);
+    const result = spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", `
+$ErrorActionPreference = 'Stop'
+foreach ($value in @(${cases.join(",")})) {
+  $entry = [pscustomobject]@{ FileSystemRights = [Enum]::ToObject([System.Security.AccessControl.FileSystemRights], [int]$value) }
+  $rule = $entry
+  $readMask = ${readMask}
+  $repairMask = ${repairMask}
+  [Console]::WriteLine(('{0},{1}' -f $readMask, ($repairMask -band [uint32]0x500d0156)))
+}`], { encoding: "utf8", timeout: 15_000 });
+    if (process.platform !== "win32" && result.error?.code === "ENOENT") {
+      t.skip("PowerShell is unavailable; this regression is required in Windows startup-controls CI");
+      return;
+    }
+    assert.equal(result.error, undefined, `${file}: ${result.error}`);
+    assert.equal(result.status, 0, `${file}: ${result.stderr}`);
+    const expected = cases.map((value) => `${value >>> 0},${(value & 0x500d0156) >>> 0}`);
+    assert.deepEqual(result.stdout.trim().split(/\r?\n/u), expected, `${file}: preserve all bits before testing writable rights`);
+  }
 });
 
 // This file is already the Windows startup-controls PR entrypoint. Exercise
