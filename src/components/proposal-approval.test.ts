@@ -23,7 +23,7 @@ assert.match(flow, /availability\.actions\.map/, "only authority-derived actions
 assert.match(flow, /action\.label\}/, "the view-model owns each visible action label");
 assert.match(
   flow,
-  /disabled=\{submitting !== null \|\| !action\.enabled\}/,
+  /disabled=\{submitting !== null \|\| needsReconciliation \|\| !action\.enabled\}/,
   "decision-specific disabled state reaches each button",
 );
 assert.match(flow, /decisionOutcomeFromResponse\(/, "outcomes derive from the response mapper");
@@ -43,8 +43,10 @@ assert.match(
   "verified Phase 5 decisions forward the authority revision",
 );
 assert.match(flow, /note:\s*note\.trim\(\)/, "the route body uses the trimmed decision note");
-assert.match(flow, /re-validated before applying/, "applied outcome credits the daemon's re-validation");
-assert.match(flow, /if \(result\.kind === "applied"\) onDecided\(\)/, "list refreshes only on an applied decision");
+assert.match(flow, /confirmed this proposal as \{outcome\.terminal\}/, "confirmed outcomes use the daemon terminal label");
+assert.match(flow, /if \(result\.kind === "confirmed"\) \{[\s\S]*?onRefresh\(\)/, "confirmed outcomes refresh authoritative state");
+assert.match(flow, /needsReconciliation \|\| !currentAvailability\.allowed/, "uncertain outcomes cannot resend before reconciliation");
+assert.match(flow, /onClick=\{onRefresh\}>\s*Refresh proposals/, "uncertain outcomes offer a read-only refresh");
 assert.match(flow, /Nothing here is applied optimistically/, "the decision block denies optimistic application");
 
 // daemon lifecycle data is rendered as trace, never reinterpreted locally
