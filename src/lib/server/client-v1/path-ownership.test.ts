@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -1132,5 +1132,53 @@ test("the ACL probe invokes no PowerShell cmdlets at all", async () => {
       /\|\s*(ForEach|Where|Select|ConvertTo|Sort)-/u,
       `${file} must not pipe through cmdlets`,
     );
+  }
+});
+
+test("native parent and child ACL repair stays protected under concurrent startup", async (t: TestContext) => {
+  if (process.platform !== "win32") {
+    t.skip("requires native Windows inheritance propagation");
+    return;
+  }
+  const fixture = await mkdtemp(join(tmpdir(), "cave-client-v1-acl-order-"));
+  const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const observations: Array<{ mode: string; iteration: number; reports: boolean[]; protected: boolean[] }> = [];
+  try {
+    for (const mode of ["ancestor-first", "concurrent"]) {
+      for (let iteration = 0; iteration < 8; iteration++) {
+        const parent = join(fixture, `${mode}-${iteration}`);
+        const child = join(parent, "device-access");
+        await mkdir(child, { recursive: true });
+        let reports: ClientV1WindowsAclReport[];
+        if (mode === "concurrent") {
+          // Reap both probes before cleanup even if one fails early.
+          const settled = await Promise.allSettled([probeWindowsAcl(parent), probeWindowsAcl(child)]);
+          reports = settled.map(result => {
+            if (result.status === "rejected") throw result.reason;
+            return result.value;
+          });
+        } else {
+          reports = [await probeWindowsAcl(parent), await probeWindowsAcl(child)];
+        }
+        assert.ok(reports.every(report => report.repaired), "fresh inherited paths must exercise real repair");
+        // Independent, read-only inspection after both processes settle. Calling
+        // the production probe again could repair and conceal the failed state.
+        const observed = execFileSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", `
+$ErrorActionPreference = 'Stop'
+foreach ($path in @($env:CAVE_ACL_PARENT, $env:CAVE_ACL_CHILD)) {
+  $item = [System.IO.DirectoryInfo]::new($path)
+  $acl = $item.GetAccessControl('Access')
+  [Console]::WriteLine([bool]$acl.AreAccessRulesProtected)
+}`], { env: { ...process.env, CAVE_ACL_PARENT: parent, CAVE_ACL_CHILD: child }, encoding: "utf8", timeout: 15_000, windowsHide: true });
+        const lines = observed.trim().split(/\r?\n/u);
+        assert.equal(lines.length, 2, "independent inspector must return both paths");
+        assert.ok(lines.every(value => value === "True" || value === "False"), "inspector must return typed Boolean values");
+        observations.push({ mode, iteration, reports: reports.map(report => report.protected), protected: lines.map(value => value === "True") });
+      }
+    }
+    t.diagnostic(JSON.stringify({ aclOrdering: observations }));
+    assert.ok(observations.every(row => [...row.reports, ...row.protected].every(Boolean)), JSON.stringify(observations));
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
   }
 });

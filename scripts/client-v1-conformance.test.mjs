@@ -1627,6 +1627,7 @@ foreach ($value in @(${cases.join(",")})) {
 // Keep build/cleanup work out of ordinary local app-suite runs.
 if (process.platform === "win32" && process.env.GITHUB_JOB === "windows-conformance") {
   await import("./child-output.test.mjs");
+  await import("../src/lib/server/client-v1/path-ownership.test.ts");
   await import("../src/lib/server/device-access/store.test.ts");
   await import("./client-v1-compatibility-control.integration.test.mjs");
 } else {
