@@ -612,8 +612,10 @@ describe("daemon adapter — proposals and decisions", () => {
     const calls: string[] = [];
     const cursor = Buffer.from("first.json").toString("base64url");
     const adapter = new DaemonThreadsAdapter({
-      call: async <T>(req: { path: string; retryTransportFailure?: boolean }) => {
+      call: async <T>(req: { path: string; timeoutMs?: number; hardTimeoutMs?: number; retryTransportFailure?: boolean }) => {
         assert.equal(req.retryTransportFailure, false);
+        assert.ok(req.hardTimeoutMs! > 0);
+        assert.equal(req.hardTimeoutMs, req.timeoutMs);
         calls.push(req.path);
         return { ok: true, status: 200, data: (calls.length === 1
           ? { proposals: [{ degraded: { file: "first.json" } }], limit: 1, hasMore: true, nextCursor: cursor }

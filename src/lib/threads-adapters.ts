@@ -450,6 +450,7 @@ type DaemonCall = <T>(req: {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  hardTimeoutMs?: number;
   retryTransportFailure?: boolean;
 }) => Promise<DaemonResponse<T>>;
 
@@ -594,7 +595,7 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       const remaining = Math.floor(deadline - performance.now());
       if (remaining <= 0) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };
       const res = await this.call<unknown>({
-        path: requestPath, timeoutMs: remaining, retryTransportFailure: false,
+        path: requestPath, timeoutMs: remaining, hardTimeoutMs: remaining, retryTransportFailure: false,
       });
       if (!res.ok) return { source: { state: "unavailable" }, cursor: `unavailable:${res.status}` };
       if (performance.now() >= deadline) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };

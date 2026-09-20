@@ -524,6 +524,8 @@ export type DaemonRequest = {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  /** Hard per-attempt deadline, independent of response activity. */
+  hardTimeoutMs?: number;
   maxResponseBytes?: number;
   retryTransportFailure?: boolean;
   diagnostics?: DaemonDiagnosticContext;
@@ -552,6 +554,7 @@ export async function callDaemonTarget<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    hardTimeoutMs,
     maxResponseBytes,
     retryTransportFailure = true,
     diagnostics = createDaemonDiagnosticContext(),
@@ -584,6 +587,7 @@ export async function callDaemonTarget<T = unknown>(
     path: reqPath,
     body,
     timeoutMs,
+    hardTimeoutMs,
     maxResponseBytes,
     diagnostics,
     diagnosticOperation,
@@ -601,6 +605,7 @@ export async function callDaemonTarget<T = unknown>(
       path: reqPath,
       body,
       timeoutMs,
+      hardTimeoutMs,
       maxResponseBytes,
       retryTransportFailure,
       diagnostics,
@@ -632,6 +637,7 @@ function callDaemonTargetOnce<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    hardTimeoutMs,
     maxResponseBytes,
     diagnostics = createDaemonDiagnosticContext(),
     diagnosticOperation = "daemon-request",
@@ -787,10 +793,11 @@ function callDaemonTargetOnce<T = unknown>(
     // `timeout` above is an IDLE timeout — a body that trickles a byte inside
     // every idle window defeats it. This hard deadline bounds the total
     // request; daemon responses are small JSON, so 2× the idle budget is
-    // generous for any legitimate reply.
+    // generous for any legitimate reply. Deadline-managed callers may supply
+    // a smaller per-attempt hard budget and disable transport retries.
     const deadline = setTimeout(() => {
       req.destroy(new Error("timeout"));
-    }, timeoutMs * 2);
+    }, Math.min(timeoutMs * 2, hardTimeoutMs ?? timeoutMs * 2));
     (deadline as { unref?: () => void }).unref?.();
 
     req.on("timeout", () => {
