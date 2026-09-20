@@ -105,7 +105,7 @@ SIMCTL_CHILD_CAVE_PERFORMANCE_INSTRUMENTATION=1 \
   "$SIMULATOR_ID" ai.opencoven.cave
 ```
 
-Capture the `ai.opencoven.cave` / `performance` signposts with Instruments'
+Capture the `ai.opencoven.cave` / Points of Interest signposts with Instruments'
 Points of Interest template.
 
 ## Budget status
@@ -236,3 +236,47 @@ supported iPhone:
   and avatar paths rather than a file named `CachedImageView.swift`.
 
 These are implementation-shape differences, not relaxed performance bounds.
+
+
+## Current-shell baseline fixture (#5292, in progress)
+
+The explicit `--performance-fixture` launch argument installs deterministic,
+non-sensitive data: 20 projects, 1,000 local chats, 1,000 server sessions,
+1,000 tasks, 12 familiars, and an unassigned conversation. It uses a separate
+preferences suite and thread store. Pairing and live connection configuration
+are disabled in this mode. Enable `--performance-instrumentation` separately
+to record spans in a Release build.
+
+The first conversation, **Rich streaming fixture**, contains Markdown and a
+synthetic text update every 50 ms while the scene is active. Updates use the
+existing in-place transcript mutation path. The response repeats every 200
+updates, bounding message size instead of growing throughout a capture. Each
+foreground interval starts the sequence again; backgrounding cancels the loop.
+This exercises rendering and publication, not network ingestion or server work.
+
+The current shell has Chats and Settings, with inline chat search.
+`drawer.open` starts at the drawer-state change and waits for SwiftUI's
+animation-removal completion, layout, and two display ticks. Closing cancels
+an unfinished open sample. `destination.stable-frame` starts at a change of
+selected destination and waits for its transaction to complete, the drawer to
+close and finish animating, and two display ticks. Delayed callbacks match their
+original span so they cannot complete a newer visit. These measurements include
+the existing animation duration; no fixed sleep substitutes for completion. Retired
+Tasks/project-switcher journeys must not be restored to satisfy the older
+baseline wording. `chat.list-projection` measures construction of the current
+chat list snapshot, including source filtering. `search.query` starts when a
+new query is published and ends after layout and two display ticks. Superseded
+queries, backgrounding, and navigation to Settings cancel unfinished samples.
+These boundaries do not establish that every asynchronous renderer is idle.
+
+`chat.first-rich-render` covers an assistant Markdown bubble's renderer creation
+through its first successful JavaScript render, height publication, and two
+display ticks after attachment to a window. It includes cold WebKit acquisition.
+Each renderer instance records at most one sample; scrolling a bubble out and
+back into a newly created renderer is a separate mount, not a second sample on
+the same renderer. Failure, teardown, or app deactivation cancels an unfinished
+sample. Image loading and later streaming updates are outside this boundary.
+
+Physical Release measurements, cold/warm distributions, trace-based bottleneck
+ranking, and measured budgets remain outstanding. No simulator, parser, or
+unit-test result in this work constitutes that acceptance.

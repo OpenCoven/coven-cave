@@ -97,7 +97,6 @@ struct ChatView: View {
     @State private var zoomTarget: ZoomTarget?
 
     /// Per-thread key for the persisted unsent draft.
-    private var draftKey: String { AppModel.draftKey(thread.id) }
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -188,29 +187,23 @@ struct ChatView: View {
             && app.chatAccessIsCurrent(projectRoot: binding.projectRoot, familiarIds: binding.familiarIds)
     }
 
-    private func writeDraftPersistence(_ value: String, key: String) {
-        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            UserDefaults.standard.removeObject(forKey: key)
-            app.setThreadDraft(thread.id, text: nil)
-        } else {
-            UserDefaults.standard.set(value, forKey: key)
-            app.setThreadDraft(thread.id, text: value)
-        }
+    private func writeDraftPersistence(_ value: String, threadId: String) {
+        app.persistThreadDraft(threadId, text: value)
     }
 
     private func scheduleDraftPersistence(_ value: String) {
         draftPersistenceTask?.cancel()
-        draftPersistenceTask = Task { [draftKey] in
+        draftPersistenceTask = Task { [threadId = thread.id] in
             try? await Task.sleep(nanoseconds: draftPersistenceDelay)
             guard !Task.isCancelled else { return }
-            writeDraftPersistence(value, key: draftKey)
+            writeDraftPersistence(value, threadId: threadId)
         }
     }
 
     private func flushDraftPersistence() {
         draftPersistenceTask?.cancel()
         draftPersistenceTask = nil
-        writeDraftPersistence(draft, key: draftKey)
+        writeDraftPersistence(draft, threadId: thread.id)
     }
 
     /// Compute the divider once per visit against the pre-visit seen boundary.
@@ -411,7 +404,7 @@ struct ChatView: View {
         // was dismissed or the app backgrounded). Only when the live draft is
         // empty, so a draft already in hand isn't clobbered.
         .onAppear {
-            if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
+            if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
             }
             // Place the "New messages" divider from the seen boundary BEFORE
