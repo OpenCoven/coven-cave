@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   mkdir,
@@ -422,4 +424,95 @@ test("an inherited async context that starts after deactivation reacquires the l
   await releaseHolder();
   await inherited;
   assert.equal(inheritedEntered, true);
+});
+
+for (const failure of ['writeFile', 'close']) {
+  test(`intent ${failure} failure removes the owned intent and permits a successor`, async () => {
+    const directory = await fsPromises.mkdtemp(path.join(temporary, 'cave-lock-publication-'));
+    const originalOpen = fsPromises.open;
+    const injectedError = new Error(`injected ${failure} failure`);
+    let injected = false;
+    try {
+      fsPromises.open = async function (...args: Parameters<typeof fsPromises.open>) {
+        const target = args[0];
+      const handle = await originalOpen(...args);
+        if (String(target).startsWith(directory + path.sep) && String(target).endsWith('.lock') && !injected) {
+          injected = true;
+          if (failure === 'close') {
+            const close = handle.close.bind(handle);
+            handle.close = async () => { await close(); throw injectedError; };
+          } else {
+            handle.writeFile = async () => { throw injectedError; };
+          }
+        }
+        return handle;
+      };
+      syncBuiltinESMExports();
+      await assert.rejects(acquireProcessIntentLock({ intentsDirectory: directory, label: 'publication' }), error => error === injectedError);
+      fsPromises.open = originalOpen;
+      syncBuiltinESMExports();
+      assert.equal(injected, true);
+      assert.deepEqual(await fsPromises.readdir(directory), [], 'failed publication must not strand a live-owner lock');
+      const release = await acquireProcessIntentLock({ intentsDirectory: directory, label: 'successor' });
+      await release();
+      assert.deepEqual(await fsPromises.readdir(directory), []);
+    } finally {
+      fsPromises.open = originalOpen;
+      syncBuiltinESMExports();
+      await fsPromises.rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test('publication cleanup retains retry ownership while the failed-close handle is open', async () => {
+  const directory = await fsPromises.mkdtemp(path.join(temporary, 'cave-lock-open-handle-'));
+  const originalOpen = fsPromises.open;
+  const originalRm = fsPromises.rm;
+  const closeFailure = new Error('injected close failure with descriptor retained');
+  let releaseHandle: (() => Promise<void>) | undefined;
+  let ownedPath: string | undefined;
+  let removalAttempts = 0;
+  try {
+    fsPromises.open = async function (...args: Parameters<typeof fsPromises.open>) {
+      const target = args[0];
+      const handle = await originalOpen(...args);
+      if (String(target).startsWith(directory + path.sep) && String(target).endsWith('.lock') && !ownedPath) {
+        ownedPath = String(target);
+        releaseHandle = handle.close.bind(handle);
+        handle.close = async () => { throw closeFailure; };
+      }
+      return handle;
+    };
+    fsPromises.rm = async function (...args: Parameters<typeof fsPromises.rm>) {
+      const target = args[0];
+      if (String(target) === ownedPath) {
+        removalAttempts++;
+        if (releaseHandle) throw Object.assign(new Error('descriptor still held'), { code: 'EPERM' });
+      }
+      return originalRm(...args);
+    };
+    syncBuiltinESMExports();
+    await assert.rejects(acquireProcessIntentLock({ intentsDirectory: directory, label: 'held-descriptor' }), error => error === closeFailure);
+    assert.ok(removalAttempts >= 1, 'publication failure must attempt owned-intent removal');
+    assert.deepEqual((await fsPromises.readdir(directory)).filter(name => name.endsWith('.choosing')), []);
+    assert.ok(releaseHandle);
+    await releaseHandle();
+    releaseHandle = undefined;
+    fsPromises.open = originalOpen;
+    syncBuiltinESMExports();
+    const release = await acquireProcessIntentLock({ intentsDirectory: directory, label: 'after-held-descriptor' });
+    await release();
+    assert.ok(removalAttempts >= 2, 'cleanup must retry after the descriptor is released');
+    assert.deepEqual(await fsPromises.readdir(directory), []);
+  } finally {
+    fsPromises.open = originalOpen;
+    fsPromises.rm = originalRm;
+    syncBuiltinESMExports();
+    try {
+      if (releaseHandle) await releaseHandle();
+    } finally {
+      releaseHandle = undefined;
+      await fsPromises.rm(directory, { recursive: true, force: true });
+    }
+  }
 });
