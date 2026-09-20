@@ -160,9 +160,39 @@ function proposalSummarySource(raw: unknown): ProposalSummarySource {
   for (const proposal of proposals) {
     if (typeof proposal !== "object" || proposal === null || Array.isArray(proposal)) continue;
     const proposalId = (proposal as Record<string, unknown>).proposalId;
-    if (typeof proposalId === "string") byId.set(proposalId, proposal);
+    if (typeof proposalId === "string") {
+      if (byId.has(proposalId)) return { state: "unparseable" };
+      byId.set(proposalId, proposal);
+    }
   }
   return { state: "available", byId };
+}
+
+// Current producer: Coven api.rs threads_proposals_response. Keep the legacy
+// single-page wrapper for supported older daemons and recorded fixtures.
+function proposalSummaryPage(raw: unknown): { source: ProposalSummarySource; limit: number; next: string | null } | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const page = raw as Record<string, unknown>;
+  if (Object.keys(page).length === 1 && Object.hasOwn(page, "proposals")) {
+    const source = proposalSummarySource(page);
+    return source.state === "available" ? { source, limit: 64, next: null } : null;
+  }
+  const keys = ["proposals", "limit", "hasMore", "nextCursor"];
+  if (Object.keys(page).length !== keys.length || !keys.every((key) => Object.hasOwn(page, key))) return null;
+  if (!Number.isInteger(page.limit) || (page.limit as number) < 1 || (page.limit as number) > 64
+    || !Array.isArray(page.proposals) || page.proposals.length > (page.limit as number)
+    || typeof page.hasMore !== "boolean") return null;
+  if (page.hasMore) {
+    if (page.proposals.length !== page.limit || typeof page.nextCursor !== "string"
+      || page.nextCursor.length > 340 || !/^[A-Za-z0-9_-]+$/.test(page.nextCursor)) return null;
+    const decoded = Buffer.from(page.nextCursor, "base64url");
+    const file = decoded.toString("utf8");
+    if (decoded.toString("base64url") !== page.nextCursor || decoded.length > 255
+      || !Buffer.from(file).equals(decoded) || !file.endsWith(".json") || /[/\\]/.test(file)) return null;
+  } else if (page.nextCursor !== null) return null;
+  const source = proposalSummarySource({ proposals: page.proposals });
+  return source.state === "available"
+    ? { source, limit: page.limit as number, next: page.nextCursor as string | null } : null;
 }
 
 function proposalSummaryCursor(raw: unknown): string {
@@ -420,6 +450,8 @@ type DaemonCall = <T>(req: {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  hardTimeoutMs?: number;
+  retryTransportFailure?: boolean;
 }) => Promise<DaemonResponse<T>>;
 
 export type DaemonAdapterOptions = {
@@ -551,6 +583,42 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     }
   }
 
+  private async proposalSummaries(): Promise<{ source: ProposalSummarySource; cursor: string }> {
+    const byId = new Map<string, unknown>();
+    const seen = new Set<string>();
+    const digest = createHash("sha256");
+    const deadline = performance.now() + this.timeoutMs;
+    let requestPath = DAEMON_PROPOSALS_PATH;
+    let pageLimit: number | null = null;
+    // Bound total work, not just each page. Exhaustion never publishes partial authority.
+    for (let index = 0; index < 64; index++) {
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };
+      const res = await this.call<unknown>({
+        path: requestPath, timeoutMs: remaining, hardTimeoutMs: remaining, retryTransportFailure: false,
+      });
+      if (!res.ok) return { source: { state: "unavailable" }, cursor: `unavailable:${res.status}` };
+      if (performance.now() >= deadline) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };
+      digest.update(proposalSummaryCursor(res.data));
+      const page = proposalSummaryPage(res.data);
+      if (!page || page.source.state !== "available") return { source: { state: "unparseable" }, cursor: "pagination:invalid" };
+      if (pageLimit !== null && (page.limit !== pageLimit
+        || !Object.hasOwn(res.data as object, "hasMore"))) {
+        return { source: { state: "unparseable" }, cursor: "pagination:changed-contract" };
+      }
+      pageLimit = page.limit;
+      for (const [id, summary] of page.source.byId) {
+        if (byId.has(id)) return { source: { state: "unparseable" }, cursor: "pagination:duplicate" };
+        byId.set(id, summary);
+      }
+      if (page.next === null) return { source: { state: "available", byId }, cursor: digest.digest("hex").slice(0, 16) };
+      if (seen.has(page.next)) return { source: { state: "unparseable" }, cursor: "pagination:repeated-cursor" };
+      seen.add(page.next);
+      requestPath = `${DAEMON_PROPOSALS_PATH}?limit=${page.limit}&cursor=${encodeURIComponent(page.next)}`;
+    }
+    return { source: { state: "unparseable" }, cursor: "pagination:limit" };
+  }
+
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const pendingDir = path.join(/* turbopackIgnore: true */ this.home, "pending");
     if (!existsSync(/* turbopackIgnore: true */ pendingDir)) {
@@ -567,16 +635,14 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     }
     if (snapshot.staged.length === 0) return okEnvelope([], this.meta(snapshot.cursor, true));
 
-    const res = await this.call<unknown>({ path: DAEMON_PROPOSALS_PATH, timeoutMs: this.timeoutMs });
+    const summaries = await this.proposalSummaries();
     const confirmedSnapshot = readPendingSnapshot(pendingDir);
     if (confirmedSnapshot === null || confirmedSnapshot.cursor !== snapshot.cursor) {
       return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));
     }
-    const summaries = res.ok ? proposalSummarySource(res.data) : { state: "unavailable" as const };
-    const summariesCursor = res.ok ? proposalSummaryCursor(res.data) : `unavailable:${res.status}`;
     return okEnvelope(
-      joinProposalSummaries(snapshot.staged, summaries),
-      this.meta(`${snapshot.cursor}:${summariesCursor}`, true),
+      joinProposalSummaries(snapshot.staged, summaries.source),
+      this.meta(`${snapshot.cursor}:${summaries.cursor}`, true),
     );
   }
 

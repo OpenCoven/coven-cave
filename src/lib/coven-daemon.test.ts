@@ -1058,6 +1058,35 @@ const {
   }
 }
 
+// A caller-owned hard budget must end an active response before a later valid
+// body completes; the idle timeout alone must not keep this request alive.
+{
+  const timers = new Set();
+  const intervals = new Set();
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.write("[");
+    const interval = setInterval(() => res.write(" "), 10);
+    const timer = setTimeout(() => { clearInterval(interval); res.end("]"); }, 200);
+    intervals.add(interval); timers.add(timer);
+    req.on("close", () => { clearInterval(interval); clearTimeout(timer); });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const res = await callDaemonTarget(
+      { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
+      { path: "/api/v1/familiars", timeoutMs: 500, hardTimeoutMs: 50, retryTransportFailure: false },
+    );
+    assert.equal(res.ok, false, "hard budget must reject a later complete trickling response");
+    assert.equal(res.error, "daemon timeout");
+  } finally {
+    for (const timer of timers) clearTimeout(timer);
+    for (const interval of intervals) clearInterval(interval);
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 // Transient transport failures on GETs retry once (the /api/familiars 503
 // flake: a briefly-busy daemon shouldn't surface a hard error for a read).
 {

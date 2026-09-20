@@ -607,6 +607,103 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.notEqual(joined.meta.sourceCursor, missing.meta.sourceCursor);
   });
 
+  it("joins authority from the current daemon paginated envelope", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const calls: string[] = [];
+    const cursor = Buffer.from("first.json").toString("base64url");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>(req: { path: string; timeoutMs?: number; hardTimeoutMs?: number; retryTransportFailure?: boolean }) => {
+        assert.equal(req.retryTransportFailure, false);
+        assert.ok(req.hardTimeoutMs! > 0);
+        assert.equal(req.hardTimeoutMs, req.timeoutMs);
+        calls.push(req.path);
+        return { ok: true, status: 200, data: (calls.length === 1
+          ? { proposals: [{ degraded: { file: "first.json" } }], limit: 1, hasMore: true, nextCursor: cursor }
+          : { proposals: [summary], limit: 1, hasMore: false, nextCursor: null }) as T };
+      },
+      covenHomeDir: home,
+    });
+    const res = await adapter.proposals();
+    assert.equal(res.data?.[0]?.authority?.state, "verified");
+    assert.deepEqual(calls, [DAEMON_PROPOSALS_PATH, `${DAEMON_PROPOSALS_PATH}?limit=1&cursor=${cursor}`]);
+  });
+
+  it("never publishes partial authority after a malformed, failed or looping page", async () => {
+    const cursor = Buffer.from("first.json").toString("base64url");
+    for (const mode of ["failed", "repeated", "malformed", "legacy", "duplicate", "changed-pending"]) {
+      const { home, summary, pendingFile } = homeWithScheduled("awaiting-human-approval");
+      let calls = 0;
+      const adapter = new DaemonThreadsAdapter({
+        call: async <T>() => {
+          calls++;
+          if (calls === 1) return { ok: true, status: 200, data: {
+            proposals: [summary], limit: 1, hasMore: true, nextCursor: cursor,
+          } as T };
+          if (mode === "failed") return { ok: false, status: 503, error: "unavailable", data: null };
+          if (mode === "changed-pending") writeFileSync(pendingFile, "{}");
+          const data = mode === "legacy" ? { proposals: [] }
+            : mode === "malformed" ? { proposals: [], limit: 1, hasMore: false, nextCursor: cursor }
+            : mode === "repeated" ? { proposals: [{ degraded: {} }], limit: 1, hasMore: true, nextCursor: cursor }
+            : { proposals: mode === "duplicate" ? [summary] : [], limit: 1, hasMore: false, nextCursor: null };
+          return { ok: true, status: 200, data: data as T };
+        },
+        covenHomeDir: home,
+      });
+      const res = await adapter.proposals();
+      assert.equal(calls, 2, mode);
+      if (mode === "changed-pending") {
+        assert.equal(res.blocked, true);
+        assert.equal(res.data, null);
+      } else assert.equal(res.data?.[0]?.authority?.state, "blocked", mode);
+    }
+  });
+
+  it("bounds pagination and discards authority when the response exceeds the total deadline", async (t) => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    let calls = 0;
+    const bounded = new DaemonThreadsAdapter({
+      call: async <T>() => {
+        calls++;
+        return { ok: true, status: 200, data: {
+          proposals: calls === 1 ? [summary] : [{ degraded: {} }], limit: 1, hasMore: true,
+          nextCursor: Buffer.from(`${String(calls).padStart(3, "0")}.json`).toString("base64url"),
+        } as T };
+      }, covenHomeDir: home,
+    });
+    const exhausted = await bounded.proposals();
+    assert.equal(calls, 64);
+    assert.equal(exhausted.data?.[0]?.authority?.state, "blocked");
+
+    let now = 0;
+    t.mock.method(performance, "now", () => now);
+    const delayed = new DaemonThreadsAdapter({
+      call: async <T>() => {
+        now = 11;
+        return { ok: true, status: 200, data: { proposals: [summary] } as T };
+      }, covenHomeDir: home, timeoutMs: 10,
+    });
+    const expired = await delayed.proposals();
+    assert.equal(expired.data?.[0]?.authority?.state, "blocked");
+  });
+
+  it("rejects malformed pagination metadata and duplicate proposal IDs", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const valid = { proposals: [summary], limit: 64, hasMore: false, nextCursor: null };
+    for (const data of [
+      { ...valid, limit: 65 }, { ...valid, limit: 0 }, { ...valid, hasMore: "false" },
+      { ...valid, nextCursor: "unexpected" }, { ...valid, extra: true },
+      { ...valid, proposals: [summary, summary] },
+      { ...valid, limit: 1, hasMore: true, nextCursor: Buffer.from("../bad.json").toString("base64url") },
+      { ...valid, limit: 1, hasMore: true, nextCursor: "%%%" },
+    ]) {
+      const adapter = new DaemonThreadsAdapter({
+        call: async <T>() => ({ ok: true, status: 200, data: data as T }), covenHomeDir: home,
+      });
+      const res = await adapter.proposals();
+      assert.equal(res.data?.[0]?.authority?.state, "blocked");
+    }
+  });
+
   it("accepts only the daemon's real proposals envelope shape", async () => {
     const { home, summary } = homeWithScheduled("awaiting-human-approval");
     for (const data of [[summary], { proposals: [summary], extra: "contract drift" }]) {
