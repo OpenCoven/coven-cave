@@ -663,13 +663,16 @@ const GAME_SCRIPT = `
   // not whether the simulation is actually correct. This exposes a read-only
   // snapshot inside the sandbox only; the frame is opaque-origin, so nothing
   // outside it can reach this.
-  window.__ARCADE_SNAPSHOT__ = function () {
+  window.__ARCADE_SNAPSHOT__ = function (visibleOnly) {
     var nearest = null, nearestDist = Infinity;
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i];
       if (!e.alive || !player) continue;
       var dx = e.x - player.x, dy = e.y - player.y;
       var d = Math.sqrt(dx * dx + dy * dy);
+      // Match fire()'s occlusion check. The browser controller must aim at a
+      // shootable wisp rather than wait for an occluded nearer one to move.
+      if (visibleOnly && castRay(Math.atan2(dy, dx)).dist < d) continue;
       if (d < nearestDist) { nearestDist = d; nearest = e; }
     }
     var bearing = 0;
@@ -688,6 +691,7 @@ const GAME_SCRIPT = `
       angle: player ? player.a : 0,
       alive: enemies.filter(function (e) { return e.alive; }).length,
       nearest: nearestDist,
+      targetVisible: nearest != null && castRay(player.a + bearing).dist >= nearestDist,
       bearing: bearing
     };
   };
