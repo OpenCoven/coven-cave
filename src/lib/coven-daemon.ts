@@ -527,6 +527,7 @@ export type DaemonRequest = {
   /** Hard per-attempt deadline, independent of response activity. */
   hardTimeoutMs?: number;
   maxResponseBytes?: number;
+  signal?: AbortSignal;
   retryTransportFailure?: boolean;
   diagnostics?: DaemonDiagnosticContext;
   diagnosticOperation?: string;
@@ -543,11 +544,45 @@ export type DaemonResponse<T = unknown> = {
 export async function callDaemon<T = unknown>(
   request: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
+  if (request.signal?.aborted) return cancelledDaemonResponse();
   const target = await loadDaemonTarget();
   return callDaemonTarget<T>(target, request);
 }
 
 export async function callDaemonTarget<T = unknown>(
+  target: DaemonTarget,
+  request: DaemonRequest,
+): Promise<DaemonResponse<T>> {
+  return callDaemonTargetDecoded(target, request, raw => JSON.parse(raw.toString("utf8")) as T);
+}
+
+export type DaemonByteRequest = DaemonRequest & { maxResponseBytes: number };
+
+function validByteBound(request: DaemonByteRequest): boolean {
+  return Number.isSafeInteger(request.maxResponseBytes) && request.maxResponseBytes > 0;
+}
+
+function invalidByteBound(): DaemonResponse<Uint8Array> {
+  return { ok: false, status: 0, data: null, error: "daemon byte reads require a positive response size limit" };
+}
+
+/** Preserve wire bytes for consumers that perform their own strict decoding. */
+export async function callDaemonBytes(request: DaemonByteRequest): Promise<DaemonResponse<Uint8Array>> {
+  if (!validByteBound(request)) return invalidByteBound();
+  if (request.signal?.aborted) return cancelledDaemonResponse();
+  return callDaemonTargetBytes(await loadDaemonTarget(), request);
+}
+
+export async function callDaemonTargetBytes(target: DaemonTarget, request: DaemonByteRequest): Promise<DaemonResponse<Uint8Array>> {
+  if (!validByteBound(request)) return invalidByteBound();
+  return callDaemonTargetDecoded(target, request, raw => raw, true);
+}
+
+function cancelledDaemonResponse<T>(): DaemonResponse<T> {
+  return { ok: false, status: 0, data: null, error: "daemon request cancelled" };
+}
+
+async function callDaemonTargetDecoded<T>(
   target: DaemonTarget,
   {
     method = "GET",
@@ -556,12 +591,16 @@ export async function callDaemonTarget<T = unknown>(
     timeoutMs = 4000,
     hardTimeoutMs,
     maxResponseBytes,
+    signal,
     retryTransportFailure = true,
     diagnostics = createDaemonDiagnosticContext(),
     diagnosticOperation = "daemon-request",
     diagnosticAttempt = 1,
   }: DaemonRequest,
+  decode: (raw: Buffer) => T,
+  decodeEmpty = false,
 ): Promise<DaemonResponse<T>> {
+  if (signal?.aborted) return cancelledDaemonResponse();
   if (target.mode === "unconfigured-hub") {
     const result = {
       ok: false,
@@ -589,17 +628,24 @@ export async function callDaemonTarget<T = unknown>(
     timeoutMs,
     hardTimeoutMs,
     maxResponseBytes,
+    signal,
     diagnostics,
     diagnosticOperation,
     diagnosticAttempt,
-  });
+  }, decode, decodeEmpty);
   // Retry transport-level failures (status 0: timeout/reset/refused) once for
   // reads unless the caller opts out — a briefly-busy daemon must not surface
   // a hard error for a GET (the /api/familiars 503 flake). Mutations never
   // retry: a timed-out POST may have been applied. HTTP-level errors (a real
   // status) never retry.
-  if (!first.ok && first.status === 0 && method === "GET" && retryTransportFailure) {
-    await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
+  if (!first.ok && first.status === 0 && method === "GET" && retryTransportFailure && !signal?.aborted) {
+    await new Promise<void>((resolve) => {
+      const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", finish); resolve(); };
+      const timer = setTimeout(finish, GET_RETRY_DELAY_MS);
+      signal?.addEventListener("abort", finish, { once: true });
+      if (signal?.aborted) finish();
+    });
+    if (signal?.aborted) return cancelledDaemonResponse();
     return callDaemonTargetOnce<T>(target, {
       method,
       path: reqPath,
@@ -607,11 +653,12 @@ export async function callDaemonTarget<T = unknown>(
       timeoutMs,
       hardTimeoutMs,
       maxResponseBytes,
+      signal,
       retryTransportFailure,
       diagnostics,
       diagnosticOperation,
       diagnosticAttempt: diagnosticAttempt + 1,
-    });
+    }, decode, decodeEmpty);
   }
   return first;
 }
@@ -639,11 +686,15 @@ function callDaemonTargetOnce<T = unknown>(
     timeoutMs = 4000,
     hardTimeoutMs,
     maxResponseBytes,
+    signal,
     diagnostics = createDaemonDiagnosticContext(),
     diagnosticOperation = "daemon-request",
     diagnosticAttempt = 1,
   }: DaemonRequest,
+  decode: (raw: Buffer) => T,
+  decodeEmpty: boolean,
 ): Promise<DaemonResponse<T>> {
+  if (signal?.aborted) return Promise.resolve(cancelledDaemonResponse());
   if (
     target.mode === "hub" &&
     target.accessToken &&
@@ -718,6 +769,7 @@ function callDaemonTargetOnce<T = unknown>(
               port: url.port,
               path: `${url.pathname}${url.search}`,
               method,
+              signal,
               timeout: timeoutMs,
               headers: Object.keys(headers).length ? headers : undefined,
             };
@@ -725,6 +777,7 @@ function callDaemonTargetOnce<T = unknown>(
         : {
             socketPath: target.socketPath,
             method,
+            signal,
             path: reqPath,
             timeout: timeoutMs,
             headers: Object.keys(headers).length ? headers : undefined,
@@ -762,21 +815,25 @@ function callDaemonTargetOnce<T = unknown>(
         // A response that errors mid-body (daemon crash, connection reset)
         // never emits "end" — without this handler the promise would hang.
         res.on("error", (err) => {
+          if (signal?.aborted) {
+            settle(cancelledDaemonResponse(), new Error("daemon request cancelled"));
+            return;
+          }
           settle(
             { ok: false, status: 0, data: null, error: normalizeDaemonError(err) },
             err,
           );
         });
         res.on("end", () => {
-          const raw = Buffer.concat(chunks).toString("utf8");
+          const raw = Buffer.concat(chunks);
           const status = res.statusCode ?? 0;
           const ok = status >= 200 && status < 300;
-          if (!raw) {
+          if (raw.length === 0 && !decodeEmpty) {
             settle({ ok, status, data: null });
             return;
           }
           try {
-            const parsed = JSON.parse(raw) as T;
+            const parsed = decode(raw);
             settle({ ok, status, data: parsed });
           } catch {
             settle({
@@ -804,6 +861,10 @@ function callDaemonTargetOnce<T = unknown>(
       req.destroy(new Error("timeout"));
     });
     req.on("error", (err) => {
+      if (signal?.aborted) {
+        settle(cancelledDaemonResponse(), new Error("daemon request cancelled"));
+        return;
+      }
       settle({
         ok: false,
         status: 0,
