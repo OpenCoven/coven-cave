@@ -499,7 +499,8 @@ struct MessageBubble: View {
                                 streaming: message.streaming && !isUser,
                                 theme: colorScheme == .light ? .light : .dark,
                                 accentHex: chrome.accentHex,
-                                onFailure: { markdownFailed = true })
+                                onFailure: { markdownFailed = true },
+                                measureFirstRichRender: message.role == .assistant)
                     .frame(height: max(mdHeight, 1))
                     .opacity(ready ? 1 : 0)
                     .accessibilityHidden(!ready)
