@@ -659,7 +659,7 @@ test("the standalone server enforces ownership on Windows with this module's scr
   );
   assert.match(
     source,
-    /if \(findings\.length > 0\) \{\s*throw discoveryPublicationFailure\(\s*`\$\{label\}-owner-shared`,\s*new Error\(/,
+    /if \(findings\.length > 0\) \{[\s\S]{0,800}?throw discoveryPublicationFailure\(\s*`\$\{label\}-owner-shared`,\s*new Error\(/,
     "the standalone server must refuse on any finding, not merely collect them",
   );
 });
@@ -925,6 +925,46 @@ test("standalone Windows owner observations distinguish unreadable and shared wi
         `[cave] client-v1 discovery publication refused: ${label}-owner-${verdict}`,
       ));
       assert.doesNotMatch(runtime.messages.join("\n"), /private|foreign/);
+    }
+  }
+});
+
+test("standalone Windows discovery logs bounded refused ACL state without publishing", async () => {
+  for (const label of ["root", "target"]) {
+    for (const repaired of [false, true]) {
+      let now = 100;
+      const root = resolve("private-discovery-root");
+      const runtime = await standalonePublisher({
+        performance: { now: () => now },
+        process: { pid: 4310, platform: "win32", env: {} },
+        execFileSync: (_exe: string, _args: string[], options: { env: Record<string, string> }) => {
+          now += 5;
+          const selected = (options.env.COVEN_CAVE_CLIENT_V1_ACL_PATH === root) === (label === "root");
+          return JSON.stringify({
+            self: "private-self", owner: "private-self", protected: !selected,
+            repaired: selected && repaired, removed: ["private-principal"],
+            aces: [{ sid: "private-self", type: "Allow", rights: 0 }],
+          });
+        },
+      });
+      assert.throws(() => runtime.publish("http://127.0.0.1:4310"), (error) => {
+        runtime.report(error);
+        return true;
+      });
+      assert.equal(runtime.published(), false);
+      assert.deepEqual(runtime.writes, []);
+      const diagnostics = runtime.messages.filter((message) => message.startsWith("[windows-acl-state] "));
+      assert.equal(diagnostics.length, 1);
+      const { at, ...state } = JSON.parse(diagnostics[0]!.slice("[windows-acl-state] ".length));
+      assert.equal(Number.isFinite(Date.parse(at)), true);
+      assert.deepEqual(state, {
+        discoveryPath: label, durationMs: 5, repairAttempted: repaired,
+        protected: false, ownerMatches: true, aceCount: 1, removedPrincipalCount: 1,
+      });
+      assert.doesNotMatch(runtime.messages.join("\n"), /private/);
+      assert.ok(runtime.messages.includes(
+        `[cave] client-v1 discovery publication refused: ${label}-owner-shared`,
+      ));
     }
   }
 });

@@ -7390,7 +7390,7 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir as homedir3 } from "node:os";
 import { join as join3, resolve as resolve2 } from "node:path";
-import { performance } from "node:perf_hooks";
+import { performance as performance2 } from "node:perf_hooks";
 import { promisify as promisify4 } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
@@ -7831,6 +7831,7 @@ async function assertExclusivePathOwnership(path4, metadata, subject, options = 
   const waiver = resolveUnverifiedOwnershipWaiver(options.env ?? process.env);
   const probe = options.probeWindowsAcl ?? probeWindowsAcl;
   let report;
+  const probeStartedAt = performance.now();
   try {
     report = await probe(path4);
   } catch (cause) {
@@ -7859,7 +7860,17 @@ async function assertExclusivePathOwnership(path4, metadata, subject, options = 
       expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
       error
     });
-    warn(error.message);
+    const probeState = {
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      durationMs: Math.max(0, Math.round(performance.now() - probeStartedAt)),
+      repairAttempted: report.repaired,
+      protected: report.protected,
+      ownerMatches: report.owner === report.self,
+      aceCount: report.aces.length,
+      removedPrincipalCount: report.removed.length
+    };
+    warn(`${error.message}
+[windows-acl-state] ${JSON.stringify(probeState)}`);
     throw error;
   }
   if (report.repaired) {
@@ -10004,10 +10015,11 @@ function sanitizedWindowsAclProbeTimeout2(error) {
   windowsAclProbeTimeoutStages2.set(sanitized, stage);
   return sanitized;
 }
-function assertStandaloneWindowsExclusive(path4, label, deadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
+function assertStandaloneWindowsExclusive(path4, label, deadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
   if (standaloneVerifiedWindowsPaths.has(path4)) return;
   if (standaloneWaivedWindowsPaths.has(path4)) return;
   const subject = `Client v1 discovery ${label}`;
+  const probeStartedAt = performance2.now();
   const waiver = resolveUnverifiedOwnershipWaiver2(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   const probeEnv = {
@@ -10026,7 +10038,7 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance.n
     let rawReport;
     for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS2; attempt += 1) {
       try {
-        const remaining = Math.floor(deadline - performance.now());
+        const remaining = Math.floor(deadline - performance2.now());
         if (remaining <= 0) {
           throw Object.assign(new Error("the ACL publication probe budget was exhausted"), {
             code: "ETIMEDOUT"
@@ -10097,6 +10109,16 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance.n
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
+    console.warn(`[windows-acl-state] ${JSON.stringify({
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      discoveryPath: label,
+      durationMs: Math.max(0, Math.round(performance2.now() - probeStartedAt)),
+      repairAttempted: report.repaired,
+      protected: report.protected,
+      ownerMatches: report.owner === report.self,
+      aceCount: report.aces.length,
+      removedPrincipalCount: report.removed.length
+    })}`);
     throw discoveryPublicationFailure(
       `${label}-owner-shared`,
       new Error(sharedOwnershipRefusal2(subject, path4, findings, waiver))
@@ -10142,7 +10164,7 @@ function assertStandaloneDiscoveryTarget(path4, windowsAclProbeDeadline) {
   }
 }
 function publishStandaloneClientV1DiscoveryRecord(endpoint) {
-  const windowsAclProbeDeadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
+  const windowsAclProbeDeadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join3(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 448 });
   const rootMetadata = lstatSync(root);

@@ -176,6 +176,41 @@ test("refuses a Windows path whose DACL still inherits", async () => {
   );
 });
 
+test("logs bounded post-probe state once while preserving the cached refusal", async () => {
+  for (const repaired of [false, true]) {
+    const warnings: string[] = [];
+    const target = uniquePath();
+    const options = windows({
+      warn: (message) => warnings.push(message),
+      probeWindowsAcl: async () => report({ protected: false, repaired, removed: ["private-principal"] }),
+    });
+    let first: Error | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(assertClientV1PathOwnership(target, { uid: 0 }, "discovery root", options), (error: unknown) => {
+        assert.ok(error instanceof ClientV1PathOwnershipError);
+        assert.match(error.message, /its DACL still inherits from the parent/);
+        assert.doesNotMatch(error.message, /windows-acl-state|private-principal/);
+        if (first) assert.equal(error, first);
+        else first = error;
+        return true;
+      });
+    }
+    assert.equal(warnings.length, 1);
+    const line = warnings[0]!.split("\n").find((entry) => entry.startsWith("[windows-acl-state] "));
+    assert.ok(line, "a successful probe process can still return a nonexclusive report");
+    const state = JSON.parse(line.slice("[windows-acl-state] ".length));
+    assert.deepEqual(Object.keys(state).sort(), ["aceCount", "at", "durationMs", "ownerMatches", "protected", "removedPrincipalCount", "repairAttempted"]);
+    assert.equal(state.repairAttempted, repaired);
+    assert.equal(state.protected, false);
+    assert.equal(state.ownerMatches, true);
+    assert.equal(state.aceCount, 3);
+    assert.equal(state.removedPrincipalCount, 1);
+    assert.ok(Number.isFinite(Date.parse(state.at)));
+    assert.ok(Number.isInteger(state.durationMs) && state.durationMs >= 0);
+    assert.doesNotMatch(line, /private-principal|S-1-5|C:\\|Users/);
+  }
+});
+
 test("refuses a Windows path carrying a Deny entry for an untrusted principal", async () => {
   await assert.rejects(
     assertClientV1PathOwnership(
