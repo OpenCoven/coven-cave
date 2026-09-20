@@ -1657,6 +1657,7 @@ export const SUITES = {
     "src/app/api/projects/route.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",
+    "src/lib/coven-daemon-bytes.test.ts",
     "src/lib/coven-bin.test.ts",
     "src/lib/bd-bin.test.ts",
     "src/lib/npx-bin.test.ts",
