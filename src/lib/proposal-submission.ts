@@ -43,7 +43,9 @@ export function submissionOutcome(response: DaemonResponse<unknown>): Submission
   const code = record(body?.error)?.code;
   if (!response.ok && ((response.status === 403 && ["ward_refused", "protected_proposal_forbidden"].includes(String(code)))
     || (response.status === 404 && code === "familiar_not_found")
-    || (response.status === 409 && code === "ward_not_configured"))) return { kind: "refused" };
+    || (response.status === 409 && code === "ward_not_configured")
+    || (response.status === 413 && ["ward_apply_too_large", "proposal_quota_exceeded"].includes(String(code))
+      && record(record(body?.error)?.details)?.writeApplied === false))) return { kind: "refused" };
   // A transport failure or post-write 500 cannot establish that nothing changed.
   return { kind: "unknown" };
 }

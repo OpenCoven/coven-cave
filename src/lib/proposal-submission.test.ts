@@ -39,3 +39,13 @@ test("known refusals are sanitized; lost or post-write failure outcomes remain u
     assert.deepEqual(submissionOutcome({ ok: false, status, data: { error: { code: "ward_apply_ambiguous", details: { writeApplied: true } } } }), { kind: "unknown" });
   }
 });
+test("documented budget refusals require explicit no-write evidence", () => {
+  for (const code of ["ward_apply_too_large", "proposal_quota_exceeded"]) {
+    assert.deepEqual(submissionOutcome({ ok: false, status: 413,
+      data: { error: { code, details: { writeApplied: false, target: "private" } } } }), { kind: "refused" });
+    for (const details of [undefined, {}, { writeApplied: true }]) {
+      assert.deepEqual(submissionOutcome({ ok: false, status: 413,
+        data: { error: { code, details } } }), { kind: "unknown" });
+    }
+  }
+});

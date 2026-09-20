@@ -20,7 +20,7 @@ function outcomeText(outcome: SubmissionOutcome): string {
     case "applied": return "The daemon confirmed the edit was applied.";
     case "staged": return "The daemon staged the edit for review. Refresh the proposal queue to inspect it.";
     case "held": return "The daemon held the edit. Inspect the familiar’s audit log before making another change.";
-    case "refused": return "The daemon refused this edit. Check the familiar and its Ward configuration before preparing another edit.";
+    case "refused": return "The daemon refused this edit. Check the familiar, its Ward configuration, and edit limits before preparing another edit.";
     case "unavailable": return "Submission is unavailable. Check the daemon connection, fixture mode and browser storage before trying again.";
     case "unknown": return "The result is unknown. Do not repeat this edit until you have checked the file and the daemon’s audit log.";
   }

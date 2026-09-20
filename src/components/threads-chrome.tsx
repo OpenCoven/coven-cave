@@ -35,7 +35,7 @@ export function ThreadsHeader({
 }) {
   const toggleLabel = listCollapsed ? "Expand list" : "Collapse list";
   return (
-    <header className="wv-head">
+    <header className={`wv-head${actions ? " wv-head--actions" : ""}`}>
       <div className="wv-head__lead">
         <button
           type="button"
