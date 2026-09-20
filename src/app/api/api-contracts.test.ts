@@ -304,6 +304,7 @@ const contracts: RouteContract[] = [
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/proposals", methods: ["GET"], kind: "json" },
+  { route: "/proposals/submit", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/proposals/[id]/approve", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", optionalJsonBody: true, localOriginGuard: true },
   { route: "/proposals/[id]/reject", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", optionalJsonBody: true, localOriginGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },

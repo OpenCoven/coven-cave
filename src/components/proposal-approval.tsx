@@ -10,6 +10,7 @@
 // contents, and — pinned to the bottom of the pane — the decision itself, so
 // the buttons never scroll away from the evidence they act on.
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ProposalSubmission } from "@/components/proposal-submission";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -455,6 +456,11 @@ export function ProposalApproval() {
   const pendingCount = model ? model.ok.length : null;
   const header = (
     <ThreadsHeader
+      actions={<ProposalSubmission available={() => {
+        const current = responseEnvelopeStateAt(state);
+        return current.kind === "ready" && current.meta.adapter === "daemon" && current.meta.verified
+          && !current.banners.some(banner => banner.kind === "stale");
+      }} onRefresh={() => void load()} />}
       surface="proposals"
       pendingCount={pendingCount}
       listCollapsed={collapsed}

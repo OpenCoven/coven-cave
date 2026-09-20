@@ -1,0 +1,28 @@
+.proposal-submission {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+}
+.proposal-submission p {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+}
+.proposal-submission input,
+.proposal-submission textarea {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font: inherit;
+}
+.proposal-submission textarea { resize: vertical; }
+.proposal-submission__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
