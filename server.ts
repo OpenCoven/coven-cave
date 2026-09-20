@@ -611,6 +611,7 @@ function assertStandaloneWindowsExclusive(
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   if (standaloneWaivedWindowsPaths.has(path)) return;
   const subject = `Client v1 discovery ${label}`;
+  const probeStartedAt = performance.now();
   const waiver = resolveUnverifiedOwnershipWaiver(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   // The smallest environment PowerShell needs, never this server's own: it
@@ -746,6 +747,17 @@ function assertStandaloneWindowsExclusive(
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
+    // Keep refusal diagnostics bounded; raw paths, principals and ACLs stay out.
+    console.warn(`[windows-acl-state] ${JSON.stringify({
+      at: new Date().toISOString(),
+      discoveryPath: label,
+      durationMs: Math.max(0, Math.round(performance.now() - probeStartedAt)),
+      repairAttempted: report.repaired,
+      protected: report.protected,
+      ownerMatches: report.owner === report.self,
+      aceCount: report.aces.length,
+      removedPrincipalCount: report.removed.length,
+    })}`);
     throw discoveryPublicationFailure(
       `${label}-owner-shared`,
       new Error(sharedOwnershipRefusal(subject, path, findings, waiver)),

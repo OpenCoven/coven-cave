@@ -10019,6 +10019,7 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance2.
   if (standaloneVerifiedWindowsPaths.has(path4)) return;
   if (standaloneWaivedWindowsPaths.has(path4)) return;
   const subject = `Client v1 discovery ${label}`;
+  const probeStartedAt = performance2.now();
   const waiver = resolveUnverifiedOwnershipWaiver2(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   const probeEnv = {
@@ -10108,6 +10109,16 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance2.
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
+    console.warn(`[windows-acl-state] ${JSON.stringify({
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      discoveryPath: label,
+      durationMs: Math.max(0, Math.round(performance2.now() - probeStartedAt)),
+      repairAttempted: report.repaired,
+      protected: report.protected,
+      ownerMatches: report.owner === report.self,
+      aceCount: report.aces.length,
+      removedPrincipalCount: report.removed.length
+    })}`);
     throw discoveryPublicationFailure(
       `${label}-owner-shared`,
       new Error(sharedOwnershipRefusal2(subject, path4, findings, waiver))
