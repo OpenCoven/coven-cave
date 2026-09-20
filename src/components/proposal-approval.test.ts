@@ -23,10 +23,15 @@ assert.match(flow, /availability\.actions\.map/, "only authority-derived actions
 assert.match(flow, /action\.label\}/, "the view-model owns each visible action label");
 assert.match(
   flow,
-  /disabled=\{submitting !== null \|\| !action\.enabled\}/,
+  /disabled=\{decisionPending \|\| submitting !== null \|\| needsReconciliation \|\| !action\.enabled\}/,
   "decision-specific disabled state reaches each button",
 );
 assert.match(flow, /decisionOutcomeFromResponse\(/, "outcomes derive from the response mapper");
+assert.match(flow, /if \(!action\?\.enabled \|\| !beginDecision\(\)\) return/, "queue guard runs before sending a mutation");
+assert.match(flow, /if \(pendingDecisionRef\.current\) return false/, "synchronous queue guard closes same-render replay");
+assert.match(flow, /finally \{[\s\S]*?endDecision\(\)/, "settled requests release the queue guard");
+assert.match(flow, /beginDecision=\{beginDecision\}/, "keyed details share the parent guard");
+
 assert.match(flow, /proposalPill\(proposal\)/, "queue status pills derive from the view-model");
 assert.match(model, /export function proposalPill\(/, "the queue pill vocabulary lives in the view-model");
 assert.match(
@@ -43,8 +48,10 @@ assert.match(
   "verified Phase 5 decisions forward the authority revision",
 );
 assert.match(flow, /note:\s*note\.trim\(\)/, "the route body uses the trimmed decision note");
-assert.match(flow, /re-validated before applying/, "applied outcome credits the daemon's re-validation");
-assert.match(flow, /if \(result\.kind === "applied"\) onDecided\(\)/, "list refreshes only on an applied decision");
+assert.match(flow, /confirmed this proposal as \{outcome\.terminal\}/, "confirmed outcomes use the daemon terminal label");
+assert.match(flow, /if \(result\.kind === "confirmed"\) \{[\s\S]*?onRefresh\(\)/, "confirmed outcomes refresh authoritative state");
+assert.match(flow, /needsReconciliation \|\| !currentAvailability\.allowed/, "uncertain outcomes cannot resend before reconciliation");
+assert.match(flow, /onClick=\{onRefresh\}>\s*Refresh proposals/, "uncertain outcomes offer a read-only refresh");
 assert.match(flow, /Nothing here is applied optimistically/, "the decision block denies optimistic application");
 
 // daemon lifecycle data is rendered as trace, never reinterpreted locally
@@ -132,3 +139,6 @@ assert.match(page, /data, not authority/, "page states the staged-write rule");
 assert.match(page, /never applies edits\s+itself/, "page denies a UI write path");
 
 console.log("proposal-approval wiring: all assertions passed");
+
+assert.match(flow, /const generation = \+\+loadGeneration\.current/, "each read owns a monotonically ordered generation");
+assert.match(flow, /if \(generation !== loadGeneration\.current\) return;\s*reconcileOutcomes/, "superseded reads cannot publish or reconcile state");

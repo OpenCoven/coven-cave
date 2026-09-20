@@ -10,7 +10,7 @@
 
 import type { ProposalView } from "./threads-read.ts";
 import type { SurfaceState, TensionPill } from "./weave-rail.ts";
-import { decisionsEnabled } from "./weave-rail.ts";
+import { decisionsEnabled, surfaceStateFromPayload } from "./weave-rail.ts";
 
 export type ProposalListModel = {
   /** Parse-ok proposals, oldest staged first (operator clears the queue in order). */
@@ -230,38 +230,63 @@ export function decisionAvailability(
 // Decision outcome from the POST response (route §3.7 status mapping)
 
 export type DecisionOutcome =
-  | { kind: "applied"; decision: "approve" | "reject" }
-  | { kind: "refused"; decision: "approve" | "reject"; why: string; message: string };
+  | { kind: "confirmed"; decision: "approve" | "reject"; terminal: "approved" | "rejected" | "vetoed" | "superseded" }
+  | { kind: "refused" | "unconfirmed"; decision: "approve" | "reject"; why: string; message: string };
+
+/** Uncertain writes survive selection changes until a fresh authoritative read. */
+export function reconcileDecisionOutcomes(
+  current: ReadonlyMap<string, DecisionOutcome>,
+  event: { kind: "outcome"; proposalId: string; outcome: DecisionOutcome }
+    | { kind: "refresh"; state: SurfaceState<unknown>; covered: ReadonlyMap<string, DecisionOutcome> },
+): ReadonlyMap<string, DecisionOutcome> {
+  if (event.kind === "refresh") {
+    if (!decisionsEnabled(event.state)) return current;
+    return new Map([...current].filter(([id, outcome]) => event.covered.get(id) !== outcome));
+  }
+  if (event.outcome.kind !== "unconfirmed") return current;
+  return new Map(current).set(event.proposalId, event.outcome);
+}
 
 const REFUSAL_MESSAGES: Record<string, string> = {
-  "daemon-unavailable": "No daemon to carry the decision — nothing was applied; the proposal stays pending.",
-  "daemon-unreachable": "The daemon did not answer — nothing was applied; the proposal stays pending.",
-  "daemon-endpoint-missing": "The daemon does not accept decisions yet — nothing was applied.",
-  "daemon-timeout": "The daemon timed out — nothing was applied; the proposal stays pending.",
-  "proposal-corrupt": "The proposal is corrupt — the decision was not applied.",
-  "proposal-refused": "The daemon re-validated and refused the decision — nothing was applied, and the proposal may no longer be pending.",
-  "not-found": "No staged proposal by that id — it may already be decided.",
-  "invalid-id": "That proposal id is not valid.",
+  "daemon-endpoint-missing": "The daemon does not accept decisions yet. Update the daemon before trying again.",
+  "proposal-corrupt": "The proposal is corrupt. Inspect its source before deciding.",
+  "proposal-refused": "The daemon refused the decision. Refresh to inspect its current state.",
+  "not-found": "No staged proposal by that id. Refresh to inspect the current state.",
+  "invalid-id": "That proposal id is not valid. Refresh the proposal list.",
 };
+
+function outcomeRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
 
 export function decisionOutcomeFromResponse(
   decision: "approve" | "reject",
   status: number,
   payload: unknown,
+  proposalId: string,
 ): DecisionOutcome {
-  const body = (typeof payload === "object" && payload !== null ? payload : {}) as {
-    blocked?: unknown;
-    why?: unknown;
-  };
-  if (status === 200 && body.blocked !== true) {
-    return { kind: "applied", decision };
+  const body = outcomeRecord(payload);
+  const data = outcomeRecord(body?.data);
+  const meta = outcomeRecord(body?.meta);
+  const terminal = data?.decision;
+  const matchesDecision = decision === "approve"
+    ? terminal === "approved"
+    : terminal === "rejected" || terminal === "vetoed" || terminal === "superseded";
+  if (
+    status === 200 && body?.blocked === false && meta?.adapter === "daemon"
+    && decisionsEnabled(surfaceStateFromPayload(payload))
+    && data?.ok === true && proposalId.length > 0 && data.proposalId === proposalId && matchesDecision
+  ) {
+    return { kind: "confirmed", decision, terminal: terminal as "approved" | "rejected" | "vetoed" | "superseded" };
   }
-  const why = typeof body.why === "string" ? body.why : `http-${status}`;
+  const why = typeof body?.why === "string" ? body.why : `http-${status}`;
+  const refusal = body?.blocked === true && status !== 200 ? REFUSAL_MESSAGES[why] : undefined;
   return {
-    kind: "refused",
+    kind: refusal ? "refused" : "unconfirmed",
     decision,
     why,
-    message: REFUSAL_MESSAGES[why] ?? "The decision was refused — nothing was applied.",
+    message: refusal ?? "The decision outcome is not confirmed. Refresh and inspect the daemon’s current state before deciding again.",
   };
 }
 
