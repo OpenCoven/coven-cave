@@ -1,0 +1,140 @@
+{
+  "archive": "cave-interface-redesign-handoff.zip",
+  "sha256": "9db832c0c99af0d686d575161754a7b006dff5a1036be9d5b751710884a52e90",
+  "issue": 5453,
+  "sourceAuthorization": "Val supplied this archive instead of the live project on 2026-09-20.",
+  "entries": [
+    {
+      "path": "coven-cave-interface-redesign/README.md",
+      "bytes": 1694,
+      "sha256": "8f301e73ad05a74e1a58ea6c8f0bc8e7cc52bc2a436f25058b6c8adfe0f237a6",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/Coven Cave Prototype.dc.html",
+      "bytes": 110727,
+      "sha256": "e6021584d251d9c1f52f7e003748179954aafae3bc55f19957216ed6f8e75716",
+      "retained": "source/Coven Cave Prototype.dc.html"
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/Coven Cave Redesign Spec.md",
+      "bytes": 27336,
+      "sha256": "4f4a454ac80ae6de314a1138719aa3c1d96ee055798a0b939784ea6bd3cc8e3e",
+      "retained": "source/Coven Cave Redesign Spec.md"
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/Coven Cave Redesign.dc.html",
+      "bytes": 287174,
+      "sha256": "5a598c47bf74576bd0910bbfbe6dcb20f494dacbd4ee99e7fead0c5a5aed1391",
+      "retained": "source/Coven Cave Redesign.dc.html"
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/CovenComposer.dc.html",
+      "bytes": 55610,
+      "sha256": "85749a74b1da5e5a8342dcb312338038d3f5eef0efaf94b7b893b8a59ed2dcaa",
+      "retained": "source/CovenComposer.dc.html"
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/_ds/opencoven-530c9c44-8b06-4dfc-9215-ed70af0a743a/_ds_bundle.css",
+      "bytes": 609502,
+      "sha256": "8f070979069fee237ea35379c689d4b4d5d65edc5da09896f8c7cd5d21e89317",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/_ds/opencoven-530c9c44-8b06-4dfc-9215-ed70af0a743a/_ds_bundle.js",
+      "bytes": 480247,
+      "sha256": "9899c2779c461dacac2c1c2efc96924ba31ed27108c8edfccf6b9ce00f310675",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/_ds/opencoven-530c9c44-8b06-4dfc-9215-ed70af0a743a/styles.css",
+      "bytes": 28,
+      "sha256": "13d37eb3b23b3fcc9acf030fbefce7351632b973e5b51fb94058104fe8b23802",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/github.md",
+      "bytes": 855,
+      "sha256": "0020092448be3f96d6cc932e3bc88c5f2cc97394002cfed042b440620b7d94fa",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/oc-mark.svg",
+      "bytes": 1497,
+      "sha256": "f145d95c5d1d11f9ef6cfdeb2481ccfb13836de6c9611b93f2eb0cdaf4494d94",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/support.js",
+      "bytes": 69150,
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.01.png",
+      "bytes": 5017209,
+      "sha256": "c09147ab23d84810a38095a7cfa3745ee040e3d7d37a0a0ffccf96575889965f",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.18.png",
+      "bytes": 3212971,
+      "sha256": "8d057742fa7b3e3ceb5c629af9abbb87181341bbf8f1d549e9642ee341078618",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.28.png",
+      "bytes": 837075,
+      "sha256": "5532fb2e3a3fa52ea846204fe1d06736ef0e260813f450fb77b96d9e1167cdef",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.38.png",
+      "bytes": 3377462,
+      "sha256": "878e62db4c1e7d480e12756c2e83131a4ce30a1db6c87ffc2beb0c347c0f70f6",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.49.png",
+      "bytes": 369872,
+      "sha256": "f58aa092b0a2588267909e0866fbd9b81c087d749f0aca220157c2824e2fb10a",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.39.57.png",
+      "bytes": 327729,
+      "sha256": "89ed2a833ed5aeb37a78e0d454af3daf000099015bf808598fde66576feaa6ea",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 03.40.11.png",
+      "bytes": 1540206,
+      "sha256": "3a938099e1bbad40513c6d820ce33b4f0dd2007c59fdbb48129eef5f4abe6260",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 10.37.20.png",
+      "bytes": 393238,
+      "sha256": "f945bd3c807838edb5b5bad5a0562bccff49149dc7e3c9ef4c18fcf3db49f670",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 10.37.28.png",
+      "bytes": 472216,
+      "sha256": "2b93a96126be253109721c3b6003261f9a7be43dd872142fdd96eeddfadee04d",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/Screenshot 2026-09-14 at 10.37.35.png",
+      "bytes": 252063,
+      "sha256": "f7ff301d2a848491fce5eb438fb334af257c4bcac5c305ecf2c448335d8c6f37",
+      "retained": null
+    },
+    {
+      "path": "coven-cave-interface-redesign/project/uploads/pasted-1789378442124-0.png",
+      "bytes": 69735,
+      "sha256": "d4d0d18db8230ce74af6ca347f8d8c302d7e081ea8a71ec631ac0ad98d27be4f",
+      "retained": null
+    }
+  ]
+}
