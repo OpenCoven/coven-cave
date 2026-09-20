@@ -59,10 +59,17 @@ const foldTrigger = (page: Page) => page.locator(".cave-chat-fold__trigger");
 const turns = (page: Page) => page.locator("[data-turn-id]");
 
 async function openFoldedThread(page: Page) {
-  await page.context().routeWebSocket("**/*", (socket) => socket.close());
+  // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
+  await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.route("**/api/**", (route) => route.fulfill({
     status: route.request().method() === "GET" ? 200 : 403,
     json: { ok: route.request().method() === "GET" },
+  }));
+  await page.route("**/api/daemon/connection", (route) => route.fulfill({
+    json: { ok: true, running: true, connected: true, target: { mode: "local" } },
   }));
   const project = { id: "fold-project", name: "Fold project", root: "/repo", access: "write", createdAt: iso(500), updatedAt: iso(1) };
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
@@ -86,18 +93,14 @@ async function openFoldedThread(page: Page) {
       : r.fulfill({ json: { ok: true } }),
   );
   await page.goto("/");
-  await page.waitForSelector(".shell-frame", { timeout: 30_000 });
+  await page.waitForSelector(".shell-frame[data-settled]", { timeout: 30_000 });
   // cave:agents-open-session is handled by ChatSurface, so the surface has to
   // be MOUNTED before the event is dispatched — the app boots on home, where
   // that listener does not exist yet and the event lands on nothing.
-  await page.waitForFunction(
-    () => {
-      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
-      return document.querySelector(".chat-surface") !== null;
-    },
-    undefined,
-    { timeout: 30_000 },
-  );
+  // Navigate once after hydration; repeated landing events can interrupt the
+  // lazy surface while it is loading.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } })));
+  await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
   await page.evaluate((id) =>
     window.dispatchEvent(
       new CustomEvent("cave:agents-open-session", { detail: { sessionId: id, familiarId: "nova" } }),

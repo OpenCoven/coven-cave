@@ -910,7 +910,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useLayoutEffect\(\(\) => \{\s*\n\s*viewMountedRef\.current = true;\s*\n\s*return \(\) => \{\s*\n\s*viewMountedRef\.current = false;\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
   "the callback ref stays render-synchronized while layout cleanup synchronously releases compose ownership",
 );
 // Set to runId at the start of every send so resumed replacements also lose
@@ -1059,7 +1059,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;/,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*viewMountedRef\.current = true;\s*\n\s*return \(\) => \{\s*\n\s*viewMountedRef\.current = false;\s*\n\s*displayedCreationRunIdRef\.current = null;/,
   "keyed compose replacement synchronously revokes the old view's display ownership",
 );
 assert.match(

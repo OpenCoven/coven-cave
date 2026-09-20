@@ -51,7 +51,8 @@ const sessions = [
 ];
 
 async function isolateRuntime(page: Page) {
-  await page.context().routeWebSocket("**/*", (socket) => socket.close());
+  // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
+  await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
   await page.context().addCookies([
     { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
   ]);
@@ -564,6 +565,8 @@ test("mobile fix handoff opens the Chat drawer and restores the main draft on cl
   });
   const drawer = page.locator(".mobile-right-chat-drawer");
   await expect(drawer).toBeVisible();
+  // The drawer shell appears before its lazy Chat chunk compiles under next dev.
+  await expect(drawer.getByRole("textbox", { name: "Message", exact: true })).toBeVisible({ timeout: 45_000 });
   await expect.poll(() => fixture.sends.length).toBe(1);
   expect(fixture.sends[0]).toMatchObject({ familiarId: "cody", projectRoot: "/repo" });
   await expect(drawer.getByText(fixture.fixtureReply, { exact: true })).toBeVisible();

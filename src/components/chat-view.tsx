@@ -2712,10 +2712,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Tracks which generation run currently owns the displayed view. Cleared on
   // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
   const displayedCreationRunIdRef = useRef<string | null>(null);
+  const viewMountedRef = useRef(false);
   const onSessionsChangedRef = useRef(onSessionsChanged);
   onSessionsChangedRef.current = onSessionsChanged;
   useLayoutEffect(() => {
+    viewMountedRef.current = true;
     return () => {
+      viewMountedRef.current = false;
       displayedCreationRunIdRef.current = null;
     };
   }, []);
@@ -5275,7 +5278,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (runtimeMutationRef.current === runtimeMutation && runtimeSaved) {
         runtimeMutationRef.current = null;
       }
-      if (currentDraftKeyRef.current !== scopedDraftKey) {
+      // New Chat can remount the same draft scope. The old instance must not
+      // start a run after its cleanup has already revoked display ownership.
+      if (!viewMountedRef.current || currentDraftKeyRef.current !== scopedDraftKey) {
         if (!readComposerDraft(scopedDraftKey)) writeComposerDraft(scopedDraftKey, text);
         announce("Chat changed while saving runtime settings. Your message was kept as a draft.", "assertive");
         return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 
 /**
  * Persist a composer's in-progress text so a page reload doesn't eat a
@@ -91,19 +91,27 @@ export function useDraftPersistence(
 export function useComposerDraft(key: string, delayMs = 250) {
   const [draft, setDraft] = useState(() => ({ key, value: readComposerDraft(key) }));
   const committedDraft = useRef(draft);
-  useEffect(() => { committedDraft.current = draft; }, [draft]);
+  useLayoutEffect(() => { committedDraft.current = draft; }, [draft]);
   if (draft.key !== key) {
     setDraft({ key, value: readComposerDraft(key) });
   }
   const setValue = useCallback((next: SetStateAction<string>) => {
-    setDraft((current) => {
-      // Async work started on another thread must not change this draft.
-      if (current.key !== key) return current;
-      return { key, value: typeof next === "function" ? next(current.value) : next };
-    });
+    const current = committedDraft.current;
+    // Async work started on another thread must not change this draft.
+    if (current.key !== key) return;
+    const updated = { key, value: typeof next === "function" ? next(current.value) : next };
+    // Session promotion can arrive before React commits this edit. Transfer
+    // the accepted value, including a send's clear, rather than a stale render.
+    committedDraft.current = updated;
+    setDraft(updated);
   }, [key]);
   const value = draft.key === key ? draft.value : "";
-  const { clearNow } = useDraftPersistence(key, value, delayMs);
+  const { clearNow: clearPersistedDraft } = useDraftPersistence(key, value, delayMs);
+  const clearNow = useCallback(() => {
+    if (committedDraft.current.key !== key) return;
+    committedDraft.current = { key, value: "" };
+    clearPersistedDraft();
+  }, [key, clearPersistedDraft]);
   const transferTo = useCallback((destination: string) => {
     if (committedDraft.current.key !== key || destination === key) return;
     writeComposerDraft(destination, committedDraft.current.value);

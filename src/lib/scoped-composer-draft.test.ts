@@ -79,3 +79,40 @@ test("reused composer restores only its own draft, flushes rapid switches and ig
     globalThis.window = originalWindow;
   }
 });
+
+for (const followUp of ["", "Newest follow-up"]) {
+  test(`promotion before effects preserves ${followUp ? "the newest follow-up" : "a cleared draft"}`, async () => {
+    const originalWindow = globalThis.window;
+    const storage = new Map([["compose", "Already sent prompt"]]);
+    globalThis.window = {
+      localStorage: {
+        getItem: (key) => storage.get(key) ?? null,
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: (key) => storage.delete(key),
+      },
+      setTimeout: () => 1,
+      clearTimeout: () => {},
+    };
+    let current;
+    let renderer;
+    function Probe() {
+      current = useComposerDraft("compose");
+      return null;
+    }
+    try {
+      await act(async () => { renderer = create(createElement(StrictMode, null, createElement(Probe))); });
+      await act(async () => {
+        current.setValue("");
+        current.clearNow();
+        if (followUp) current.setValue((value) => value + followUp);
+        // A session response can arrive before the batched render/effects.
+        await Promise.resolve();
+        current.transferTo("session");
+        assert.equal(storage.get("session") ?? "", followUp);
+      });
+    } finally {
+      await act(async () => { renderer?.unmount(); });
+      globalThis.window = originalWindow;
+    }
+  });
+}

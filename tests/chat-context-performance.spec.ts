@@ -39,7 +39,8 @@ const sessions = [
 
 async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promise<void>) {
   const conversationRequests: string[] = [];
-  await page.context().routeWebSocket("**/*", (socket) => socket.close());
+  // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
+  await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
   await page.addInitScript((betaFamiliar) => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
@@ -421,3 +422,61 @@ test("a remote-host handoff carries follow-up text through its owned session pro
     release();
   }
 });
+
+for (const departure of ["project", "new-chat"] as const) {
+  test(`a delayed runtime save cannot send or move a draft after ${departure} departure`, async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "cody" } })));
+    await switchProject(page, "alpha");
+    let releaseSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+    let saves = 0;
+    let sends = 0;
+    await page.route("**/api/config", async (route) => {
+      saves += 1;
+      await saveGate;
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.route("**/api/chat/model-state**", (route) => route.fulfill({ json: {
+      ok: true, state: { harness: "claude", effectiveModel: "", source: "runtime-default", applicationState: "saved", reason: "fixture" },
+    } }));
+    await page.route("**/api/chat/send", (route) => {
+      sends += 1;
+      return route.fulfill({ status: 403, json: { ok: false, error: "Synthetic send forbidden" } });
+    });
+    const main = page.getByTestId("chat-main");
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Origin message waiting for runtime");
+    await main.getByRole("button", { name: /change model/ }).click();
+    await page.getByRole("menu", { name: "Runtime and model" }).getByRole("menuitemradio", { name: "Codex", exact: true }).click();
+    await expect.poll(() => saves).toBe(1);
+    await page.keyboard.press("Escape");
+    await composer.focus();
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+    try {
+      if (departure === "project") {
+        await main.getByRole("button", { name: /^Project:/ }).click();
+        await page.locator(".cave-project-picker__row").filter({ hasText: "Context beta" }).first().locator(".ui-popover-item").click();
+      } else {
+        const oldComposer = await composer.elementHandle();
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "cody" } })));
+        await expect.poll(() => oldComposer!.evaluate((element) => element.isConnected)).toBe(false);
+      }
+      await composer.fill("Destination draft must survive");
+      await expect.poll(() => page.evaluate(() => Object.values(localStorage).includes("Destination draft must survive"))).toBe(true);
+      releaseSave();
+      await expect(page.getByText("Chat changed while saving runtime settings. Your message was kept as a draft.", { exact: true })).toBeAttached();
+      expect(sends).toBe(0);
+      await expect(composer).toHaveValue("Destination draft must survive");
+      await expect.poll(() => page.evaluate(() => Object.values(localStorage).includes("Destination draft must survive"))).toBe(true);
+      if (departure === "project") {
+        await main.getByRole("button", { name: /^Project:/ }).click();
+        await page.locator(".cave-project-picker__row").filter({ hasText: "Context alpha" }).first().locator(".ui-popover-item").click();
+        await expect(composer).toHaveValue("Origin message waiting for runtime");
+      }
+    } finally {
+      releaseSave();
+    }
+  });
+}
