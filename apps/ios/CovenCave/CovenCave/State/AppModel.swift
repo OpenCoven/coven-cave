@@ -4810,6 +4810,7 @@ final class AppModel {
         disconnectRefreshCancellationTask = nil
         stopConnectionSupervisorWorker()
         cancelQueuedMessageFlush()
+        NotificationCenter.default.post(name: .caveImageAuthorityChanged, object: nil)
         connectionConfigurationGeneration &+= 1
         let transitionGeneration = connectionConfigurationGeneration
         invalidateProjectContextLoads()
@@ -4851,6 +4852,7 @@ final class AppModel {
         // coordinator was awaiting its owner. Advance once more so anything
         // that captured that transition epoch/old client is also fenced.
         cancelQueuedMessageFlush()
+        NotificationCenter.default.post(name: .caveImageAuthorityChanged, object: nil)
         connectionConfigurationGeneration &+= 1
         let configuredGeneration = connectionConfigurationGeneration
         invalidateProjectContextLoads()
@@ -4913,6 +4915,7 @@ final class AppModel {
         disconnectRefreshCancellationTask?.cancel()
         stopConnectionSupervisorWorker()
         cancelQueuedMessageFlush()
+        NotificationCenter.default.post(name: .caveImageAuthorityChanged, object: nil)
         connectionConfigurationGeneration &+= 1
         advanceProjectNavigationConnectionGeneration()
         pendingPairingDestination = nil

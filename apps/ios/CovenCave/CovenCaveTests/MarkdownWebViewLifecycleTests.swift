@@ -5,6 +5,130 @@ import XCTest
 
 final class MarkdownWebViewLifecycleTests: XCTestCase {
     @MainActor
+    func testInlineImageZoomUsesBoundedDownsampling() async throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 5000, height: 1), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 5000, height: 1))
+        }
+        let data = try XCTUnwrap(source.pngData())
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let presented = expectation(description: "Inline zoom presents a bounded native image")
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { note in
+            guard let target = note.object as? ZoomTarget, case .image(let image) = target.content else {
+                XCTFail("Expected a native image")
+                presented.fulfill()
+                return
+            }
+            XCTAssertLessThanOrEqual(image.cgImage?.width ?? Int.max, 4096)
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.presentImage(src: "data:image/png;base64," + data.base64EncodedString(), fallbackHTML: "")
+        await fulfillment(of: [presented], timeout: 5)
+    }
+
+    @MainActor
+    func testInlineImageFailureDoesNotRenderUnboundedFallback() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let presented = expectation(description: "Unsupported image has a safe error")
+        let unsafeHTML = "<img src='https://example.invalid/unbounded.png'>"
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { note in
+            guard let target = note.object as? ZoomTarget, case .html(let html) = target.content else {
+                XCTFail("Expected a static failure message")
+                presented.fulfill()
+                return
+            }
+            XCTAssertFalse(html.contains("<img"))
+            XCTAssertFalse(html.contains("example.invalid"))
+            XCTAssertTrue(html.contains("Couldn't open"))
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.presentImage(src: "file:///private/unsupported.png", fallbackHTML: unsafeHTML)
+        await fulfillment(of: [presented], timeout: 5)
+    }
+
+    @MainActor
+    func testInvalidatingOwnerCancelsPendingImagePresentation() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        let presented = expectation(description: "Disposed owner must not open zoom")
+        presented.isInverted = true
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { _ in
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.presentImage(src: "data:image/png;base64,broken", fallbackHTML: "<img src='unbounded'>")
+        coordinator.invalidate()
+        await fulfillment(of: [presented], timeout: 0.2)
+    }
+
+    @MainActor
+    func testAuthorityChangeCancelsPendingImagePresentation() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let presented = expectation(description: "Old authority must not open zoom")
+        presented.isInverted = true
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { _ in
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.presentImage(src: "data:image/png;base64,broken", fallbackHTML: "")
+        NotificationCenter.default.post(name: .caveImageAuthorityChanged, object: nil)
+        await fulfillment(of: [presented], timeout: 0.2)
+    }
+
+    @MainActor
+    func testAuthorityChangeRejectsQueuedImageBridgeMessage() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let presented = expectation(description: "Queued old-authority message must not open zoom")
+        presented.isInverted = true
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { _ in
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.enqueueScriptBody(["type": "enlarge", "kind": "image", "src": "file:///unsupported.png"])
+        NotificationCenter.default.post(name: .caveImageAuthorityChanged, object: nil)
+        await fulfillment(of: [presented], timeout: 0.2)
+    }
+
+    @MainActor
+    func testRapidReplacementPresentsOnlyTheLastImage() async throws {
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let source = "data:image/png;base64," + (try XCTUnwrap(image.pngData())).base64EncodedString()
+        let presented = expectation(description: "Only the final tap presents")
+        var count = 0
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { note in
+            count += 1
+            guard let target = note.object as? ZoomTarget, case .image = target.content else {
+                XCTFail("A replaced image failure must not present")
+                presented.fulfill()
+                return
+            }
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        for _ in 0..<30 {
+            coordinator.presentImage(src: "file:///unsupported.png", fallbackHTML: "")
+        }
+        coordinator.presentImage(src: source, fallbackHTML: "")
+        await fulfillment(of: [presented], timeout: 5)
+        await drainMainQueue()
+        XCTAssertEqual(count, 1)
+    }
+
+    @MainActor
     func testRegisteredHandlerDoesNotRetainCoordinator() {
         // Keep WebKit/configuration alive deliberately. Before the weak
         // forwarding handler this leaves the coordinator retained.
@@ -110,18 +234,26 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
     func testTransientStreamingFailureCanRecoverWithSettledRender() async throws {
         let recorder = CavePerformanceRecorder(enabled: true)
         let coordinator = MarkdownWebView.Coordinator(performanceRecorder: recorder)
+        coordinator.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
+            window.__caveTestErrors = [];
+            window.addEventListener('error', event => window.__caveTestErrors.push(event.message));
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         // A real render needs a visible, sized web view. An unattached zero-size
         // view can defer WebContent startup on a cold CI simulator.
         let host = UIViewController()
         host.view = coordinator.webView
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
         window.rootViewController = host
-        window.isHidden = false
+        window.makeKeyAndVisible()
         host.view.layoutIfNeeded()
         defer {
             coordinator.invalidate()
             window.isHidden = true
             window.rootViewController = nil
+            previousKeyWindow?.makeKeyAndVisible()
         }
         let clock = ContinuousClock()
         let readyDeadline = clock.now.advanced(by: .seconds(30))
@@ -132,7 +264,12 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
             )) as? Bool == true
             if !rendererReady { try await Task.sleep(for: .milliseconds(10)) }
         }
-        XCTAssertTrue(rendererReady, "The bundled renderer must load before injecting a transient failure")
+        if !rendererReady {
+            let diagnostic = try? await coordinator.webView.evaluateJavaScript(
+                "JSON.stringify({url:location.href, state:document.readyState, scripts:document.scripts.length, errors:window.__caveTestErrors})"
+            )
+            XCTFail("The bundled renderer must load before injecting a transient failure: \(String(describing: diagnostic))")
+        }
         guard rendererReady else { return }
         _ = try await coordinator.webView.evaluateJavaScript("""
             window.caveRender = async function(md, opts) {
