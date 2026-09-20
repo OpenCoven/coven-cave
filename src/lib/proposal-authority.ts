@@ -725,6 +725,11 @@ function isProbeReport(value: unknown): boolean {
 }
 
 function hasValidProducerEvidence(raw: RawRecord): boolean {
+  // AUTO replay is bound to a producer commitment; a matching envelope hash
+  // alone cannot establish that the required evidence was ever supplied.
+  if (isRecord(raw.classification) && isRecord(raw.classification.approval_path)
+    && raw.classification.approval_path.kind === "auto_regression"
+    && !isByteArray(raw.autoRegressionEvidence, 32)) return false;
   return ["identityEvidence", "autoRegressionEvidence"].every(key => !(key in raw) || isByteArray(raw[key], 32))
     && (!("probes" in raw) || (Array.isArray(raw.probes) && raw.probes.every(isProbeReport)));
 }

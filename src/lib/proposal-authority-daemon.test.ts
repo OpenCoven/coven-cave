@@ -72,3 +72,30 @@ test("passed, failed and unscored probes remain advisory under the daemon's type
     assert.equal(normalizeProposalAuthority(staged, summary).state, "blocked");
   }
 });
+
+test("auto-regression requires its commitment with and without a veto window", () => {
+  for (const veto of [true, false]) {
+    const { staged, summary } = fixture();
+    staged.classification.approval_path.kind = "auto_regression";
+    summary.approvalPath.variant = "auto_regression";
+    summary.approvalPath.label = "auto";
+    if (!veto) {
+      staged.classification.approval_path.veto = null;
+      staged.veto_deadline = null;
+      staged.earliest_close = null;
+      staged.lifecycle = { state: "ready_for_replay" };
+      summary.approvalPath.veto_deadline = null;
+      summary.earliestClose = null;
+      summary.lifecycle = "ready_for_replay";
+    }
+    staged.autoRegressionEvidence = Array(32).fill(7);
+    summary.proposalRevision = canonicalProposalRevision(staged);
+    assert.equal(normalizeProposalAuthority(staged, summary).state, "verified");
+    for (const evidence of [undefined, null, [], Array(31).fill(7), Array(32).fill(256)]) {
+      if (evidence === undefined) delete staged.autoRegressionEvidence;
+      else staged.autoRegressionEvidence = evidence;
+      summary.proposalRevision = canonicalProposalRevision(staged);
+      assert.equal(normalizeProposalAuthority(staged, summary).state, "blocked", `veto=${veto}, evidence=${JSON.stringify(evidence)}`);
+    }
+  }
+});
