@@ -139,6 +139,44 @@ as passed.
 - Transcript rows and indexes are proportional to the current message count,
   not the number of streamed text deltas.
 
+## Inline image zoom bounds (#5314)
+
+Inline images use `CaveImageCache` rather than a full-source `UIImage` path.
+The loader accepts at most 32 MiB of encoded image bytes, preflights base64
+before decoding, and enforces the same cap as response chunks arrive.
+Requests use an ephemeral session without shared cookies or credentials,
+with 15-second request and 30-second resource timeouts. Explicit bearer
+requests retain the existing redirect guard; inline remote images do not
+receive pairing credentials.
+
+ImageIO rejects source dimensions above 32,768 pixels per axis or 100 million
+pixels total. Target dimensions are limited to 4,096 pixels per axis; EXIF
+orientation is applied when fitting the target. Two load/decode operations
+can run concurrently and six can wait; excess requests return the same
+explicit failure UI. Same-source/target requests still share one operation.
+The existing 48 MiB decoded-image cache budget remains unchanged. Data-URL
+cache keys retain a 32-byte SHA-256 digest rather than the encoded source text.
+Cancellation propagates into detached decode work and is checked before and
+after ImageIO calls. A synchronous ImageIO call already in progress cannot be
+interrupted; its scheduler slot remains held until it actually returns.
+
+Owner disposal, content replacement, another image selection, and pairing
+changes cancel pending inline presentation. Pairing generation checks also
+reject old WebKit messages queued before the authority changed. Failed image
+loads show a static message; the original image HTML is never a fallback.
+
+Native behavioral tests cover resource caps, coalescing, cancellation,
+orientation, and the inline entry point. These bounds do **not** establish
+physical-device performance acceptance: #5314 still requires Release-device
+Time Profiler/Allocations evidence, 100 zoom/dismiss cycles, and the #5310
+memory/hitch gates. Simulator tests do not establish VoiceOver acceptance.
+
+Use `pnpm mobile:ios:xcodegen` to generate the local Xcode project. Its wrapper
+builds and verifies markdown resources before XcodeGen scans them. Running
+XcodeGen directly can omit files later created by the pre-build script.
+Verify `markdown.html` exists inside the built app before interpreting a
+renderer test result.
+
 ## Validation
 
 Run from the repository worktree:

@@ -31,6 +31,23 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// WebKit callbacks can arrive outside MainActor. Capture the authority at
+/// ingress so a queued callback cannot become work for replaced content or pairing.
+private final class MarkdownCallbackEpoch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    func snapshot() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+    func advance() {
+        lock.lock()
+        value &+= 1
+        lock.unlock()
+    }
+}
+
 struct MarkdownRenderSignature: Equatable {
     let markdown: String
     let streaming: Bool
@@ -133,6 +150,7 @@ struct MarkdownWebView: UIViewRepresentable {
         private var throttleTask: Task<Void, Never>?
         private var imageTask: Task<Void, Never>?
         private var imageGeneration: UInt64 = 0
+        private nonisolated let messageEpoch = MarkdownCallbackEpoch()
         private var renderSpan: CavePerformanceSpan?
 
         private var ready = false
@@ -164,6 +182,8 @@ struct MarkdownWebView: UIViewRepresentable {
             config.userContentController = userContentController
             webView = WKWebView(frame: .zero, configuration: config)
             super.init()
+            NotificationCenter.default.addObserver(self, selector: #selector(imageAuthorityDidChange),
+                                                   name: .caveImageAuthorityChanged, object: nil)
             userContentController.add(WeakScriptMessageHandler(target: self), name: "cave")
             webView.navigationDelegate = self
             webView.isOpaque = false
@@ -182,11 +202,19 @@ struct MarkdownWebView: UIViewRepresentable {
             }
         }
 
+        @objc private func imageAuthorityDidChange() {
+            messageEpoch.advance()
+            imageTask?.cancel()
+            imageTask = nil
+            imageGeneration &+= 1
+        }
+
         /// Terminal and idempotent. Cancellation fences native publication;
         /// it does not pretend to synchronously abort WebKit JavaScript.
         func invalidate() {
             guard !isInvalidated else { return }
             isInvalidated = true
+            NotificationCenter.default.removeObserver(self, name: .caveImageAuthorityChanged, object: nil)
             callbackGeneration &+= 1
             stopPendingWork()
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "cave")
@@ -248,6 +276,10 @@ struct MarkdownWebView: UIViewRepresentable {
                 }
                 return
             }
+            imageTask?.cancel()
+            imageTask = nil
+            imageGeneration &+= 1
+            messageEpoch.advance()
             lastRenderSignature = renderSignature
             lastStyleSignature = styleSignature
             pending = md
@@ -393,9 +425,15 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            enqueueScriptBody(message.body)
+        }
+
+        nonisolated func enqueueScriptBody(_ messageBody: Any) {
+            let authority = messageEpoch.snapshot()
             Task { @MainActor [weak self] in
                 guard let self, !self.isInvalidated, !self.failed,
-                      let body = message.body as? [String: Any],
+                      self.messageEpoch.snapshot() == authority,
+                      let body = messageBody as? [String: Any],
                       let type = body["type"] as? String else { return }
                 switch type {
                 case "height":
@@ -449,40 +487,48 @@ struct MarkdownWebView: UIViewRepresentable {
             }
         }
 
-        /// Decode an inline image's `src` into a `UIImage` for the smooth native
-        /// zoom (pinch/pan/double-tap), matching attachment behaviour. Falls back
-        /// to the HTML zoom for data we can't decode (relative paths, failures).
-        private func presentImage(src: String?, fallbackHTML: String) {
+        /// Inline zoom shares the bounded loader and off-main ImageIO path used
+        /// by attachments. Never render the original HTML as a failure fallback:
+        /// its image could bypass the encoded-byte and decoded-pixel limits.
+        func presentImage(src: String?, fallbackHTML _: String) {
             guard !isInvalidated, !failed else { return }
             imageTask?.cancel()
             imageTask = nil
             imageGeneration &+= 1
             let requestGeneration = imageGeneration
             let generation = callbackGeneration
-            if let src, !src.isEmpty {
-                if let img = UIImage.fromDataUrl(src) {
-                    ContentZoom.image(img)
-                    return
+            let source: CaveImageSource?
+            if let src, src.range(of: "data:image/", options: [.anchored, .caseInsensitive]) != nil {
+                source = .dataURL(src)
+            } else if let src, let url = URL(string: src),
+                      let scheme = url.scheme?.lowercased(),
+                      (scheme == "http" || scheme == "https"),
+                      url.user == nil, url.password == nil {
+                source = .remoteURL(url)
+            } else {
+                source = nil
+            }
+            imageTask = Task { @MainActor [weak self] in
+                let image: UIImage?
+                if let source {
+                    image = await CaveImageCache.shared.image(
+                        for: source, targetPixelSize: CGSize(width: 4096, height: 4096)
+                    )
+                } else {
+                    image = nil
                 }
-                if let url = URL(string: src), let scheme = url.scheme,
-                   scheme == "http" || scheme == "https" {
-                    imageTask = Task { @MainActor [weak self] in
-                        let response = try? await URLSession.shared.data(from: url)
-                        guard let self, !Task.isCancelled,
-                              !self.isInvalidated, !self.failed,
-                              self.callbackGeneration == generation,
-                              self.imageGeneration == requestGeneration else { return }
-                        self.imageTask = nil
-                        if let (data, _) = response, let img = UIImage(data: data) {
-                            ContentZoom.image(img)
-                        } else if !fallbackHTML.isEmpty {
-                            ContentZoom.html(fallbackHTML)
-                        }
-                    }
-                    return
+                guard let self, !Task.isCancelled,
+                      !self.isInvalidated, !self.failed,
+                      self.callbackGeneration == generation,
+                      self.imageGeneration == requestGeneration else { return }
+                self.imageTask = nil
+                if let image {
+                    ContentZoom.image(image)
+                } else {
+                    ContentZoom.html("<p>Couldn't open this image. It may be unavailable, unsupported, or too large.</p>")
                 }
             }
-            if !fallbackHTML.isEmpty { ContentZoom.html(fallbackHTML) }
         }
+
     }
 }
