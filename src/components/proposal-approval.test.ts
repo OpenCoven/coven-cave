@@ -23,10 +23,15 @@ assert.match(flow, /availability\.actions\.map/, "only authority-derived actions
 assert.match(flow, /action\.label\}/, "the view-model owns each visible action label");
 assert.match(
   flow,
-  /disabled=\{submitting !== null \|\| needsReconciliation \|\| !action\.enabled\}/,
+  /disabled=\{decisionPending \|\| submitting !== null \|\| needsReconciliation \|\| !action\.enabled\}/,
   "decision-specific disabled state reaches each button",
 );
 assert.match(flow, /decisionOutcomeFromResponse\(/, "outcomes derive from the response mapper");
+assert.match(flow, /if \(!action\?\.enabled \|\| !beginDecision\(\)\) return/, "queue guard runs before sending a mutation");
+assert.match(flow, /if \(pendingDecisionRef\.current\) return false/, "synchronous queue guard closes same-render replay");
+assert.match(flow, /finally \{[\s\S]*?endDecision\(\)/, "settled requests release the queue guard");
+assert.match(flow, /beginDecision=\{beginDecision\}/, "keyed details share the parent guard");
+
 assert.match(flow, /proposalPill\(proposal\)/, "queue status pills derive from the view-model");
 assert.match(model, /export function proposalPill\(/, "the queue pill vocabulary lives in the view-model");
 assert.match(

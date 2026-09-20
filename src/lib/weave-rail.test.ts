@@ -105,6 +105,18 @@ describe("surfaceStateFromPayload — envelope to render state", () => {
     assert.deepEqual(state.kind === "ready" ? state.banners : null, []);
   });
 
+  it("rejects malformed freshness metadata before enabling decisions", () => {
+    for (const invalid of [
+      { observedAt: "invalid" }, { observedAt: "" },
+      { staleAfter: "invalid" }, { staleAfter: "2026-07-14T00:00:00Z" },
+      { sourceCursor: "" }, { sourceCursor: "   " },
+    ]) {
+      const state = surfaceStateFromPayload(okEnvelope([], meta({ adapter: "daemon", ...invalid })), FRESH);
+      assert.equal(state.kind, "blocked", JSON.stringify(invalid));
+      assert.equal(decisionsEnabled(state), false);
+    }
+  });
+
   it("fixtures adapter always carries the honest fixture-data banner", () => {
     const state = surfaceStateFromPayload<WeaveSummary[]>(okEnvelope(weaves, meta()), FRESH);
     assert.equal(state.kind, "ready");

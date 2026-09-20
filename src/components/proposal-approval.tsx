@@ -189,6 +189,9 @@ function ProposalDetail({
   onUnconfirmed,
   unconfirmedOutcome,
   onBack,
+  decisionPending,
+  beginDecision,
+  endDecision,
 }: {
   proposal: ProposalView;
   state: SurfaceState<ProposalView[]>;
@@ -196,6 +199,9 @@ function ProposalDetail({
   onUnconfirmed: (outcome: DecisionOutcome) => void;
   unconfirmedOutcome: DecisionOutcome | null;
   onBack: () => void;
+  decisionPending: boolean;
+  beginDecision: () => boolean;
+  endDecision: () => void;
 }) {
   const { announce } = useAnnouncer();
   const [note, setNote] = useState("");
@@ -221,7 +227,7 @@ function ProposalDetail({
       const currentAvailability = decisionAvailability(responseEnvelopeStateAt(state), proposal, note);
       if (!payload || submitting || needsReconciliation || !currentAvailability.allowed) return;
       const action = currentAvailability.actions.find((candidate) => candidate.decision === decision);
-      if (!action?.enabled) return;
+      if (!action?.enabled || !beginDecision()) return;
       setSubmitting(decision);
       setOutcome(null);
       try {
@@ -247,9 +253,10 @@ function ProposalDetail({
         onUnconfirmed(result);
       } finally {
         setSubmitting(null);
+        endDecision();
       }
     },
-    [state, proposal, note, payload, submitting, needsReconciliation, announce, onRefresh, onUnconfirmed],
+    [state, proposal, note, payload, submitting, needsReconciliation, announce, onRefresh, onUnconfirmed, beginDecision, endDecision],
   );
 
   const frayState = payload?.fray.state;
@@ -350,7 +357,7 @@ function ProposalDetail({
                   <button
                     key={action.decision}
                     type="button"
-                    disabled={submitting !== null || needsReconciliation || !action.enabled}
+                    disabled={decisionPending || submitting !== null || needsReconciliation || !action.enabled}
                     onClick={() => void decide(action.decision)}
                     className={`wv-act focus-ring ${action.decision === "approve" ? "wv-act--approve" : "wv-act--reject"}`}
                   >
@@ -388,6 +395,20 @@ export function ProposalApproval() {
   const [state, setState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [unconfirmedOutcomes, setUnconfirmedOutcomes] = useState<ReadonlyMap<string, DecisionOutcome>>(new Map());
+  // Queue-owned synchronous guard survives keyed detail remounts and closes
+  // the interval before React publishes the pending state to the buttons.
+  const pendingDecisionRef = useRef(false);
+  const [decisionPending, setDecisionPending] = useState(false);
+  const beginDecision = useCallback(() => {
+    if (pendingDecisionRef.current) return false;
+    pendingDecisionRef.current = true;
+    setDecisionPending(true);
+    return true;
+  }, []);
+  const endDecision = useCallback(() => {
+    pendingDecisionRef.current = false;
+    setDecisionPending(false);
+  }, []);
   const unconfirmedRef = useRef(unconfirmedOutcomes);
   const reconcileOutcomes = useCallback((event: Parameters<typeof reconcileDecisionOutcomes>[1]) => {
     unconfirmedRef.current = reconcileDecisionOutcomes(unconfirmedRef.current, event);
@@ -562,6 +583,9 @@ export function ProposalApproval() {
           key={selected.file}
           proposal={selected}
           state={responseState}
+          decisionPending={decisionPending}
+          beginDecision={beginDecision}
+          endDecision={endDecision}
           unconfirmedOutcome={unconfirmedOutcomes.get(selected.payload?.id ?? "") ?? null}
           onUnconfirmed={(outcome) => {
             if (selected.payload) {

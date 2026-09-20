@@ -416,6 +416,8 @@ describe("decisionOutcomeFromResponse — only bound daemon outcomes confirm dec
       { ...envelope(receipt("approved")), meta: { adapter: "fixtures", verified: true } },
       { ...envelope(receipt("approved")), meta: { adapter: "daemon", verified: false } },
       envelope(receipt("rejected")),
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, observedAt: "invalid" } },
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, sourceCursor: "" } },
       { ...envelope(receipt("approved")), meta: { adapter: "daemon", verified: true } },
       { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, staleAfter: "2000-01-01T00:00:00Z" } },
       { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, staleAfter: "invalid" } },
