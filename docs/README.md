@@ -69,6 +69,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`knowledge-vault.md`](knowledge-vault.md) — curated reference knowledge injected into every harness, and how it differs from memory
 - [`knowledge-packs.md`](knowledge-packs.md) — marketplace-distributed starter kits for a linked knowledge base
+- [`covenwiki-render.md`](covenwiki-render.md) — reading generated CovenWiki manifests at `/wikis`: the read-only store, slug rules, the three API reads, and what the reader refuses
 - [`prompt-packs.md`](prompt-packs.md) — where prompt templates come from and how they merge
 - [`authoring-assist.md`](authoring-assist.md) — templating and agentic assistance across stitches, skills, and crafts
 - [`marketplace.md`](marketplace.md) — the checked-in publisher catalog, and why the in-app view is deliberately narrower

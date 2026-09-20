@@ -13,6 +13,16 @@ test("classifies actionable Tailscale installation and session states", () => {
   assert.equal(classifyTailscaleFailureKind("Tailscale CLI not found"), "not-installed");
   assert.equal(classifyTailscaleFailureKind("Tailscale is signed out"), "signed-out");
   assert.equal(classifyTailscaleFailureKind("Tailscale is logged out"), "signed-out");
+  assert.equal(
+    classifyTailscaleFailureKind("Tailscale CLI could not report status"),
+    "cli-unusable",
+  );
+  assert.equal(
+    classifyTailscaleFailureKind(
+      "The Tailscale CLI did not return status JSON, so the tunnel state is unknown.",
+    ),
+    "cli-unusable",
+  );
 
   for (const state of ["not connected", "not running", "stopped", "unreachable"]) {
     assert.equal(classifyTailscaleFailureKind(`Tailscale is ${state}`), "not-running");

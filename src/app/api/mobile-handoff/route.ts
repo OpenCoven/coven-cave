@@ -529,7 +529,9 @@ async function ensureNativeAppServeReady(
         ? "Tailscale is not installed"
         : tailscale.kind === "needs-login"
           ? "Tailscale is signed out"
-          : "Tailscale is not running";
+          : tailscale.kind === "cli-unusable"
+            ? "Tailscale CLI could not report status"
+            : "Tailscale is not running";
     return mobileUnavailableResponse(error, {
       stderr: self.stderr,
       steps: buildPairingSteps({

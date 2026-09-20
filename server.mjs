@@ -9129,7 +9129,8 @@ function tailscaleSpawnEnv() {
     const joined = dedup.join(delimiter);
     cachedTailscalePath = joined || process.env.PATH || "";
   }
-  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath });
+  const term = process.env.TERM?.trim() ? process.env.TERM : "dumb";
+  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath, TERM: term });
 }
 
 // src/lib/server/device-access/peers.ts

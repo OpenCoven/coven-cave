@@ -302,6 +302,9 @@ export const SUITES = {
     "src/lib/covenwiki-regen.test.ts",
     "scripts/covenwiki-regen-cli.test.mjs",
     "src/lib/covenwiki-generate.test.ts",
+    "src/lib/covenwiki-store.test.ts",
+    "src/components/covenwiki-reader.test.tsx",
+    "src/app/wikis/wiki-page.test.tsx",
     "scripts/covenwiki-generate-cli.test.mjs",
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
@@ -860,6 +863,7 @@ export const SUITES = {
     "src/lib/task-orchestration.test.ts",
     "src/lib/familiar-color.test.ts",
     "src/lib/github-search.test.ts",
+    "src/lib/github-activity-projection.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
     "src/lib/pausable-poll-discipline.test.ts",
@@ -1464,6 +1468,7 @@ export const SUITES = {
     "src/app/api/research/resources/search/route.test.ts",
   ],
   api: [
+    "src/app/api/wikis/route.test.ts",
     "src/app/api/afs/afs-routes.test.ts",
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
@@ -2104,6 +2109,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/wikis/route.test.ts",
   // x-comms-model.ts imports "@/lib/x-publish-composer" as a runtime value —
   // deliberately, so the two X rooms share one definition of the 280 limit.
   "src/lib/x-comms-model.test.ts",
@@ -2499,6 +2505,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/app/wikis/wiki-page.test.tsx",
+  "src/components/covenwiki-reader.test.tsx",
   // Renders the whole X Comms room through react-test-renderer (JSX).
   "src/components/role-surfaces/x-comms-surface.behavior.test.tsx",
   "src/components/reminder-link-field.behavior.test.tsx",

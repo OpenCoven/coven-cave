@@ -108,6 +108,13 @@ const ROUTE_INVENTORY = {
   // reference, not a destination. It renders the vendored Beautiful UI set so a
   // palette switch can be checked against all 19 at once (docs/beautiful-ui.md).
   "/aesthetic/beautiful": { kind: "dev-only" },
+  // CovenWiki Phase 2 (#5440) ships the read-only render route with no
+  // navigation entry: nothing links /wikis yet and its empty state points at
+  // the generate CLI. Classified dev-only until a Phase 3 entry point exists;
+  // promoting it to a destination means mounting AnalyticsPageShell and
+  // declaring the link that reaches it.
+  "/wikis": { kind: "dev-only" },
+  "/wikis/[repo]/[[...slug]]": { kind: "dev-only" },
 };
 
 // ── Discover every page.tsx under src/app ────────────────────────────────────

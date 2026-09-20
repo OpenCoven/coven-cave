@@ -1,0 +1,49 @@
+.covenwiki-layout {
+  display: grid;
+  grid-template-columns: calc(var(--space-12) * 5) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.covenwiki-layout, .covenwiki-index { font-size: var(--text-base); line-height: var(--leading-normal); }
+.covenwiki-sidebar, .covenwiki-main, .covenwiki-index {
+  overflow: auto;
+  min-width: 0;
+  padding: var(--space-6);
+}
+.covenwiki-sidebar { background: var(--bg-panel); }
+.covenwiki-main { scroll-behavior: auto; }
+.covenwiki-index { height: 100%; }
+.covenwiki-layout h1, .covenwiki-index h1 { font-size: var(--text-xl); font-weight: 600; margin-block: var(--space-4); }
+.covenwiki-page-header h2 { font-size: var(--text-xl); font-weight: 600; }
+.covenwiki-muted { color: var(--text-muted); font-size: var(--text-sm); margin-block: var(--space-3); }
+.covenwiki-status { color: var(--text-secondary); margin-block: var(--space-3); }
+.covenwiki-nav { list-style: none; padding: 0; margin-block: var(--space-3); }
+.covenwiki-nav .covenwiki-nav { padding-inline-start: var(--space-4); }
+.covenwiki-nav a, .covenwiki-group { display: block; padding: var(--space-2); overflow-wrap: anywhere; }
+.covenwiki-group { font-weight: 600; color: var(--text-secondary); }
+.covenwiki-nav a { border-radius: var(--radius-control); }
+.covenwiki-nav a:hover, .covenwiki-nav a[aria-current="page"] { background: var(--bg-hover); }
+.covenwiki-nav a[aria-current="page"] { font-weight: 600; text-decoration: underline; }
+.covenwiki-page-header { margin-block-end: var(--space-6); }
+.covenwiki-prose { max-width: 72ch; overflow-wrap: anywhere; }
+.covenwiki-evidence { max-width: 72ch; margin-block-start: var(--space-8); border-top: 1px solid var(--border-hairline); padding-block-start: var(--space-4); }
+.covenwiki-evidence h3 { font-size: var(--text-md); font-weight: 600; margin-block: var(--space-3); }
+.covenwiki-evidence ul { padding-inline-start: var(--space-4); }
+.covenwiki-evidence li { margin-block: var(--space-2); overflow-wrap: anywhere; }
+.covenwiki-evidence button { max-width: 100%; white-space: normal; text-align: start; }
+.covenwiki-list { list-style: none; padding: 0; max-width: 72ch; }
+.covenwiki-list > li { padding-block: var(--space-4); border-bottom: 1px solid var(--border-hairline); }
+.covenwiki-list a { font-size: var(--text-lg); font-weight: 600; }
+.covenwiki-list p { margin-block-start: var(--space-2); }
+.covenwiki-index pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-block: var(--space-4); }
+.covenwiki-file { height: 65dvh; min-height: 0; display: flex; flex-direction: column; }
+@container (max-width: 40rem) {
+  .covenwiki-sidebar { grid-column: 1 / -1; max-height: 35dvh; }
+  .covenwiki-main { grid-column: 1 / -1; min-height: 0; }
+}
+@media (pointer: coarse) {
+  .covenwiki-nav a { min-height: var(--touch-target); display: flex; align-items: center; }
+}

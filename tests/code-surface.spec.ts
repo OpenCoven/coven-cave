@@ -948,6 +948,13 @@ test.describe("code surface (Coding familiar's room)", () => {
   test("legacy GitHub mode lands on Activity and preserves notifications", async ({ page }) => {
     await base(page);
     await mockGitHubActivity(page);
+    await page.route("**/api/board**", (route) => route.fulfill({ json: {
+      ok: true,
+      cards: [{
+        id: "release-card", title: "Release work", sessionId: null, familiarId: null,
+        github: [{ id: "NOTIFICATION:RELEASE-ALERT", url: "elsewhere" }],
+      }],
+    } }));
     await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
 
     const topTabs = page.getByRole("tablist", { name: "Code surface" });
@@ -971,6 +978,7 @@ test.describe("code surface (Coding familiar's room)", () => {
       "true",
     );
     await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("1 linked task", { exact: true })).toBeVisible();
   });
 
   for (const { ctab, filter } of [
