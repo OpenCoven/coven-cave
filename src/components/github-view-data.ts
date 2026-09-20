@@ -121,14 +121,3 @@ export const KIND_ORDER: Record<string, number> = {
   issue: 2,
   notification: 3,
 };
-export function linkedCardsForItem(cards: Card[], item: GitHubItem): Card[] {
-  const url = item.url.trim().toLowerCase();
-  const id = item.id.trim().toLowerCase();
-  return cards.filter((card) =>
-    (card.github ?? []).some(
-      (github) =>
-        github.url.trim().toLowerCase() === url ||
-        (id && github.id.trim().toLowerCase() === id),
-    ),
-  );
-}

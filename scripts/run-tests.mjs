@@ -863,6 +863,7 @@ export const SUITES = {
     "src/lib/task-orchestration.test.ts",
     "src/lib/familiar-color.test.ts",
     "src/lib/github-search.test.ts",
+    "src/lib/github-activity-projection.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
     "src/lib/pausable-poll-discipline.test.ts",

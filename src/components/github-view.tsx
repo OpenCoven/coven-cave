@@ -55,6 +55,7 @@ import type { Card } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import { githubItemMatchesQuery } from "@/lib/github-search";
+import { linkCardsToItems } from "@/lib/github-activity-projection";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { DiffHunk } from "@/components/gh-diff-view";
@@ -89,7 +90,7 @@ import {
 } from "@/lib/github-stage";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON,
-  linkedCardsForItem, orgOf, useCards, useFamiliars,
+  orgOf, useCards, useFamiliars,
   type ActivityResult, type Filter, type PatStatus,
 } from "./github-view-data";
 
@@ -3109,11 +3110,7 @@ export function GitHubView({
   );
 
   const linkedMap = useMemo(() => {
-    const m = new Map<string, Card[]>();
-    for (const item of scoped) {
-      m.set(item.id, linkedCardsForItem(cards, item));
-    }
-    return m;
+    return linkCardsToItems(cards, scoped);
   }, [scoped, cards]);
 
   // Stage sections do the grouping now, so the only ordering left inside a

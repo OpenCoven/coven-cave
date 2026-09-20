@@ -6,7 +6,8 @@ const view = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8")
 assert.match(source, /export function useFamiliars/, "GitHub familiar loading has a dedicated data boundary");
 assert.match(source, /export function useCards/, "linked board-card loading has a dedicated data boundary");
 assert.match(source, /export const KIND_ORDER/, "GitHub activity ordering remains centralized");
-assert.match(source, /export function linkedCardsForItem/, "task linking preserves URL and id matching");
+assert.doesNotMatch(source, /export function linkedCardsForItem/, "the per-item card scan is retired");
+assert.match(view, /linkCardsToItems\(cards, scoped\)/, "the view links cards in one projection");
 assert.match(source, /collections: ActivityCollections/, "activity data includes per-category completeness metadata");
 assert.match(
   view,
