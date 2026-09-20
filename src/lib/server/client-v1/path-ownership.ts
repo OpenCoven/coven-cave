@@ -773,6 +773,7 @@ export async function assertExclusivePathOwnership(
   const waiver = resolveUnverifiedOwnershipWaiver(options.env ?? process.env);
   const probe = options.probeWindowsAcl ?? probeWindowsAcl;
   let report: ClientV1WindowsAclReport;
+  const probeStartedAt = performance.now();
   try {
     report = await probe(path);
   } catch (cause) {
@@ -808,7 +809,19 @@ export async function assertExclusivePathOwnership(
       expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
       error,
     });
-    warn(error.message);
+    // The PowerShell process can exit successfully after a repair yet return
+    // a nonexclusive report. Keep bounded state in server logs, not the API
+    // error or raw ACL output, so native startup failures remain diagnosable.
+    const probeState = {
+      at: new Date().toISOString(),
+      durationMs: Math.max(0, Math.round(performance.now() - probeStartedAt)),
+      repairAttempted: report.repaired,
+      protected: report.protected,
+      ownerMatches: report.owner === report.self,
+      aceCount: report.aces.length,
+      removedPrincipalCount: report.removed.length,
+    };
+    warn(`${error.message}\n[windows-acl-state] ${JSON.stringify(probeState)}`);
     throw error;
   }
 
