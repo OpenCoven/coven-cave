@@ -646,7 +646,7 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
             AND event_type IN ('proposal_approved', 'proposal_rejected', 'proposal_vetoed')
           GROUP BY proposal_id
         ) SELECT recent.*, counts.terminal_count FROM recent
-          JOIN counts USING (proposal_id) ORDER BY recent.id DESC`).all();
+          LEFT JOIN counts USING (proposal_id) ORDER BY recent.id DESC`).all();
         receipts = [];
         for (const row of rows) {
           const receipt = normalizeProposalTerminal(row);

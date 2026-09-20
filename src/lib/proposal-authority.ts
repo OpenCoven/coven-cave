@@ -240,7 +240,7 @@ function daysInMonth(year: number, month: number): number {
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-function isStrictRfc3339(value: unknown): value is string {
+export function isStrictRfc3339(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = RFC3339_RE.exec(value);
   if (!match) return false;
