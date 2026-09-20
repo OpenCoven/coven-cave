@@ -263,6 +263,7 @@ export async function acquireProcessIntentLock(
     0o600,
   );
   let ownPath: string;
+  let publishedIntentPath: string | undefined;
   try {
     // Inside the removal guard, not before it: a rejecting close() would
     // otherwise escape with the marker still on disk, and because the marker
@@ -288,11 +289,15 @@ export async function acquireProcessIntentLock(
       "wx",
       0o600,
     );
+    publishedIntentPath = ownPath;
     try {
       await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
     } finally {
       await handle.close();
     }
+  } catch (error) {
+    if (publishedIntentPath) await removeIntent(publishedIntentPath);
+    throw error;
   } finally {
     // Cleared whether or not the intent was published: a marker outliving its
     // owner's attempt would stall every other contender until the liveness
