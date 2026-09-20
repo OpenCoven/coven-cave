@@ -10,11 +10,13 @@
  * here, never editing shell code. The registry itself is open: any module
  * can call registerRoleSurface at import time and appear identically.
  *
- * Room components are code-split via next/dynamic (mirroring
- * lazy-surfaces.tsx) so their chunks load on first entry, not at app boot.
+ * Room components are code-split so their chunks load on first entry, not at
+ * app boot. Research uses an effect loader to avoid delaying its first read
+ * behind the Suspense retry throttle; other rooms use next/dynamic.
  */
 
 import dynamic from "next/dynamic";
+import { ResearcherSurfaceLoader } from "./researcher-surface-loader";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import {
   registerRoleSurface,
@@ -44,10 +46,6 @@ function RoomFallback() {
   );
 }
 
-const ResearcherSurface = dynamic(
-  () => import("./researcher-surface").then((m) => m.ResearcherSurface),
-  { ssr: false, loading: RoomFallback },
-);
 const IndexerSurface = dynamic(
   () => import("./indexer-surface").then((m) => m.IndexerSurface),
   { ssr: false, loading: RoomFallback },
@@ -118,7 +116,7 @@ registerRoleSurface({
       ],
     };
   },
-  render: (context) => <ResearcherSurface context={context} />,
+  render: (context) => <ResearcherSurfaceLoader context={context} fallback={<RoomFallback />} />,
 });
 
 // The Coding familiar's room (cave-cc5r): the full Code workbench, granted by
