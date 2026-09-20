@@ -1,6 +1,8 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+const utf8Encoder = new TextEncoder();
+
 function jsonPathForProperty(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -243,7 +245,7 @@ export function canonicalJson(value: unknown): string {
 export function sha256Digest(value: string | Uint8Array): string {
   // Shared with the browser protocol parsers: avoid pulling in Node crypto
   // compatibility code for ciphers, key exchange, and unrelated algorithms.
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const bytes = typeof value === "string" ? utf8Encoder.encode(value) : value;
   return bytesToHex(sha256(bytes));
 }
 

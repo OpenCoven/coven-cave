@@ -25,11 +25,14 @@ const context = (id: string) => ({ activeFamiliar: { id } }) as RoleSurfaceConte
 
 async function fixture() {
   const gate = deferred();
+  const rendered = vi.fn();
   const imported = vi.fn(async () => {
     await gate.promise;
     return {
-      ResearcherSurface: ({ context: value }: { context: RoleSurfaceContext }) =>
-        createElement("p", null, value.activeFamiliar.id),
+      ResearcherSurface: ({ context: value }: { context: RoleSurfaceContext }) => {
+        rendered(value.activeFamiliar.id);
+        return createElement("p", null, value.activeFamiliar.id);
+      },
     };
   });
   vi.doMock("./researcher-surface", imported);
@@ -37,19 +40,21 @@ async function fixture() {
   const view = (id: string) => createElement(ResearcherSurfaceLoader, {
     context: context(id), fallback: createElement("span", null, "Loading"),
   });
-  return { gate, imported, view };
+  return { gate, imported, rendered, view };
 }
 
 test("loads once under StrictMode, mounts with current context, and reuses a warm module", async () => {
-  const { gate, imported, view } = await fixture();
+  const { gate, imported, rendered, view } = await fixture();
   await act(async () => { renderer = create(createElement(StrictMode, null, view("first"))); });
   expect(renderer!.toJSON()).toMatchObject({ type: "span", children: ["Loading"] });
   await act(async () => { renderer!.update(createElement(StrictMode, null, view("second"))); });
   await act(async () => { gate.resolve(); await vi.dynamicImportSettled(); });
   expect(renderer!.toJSON()).toMatchObject({ type: "p", children: ["second"] });
   expect(imported).toHaveBeenCalledTimes(1);
+  rendered.mockClear();
   await act(async () => { renderer!.unmount(); renderer = create(view("third")); });
   expect(renderer!.toJSON()).toMatchObject({ type: "p", children: ["third"] });
+  expect(rendered).toHaveBeenCalledTimes(1);
   expect(imported).toHaveBeenCalledTimes(1);
 });
 

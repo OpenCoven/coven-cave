@@ -28,13 +28,14 @@ export function ResearcherSurfaceLoader({ context, fallback }: {
     () => ({ component: loaded }),
   );
   useEffect(() => {
+    if (state.component) return;
     let active = true;
     void loadResearcher().then(
       (component) => { if (active) setState({ component }); },
       (error: unknown) => { if (active) setState({ component: null, error }); },
     );
     return () => { active = false; };
-  }, []);
+  }, [state.component]);
   if ("error" in state) throw state.error;
   const Component = state.component;
   return Component ? <Component context={context} /> : fallback;
