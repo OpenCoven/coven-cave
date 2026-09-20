@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { fileURLToPath } from "node:url";
 
 import {
   AUTHORITY_TAKEOVER_ASSERTION_IDS,
@@ -1627,7 +1628,17 @@ foreach ($value in @(${cases.join(",")})) {
 // Keep build/cleanup work out of ordinary local app-suite runs.
 if (process.platform === "win32" && process.env.GITHUB_JOB === "windows-conformance") {
   await import("./child-output.test.mjs");
-  await import("../src/lib/server/client-v1/path-ownership.test.ts");
+  // Complete and print native ownership failures before the longer packaged
+  // build starts. Dynamic import would defer the failure report until the
+  // combined suite ends, losing the details if that build is cancelled.
+  const nativeEnvironment = { ...process.env };
+  delete nativeEnvironment.NODE_TEST_CONTEXT; // Start an independent test runner, not the parent IPC reporter.
+  const nativeOwnership = spawnSync(process.execPath, [
+    "--experimental-strip-types", "--test", "--test-reporter=spec", "--test-concurrency=1",
+    fileURLToPath(new URL("../src/lib/server/client-v1/path-ownership.test.ts", import.meta.url)),
+  ], { stdio: "inherit", env: nativeEnvironment });
+  assert.equal(nativeOwnership.error, undefined, "native ownership runner must start");
+  assert.equal(nativeOwnership.status, 0, "native ownership checks must pass before packaged startup");
   await import("../src/lib/server/device-access/store.test.ts");
   await import("./client-v1-compatibility-control.integration.test.mjs");
 } else {
