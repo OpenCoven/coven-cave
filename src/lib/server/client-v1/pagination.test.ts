@@ -13,6 +13,7 @@ import {
   paginateClientV1Sequence,
   parseClientV1PageLimit,
   type ClientV1PageKey,
+  type ClientV1PageResult,
 } from "./pagination.ts";
 
 type Row = { id: string; at: string };
@@ -372,6 +373,33 @@ test("sequence pagination resumes by position, not by comparing keys", () => {
   assert.deepEqual(second!.items.map((turn) => turn.id), ["t3"]);
   assert.equal(second!.cursor?.hasMore, false);
 });
+
+for (const count of [2, 4]) {
+  test(`sequence pagination stops on an exactly full final page (${count} turns)`, () => {
+    const turns = Array.from({ length: count }, (_, index) => ({
+      id: `t${index + 1}`,
+      at: "2026-08-01T00:00:00.000Z",
+    }));
+    let after: ClientV1PageKey | null = null;
+    for (let offset = 0; offset < count; offset += 2) {
+      const result: ClientV1PageResult<Row> | null = paginateClientV1Sequence(turns, { limit: 2, after, keyOf });
+      assert.ok(result);
+      assert.deepEqual(result.items, turns.slice(offset, offset + 2));
+      if (offset + 2 < count) {
+        assert.equal(result.cursor?.hasMore, true);
+        assert.ok(result.cursor?.next);
+        after = decodeClientV1Cursor(result.cursor.next);
+      } else {
+        // An exact page-size match is not evidence of another turn. Do not
+        // make clients fetch an empty page just to discover the transcript end.
+        assert.deepEqual(result.cursor, after === null ? undefined : {
+          current: encodeClientV1Cursor(after),
+          hasMore: false,
+        });
+      }
+    }
+  });
+}
 
 test("sequence pagination reports an unresolvable cursor rather than guessing", () => {
   const turns = [{ id: "t1", at: "2026-08-01T00:00:00.000Z" }];
