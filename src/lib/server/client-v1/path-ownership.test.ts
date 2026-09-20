@@ -577,6 +577,7 @@ $item.SetAccessControl($acl)
     );
 
     const observed = await probeWindowsAcl(root);
+    t.diagnostic(JSON.stringify({ ownerRights: observed.aces.filter(ace => ace.sid === OWNER_RIGHTS_SID) }));
     assert.equal(observed.repaired, true, "the unsafe Users grant must trigger ACL repair");
     assert.ok(
       observed.removed.includes(USERS_SID),
@@ -591,7 +592,10 @@ $item.SetAccessControl($acl)
       observed.aces.some((ace) =>
         ace.sid === OWNER_RIGHTS_SID
         && ace.type === "Allow"
-        && ace.rights === 0x0002_0000
+        // FileSystemAccessRule adds Synchronize to Allow entries. It is
+        // not a write grant; every other bit must remain ReadPermissions.
+        && typeof ace.rights === "number"
+        && (ace.rights & ~0x0010_0000) === 0x0002_0000
       ),
       "the read-only OWNER RIGHTS entry must remain intact",
     );
@@ -1168,7 +1172,7 @@ test("ACL ordering observations survive rejected repair and inspection", async (
   }
 });
 
-test("native parent and child ACL repair stays protected under concurrent startup", async (t: TestContext) => {
+test("native ancestor-first ACL repair stays protected with concurrent diagnostic control", async (t: TestContext) => {
   if (process.platform !== "win32") {
     t.skip("requires native Windows inheritance propagation");
     return;
@@ -1213,7 +1217,10 @@ foreach ($path in @($env:CAVE_ACL_PARENT, $env:CAVE_ACL_CHILD)) {
       }
     }
     if (errors.length > 0) throw new AggregateError(errors, "ACL ordering probe or independent inspection failed; see per-iteration diagnostics");
-    assert.ok(observations.every(row => row.reports.every(value =>
+    // Concurrent repair is an intentionally unsafe control: Windows can
+    // reset the child's protection while propagating a parent's new DACL.
+    // Production startup now orders these repairs; only that mode is safe.
+    assert.ok(observations.filter(row => row.mode === "ancestor-first").every(row => row.reports.every(value =>
       value.status === "fulfilled" && value.repaired && value.protected)
       && row.protected?.every(Boolean)), JSON.stringify(observations));
   } finally {

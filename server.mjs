@@ -10983,7 +10983,11 @@ var wss = new WebSocketServer({ noServer: true });
 var remotePtyClients = /* @__PURE__ */ new Set();
 var deviceAccessSecret = randomUUID3();
 process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
-var deferredDeviceAccess = deferDeviceAccessStore(() => createDeviceAccessStore());
+var discoveryInitialization = Promise.withResolvers();
+var deferredDeviceAccess = deferDeviceAccessStore(async () => {
+  await discoveryInitialization.promise;
+  return createDeviceAccessStore();
+});
 var deviceAccessStore = deferredDeviceAccess.store;
 var deviceAccess = createDeviceAccessGateway({
   store: deviceAccessStore,
@@ -11128,6 +11132,8 @@ server.listen(port, hostname, () => {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
+  } finally {
+    discoveryInitialization.resolve();
   }
   logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);

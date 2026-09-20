@@ -2068,7 +2068,13 @@ process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
 // the packaged-server probe then reports "did not answer within 90000 ms"
 // (cave-9jt60). Device pairing is one feature; it does not get to decide
 // whether the server exists. It fails closed on its own instead.
-const deferredDeviceAccess = deferDeviceAccessStore(() => createDeviceAccessStore());
+// Discovery hardens the parent Cave directory. Windows inheritance propagation
+// can undo a concurrent child DACL repair, so finish that attempt first.
+const discoveryInitialization = Promise.withResolvers<void>();
+const deferredDeviceAccess = deferDeviceAccessStore(async () => {
+  await discoveryInitialization.promise;
+  return createDeviceAccessStore();
+});
 const deviceAccessStore = deferredDeviceAccess.store;
 const deviceAccess = createDeviceAccessGateway({
   store: deviceAccessStore,
@@ -2285,6 +2291,10 @@ server.listen(port, hostname, () => {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
+  } finally {
+    // A refused discovery record disables client v1, but pairing still gets
+    // its own independent, fail-closed ownership verification.
+    discoveryInitialization.resolve();
   }
   logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);

@@ -233,4 +233,32 @@ test("server.ts no longer blocks boot on device access", () => {
   }
 });
 
+for (const discoveryFails of [false, true]) {
+  test(`server orders child initialization after discovery settles (failure=${discoveryFails})`, async () => {
+    const source = readFileSync(new URL("../../../../server.ts", import.meta.url), "utf8");
+    const initialization = source.slice(source.indexOf("const discoveryInitialization ="), source.indexOf("const deviceAccessStore ="));
+    const listening = /server\.listen\(port, hostname, \(\) => \{([\s\S]*?)\n\}\);/u.exec(source)?.[1];
+    assert.ok(initialization && listening, "exercise the production startup wiring");
+    const events: string[] = [];
+    const run = new Function("deferDeviceAccessStore", "createDeviceAccessStore", "publishStandaloneClientV1DiscoveryRecord", "reportClientV1DiscoveryUnavailable", "loopbackHttpEndpoint", "logStartupHeapCeiling", "console", `
+      const hostname = "localhost", port = 3000;
+      ${initialization.replace("Promise.withResolvers<void>()", "Promise.withResolvers()")}
+      return { deferred: deferredDeviceAccess, listen: () => { ${listening} } };
+    `)(deferDeviceAccessStore, async () => {
+      events.push("child");
+      return fakeStore();
+    }, () => {
+      events.push("parent");
+      if (discoveryFails) throw new Error("discovery refused");
+    }, () => events.push("refused"), () => "localhost", () => {}, { log: () => {} });
+    await setImmediate();
+    assert.deepEqual(events, [], "child hardening must not start before listen");
+    const pending = run.deferred.store.policy();
+    run.listen();
+    assert.deepEqual(events, discoveryFails ? ["parent", "refused"] : ["parent"]);
+    assert.deepEqual(await pending, { enabled: true, allowedTailnets: ["tail"] });
+    assert.deepEqual(events, discoveryFails ? ["parent", "refused", "child"] : ["parent", "child"]);
+  });
+}
+
 console.log("deferred.test.ts OK");
