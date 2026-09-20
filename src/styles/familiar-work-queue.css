@@ -751,7 +751,6 @@
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--accent-presence);
 }
-.fwq-tag--bead { font-family: var(--font-mono); }
 .fwq-tag--p0,
 .fwq-tag--p1 {
   color: var(--color-warning);

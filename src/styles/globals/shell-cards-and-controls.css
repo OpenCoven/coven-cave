@@ -653,14 +653,6 @@ details[open] > .cave-edit-card__summary::before {
 /* Quick-chat reveal: an in-app popover anchored top-right under the top bar,
    opened by the top-bar chat-circle icon. The Tauri standalone window
    (TrayQuickChat) reuses the same useQuickChat hook but renders full-screen. */
-.quick-chat-overlay-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1190;
-  /* Faint scrim so the popover reads as a focused surface without going full-modal. */
-  background: color-mix(in oklch, var(--bg-base) 28%, transparent);
-  animation: quick-chat-backdrop-in 140ms var(--ease-standard, ease-out);
-}
 
 .quick-chat-overlay {
   position: fixed;
@@ -689,19 +681,6 @@ details[open] > .cave-edit-card__summary::before {
 }
 
 /* Caret connecting the dropdown to its menubar trigger (positioned inline). */
-.quick-chat-overlay__caret {
-  width: 12px;
-  height: 12px;
-  /* Matches the overlay's frosted fill so the caret doesn't read solid. */
-  background: var(--glass-raised);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border-left: 1px solid var(--border-hairline);
-  border-top: 1px solid var(--border-hairline);
-  border-top-left-radius: 3px;
-  transform: rotate(45deg);
-  box-shadow: -2px -2px 6px -3px rgba(0, 0, 0, 0.35);
-  animation: quick-chat-backdrop-in 180ms var(--ease-standard, ease-out);
-}
 
 @keyframes quick-chat-overlay-in {
   from {
@@ -718,9 +697,7 @@ details[open] > .cave-edit-card__summary::before {
   to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .quick-chat-overlay,
-  .quick-chat-overlay-backdrop,
-  .quick-chat-overlay__caret {
+  .quick-chat-overlay {
     animation: none;
   }
 }

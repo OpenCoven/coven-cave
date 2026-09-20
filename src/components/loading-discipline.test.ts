@@ -80,17 +80,11 @@ assert.match(
 // degrade to static under prefers-reduced-motion via one contract.
 for (const [file, label] of [
   ["./chat-list.tsx", "Chat list boot + content-search placeholders"],
-  ["./capability-card.tsx", "Capability card placeholder"],
   ["./automations-view.tsx", "Schedules first-load placeholder"],
 ]) {
   const src = read(file);
   assert.match(src, /ui-skeleton/, `${label} uses the shared shimmer skeleton`);
 }
-assert.doesNotMatch(
-  read("./capability-card.tsx"),
-  /animate-pulse/,
-  "Capability placeholder no longer uses the static animate-pulse idiom",
-);
 assert.doesNotMatch(
   read("./automations-view.tsx"),
   /animate-pulse rounded-lg/,

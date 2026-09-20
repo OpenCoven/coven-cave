@@ -191,13 +191,6 @@
 }
 
 /* Panes -------------------------------------------------------------------- */
-
-.wv-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 .wv-grid {
   flex: 1 1 auto;
   min-height: 0;
@@ -606,15 +599,6 @@
   font-weight: 400;
   color: var(--text-muted);
 }
-.wv-copy {
-  display: inline-flex;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0;
-}
-.wv-copy:hover { color: var(--text-primary); }
 .wv-detail-summary {
   margin: var(--space-1) 0 0;
   max-width: 76ch;

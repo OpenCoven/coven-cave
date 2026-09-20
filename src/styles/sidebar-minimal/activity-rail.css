@@ -61,10 +61,6 @@
   display: none;
 }
 
-.shell-nav--rail .sidebar-section--collapsed .sidebar-section__content {
-  display: flex;
-}
-
 /* ── Rail-only bookends: retired (was chat-revamp phase D) ───────────────────
  * The rail used to open with a decorative brand mark and close with an account
  * avatar, neither of which the expanded panel has. Both are gone (issue 4351):
@@ -83,7 +79,6 @@
 /* Labels and count pills collapse away; the icon is all that stays per row.
    (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
 .shell-nav--rail .sidebar-folder-label,
-.shell-nav--rail .sidebar-action-label,
 .shell-nav--rail .sidebar-actions .sidebar-action-row > span,
 .shell-nav--rail .sidebar-foot-label,
 .shell-nav--rail .sidebar-foot-badge {
@@ -125,10 +120,6 @@
   gap: var(--space-1);
   align-items: center;
   scrollbar-width: none;
-}
-.shell-nav--rail .sidebar-folders {
-  width: 100%;
-  align-items: center;
 }
 
 .shell-nav--rail .sidebar-foot {
@@ -188,7 +179,6 @@
    open scaled all of them down 20px → 16px in the same frame that the panel
    slid out; the glyphs now only gain a label (issue 4351). */
 .sidebar-folder-icon,
-.sidebar-action-icon,
 .sidebar-foot-icon {
   width: var(--icon-md);
   height: var(--icon-md);
@@ -198,21 +188,3 @@
    used to render anyway — a full-width uppercase string in a 56px column. It
    collapses to a hairline that keeps the label's own line box, so the room
    rows below stay on the panel's grid. */
-.shell-nav--rail .sidebar-rooms-label {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 12px;
-  margin-inline: auto;
-  font-size: 0;
-  line-height: 0;
-  color: transparent;
-}
-
-.shell-nav--rail .sidebar-rooms-label::before {
-  content: "";
-  display: block;
-  width: 100%;
-  height: 1px;
-  background: var(--border-hairline);
-}

@@ -77,31 +77,7 @@
    section. They used to be forked here as .sidebar-familiar-switch and the
    .sidebar-actions CTA, which is how the two rails drifted apart. */
 
-.sidebar-title {
-  font-size: var(--text-base);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Passive icon affordance; hover/colour follows the row button above. */
-.sidebar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  color: var(--text-secondary);
-  transition: color 120ms ease;
-}
-
-.sidebar-header:hover .sidebar-toggle {
-  color: var(--text-primary);
-}
 
 /* ── Header CTA ──────────────────────────────────────────────────────────── */
 .sidebar-actions {
@@ -131,38 +107,6 @@
   color: var(--text-primary);
 }
 
-.sidebar-action-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  color: var(--text-primary);
-}
-
-.sidebar-action-icon {
-  opacity: 1;
-}
-
-.sidebar-action-icon {
-  flex-shrink: 0;
-  width: var(--icon-md);
-  height: var(--icon-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.7;
-}
-
-.sidebar-action-row:hover .sidebar-action-icon,
-.sidebar-action-row--active .sidebar-action-icon {
-  opacity: 1;
-}
-
-.sidebar-action-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-base);
-}
-
 .sidebar-action-kbd {
   font-size: var(--text-2xs);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -175,53 +119,10 @@
   background: var(--bg-base);
 }
 
-.sidebar-action-trailing {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
 .sidebar-familiar-filter {
   display: grid;
   gap: var(--space-1);
   min-width: 0;
-}
-
-.sidebar-familiar-filter__label {
-  padding: 0 2px;
-  font-size: var(--text-2xs);
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.sidebar-familiar-filter__control {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 7px;
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-
-.sidebar-familiar-filter__control:hover,
-.sidebar-familiar-filter__control:focus-within {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.sidebar-familiar-filter__icon {
-  position: absolute;
-  left: 9px;
-  color: var(--text-muted);
-  pointer-events: none;
 }
 
 .sidebar-familiar-filter__select {
@@ -238,13 +139,6 @@
   font: inherit;
   font-size: var(--text-base);
   cursor: pointer;
-}
-
-.sidebar-familiar-filter__chevron {
-  position: absolute;
-  right: 9px;
-  color: var(--text-muted);
-  pointer-events: none;
 }
 
 /* Stack the top-level scope selector + New chat action tightly */

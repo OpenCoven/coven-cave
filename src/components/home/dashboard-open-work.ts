@@ -17,13 +17,6 @@ export type OpenWorkFilter = "all" | "running" | "blocked" | "inbox";
 
 export const OPEN_WORK_FILTERS: OpenWorkFilter[] = ["all", "inbox"];
 
-export const OPEN_WORK_FILTER_LABEL: Record<OpenWorkFilter, string> = {
-  all: "All",
-  running: "Running",
-  blocked: "Blocked",
-  inbox: "Needs you",
-};
-
 export type OpenWorkRow = {
   id: string;
   title: string;

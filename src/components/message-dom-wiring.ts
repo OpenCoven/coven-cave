@@ -332,10 +332,6 @@ function readWorkingTree(absPath: string): Promise<WorkingTreeRead> {
   return pending;
 }
 
-export function clearWorkingTreeCache(): void {
-  diskCache.clear();
-}
-
 /** Join a project root and a repo-relative path without doubling the slash. */
 export function joinProjectPath(root: string, relative: string): string {
   return `${root.replace(/[/\\]+$/, "")}/${relative.replace(/^[/\\]+/, "")}`;

@@ -297,7 +297,6 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
-.code-room__spacer { flex: 1; min-width: var(--space-1); }
 .code-room__facts {
   display: flex;
   flex-wrap: wrap;

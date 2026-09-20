@@ -97,12 +97,6 @@ export const KIND_ICON: Record<
   review_request: "ph:git-pull-request",
   notification: "ph:bell",
 };
-export const KIND_LABEL: Record<string, string> = {
-  pr: "PR",
-  issue: "Issue",
-  review_request: "Review",
-  notification: "Notif",
-};
 export const KIND_DETAIL_LABEL: Record<string, string> = {
   pr: "Pull request",
   issue: "Issue",

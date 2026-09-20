@@ -143,40 +143,6 @@ export function ExpandMemoryButton({
   );
 }
 
-
-export function SourceFilterChip({
-  label,
-  count,
-  active,
-  onClick,
-  help,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-  /** One line saying what this source actually is — the three source names
-   *  read as synonyms without it. */
-  help?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      title={help}
-      className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[length:var(--text-xs)] transition-colors ${
-        active
-          ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-          : "border-transparent text-[var(--text-secondary)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]/50"
-      }`}
-    >
-      <span className="text-[var(--text-muted)]">{label}</span>
-      <span className="font-semibold text-[var(--text-primary)]">{count}</span>
-    </button>
-  );
-}
-
 export function MemoryFilesList({
   entries,
   onOpen,

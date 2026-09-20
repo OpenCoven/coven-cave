@@ -1008,19 +1008,9 @@
   white-space: nowrap;
 }
 
-.hc-mic-live {
-  color: var(--accent-presence);
-  border-color: var(--accent-presence);
-  animation: hc-mic-pulse 1.6s ease-in-out infinite;
-}
-
 @keyframes hc-mic-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hc-mic-live { animation: none; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1114,28 +1104,9 @@
   flex-direction: column;
 }
 
-.composer-actions__section {
-  min-width: 0;
-  padding: var(--space-1) 0;
-}
-
-.composer-actions__section + .composer-actions__section {
-  border-top: 1px solid var(--border-hairline);
-}
-
 .composer-actions__linked {
   max-height: 15rem;
   overflow-y: auto;
-}
-
-.composer-actions__improve .ui-popover-item,
-.composer-actions__item {
-  gap: 10px;
-}
-
-.composer-actions__icon--live {
-  color: var(--accent-presence);
-  animation: hc-mic-pulse 1.6s ease-in-out infinite;
 }
 
 .composer-actions__response .composer-options__action {
@@ -1145,10 +1116,6 @@
 .composer-actions__response .composer-options__section {
   padding-right: var(--space-2);
   padding-left: var(--space-2);
-}
-
-.composer-actions__enhance {
-  min-width: 0;
 }
 
 /* "+" popover rows: icon · label · trailing shortcut hint. */
@@ -1219,8 +1186,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-plus__icon--live,
-  .composer-actions__icon--live { animation: none; }
+  .composer-plus__icon--live { animation: none; }
 }
 
 /* Shared adaptive context controls (cave-g21f): project · worktree · branch · model
