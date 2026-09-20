@@ -32,8 +32,8 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 }
 
 /// WebKit callbacks can arrive outside MainActor. Capture the authority at
-/// ingress so a queued callback cannot become work for a replacement pairing.
-private final class MarkdownAuthorityEpoch: @unchecked Sendable {
+/// ingress so a queued callback cannot become work for replaced content or pairing.
+private final class MarkdownCallbackEpoch: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64 = 0
     func snapshot() -> UInt64 {
@@ -150,7 +150,7 @@ struct MarkdownWebView: UIViewRepresentable {
         private var throttleTask: Task<Void, Never>?
         private var imageTask: Task<Void, Never>?
         private var imageGeneration: UInt64 = 0
-        private nonisolated let imageAuthorityEpoch = MarkdownAuthorityEpoch()
+        private nonisolated let messageEpoch = MarkdownCallbackEpoch()
         private var renderSpan: CavePerformanceSpan?
 
         private var ready = false
@@ -203,7 +203,7 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         @objc private func imageAuthorityDidChange() {
-            imageAuthorityEpoch.advance()
+            messageEpoch.advance()
             imageTask?.cancel()
             imageTask = nil
             imageGeneration &+= 1
@@ -279,6 +279,7 @@ struct MarkdownWebView: UIViewRepresentable {
             imageTask?.cancel()
             imageTask = nil
             imageGeneration &+= 1
+            messageEpoch.advance()
             lastRenderSignature = renderSignature
             lastStyleSignature = styleSignature
             pending = md
@@ -428,10 +429,10 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         nonisolated func enqueueScriptBody(_ messageBody: Any) {
-            let authority = imageAuthorityEpoch.snapshot()
+            let authority = messageEpoch.snapshot()
             Task { @MainActor [weak self] in
                 guard let self, !self.isInvalidated, !self.failed,
-                      self.imageAuthorityEpoch.snapshot() == authority,
+                      self.messageEpoch.snapshot() == authority,
                       let body = messageBody as? [String: Any],
                       let type = body["type"] as? String else { return }
                 switch type {
@@ -497,7 +498,7 @@ struct MarkdownWebView: UIViewRepresentable {
             let requestGeneration = imageGeneration
             let generation = callbackGeneration
             let source: CaveImageSource?
-            if let src, src.hasPrefix("data:image/") {
+            if let src, src.range(of: "data:image/", options: [.anchored, .caseInsensitive]) != nil {
                 source = .dataURL(src)
             } else if let src, let url = URL(string: src),
                       let scheme = url.scheme?.lowercased(),

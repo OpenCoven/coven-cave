@@ -382,6 +382,17 @@ final class CaveImageCacheTests: XCTestCase {
         XCTAssertLessThanOrEqual(peak, 2)
     }
 
+    func testCachedDataURLDoesNotRetainItsEncodedPayload() async {
+        let decoder = CountingImageDecoder()
+        let cache = CaveImageCache(decoder: decoder)
+        let source = "data:image/png;base64," + Data(repeating: 1, count: 1_048_576).base64EncodedString()
+        _ = await cache.image(for: .dataURL(source), targetPixelSize: CGSize(width: 8, height: 8))
+        let entries = await cache.indexedEntryCount
+        let retainedBytes = await cache.indexedSourceIdentityByteCount
+        XCTAssertEqual(entries, 1)
+        XCTAssertLessThanOrEqual(retainedBytes, 256, "Image cost limits must not hide megabytes in a cache key")
+    }
+
     func testTargetPixelSizesUseSeparateCacheEntries() async {
         let decoder = CountingImageDecoder()
         let cache = CaveImageCache(decoder: decoder)

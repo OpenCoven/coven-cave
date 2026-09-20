@@ -154,7 +154,11 @@ pixels total. Target dimensions are limited to 4,096 pixels per axis; EXIF
 orientation is applied when fitting the target. Two load/decode operations
 can run concurrently and six can wait; excess requests return the same
 explicit failure UI. Same-source/target requests still share one operation.
-The existing 48 MiB cache budget remains unchanged.
+The existing 48 MiB decoded-image cache budget remains unchanged. Data-URL
+cache keys retain a 32-byte SHA-256 digest rather than the encoded source text.
+Cancellation propagates into detached decode work and is checked before and
+after ImageIO calls. A synchronous ImageIO call already in progress cannot be
+interrupted; its scheduler slot remains held until it actually returns.
 
 Owner disposal, content replacement, another image selection, and pairing
 changes cancel pending inline presentation. Pairing generation checks also
@@ -167,9 +171,9 @@ physical-device performance acceptance: #5314 still requires Release-device
 Time Profiler/Allocations evidence, 100 zoom/dismiss cycles, and the #5310
 memory/hitch gates. Simulator tests do not establish VoiceOver acceptance.
 
-For a fresh local generated Xcode project, generate markdown resources
-before running XcodeGen; otherwise the pre-build script can create files
-that the already-generated project does not include in its resource phase.
+Use `pnpm mobile:ios:xcodegen` to generate the local Xcode project. Its wrapper
+builds and verifies markdown resources before XcodeGen scans them. Running
+XcodeGen directly can omit files later created by the pre-build script.
 Verify `markdown.html` exists inside the built app before interpreting a
 renderer test result.
 

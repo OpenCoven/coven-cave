@@ -6,6 +6,16 @@ import XCTest
 final class MarkdownWebViewLifecycleTests: XCTestCase {
     @MainActor
     func testInlineImageZoomUsesBoundedDownsampling() async throws {
+        try await assertInlineDownsampling(prefix: "data:image/png;base64,")
+    }
+
+    @MainActor
+    func testMixedCaseDataURLUsesBoundedDownsampling() async throws {
+        try await assertInlineDownsampling(prefix: "DATA:IMAGE/PNG;base64,")
+    }
+
+    @MainActor
+    private func assertInlineDownsampling(prefix: String) async throws {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let source = UIGraphicsImageRenderer(size: CGSize(width: 5000, height: 1), format: format).image { context in
@@ -26,7 +36,7 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
             presented.fulfill()
         }
         defer { NotificationCenter.default.removeObserver(token) }
-        coordinator.presentImage(src: "data:image/png;base64," + data.base64EncodedString(), fallbackHTML: "")
+        coordinator.presentImage(src: prefix + data.base64EncodedString(), fallbackHTML: "")
         await fulfillment(of: [presented], timeout: 5)
     }
 
@@ -126,6 +136,24 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         await fulfillment(of: [presented], timeout: 5)
         await drainMainQueue()
         XCTAssertEqual(count, 1)
+    }
+
+    @MainActor
+    func testContentReplacementRejectsQueuedImageBridgeMessage() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        coordinator.apply(markdown: "Old message", streaming: false, fontScale: 1,
+                          theme: .dark, accentHex: nil, reader: false)
+        let presented = expectation(description: "A queued tap from replaced content must not open zoom")
+        presented.isInverted = true
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { _ in
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.enqueueScriptBody(["type": "enlarge", "kind": "image", "src": "file:///old-image.png"])
+        coordinator.apply(markdown: "Replacement message", streaming: false, fontScale: 1,
+                          theme: .dark, accentHex: nil, reader: false)
+        await fulfillment(of: [presented], timeout: 0.2)
     }
 
     @MainActor

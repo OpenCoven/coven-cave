@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import ImageIO
 import UIKit
 
@@ -20,7 +21,7 @@ enum CaveImageSource: Hashable, Sendable {
         case .authenticatedRemoteURL(let url, let bearerToken):
             return .remoteURL(url.absoluteString, bearerToken: bearerToken)
         case .dataURL(let value):
-            return .dataURL(value)
+            return .dataURLDigest(Data(SHA256.hash(data: Data(value.utf8))))
         }
     }
 }
@@ -35,7 +36,8 @@ protocol CaveImageDataLoading: Sendable {
 
 private enum CaveImageSourceIdentity: Hashable, Sendable {
     case remoteURL(String, bearerToken: String?)
-    case dataURL(String)
+    // Keep the identity, not the potentially 43 MiB encoded payload, in cached keys.
+    case dataURLDigest(Data)
 }
 
 private struct CaveImageCacheKey: Hashable, Sendable {
@@ -52,6 +54,10 @@ private struct CaveImageCacheKey: Hashable, Sendable {
             return nil
         }
 
+        if case .dataURL(let value) = source {
+            let maximumTextBytes = ((DefaultCaveImageDataLoader.maximumEncodedBytes + 2) / 3) * 4 + 257
+            guard value.utf8.count <= maximumTextBytes else { return nil }
+        }
         self.source = source.identity
         self.pixelWidth = Int(targetPixelSize.width.rounded(.up))
         self.pixelHeight = Int(targetPixelSize.height.rounded(.up))
@@ -273,14 +279,20 @@ private struct ImageIOCaveImageDecoder: CaveImageDecoding {
         await recorder.increment("image.decode")
 
         let image = await recorder.measure("image.decode") {
-            await Task.detached(priority: .userInitiated) {
+            let decodeTask = Task.detached(priority: .userInitiated) {
                 Self.makeThumbnail(data: data, targetPixelSize: targetPixelSize)
-            }.value
+            }
+            return await withTaskCancellationHandler {
+                await decodeTask.value
+            } onCancel: {
+                decodeTask.cancel()
+            }
         }
         return Task.isCancelled ? nil : image
     }
 
     private static func makeThumbnail(data: Data, targetPixelSize: CGSize) -> UIImage? {
+        guard !Task.isCancelled else { return nil }
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
             return nil
@@ -299,7 +311,9 @@ private struct ImageIOCaveImageDecoder: CaveImageDecoding {
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
         ] as CFDictionary
 
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+        guard !Task.isCancelled,
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions),
+              !Task.isCancelled else {
             return nil
         }
 
@@ -456,6 +470,15 @@ actor CaveImageCache {
 
     var indexedEntryCount: Int {
         indexedKeys.count
+    }
+
+    var indexedSourceIdentityByteCount: Int {
+        indexedKeys.reduce(0) { total, key in
+            switch key.source {
+            case .dataURLDigest(let value): return total + value.count
+            case .remoteURL(let url, let token): return total + url.utf8.count + (token?.utf8.count ?? 0)
+            }
+        }
     }
 
     init(
