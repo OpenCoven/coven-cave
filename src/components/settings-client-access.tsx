@@ -259,7 +259,7 @@ async function fetchClientV1Status(signal: AbortSignal): Promise<ClientV1Status 
       cache: "no-store",
       signal,
     });
-    return parseStatus(await parseJson(response));
+    return response.ok ? parseStatus(await parseJson(response)) : null;
   } catch {
     return null;
   }
@@ -794,6 +794,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const suppressedTerminalRequestIdsRef = useRef<Set<string>>(new Set());
   const actionRef = useRef<ClientAccessAction | null>(null);
   const mountedRef = useRef(false);
+  const statusLoadRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -801,7 +802,31 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       mountedRef.current = false;
       loadRef.current?.controller.abort();
       loadRef.current = null;
+      statusLoadRef.current?.abort();
+      statusLoadRef.current = null;
     };
+  }, []);
+
+  // Operational status is optional: a slow probe must not gate the ledger or
+  // keep a completed approval/revocation busy. Give it an independent lifetime.
+  const refreshStatus = useCallback((mode: ClientAccessLoadMode) => {
+    if (statusLoadRef.current) {
+      if (mode === "background") return;
+      statusLoadRef.current.abort();
+    }
+    const controller = new AbortController();
+    statusLoadRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+    void fetchClientV1Status(controller.signal).then((nextStatus) => {
+      if (nextStatus && mountedRef.current && !controller.signal.aborted
+        && statusLoadRef.current === controller) {
+        // Preserve a confirmed warning when a later probe is unavailable.
+        setStatus(nextStatus);
+      }
+    }).finally(() => {
+      clearTimeout(timeoutId);
+      if (statusLoadRef.current === controller) statusLoadRef.current = null;
+    });
   }, []);
 
   const load = useCallback(async (
@@ -814,6 +839,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       if (mode === "background") return currentLoad.promise;
       currentLoad.controller.abort();
     }
+    refreshStatus(mode);
     const controller = new AbortController();
     let timedOut = false;
     const loadId = loadIdRef.current + 1;
@@ -829,7 +855,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         controller.abort();
       }, CLIENT_ACCESS_LOAD_TIMEOUT_MS);
       try {
-        const [pairingResponse, credentialResponse, nextStatus] = await Promise.all([
+        const [pairingResponse, credentialResponse] = await Promise.all([
           fetch("/api/client/v1/admin/pairing-requests", {
             cache: "no-store",
             signal: controller.signal,
@@ -838,7 +864,6 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
             cache: "no-store",
             signal: controller.signal,
           }),
-          fetchClientV1Status(controller.signal),
         ]);
         const [pairingPayload, credentialPayload] = await Promise.all([
           parseJson(pairingResponse),
@@ -886,7 +911,6 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         credentialsRef.current = nextCredentials;
         setPendingRequests(nextPending);
         setCredentials(nextCredentials);
-        setStatus(nextStatus);
         hasConfirmedSnapshotRef.current = true;
         setHasConfirmedSnapshot(true);
         hasLocalMutationStateRef.current = false;
@@ -934,7 +958,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       promise,
     };
     return promise;
-  }, [active]);
+  }, [active, refreshStatus]);
 
   const settleTerminalRequest = useCallback((requestId: string) => {
     suppressedTerminalRequestIdsRef.current.add(requestId);
@@ -952,6 +976,8 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     if (!active) {
       loadRef.current?.controller.abort();
       loadRef.current = null;
+      statusLoadRef.current?.abort();
+      statusLoadRef.current = null;
       setLoading(false);
       return;
     }
@@ -959,6 +985,8 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     return () => {
       loadRef.current?.controller.abort();
       loadRef.current = null;
+      statusLoadRef.current?.abort();
+      statusLoadRef.current = null;
     };
   }, [active, load]);
 
