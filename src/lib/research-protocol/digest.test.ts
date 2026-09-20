@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createHash } from "node:crypto";
 
 import {
   canonicalJson,
@@ -380,4 +381,44 @@ test("descriptor classification ignores inherited value pollution for objects an
       Reflect.deleteProperty(Object.prototype, "value");
     }
   }
+});
+
+
+test("portable SHA-256 matches Node for UTF-8, padding boundaries, and byte views", () => {
+  const inputs: Array<string | Uint8Array> = [
+    "", "hello", "🧙 café e\u0301", "\ud800", "\udc00", "a\u0000b",
+    ...[0, 1, 55, 56, 63, 64, 65, 127, 128, 129, 1024, 1_000_000].map(
+      (length) => Uint8Array.from({ length }, (_, index) => (index * 131 + 17) & 255),
+    ),
+    Uint8Array.from([99, 0, 128, 255, 88]).subarray(1, 4),
+    Buffer.from([99, 0, 128, 255, 88]).subarray(1, 4),
+  ];
+  for (const input of inputs) {
+    const before = typeof input === "string" ? input : input.slice();
+    assert.equal(sha256Digest(input), createHash("sha256").update(input).digest("hex"));
+    assert.deepEqual(input, before, "hashing must not mutate the input view");
+  }
+});
+
+
+test("digest helper bundles for browsers without Node built-ins or crypto shims", async () => {
+  const { build } = await import("esbuild");
+  const { runInNewContext } = await import("node:vm");
+  const { fileURLToPath } = await import("node:url");
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL("./digest.ts", import.meta.url))],
+    bundle: true,
+    platform: "browser",
+    write: false,
+    format: "iife",
+    globalName: "ResearchDigest",
+    minify: true,
+  });
+  const output = result.outputFiles[0];
+  // The current portable helper is about 11 KB. Leave headroom while catching
+  // the former ~419 KB general-purpose Node crypto compatibility dependency.
+  assert.ok(output.contents.length < 25_000, `Digest bundle grew to ${output.contents.length} bytes`);
+  const sandbox = { TextEncoder };
+  const actual = runInNewContext(`${output.text}; ResearchDigest.sha256Digest("hello")`, sandbox);
+  assert.equal(actual, createHash("sha256").update("hello").digest("hex"));
 });

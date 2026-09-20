@@ -173,6 +173,7 @@ export const SUITES = {
     "src/components/role-surfaces/use-research-links.test.ts",
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
+    "src/components/role-surfaces/researcher-surface-loader.test.tsx",
     "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/components/role-surfaces/research-run-projection-surface.test.tsx",
     "src/lib/research-generations.test.ts",
@@ -2559,6 +2560,7 @@ const VITEST_TESTS = new Set([
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
+  "src/components/role-surfaces/researcher-surface-loader.test.tsx",
   "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
   "src/components/role-surfaces/research-run-projection-surface.test.tsx",
   "src/components/voice-provider-settings.test.tsx",

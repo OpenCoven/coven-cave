@@ -118,6 +118,7 @@
     "@iconify/react": "6.0.2",
     "@lezer/highlight": "1.2.3",
     "@milkdown/crepe": "7.21.3",
+    "@noble/hashes": "2.4.0",
     "@openclaw/gateway-client": "2026.7.2-beta.5",
     "@openclaw/gateway-protocol": "2026.7.2-beta.5",
     "@tailwindcss/browser": "4.3.3",

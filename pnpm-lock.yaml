@@ -54,6 +54,9 @@ importers:
       '@milkdown/crepe':
         specifier: 7.21.3
         version: 7.21.3(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.2)(typescript@6.0.3)
+      '@noble/hashes':
+        specifier: 2.4.0
+        version: 2.4.0
       '@openclaw/gateway-client':
         specifier: 2026.7.2-beta.5
         version: 2026.7.2-beta.5
@@ -1164,6 +1167,10 @@ packages:
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [win32]
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@ocavue/utils@1.7.0':
     resolution: {integrity: sha512-yEk9ATNBjTZTtuVFMB/MAIF6zJBvJ2+lVNQvK2+O+ggEBGTgx2tp27d4FPgmD5bRsNHHP3D0SleQia/bvIeV8w==}
@@ -4785,6 +4792,8 @@ snapshots:
 
   '@next/swc-win32-x64-msvc@16.3.3':
     optional: true
+
+  '@noble/hashes@2.4.0': {}
 
   '@ocavue/utils@1.7.0': {}
 
