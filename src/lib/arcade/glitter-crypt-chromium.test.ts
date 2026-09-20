@@ -28,7 +28,9 @@ if (!existsSync(executablePath)) {
       const seeded = frameDelay
         ? "<script>let seed=3; Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};</script>"
         : "";
-      await page.setContent(seeded + buildArcadeSrcDoc(), { waitUntil: "load" });
+      await page.setContent(buildArcadeSrcDoc().replace("<head>", "<head>" + seeded), { waitUntil: "load" });
+
+      assert.equal(await page.evaluate(() => document.compatMode), "CSS1Compat", "seeded and normal documents preserve standards mode");
 
       // ── Boot ────────────────────────────────────────────────────────────────
       assert.equal(
@@ -116,6 +118,14 @@ if (!existsSync(executablePath)) {
           }, delay));
         }, frameDelay);
       }
+      const targeting = await page.evaluate(() => ({
+        defaultTarget: window.__ARCADE_SNAPSHOT__(),
+        explicitDefault: window.__ARCADE_SNAPSHOT__(false),
+        visibleTarget: window.__ARCADE_SNAPSHOT__(true),
+      }));
+      assert.deepEqual(targeting.defaultTarget, targeting.explicitDefault, "omitted visibility option retains default targeting");
+      assert.ok(targeting.defaultTarget.nearest <= targeting.visibleTarget.nearest, "default targeting includes every living wisp");
+      assert.equal(targeting.defaultTarget.alive, targeting.visibleTarget.alive, "visibility selection does not alter game state");
       const opening = await snapshot();
       assert.equal(opening.state, "playing", "the sim is running");
       assert.ok(opening.alive > 0, "wave 1 spawned wisps");
