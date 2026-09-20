@@ -1010,6 +1010,8 @@ export const SUITES = {
     "src/lib/thread-self-report-timing.test.ts",
     "src/lib/threads-read.test.ts",
     "src/lib/proposal-authority-daemon.test.ts",
+    "src/lib/proposal-terminal.test.ts",
+    "scripts/sanitize-threads-trace.test.mjs",
     "src/lib/threads-adapters.test.ts",
     "src/lib/weave-map.test.ts",
     "src/lib/weave-rail.test.ts",

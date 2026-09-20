@@ -38,6 +38,7 @@ import {
   type WeaveListEntry,
   type WeaveDetail,
 } from "./threads-read.ts";
+import { normalizeProposalTerminal, type ProposalTerminalReceipt } from "./proposal-terminal.ts";
 import { normalizeProposal } from "./proposal-normalize.ts";
 
 export interface ThreadsReadAdapter {
@@ -48,6 +49,7 @@ export interface ThreadsReadAdapter {
   strands(threadId: string): Promise<ThreadsEnvelope<StrandView[]>>;
   audit(threadId: string, before?: number): Promise<ThreadsEnvelope<AuditEntryView[]>>;
   proposals(): Promise<ThreadsEnvelope<ProposalView[]>>;
+  proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>>;
   approve(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
   reject(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
 }
@@ -97,7 +99,7 @@ type PendingSnapshot = {
 };
 
 type ProposalSummarySource =
-  | { state: "available"; byId: Map<string, unknown> }
+  | { state: "available"; byId: Map<string, unknown>; total: number }
   | { state: "unavailable" }
   | { state: "unparseable" };
 
@@ -165,7 +167,7 @@ function proposalSummarySource(raw: unknown): ProposalSummarySource {
       byId.set(proposalId, proposal);
     }
   }
-  return { state: "available", byId };
+  return { state: "available", byId, total: proposals.length };
 }
 
 // Current producer: Coven api.rs threads_proposals_response. Keep the legacy
@@ -378,6 +380,10 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     return okEnvelope(page, this.meta(cursor, true));
   }
 
+  async proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>> {
+    return blockedEnvelope("no-fixture", this.meta("terminal:fixtures-unavailable", false));
+  }
+
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const timeout = this.timedOut<ProposalView[]>();
     if (timeout) return timeout;
@@ -390,7 +396,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     }
     if (this.phase5FixtureDir === null) {
       return okEnvelope(
-        joinProposalSummaries(staged, { state: "available", byId: new Map() }),
+        joinProposalSummaries(staged, { state: "available", byId: new Map(), total: 0 }),
         this.meta(pendingDirCursor(this.pendingDir), true),
       );
     }
@@ -585,6 +591,7 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
 
   private async proposalSummaries(): Promise<{ source: ProposalSummarySource; cursor: string }> {
     const byId = new Map<string, unknown>();
+    let total = 0;
     const seen = new Set<string>();
     const digest = createHash("sha256");
     const deadline = performance.now() + this.timeoutMs;
@@ -607,11 +614,12 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
         return { source: { state: "unparseable" }, cursor: "pagination:changed-contract" };
       }
       pageLimit = page.limit;
+      total += page.source.total;
       for (const [id, summary] of page.source.byId) {
         if (byId.has(id)) return { source: { state: "unparseable" }, cursor: "pagination:duplicate" };
         byId.set(id, summary);
       }
-      if (page.next === null) return { source: { state: "available", byId }, cursor: digest.digest("hex").slice(0, 16) };
+      if (page.next === null) return { source: { state: "available", byId, total }, cursor: digest.digest("hex").slice(0, 16) };
       if (seen.has(page.next)) return { source: { state: "unparseable" }, cursor: "pagination:repeated-cursor" };
       seen.add(page.next);
       requestPath = `${DAEMON_PROPOSALS_PATH}?limit=${page.limit}&cursor=${encodeURIComponent(page.next)}`;
@@ -619,13 +627,54 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     return { source: { state: "unparseable" }, cursor: "pagination:limit" };
   }
 
+  async proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>> {
+    const dbPath = path.join(/* turbopackIgnore: true */ this.home, "coven.sqlite3");
+    if (!existsSync(/* turbopackIgnore: true */ dbPath)) return blockedEnvelope("no-audit-store", this.meta("terminal:absent", false));
+    let receipts: ProposalTerminalReceipt[];
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        // Check uniqueness across the whole audit, not just the display page.
+        const rows = db.prepare(`WITH recent AS MATERIALIZED (
+          SELECT id, proposal_id, event_type, substr(detail, 1, 16384) AS detail, decided_at
+          FROM ward_audit WHERE event_type IN ('proposal_approved', 'proposal_rejected', 'proposal_vetoed')
+          ORDER BY id DESC LIMIT 50
+        ), counts AS MATERIALIZED (
+          SELECT proposal_id, COUNT(*) AS terminal_count FROM ward_audit
+          WHERE proposal_id IN (SELECT proposal_id FROM recent)
+            AND event_type IN ('proposal_approved', 'proposal_rejected', 'proposal_vetoed')
+          GROUP BY proposal_id
+        ) SELECT recent.*, counts.terminal_count FROM recent
+          JOIN counts USING (proposal_id) ORDER BY recent.id DESC`).all();
+        receipts = [];
+        for (const row of rows) {
+          const receipt = normalizeProposalTerminal(row);
+          if (!receipt || row.terminal_count !== 1) return blockedEnvelope("unparseable", this.meta("terminal:invalid", false));
+          receipts.push(receipt);
+        }
+      } finally { db.close(); }
+    } catch { return blockedEnvelope("no-audit-store", this.meta("terminal:unreadable", false)); }
+    // A persisted receipt alone cannot make an unavailable daemon look live.
+    const summaries = await this.proposalSummaries();
+    if (summaries.source.state !== "available") return blockedEnvelope("daemon-unavailable", this.meta("terminal:daemon-unavailable", false));
+    if (receipts.some(receipt => summaries.source.state === "available" && summaries.source.byId.has(receipt.proposalId))) {
+      return blockedEnvelope("unparseable", this.meta("terminal:still-pending", false));
+    }
+    return okEnvelope(receipts, this.meta(`terminal:${receipts[0]?.auditId ?? 0}:${summaries.cursor}`, true));
+  }
+
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const pendingDir = path.join(/* turbopackIgnore: true */ this.home, "pending");
     if (!existsSync(/* turbopackIgnore: true */ pendingDir)) {
-      // No pending dir but a real coven home: nothing has ever been staged —
-      // verified empty. No coven home at all: nothing to verify against.
-      if (existsSync(/* turbopackIgnore: true */ this.home)) return okEnvelope([], this.meta("pending:empty", true));
-      return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
+      if (!existsSync(/* turbopackIgnore: true */ this.home)) return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
+      const summaries = await this.proposalSummaries();
+      if (summaries.source.state !== "available") return blockedEnvelope(
+        summaries.source.state === "unparseable" ? "unparseable" : "daemon-unavailable", this.meta("pending:unverified", false));
+      if (summaries.source.total !== 0 || existsSync(/* turbopackIgnore: true */ pendingDir)) {
+        return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));
+      }
+      return okEnvelope([], this.meta(`pending:empty:${summaries.cursor}`, true));
     }
     const snapshot = readPendingSnapshot(pendingDir);
     if (snapshot === null) {
@@ -633,9 +682,13 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       // never a throw and never an empty-healthy answer.
       return blockedEnvelope("unparseable", this.meta("pending:unreadable", false));
     }
-    if (snapshot.staged.length === 0) return okEnvelope([], this.meta(snapshot.cursor, true));
 
     const summaries = await this.proposalSummaries();
+    if (summaries.source.state !== "available") return blockedEnvelope(
+      summaries.source.state === "unparseable" ? "unparseable" : "daemon-unavailable", this.meta(`${snapshot.cursor}:unverified`, false));
+    if (snapshot.staged.length === 0 && summaries.source.total !== 0) {
+      return blockedEnvelope("unparseable", this.meta("pending:missing-staged", false));
+    }
     const confirmedSnapshot = readPendingSnapshot(pendingDir);
     if (confirmedSnapshot === null || confirmedSnapshot.cursor !== snapshot.cursor) {
       return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));

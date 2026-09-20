@@ -35,6 +35,8 @@ import {
   responseEnvelopeStateAt,
   useResponseEnvelopeFreshness,
 } from "@/lib/response-envelope-freshness";
+import type { ProposalTerminalReceipt } from "@/lib/proposal-terminal";
+import "./proposal-terminal.css";
 import type { ProposalView } from "@/lib/threads-read";
 import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/weave-rail";
 
@@ -50,6 +52,37 @@ async function fetchProposals(): Promise<SurfaceState<ProposalView[]>> {
       meta: null,
     };
   }
+}
+
+async function fetchTerminalOutcomes(): Promise<SurfaceState<ProposalTerminalReceipt[]>> {
+  try {
+    const response = await fetch("/api/proposals?view=outcomes", { cache: "no-store" });
+    return surfaceStateFromPayload<ProposalTerminalReceipt[]>(await response.json());
+  } catch {
+    return { kind: "blocked", why: "daemon-unreachable", message: blockedMessage("daemon-unreachable"), meta: null };
+  }
+}
+
+function TerminalOutcomes({ state, onRefresh }: { state: SurfaceState<ProposalTerminalReceipt[]>; onRefresh: () => void }) {
+  if (state.kind === "loading") return <p role="status">Reading proposal outcomes…</p>;
+  if (state.kind !== "ready" || !state.meta.verified || state.meta.adapter !== "daemon"
+    || state.banners.some(banner => banner.kind === "stale")) {
+    return <section aria-label="Recent proposal outcomes" className="proposal-terminal">
+      <p role="status">Proposal outcomes are unavailable or stale. Refresh to verify the daemon’s result.</p>
+      <button type="button" className="wv-act focus-ring" onClick={onRefresh}>Refresh outcomes</button>
+    </section>;
+  }
+  if (state.data.length === 0) return null;
+  return <section aria-label="Recent proposal outcomes" className="proposal-terminal">
+    <h2>Recent outcomes</h2>
+    <ul tabIndex={0} className="focus-ring" aria-label="Recent proposal outcomes">
+      {state.data.map(receipt => <li key={receipt.proposalId}>
+        <p role="status">The daemon confirmed this proposal as {receipt.terminal}.
+          {receipt.reason !== receipt.terminal ? ` Reason: ${receipt.reason}.` : ""}</p>
+        <p className="wv-footmeta">Proposal {receipt.proposalId} · <time dateTime={receipt.decidedAt}>{receipt.decidedAt}</time></p>
+      </li>)}
+    </ul>
+  </section>;
 }
 
 function OutcomeNote({ outcome }: { outcome: DecisionOutcome }) {
@@ -394,6 +427,8 @@ function ProposalDetail({
 
 export function ProposalApproval() {
   const [state, setState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
+  const [terminalState, setTerminalState] = useState<SurfaceState<ProposalTerminalReceipt[]>>({ kind: "loading" });
+  const terminalResponse = useResponseEnvelopeFreshness(terminalState);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [unconfirmedOutcomes, setUnconfirmedOutcomes] = useState<ReadonlyMap<string, DecisionOutcome>>(new Map());
   // Queue-owned synchronous guard survives keyed detail remounts and closes
@@ -424,10 +459,12 @@ export function ProposalApproval() {
     const generation = ++loadGeneration.current;
     const covered = unconfirmedRef.current;
     setState({ kind: "loading" });
-    const next = await fetchProposals();
+    setTerminalState({ kind: "loading" });
+    const [next, outcomes] = await Promise.all([fetchProposals(), fetchTerminalOutcomes()]);
     if (generation !== loadGeneration.current) return;
     reconcileOutcomes({ kind: "refresh", state: next, covered });
     setState(next);
+    setTerminalState(outcomes);
   }, [reconcileOutcomes]);
 
   useEffect(() => {
@@ -495,11 +532,14 @@ export function ProposalApproval() {
     );
   }
 
+  const terminalOutcomes = <TerminalOutcomes state={terminalResponse} onRefresh={() => void load()} />;
+
   if (queue.length === 0) {
     return (
       <div className="wv-page">
         {header}
         <SurfaceBanners banners={responseState.banners} />
+        {terminalOutcomes}
         <div className="wv-center">
           <div role="status" className="wv-verified-empty">
             <span className="wv-verified-empty__seal">
@@ -539,6 +579,7 @@ export function ProposalApproval() {
         </p>
       </div>
       <SurfaceBanners banners={responseState.banners} />
+      {terminalOutcomes}
 
       <div className="wv-grid" data-pane={narrowPane} data-collapsed={collapsed ? "true" : "false"}>
         <section aria-label="Proposal queue" className="wv-pane-list">

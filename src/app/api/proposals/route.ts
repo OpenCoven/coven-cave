@@ -6,7 +6,10 @@ export const runtime = "nodejs";
 
 // GET /api/proposals — staged DegradeToProposal writes from ~/.coven/pending/
 // (spec §3 route 6). Both `ok` and `corrupt` entries are listed (R6).
-export async function GET() {
-  const envelope = await activeThreadsAdapter().proposals();
+export async function GET(request?: Request) {
+  const adapter = activeThreadsAdapter();
+  const envelope = request && new URL(request.url).searchParams.get("view") === "outcomes"
+    ? await adapter.proposalOutcomes()
+    : await adapter.proposals();
   return NextResponse.json(envelope, { status: httpStatusForEnvelope(envelope, "GET") });
 }
