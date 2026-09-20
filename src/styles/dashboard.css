@@ -2,10 +2,6 @@
    globals.css; these add only what the adaptive triage/launcher surface needs.
    Namespaced .dash-* so they never collide with /daily-report. */
 
-/* Report callout (today's/latest report) inner layout. */
-
-/* Recent-report rows. */
-
 /* bulk triage: select toggle + bar + row checkbox */
 .dash-inbox__check {
   display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
@@ -13,10 +9,6 @@
 }
 .dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: var(--accent-presence-foreground); }
 .dash-inbox__check svg { width: 11px; height: 11px; }
-
-/* Open items beyond the visible cap drill through to the Rituals surface. */
-
-/* Compact launcher (busy state): single dense row, hide subtitles. */
 
 /* Settings shell: desktop-native control surface for /settings. */
 .settings-shell {

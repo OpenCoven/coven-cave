@@ -721,11 +721,6 @@
   gap: 10px;
 }
 
-/* Sidebar cluster label for Role Surface rooms. The explicit line box is load
-   bearing: the collapsed rail replaces the word with a hairline of the same
-   height (styles/sidebar-minimal/activity-rail.css), so the room rows below it
-   keep the same vertical position in both states (issue 4351). */
-
 /* Medium rooms retain navigation while moving the inspector on demand. */
 @container role-surface-room (max-width: 860px) {
   .role-surface-disclosures {
