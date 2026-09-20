@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -195,5 +195,141 @@ test("child processes serialize save/delete without resurrecting or losing updat
     assert.equal(final.some((item) => item.id === "delete-me"), false);
     assert.equal(final.some((item) => item.id === "keep"), true);
     assert.equal(final.some((item) => item.url === "https://example.com/added"), true);
+  });
+});
+
+// Pause real filesystem scheduling in each child, never production lock logic.
+// The second contender either enters (the old missing-choosing defect) or
+// starts its second admission scan (the corrected waiting path). No sleep
+// determines which schedule is exercised.
+const controlledTransactionScript = `
+  import fs from "node:fs/promises";
+  import path from "node:path";
+  import { syncBuiltinESMExports } from "node:module";
+  const input = JSON.parse(process.env.RESEARCH_LINKS_CHILD_INPUT);
+  const pending = new Set();
+  const waiters = new Map();
+  process.on("message", (message) => {
+    const resolve = waiters.get(message);
+    if (resolve) { waiters.delete(message); resolve(); }
+    else pending.add(message);
+  });
+  const wait = (message) => pending.delete(message) ? Promise.resolve()
+    : new Promise((resolve) => waiters.set(message, resolve));
+  const intents = path.join(input.resourceRoot, "locks", "intents");
+  const originalOpen = fs.open;
+  const originalReaddir = fs.readdir;
+  let published = false;
+  let scans = 0;
+  fs.open = async (...args) => {
+    const target = String(args[0]);
+    const isIntent = path.dirname(target) === intents && target.endsWith(".lock");
+    if (isIntent && input.role === "a" && !published) {
+      process.send({ event: "publication-held" });
+      await wait("publish");
+    }
+    const handle = await originalOpen(...args);
+    if (isIntent) published = true;
+    return handle;
+  };
+  fs.readdir = async (...args) => {
+    if (input.role === "b" && published && String(args[0]) === intents && ++scans === 2) {
+      process.send({ event: "waiting" });
+      await wait("resume-scan");
+    }
+    return originalReaddir(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    const { mutateCompatibleResearchLinks } = await import(${JSON.stringify(new URL("./research-links-compatibility.ts", import.meta.url).href)});
+    await mutateCompatibleResearchLinks(async (links) => {
+      process.send({ event: "entered", urls: links.map((item) => item.url) });
+      await wait("write");
+      return { links: [...links, {
+        id: input.role, url: "https://example.com/save-" + input.role,
+        category: "article", title: input.role, addedAt: ${JSON.stringify(NOW)}, source: "desk",
+      }], result: null };
+    }, { legacyPath: input.legacyPath, resourceRoot: input.resourceRoot });
+    process.send({ event: "done" });
+  } catch (error) {
+    process.send({ event: "error", message: String(error) });
+    process.exitCode = 1;
+  } finally {
+    process.disconnect();
+  }
+`;
+
+test("delayed intent publication serializes real child transactions before legacy projection", { timeout: 30_000 }, async (t) => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    await listCompatibleResearchLinks(options);
+    type Message = { event: string; urls?: string[]; message?: string };
+    const children: ReturnType<typeof startChild>[] = [];
+    function startChild(role: "a" | "b") {
+      t.signal.throwIfAborted();
+      const process = spawn(globalThis.process.execPath,
+        ["--experimental-strip-types", "--input-type=module", "-e", controlledTransactionScript], {
+          env: { ...globalThis.process.env, RESEARCH_LINKS_CHILD_INPUT: JSON.stringify({ role, legacyPath, resourceRoot }) },
+          stdio: ["ignore", "pipe", "pipe", "ipc"],
+        });
+      const messages: Message[] = [];
+      let stderr = "";
+      let notify = () => {};
+      let closed = false;
+      process.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+      process.stdout?.resume();
+      process.on("message", (message) => { messages.push(message as Message); notify(); });
+      const exited = new Promise<void>((resolve) => process.once("close", () => { closed = true; notify(); resolve(); }));
+      process.on("error", (error) => { messages.push({ event: "error", message: String(error) }); notify(); });
+      async function until(...events: string[]): Promise<Message> {
+        const deadline = Date.now() + 10_000;
+        for (;;) {
+          const error = messages.find((message) => message.event === "error");
+          assert.equal(error, undefined, JSON.stringify(error));
+          const result = messages.find((message) => events.includes(message.event));
+          if (result) return result;
+          assert.equal(closed, false, `child ${role} exited before ${events}: ${stderr}`);
+          const remaining = deadline - Date.now();
+          assert.ok(remaining > 0, `child ${role} timed out waiting for ${events}: ${stderr}`);
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, remaining);
+            notify = () => { clearTimeout(timer); resolve(); };
+          });
+        }
+      }
+      return { process, until, exited, isClosed: () => closed };
+    }
+    const stopChildren = () => {
+      for (const child of children) if (!child.isClosed()) child.process.kill("SIGKILL");
+    };
+    t.signal.addEventListener("abort", stopChildren, { once: true });
+    try {
+      const a = startChild("a"); children.push(a);
+      await a.until("publication-held");
+      const b = startChild("b"); children.push(b);
+      const admission = await b.until("entered", "waiting");
+      a.process.send("publish");
+      await a.until("entered");
+      if (admission.event === "entered") {
+        // Preserve the old failing ordering so the projection assertion below
+        // catches a genuinely lost row rather than merely an early admission.
+        b.process.send("write"); await b.until("done");
+        a.process.send("write"); await a.until("done");
+      } else {
+        a.process.send("write"); await a.until("done");
+        b.process.send("resume-scan"); await b.until("entered");
+        b.process.send("write"); await b.until("done");
+      }
+      await Promise.all(children.map((child) => child.exited));
+      // A compatibility list can recover the lost projection from manifests.
+      // Read the raw legacy file FIRST, matching the original CI failure.
+      assert.deepEqual((await readResearchLinksStrict({ path: legacyPath })).links.map((item) => item.url).sort(),
+        ["https://example.com/save-a", "https://example.com/save-b"]);
+      assert.equal(admission.event, "waiting", "a live chooser must prevent early admission");
+      assert.deepEqual((await b.until("entered")).urls, ["https://example.com/save-a"]);
+    } finally {
+      stopChildren();
+      await Promise.all(children.map((child) => child.exited));
+      t.signal.removeEventListener("abort", stopChildren);
+    }
   });
 });
