@@ -1135,6 +1135,39 @@ test("the ACL probe invokes no PowerShell cmdlets at all", async () => {
   }
 });
 
+async function observeAclRepairPair(
+  concurrent: boolean,
+  parent: () => Promise<ClientV1WindowsAclReport>,
+  child: () => Promise<ClientV1WindowsAclReport>,
+  inspect: () => boolean[],
+) {
+  const reports = concurrent
+    ? await Promise.allSettled([parent(), child()])
+    : [...await Promise.allSettled([parent()]), ...await Promise.allSettled([child()])];
+  // Inspect even when a repair rejected; settle every child before inspection
+  // or fixture cleanup, and retain inspection failures alongside probe failures.
+  const [inspection] = await Promise.allSettled([Promise.resolve().then(inspect)]);
+  return { reports, inspection };
+}
+
+test("ACL ordering observations survive rejected repair and inspection", async () => {
+  for (const concurrent of [false, true]) {
+    let childFinished = false;
+    const failure = new Error("synthetic repair failure");
+    const inspected = new Error("synthetic inspection failure");
+    const result = await observeAclRepairPair(concurrent,
+      async () => { throw failure; },
+      async () => { await Promise.resolve(); childFinished = true; return report({ repaired: false }); },
+      () => { assert.equal(childFinished, true); throw inspected; },
+    );
+    assert.deepEqual(result.reports, [
+      { status: "rejected", reason: failure },
+      { status: "fulfilled", value: report({ repaired: false }) },
+    ]);
+    assert.deepEqual(result.inspection, { status: "rejected", reason: inspected });
+  }
+});
+
 test("native parent and child ACL repair stays protected under concurrent startup", async (t: TestContext) => {
   if (process.platform !== "win32") {
     t.skip("requires native Windows inheritance propagation");
@@ -1142,42 +1175,47 @@ test("native parent and child ACL repair stays protected under concurrent startu
   }
   const fixture = await mkdtemp(join(tmpdir(), "cave-client-v1-acl-order-"));
   const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  const observations: Array<{ mode: string; iteration: number; reports: boolean[]; protected: boolean[] }> = [];
+  const observations = [];
+  const errors: unknown[] = [];
   try {
     for (const mode of ["ancestor-first", "concurrent"]) {
       for (let iteration = 0; iteration < 8; iteration++) {
         const parent = join(fixture, `${mode}-${iteration}`);
         const child = join(parent, "device-access");
         await mkdir(child, { recursive: true });
-        let reports: ClientV1WindowsAclReport[];
-        if (mode === "concurrent") {
-          // Reap both probes before cleanup even if one fails early.
-          const settled = await Promise.allSettled([probeWindowsAcl(parent), probeWindowsAcl(child)]);
-          reports = settled.map(result => {
-            if (result.status === "rejected") throw result.reason;
-            return result.value;
-          });
-        } else {
-          reports = [await probeWindowsAcl(parent), await probeWindowsAcl(child)];
-        }
-        assert.ok(reports.every(report => report.repaired), "fresh inherited paths must exercise real repair");
-        // Independent, read-only inspection after both processes settle. Calling
-        // the production probe again could repair and conceal the failed state.
-        const observed = execFileSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", `
+        const result = await observeAclRepairPair(mode === "concurrent",
+          () => probeWindowsAcl(parent), () => probeWindowsAcl(child), () => {
+            // A second production probe could repair and conceal failed state.
+            const observed = execFileSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", `
 $ErrorActionPreference = 'Stop'
 foreach ($path in @($env:CAVE_ACL_PARENT, $env:CAVE_ACL_CHILD)) {
   $item = [System.IO.DirectoryInfo]::new($path)
   $acl = $item.GetAccessControl('Access')
   [Console]::WriteLine([bool]$acl.AreAccessRulesProtected)
 }`], { env: { ...process.env, CAVE_ACL_PARENT: parent, CAVE_ACL_CHILD: child }, encoding: "utf8", timeout: 15_000, windowsHide: true });
-        const lines = observed.trim().split(/\r?\n/u);
-        assert.equal(lines.length, 2, "independent inspector must return both paths");
-        assert.ok(lines.every(value => value === "True" || value === "False"), "inspector must return typed Boolean values");
-        observations.push({ mode, iteration, reports: reports.map(report => report.protected), protected: lines.map(value => value === "True") });
+            const lines = observed.trim().split(/\r?\n/u);
+            assert.equal(lines.length, 2, "independent inspector must return both paths");
+            assert.ok(lines.every(value => value === "True" || value === "False"), "inspector must return typed Boolean values");
+            return lines.map(value => value === "True");
+          });
+        const observation = {
+          mode, iteration,
+          reports: result.reports.map(value => value.status === "fulfilled"
+            ? { status: value.status, repaired: value.value.repaired, protected: value.value.protected }
+            : { status: value.status }),
+          protected: result.inspection.status === "fulfilled" ? result.inspection.value : null,
+        };
+        observations.push(observation);
+        t.diagnostic(JSON.stringify({ aclOrdering: observation }));
+        for (const value of [...result.reports, result.inspection]) {
+          if (value.status === "rejected") errors.push(value.reason);
+        }
       }
     }
-    t.diagnostic(JSON.stringify({ aclOrdering: observations }));
-    assert.ok(observations.every(row => [...row.reports, ...row.protected].every(Boolean)), JSON.stringify(observations));
+    if (errors.length > 0) throw new AggregateError(errors, "ACL ordering probe or independent inspection failed; see per-iteration diagnostics");
+    assert.ok(observations.every(row => row.reports.every(value =>
+      value.status === "fulfilled" && value.repaired && value.protected)
+      && row.protected?.every(Boolean)), JSON.stringify(observations));
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }
