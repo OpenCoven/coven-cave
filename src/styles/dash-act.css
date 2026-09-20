@@ -22,25 +22,8 @@
   white-space: nowrap;
 }
 .dash-act:hover { border-color: var(--accent-presence); }
-.dash-act--primary {
-  color: var(--bg-base);
-  background: var(--accent-presence);
-  border-color: var(--accent-presence);
-}
-.dash-act--ghost { padding: 5px 8px; color: var(--text-muted); }
-.dash-act--ghost svg { width: 15px; height: 15px; }
 
 /* Snooze split: button opens a small duration menu. */
-.dash-snooze { position: relative; display: inline-flex; }
-.dash-snooze .dash-act svg { width: 12px; height: 12px; opacity: 0.7; }
-.dash-snooze__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: transparent;
-  border: none;
-  cursor: default;
-}
 .dash-snooze__menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -55,25 +38,6 @@
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong);
   box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45);
-}
-.dash-snooze__opt {
-  display: flex;
-  align-items: center;
-  padding: 7px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-primary);
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-.dash-snooze__opt:hover { background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent)); }
-.dash-snooze__opt:focus-visible {
-  background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent));
-  outline: 2px solid var(--accent-presence);
-  outline-offset: -2px;
 }
 
 /* Frosted-glass fallbacks for the snooze menu — split from dashboard.css's

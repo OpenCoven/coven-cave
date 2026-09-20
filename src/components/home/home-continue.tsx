@@ -38,8 +38,6 @@ import {
   continuePageLabel,
 } from "@/lib/home-continue-paging";
 
-export const HOME_CONTINUE_PREF_KEY = "cave:home:continue-expanded";
-
 const CARD_SELECTOR = ".home-continue__card";
 
 /** Newest-first sessions a person can meaningfully resume from home: not

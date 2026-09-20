@@ -107,13 +107,6 @@
   flex: none;
 }
 
-.rr-head__sep {
-  width: 1px;
-  height: var(--space-5);
-  margin-inline: var(--space-1);
-  background: var(--border-hairline);
-}
-
 .rr-meta {
   min-width: 0;
   overflow: hidden;
@@ -1402,17 +1395,6 @@
 }
 
 /* Retained vertical source-strip contract: the inspector owns scrolling. */
-.rr-more {
-  margin-top: var(--space-2);
-}
-
-.rr-more__label {
-  margin-bottom: var(--space-2);
-  color: var(--text-muted);
-  font: 600 var(--text-2xs) var(--font-mono);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
 
 .rr-srcscroll {
   display: flex;

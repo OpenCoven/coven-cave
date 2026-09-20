@@ -8,8 +8,7 @@
  * table and the step sheet both edit through.
  */
 
-import type { CSSProperties, ReactNode } from "react";
-import { Icon, type IconName } from "@/lib/icon";
+import type { CSSProperties } from "react";
 import type { ChartStepState } from "./chart-room-model";
 
 /** A project's own colour, handed to CSS as a custom property. Board data, not
@@ -34,16 +33,6 @@ export function StateTag({ state }: { state: ChartStepState }) {
       {state === "decision" ? "owed" : state}
     </span>
   );
-}
-
-export function Eyebrow({
-  children,
-  accent = false,
-}: {
-  children: ReactNode;
-  accent?: boolean;
-}) {
-  return <span className={accent ? "cr-eyebrow cr-eyebrow--accent" : "cr-eyebrow"}>{children}</span>;
 }
 
 /**
@@ -91,8 +80,4 @@ export function ChartSelect({
       </select>
     </span>
   );
-}
-
-export function LensIcon({ name, size = 13 }: { name: IconName; size?: number }) {
-  return <Icon name={name} width={size} height={size} aria-hidden />;
 }

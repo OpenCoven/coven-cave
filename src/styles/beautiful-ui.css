@@ -338,8 +338,6 @@
    pending; text that streams or fades in settles fully visible so nothing is
    left permanently transparent. */
 @media (prefers-reduced-motion: reduce) {
-  .bui-animated,
-  .bui-animated *,
   [class*="bui-"] {
     animation: none !important;
     transition: none !important;
@@ -351,7 +349,6 @@
     -webkit-text-fill-color: var(--bui-ink) !important;
   }
 
-  .bui-stream-in,
   .bui-fade-in,
   .bui-fade-up {
     opacity: 1 !important;

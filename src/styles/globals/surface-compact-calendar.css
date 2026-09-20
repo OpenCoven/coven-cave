@@ -732,13 +732,6 @@
   backdrop-filter: blur(18px);
   overflow: hidden;
 }
-.salem-panel--expanded {
-  bottom: 0;
-  right: 0;
-  width: 100vw;
-  max-height: 100vh;
-  border-radius: 0;
-}
 .salem-panel--rail {
   flex: 1;
   align-self: stretch;

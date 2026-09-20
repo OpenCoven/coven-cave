@@ -325,15 +325,6 @@
   color: var(--text-primary);
 }
 
-.cr-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 15;
-  background: transparent;
-  border: 0;
-  cursor: default;
-}
-
 /* ── Collapsible section head (help, briefing) ───────────────────────────── */
 
 .cr-disclosure {
@@ -2876,16 +2867,6 @@
   font-size: var(--text-2xs);
   color: var(--room-accent);
   white-space: nowrap;
-  flex: none;
-}
-
-.cr-sheet__order {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
   flex: none;
 }
 

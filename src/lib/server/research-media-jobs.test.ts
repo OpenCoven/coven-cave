@@ -625,16 +625,24 @@ test("cancellation in another process aborts the durable lease owner's job", asy
   );
 });
 
-test("a transient terminal write failure is reconciled after storage recovers", async () => {
+test("a transient terminal write failure is reconciled after storage recovers", async (t) => {
   const familiarId = "runner-terminal-reconcile";
   const generationId = "terminal-write-failure";
   await seed(familiarId, [generation(familiarId, generationId)]);
   const target = researchGenerationsPath(familiarId);
   const backup = `${target}.temporary-backup`;
-  let restored!: () => void;
-  let restoreFailure: unknown;
-  const restoredPromise = new Promise<void>((resolve) => {
-    restored = resolve;
+  let terminalWriteFailed = false;
+  let drainFailed = false;
+  const warn = console.warn;
+  t.mock.method(console, "warn", (...args: unknown[]) => {
+    const message = String(args[0]);
+    if (message.startsWith(`[research-media-jobs] failed to persist terminal state for ${generationId}:`)) {
+      terminalWriteFailed = true;
+    }
+    if (message.startsWith(`[research-media-jobs] queue drain failed for ${familiarId}:`)) {
+      drainFailed = true;
+    }
+    warn(...args);
   });
   const factory: ResearchMediaJobFactory = () => ({
     familiarId,
@@ -642,14 +650,6 @@ test("a transient terminal write failure is reconciled after storage recovers", 
     run: async () => {
       await rename(target, backup);
       await mkdir(target);
-      setTimeout(() => {
-        void rm(target, { recursive: true, force: true })
-          .then(() => rename(backup, target))
-          .catch((error) => {
-            restoreFailure = error;
-          })
-          .finally(restored);
-      }, 200);
       throw new Error("renderer failed while storage was unavailable");
     },
   });
@@ -660,9 +660,19 @@ test("a transient terminal write failure is reconciled after storage recovers", 
   );
   assert.equal(queued.ok, true);
   if (!queued.ok) return;
-  await queued.done;
-  await restoredPromise;
-  assert.equal(restoreFailure, undefined);
+  try {
+    await queued.done;
+    // Keep storage unavailable until the failed drain schedules its retry.
+    // A wall-clock restore can race the terminal write on a loaded machine.
+    await waitFor(
+      async () => drainFailed,
+      () => "the unavailable store never caused a failed queue drain",
+    );
+    assert.equal(terminalWriteFailed, true);
+  } finally {
+    await rm(target, { recursive: true, force: true });
+    await rename(backup, target);
+  }
 
   // This loop used to fall THROUGH on timeout into the assertion below, so an
   // expired wait surfaced as "Expected values to be strictly equal: undefined"

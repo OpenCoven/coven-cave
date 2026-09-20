@@ -59,7 +59,8 @@ async function withRuntime<T>(
 ): Promise<T> {
   const root = await mkdtemp(scratchPrefix);
   try {
-    const runtime = createClientV1Runtime({ credentialRoot: root, loopbackSecret: STAMP });
+    // Keep credential timestamps and the rate-limit window on the same test clock.
+    const runtime = createClientV1Runtime({ credentialRoot: root, loopbackSecret: STAMP, now: () => BOUND_NOW });
     const issued = await runtime.credentialStore.issue({
       appName: "OpenCoven Chat",
       installationId: "chat-install-1",

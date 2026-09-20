@@ -2,93 +2,13 @@
    globals.css; these add only what the adaptive triage/launcher surface needs.
    Namespaced .dash-* so they never collide with /daily-report. */
 
-/* Report callout (today's/latest report) inner layout. */
-.dash-cta--static { cursor: default; }
-.dash-cta__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.dash-cta__text { min-width: 0; }
-
-/* Recent-report rows. */
-.dash-row--info { --row-accent: var(--color-info); }
-.dash-report-row__main {
-  min-width: 0;
-  flex: 1;
-}
-
-.dash-strip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-card);
-  font-size: 0.86rem;
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
-}
-.dash-strip svg { width: 18px; height: 18px; flex: 0 0 auto; }
-
-.dash-inbox__error {
-  margin-bottom: 10px;
-  padding: 9px 13px;
-  border-radius: 10px;
-  font-size: 0.8rem;
-  color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
-}
-
-.dash-inbox__row { align-items: center; }
-.dash-inbox__row--selected { background: color-mix(in oklch, var(--accent-presence) 10%, transparent); }
-.dash-inbox__row[role="checkbox"] { cursor: pointer; }
-
 /* bulk triage: select toggle + bar + row checkbox */
-.dash-inbox__select-toggle { margin-left: auto; }
-.dash-inbox__bulkbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin: var(--space-1) 0 var(--space-2); padding: 6px 8px; border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
-}
-.dash-inbox__bulkbar-left, .dash-inbox__bulkbar-right { display: flex; align-items: center; gap: 6px; }
-.dash-inbox__bulkbar-count { font-size: 12px; color: var(--text-muted); }
 .dash-inbox__check {
   display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
   border: 1px solid var(--border-strong); border-radius: 5px; color: transparent;
 }
 .dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: var(--accent-presence-foreground); }
 .dash-inbox__check svg { width: 11px; height: 11px; }
-
-.dash-inbox__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-/* Open items beyond the visible cap drill through to the Rituals surface. */
-.dash-inbox__more {
-  display: flex; align-items: center; gap: 6px;
-  margin-top: var(--space-2); padding: 7px 10px; border-radius: var(--radius-control);
-  font-size: 0.8rem; font-weight: 600; color: var(--text-muted);
-  text-decoration: none; border: 1px dashed var(--border-hairline);
-}
-.dash-inbox__more:hover { color: var(--text-primary); border-color: var(--accent-presence); }
-.dash-inbox__more svg { width: 13px; height: 13px; flex: 0 0 auto; }
-
-/* Compact launcher (busy state): single dense row, hide subtitles. */
-.dr-quicklinks.dash-launcher--compact {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-.dr-quicklinks.dash-launcher--compact .dr-quicklink { padding: 10px 12px; }
-
-@media (max-width: 720px) {
-  .dash-inbox__actions { flex-wrap: wrap; justify-content: flex-end; }
-  .dr-quicklinks.dash-launcher--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 
 /* Settings shell: desktop-native control surface for /settings. */
 .settings-shell {
@@ -1039,69 +959,8 @@
 /* ── Unified dashboard: today's daily summary, folded inline ───────────────
    The narrative panel sits beside its generated illustration on wide screens
    and stacks on narrow ones. Reuses the shared .dr-panel / .dr-cardimg look. */
-.dash-today__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-@media (min-width: 720px) {
-  .dash-today__grid--media {
-    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr);
-  }
-}
-.dash-today__panel { display: flex; flex-direction: column; gap: 16px; }
-.dash-today__img {
-  width: 100%;
-  height: 100%;
-  max-height: 360px;
-  object-fit: cover;
-  border-radius: 14px;
-  border: 1px solid var(--border-hairline);
-}
-.dash-today__placeholder { color: var(--text-muted); font-style: italic; }
-
-.dash-today__sessions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: 14px;
-  border-top: 1px solid var(--border-hairline);
-}
-.dash-today__sessions-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.dash-today__chips { display: flex; flex-wrap: wrap; gap: 7px; }
-.dash-today__chip {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--space-1) 10px;
-  border-radius: var(--radius-pill);
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-}
-.dash-today__chip--link {
-  text-decoration: none;
-  color: var(--color-info);
-  border-color: color-mix(in oklch, var(--color-info) 38%, transparent);
-  background: color-mix(in oklch, var(--color-info) 9%, transparent);
-}
-.dash-today__chip--link:hover {
-  border-color: color-mix(in oklch, var(--color-info) 55%, transparent);
-  background: color-mix(in oklch, var(--color-info) 15%, transparent);
-}
 
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
-.dr-eyebrow__icon { font-size: 0.85rem; color: var(--accent-presence); }
 
 
 /* Shared hover-able trend sparkline (report metric cards, analytics, profile) */
