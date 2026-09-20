@@ -24,12 +24,14 @@ export function ThreadsHeader({
   pendingCount,
   listCollapsed,
   onToggleList,
+  actions,
 }: {
   surface: "weaves" | "proposals";
   /** null when the proposals queue could not be verified — no badge is shown. */
   pendingCount: number | null;
   listCollapsed: boolean;
   onToggleList: () => void;
+  actions?: ReactNode;
 }) {
   const toggleLabel = listCollapsed ? "Expand list" : "Collapse list";
   return (
@@ -74,6 +76,7 @@ export function ThreadsHeader({
           ) : null}
         </nav>
       </div>
+      {actions}
       {surface === "weaves" ? (
         <a className="wv-cta focus-ring" href="/proposals">
           Review proposals

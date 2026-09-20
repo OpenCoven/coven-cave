@@ -26,6 +26,8 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/proposal-submission.test.ts",
+    "src/lib/proposal-submission-controller.test.ts",
     "src/lib/afs.test.ts",
     "src/components/afs-pane.test.ts",
     "src/lib/array-content-equal.test.ts",
@@ -1469,6 +1471,8 @@ export const SUITES = {
     "src/app/api/research/resources/search/route.test.ts",
   ],
   api: [
+    "src/app/api/proposals/submit/route.test.ts",
+    "src/lib/server/proposal-submission.test.ts",
     "src/app/api/wikis/route.test.ts",
     "src/app/api/afs/afs-routes.test.ts",
     "scripts/dependency-policy.test.mjs",
