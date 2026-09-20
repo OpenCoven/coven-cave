@@ -1558,7 +1558,6 @@ export const SUITES = {
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
     "src/lib/server/client-v1/pairing-store.test.ts",
-    "src/lib/server/device-access/store.test.ts",
     "src/lib/server/device-access/deferred.test.ts",
     "src/lib/server/device-access/peers.test.ts",
     "src/lib/server/device-access/gateway.test.ts",
@@ -2061,6 +2060,8 @@ export const SUITES = {
   // on ubuntu/windows/macos, and normal pull-request CI runs them on Ubuntu.
   // Keep this separate from the broader app/api/mobile suites.
   conformance: [
+    "src/lib/server/device-access/store.test.ts",
+    "scripts/child-output.test.mjs",
     "scripts/cross-environment.test.ts",
     "scripts/client-v1-compatibility-control.integration.test.mjs",
     "scripts/research-protocol-conformance.test.ts",
@@ -2081,6 +2082,7 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  "scripts/client-v1-conformance.test.mjs",
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",
   "scripts/release-macos-signing.test.mjs",

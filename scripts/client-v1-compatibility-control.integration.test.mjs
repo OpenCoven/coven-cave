@@ -18,6 +18,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { collectOutput } from "./child-output.mjs";
+
 import { resolveCorepackLaunch } from "./corepack-launch.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,8 +27,8 @@ const buildTimeoutMs = 20 * 60_000;
 const startupTimeoutMs = process.platform === "win32" ? 90_000 : 45_000;
 const requestTimeoutMs = 3_000;
 const shutdownTimeoutMs = 8_000;
-const maxOutputBytes = 32_000;
 const broadTraceWarning = "Dynamic filesystem access causes tracing of the whole project";
+const sidecarToken = "compatibility-device-access-test-token";
 const healthPath = "/api/client/v1/health";
 const successMetadata = {
   apiVersion: "1.0",
@@ -59,18 +61,6 @@ async function stopChild(child) {
   });
 }
 
-function collectOutput(child) {
-  let output = "";
-  const append = (chunk) => {
-    output += chunk.toString("utf8");
-    if (output.length > maxOutputBytes) {
-      output = output.slice(-maxOutputBytes);
-    }
-  };
-  child.stdout?.on("data", append);
-  child.stderr?.on("data", append);
-  return () => output;
-}
 
 async function runBuild(label, args, env) {
   let launch;
@@ -194,6 +184,7 @@ function isolatedEnvironment(root, port, selector) {
   env.COVEN_HOME = path.join(root, "coven");
   env.COVEN_CAVE_HOME = path.join(root, "coven", "cave");
   env.COVEN_CAVE_HEAP_MONITOR = "0";
+  env.COVEN_CAVE_AUTH_TOKEN = sidecarToken;
   env.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE = "off";
   if (port !== undefined) env.COVEN_CAVE_PORT = String(port);
   if (selector !== undefined) {
@@ -205,6 +196,7 @@ function isolatedEnvironment(root, port, selector) {
 async function requestHealth(origin) {
   const response = await fetch(`${origin}${healthPath}`, {
     signal: AbortSignal.timeout(requestTimeoutMs),
+    headers: { "x-coven-cave-token": sidecarToken },
   });
   let body;
   try {
@@ -233,17 +225,35 @@ async function launchArtifact(artifact, root, selector) {
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
     if (!isRunning(child)) {
-      throw new Error(`packaged server exited before readiness\n${output().slice(-4_000)}`);
+      throw new Error(`packaged server exited before readiness (exit=${child.exitCode}, signal=${child.signalCode})\n${output()}`);
     }
+    let result;
     try {
-      const result = await requestHealth(origin);
-      return { child, origin, port, result };
+      result = await requestHealth(origin);
     } catch {
       await sleep(250);
+      continue;
     }
+    // Health is intentionally independent of the deferred device store. A
+    // green boot must not conceal permanently disabled pairing on Windows.
+    try {
+      const response = await fetch(`${origin}/api/device-access/admin`, {
+        headers: { "x-coven-cave-token": sidecarToken },
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+      });
+      const device = await response.json();
+      assert.equal(response.status, 200, JSON.stringify(device));
+      assert.equal(device.ok, true);
+      assert.deepEqual(device.devices, []);
+      assert.deepEqual(device.allowedTailnets, []);
+    } catch (error) {
+      await stopChild(child);
+      throw new Error(`packaged device access failed: ${error.message}\n${output()}`, { cause: error });
+    }
+    return { child, origin, port, result };
   }
   await stopChild(child);
-  throw new Error(`packaged server did not answer within ${startupTimeoutMs} ms\n${output().slice(-4_000)}`);
+  throw new Error(`packaged server did not answer within ${startupTimeoutMs} ms\n${output()}`);
 }
 
 async function stopArtifact(server) {

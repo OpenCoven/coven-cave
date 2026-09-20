@@ -1586,3 +1586,15 @@ test("the fixture roster covers the optional familiar fields and enough rows to 
   const sparse = FIXTURE_ROSTER.find((entry) => entry.id === "brewer");
   assert.deepEqual(Object.keys(sparse).sort(), ["display_name", "id", "role"]);
 });
+
+// This file is already the Windows startup-controls PR entrypoint. Exercise
+// actual ACL-backed storage and packaged initialization in that CI job, where
+// successful health responses alone can conceal unavailable device access.
+// Keep build/cleanup work out of ordinary local app-suite runs.
+if (process.platform === "win32" && process.env.GITHUB_JOB === "windows-conformance") {
+  await import("./child-output.test.mjs");
+  await import("../src/lib/server/device-access/store.test.ts");
+  await import("./client-v1-compatibility-control.integration.test.mjs");
+} else {
+  test("Windows packaged device-access acceptance", { skip: "requires the Windows startup-controls CI job" }, () => {});
+}

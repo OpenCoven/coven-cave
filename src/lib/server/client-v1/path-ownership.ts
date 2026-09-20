@@ -432,6 +432,35 @@ function sanitizedWindowsAclProbeTimeout(error: unknown): NodeJS.ErrnoException 
   return sanitized;
 }
 
+/** Preserve process facts in the message: deferred initialization only logs
+ * Error.message. Never echo PowerShell's command, target path or raw output. */
+function sanitizedWindowsAclProbeFailure(error: unknown): Error {
+  const failure = (error && typeof error === "object" ? error : {}) as Record<string, unknown>;
+  const code = typeof failure.code === "number" && Number.isSafeInteger(failure.code)
+    ? failure.code
+    : typeof failure.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(failure.code)
+      ? failure.code : undefined;
+  const status = typeof failure.status === "number" && Number.isSafeInteger(failure.status)
+    ? failure.status : undefined;
+  const signal = failure.signal === null ? null
+    : typeof failure.signal === "string" && /^SIG[A-Z0-9]{1,20}$/.test(failure.signal)
+      ? failure.signal : undefined;
+  const killed = typeof failure.killed === "boolean" ? failure.killed : undefined;
+  const bytes = (value: unknown) => typeof value === "string" ? Buffer.byteLength(value)
+    : Buffer.isBuffer(value) ? value.length : "unknown";
+  const stderr = typeof failure.stderr === "string" ? failure.stderr
+    : Buffer.isBuffer(failure.stderr) ? failure.stderr.toString("utf8") : "";
+  let stage = "launch";
+  for (const match of stderr.matchAll(/^acl-probe:([a-z-]+)\r?$/gmu)) {
+    if (WINDOWS_ACL_PROBE_STAGES.has(match[1]!)) stage = match[1]!;
+  }
+  return Object.assign(new Error(
+    `Windows ACL probe failed (code=${code ?? "unknown"}, status=${status ?? "unknown"}, `
+      + `signal=${signal === null ? "null" : signal ?? "unknown"}, killed=${killed ?? "unknown"}, `
+      + `stage=${stage}, stdoutBytes=${bytes(failure.stdout)}, stderrBytes=${bytes(failure.stderr)}).`,
+  ), { code, status, signal, killed });
+}
+
 /**
  * The smallest environment PowerShell needs, never the server's own.
  *
@@ -519,8 +548,9 @@ export function createClientV1WindowsAclProbe(
 ): ClientV1WindowsAclProbe {
   return async (path) => {
     for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
+      let stdout: string;
       try {
-        const { stdout } = await execute(
+        ({ stdout } = await execute(
           windowsPowerShellPath(),
           [
             "-NoProfile",
@@ -540,15 +570,16 @@ export function createClientV1WindowsAclProbe(
             timeout: WINDOWS_ACL_PROBE_TIMEOUT_MS,
             maxBuffer: 1024 * 1024,
           },
-        );
-        return parseClientV1WindowsAclReport(stdout);
+        ));
       } catch (error) {
         const timedOut = windowsAclProbeTimedOut(error);
         if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
           if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
-          throw error;
+          throw sanitizedWindowsAclProbeFailure(error);
         }
+        continue;
       }
+      return parseClientV1WindowsAclReport(stdout);
     }
     throw new Error("the ACL probe attempt bound was exhausted");
   };
