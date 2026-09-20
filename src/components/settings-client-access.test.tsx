@@ -425,6 +425,223 @@ describe("SettingsClientAccess", () => {
     ).toBe(true);
   });
 
+  test("shows the access ledger before optional status completes", async () => {
+    const status = deferred<Response>();
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.endsWith("/pairing-requests")) return clientV1SuccessResponse({ pairingRequests: [pendingRequest] });
+      if (url.endsWith("/credentials")) return clientV1SuccessResponse({ credentials: [activeCredential] });
+      if (url.endsWith("/status")) return status.promise;
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const renderer = await render();
+    try {
+      expect(text(renderer)).not.toContain("Loading client access…");
+      expect(buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.disabled).toBe(false);
+      await act(async () => {
+        status.resolve(clientV1SuccessResponse({ status: {
+          discovery: { available: false }, ownershipWaiver: { granted: false },
+        } }));
+        await flush();
+      });
+      expect(text(renderer)).toContain("Client v1 is disabled");
+      expect(text(renderer)).toContain("Issued credentials");
+    } finally {
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  test("times out only the optional status probe and keeps polling the ledger", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/pairing-requests")) return clientV1SuccessResponse({ pairingRequests: [] });
+      if (url.endsWith("/credentials")) return clientV1SuccessResponse({ credentials: [] });
+      if (url.endsWith("/status")) {
+        signals.push(init!.signal as AbortSignal);
+        return hangingResponse(init!.signal as AbortSignal);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(CLIENT_ACCESS_POLL_MS); });
+      expect(signals).toHaveLength(1);
+      expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/credentials"))).toHaveLength(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(CLIENT_ACCESS_LOAD_TIMEOUT_MS); });
+      expect(signals[0].aborted).toBe(true);
+      expect(signals.length).toBeGreaterThan(1);
+      expect(text(renderer)).toContain("No pending requests.");
+      expect(text(renderer)).not.toContain("too long to load");
+    } finally {
+      await act(async () => renderer.unmount());
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    }
+  });
+
+  test("ignores status from a previous activation", async () => {
+    const oldStatus = deferred<Response>();
+    const signals: AbortSignal[] = [];
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/pairing-requests")) return clientV1SuccessResponse({ pairingRequests: [] });
+      if (url.endsWith("/credentials")) return clientV1SuccessResponse({ credentials: [] });
+      if (url.endsWith("/status")) {
+        signals.push(init!.signal as AbortSignal);
+        return signals.length === 1 ? oldStatus.promise : clientV1SuccessResponse({ status: {
+          discovery: { available: true }, ownershipWaiver: { granted: false },
+        } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const renderer = await render();
+    try {
+      await act(async () => renderer.update(<SettingsClientAccess active={false} />));
+      expect(signals[0].aborted).toBe(true);
+      await act(async () => renderer.update(<SettingsClientAccess active />));
+      await act(async () => {
+        oldStatus.resolve(clientV1SuccessResponse({ status: {
+          discovery: { available: false }, ownershipWaiver: { granted: true },
+        } }));
+        await flush();
+      });
+      expect(text(renderer)).not.toContain("Client v1 is disabled");
+      expect(text(renderer)).not.toContain("Security waiver in force");
+    } finally {
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  test.each(["approve", "deny", "revoke"])("finishes %s while operational status is hung", async (kind) => {
+    let mutated = false;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/status")) return hangingResponse(init!.signal as AbortSignal);
+      if (url.endsWith("/decision")) {
+        mutated = true;
+        return clientV1SuccessResponse({ pairingRequest: {
+          ...pendingRequest, status: kind === "approve" ? "approved" : "denied", decidedAt: CREATED_AT,
+        } });
+      }
+      if (init?.method === "DELETE") {
+        mutated = true;
+        return clientV1SuccessResponse({ credential: { ...activeCredential, revokedAt: REVOKED_AT } });
+      }
+      if (url.endsWith("/pairing-requests")) return clientV1SuccessResponse({ pairingRequests: mutated ? [] : [pendingRequest] });
+      if (url.endsWith("/credentials")) return clientV1SuccessResponse({ credentials: [
+        mutated && kind === "revoke" ? { ...activeCredential, revokedAt: REVOKED_AT } : activeCredential,
+      ] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const renderer = await render();
+    try {
+      const verb = kind[0].toUpperCase() + kind.slice(1);
+      await act(async () => {
+        await buttonByLabel(renderer, `${verb} access for OpenCoven Chat`).props.onClick();
+      });
+      expect(mutated).toBe(true);
+      expect(announce).toHaveBeenCalledWith(
+        `${kind === "approve" ? "Approved" : kind === "deny" ? "Denied" : "Revoked"} access for OpenCoven Chat.`, "polite",
+      );
+      expect(text(renderer)).not.toContain("Loading client access…");
+    } finally {
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  test("retains a confirmed warning across failed status reads until a healthy response", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase = "warning";
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.endsWith("/pairing-requests")) return clientV1SuccessResponse({ pairingRequests: [] });
+      if (url.endsWith("/credentials")) return clientV1SuccessResponse({ credentials: [] });
+      if (url.endsWith("/status")) return jsonResponse({ apiVersion: "1.0", data: { status: {
+        discovery: { available: phase !== "warning" }, ownershipWaiver: { granted: phase === "warning" },
+      } } }, phase === "failed" ? 503 : 200);
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const renderer = await render();
+    try {
+      expect(text(renderer)).toContain("Security waiver in force");
+      phase = "failed";
+      await act(async () => { await vi.advanceTimersByTimeAsync(CLIENT_ACCESS_POLL_MS); });
+      expect(text(renderer)).toContain("Security waiver in force");
+      phase = "healthy";
+      await act(async () => { await vi.advanceTimersByTimeAsync(CLIENT_ACCESS_POLL_MS); });
+      expect(text(renderer)).not.toContain("Security waiver in force");
+      expect(text(renderer)).not.toContain("Client v1 is disabled");
+    } finally {
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  test("integrates rendered decisions and revocation with real admin handlers and stores", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { createClientV1Runtime } = await import("@/lib/server/client-v1/runtime");
+    const { TOKEN_HEADER } = await import("@/proxy-helpers");
+    const { createAdminPairingRequestsGetHandler } = await import("@/app/api/client/v1/admin/pairing-requests/route");
+    const { createAdminPairingDecisionPostHandler } = await import("@/app/api/client/v1/admin/pairing-requests/[id]/decision/route");
+    const { createAdminCredentialsGetHandler } = await import("@/app/api/client/v1/admin/credentials/route");
+    const { createAdminCredentialDeleteHandler } = await import("@/app/api/client/v1/admin/credentials/[id]/route");
+    const root = await mkdtemp(join(tmpdir(), "cave-client-access-integration-"));
+    let renderer: ReactTestRenderer | undefined;
+    vi.stubEnv("COVEN_CAVE_AUTH_TOKEN", "test-admin-token");
+    try {
+      const runtime = createClientV1Runtime({ credentialRoot: root, loopbackSecret: "test-loopback" });
+      const identity = { appName: "Integration client", installationId: "integration-install", scopes: ["chat:read"] };
+      const approved = runtime.pairingStore.create(identity);
+      const denied = runtime.pairingStore.create({ ...identity, appName: "Denied integration client" });
+      const issued = await runtime.credentialStore.issue(identity);
+      const initialReads: Promise<Response>[] = [];
+      const ledger = createAdminPairingRequestsGetHandler(runtime);
+      const credentials = createAdminCredentialsGetHandler(runtime);
+      const decide = createAdminPairingDecisionPostHandler(runtime);
+      const revoke = createAdminCredentialDeleteHandler(runtime);
+      globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/status")) return hangingResponse(init!.signal as AbortSignal);
+        // Emulate the already-authenticated same-origin admin transport. Proxy
+        // authentication/CSRF and pairing exchange have their own security suite.
+        const headers = new Headers(init?.headers);
+        headers.set(TOKEN_HEADER, "test-admin-token");
+        headers.set("origin", "http://localhost:3000");
+        const req = new Request(`http://localhost:3000${url}`, { ...init, headers });
+        if (url.endsWith("/pairing-requests") || url.endsWith("/credentials")) {
+          const response = url.endsWith("/pairing-requests") ? ledger(req) : credentials(req);
+          initialReads.push(response);
+          return response;
+        }
+        if (url.endsWith("/decision")) return decide(req, { params: Promise.resolve({ id: url.split("/").at(-2)! }) });
+        if (init?.method === "DELETE") return revoke(req, { params: Promise.resolve({ id: url.split("/").at(-1)! }) });
+        throw new Error(`Unexpected fetch: ${url}`);
+      });
+      renderer = await render();
+      await act(async () => { await Promise.all(initialReads); await flush(); });
+      expect(text(renderer!)).toContain("Issued credentials");
+      await act(async () => {
+        await buttonByLabel(renderer!, "Approve access for Integration client").props.onClick();
+      });
+      expect(runtime.pairingStore.get(approved.id)?.status).toBe("approved");
+      await act(async () => {
+        await buttonByLabel(renderer!, "Deny access for Denied integration client").props.onClick();
+      });
+      expect(runtime.pairingStore.get(denied.id)?.status).toBe("denied");
+      await act(async () => {
+        await buttonByLabel(renderer!, "Revoke access for Integration client").props.onClick();
+      });
+      expect(await runtime.credentialStore.verify(issued.credential.id, issued.bearer)).toBe(false);
+      expect((await runtime.credentialStore.reload()).get(issued.credential.id)?.revocationReason).toBe("Revoked in Cave settings");
+      expect(text(renderer!)).toContain("Revoked");
+      expect(text(renderer!)).not.toContain(issued.bearer);
+      expect(text(renderer!)).not.toContain("Couldn’t");
+    } finally {
+      if (renderer) await act(async () => renderer!.unmount());
+      vi.unstubAllEnvs();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("keeps client access loading when the status endpoint is refused", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "/api/client/v1/admin/pairing-requests") {
