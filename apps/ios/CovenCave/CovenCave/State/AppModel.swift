@@ -5830,13 +5830,30 @@ final class AppModel {
     /// required". Kept separate from `discoverBaseURL` so the paired
     /// sequential path keeps its credential-safety semantics untouched.
     static func previewDiscoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        guard !candidates.isEmpty else { return .unreachable(nil) }
+        guard !Task.isCancelled, !candidates.isEmpty else { return .unreachable(nil) }
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
             for (index, base) in candidates.enumerated() {
                 group.addTask { (index, await Self.probe(base, sendCredential: false)) }
             }
             var collected = [ProbeResult?](repeating: nil, count: candidates.count)
-            for await (index, result) in group { collected[index] = result }
+            var earliestTerminal: Int?
+            for await (index, result) in group {
+                collected[index] = result
+                switch result {
+                case .ok, .unauthorized, .managedPairingRequired, .credentialFailure:
+                    earliestTerminal = min(earliestTerminal ?? index, index)
+                case .failed:
+                    break
+                }
+                // Keep endpoint preference authoritative, including pairing
+                // gates. Once every earlier probe has answered, slower sibling
+                // ports cannot change the result and must not delay the preview.
+                if let winner = earliestTerminal,
+                   (0..<winner).allSatisfy({ collected[$0] != nil }) {
+                    group.cancelAll()
+                    break
+                }
+            }
             return collected
         }
         return adjudicateDiscoveryResults(results, candidates: candidates)
