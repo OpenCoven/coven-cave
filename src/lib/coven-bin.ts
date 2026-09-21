@@ -971,6 +971,20 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
 // without this each one would spawn its own login shell.
 let pendingPathDiscovery: Promise<string> | null = null;
 
+// Every cache invalidation advances the generation. An async discovery
+// publishes its PATH only if no invalidation happened while it ran, so a
+// discovery started before a post-install refresh can never overwrite the
+// refreshed result. The sync API is unaffected: it computes and publishes
+// within one call.
+let discoveryGeneration = 0;
+
+function invalidatePathCaches(): void {
+  cachedPath = null;
+  cachedToolPath = null;
+  pendingPathDiscovery = null;
+  discoveryGeneration += 1;
+}
+
 /**
  * covenSpawnEnv() for async callers: identical PATH composition and cache,
  * but the login-shell probe runs off the event loop and concurrent callers
@@ -988,9 +1002,11 @@ export async function covenSpawnEnvAsync(
   let pending = shareable ? pendingPathDiscovery : null;
   if (pending === null) {
     const discovery = discoveryOptions(options);
+    const generation = discoveryGeneration;
     const started: Promise<string> = augmentedSpawnPathAsync(false, discovery)
       .then((pathValue) => {
-        if (discovery.deadline === undefined || discovery.now() < discovery.deadline) {
+        const fresh = discovery.deadline === undefined || discovery.now() < discovery.deadline;
+        if (fresh && generation === discoveryGeneration && cachedPath === null) {
           cachedPath = pathValue;
         }
         return pathValue;
@@ -1004,13 +1020,13 @@ export async function covenSpawnEnvAsync(
   return spawnEnv(await pending);
 }
 
-/** refreshCovenSpawnEnv() for async callers: drop the caches, then rediscover
- *  off the event loop (joining an in-flight discovery when one is running). */
+/** refreshCovenSpawnEnv() for async callers: drop the caches and start a new
+ *  discovery off the event loop. A discovery already in flight is retired
+ *  (its result is returned to its own callers but never cached). */
 export async function refreshCovenSpawnEnvAsync(
   options: CovenSpawnEnvOptions = {},
 ): Promise<NodeJS.ProcessEnv> {
-  cachedPath = null;
-  cachedToolPath = null;
+  invalidatePathCaches();
   return covenSpawnEnvAsync(options);
 }
 
@@ -1041,8 +1057,7 @@ export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
 export function refreshCovenSpawnEnv(
   options: CovenSpawnEnvOptions = {},
 ): NodeJS.ProcessEnv {
-  cachedPath = null;
-  cachedToolPath = null;
+  invalidatePathCaches();
   return covenSpawnEnv(options);
 }
 
@@ -1053,7 +1068,6 @@ export function refreshCovenSpawnEnv(
  */
 export function refreshCovenBin(): string {
   cachedBin = null;
-  cachedPath = null;
-  cachedToolPath = null;
+  invalidatePathCaches();
   return covenBin();
 }

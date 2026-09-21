@@ -391,7 +391,7 @@ for (const rel of [
 
 assert.match(
   source,
-  /export function refreshCovenSpawnEnv\([^)]*CovenSpawnEnvOptions[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(options\)/,
+  /export function refreshCovenSpawnEnv\([^)]*CovenSpawnEnvOptions[\s\S]*?invalidatePathCaches\(\);[\s\S]*?return covenSpawnEnv\(options\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
 );
 
@@ -677,7 +677,7 @@ assert.match(
 );
 assert.match(
   source,
-  /export function refreshCovenBin\(\)[\s\S]*cachedBin = null;[\s\S]*cachedPath = null;[\s\S]*return covenBin\(\)/,
+  /export function refreshCovenBin\(\)[\s\S]*?cachedBin = null;[\s\S]*?invalidatePathCaches\(\);[\s\S]*?return covenBin\(\)/,
   "CLI updates clear executable and PATH caches before daemon recovery",
 );
 
