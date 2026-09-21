@@ -238,3 +238,28 @@ test("omits the overflow trigger when every action fits within the visible budge
   assert.equal(root.findAllByType(Button).length, 3, "all three in-budget actions stay visible");
   assert.equal(root.findAllByType(OverflowMenu).length, 0, "no overflow trigger renders when nothing spills out");
 });
+
+// Phone-width layout: filters take their own row, but the visible actions and
+// the overflow trigger share the next one. Before this rule the Tasks header
+// stacked search, tabs, "New task", and "⋯" as four rows (~250px of chrome on
+// a 390px viewport) before the first task was visible.
+{
+  const narrow = styles.match(/@container surface-toolbar-controls \(max-width: 520px\) \{([\s\S]*?)\n\}/);
+  assert.ok(narrow, "the phone-width controls rule exists");
+  const block = narrow[1];
+  assert.match(
+    block,
+    /\.ui-surface-toolbar__visible-actions\s*\{[^}]*flex:\s*1 1 auto;/,
+    "visible actions flex on the row instead of forcing 100% width",
+  );
+  assert.doesNotMatch(
+    block,
+    /\.ui-surface-toolbar__visible-actions\s*\{[^}]*width:\s*100%/,
+    "visible actions no longer claim a full row of their own",
+  );
+  assert.match(
+    block,
+    /\.ui-surface-toolbar__controls > \.ui-icon-btn\s*\{[^}]*margin-inline-start:\s*auto;/,
+    "the overflow trigger docks to the trailing edge of the actions row",
+  );
+}

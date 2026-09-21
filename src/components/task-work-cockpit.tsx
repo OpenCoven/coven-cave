@@ -332,7 +332,7 @@ export function TaskWorkCockpit({
               className={lookupState === "error" ? undefined : "animate-spin"}
               aria-hidden
             />
-            <strong>{lookupState === "error" ? "Couldn't check the work session" : "Preparing work session..."}</strong>
+            <strong>{lookupState === "error" ? "Couldn't check the work session" : "Preparing work session…"}</strong>
             <span>
               {lookupState === "error"
                 ? "The task is still linked. Check the session again without leaving Tasks."
@@ -350,7 +350,7 @@ export function TaskWorkCockpit({
             {unlinkError ? <span role="alert">{unlinkError}</span> : null}
             <span className="task-work-cockpit__state-actions">
               <button type="button" className="focus-ring" onClick={() => void unlinkMissingSession()} disabled={unlinking}>
-                {unlinking ? "Unlinking..." : "Unlink missing session"}
+                {unlinking ? "Unlinking…" : "Unlink missing session"}
               </button>
               <button type="button" className="focus-ring" onClick={onOpenDetails}>
                 Open task details

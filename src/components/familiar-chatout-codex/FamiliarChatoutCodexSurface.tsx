@@ -77,11 +77,11 @@ function FauxLeftSidebar() {
       </nav>
       <div className={styles.sidebarSection}>opencoven</div>
       <div className={`${styles.sidebarRow} ${styles.sidebarRowActive}`}>
-        <span>create a Codex-style famil...</span>
+        <span>create a Codex-style famil…</span>
         <span>1w</span>
       </div>
       <div className={styles.sidebarProject}><span>Review PR 75776</span><span>2w</span></div>
-      <div className={styles.sidebarProject}><span>macOS Application Pri...</span><span>5d</span></div>
+      <div className={styles.sidebarProject}><span>macOS Application Pri…</span><span>5d</span></div>
       <div className={styles.sidebarSection}>Projects</div>
       <div className={styles.sidebarProject}><span>coven-code</span><span>⌁</span></div>
       <div className={styles.sidebarProject}><span>open-sesame</span><span>⌁</span></div>

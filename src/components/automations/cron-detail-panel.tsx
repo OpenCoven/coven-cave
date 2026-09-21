@@ -577,7 +577,7 @@ export function CodexDetailPanel({
           className="justify-center rounded-[var(--radius-control)] py-2 text-[length:var(--text-sm)] font-medium transition-colors disabled:opacity-40"
           leadingIcon="ph:floppy-disk-bold"
         >
-          {busy ? "Saving..." : "Save changes"}
+          {busy ? "Saving…" : "Save changes"}
         </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button

@@ -1387,10 +1387,10 @@ export function BoardView({
                 onChange={(next) => { if (next) void bulkMove(next); }}
                 className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
-                  { value: "", label: "Move to...", disabled: true },
+                  { value: "", label: "Move to…", disabled: true },
                   ...STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
                 ]}
-                placeholder="Move to..."
+                placeholder="Move to…"
               />
               <label className="sr-only" htmlFor="board-bulk-assign">Assign selected tasks to a familiar</label>
               <StandardSelect
@@ -1401,10 +1401,10 @@ export function BoardView({
                 onChange={(next) => { if (next) void bulkAssign(next); }}
                 className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
-                  { value: "", label: "Assign to...", disabled: true },
+                  { value: "", label: "Assign to…", disabled: true },
                   ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
                 ]}
-                placeholder="Assign to..."
+                placeholder="Assign to…"
               />
               <label className="sr-only" htmlFor="board-bulk-priority">Set priority of selected tasks</label>
               <StandardSelect<CardPriority | "">
@@ -1415,10 +1415,10 @@ export function BoardView({
                 onChange={(next) => { if (next) void bulkSetPriority(next); }}
                 className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
                 options={[
-                  { value: "", label: "Priority...", disabled: true },
+                  { value: "", label: "Priority…", disabled: true },
                   ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
                 ]}
-                placeholder="Priority..."
+                placeholder="Priority…"
               />
               <form
                 className="inline-flex items-center gap-1"

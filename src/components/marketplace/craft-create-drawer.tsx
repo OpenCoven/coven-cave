@@ -552,7 +552,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
             <section className="craft-create-drawer__roles" aria-label="Roles to extract">
               <h3>Roles</h3>
               {!loaded ? (
-                <p className="craft-create-drawer__status">Loading roles...</p>
+                <p className="craft-create-drawer__status">Loading roles…</p>
               ) : visibleRoles.length === 0 ? (
                 <div className="craft-create-drawer__teach">
                   <p>

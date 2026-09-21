@@ -64,7 +64,7 @@ export function FamiliarMenuBar({
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
-      : "Starting..."
+      : "Starting…"
     : "Enhance";
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
@@ -89,7 +89,7 @@ export function FamiliarMenuBar({
           className="menu-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Search Cave..."
+          placeholder="Search Cave…"
           aria-label={SEARCH_LABEL}
           title={`Search everything in your Cave (${searchShortcut} opens the command palette)`}
           autoComplete="off"

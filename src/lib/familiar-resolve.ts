@@ -67,6 +67,22 @@ export function orderAvatarSources(
     : { avatarImage: avatarUrl, avatarImageFallback: upload };
 }
 
+// Stored colour overrides written by the old "Moon" preset carry a
+// three-colour color-mix() that browsers compute to transparent (color-mix
+// takes exactly two colours). Map it to the preset's current value so the
+// familiar keeps a visible accent without asking people to re-pick it.
+const LEGACY_COLOR_ALIASES: Record<string, string> = {
+  "color-mix(in oklch, var(--accent-presence-soft) 58%, var(--text-primary) 18%, white 24%)":
+    "oklch(0.82 0.03 291)",
+};
+
+export function normalizeFamiliarColor(color: string | null | undefined): string | null {
+  if (!color) return null;
+  const trimmed = color.trim();
+  if (!trimmed) return null;
+  return LEGACY_COLOR_ALIASES[trimmed] ?? trimmed;
+}
+
 export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFamiliar {
   const ov = ctx.override ?? {};
   const glyphOverrides = ctx.glyphOverride ? { [base.id]: ctx.glyphOverride } : {};
@@ -77,7 +93,7 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     familiarType: ov.familiarType ?? base.familiarType,
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
-    color: ov.color ?? base.color ?? "var(--accent-presence)",
+    color: normalizeFamiliarColor(ov.color) ?? normalizeFamiliarColor(base.color) ?? "var(--accent-presence)",
     // Rank the two portrait stores by recency, retaining the other source as
     // the fallback so a failed image never skips straight to the glyph.
     ...orderAvatarSources(base.avatarUrl, ctx.image),

@@ -619,7 +619,7 @@ export function OpenCovenToolsUpdate({
         : checking
           ? lastSuccessfulCheckedAt
             ? `Checking tools — last known ${relativeTime(lastSuccessfulCheckedAt)}`
-            : "Checking tools..."
+            : "Checking tools…"
           : lastCheckError
             ? lastSuccessfulCheckedAt
               ? `Stale data from ${relativeTime(lastSuccessfulCheckedAt)} — check failed: ${lastCheckError}`
@@ -713,7 +713,7 @@ export function OpenCovenToolsUpdate({
                     : job.action === "repair"
                       ? "Repairing"
                       : "Updating"}
-                  {daemon ? `; ${daemonLifecycleText(daemon)}` : ""}... {formatElapsed(job.elapsedMs)}
+                  {daemon ? `; ${daemonLifecycleText(daemon)}` : ""}… {formatElapsed(job.elapsedMs)}
                 </span>
               ) : updatingElsewhere ? (
                 <span className="inline-flex items-center gap-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">

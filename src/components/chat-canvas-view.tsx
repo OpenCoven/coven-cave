@@ -14,6 +14,7 @@ import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { CanvasEditor } from "@/components/canvas-editor";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
+import { stripInlineMarkdown } from "@/lib/plain-text-preview";
 import {
   filterCanvasArtifacts,
   formatArtifactWhen,
@@ -211,8 +212,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
       <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
         <EmptyState
           icon="ph:hourglass"
-          headline="Loading saved sketches..."
-          subtitle="Fetching saved sketches from the canvas store..."
+          headline="Loading saved sketches…"
+          subtitle="Fetching saved sketches from the canvas store…"
         />
       </div>
     );
@@ -320,7 +321,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 </button>
                 <div className="chat-canvas-card__meta">
                   <span className="chat-canvas-card__title" title={artifact.prompt || artifact.title}>
-                    {artifact.title}
+                    {stripInlineMarkdown(artifact.title) || artifact.title}
                   </span>
                   <span className="chat-canvas-card__sub">
                     {galleryArtifactKind(artifact) === "react" ? "React" : "HTML"}
@@ -393,7 +394,9 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
             onClick={(event) => event.stopPropagation()}
           >
             <header className="chat-canvas-preview__head">
-              <span className="chat-canvas-preview__title" title={preview.title}>{preview.title}</span>
+              <span className="chat-canvas-preview__title" title={preview.title}>
+                {stripInlineMarkdown(preview.title) || preview.title}
+              </span>
               <span className="chat-canvas-preview__tag">
                 {galleryArtifactKind(preview) === "react" ? "React" : "HTML"}
                 {(() => { const when = formatArtifactWhen(preview.updatedAt); return when ? ` · ${when}` : ""; })()}
