@@ -23,7 +23,7 @@ test("the drawer contains chat navigation without global workspace controls", ()
 
 test("Chats lists global conversations without scanning transcripts to organize rows", () => {
   const source = read("Views/ChatsHomeView.swift");
-  assert.ok(source.includes("ChatListSnapshot("), "the home must use one shared conversation projection");
+  assert.ok(source.includes("listSnapshotCache.resolve("), "the home must use one shared conversation projection");
   assert.ok(!source.includes("handleProjectContextChange"), "unrelated access changes must not reset selection");
   assert.ok(!source.includes("app.projectFamiliars"), "the conversation list must not be globally project-filtered");
   assert.ok(source.includes("setThreadArchived"), "archived history must remain reachable");

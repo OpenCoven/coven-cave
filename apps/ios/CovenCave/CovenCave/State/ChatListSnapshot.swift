@@ -26,6 +26,20 @@ struct ChatListSnapshot {
     let entries: [Entry]
     let archivedCount: Int
 
+    private init(entries: [Entry], archivedCount: Int) {
+        self.entries = entries
+        self.archivedCount = archivedCount
+    }
+
+    /// Filtering preserves the already sorted order; a search edit need not
+    /// parse dates, reconcile sessions, rebuild search text, or sort again.
+    func filtered(query: String, includeArchived: Bool) -> ChatListSnapshot {
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ChatListSnapshot(entries: entries.filter {
+            (includeArchived || !$0.archived) && (search.isEmpty || $0.searchText.contains(search))
+        }, archivedCount: archivedCount)
+    }
+
     init(
         threads: [ChatThread],
         sessions: [SessionRow],
@@ -95,5 +109,51 @@ struct ChatListSnapshot {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id < $1.id
         }
+    }
+}
+
+/// One disposable projection per Chats view. Read all organizing fields on
+/// every call so SwiftUI observes metadata changes, but never read transcripts.
+/// Object identity fences replacement threads with the same persisted ID.
+@MainActor
+final class ChatListSnapshotCache {
+    private struct ThreadKey: Equatable {
+        let identity: ObjectIdentifier
+        let title: String
+        let familiarIds: [String]
+        let sessionIds: [String: String]
+        let updatedAt: Date
+        let pinned: Bool
+        let archived: Bool
+        let isFlowRun: Bool
+    }
+
+    private struct FamiliarKey: Equatable {
+        let id: String
+        let name: String
+    }
+
+    private var threadKeys: [ThreadKey] = []
+    private var sessionKeys: [SessionRow] = []
+    private var familiarKeys: [FamiliarKey] = []
+    private var snapshot: ChatListSnapshot?
+
+    func resolve(threads: [ChatThread], sessions: [SessionRow], familiars: [Familiar],
+                 query: String, includeArchived: Bool) -> ChatListSnapshot {
+        let nextThreads = threads.map {
+            ThreadKey(identity: ObjectIdentifier($0), title: $0.title,
+                      familiarIds: $0.familiarIds, sessionIds: $0.sessionIds,
+                      updatedAt: $0.updatedAt, pinned: $0.pinned,
+                      archived: $0.archived, isFlowRun: $0.isFlowRun)
+        }
+        let nextFamiliars = familiars.map { FamiliarKey(id: $0.id, name: $0.displayName) }
+        if snapshot == nil || threadKeys != nextThreads || sessionKeys != sessions || familiarKeys != nextFamiliars {
+            snapshot = ChatListSnapshot(threads: threads, sessions: sessions,
+                                        familiars: familiars, includeArchived: true)
+            threadKeys = nextThreads
+            sessionKeys = sessions
+            familiarKeys = nextFamiliars
+        }
+        return snapshot!.filtered(query: query, includeArchived: includeArchived)
     }
 }
