@@ -18,6 +18,7 @@ import { commaInput, listInput, parseListInput } from "@/lib/automations/list-in
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
+import { CanonicalAutomationHistory } from "@/components/automations/canonical-history";
 
 const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   weekly: "Weekly",
@@ -549,6 +550,7 @@ export function CodexDetailPanel({
               {runtimeSection}
             </div>
             {runsSection && <div className="min-w-0 lg:col-span-2">{runsSection}</div>}
+            <div className="min-w-0 lg:col-span-2"><CanonicalAutomationHistory key={auto.id} automationId={auto.id} /></div>
           </div>
         ) : (
           <div className="space-y-5">
@@ -557,6 +559,7 @@ export function CodexDetailPanel({
             {scheduleSection}
             {runtimeSection}
             {runsSection}
+            <CanonicalAutomationHistory key={auto.id} automationId={auto.id} />
           </div>
         )}
         </div>
