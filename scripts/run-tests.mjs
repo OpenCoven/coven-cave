@@ -1518,6 +1518,7 @@ export const SUITES = {
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/main-health.test.mjs",
     "scripts/main-health-workflow.test.mjs",
+    "scripts/threads-live-workflow.test.mjs",
     "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/coven-home.test.ts",
