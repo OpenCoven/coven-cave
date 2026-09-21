@@ -24,7 +24,9 @@ Do not set `COVEN_THREADS_E2E_INVOCATION` for ordinary invocations; the config
 creates it and propagates it to workers to preserve earlier run directories.
 Set `COVEN_THREADS_E2E_BROWSER=firefox` or `webkit` for the corresponding
 optional browser lane; Chromium is the default. Install the selected Playwright
-browser first. These lanes are selectable locally, not yet scheduled.
+browser first. The advisory `Threads live acceptance` workflow runs all three
+lanes daily and on manual dispatch, using the same compatibility pins and
+isolated builder.
 
 Run with retries disabled. JSON/JUnit and each manifest expose retry counts;
 a retry-success is a first-attempt failure, never qualifying stability evidence.
@@ -53,7 +55,17 @@ in its manifest; it is not an upload artifact. Build artifacts likewise remain i
 the builder's private temporary directory for explicit reuse and diagnosis.
 
 The daemon pin is a reviewed fixture input, not a claim of upstream stable-pin
-promotion. Firefox/WebKit scheduling, the scheduled workflow and the full
-30-day observation ledger remain outstanding. The current GitHub token cannot
-push workflow files; do not bypass that restriction or silently replace the
-scheduled acceptance with mocked tests.
+promotion. The workflow retains sanitized results for 90 days, names artifacts
+by source SHA, browser, run ID and attempt, and does not upload private fixture
+roots or builder output. Build/setup failures remain failed workflow runs;
+missing journey evidence cannot count as a pass.
+
+The 30-day observation gate remains outstanding until actual scheduled evidence
+establishes it. Audit scheduled Chromium attempts over 30 consecutive days;
+retain failed/missing scheduled executions and count retry-success as failure.
+Keep manual runs, workflow reruns and Firefox/WebKit results separately visible;
+none can replace a failed original Chromium attempt. Record the window, expected
+and observed runs, per-journey first-attempt numerator/denominator, source/pin
+changes, gaps and artifact links on #5256. Missing coverage blocks qualification.
+Promotion to a required check is a separate decision after this audit; this
+workflow does not alter branch protection or claim a qualified stability window.
