@@ -1,7 +1,7 @@
 "use client";
 
 import "@/styles/vault-panel.css";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -40,6 +40,7 @@ type Mapping = {
   required: boolean;
   status: VaultStatus;
   hasValue: boolean;
+  needsConfirmation?: boolean;
   error?: string;
 };
 
@@ -97,6 +98,8 @@ function AddMappingForm({
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState<string | null>(null);
   const { announce } = useAnnouncer();
+  const helpId = useId();
+  const errorId = useId();
 
   const pasteResult = useMemo(
     () => storage === "environment"
@@ -111,6 +114,11 @@ function AddMappingForm({
   const activeStorage = storage === "environment"
     ? "environment"
     : detectedStorage ?? storage;
+  const referenceProviders = [...new Set([
+    ...pasteResult.entries.map((entry) => entry.storage),
+    activeStorage,
+  ].filter((provider) => provider === "1password" || provider === "dashlane"))]
+    .map((provider) => vaultStorageProvider(provider).label).join(" and ");
 
   function selectStorage(next: VaultStorageId) {
     setStorage(next);
@@ -153,6 +161,7 @@ function AddMappingForm({
     e.preventDefault();
     if (storage !== "environment" && pasteResult.error) {
       setErr(pasteResult.error);
+      announce(pasteResult.error, "assertive");
       return;
     }
     setBusy(true); setErr(null);
@@ -194,13 +203,15 @@ function AddMappingForm({
         body: JSON.stringify(payload),
       });
       const j = await res.json() as { ok: boolean; error?: string };
-      if (!j.ok) throw new Error(j.error ?? "Failed to save");
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Couldn't save the variable. Try again.");
       announce(isBatch
         ? `Saved ${pasteResult.entries.length} Vault entries.`
         : `Saved ${normalizeVaultKey(key)}.`);
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Unknown error");
+      const message = e instanceof Error ? e.message : "Couldn't save the variable. Try again.";
+      setErr(message);
+      announce(message, "assertive");
     } finally {
       setBusy(false);
     }
@@ -208,45 +219,33 @@ function AddMappingForm({
 
   return (
     <form className="vault-add-form" onSubmit={handleSubmit}>
+      <p className="vault-provider-description" id={helpId}>
+        Enter a name and value, or paste several KEY=value lines. Values you enter
+        directly are encrypted on this device. Nothing is saved until you choose Save.
+      </p>
       <div className="vault-add-row">
         <label className="vault-add-label">
-          Env var name
+          Variable name
           <input
+            name="environmentVariable"
             className="vault-add-input focus-ring"
             value={key}
             onChange={(e) => setKey(normalizeVaultKey(e.target.value))}
-            placeholder={isBatch ? "Detected from paste" : "GITHUB_PAT"}
+            placeholder={isBatch ? "Detected from paste" : "MY_API_KEY"}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-describedby={helpId}
             required={!isBatch}
             disabled={!!initial}
           />
         </label>
-        <div className="vault-add-label [flex:2]!">
-          Storage
-          <div className="vault-provider-list">
-            {VAULT_STORAGE_PROVIDERS.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                className={`vault-btn focus-ring${activeStorage === provider.id ? " vault-btn--primary" : ""}`}
-                onClick={() => selectStorage(provider.id)}
-                aria-pressed={activeStorage === provider.id}
-                title={provider.description}
-                disabled={isBatch}
-              >
-                {provider.shortLabel}
-              </button>
-            ))}
-          </div>
-          {!isBatch ? (
-            <span className="vault-provider-description">
-              {vaultStorageProvider(activeStorage).description}
-            </span>
-          ) : null}
-        </div>
       </div>
       {storage !== "environment" ? (
         <label className="vault-add-label">
-          Secret, secure reference, or .env entries
+          {activeStorage === "1password" || activeStorage === "dashlane"
+            ? "Secret reference"
+            : "Value or .env entries"}
           <div className="vault-paste-field">
             <textarea
               className={`vault-add-input vault-paste-input focus-ring${showInput ? "" : " vault-paste-input--masked"}`}
@@ -255,7 +254,15 @@ function AddMappingForm({
               onChange={(e) => setInput(e.target.value)}
               placeholder={initial?.storage === "encrypted"
                 ? "Leave blank to keep the current encrypted value"
-                : "Paste a value, op:// or dl:// reference, or KEY=value lines"}
+                : activeStorage === "1password"
+                  ? "op://Your vault/Your item/field"
+                  : activeStorage === "dashlane"
+                    ? "dl://Your item/field"
+                    : "Paste your value or KEY=value lines"}
+              autoComplete="off"
+              autoCapitalize="none"
+              aria-describedby={`${helpId}${err ? ` ${errorId}` : ""}`}
+              aria-invalid={!!pasteResult.error || undefined}
               required={!initial}
               rows={isBatch ? Math.min(8, Math.max(3, pasteResult.entries.length)) : 3}
               spellCheck={false}
@@ -300,16 +307,41 @@ function AddMappingForm({
           launch environment or <code>.env.local</code>.
         </div>
       )}
-      <label className="vault-add-label">
-        Description (optional)
-        <input
-          className="vault-add-input focus-ring"
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder="What this secret is for"
-        />
-      </label>
-      <div className="vault-add-footer">
+      {referenceProviders ? (
+        <p className="vault-provider-description">
+          {referenceProviders} may ask you to unlock
+          when Cave uses this reference after you save it. Opening this form does not connect.
+        </p>
+      ) : null}
+      <details className="vault-storage-options" open={initialStorage !== "encrypted" || undefined}>
+        <summary className="focus-ring">Storage and other options (optional)</summary>
+        <div className="vault-provider-list" role="group" aria-label="Value storage">
+          {VAULT_STORAGE_PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              type="button"
+              className={`vault-btn focus-ring${activeStorage === provider.id ? " vault-btn--primary" : ""}`}
+              onClick={() => selectStorage(provider.id)}
+              aria-pressed={activeStorage === provider.id}
+              title={provider.description}
+              disabled={isBatch}
+            >
+              {provider.id === "encrypted" ? "Enter a value" : provider.shortLabel}
+            </button>
+          ))}
+        </div>
+        {!isBatch ? (
+          <p className="vault-provider-description">{vaultStorageProvider(activeStorage).description}</p>
+        ) : null}
+        <label className="vault-add-label">
+          Description (optional)
+          <input
+            className="vault-add-input focus-ring"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="What this secret is for"
+          />
+        </label>
         <label className="vault-required-check">
           <input
             className="focus-ring"
@@ -319,11 +351,13 @@ function AddMappingForm({
           />
           Required
         </label>
-        {err && <span className="vault-err">{err}</span>}
+      </details>
+      <div className="vault-add-footer">
+        {err && <span className="vault-err" id={errorId} role="alert">{err}</span>}
         <div className="[margin-left:auto]! [display:flex]! [gap:6px]!">
           <button type="button" className="vault-btn focus-ring" onClick={onCancel}>Cancel</button>
           <button type="submit" className="vault-btn vault-btn--primary focus-ring" disabled={busy}>
-            {busy ? "Saving…" : initial ? "Save changes" : isBatch ? "Save entries" : "Add mapping"}
+            {busy ? "Saving…" : initial ? "Save changes" : isBatch ? "Save variables" : "Save variable"}
           </button>
         </div>
       </div>
@@ -453,7 +487,7 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
         <span className="vault-header-sub">
           {familiarId
             ? `shared, granted, and available keys for ${familiarId}`
-            : "Paste secrets, secure references, or .env entries; keep environment-owned values in place"}
+            : "Your environment variables and API keys"}
         </span>
         <button
           type="button"
@@ -462,13 +496,14 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
           disabled={adding}
         >
           <Icon name="ph:plus" width={12} />
-          Add secrets
+          Add environment variable
         </button>
         <button
           type="button"
           className="vault-btn focus-ring"
           onClick={load}
           title="Refresh"
+          aria-label="Refresh environment variables"
         >
           <Icon name="ph:arrows-clockwise" width={12} />
         </button>
@@ -478,6 +513,7 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
       {(adding || editing) && (
         <div className="vault-add-wrapper">
           <AddMappingForm
+            key={editing ? `edit:${editing.key}` : "add"}
             initial={editing ?? undefined}
             familiarId={familiarId}
             onSaved={() => { setAdding(false); setEditing(null); void load(); }}
@@ -501,13 +537,13 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
           }
         />
       ) : mappings.length === 0 ? (
-        <EmptyState
+        !adding && !editing ? <EmptyState
           compact
           icon="ph:vault"
-          headline={familiarId ? "No secrets available" : "No mappings yet"}
+          headline="No environment variables added"
           subtitle={familiarId
-            ? "Add a secret scoped to this familiar."
-            : "Paste a value or .env block, link a secure reference, or recognize an environment-owned key."}
+            ? `Add your own values for ${familiarId}, one at a time or as KEY=value lines. Password managers are optional.`
+            : "Add your own values when you need them. Enter one variable or paste KEY=value lines. Password managers are optional."}
           actions={
             <Button
               size="xs"
@@ -515,10 +551,10 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
               onClick={() => { setAdding(true); setEditing(null); }}
               disabled={adding}
             >
-              Add secrets
+              Add environment variable
             </Button>
           }
-        />
+        /> : null
       ) : (
         <>
           {mappings.length > 3 ? (
@@ -543,6 +579,7 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
               key={m.key}
               className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}
               data-granted={familiarId ? granted : undefined}
+              data-needs-confirmation={m.needsConfirmation || undefined}
             >
               <div className="vault-row-main">
                 <code className="vault-row-key">{m.key}</code>
@@ -570,6 +607,15 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
                 <div className="vault-row-error">{m.error}</div>
               )}
               <div className="vault-row-actions">
+                {m.needsConfirmation ? (
+                  <button
+                    type="button"
+                    className="vault-btn focus-ring"
+                    onClick={() => { setEditing(m); setAdding(false); }}
+                  >
+                    Review reference
+                  </button>
+                ) : null}
                 {m.ref && (
                   <button
                     type="button"
@@ -628,8 +674,8 @@ export function VaultPanel({ familiarId }: { familiarId?: string }) {
 
       {/* Footer note */}
       <div className="vault-footer-note">
-        Local values are encrypted with a machine-local Cave key. Secure references resolve
-        through their provider CLI. Environment values stay where they already live.
+        Values you enter are encrypted on this device. 1Password and Dashlane are used
+        only for saved references. Existing launch environment and .env.local values stay in place.
       </div>
       {grantError ? (
         <div className="vault-row-error" role="alert">{grantError}</div>

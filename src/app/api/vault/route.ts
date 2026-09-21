@@ -162,7 +162,9 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      prepared.push({ key, storage, entry: { ...baseEntry, ref: reference } });
+      // Saving a reference is the user's explicit choice to use that provider.
+      // Loading metadata or changing a familiar grant must never confirm it.
+      prepared.push({ key, storage, entry: { ...baseEntry, ref: reference, providerAccessConfirmed: true } });
       continue;
     }
 
