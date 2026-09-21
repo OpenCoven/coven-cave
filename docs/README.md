@@ -36,6 +36,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Platform and runtime
 
+- [`client-v1-release.md`](client-v1-release.md) — the compatibility metadata a release advertises on `/api/client/v1/health`, and the fixture-check and release-smoke gates that protect it
 - [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
 - [`device-access.md`](device-access.md) — opt-in tailnet allowlists, desktop-managed browser/iOS pairing, durable grants, revocation, and audit
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
