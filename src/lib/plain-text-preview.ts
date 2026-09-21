@@ -17,7 +17,10 @@ const LINK_RE = /!?\[([^\]]*)\]\([^)]*\)/g;
 const STRIKE_RE = /~~(\S(?:.*?\S)?)~~/g;
 // Dangling emphasis markers left when a title was cut mid-span
 // ("**User:** Push cody/astra **" — the harness truncates before closing).
-const DANGLING_MARKERS_RE = /(?:^|\s)(?:\*\*|__|\*|_|`)+(?=\s|$)/g;
+// A character class, not an alternation of "**" and "*": the alternation is
+// ambiguous on long runs of stars and backtracks exponentially (CodeQL
+// js/redos on the first draft).
+const DANGLING_MARKERS_RE = /(?:^|\s)[*_`]+(?=\s|$)/g;
 
 /**
  * Strip inline and line-leading markdown syntax from a single-line string,
