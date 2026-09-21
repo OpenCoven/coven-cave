@@ -16,10 +16,20 @@ struct CaveNavigationDrawer: View {
     @State private var recentsExpanded = true
 
     private var recentThreads: [ChatThread] {
-        Array(app.chatThreads.filter { !$0.archived }.sorted {
-            if $0.pinned != $1.pinned { return $0.pinned }
-            return $0.updatedAt > $1.updatedAt
-        }.prefix(5))
+        // Keep only the five winners instead of sorting the entire history.
+        // Equal timestamps retain input order, like the previous stable sort.
+        var recent: [ChatThread] = []
+        recent.reserveCapacity(6)
+        for thread in app.chatThreads where !thread.archived {
+            let index = recent.firstIndex {
+                if thread.pinned != $0.pinned { return thread.pinned }
+                return thread.updatedAt > $0.updatedAt
+            } ?? recent.count
+            guard index < 5 else { continue }
+            recent.insert(thread, at: index)
+            if recent.count > 5 { recent.removeLast() }
+        }
+        return recent
     }
 
     var body: some View {
@@ -43,7 +53,8 @@ struct CaveNavigationDrawer: View {
     }
 
     private func panel(width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let recentThreads = recentThreads
+        return VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.top, 22)
                 .padding(.bottom, 14)

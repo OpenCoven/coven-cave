@@ -26,7 +26,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatsHome,
-  /\.refreshable \{\s*await app\.loadFamiliars\(\)\s*await app\.loadSessions\(\)\s*\}/,
+  /\.refreshable \{\s*async let familiars: Void = app\.loadFamiliars\(\)\s*async let sessions: Void = app\.loadSessions\(\)\s*_ = await \(familiars, sessions\)\s*\}/,
   "Chats pull-to-refresh must stay an unconditional familiar + session reload",
 );
 

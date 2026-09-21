@@ -18,6 +18,7 @@ const outHtml = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.h
 // (ContentZoom.swift) can restyle a lifted table/diagram to match the chat.
 const outCss = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.css");
 const outMermaid = resolve(dirname(outHtml), "markdown-mermaid.js");
+const outHighlight = resolve(dirname(outHtml), "markdown-highlight.js");
 
 const result = await build({
   entryPoints: [resolve(srcDir, "entry.mjs")],
@@ -41,6 +42,16 @@ const diagramResult = await build({
   legalComments: "none",
 });
 const css = readFileSync(resolve(srcDir, "markdown.css"), "utf8");
+const highlightResult = await build({
+  entryPoints: [resolve(srcDir, "highlight.mjs")],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "safari16",
+  minify: true,
+  write: false,
+  legalComments: "none",
+});
 
 const html = `<!doctype html>
 <html><head>
@@ -58,3 +69,5 @@ writeFileSync(outCss, css);
 console.log(`wrote ${outCss} (${(css.length / 1024).toFixed(0)} KB)`);
 writeFileSync(outMermaid, diagramResult.outputFiles[0].contents);
 console.log(`wrote ${outMermaid} (${(diagramResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, lazy)`);
+writeFileSync(outHighlight, highlightResult.outputFiles[0].contents);
+console.log(`wrote ${outHighlight} (${(highlightResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, lazy)`);

@@ -461,7 +461,15 @@ final class AppModel {
     /// into one discovery sweep instead of stacking probes.
     @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
 
-    var familiars: [Familiar] = []
+    var familiars: [Familiar] = [] {
+        didSet {
+            // Preserve first-match semantics if a malformed roster duplicates
+            // an ID. Rebuild on replacement, reordering and avatar edits.
+            familiarIndex = Dictionary(familiars.enumerated().map { ($0.element.id, $0.offset) },
+                                       uniquingKeysWith: { first, _ in first })
+        }
+    }
+    @ObservationIgnored private var familiarIndex: [String: Int] = [:]
     var familiarsError: String?
     var familiarsLoaded = false
     /// User's preferred familiar order (ids), applied over the server's order
@@ -2971,7 +2979,11 @@ final class AppModel {
     #endif
 
     func familiar(_ id: String) -> Familiar? {
-        familiars.first { $0.id == id }
+        // Read the observed roster even for a miss: arrival/removal must still
+        // invalidate rows that previously had no familiar to display.
+        let roster = familiars
+        guard let index = familiarIndex[id] else { return nil }
+        return roster[index]
     }
 
     func project(_ id: String) -> ProjectInfo? {

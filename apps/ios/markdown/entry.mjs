@@ -7,46 +7,21 @@
 import { parse } from "@create-markdown/core";
 import { renderAsync } from "@create-markdown/preview";
 import { renderTableReplacements } from "../../../src/lib/markdown-table-cells.ts";
-import hljs from "highlight.js/lib/core";
-
-import langSwift from "highlight.js/lib/languages/swift";
-import langPython from "highlight.js/lib/languages/python";
-import langJavascript from "highlight.js/lib/languages/javascript";
-import langTypescript from "highlight.js/lib/languages/typescript";
-import langRust from "highlight.js/lib/languages/rust";
-import langGo from "highlight.js/lib/languages/go";
-import langRuby from "highlight.js/lib/languages/ruby";
-import langBash from "highlight.js/lib/languages/bash";
-import langJson from "highlight.js/lib/languages/json";
-import langYaml from "highlight.js/lib/languages/yaml";
-import langSql from "highlight.js/lib/languages/sql";
-import langXml from "highlight.js/lib/languages/xml";
-import langCss from "highlight.js/lib/languages/css";
-import langScss from "highlight.js/lib/languages/scss";
-import langMarkdown from "highlight.js/lib/languages/markdown";
-import langDiff from "highlight.js/lib/languages/diff";
-import langDockerfile from "highlight.js/lib/languages/dockerfile";
-import langJava from "highlight.js/lib/languages/java";
-import langKotlin from "highlight.js/lib/languages/kotlin";
-import langC from "highlight.js/lib/languages/c";
-import langCpp from "highlight.js/lib/languages/cpp";
-import langPhp from "highlight.js/lib/languages/php";
-import langLua from "highlight.js/lib/languages/lua";
-
-const REGISTER = {
-  swift: langSwift, python: langPython, javascript: langJavascript,
-  typescript: langTypescript, rust: langRust, go: langGo, ruby: langRuby,
-  bash: langBash, json: langJson, yaml: langYaml, sql: langSql, xml: langXml,
-  css: langCss, scss: langScss, markdown: langMarkdown, diff: langDiff,
-  dockerfile: langDockerfile, java: langJava, kotlin: langKotlin, c: langC,
-  cpp: langCpp, php: langPhp, lua: langLua,
-};
-for (const [name, def] of Object.entries(REGISTER)) hljs.registerLanguage(name, def);
-hljs.configure({ classPrefix: "hljs-" });
-
-// highlight.js already knows common aliases (js, ts, py, sh, yml, html, c++, …);
-// a few extras it doesn't infer from our registered set:
-const ALIASES = { sh: "bash", shell: "bash", zsh: "bash", html: "xml", "objective-c": "c" };
+// Keep prose-only WebViews free of syntax engines and language grammars.
+// A failed optional resource leaves readable code plus Copy/Expand controls.
+let highlighterReady = null;
+function initHighlighter() {
+  if (!highlighterReady) {
+    highlighterReady = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "markdown-highlight.js";
+      script.onload = () => resolve(window.caveHighlight ?? null);
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+  }
+  return highlighterReady;
+}
 
 let mermaidReady = null;
 function initMermaid() {
@@ -81,15 +56,10 @@ function codeText(block) {
 function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function highlightCode(code, rawLang) {
-  let lang = (rawLang ?? "").trim().toLowerCase().split(/\s+/)[0];
-  lang = ALIASES[lang] ?? lang;
-  let inner = escapeHtml(code);
-  let resolved = "";
-  if (lang && hljs.getLanguage(lang)) {
-    resolved = lang;
-    try { inner = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch {}
-  }
+function highlightCode(code, rawLang, highlighter) {
+  const { inner, resolved } = highlighter
+    ? highlighter.highlight(code, rawLang)
+    : { inner: escapeHtml(code), resolved: "" };
   // A header bar (language label + Expand + Copy) sits above the code, like the
   // desktop chat. Expand lifts the highlighted <pre> to a full-screen viewer;
   // Copy reads the <code> textContent (raw, de-highlighted) and hands it to
@@ -119,7 +89,11 @@ async function renderMarkdown(md, { streaming = false } = {}) {
   const blocks = parse(md || "");
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
   const hasMermaid = !streaming && codeBlocks.some(isMermaid);
-  const mermaid = hasMermaid ? await initMermaid() : null;
+  const hasCode = codeBlocks.some((block) => !isMermaid(block));
+  const [mermaid, highlighter] = await Promise.all([
+    hasMermaid ? initMermaid() : null,
+    hasCode ? initHighlighter() : null,
+  ]);
 
   const replacements = new Array(codeBlocks.length);
   codeBlocks.forEach((block, i) => {
@@ -129,7 +103,7 @@ async function renderMarkdown(md, { streaming = false } = {}) {
         : (mermaid.renderBlock?.(block, () => "") ?? "");
       return;
     }
-    replacements[i] = highlightCode(codeText(block), block.props?.language ?? block.props?.info ?? "");
+    replacements[i] = highlightCode(codeText(block), block.props?.language ?? block.props?.info ?? "", highlighter);
   });
 
   // Re-render table cells through the inline path so **bold**/`code`/[links]

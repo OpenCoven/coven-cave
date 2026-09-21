@@ -36,6 +36,7 @@ struct ChatsHomeView: View {
     @State private var showNewChat = false
     @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
+    @State private var listSnapshotCache = ChatListSnapshotCache()
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
     /// The sidebar selection: a familiar (drills into its threads in the detail
@@ -115,7 +116,7 @@ struct ChatsHomeView: View {
     private var splitView: some View {
         // Both server lists go in; the snapshot owns the archived filter, so
         // the "Show archived" count includes server-only rows (#5429).
-        let snapshot = ChatListSnapshot(
+        let snapshot = listSnapshotCache.resolve(
             threads: app.chatThreads,
             sessions: app.chatServerSessions + app.chatArchivedServerSessions,
             familiars: app.familiars,
@@ -157,8 +158,9 @@ struct ChatsHomeView: View {
                 }
             }
             .refreshable {
-                await app.loadFamiliars()
-                await app.loadSessions()
+                async let familiars: Void = app.loadFamiliars()
+                async let sessions: Void = app.loadSessions()
+                _ = await (familiars, sessions)
             }
             // Sessions load once; reconnects and pull-to-refresh handle
             // subsequent reloads, so re-appearing destinations don't refetch the list.
