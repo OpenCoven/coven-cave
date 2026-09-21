@@ -12,7 +12,7 @@ import {
   type PrerequisiteDefinition,
   type PrerequisiteId,
 } from "../onboarding-prerequisites.ts";
-import { covenSpawnEnv, pickWindowsLauncher } from "../coven-bin.ts";
+import { covenSpawnEnvAsync, pickWindowsLauncher } from "../coven-bin.ts";
 import { openCovenToolReadinessStatuses } from "../opencoven-tools-status.ts";
 import { probeManagedNodeToolchain } from "./managed-node-toolchain.ts";
 
@@ -40,7 +40,7 @@ function platformId(): "win32" | "darwin" | "linux" | "ios" | "android" {
 async function commandPath(binary: string): Promise<string | null> {
   const command = process.platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await execFileAsync(command, [binary], { windowsHide: true, env: covenSpawnEnv(), timeout: PROBE_TIMEOUT_MS });
+    const { stdout } = await execFileAsync(command, [binary], { windowsHide: true, env: await covenSpawnEnvAsync(), timeout: PROBE_TIMEOUT_MS });
     const lines = stdout.split(/\r?\n/);
     return process.platform === "win32" ? pickWindowsLauncher(lines) : lines.map((line) => line.trim()).find(Boolean) ?? null;
   } catch {

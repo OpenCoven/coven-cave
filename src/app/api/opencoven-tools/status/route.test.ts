@@ -80,7 +80,7 @@ assert.match(
 
 assert.match(
   source,
-  /verifyOpenCovenToolInstall[\s\S]*?refreshCovenSpawnEnv\(\)/,
+  /verifyOpenCovenToolInstall[\s\S]*?await refreshCovenSpawnEnvAsync\(\)/,
   "post-install verification rebuilds PATH before probing the tool",
 );
 
@@ -92,7 +92,7 @@ assert.match(
 
 assert.match(
   source,
-  /openCovenToolStatuses[\s\S]*?const env = refreshCovenSpawnEnv\(\);[\s\S]*?toolStatus\(tool, env\)/,
+  /openCovenToolStatuses[\s\S]*?const env = await refreshCovenSpawnEnvAsync\(\);[\s\S]*?toolStatus\(tool, env\)/,
   "ordinary status checks share one freshly rebuilt environment across tool and npm probes",
 );
 

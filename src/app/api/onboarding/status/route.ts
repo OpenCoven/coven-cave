@@ -10,7 +10,7 @@ import { caveHome } from "@/lib/coven-paths";
 import {
   covenBinaryFromEnvironment,
   covenLaunchCommandForBinary,
-  covenSpawnEnv,
+  covenSpawnEnvAsync,
   covenWrapperSpawnEnv,
   pickWindowsLauncher,
 } from "@/lib/coven-bin";
@@ -415,7 +415,9 @@ export async function GET() {
   let readinessEnv: NodeJS.ProcessEnv;
   let discoveryState: EnvironmentDiscoveryState;
   try {
-    readinessEnv = covenSpawnEnv({ discoveryDeadline });
+    // Async discovery: a slow login shell on a fresh profile no longer blocks
+    // the event loop for the whole probe (issue #5448).
+    readinessEnv = await covenSpawnEnvAsync({ discoveryDeadline });
     discoveryState = environmentDiscoveryState(Date.now(), discoveryDeadline);
   } catch {
     const unavailable = {

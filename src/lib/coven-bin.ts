@@ -23,7 +23,7 @@
 // `covenLaunchCommand()` for argv[0] plus fixed args, and `covenSpawnEnv()`
 // for the env option.
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -123,27 +123,11 @@ export function runnableNodeToolchainDirs(
   const probe = dependencies.probe ?? execFileSync;
   const sourceEnv = dependencies.env ?? process.env;
   const now = dependencies.now ?? Date.now;
-  const nodeName = platform === "win32" ? "node.exe" : "node";
-  const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
 
   return directories.filter((directory) => {
-    const node = path.join(/* turbopackIgnore: true */ directory, nodeName);
-    const npmName = npmNames.find((name) => exists(path.join(/* turbopackIgnore: true */ directory, name)));
-    if (!exists(node) || !npmName) {
-      return false;
-    }
-    const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
-    const env = scrubSidecarInternalEnv(
-      withSearchPath(
-        sourceEnv,
-        [
-          directory,
-          environmentValue(sourceEnv, "PATH", platform),
-        ].filter(Boolean).join(path.delimiter),
-        platform,
-      ),
-      platform,
-    );
+    const context = toolchainProbeContext(directory, { platform, exists, sourceEnv });
+    if (!context) return false;
+    const { node, npm, env, npmNeedsShell } = context;
     try {
       const nodeTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
       if (nodeTimeout <= 0) return false;
@@ -160,7 +144,7 @@ export function runnableNodeToolchainDirs(
         stdio: "ignore",
         windowsHide: true,
         env,
-        shell: platform === "win32" && /\.(cmd|bat)$/i.test(npm),
+        shell: npmNeedsShell,
       });
       return remainingDiscoveryTimeout(
         Number.POSITIVE_INFINITY,
@@ -173,42 +157,176 @@ export function runnableNodeToolchainDirs(
   });
 }
 
-function nodeNvmBinDirs(discovery: DiscoveryOptions): string[] {
-  const nvmRoot = path.join(/* turbopackIgnore: true */ HOME, ".nvm", "versions", "node");
-  if (!existsSync(/* turbopackIgnore: true */ nvmRoot)) return [];
+type NodeRuntimeProbeAsync = (
+  ...args: Parameters<NodeRuntimeProbe>
+) => Promise<unknown>;
+
+/** execFile as a NodeRuntimeProbe: same command, args, timeout, env, and
+ *  shell decision as the execFileSync default, resolved off the event loop. */
+const execFileProbeAsync: NodeRuntimeProbeAsync = (command, args, options) =>
+  new Promise((resolve, reject) => {
+    execFile(
+      /* turbopackIgnore: true */ command,
+      args,
+      {
+        timeout: options.timeout,
+        // Literal on purpose: the Windows console-window scanner reads source text.
+        windowsHide: true,
+        env: options.env,
+        shell: options.shell,
+      },
+      (error) => (error ? reject(error) : resolve(undefined)),
+    );
+  });
+
+/**
+ * runnableNodeToolchainDirs() off the event loop, with the per-directory
+ * node/npm health checks running in parallel. Identical admission rules and
+ * budget accounting: each spawn re-checks the remaining discovery budget and
+ * a directory is admitted only while budget remains after its npm probe.
+ */
+export async function runnableNodeToolchainDirsAsync(
+  directories: readonly string[],
+  dependencies: {
+    platform?: NodeJS.Platform;
+    exists?: (file: string) => boolean;
+    probe?: NodeRuntimeProbeAsync;
+    env?: NodeJS.ProcessEnv;
+    deadline?: number;
+    now?: () => number;
+  } = {},
+): Promise<string[]> {
+  const platform = dependencies.platform ?? process.platform;
+  const exists = dependencies.exists ?? existsSync;
+  const probe = dependencies.probe ?? execFileProbeAsync;
+  const sourceEnv = dependencies.env ?? process.env;
+  const now = dependencies.now ?? Date.now;
+
+  const verdicts = await Promise.all(
+    directories.map(async (directory) => {
+      const context = toolchainProbeContext(directory, { platform, exists, sourceEnv });
+      if (!context) return false;
+      const { node, npm, env, npmNeedsShell } = context;
+      try {
+        const nodeTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+        if (nodeTimeout <= 0) return false;
+        await probe(node, ["--version"], {
+          timeout: nodeTimeout,
+          stdio: "ignore",
+          windowsHide: true,
+          env,
+        });
+        const npmTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+        if (npmTimeout <= 0) return false;
+        await probe(npm, ["--version"], {
+          timeout: npmTimeout,
+          stdio: "ignore",
+          windowsHide: true,
+          env,
+          shell: npmNeedsShell,
+        });
+        return remainingDiscoveryTimeout(
+          Number.POSITIVE_INFINITY,
+          dependencies.deadline,
+          now,
+        ) > 0;
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return directories.filter((_, index) => verdicts[index]);
+}
+
+/** The node/npm launchers and scrubbed probe env for one version-manager
+ *  directory, or null when it lacks either launcher. Shared by the sync and
+ *  async health checks so they admit exactly the same directories. */
+function toolchainProbeContext(
+  directory: string,
+  dependencies: {
+    platform: NodeJS.Platform;
+    exists: (file: string) => boolean;
+    sourceEnv: NodeJS.ProcessEnv;
+  },
+): { node: string; npm: string; env: NodeJS.ProcessEnv; npmNeedsShell: boolean } | null {
+  const { platform, exists, sourceEnv } = dependencies;
+  const nodeName = platform === "win32" ? "node.exe" : "node";
+  const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
+  const node = path.join(/* turbopackIgnore: true */ directory, nodeName);
+  const npmName = npmNames.find((name) => exists(path.join(/* turbopackIgnore: true */ directory, name)));
+  if (!exists(node) || !npmName) return null;
+  const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
+  const env = scrubSidecarInternalEnv(
+    withSearchPath(
+      sourceEnv,
+      [
+        directory,
+        environmentValue(sourceEnv, "PATH", platform),
+      ].filter(Boolean).join(path.delimiter),
+      platform,
+    ),
+    platform,
+  );
+  return { node, npm, env, npmNeedsShell: platform === "win32" && /\.(cmd|bat)$/i.test(npm) };
+}
+
+/** Version-manager bin directories under `root/<version>/<...segments>`,
+ *  newest version first by lexicographic sort. Empty when the root is
+ *  missing or unreadable. */
+function versionManagerBinDirs(root: string, segments: string[]): string[] {
+  if (!existsSync(/* turbopackIgnore: true */ root)) return [];
   try {
-    const directories = readdirSync(/* turbopackIgnore: true */ nvmRoot)
-      .map((v) => path.join(/* turbopackIgnore: true */ nvmRoot, v, "bin"))
+    return readdirSync(/* turbopackIgnore: true */ root)
+      .map((v) => path.join(/* turbopackIgnore: true */ root, v, ...segments))
       .filter((d) => existsSync(/* turbopackIgnore: true */ d))
       .sort()
-      .reverse(); // newest version first by lexicographic sort
-    return runnableNodeToolchainDirs(directories, {
-      env: discovery.env,
-      deadline: discovery.deadline,
-      now: discovery.now,
-    });
+      .reverse();
   } catch {
     return [];
   }
 }
 
+const NVM_ROOT = path.join(/* turbopackIgnore: true */ HOME, ".nvm", "versions", "node");
+const FNM_ROOT = path.join(/* turbopackIgnore: true */ HOME, ".fnm", "node-versions");
+
+function nodeNvmBinDirs(discovery: DiscoveryOptions): string[] {
+  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
+  if (directories.length === 0) return [];
+  return runnableNodeToolchainDirs(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now,
+  });
+}
+
 function fnmBinDirs(discovery: DiscoveryOptions): string[] {
-  const fnmRoot = path.join(/* turbopackIgnore: true */ HOME, ".fnm", "node-versions");
-  if (!existsSync(/* turbopackIgnore: true */ fnmRoot)) return [];
-  try {
-    const directories = readdirSync(/* turbopackIgnore: true */ fnmRoot)
-      .map((v) => path.join(/* turbopackIgnore: true */ fnmRoot, v, "installation", "bin"))
-      .filter((d) => existsSync(/* turbopackIgnore: true */ d))
-      .sort()
-      .reverse();
-    return runnableNodeToolchainDirs(directories, {
-      env: discovery.env,
-      deadline: discovery.deadline,
-      now: discovery.now,
-    });
-  } catch {
-    return [];
-  }
+  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
+  if (directories.length === 0) return [];
+  return runnableNodeToolchainDirs(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now,
+  });
+}
+
+function nodeNvmBinDirsAsync(discovery: DiscoveryOptions): Promise<string[]> {
+  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
+  if (directories.length === 0) return Promise.resolve([]);
+  return runnableNodeToolchainDirsAsync(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now,
+  });
+}
+
+function fnmBinDirsAsync(discovery: DiscoveryOptions): Promise<string[]> {
+  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
+  if (directories.length === 0) return Promise.resolve([]);
+  return runnableNodeToolchainDirsAsync(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now,
+  });
 }
 
 function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
@@ -225,14 +343,31 @@ function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
 }
 
 function candidateDirs(discovery = discoveryOptions()): string[] {
+  return assembleCandidateDirs(nodeNvmBinDirs(discovery), fnmBinDirs(discovery), discovery);
+}
+
+/** candidateDirs() with the NVM/FNM health checks off the event loop. */
+async function candidateDirsAsync(discovery: DiscoveryOptions): Promise<string[]> {
+  const [nvm, fnm] = await Promise.all([
+    nodeNvmBinDirsAsync(discovery),
+    fnmBinDirsAsync(discovery),
+  ]);
+  return assembleCandidateDirs(nvm, fnm, discovery);
+}
+
+function assembleCandidateDirs(
+  nvmDirs: readonly string[],
+  fnmDirs: readonly string[],
+  discovery: DiscoveryOptions,
+): string[] {
   const managed = managedNodePaths();
   return [
     // Cave's verified user-scoped Node/npm lane precedes opportunistic host
     // managers. It never edits system PATH; this only affects Cave children.
     managed?.npmBin,
     managed ? path.dirname(managed.node) : null,
-    ...nodeNvmBinDirs(discovery),
-    ...fnmBinDirs(discovery),
+    ...nvmDirs,
+    ...fnmDirs,
     ...windowsNpmBinDirs(discovery),
     path.join(/* turbopackIgnore: true */ HOME, "Library", "pnpm"),
     path.join(/* turbopackIgnore: true */ HOME, ".bun", "bin"),
@@ -293,6 +428,36 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Same probe as loginShellPath(), off the event loop. A slow login shell
+ * (measured at 3.2 s of rc-file startup on a fresh profile, issue #5448)
+ * otherwise blocks every other request for the whole probe, and the first
+ * document waits on it before it can render. Async callers on the onboarding
+ * preflight path use this; the sync variant stays for sync callers.
+ */
+function loginShellPathAsync(discovery: DiscoveryOptions): Promise<string | null> {
+  if (process.platform === "win32") return Promise.resolve(null);
+  const env = discovery.env as Record<string, string | undefined>;
+  const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
+  const timeout = remainingDiscoveryTimeout(4000, discovery.deadline, discovery.now);
+  if (timeout <= 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile(
+      /* turbopackIgnore: true */ shell,
+      ["-ilc", "echo $PATH"],
+      { windowsHide: true, encoding: "utf-8", timeout, env: discovery.env },
+      (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const out = String(stdout).trim();
+        resolve(out || null);
+      },
+    );
+  });
 }
 
 /**
@@ -676,6 +841,35 @@ function augmentedSpawnPath(
   const fromSystem = process.platform === "win32"
     ? windowsRegistryPath(discovery)
     : loginShellPath(discovery);
+  return composeSpawnPath(fromSystem, candidateDirs(discovery), preferLaunchPath, discovery);
+}
+
+/** augmentedSpawnPath() with the login-shell probe and the NVM/FNM toolchain
+ *  health checks off the event loop and running concurrently. The Windows
+ *  registry read stays synchronous (`reg query` is fast and has no rc files
+ *  to source). */
+async function augmentedSpawnPathAsync(
+  preferLaunchPath: boolean,
+  discovery: DiscoveryOptions,
+): Promise<string> {
+  const [fromSystem, candidates] = await Promise.all([
+    process.platform === "win32"
+      ? Promise.resolve(windowsRegistryPath(discovery))
+      : loginShellPathAsync(discovery),
+    candidateDirsAsync(discovery),
+  ]);
+  return composeSpawnPath(fromSystem, candidates, preferLaunchPath, discovery);
+}
+
+/** Merge the discovered system PATH with the launch PATH and Cave's candidate
+ *  dirs. One composition for both the sync and async discovery paths so
+ *  managed-tool priority and launch-PATH precedence cannot drift apart. */
+function composeSpawnPath(
+  fromSystem: string | null,
+  candidates: readonly string[],
+  preferLaunchPath: boolean,
+  discovery: DiscoveryOptions,
+): string {
   // Windows retains the casing it inherited for environment keys (normally
   // `Path`). After copying the environment, `env.PATH` therefore cannot be
   // relied on even though `process.env.PATH` is case-insensitive. Read it
@@ -685,7 +879,6 @@ function augmentedSpawnPath(
   )?.[1];
   const launchPath = launchPathValue ? launchPathValue.split(path.delimiter) : [];
   const systemPath = fromSystem ? fromSystem.split(path.delimiter) : [];
-  const candidates = candidateDirs(discovery);
   // `coven` intentionally prefers its managed install locations over a stale
   // shell binary. General Queue tools must do the opposite: a desktop launch
   // should honor the user's PATH before falling back to Cave's helpful extras.
@@ -773,6 +966,70 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
   return spawnEnv(pathValue);
 }
 
+// One in-flight default-options discovery shared by concurrent async callers.
+// The onboarding preflight fans out several probes at once on a fresh profile;
+// without this each one would spawn its own login shell.
+let pendingPathDiscovery: Promise<string> | null = null;
+
+// Every cache invalidation advances the generation. An async discovery
+// publishes its PATH only if no invalidation happened while it ran, so a
+// discovery started before a post-install refresh can never overwrite the
+// refreshed result. The sync API is unaffected: it computes and publishes
+// within one call.
+let discoveryGeneration = 0;
+
+function invalidatePathCaches(): void {
+  cachedPath = null;
+  cachedToolPath = null;
+  pendingPathDiscovery = null;
+  discoveryGeneration += 1;
+}
+
+/**
+ * covenSpawnEnv() for async callers: identical PATH composition and cache,
+ * but the login-shell probe runs off the event loop and concurrent callers
+ * with default discovery options share one subprocess. Prefer this on request
+ * paths; keep covenSpawnEnv() for sync call sites.
+ */
+export async function covenSpawnEnvAsync(
+  options: CovenSpawnEnvOptions = {},
+): Promise<NodeJS.ProcessEnv> {
+  if (cachedPath !== null) return spawnEnv(cachedPath);
+  const shareable =
+    options.discoveryEnv === undefined &&
+    options.discoveryDeadline === undefined &&
+    options.now === undefined;
+  let pending = shareable ? pendingPathDiscovery : null;
+  if (pending === null) {
+    const discovery = discoveryOptions(options);
+    const generation = discoveryGeneration;
+    const started: Promise<string> = augmentedSpawnPathAsync(false, discovery)
+      .then((pathValue) => {
+        const fresh = discovery.deadline === undefined || discovery.now() < discovery.deadline;
+        if (fresh && generation === discoveryGeneration && cachedPath === null) {
+          cachedPath = pathValue;
+        }
+        return pathValue;
+      })
+      .finally(() => {
+        if (pendingPathDiscovery === started) pendingPathDiscovery = null;
+      });
+    if (shareable) pendingPathDiscovery = started;
+    pending = started;
+  }
+  return spawnEnv(await pending);
+}
+
+/** refreshCovenSpawnEnv() for async callers: drop the caches and start a new
+ *  discovery off the event loop. A discovery already in flight is retired
+ *  (its result is returned to its own callers but never cached). */
+export async function refreshCovenSpawnEnvAsync(
+  options: CovenSpawnEnvOptions = {},
+): Promise<NodeJS.ProcessEnv> {
+  invalidatePathCaches();
+  return covenSpawnEnvAsync(options);
+}
+
 /**
  * Opt one exact Cave-owned Coven CLI invocation into the npm wrapper's native
  * no-window policy. Call this only at a call site whose resolved command is
@@ -800,8 +1057,7 @@ export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
 export function refreshCovenSpawnEnv(
   options: CovenSpawnEnvOptions = {},
 ): NodeJS.ProcessEnv {
-  cachedPath = null;
-  cachedToolPath = null;
+  invalidatePathCaches();
   return covenSpawnEnv(options);
 }
 
@@ -812,7 +1068,6 @@ export function refreshCovenSpawnEnv(
  */
 export function refreshCovenBin(): string {
   cachedBin = null;
-  cachedPath = null;
-  cachedToolPath = null;
+  invalidatePathCaches();
   return covenBin();
 }
