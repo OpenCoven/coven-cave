@@ -320,7 +320,10 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                   </span>
                 </button>
                 <div className="chat-canvas-card__meta">
-                  <span className="chat-canvas-card__title" title={artifact.prompt || artifact.title}>
+                  <span
+                    className="chat-canvas-card__title"
+                    title={stripInlineMarkdown(artifact.prompt || artifact.title) || artifact.title}
+                  >
                     {stripInlineMarkdown(artifact.title) || artifact.title}
                   </span>
                   <span className="chat-canvas-card__sub">
@@ -394,7 +397,10 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
             onClick={(event) => event.stopPropagation()}
           >
             <header className="chat-canvas-preview__head">
-              <span className="chat-canvas-preview__title" title={preview.title}>
+              <span
+                className="chat-canvas-preview__title"
+                title={stripInlineMarkdown(preview.title) || preview.title}
+              >
                 {stripInlineMarkdown(preview.title) || preview.title}
               </span>
               <span className="chat-canvas-preview__tag">

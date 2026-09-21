@@ -37,3 +37,10 @@ assert.equal(sessionDisplayTitle({ title: "Rename `foo_bar` to _fooBar_" }), "Re
 assert.equal(sessionDisplayTitle({ title: "Compute 2*3 in snake_case" }), "Compute 2*3 in snake_case");
 
 console.log("session-title.test.ts: markdown ok");
+
+// Preamble leaks wrapped in markdown only become anchored once the syntax is
+// stripped, so the canon and runtime-scope checks run again on the plain text.
+assert.equal(sessionDisplayTitle({ title: "## Runtime filesystem boundary: - This is the local…" }), "New chat");
+assert.equal(sessionDisplayTitle({ title: "**Coven identity canon:** - Each familiar has…" }), "New chat");
+
+console.log("session-title.test.ts: wrapped-leak ok");

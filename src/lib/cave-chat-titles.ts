@@ -822,6 +822,11 @@ export function sanitizeSessionTitle(title: string | null | undefined): string |
   // **User:** …"); rows render plain text, so strip it at this boundary.
   const plain = normalizeChatTitle(stripInlineMarkdown(normalized));
   if (!plain) return null;
+  // Re-run the preamble checks on the stripped text: a heading-wrapped leak
+  // ("## Runtime filesystem boundary: …") only becomes anchored once the
+  // markdown is gone.
+  if (CANON_TITLE_LEAK_RE.test(plain)) return null;
+  if (RUNTIME_SCOPE_TITLE_LEAK_RE.test(plain)) return null;
   if (PRIOR_CONVERSATION_LEAK_RE.test(plain)) return null;
   return plain;
 }
