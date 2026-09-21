@@ -88,6 +88,27 @@ v0.4.2 release run), and `release-rollout.mjs restore-plan`/the drill itself
 - [#5339](https://github.com/OpenCoven/coven-cave/issues/5339) (P0 security release hold): **open**; its 2026-09-20 reconciliation keeps per-target hold disposition pending. It remains independently binding on any rollout.
 - Cave Project 9 status for #4781 could not be read: the available token lacks the `read:project` scope. Project coverage is therefore **unknown**; Cave Board/task execution records were not searched (**partial**).
 
+### Progress later on 2026-09-21 (after the reconciliation above)
+
+Executed in the same day, after the reconciliation was recorded. Each item is
+verified by a merge commit or an issue reference; nothing below publishes,
+signs, or rolls out anything.
+
+| Row | Delivered | Evidence | Still human-held |
+|---|---|---|---|
+| Coven authority compatibility release (Coven half) | Crate packaged as `opencoven-coven-client` (library name stays `coven_client`; `coven-cli` unchanged), publication metadata and explicit include list, crate README, `tests/package_contract.rs`, `scripts/verify-coven-client-package.mjs`, `docs/reference/coven-client-crate.md`, and `release-crates.yml` (signed `coven-client-v*` tag on `main` → workspace gates → `cargo package` → verifier → `cargo publish --dry-run` → publish only with `CARGO_REGISTRY_TOKEN` in the `crates-io-release` environment, failing closed otherwise). Review points (immutable action SHAs, `gpg.format ssh` before `git verify-tag`, release-stress selector) fixed before merge. | [OpenCoven/coven#1140](https://github.com/OpenCoven/coven/issues/1140) → [#1141](https://github.com/OpenCoven/coven/pull/1141), merged `68da978c7e2308a8a90e692a0f21772f575f6986`. Local: `opencoven-coven-client-0.1.0.crate` sha256 `368d23fa679f5ca039c52afafec1915c2befffa27aaee52b4a5f041dfe2cb7ae`, dry-run ok. | crates.io name ownership + `CARGO_REGISTRY_TOKEN`; a signed `coven-client-v0.1.0` tag |
+| Cave authority compatibility release (Task 2 residue) | `release.yml` had **no** Client v1 gate and `docs/client-v1-release.md` did not exist. Both validation paths now run `export-client-v1-contract.mjs --check` and the Client v1 release smoke against the built `server.mjs` after the web build and before any installer/checksum/updater job; the workflow contract test pins the ordering and refuses conditional or advisory gates. | [#5513](https://github.com/OpenCoven/coven-cave/pull/5513), merged `9e6a67bfb2ded0b94bdf6716b6757e6e7d7ad4a1`. Local: contract tests 20/20, fixture check exit 0, the smoke step verbatim against the built server → `ok (release 0.5.0)`. | — |
+| Chat signed packages/updater | Owner-repo tracker opened with the verified state and the four decisions/prerequisites (window minimum 820×600 vs 480×520, `opencoven-chat` protocol, updater keypair + `createUpdaterArtifacts`, Apple/Windows signing secrets). `scripts/verify-package.mjs` is deliberately **not** written until those are decided; asserting a contract the config does not declare would be fiction. | [OpenCoven/chat#356](https://github.com/OpenCoven/chat/issues/356) | all four items |
+| Cross-repository canaries | Not touched. [OpenCoven/chat#219](https://github.com/OpenCoven/chat/issues/219) has a live owner and a root cause posted 2026-09-21 (`MAX_PATH` overflow in the `aws-lc-sys` build script on the Windows lane). Chat's `contract-canary.mjs` already pins exact SDK/Cave revisions; the plan's minimum/latest/main matrix does not exist and was not started, to avoid a second design in an actively worked lane. | — | Windows lane repair; matrix design |
+| SDK publishing | Not touched, by decision. The SDK **formally excluded** `@opencoven/dev-cli` from its release ([sdk#37](https://github.com/OpenCoven/sdk/issues/37), `docs/superpowers/plans/2026-08-25-cli-release-scope.md`, 2026-08-25): native trust requirements unmet; a standalone CLI needs a separate reviewed design. It also chose a release-manifest/lock design over the plan's `compatibility/manifest.json`. | — | SHIP disposition (#40), aggregate record, publication |
+| Pilot and rollback | Non-mutating drill evidence for the live line: a v0.4.2 state file with the verified readiness verdict → `release-rollout.mjs gate` = **hold** (acceptance incomplete, five metrics unmeasured, five canaries missing, 0h of 24h observed), `restore-plan` prints the bounded three-step drill naming v0.4.1. The drill's mutating step was not run. | this record | cohort, observation window, drill execution, #5339 disposition |
+
+**Consequence for the `cli-*` acceptance steps.** They now conflict with an
+owner-repo decision, not merely an unpublished package. Until Val either
+commissions the standalone-CLI design or amends this issue and
+`docs/workflows/release-acceptance.md` to defer the seven `cli-*` steps, the
+acceptance record cannot reach `complete` and the rollout gate cannot advance.
+
 ### What clears each blocker (imperative, by owner)
 
 1. **OpenCoven/chat** — provision Apple Developer ID + notarization and Windows code-signing secrets in the `release-signing` environment; generate the updater keypair and enable `createUpdaterArtifacts`; land `docs/rollback.md` and `scripts/verify-package.mjs`; push a signed `v0.0.1` (or `-rc.N`) tag and let `release.yml` publish. Fix the `platform-conformance (win32-x64)` job.
