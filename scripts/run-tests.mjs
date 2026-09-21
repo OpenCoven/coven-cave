@@ -1664,6 +1664,7 @@ export const SUITES = {
     "src/lib/coven-daemon.test.ts",
     "src/lib/coven-daemon-bytes.test.ts",
     "src/lib/coven-bin.test.ts",
+    "src/lib/coven-bin-async-discovery.test.ts",
     "src/lib/bd-bin.test.ts",
     "src/lib/npx-bin.test.ts",
     "src/lib/harness-version.test.ts",
