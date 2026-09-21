@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Added
+- **Client v1 release gates** (#4781). Release and candidate validation now
+  verify the committed Client v1 contract fixture against source and run the
+  Client v1 release smoke against the freshly built server before any
+  installer or updater manifest is produced. `docs/client-v1-release.md`
+  documents the compatibility metadata a release advertises and what those
+  gates prove.
+
 ## [0.5.0] - 2026-09-16
 
 > The Needs-you inbox, and a pass that removes what the app could not back.

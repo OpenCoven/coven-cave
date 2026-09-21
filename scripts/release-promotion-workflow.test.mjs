@@ -107,7 +107,7 @@ test("candidate validation requires signed tag provenance and calls every deferr
     NEXT_PUBLIC_CAVE_CRAFTS: "1",
   });
   assert.match(
-    full.jobs.frontend.steps.at(-1).run,
+    full.jobs.frontend.steps.find((step) => /\bpnpm build\b/.test(step.run ?? ""))?.run ?? "",
     /for attempt in 1 2 3; do[\s\S]*pnpm build[\s\S]*rm -rf \.next/,
     "candidate frontend validation retains the Turbopack retry",
   );
@@ -271,6 +271,48 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
       `${publishingJob} must be transitively downstream of authorization`,
     );
   }
+});
+
+test("release and candidate validation run the Client v1 gates after the web build and before any installer", async () => {
+  const [release, full] = await Promise.all([
+    workflow("release.yml"),
+    workflow("full-validation.yml"),
+  ]);
+  const jobs = [
+    ["release.yml release-web-core", release.jobs["release-web-core"]],
+    ["full-validation.yml frontend", full.jobs.frontend],
+  ];
+  for (const [label, job] of jobs) {
+    const runs = job.steps.map((step) => step.run ?? "");
+    const build = runs.findIndex((run) => /\bpnpm build\b/.test(run));
+    const fixture = runs.findIndex((run) =>
+      run.includes("node scripts/export-client-v1-contract.mjs --check"),
+    );
+    const smoke = runs.findIndex((run) =>
+      run.includes("node scripts/client-v1-release-smoke.mjs --origin"),
+    );
+    assert.ok(build >= 0, `${label}: builds the web bundle`);
+    assert.ok(fixture > build, `${label}: verifies the Client v1 contract fixture after the build`);
+    assert.ok(smoke > fixture, `${label}: runs the Client v1 release smoke after the fixture check`);
+    assert.match(
+      runs[smoke],
+      /node server\.mjs[\s\S]*\/api\/client\/v1\/health[\s\S]*client-v1-release-smoke\.mjs --origin/,
+      `${label}: the smoke probes the built server, not a dev server or a mock`,
+    );
+    assert.equal(job.steps[smoke].env?.COVEN_CAVE_E2E, "1", `${label}: the smoke server runs daemon-less`);
+    for (const step of [job.steps[fixture], job.steps[smoke]]) {
+      assert.equal(step.if, undefined, `${label}: a Client v1 gate cannot be conditioned off`);
+      assert.equal(step["continue-on-error"], undefined, `${label}: a Client v1 gate cannot be advisory`);
+    }
+  }
+  assert.ok(
+    dependsOn(release.jobs, "build", "release-web-core"),
+    "no installer builds until the Client v1 gates have passed",
+  );
+  assert.ok(
+    dependsOn(release.jobs, "updater-manifest", "release-web-core"),
+    "no updater manifest publishes until the Client v1 gates have passed",
+  );
 });
 
 test("no release gate is silently advisory", async () => {
