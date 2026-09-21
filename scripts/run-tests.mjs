@@ -1961,6 +1961,7 @@ export const SUITES = {
     "src/lib/server/mobile-access-provision.test.ts",
   ],
   mobile: [
+    "scripts/ios-release-evidence.test.mjs",
     "src/lib/mobile-access-token.test.ts",
     "src/lib/mobile-handoff.test.ts",
     "src/lib/mobile-mode-reconcile.test.ts",
