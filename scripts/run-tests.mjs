@@ -1559,6 +1559,7 @@ export const SUITES = {
     "src/lib/server/client-v1/authority-runtime.test.ts",
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/coven-automations-client.test.ts",
+    "src/lib/server/coven-automations-sdk.test.ts",
     "src/lib/server/client-v1/json-clone.test.ts",
     "src/components/canvas-github-import-modal.test.ts",
     "src/components/canvas-github-import-styles.test.ts",
