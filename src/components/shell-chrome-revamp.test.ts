@@ -76,7 +76,7 @@ assert.doesNotMatch(
 );
 assert.match(
   menuBar,
-  /placeholder="Search Cave\.\.\."/,
+  /placeholder="Search Cave…"/,
   'the field reads "Search Cave…" so it does not compete with the Nova composer',
 );
 assert.match(

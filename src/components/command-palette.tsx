@@ -1188,7 +1188,7 @@ export function CommandPalette({
             className="max-h-[45vh] overflow-y-auto border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
           >
             {salemLoading ? (
-              <span>Asking Salem through salem.opencoven.ai...</span>
+              <span>Asking Salem through salem.opencoven.ai…</span>
             ) : salemError ? (
               <span className="text-[var(--color-danger)]">{salemError}</span>
             ) : (

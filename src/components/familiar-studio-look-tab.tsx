@@ -75,7 +75,10 @@ const COLOR_PRESETS: ColorPreset[] = [
   },
   {
     label: "Moon",
-    color: "color-mix(in oklch, var(--accent-presence-soft) 58%, var(--text-primary) 18%, white 24%)",
+    // Graphite-lavender on the brand hue (291). The earlier three-colour
+    // color-mix() was invalid CSS (color-mix takes exactly two colours) and
+    // computed to transparent, so Moon familiars lost their dot everywhere.
+    color: "oklch(0.82 0.03 291)",
     inputFallback: "#b8b8c2",
   },
 ];

@@ -85,7 +85,7 @@ export function toolFooterStatusText({
       ? `Latest tool data is stale; re-check failed: ${error}`
       : `Check failed: ${error}`;
   }
-  if (checking) return "Checking tools...";
+  if (checking) return "Checking tools…";
   if (tools.some((tool) => !hasVerifiedLatestVersion(tool))) {
     return "Latest version couldn't be verified for one or more tools.";
   }

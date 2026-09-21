@@ -1,5 +1,6 @@
 import { COVEN_IDENTITY_CANON_HEADER } from "./coven-identity-canon.ts";
 import { relativeTime } from "./daily-report.ts";
+import { stripInlineMarkdown } from "./plain-text-preview.ts";
 import { redact } from "./redact.ts";
 import { REDACTED_SECRET, redactSecretText, scanAuthorizationCredential } from "./secret-redaction.ts";
 
@@ -802,6 +803,12 @@ const CANON_TITLE_LEAK_RE = new RegExp(
 // chat in a project. Reject it so those fall back to a neutral title.
 const RUNTIME_SCOPE_TITLE_LEAK_RE = /^Runtime filesystem boundary\s*:/;
 
+// The chat-history fallback block ("## Prior conversation **User:** …", see
+// chat-history-fallback.ts) is a transcript scaffold, not a name. Daemon
+// titles that start with it are rejected after markdown stripping so the row
+// falls back to a neutral title instead of showing the scaffold heading.
+const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
+
 /** Reject harness-derived titles that leaked one of the preambles the chat
  *  route prepends to every harness prompt (identity canon or runtime scope).
  *  Returns the normalized title, or null when the caller should fall back to a
@@ -811,7 +818,17 @@ export function sanitizeSessionTitle(title: string | null | undefined): string |
   if (!normalized) return null;
   if (CANON_TITLE_LEAK_RE.test(normalized)) return null;
   if (RUNTIME_SCOPE_TITLE_LEAK_RE.test(normalized)) return null;
-  return normalized;
+  // Harness-derived titles can carry markdown syntax ("## Prior conversation
+  // **User:** …"); rows render plain text, so strip it at this boundary.
+  const plain = normalizeChatTitle(stripInlineMarkdown(normalized));
+  if (!plain) return null;
+  // Re-run the preamble checks on the stripped text: a heading-wrapped leak
+  // ("## Runtime filesystem boundary: …") only becomes anchored once the
+  // markdown is gone.
+  if (CANON_TITLE_LEAK_RE.test(plain)) return null;
+  if (RUNTIME_SCOPE_TITLE_LEAK_RE.test(plain)) return null;
+  if (PRIOR_CONVERSATION_LEAK_RE.test(plain)) return null;
+  return plain;
 }
 
 /**

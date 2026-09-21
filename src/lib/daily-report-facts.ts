@@ -6,6 +6,7 @@
 // in server/github-merged.ts.
 
 import { sanitizeSessionTitle } from "./cave-chat-titles.ts";
+import { stripInlineMarkdown } from "./plain-text-preview.ts";
 import type { SessionRow } from "./types";
 
 export type MergedPr = {
@@ -59,9 +60,8 @@ const REPORT_TITLE_MAX = 64;
 
 // Session titles come from harness transcripts and can leak raw markdown
 // ("## Prior conversation **User:** Merge PR #26 **"). Report surfaces render
-// plain text, so markdown syntax must be stripped, not rendered.
-const MD_HEADING_RE = /^#{1,6}\s+/;
-const MD_EMPHASIS_RE = /(\*\*|__|[*_`])/g;
+// plain text, so markdown syntax is stripped (shared stripInlineMarkdown),
+// not rendered.
 const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
 // Titles opening with an XML-ish tag ("<covenroster> You are in a group
 // chat…") are prompt-preamble leaks, not names. Seen live on 2026-07-06.
@@ -74,11 +74,7 @@ const ANGLE_TAG_LEAK_RE = /^<[a-z][\w-]*>/i;
 export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
   const sanitized = sanitizeSessionTitle(session.title);
   if (!sanitized || ANGLE_TAG_LEAK_RE.test(sanitized)) return "Untitled session";
-  const stripped = sanitized
-    .replace(MD_HEADING_RE, "")
-    .replace(MD_EMPHASIS_RE, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const stripped = stripInlineMarkdown(sanitized);
   if (!stripped || PRIOR_CONVERSATION_LEAK_RE.test(stripped)) return "Untitled session";
   if (stripped.length <= REPORT_TITLE_MAX) return stripped;
   return `${stripped.slice(0, REPORT_TITLE_MAX - 1).trimEnd()}…`;

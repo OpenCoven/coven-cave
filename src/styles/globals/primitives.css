@@ -1195,10 +1195,21 @@
 
 @container surface-toolbar-controls (max-width: 520px) {
   .ui-surface-toolbar__controls,
-  .ui-surface-toolbar__filters,
-  .ui-surface-toolbar__visible-actions {
+  .ui-surface-toolbar__filters {
     width: 100%;
     justify-content: flex-start;
+  }
+  /* Phone width: filters take their own row, but the visible actions and
+     the overflow trigger share the next one instead of stacking three rows
+     of chrome above the content (Tasks measured ~250px of header on a
+     390px viewport). The trigger docks to the trailing edge. */
+  .ui-surface-toolbar__visible-actions {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .ui-surface-toolbar__controls > .ui-icon-btn {
+    margin-inline-start: auto;
   }
 }
 

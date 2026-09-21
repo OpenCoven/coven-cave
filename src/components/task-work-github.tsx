@@ -106,7 +106,7 @@ export function TaskWorkGitHub({
         <span className="task-work-github__actions">
           <button type="button" className="focus-ring" onClick={() => void refresh()} disabled={loading}>
             <Icon name="ph:arrows-clockwise" width={13} className={loading ? "animate-spin" : undefined} aria-hidden />
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
           <button type="button" className="focus-ring" onClick={onManage}>Manage</button>
         </span>

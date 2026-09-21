@@ -923,6 +923,7 @@ export const SUITES = {
     "src/lib/code-lang.test.ts",
     "src/lib/shiki-highlighter.test.ts",
     "src/lib/session-title.test.ts",
+    "src/lib/plain-text-preview.test.ts",
     "src/lib/home-suggestions.test.ts",
     "src/lib/project-search.test.ts",
     "src/lib/tool-target-file.test.ts",

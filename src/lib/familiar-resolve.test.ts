@@ -148,3 +148,19 @@ const upload = (updatedAt) => ({ dataUrl: UPLOAD, mime: "image/png", updatedAt }
 }
 
 console.log("familiar-resolve.test.ts: ok");
+
+// The retired "Moon" preset stored a three-colour color-mix() that browsers
+// compute to transparent (color-mix takes exactly two colours), so those
+// familiars lost their dot in the calendar legend and every accent. The stored
+// value is aliased to the preset's current colour at resolve time.
+{
+  const legacyMoon =
+    "color-mix(in oklch, var(--accent-presence-soft) 58%, var(--text-primary) 18%, white 24%)";
+  const fromOverride = resolveFamiliar(base, { override: { color: legacyMoon }, archived: false });
+  assert.equal(fromOverride.color, "oklch(0.82 0.03 291)");
+  const fromConfig = resolveFamiliar({ ...base, color: legacyMoon }, { archived: false });
+  assert.equal(fromConfig.color, "oklch(0.82 0.03 291)");
+  // Ordinary colours pass through untouched (trimmed only).
+  const plain = resolveFamiliar(base, { override: { color: " oklch(0.82 0.08 20) " }, archived: false });
+  assert.equal(plain.color, "oklch(0.82 0.08 20)");
+}
