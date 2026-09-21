@@ -1561,6 +1561,9 @@ export const SUITES = {
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/coven-automations-client.test.ts",
     "src/lib/server/coven-automations-sdk.test.ts",
+    "src/lib/server/automation-history.test.ts",
+    "src/app/api/coven-automations/[id]/events/route.test.ts",
+    "src/components/automations/canonical-history.test.ts",
     "src/lib/server/client-v1/json-clone.test.ts",
     "src/components/canvas-github-import-modal.test.ts",
     "src/components/canvas-github-import-styles.test.ts",
@@ -2431,6 +2434,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/automation-log-paths.test.ts",
   // the client imports the daemon transport and types via "@/lib/…" alias
   "src/lib/server/coven-automations-client.test.ts",
+  "src/app/api/coven-automations/[id]/events/route.test.ts",
   "src/lib/session-project-scope.test.ts",
   "src/lib/theme-token-hex.test.ts",
   "src/lib/familiar-growth-signals.test.ts",
