@@ -9,7 +9,9 @@ import { callDaemonBytes, type DaemonByteRequest } from "../coven-daemon.ts";
 export function createAutomationReadClient(transport: typeof callDaemonBytes = callDaemonBytes) {
   async function request(context: OperationContext, body?: { readonly action: string }) {
     context.signal.throwIfAborted();
-    const remaining = Math.min(6_000, Math.ceil((context.deadline ?? performance.now() + 6_000) - performance.now()));
+    // Match the SDK socket adapter's five-minute safety ceiling while honoring
+    // an explicit caller deadline longer than Cave's six-second default.
+    const remaining = Math.min(300_000, Math.ceil((context.deadline ?? performance.now() + 6_000) - performance.now()));
     if (remaining <= 0) throw new CovenClientError(normalizeCovenError({ code: "timeout" }, "automations.read"));
     const request: DaemonByteRequest = {
       method: body ? "POST" : "GET",
@@ -24,10 +26,10 @@ export function createAutomationReadClient(transport: typeof callDaemonBytes = c
     };
     const result = await transport(request);
     context.signal.throwIfAborted();
-    if (result.data === null || result.status === 0) {
+    if (result.status === 0) {
       throw new CovenClientError(normalizeCovenError({ code: "unavailable" }, "automations.read"));
     }
-    return { status: result.status, body: result.data };
+    return { status: result.status, body: result.data ?? new Uint8Array() };
   }
   return createCovenAutomationsClient({
     operation: { timeoutMs: 6_000 },

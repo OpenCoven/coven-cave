@@ -91,6 +91,24 @@ test("unavailable transport has a sanitized error and never becomes an empty lis
   });
 });
 
+test("empty HTTP replies reach canonical protocol validation instead of becoming unavailable", async () => {
+  for (const status of [200, 401, 410, 503]) {
+    const client = createAutomationReadClient(async request => request.method === "GET"
+      ? { ok: true, status: 200, data: Buffer.from(JSON.stringify(capabilities)) }
+      : { ok: status === 200, status, data: null });
+    await assert.rejects(client.events({ stream }), { code: "invalid_response" });
+  }
+});
+
+test("caller deadlines can exceed the default while retaining a hard upper bound", async () => {
+  for (const timeoutMs of [30_000, 600_000]) {
+    const { client, requests } = setup();
+    await client.events({ stream }, { timeoutMs });
+    assert.ok(requests.every(request => request.hardTimeoutMs! > 6_000));
+    assert.ok(requests.every(request => request.hardTimeoutMs! <= Math.min(timeoutMs, 300_000)));
+  }
+});
+
 test("an in-flight cancelled read receives the signal and is not replayed", async () => {
   const controller = new AbortController();
   let reads = 0;
