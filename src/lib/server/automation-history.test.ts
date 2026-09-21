@@ -59,3 +59,40 @@ test("cursor expiry and unavailable reads remain failures with no reset or raw d
     assert.doesNotMatch(JSON.stringify(result), /private/);
   }
 });
+
+test("stream IDs preserve the SDK Unicode and code-point bounds", async () => {
+  for (const id of ["routine with spaces", "日課", "🧙".repeat(320), "a".repeat(320)]) {
+    let calls = 0;
+    const result = await readAutomationHistory(id, new URLSearchParams(), new AbortController().signal, {
+      events: async query => { calls++; assert.equal(query.stream.id, id); return { ...page, stream: { ...stream, id } }; },
+    });
+    assert.equal(result.kind, "available"); assert.equal(calls, 1);
+  }
+  for (const id of ["", "a".repeat(321), "🧙".repeat(321), "\ud800"]) {
+    let calls = 0;
+    const result = await readAutomationHistory(id, new URLSearchParams(), new AbortController().signal, {
+      events: async () => { calls++; return page; },
+    });
+    assert.equal(result.kind, "invalid"); assert.equal(calls, 0);
+  }
+});
+
+test("misfire history preserves each canonical disposition without free-text reasons", async () => {
+  const dispositions = {
+    none: "No scheduling disposition recorded.",
+    collapsed_to_latest: "Missed slots collapsed to the latest occurrence.",
+    skipped_overlap: "Skipped because another occurrence overlaps.",
+    skipped_paused: "Skipped because the routine was paused.",
+    skipped_invalid: "Skipped because the routine was invalid.",
+  } as const;
+  for (const [disposition, expected] of Object.entries(dispositions)) {
+    const result = await readAutomationHistory("daily", new URLSearchParams(), new AbortController().signal, {
+      events: async () => ({ ...page, events: [{ ...event, kind: "occurrence.misfire_recorded", payload: {
+        disposition: disposition as keyof typeof dispositions, collapsedSlots: [],
+      } }] }),
+    });
+    assert.equal(result.kind, "available");
+    if (result.kind === "available") assert.equal(result.entries[0].detail, expected);
+    assert.doesNotMatch(JSON.stringify(result), /private/);
+  }
+});

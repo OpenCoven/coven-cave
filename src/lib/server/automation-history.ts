@@ -25,7 +25,14 @@ function detail(event: CovenAutomationEvent): string {
   }
   if (event.kind === "receipt.recorded") return `Reported outcome: ${event.payload.outcome.replaceAll("_", " ")}. Receipt verification is separate.`;
   if (event.kind === "feed.snapshot") return "Coven recorded a history snapshot.";
-  return "Inspect the occurrence for its scheduling disposition.";
+  const dispositions = {
+    none: "No scheduling disposition recorded.",
+    collapsed_to_latest: "Missed slots collapsed to the latest occurrence.",
+    skipped_overlap: "Skipped because another occurrence overlaps.",
+    skipped_paused: "Skipped because the routine was paused.",
+    skipped_invalid: "Skipped because the routine was invalid.",
+  };
+  return dispositions[event.payload.disposition];
 }
 
 /** The SDK validates the wire. Project only non-sensitive history metadata;
@@ -38,7 +45,7 @@ export async function readAutomationHistory(
   client: Pick<ReturnType<typeof createAutomationReadClient>, "events"> = createAutomationReadClient(),
 ): Promise<AutomationHistoryResult> {
   const checkpoint = query.get("checkpoint");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(id) ||
+  if (!id.isWellFormed() || [...id].length < 1 || [...id].length > 320 ||
     [...query.keys()].some(key => key !== "checkpoint") || query.getAll("checkpoint").length > 1 ||
     (checkpoint !== null && (!checkpoint.isWellFormed() || Buffer.byteLength(checkpoint) < 1 || Buffer.byteLength(checkpoint) > 512))) {
     return { kind: "invalid" };

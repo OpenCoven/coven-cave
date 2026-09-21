@@ -3,7 +3,7 @@ import test from "node:test";
 import { GET } from "./route.ts";
 
 test("history route rejects invalid streams and query parameters without daemon access", async () => {
-  for (const [id, query] of [["../other", ""], ["daily", "after=0"], ["daily", "checkpoint="]]) {
+  for (const [id, query] of [["", ""], ["a".repeat(321), ""], ["daily", "after=0"], ["daily", "checkpoint="]]) {
     const response = await GET(new Request(`http://localhost/api/coven-automations/daily/events?${query}`), { params: Promise.resolve({ id }) });
     assert.equal(response.status, 400);
     assert.equal(response.headers.get("cache-control"), "no-store");
