@@ -35,6 +35,55 @@ This is an operator record, not input to `pnpm release:rollout`. The existing
 updater manifests and installers. Their percentages and baseline verdicts do
 not establish an iOS cohort, downgrade path, or TestFlight approval.
 
+### Check the evidence index locally
+
+Use the local checker to catch missing receipts and receipts bound to a different
+candidate before the maintainer reviews the underlying evidence:
+
+```bash
+node scripts/ios-release-evidence.mjs template > /tmp/ios-evidence.json
+# Fill the record from retained, reviewed receipts in approved private storage.
+node scripts/ios-release-evidence.mjs validate /tmp/ios-evidence.json
+```
+
+The generated index starts entirely pending. Record the candidate's marketing
+version, build number, full source SHA, archive SHA-256 and exported IPA SHA-256.
+Each receipt repeats the identity it actually tested or reviewed. Do not copy
+the new candidate's identity over an older receipt to make validation pass.
+Receipts covering earlier work must include a reviewed binding to this candidate.
+
+| Receipt key | Required underlying evidence |
+| --- | --- |
+| `signing` | Signing identity and entitlements for this archive/export |
+| `symbols` | App/extension UUID coverage and explicit vendor-symbol limitations |
+| `assetsAndDependencies` | Bundled asset and dependency digests |
+| `prerequisiteReconciliation` | Retained evidence or explicit maintainer mappings for each of #5311, #5317 and #5318 |
+| `incident` | Incident classification and matched baseline |
+| `physicalDevice` | Physical device/OS matrix, workload and measured budgets |
+| `populatedV040Upgrade` | Populated v0.4.0 upgrade results, or explicit maintainer reconciliation plus substitute results |
+| `recovery` | Non-destructive recovery drill and downgrade/forward-fix limits |
+| `diagnosticDrill` | Synthetic failure, redaction, bounded retention, build attribution, HOLD routing and absent/delayed-report handling |
+| `cohort` | Ratified thresholds, observations, denominators and device-hours for the claimed cohort |
+| `releaseHolds` | Reviewed disposition of every applicable hold, including #5339 |
+| `maintainerDecision` | Named accountability, on-call operator, timestamp and explicit build/cohort-specific decision |
+
+Set `result` to `pass` only after reviewing the receipt against the requirement;
+`pending`, `blocked`, and `fail` remain incomplete. Use opaque `receiptId` values
+(1–128 ASCII letters, digits, dots, underscores or hyphens, starting with a
+letter or digit). Resolve those IDs through the protected evidence record.
+Do not put URLs, paths, raw diagnostics, transcripts or credentials in this index.
+Unknown fields are rejected and validation errors do not echo input values.
+This restricted shape is not a general secret scanner; review before sharing.
+
+Exit code **0** means `record-complete`: all required entries say `pass`, have
+non-placeholder receipt IDs, and name the same candidate. **1** means incomplete;
+**2** means invalid CLI use or unreadable JSON. The checker does not open receipts,
+hash artifacts, validate signatures, confirm observations, or authenticate a
+maintainer's decision. Every result reports `releaseAuthorized: false`.
+It performs no network, device or distribution operation. Keep the operator's
+HOLD in place until the runbook's actual acceptance and explicit authorization
+are satisfied; a syntactically complete index cannot clear it.
+
 ## Establish the candidate
 
 1. Read the [current iOS direction](../ios-current-direction.md). Qualify the
