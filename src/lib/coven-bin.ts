@@ -170,7 +170,8 @@ const execFileProbeAsync: NodeRuntimeProbeAsync = (command, args, options) =>
       args,
       {
         timeout: options.timeout,
-        windowsHide: options.windowsHide,
+        // Literal on purpose: the Windows console-window scanner reads source text.
+        windowsHide: true,
         env: options.env,
         shell: options.shell,
       },
