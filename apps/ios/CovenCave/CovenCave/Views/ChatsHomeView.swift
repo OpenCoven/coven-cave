@@ -158,9 +158,7 @@ struct ChatsHomeView: View {
                 }
             }
             .refreshable {
-                async let familiars: Void = app.loadFamiliars()
-                async let sessions: Void = app.loadSessions()
-                _ = await (familiars, sessions)
+                await app.refreshChats()
             }
             // Sessions load once; reconnects and pull-to-refresh handle
             // subsequent reloads, so re-appearing destinations don't refetch the list.

@@ -25,7 +25,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
             return !!document.querySelector('strong') &&
                 !!document.querySelector('code .hljs-keyword') &&
                 typeof window.caveMermaid === 'undefined' &&
-                document.querySelectorAll('script[src]').length === 0;
+                document.querySelectorAll('script[src$="markdown-highlight.js"]').length === 1 &&
+                document.querySelectorAll('script[src$="markdown-mermaid.js"]').length === 0;
             """, arguments: [:], contentWorld: .page)
         XCTAssertEqual(prose as? Bool, true, "Ordinary formatted replies must not load diagram code")
 
@@ -34,7 +35,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
             await window.caveRender(md, {streaming: true});
             return document.getElementById('root').textContent.includes('rendering on completion') &&
                 typeof window.caveMermaid === 'undefined' &&
-                document.querySelectorAll('script[src]').length === 0;
+                document.querySelectorAll('script[src$="markdown-highlight.js"]').length === 1 &&
+                document.querySelectorAll('script[src$="markdown-mermaid.js"]').length === 0;
             """, arguments: ["md": diagram], contentWorld: .page)
         XCTAssertEqual(streaming as? Bool, true, "Incomplete diagrams must remain lightweight")
 

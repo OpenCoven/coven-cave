@@ -1091,6 +1091,11 @@ final class AppModel {
         state.lastApplied = token
     }
 
+    private typealias CoordinatedSessionsResult = (
+        token: CoordinatedLoadToken,
+        result: Result<[SessionRow], any Error>
+    )
+
     private func coordinatedSessionsLoad(
         using client: any ProjectContextLoadingClient,
         generation: UInt64?,
@@ -4099,17 +4104,36 @@ final class AppModel {
         using client: any ProjectContextLoadingClient,
         projects nextProjects: [ProjectInfo],
         loadNonce: UInt64,
-        navigationGeneration: UInt64?
+        navigationGeneration: UInt64?,
+        prefetchedSessions: CoordinatedSessionsResult? = nil
     ) async throws -> ProjectContextSelectionResolution {
         await awaitThreadHydration()
         guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
             throw CancellationError()
         }
 
-        let haveUsableSessions = sessionsLoaded && sessionsError == nil
+        var haveUsableSessions = sessionsLoaded && sessionsError == nil
         let haveUsableTasks = tasksLoaded && tasksError == nil
         var resolvedSessions = haveUsableSessions ? serverSessions : []
         let resolvedTasks = haveUsableTasks ? tasks : []
+        var fetchedSessions: [SessionRow]?
+        var sessionsError: String?
+        var sessionsLoadToken: CoordinatedLoadToken?
+        if let prefetchedSessions {
+            sessionsLoadToken = prefetchedSessions.token
+            switch prefetchedSessions.result {
+            case .success(let rows):
+                haveUsableSessions = true
+                resolvedSessions = rows.filter { $0.archivedAt == nil }
+                fetchedSessions = rows
+            case .failure(let error):
+                haveUsableSessions = false
+                resolvedSessions = []
+                // Only applySessionsLoad may mutate connection state, after
+                // its freshness fence. A superseded error is selection data.
+                sessionsError = error.localizedDescription
+            }
+        }
         var explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
         let needsAuthoritativeSessionHistory = !haveUsableSessions
             && needsAuthoritativeSessionHistoryForProjectContextSelection(
@@ -4129,7 +4153,7 @@ final class AppModel {
             tasks: resolvedTasks,
             allowAlphabeticalFallback: false
         )
-        if immediateProjectContextSelectionIsFinal(
+        if sessionsError == nil && immediateProjectContextSelectionIsFinal(
             immediateDecision,
             hasUsableSessions: haveUsableSessions,
             needsAuthoritativeSessionHistory: needsAuthoritativeSessionHistory
@@ -4140,15 +4164,16 @@ final class AppModel {
                 threads: immediateThreads,
                 sessions: resolvedSessions,
                 tasks: resolvedTasks,
-                allowAlphabeticalFallback: false
+                allowAlphabeticalFallback: false,
+                fetchedSessions: fetchedSessions,
+                sessionsLoadToken: sessionsLoadToken
             )
         }
 
+        // A refresh result is an attempted read even when it failed. Never
+        // turn that failure into a second request through a different scope.
         // Legacy default selection may consult chat history, never task APIs.
-        var fetchedSessions: [SessionRow]?
-        var sessionsError: String?
-        var sessionsLoadToken: CoordinatedLoadToken?
-        if !haveUsableSessions {
+        if !haveUsableSessions && prefetchedSessions == nil {
             let loadedSessions = await coordinatedSessionsLoad(
                 using: client,
                 generation: navigationGeneration,
@@ -4281,6 +4306,16 @@ final class AppModel {
         mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = [],
         preservingSelection: Bool = false
     ) async {
+        await loadProjectContext(using: client, mirrorFailuresTo: mirroredSurfaces,
+                                 preservingSelection: preservingSelection, sessionsRefresh: nil)
+    }
+
+    private func loadProjectContext(
+        using client: any ProjectContextLoadingClient,
+        mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces,
+        preservingSelection: Bool,
+        sessionsRefresh: Task<CoordinatedSessionsResult, Never>?
+    ) async {
         let navigationGeneration = currentProjectNavigationConnectionGeneration()
         noteProjectNavigationSurfaceAttempt(.projects, generation: navigationGeneration)
         projectContextLoadNonce &+= 1
@@ -4296,6 +4331,7 @@ final class AppModel {
             let nextProjects = try await loadedProjects
             let grants = try await loadedGrants
             let nextFamiliars = try await loadedFamiliars
+            let prefetchedSessions = await sessionsRefresh?.value
 
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
 
@@ -4310,7 +4346,8 @@ final class AppModel {
                 using: client,
                 projects: nextProjects,
                 loadNonce: loadNonce,
-                navigationGeneration: navigationGeneration
+                navigationGeneration: navigationGeneration,
+                prefetchedSessions: prefetchedSessions
             )
 
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
@@ -5874,6 +5911,27 @@ final class AppModel {
         return .ok
     }
 
+    /// Overlap independent metadata reads with one session refresh. Both the
+    /// selection resolver and chat rows consume the same attempted result.
+    func refreshChats() async {
+        guard let client = coreResourceClient else { return }
+        let generation = currentProjectNavigationConnectionGeneration()
+        noteProjectNavigationSurfaceAttempt(.sessions, generation: generation)
+        let sessionsRefresh = Task {
+            let load = await coordinatedSessionsLoad(using: client, generation: generation)
+            applySessionsLoad(load, generation: generation, preservingSelection: false)
+            return load
+        }
+        await withTaskCancellationHandler {
+            await loadProjectContext(using: client, mirrorFailuresTo: [.familiars],
+                                     preservingSelection: false, sessionsRefresh: sessionsRefresh)
+            // Metadata failure must not abandon an otherwise valid session read.
+            _ = await sessionsRefresh.value
+        } onCancel: {
+            sessionsRefresh.cancel()
+        }
+    }
+
     func loadFamiliars() async {
         guard let client = coreResourceClient else { return }
         await loadProjectContext(using: client, mirrorFailuresTo: [.familiars])
@@ -6001,6 +6059,14 @@ final class AppModel {
             using: client,
             generation: navigationGeneration
         )
+        applySessionsLoad(load, generation: navigationGeneration, preservingSelection: preservingSelection)
+    }
+
+    private func applySessionsLoad(
+        _ load: CoordinatedSessionsResult,
+        generation navigationGeneration: UInt64?,
+        preservingSelection: Bool
+    ) {
         guard !Task.isCancelled,
               coordinatedLoadShouldApply(load.token, state: sessionsLoadState) else { return }
         markCoordinatedLoadApplied(load.token, state: &sessionsLoadState)
