@@ -41,8 +41,8 @@ assert.match(
 );
 assert.match(
   vault,
-  /<EmptyState[\s\S]*?No mappings yet[\s\S]*?Add secrets/,
-  "Vault panel empty state has an Add secrets action, not bare text",
+  /<EmptyState[\s\S]*?No environment variables added[\s\S]*?Add environment variable/,
+  "Vault panel empty state has an Add environment variable action, not bare text",
 );
 
 console.log("surface-error-states.test.ts: ok");
