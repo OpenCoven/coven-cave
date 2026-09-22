@@ -258,6 +258,15 @@ for (const platform of measuredPlatforms) {
     `${platform} must move by exactly the reviewed v0.5.0 candidate delta`,
   );
 }
+assert.deepEqual(
+  sidecarMeasurement.releaseDelta.generatedFileDeltas,
+  {
+    ".next/server/app": 39,
+    ".next/server/chunks": 89,
+    ".next/static/chunks": 63,
+  },
+  "the release delta must retain the reviewed per-directory inventory counts",
+);
 assert.equal(
   Object.values(sidecarMeasurement.releaseDelta.generatedFileDeltas).reduce((total, count) => total + count, 0),
   sidecarMeasurement.releaseDelta.fileCount,
