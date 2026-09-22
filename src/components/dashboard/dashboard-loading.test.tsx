@@ -16,6 +16,7 @@ vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let renderer;
 let requests;
+let deferMetrics;
 const item = { id: "ask", kind: "reminder", title: "Review the release", status: "fired", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 const card = { id: "task", title: "Approve the task", status: "review", familiarId: null, updatedAt: "2026-09-15T00:00:00Z" };
 const text = node => typeof node === "string" ? node : (node?.children ?? []).map(text).join("");
@@ -27,11 +28,13 @@ async function reply(url, payload, ok = true) {
   request.done = true;
   await act(async () => { request.resolve({ ok, json: async () => payload }); });
 }
-async function poll() { await act(async () => hooks.poll()); }
+async function poll() { await act(async () => { void hooks.poll(); }); }
+const stat = label => text(renderer.root.findAllByProps({ className: "bd-cell bd-stat" }).find(node => text(node.findByProps({ className: "bd-label" })) === label).findByProps({ className: "bd-stat-value" }));
 beforeEach(() => {
   requests = [];
-  vi.stubGlobal("fetch", vi.fn((url) => {
-    if (url === "/api/inbox" || url === "/api/board") return new Promise(resolve => requests.push({ url, resolve }));
+  deferMetrics = false;
+  vi.stubGlobal("fetch", vi.fn((url, options) => {
+    if (url === "/api/inbox" || url === "/api/board" || (deferMetrics && ["/api/sessions/list", "/api/familiars", "/api/projects"].includes(url))) return new Promise(resolve => requests.push({ url, resolve, signal: options.signal }));
     return Promise.resolve({ ok: true, headers: new Headers(), json: async () => ({ ok: true, sessions: [], familiars: [], projects: [], items: [] }) });
   }));
 });
@@ -87,4 +90,57 @@ test("standalone server seed remains visible before and after a failed initial i
   await reply("/api/board", { cards: [] });
   expect(boardText()).toContain(item.title);
   expect(boardText()).toContain("unavailable");
+});
+
+test("metrics wait for real data and preserve the last snapshot through an outage", async () => {
+  deferMetrics = true;
+  await mount();
+  expect(stat("total sessions")).toBe("—");
+  expect(stat("familiars")).toBe("—");
+  await reply("/api/board", { cards: [] });
+  await reply("/api/inbox", { items: [] });
+  await reply("/api/sessions/list", { sessions: [{ id: "s1", familiarId: "sage", created_at: new Date().toISOString() }] });
+  await reply("/api/familiars", { familiars: [{ id: "sage", display_name: "Sage" }] });
+  await reply("/api/projects", { projects: [{ id: "p1" }] });
+  expect(stat("total sessions")).toBe("1");
+  expect(stat("familiars")).toBe("1");
+  expect(stat("projects")).toBe("1");
+  await poll();
+  await reply("/api/board", { cards: [] });
+  await reply("/api/inbox", { items: [] });
+  await reply("/api/sessions/list", {}, false);
+  await reply("/api/familiars", { ok: false, familiars: [] });
+  await reply("/api/projects", { projects: null });
+  expect(stat("total sessions")).toBe("1");
+  expect(stat("familiars")).toBe("1");
+  expect(stat("projects")).toBe("1");
+  expect(text(renderer.toJSON())).toContain("Couldn't refresh");
+  const retry = renderer.root.findAllByType("button").find(node => node.props["aria-label"] === "Retry dashboard refresh");
+  expect(retry).toBeDefined();
+  await act(async () => { retry.props.onClick(); });
+  await reply("/api/sessions/list", { sessions: [] });
+  await reply("/api/familiars", { familiars: [] });
+  await reply("/api/projects", { projects: [] });
+  expect(stat("total sessions")).toBe("0");
+  expect(stat("familiars")).toBe("0");
+  expect(stat("projects")).toBe("0");
+  expect(text(renderer.toJSON())).not.toContain("Couldn't refresh");
+});
+
+test("refresh during an unfinished initial load does not duplicate its requests", async () => {
+  await mount();
+  await poll();
+  expect(requests.filter(r => r.url === "/api/inbox")).toHaveLength(1);
+  expect(requests.filter(r => r.url === "/api/board")).toHaveLength(1);
+});
+
+test("explicit retry replaces a partly failed load instead of waiting for slow sibling requests", async () => {
+  deferMetrics = true;
+  await mount();
+  await reply("/api/sessions/list", {}, false);
+  const previous = requests.slice();
+  const retry = renderer.root.findAllByType("button").find(node => node.props["aria-label"] === "Retry dashboard refresh");
+  await act(async () => { retry.props.onClick(); });
+  expect(previous.every(request => request.signal.aborted)).toBe(true);
+  expect(requests.filter(r => r.url === "/api/sessions/list")).toHaveLength(2);
 });

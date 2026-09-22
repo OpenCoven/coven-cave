@@ -393,7 +393,7 @@ assert.doesNotMatch(settings, /autoRetryBlocked/, "the poll-stopping latch is go
   const workspaceSrc = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
   assert.match(
     workspaceSrc,
-    /usePausablePoll\(\(\) => void reconcileMobileMode\(mobileModeEnabled\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/,
+    /usePausablePoll\(\(\) => reconcileMobileMode\(mobileModeEnabled\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/,
     "Workspace keeps polling too; both consumers rely on the shared TTL breaker",
   );
   assert.doesNotMatch(workspaceSrc, /mobileModeAutoRetryBlocked/, "the poll-stopping latch is gone from Workspace");

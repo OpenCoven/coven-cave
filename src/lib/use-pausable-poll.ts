@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { runRefreshSafely, useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 
 /**
@@ -19,7 +19,8 @@ import { runRefreshSafely, useRefreshOnFocus } from "@/lib/use-refresh-on-focus"
  * (e.g. only poll while a run is active). Pass `{ pauseWhileInputActive: true }`
  * for nonessential shell polls that should not compete with mobile composition.
  * The initial mount load stays the caller's job — this hook only schedules the
- * recurring poll + the on-return refresh.
+ * recurring poll + the on-return refresh. Return the callback's promise so
+ * timer and foreground events share its in-flight work instead of overlapping.
  */
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
@@ -54,21 +55,29 @@ export function usePausablePoll(
   // tear down and recreate the interval on every render.
   const cbRef = useRef(callback);
   cbRef.current = callback;
+  const inFlightRef = useRef(false);
+
+  const run = useCallback(() => {
+    if (!enabled || inFlightRef.current) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (pollPausedForActiveInput(pauseWhileInputActive)) return;
+    inFlightRef.current = true;
+    runRefreshSafely(async () => {
+      try {
+        await cbRef.current();
+      } finally {
+        inFlightRef.current = false;
+      }
+    });
+  }, [enabled, pauseWhileInputActive]);
 
   useEffect(() => {
     if (!enabled) return;
-    const id = setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      if (pollPausedForActiveInput(pauseWhileInputActive)) return;
-      runRefreshSafely(cbRef.current);
-    }, intervalMs);
+    const id = setInterval(run, intervalMs);
     return () => clearInterval(id);
-  }, [enabled, intervalMs, pauseWhileInputActive]);
+  }, [enabled, intervalMs, run]);
 
   // Immediate refresh on regaining the foreground (browser focus/visibility +
   // Tauri native focus), so returning to the tab doesn't wait out the interval.
-  useRefreshOnFocus(() => {
-    if (pollPausedForActiveInput(pauseWhileInputActive)) return;
-    return cbRef.current();
-  }, { enabled });
+  useRefreshOnFocus(run, { enabled });
 }

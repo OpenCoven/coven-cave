@@ -1341,7 +1341,7 @@ export function Workspace() {
   // prerequisite failures — the shared reconciler's TTL breaker decides when a
   // tick becomes a real probe, so the status heals itself once Tailscale
   // comes up instead of latching stale until a manual Retry.
-  usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
+  usePausablePoll(() => reconcileMobileMode(mobileModeEnabled), 60_000, {
     enabled: mobileModeEnabled,
   });
 
@@ -1751,7 +1751,7 @@ export function Workspace() {
         loadFamiliarsReqRef.current,
       );
     try {
-      const res = await fetch("/api/familiars", { cache: "no-store" });
+      const res = await fetch("/api/familiars", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
       const json = await res.json();
       if (!isCurrent()) return;
       if (!json.ok) {
@@ -1787,7 +1787,7 @@ export function Workspace() {
   // only fires on daemonRunning TRANSITIONS, so a one-off fetch flake with the
   // daemon already "running" (e.g. it restarts right after the first familiar
   // is summoned) stranded the error screen until a manual Retry (issue #2990).
-  usePausablePoll(() => void loadFamiliars(), 4_000, {
+  usePausablePoll(() => loadFamiliars(), 4_000, {
     enabled: familiarsError !== null,
   });
 
@@ -1823,6 +1823,7 @@ export function Workspace() {
       const res = await fetch("/api/github/tasks", {
         method: force ? "POST" : "GET",
         cache: "no-store",
+        signal: force ? undefined : AbortSignal.timeout(15_000),
       });
       const json = await res.json().catch(() => null);
       const superseded = force
@@ -1886,7 +1887,7 @@ export function Workspace() {
         params.set("classifyFamiliarWorkspace", "1");
         if (capturedActiveId) params.set("familiarId", capturedActiveId);
         else params.set("collapseFamiliarWorkspace", "1");
-        const sessionsResult = await fetch(`/api/sessions/list?${params.toString()}`, { cache: "no-store" });
+        const sessionsResult = await fetch(`/api/sessions/list?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const json = await sessionsResult.json();
         if (!isCurrent()) return; // superseded by a newer load / scope change
         if (!json.ok) {
@@ -1971,10 +1972,10 @@ export function Workspace() {
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
-  usePausablePoll(() => void loadSessions(), 4000, {
+  usePausablePoll(() => loadSessions(), 4000, {
     pauseWhileInputActive: true,
   });
-  usePausablePoll(() => void loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
+  usePausablePoll(() => loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     pauseWhileInputActive: true,
   });
 
@@ -2453,7 +2454,7 @@ export function Workspace() {
   // already de-dupes via reconcileEscalations(). Pauses in a hidden tab.
   const refreshEscalations = useCallback(async () => {
     try {
-      const res = await fetch("/api/escalations", { cache: "no-store" });
+      const res = await fetch("/api/escalations", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
       const json = await res.json();
       if (json.ok && Array.isArray(json.items)) {
         const now = Date.now();
@@ -2476,7 +2477,7 @@ export function Workspace() {
   useEffect(() => {
     void refreshEscalations();
   }, [refreshEscalations]);
-  usePausablePoll(() => void refreshEscalations(), 30_000, {
+  usePausablePoll(() => refreshEscalations(), 30_000, {
     pauseWhileInputActive: true,
   });
 
@@ -2525,7 +2526,7 @@ export function Workspace() {
   useEffect(() => {
     void refreshOpenTaskCards();
   }, [refreshOpenTaskCards]);
-  usePausablePoll(() => void refreshOpenTaskCards(), 60_000, {
+  usePausablePoll(() => refreshOpenTaskCards(), 60_000, {
     pauseWhileInputActive: true,
   });
 

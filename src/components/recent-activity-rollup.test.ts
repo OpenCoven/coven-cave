@@ -34,7 +34,7 @@ assert.match(
 // sidebar; RecentActivityRollup must never add a mount or interval request.
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  /usePausablePoll\(\(\) => loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace owns the four-second session refresh interval",
 );
 // The rollup is no longer mounted anywhere: the full thread list is docked in

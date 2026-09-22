@@ -230,6 +230,9 @@ export function CommandPalette({
   const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
   const [salemError, setSalemError] = useState<string | null>(null);
   const [contentHits, setContentHits] = useState<ConversationHit[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState<string | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   // Global-search mode state (cave-ychtl.6). Active when the query carries a
   // structured filter, a shared link was restored, or Cmd/Ctrl+Enter broadened
   // the search; results then come from the coordinator via /api/search.
@@ -249,41 +252,18 @@ export function CommandPalette({
 
 
 
-  // Conversation content search (CHAT-D9-02 backend, surfaced here). Plain,
-  // unscoped queries of length ≥2 hit /api/chat/search, debounced ~250ms with a
-  // retype aborting the in-flight request — same shape the chat-list uses.
-  useEffect(() => {
-    const { token, rest } = parseFamiliarToken(query);
-    const text = rest.trim();
-    if (!open || token !== null || text.startsWith("/") || text.length < 2) {
-      setContentHits([]);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/chat/search?q=${encodeURIComponent(text)}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const json = await res.json().catch(() => ({ ok: false }));
-        if (controller.signal.aborted) return;
-        setContentHits(json.ok && Array.isArray(json.hits) ? (json.hits as ConversationHit[]) : []);
-      } catch {
-        /* aborted retype or network hiccup — a newer effect owns the state */
-      }
-    }, 250);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [open, query]);
-
   const updateQuery = (next: string) => {
     setQuery(next);
     onQueryChange?.(next);
     setSalemAnswer(null);
     setSalemError(null);
+  };
+
+  const retrySearch = () => {
+    // The retry button disappears as soon as loading begins. Hand keyboard
+    // focus back to the stable input before removing that focused element.
+    inputRef.current?.focus();
+    setSearchAttempt((attempt) => attempt + 1);
   };
 
   // ── Global-search mode (cave-ychtl.6) ────────────────────────────────────
@@ -338,9 +318,52 @@ export function CommandPalette({
     [globalModeActive, effectiveGlobalState],
   );
 
+  // Plain searches augment local matches with chat content. Structured search
+  // is owned by the coordinator, so it must not also start this unused read.
+  useEffect(() => {
+    const { token, rest } = parseFamiliarToken(query);
+    const text = rest.trim();
+    setContentHits([]);
+    setContentError(null);
+    if (!open || globalModeActive || token !== null || text.startsWith("/") || text.length < 2) {
+      setContentLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setContentLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/chat/search?q=${encodeURIComponent(text)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = await res.json();
+        if (controller.signal.aborted) return;
+        if (!res.ok || !json?.ok || !Array.isArray(json.hits)) {
+          throw new Error("Chat search failed");
+        }
+        setContentHits(json.hits as ConversationHit[]);
+      } catch {
+        if (!controller.signal.aborted) setContentError("Couldn't search chats. Local matches are still available.");
+      } finally {
+        if (!controller.signal.aborted) setContentLoading(false);
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, query, globalModeActive, searchAttempt]);
+
   // Coordinator-backed results, debounced and abortable (retype cancels).
   useEffect(() => {
-    if (!open || !globalStateKey || !effectiveGlobalState) return;
+    setGlobalResults([]);
+    setGlobalPartial(false);
+    setGlobalError(null);
+    if (!open || !globalStateKey || !effectiveGlobalState) {
+      setGlobalLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setGlobalLoading(true);
     setGlobalError(null);
@@ -368,7 +391,7 @@ export function CommandPalette({
           partial?: boolean;
         };
         if (controller.signal.aborted) return;
-        if (!json.ok) {
+        if (!res.ok || !json?.ok || !Array.isArray(json.results)) {
           setGlobalError("Search is unavailable right now.");
         } else {
           // The coordinator returns RankedResults (document nested); the
@@ -398,7 +421,7 @@ export function CommandPalette({
     };
     // effectiveGlobalState is stable because it derives from the key string.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, globalStateKey]);
+  }, [open, globalStateKey, searchAttempt]);
 
   const removeScopeChip = (scope: SearchScope) => {
     setRemovedScopeKeys((previous) => {
@@ -492,13 +515,14 @@ export function CommandPalette({
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
     let cancelled = false;
+    const controller = new AbortController();
 
     const loadBoardCorpus = async () => {
       try {
-        const boardRes = await fetch("/api/board", { cache: "no-store" });
+        const boardRes = await fetch("/api/board", { cache: "no-store", signal: controller.signal });
         const board = await boardRes.json();
         if (cancelled) return;
-        if (board.ok) setCards(board.cards ?? []);
+        if (boardRes.ok && board?.ok && Array.isArray(board.cards)) setCards(board.cards);
       } catch {
         /* board search stays independently usable from its last snapshot */
       }
@@ -506,10 +530,10 @@ export function CommandPalette({
 
     const loadFileMemoryCorpus = async () => {
       try {
-        const fsRes = await fetch("/api/memory", { cache: "no-store" });
+        const fsRes = await fetch("/api/memory", { cache: "no-store", signal: controller.signal });
         const fs = await fsRes.json();
         if (cancelled) return;
-        if (fs.ok) setFsMemory(fs.entries ?? []);
+        if (fsRes.ok && fs?.ok && Array.isArray(fs.entries)) setFsMemory(fs.entries);
       } catch {
         /* file-memory search stays independently usable from its last snapshot */
       }
@@ -520,7 +544,7 @@ export function CommandPalette({
       loadFileMemoryCorpus(),
     ]);
 
-    return () => { cancelled = true; clearTimeout(t); };
+    return () => { cancelled = true; controller.abort(); clearTimeout(t); };
   }, [open]);
 
   // Keep the keyboard-highlighted option visible: arrowing past the bottom of
@@ -1321,6 +1345,18 @@ export function CommandPalette({
         {globalModeActive && globalError ? (
           <div role="alert" className="border-b border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-danger)]">
             {globalError}
+            <button type="button" className="ui-btn ui-btn--sm ml-2" aria-label="Retry global search" onClick={retrySearch}>Retry</button>
+          </div>
+        ) : null}
+        {!globalModeActive && contentLoading ? (
+          <div role="status" className="border-b border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            Searching chats…
+          </div>
+        ) : null}
+        {!globalModeActive && contentError ? (
+          <div role="alert" className="border-b border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--danger-text)]">
+            {contentError}
+            <button type="button" className="ui-btn ui-btn--sm ml-2" aria-label="Retry chat search" onClick={retrySearch}>Retry</button>
           </div>
         ) : null}
         {globalModeActive && globalPartial && !globalError ? (
@@ -1329,9 +1365,9 @@ export function CommandPalette({
           </div>
         ) : null}
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {globalModeActive
+          {globalModeActive && !globalLoading && !globalError
             ? `${globalResults.length} result${globalResults.length === 1 ? "" : "s"} in global search`
-            : resultSummary}
+            : !globalModeActive && !contentLoading && !contentError ? resultSummary : ""}
         </div>
         <ul
           id="command-palette-listbox"

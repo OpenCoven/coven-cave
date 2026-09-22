@@ -544,17 +544,17 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  /usePausablePoll\(\(\) => loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace pauses the heavy sessions poll while a mobile text input is active",
 );
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void refreshEscalations\(\), 30_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  /usePausablePoll\(\(\) => refreshEscalations\(\), 30_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace pauses the escalation poll while a mobile text input is active",
 );
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  /usePausablePoll\(\(\) => refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace pauses the task-card poll while a mobile text input is active",
 );
 assert.match(

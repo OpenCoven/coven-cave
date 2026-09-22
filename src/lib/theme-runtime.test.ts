@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import * as themeRuntime from "./theme-runtime.ts";
 
 import {
   activeCustomThemeVariables,
@@ -10,6 +11,48 @@ import {
   themeRuntimeSignature,
 } from "./theme-runtime.ts";
 import { applyPreferencesPatch, createDefaultPreferences } from "./preferences-schema.ts";
+
+// Theme swaps commit without a page-wide color crossfade. Restoration is
+// cancellable so a quick second selection or unmount cannot strand the rule.
+assert.equal(typeof themeRuntime.applyThemeWithoutTransitions, "function");
+{
+  const order = [];
+  const frames = new Map();
+  let sequence = 0;
+  const style = { textContent: "", remove: () => order.push("remove") };
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {
+    createElement: () => style,
+    head: { append: () => order.push("append") },
+    documentElement: { get offsetHeight() { order.push("flush"); return 1; } },
+  } });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {
+    requestAnimationFrame: callback => { frames.set(++sequence, callback); return sequence; },
+    cancelAnimationFrame: id => frames.delete(id),
+  } });
+  try {
+    const restore = themeRuntime.applyThemeWithoutTransitions(() => order.push("apply"));
+    assert.deepEqual(order, ["append", "apply", "flush"]);
+    assert.match(style.textContent, /transition:none\s*!important/);
+    frames.get(1)();
+    assert.equal(order.includes("remove"), false);
+    frames.get(2)();
+    assert.equal(order.at(-1), "remove");
+    restore();
+    assert.equal(order.filter(step => step === "remove").length, 1);
+    const cancel = themeRuntime.applyThemeWithoutTransitions(() => {});
+    cancel();
+    assert.equal(frames.has(sequence), false);
+    assert.throws(() => themeRuntime.applyThemeWithoutTransitions(() => { throw new Error("failed apply"); }), /failed apply/);
+    assert.equal(order.at(-1), "remove");
+  } finally {
+    if (previousDocument) Object.defineProperty(globalThis, "document", previousDocument);
+    else delete globalThis.document;
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else delete globalThis.window;
+  }
+}
 
 const custom = {
   name: "Two mode",

@@ -7,6 +7,8 @@ import type { SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
 
 const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "marketplace", "grimoire", "agents"];
 
+type WarmupConnection = EventTarget & { saveData?: boolean; effectiveType?: string };
+
 function scheduleIdle(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   const idle = window as Window & {
@@ -34,8 +36,12 @@ export function useSurfaceWarmup(): void {
     let cursor = 0;
     let active = false;
     let backpressured = false;
+    // Optional in Safari and native webviews. A missing signal keeps the
+    // normal idle warmup; constrained connections reserve bandwidth for intent.
+    const connection = (navigator as Navigator & { connection?: WarmupConnection }).connection;
+    const constrained = () => connection?.saveData === true || connection?.effectiveType === "2g" || connection?.effectiveType === "slow-2g";
 
-    const runnable = () => !cancelled && !backpressured && !document.hidden && navigator.onLine !== false;
+    const runnable = () => !cancelled && !backpressured && !document.hidden && navigator.onLine !== false && !constrained();
     const runNext = () => {
       if (active || !runnable() || cursor >= ORDER.length) return;
       const surface = ORDER[cursor++];
@@ -84,6 +90,7 @@ export function useSurfaceWarmup(): void {
       abortWarm();
     };
     const onVisibility = () => (document.hidden ? pause() : resume());
+    const onConnectionChange = () => (constrained() ? pause() : resume());
     // Board writes can originate outside BoardView (for example, Home's quick
     // task composer). Keep a completed background snapshot from surviving one
     // of those writes until its TTL expires. This listener is workspace-owned,
@@ -99,8 +106,9 @@ export function useSurfaceWarmup(): void {
     // a warmed roster too, so don't keep a fresh pre-mutation snapshot for its
     // 30-second TTL.
     const onFamiliarsRefresh = () => invalidateIfDefined("github:familiars");
-    const raf = window.requestAnimationFrame(() => window.requestAnimationFrame(begin));
+    let raf = window.requestAnimationFrame(() => { raf = window.requestAnimationFrame(begin); });
     document.addEventListener("visibilitychange", onVisibility);
+    connection?.addEventListener("change", onConnectionChange);
     window.addEventListener("online", resume);
     window.addEventListener("offline", pause);
     window.addEventListener("cave:board:reload", onBoardReload);
@@ -112,6 +120,7 @@ export function useSurfaceWarmup(): void {
       cancelIdle();
       abortWarm();
       document.removeEventListener("visibilitychange", onVisibility);
+      connection?.removeEventListener("change", onConnectionChange);
       window.removeEventListener("online", resume);
       window.removeEventListener("offline", pause);
       window.removeEventListener("cave:board:reload", onBoardReload);

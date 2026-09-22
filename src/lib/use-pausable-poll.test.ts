@@ -14,7 +14,7 @@ assert.match(
 // ── Recurring poll pauses while the tab is hidden ────────────────────────────
 assert.match(
   src,
-  /const id = setInterval\(\(\) => \{[\s\S]*?if \(typeof document !== "undefined" && document\.hidden\) return;[\s\S]*?runRefreshSafely\(cbRef\.current\);[\s\S]*?\}, intervalMs\)/,
+  /const run = useCallback\([\s\S]*?if \(typeof document !== "undefined" && document\.hidden\) return;[\s\S]*?runRefreshSafely\(async \(\) =>[\s\S]*?await cbRef\.current\(\);[\s\S]*?const id = setInterval\(run, intervalMs\)/,
   "the interval skips the callback while the tab is hidden and contains rejected promises",
 );
 assert.match(
@@ -51,13 +51,13 @@ assert.match(src, /if \(!enabled\) return;/, "passing { enabled: false } suspend
 assert.match(src, /import \{ runRefreshSafely, useRefreshOnFocus \} from "@\/lib\/use-refresh-on-focus"/, "composes the existing focus hook and its async rejection guard");
 assert.match(
   src,
-  /useRefreshOnFocus\(\(\) => \{[\s\S]*?if \(pollPausedForActiveInput\(pauseWhileInputActive\)\) return;[\s\S]*?return cbRef\.current\(\);[\s\S]*?\}, \{ enabled \}\)/,
+  /useRefreshOnFocus\(run, \{ enabled \}\)/,
   "foreground refresh also respects active input composition",
 );
 assert.doesNotMatch(src, /addEventListener\("visibilitychange"/, "no hand-rolled visibilitychange listener — that lives in useRefreshOnFocus");
 
 // ── Stable interval across callback identity changes ─────────────────────────
 assert.match(src, /const cbRef = useRef\(callback\);\s*cbRef\.current = callback;/, "the callback is read via a ref so the interval isn't torn down each render");
-assert.match(src, /\}, \[enabled, intervalMs, pauseWhileInputActive\]\)/, "the poll effect depends only on enabled + intervalMs + input-pause mode");
+assert.match(src, /\}, \[enabled, intervalMs, run\]\)/, "the poll effect depends on its stable shared callback");
 
 console.log("use-pausable-poll.test.ts: ok");
