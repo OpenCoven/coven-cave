@@ -23,7 +23,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -32,7 +31,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { isSidecarInternalEnvKey, scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 import { caveHome } from "./coven-paths.ts";
@@ -52,6 +51,8 @@ export type VaultScope = "shared" | string[];
 
 export type VaultEntry = {
   ref?: string;
+  /** A saved user choice, needed when a reference matches a legacy app default. */
+  providerAccessConfirmed?: boolean;
   storage?: VaultStorageId;
   description?: string;
   required?: boolean;
@@ -59,6 +60,36 @@ export type VaultEntry = {
 };
 
 export type VaultMap = Record<string, VaultEntry>;
+
+// These references shipped in older builds and could be copied into user state
+// without consent. Retain the entries, but require a deliberate reference save
+// before resolving them. Custom references and explicit map overrides retain
+// their existing behavior. This is a setup preference, not an authority grant.
+const LEGACY_SHIPPED_REFERENCES = new Set([
+  "op://Development/GitHub PAT/username",
+  "op://Development/OpenAI API Key 2/credential",
+  "op://Development/ElevenLabs API Key/credential",
+]);
+const LEGACY_REFERENCE_REVIEW_MESSAGE =
+  "This reference matches an old Cave default. Review and save your own value or reference to allow access.";
+
+function needsReferenceConfirmation(entry: VaultEntry | undefined): boolean {
+  return !!entry?.ref
+    && entry.storage !== "encrypted"
+    && entry.storage !== "environment"
+    && LEGACY_SHIPPED_REFERENCES.has(entry.ref)
+    && entry.providerAccessConfirmed !== true
+    && !process.env.COVEN_VAULT_FILE?.trim();
+}
+
+function unconfirmedReferenceStatus(key: string, entry: VaultEntry): VaultMappingStatus {
+  return {
+    key, ref: entry.ref ?? null, description: entry.description ?? null,
+    storage: refStorage(entry.ref!), required: entry.required ?? false,
+    status: "unresolved", hasValue: false, needsConfirmation: true,
+    error: LEGACY_REFERENCE_REVIEW_MESSAGE,
+  };
+}
 
 export type VaultSecretSource = "process-env" | "env-local" | "vault" | null;
 
@@ -182,6 +213,7 @@ export type VaultMappingStatus = {
   required: boolean;
   status: VaultStatus;
   hasValue: boolean;  // true if currently resolvable — never exposes the value
+  needsConfirmation?: boolean;
   error?: string;
 };
 
@@ -206,7 +238,8 @@ function isBundle(): boolean {
  * rewrites this file) must target a writable per-user location. Writing into
  * the bundle breaks its signature seal → Gatekeeper rejects the app and the
  * in-place auto-updater can no longer replace it. In bundle mode the file lives
- * under `caveHome()`, seeded once from the bundle's shipped map.
+ * under `caveHome()`. A missing user map is empty: app-shipped mappings are
+ * never evidence that this user configured or authorized a secret provider.
  *
  * Resolution (first hit wins): `COVEN_VAULT_FILE` → bundle path → `<cwd>/vault.yaml`.
  */
@@ -215,34 +248,6 @@ function vaultYamlPath(): string {
   if (override) return override;
   if (isBundle()) return join(/* turbopackIgnore: true */ caveHome(), "vault.yaml");
   return join(/* turbopackIgnore: true */ process.cwd(), "vault.yaml");
-}
-
-/** Read-only vault map shipped inside the bundle (cwd at runtime). */
-function bundledSeedVaultPath(): string {
-  return join(/* turbopackIgnore: true */ process.cwd(), "vault.yaml");
-}
-
-let _vaultSeedChecked = false;
-
-/** First-run seed for bundle mode: copy the bundle's shipped reference map into
- *  the writable location once. Existence is the "seeded" marker. No-op outside
- *  bundle mode or when `COVEN_VAULT_FILE` is set. */
-function seedVaultIfNeeded(): void {
-  if (!isBundle()) return;
-  if (process.env.COVEN_VAULT_FILE?.trim()) return;
-  if (_vaultSeedChecked) return;
-  _vaultSeedChecked = true;
-  const dest = vaultYamlPath();
-  if (existsSync(/* turbopackIgnore: true */ dest)) return;
-  const seed = bundledSeedVaultPath();
-  if (resolve(/* turbopackIgnore: true */ seed) === resolve(/* turbopackIgnore: true */ dest)) return;
-  try {
-    if (!existsSync(/* turbopackIgnore: true */ seed)) return;
-    mkdirSync(/* turbopackIgnore: true */ dirname(dest), { recursive: true });
-    copyFileSync(/* turbopackIgnore: true */ seed, dest);
-  } catch {
-    // Best-effort: a failed seed just means the map starts empty.
-  }
 }
 
 // ── Vault loader ──────────────────────────────────────────────────────────────
@@ -276,13 +281,11 @@ function readVaultMap(strict: boolean): VaultMap {
 
 export function loadVaultMap(force = false): VaultMap {
   if (_vaultMap && !force) return _vaultMap;
-  seedVaultIfNeeded();
   _vaultMap = readVaultMap(false);
   return _vaultMap;
 }
 
 export function loadVaultMapForMutation(): VaultMap {
-  seedVaultIfNeeded();
   _vaultMap = readVaultMap(true);
   return _vaultMap;
 }
@@ -306,6 +309,9 @@ export function saveVaultMap(map: VaultMap): void {
     "# Safe to commit; contains no credentials.",
     "",
   ];
+  // A comments-only document parses as null, which strict reads correctly
+  // reject. Removing the final mapping must persist a valid empty object.
+  if (Object.keys(map).length === 0) lines.push("{}", "");
   for (const [key, entry] of Object.entries(map)) {
     lines.push(`${key}:`);
     if (entry.storage === "encrypted") {
@@ -314,6 +320,7 @@ export function saveVaultMap(map: VaultMap): void {
       lines.push('  storage: "environment"');
     } else if (entry.ref) {
       lines.push(`  ref: "${entry.ref}"`);
+      if (entry.providerAccessConfirmed === true) lines.push("  providerAccessConfirmed: true");
     }
     if (entry.description) lines.push(`  description: "${entry.description.replace(/"/g, "'")}"`);
     if (entry.required) lines.push(`  required: true`);
@@ -522,6 +529,7 @@ export function resolveVaultManagedSecret(
 ): string | undefined {
   if (!entry) return undefined;
   if (entry.storage === "environment") return undefined;
+  if (needsReferenceConfirmation(entry)) return undefined;
 
   // The map's declared backend wins: a ref mapping is never shadowed by a
   // stale/orphaned entry in the local encrypted store.
@@ -538,6 +546,7 @@ export function resolveCachedVaultManagedSecret(
   options?: VaultResolutionOptions,
 ): string | undefined {
   if (!entry || entry.storage === "environment") return undefined;
+  if (needsReferenceConfirmation(entry)) return undefined;
   const rawCurrent = process.env[key];
   const current = rawCurrent?.trim();
   if (
@@ -569,12 +578,11 @@ type ResolvedSecret = {
 
 /** Resolve one key with the same precedence used by every secret consumer. */
 function resolveSecretWithSource(key: string, map = loadVaultMap()): ResolvedSecret | undefined {
+  const entry = map[key];
   const rawProcessValue = process.env[key];
   const fromProcess = rawProcessValue?.trim();
-  if (fromProcess) {
-    const mirrored = rawProcessValue
-      ? currentMirroredMetadata(key, rawProcessValue)
-      : null;
+  const mirrored = rawProcessValue ? currentMirroredMetadata(key, rawProcessValue) : null;
+  if (fromProcess && !(mirrored?.source === "vault" && needsReferenceConfirmation(entry))) {
     return {
       value: fromProcess,
       source: mirrored?.source ?? "process-env",
@@ -593,7 +601,6 @@ function resolveSecretWithSource(key: string, map = loadVaultMap()): ResolvedSec
     return { value: fromFile, ...metadata };
   }
 
-  const entry = map[key];
   if (entry?.storage === "environment") return undefined;
   const value = entry
     ? resolveVaultManagedSecret(key, entry)
@@ -664,6 +671,12 @@ export function getSecretStatus(key: string): VaultSecretStatus {
     };
   }
 
+  if (entry && needsReferenceConfirmation(entry)) {
+    return {
+      key, status: "unresolved", hasValue: false, storage: refStorage(entry.ref!),
+      source: "vault", error: LEGACY_REFERENCE_REVIEW_MESSAGE,
+    };
+  }
   const storage = entry?.storage === "encrypted" || (
     entry?.storage !== "environment"
     && !entry?.ref
@@ -703,11 +716,14 @@ export function canResolve(key: string): boolean {
 
 /** Check whether a key appears configured without reading or caching its value. */
 export function hasConfiguredSecretMetadata(key: string): boolean {
-  if (process.env[key]?.trim()) return true;
-  if (readEnvLocalValue(key) !== undefined) return true;
-
   const map = loadVaultMap();
   const entry = map[key];
+  const rawProcessValue = process.env[key];
+  const mirrored = rawProcessValue ? currentMirroredMetadata(key, rawProcessValue) : null;
+  if (rawProcessValue?.trim() && !(mirrored?.source === "vault" && needsReferenceConfirmation(entry))) return true;
+  if (readEnvLocalValue(key) !== undefined) return true;
+
+  if (needsReferenceConfirmation(entry)) return false;
   if (entry?.storage === "environment") return true;
   if (entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)) return true;
   return !!entry?.ref;
@@ -743,6 +759,8 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
         status: "env-only" as VaultStatus, hasValue: true,
       };
     }
+
+    if (needsReferenceConfirmation(entry)) return unconfirmedReferenceStatus(key, entry);
 
     if (encryptedMapping || legacyEncryptedCandidate) {
       try {
@@ -813,7 +831,8 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     const mirrored = rawProcessValue
       ? currentMirroredMetadata(key, rawProcessValue)
       : null;
-    const fromEnvFile = processValue ? undefined : readEnvLocalValue(key);
+    const blockedCache = mirrored?.source === "vault" && needsReferenceConfirmation(entry);
+    const fromEnvFile = processValue && !blockedCache ? undefined : readEnvLocalValue(key);
     if (fromEnvFile) {
       mirrorVaultSecretToProcessEnv(key, fromEnvFile, { source: "env-local", storage: null });
     }
@@ -836,6 +855,8 @@ export function getVaultStatuses(): VaultMappingStatus[] {
         status: "env-only" as VaultStatus, hasValue: true,
       };
     }
+
+    if (needsReferenceConfirmation(entry)) return unconfirmedReferenceStatus(key, entry);
 
     if (processValue && mirrored?.source === "vault") {
       return {

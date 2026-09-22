@@ -25,6 +25,33 @@ read-only:
 The target supported path requires no terminal step and reaches this result in
 under ten minutes.
 
+## Credentials belong to the user
+
+Fresh installs start with an empty Secret Vault. Cave never copies credential
+mappings from its application bundle into a user's configuration. A missing
+configuration is an ordinary setup state, not a reason to open 1Password.
+
+In a familiar's **Vault**, choose **Add environment variable**, enter its name
+and value, then choose **Save variable**. Several `KEY=value` lines can be pasted
+at once; review the detected names before choosing **Save variables**. Direct
+values are hidden while editing and encrypted on the device. Cancel saves
+nothing. A failed save retains the draft for correction or retry.
+
+**Storage and other options** contains optional 1Password and Dashlane
+references, or an existing environment value. A password-manager reference is
+used only after it has been saved; using it can prompt the user to unlock that
+provider. Opening or refreshing the Vault only inspects metadata. Existing
+launcher variables, `.env.local`, user-saved mappings, and an explicit
+`COVEN_VAULT_FILE` remain supported. Removing the last mapping leaves a valid
+empty configuration.
+
+Upgrades preserve existing writable user maps. Known references shipped by
+older Cave versions remain visible but unresolved until the user edits and
+saves the reference. The warning explains that the entry matches an old default;
+it does not assume the user created it. Reviewing metadata or changing a familiar
+grant never confirms provider access. Custom references and explicitly selected
+map files retain their behavior. Environment values continue to take precedence.
+
 ## Product vocabulary
 
 Primary onboarding copy should introduce only:
