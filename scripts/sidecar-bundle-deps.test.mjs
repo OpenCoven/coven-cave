@@ -183,10 +183,10 @@ assert.ok(
 );
 const sidecarMeasurement = declaredSidecarBudget.measurement;
 const measuredPlatforms = ["windows", "ubuntu", "macos"];
-assert.equal(sidecarMeasurement.on, "2026-09-02", "the release-candidate budget review date must not drift");
+assert.equal(sidecarMeasurement.on, "2026-09-22", "the release-candidate budget review date must not drift");
 assert.equal(
   sidecarMeasurement.reference,
-  "v0.3.13-rc.1 / GitHub Actions run 33587097523",
+  "v0.5.0-rc.2 / GitHub Actions run 35743277066",
   "the release-candidate budget must retain its governing evidence reference",
 );
 const governingMeasurement = Math.max(
@@ -238,12 +238,12 @@ for (const platform of measuredPlatforms) {
 }
 assert.equal(
   sidecarMeasurement.windowsObserved,
-  false,
-  "the failed rc.1 Windows runtime leg must remain explicitly identified as projected evidence",
+  true,
+  "the governing Windows count must be identified as observed candidate evidence",
 );
 assert.equal(
   sidecarMeasurement.releaseDelta.nextTraceFileCount,
-  18,
+  7,
   "the release delta must retain the measured Next trace growth",
 );
 assert.equal(
@@ -255,9 +255,14 @@ for (const platform of measuredPlatforms) {
   assert.equal(
     sidecarMeasurement[platform] - sidecarMeasurement.releaseDelta.baseline[platform],
     sidecarMeasurement.releaseDelta.fileCount,
-    `${platform} must move by exactly the reviewed v0.3.13 release delta`,
+    `${platform} must move by exactly the reviewed v0.5.0 candidate delta`,
   );
 }
+assert.equal(
+  Object.values(sidecarMeasurement.releaseDelta.generatedFileDeltas).reduce((total, count) => total + count, 0),
+  sidecarMeasurement.releaseDelta.fileCount,
+  "the same-machine generated-output inventory must account for the complete file-count delta",
+);
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [
   "dist/compiled/webpack/webpack-lib.js",
