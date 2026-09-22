@@ -265,6 +265,7 @@ const CLIENT_V1_DISCOVERY_NONCE =
       ).toString("base64url")
     : randomUUID();
 let clientV1DiscoveryPublished = false;
+let clientV1DiscoveryEndpoint = "";
 
 function standaloneCaveHome(): string {
   const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
@@ -820,6 +821,7 @@ function assertStandaloneDiscoveryTarget(path: string, windowsAclProbeDeadline?:
 }
 
 function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
+  clientV1DiscoveryEndpoint = endpoint;
   const windowsAclProbeDeadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -965,6 +967,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     ownsTemporaryPath = false;
     chmodSync(path, 0o600);
     clientV1DiscoveryPublished = true;
+    registerClientV1DiscoveryPublication(endpoint, null);
   } catch (error) {
     if (fd !== null) closeSync(fd);
     if (ownsTemporaryPath) rmSync(temporaryPath, { force: true });
@@ -1014,11 +1017,29 @@ function readLiveForeignDiscoveryOccupant(
  * Publication outcome for the Settings status route (status.ts), which runs
  * in this process but through Next's own module graph: a module-level flag
  * here is invisible there, so the registry lives on globalThis next to the
- * authority bootstrap. `republish` covers exactly one case — this process
+ * authority bootstrap. The publisher registers success and
+ * reportClientV1DiscoveryUnavailable registers failure, so every caller of
+ * either — listener readiness and republish alike — is covered without
+ * touching the listen block. `republish` covers exactly one case — this process
  * published, and another instance sharing the home has since removed the
  * record — and goes back through the publisher, which still refuses to
  * replace a live foreign record.
  */
+// Same rule as reportClientV1DiscoveryUnavailable: an unknown error is never
+// coerced. Only a genuine Error's own message is read, and even that
+// defensively, so a hostile thrown value cannot break the status registry.
+function describePublicationError(error: unknown): string {
+  if (error instanceof Error) {
+    try {
+      const message = error.message;
+      if (typeof message === "string" && message.length > 0) return message;
+    } catch {
+      // fall through to the fixed text
+    }
+  }
+  return "no diagnostic text was recorded";
+}
+
 function registerClientV1DiscoveryPublication(endpoint: string, error: unknown): void {
   const failure = error === null
     ? undefined
@@ -1026,7 +1047,7 @@ function registerClientV1DiscoveryPublication(endpoint: string, error: unknown):
       category: typeof error === "object" && error !== null
         ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other"
         : "disabled-other",
-      message: error instanceof Error ? error.message : String(error),
+      message: describePublicationError(error),
     };
   const publication: ClientV1DiscoveryPublication = {
     path: clientV1DiscoveryFile(),
@@ -1055,11 +1076,9 @@ function republishStandaloneClientV1DiscoveryRecord(endpoint: string): boolean {
       "[cave] client-v1 discovery record had been removed by another Cave instance"
       + " sharing this home; republished.",
     );
-    registerClientV1DiscoveryPublication(endpoint, null);
     return true;
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
-    registerClientV1DiscoveryPublication(endpoint, error);
     return false;
   }
 }
@@ -2374,6 +2393,7 @@ server.headersTimeout = 80_000;
  */
 function reportClientV1DiscoveryUnavailable(error: unknown): void {
   clientV1DiscoveryPublished = false;
+  registerClientV1DiscoveryPublication(clientV1DiscoveryEndpoint, error);
   const category = typeof error === "object" && error !== null
     ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other"
     : "disabled-other";
@@ -2402,10 +2422,8 @@ function reportClientV1DiscoveryUnavailable(error: unknown): void {
 server.listen(port, hostname, () => {
   try {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
-    registerClientV1DiscoveryPublication(loopbackHttpEndpoint(hostname, port), null);
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
-    registerClientV1DiscoveryPublication(loopbackHttpEndpoint(hostname, port), error);
   } finally {
     // A refused discovery record disables client v1, but pairing still gets
     // its own independent, fail-closed ownership verification.

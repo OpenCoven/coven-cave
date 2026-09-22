@@ -470,11 +470,19 @@ test("server refuses to replace a live foreign discovery record and records its 
     occupantCheck < temporaryWrite,
     "a live foreign record is refused before any byte is written",
   );
-  const listen = source.indexOf("server.listen(port, hostname");
+  const publisher = /function publishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(publisher, "server.ts must define publishStandaloneClientV1DiscoveryRecord");
   assert.match(
-    source.slice(listen, listen + 700),
-    /registerClientV1DiscoveryPublication\(loopbackHttpEndpoint\(hostname,\s*port\),\s*null\)[\s\S]*registerClientV1DiscoveryPublication\(loopbackHttpEndpoint\(hostname,\s*port\),\s*error\)/u,
-    "both publication outcomes reach the Settings status route",
+    publisher![0],
+    /clientV1DiscoveryPublished = true;\s*registerClientV1DiscoveryPublication\(endpoint, null\);/u,
+    "a successful publication reaches the Settings status route",
+  );
+  const report = /function reportClientV1DiscoveryUnavailable\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(report, "server.ts must define reportClientV1DiscoveryUnavailable");
+  assert.match(
+    report![0],
+    /clientV1DiscoveryPublished = false;\s*registerClientV1DiscoveryPublication\(clientV1DiscoveryEndpoint, error\);/u,
+    "a refused publication reaches the Settings status route with its category",
   );
   const republish = /function republishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/u.exec(source);
   assert.ok(republish, "server.ts must define republishStandaloneClientV1DiscoveryRecord");
