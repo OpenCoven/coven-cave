@@ -245,7 +245,7 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
   useEffect(() => {
     load();
   }, [load]);
-  usePausablePoll(load, 30_000);
+  usePausablePoll(load, 30_000, { serialize: true });
 
   // Server-rendered model is the first-paint seed; each poll rebuilds it from
   // the fresh inbox so needs-attention stays live.

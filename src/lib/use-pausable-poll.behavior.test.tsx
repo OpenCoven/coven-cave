@@ -10,8 +10,8 @@ vi.mock("@/lib/use-refresh-on-focus", async (original) => ({
 }));
 
 let renderer: ReactTestRenderer;
-function Probe({ refresh }: { refresh: () => void | Promise<void> }) {
-  usePausablePoll(refresh, 1000);
+function Probe({ refresh, serialize }: { refresh: () => void | Promise<void>; serialize?: boolean }) {
+  usePausablePoll(refresh, 1000, { serialize });
   return null;
 }
 
@@ -29,7 +29,7 @@ afterEach(async () => {
 test("polls and foreground refresh share one in-flight request", async () => {
   let complete!: () => void;
   const refresh = vi.fn(() => new Promise<void>(resolve => { complete = resolve; }));
-  await act(async () => { renderer = create(<Probe refresh={refresh} />); });
+  await act(async () => { renderer = create(<Probe refresh={refresh} serialize />); });
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(refresh).toHaveBeenCalledTimes(1);
   await act(async () => { foreground.refresh(); await vi.advanceTimersByTimeAsync(3000); });
@@ -42,10 +42,18 @@ test("polls and foreground refresh share one in-flight request", async () => {
 
 test("a rejected refresh releases the next poll and hidden focus stays quiet", async () => {
   const refresh = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
-  await act(async () => { renderer = create(<Probe refresh={refresh} />); });
+  await act(async () => { renderer = create(<Probe refresh={refresh} serialize />); });
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   expect(refresh).toHaveBeenCalledTimes(2);
   vi.stubGlobal("document", { hidden: true });
   await act(async () => { foreground.refresh(); await vi.advanceTimersByTimeAsync(1000); });
   expect(refresh).toHaveBeenCalledTimes(2);
+});
+
+test("existing unbounded callbacks keep polling unless serialization is explicitly enabled", async () => {
+  const refresh = vi.fn(() => new Promise<void>(() => {}));
+  await act(async () => { renderer = create(<Probe refresh={refresh} />); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); foreground.refresh(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(refresh).toHaveBeenCalledTimes(4);
 });

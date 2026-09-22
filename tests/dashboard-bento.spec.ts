@@ -122,6 +122,7 @@ test("failed metrics keep their last values and keyboard retry has a stable focu
   }).toBe(true);
   await page.setViewportSize({ width: 760, height: 720 });
   await expect(retry).toBeInViewport();
+  await expect(retry).toHaveCSS("border-top-width", "1px");
   await expect(stats.locator(".bd-stat-value")).toHaveText(["8", "8", "4", "2"]);
   await page.route("**/api/sessions/list**", route => route.fulfill({ json: { sessions: [] } }));
   await page.route("**/api/familiars", route => route.fulfill({ json: { familiars: [] } }));
@@ -208,6 +209,7 @@ test("carousel leads with the coven aggregate and pages through top familiars", 
   const dots = page.locator(".bd-carousel-dots button");
   await expect(dots).toHaveCount(5);
   await expect(dots.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(dots.nth(1)).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   // Next → the busiest familiar (Sage) with its weekly total.
   await page.getByRole("button", { name: "Next familiar chart" }).click();

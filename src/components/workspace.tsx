@@ -1341,7 +1341,7 @@ export function Workspace() {
   // prerequisite failures — the shared reconciler's TTL breaker decides when a
   // tick becomes a real probe, so the status heals itself once Tailscale
   // comes up instead of latching stale until a manual Retry.
-  usePausablePoll(() => reconcileMobileMode(mobileModeEnabled), 60_000, {
+  usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
     enabled: mobileModeEnabled,
   });
 
@@ -1788,6 +1788,7 @@ export function Workspace() {
   // daemon already "running" (e.g. it restarts right after the first familiar
   // is summoned) stranded the error screen until a manual Retry (issue #2990).
   usePausablePoll(() => loadFamiliars(), 4_000, {
+    serialize: true,
     enabled: familiarsError !== null,
   });
 
@@ -1973,9 +1974,11 @@ export function Workspace() {
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
   usePausablePoll(() => loadSessions(), 4000, {
+    serialize: true,
     pauseWhileInputActive: true,
   });
   usePausablePoll(() => loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
+    serialize: true,
     pauseWhileInputActive: true,
   });
 
@@ -2478,6 +2481,7 @@ export function Workspace() {
     void refreshEscalations();
   }, [refreshEscalations]);
   usePausablePoll(() => refreshEscalations(), 30_000, {
+    serialize: true,
     pauseWhileInputActive: true,
   });
 
@@ -2526,7 +2530,7 @@ export function Workspace() {
   useEffect(() => {
     void refreshOpenTaskCards();
   }, [refreshOpenTaskCards]);
-  usePausablePoll(() => refreshOpenTaskCards(), 60_000, {
+  usePausablePoll(() => void refreshOpenTaskCards(), 60_000, {
     pauseWhileInputActive: true,
   });
 

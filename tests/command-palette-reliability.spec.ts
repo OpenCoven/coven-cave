@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openPalette(page: Page) {
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.addInitScript(() => localStorage.setItem("cave:onboarding:dismissed", "1"));
   await page.route("**/api/familiars**", route => route.fulfill({ json: { ok: true, familiars: [] } }));
   await page.route("**/api/sessions/list**", route => route.fulfill({ json: { ok: true, sessions: [] } }));

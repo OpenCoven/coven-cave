@@ -19,8 +19,10 @@ import { runRefreshSafely, useRefreshOnFocus } from "@/lib/use-refresh-on-focus"
  * (e.g. only poll while a run is active). Pass `{ pauseWhileInputActive: true }`
  * for nonessential shell polls that should not compete with mobile composition.
  * The initial mount load stays the caller's job — this hook only schedules the
- * recurring poll + the on-return refresh. Return the callback's promise so
- * timer and foreground events share its in-flight work instead of overlapping.
+ * recurring poll + the on-return refresh. Opt into `serialize: true` only for
+ * callbacks that return a bounded promise (for example a fetch with a timeout).
+ * Timer and foreground triggers then share in-flight work. Initial/manual
+ * calls remain the caller's responsibility; other consumers keep their pacing.
  */
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
@@ -47,10 +49,11 @@ function pollPausedForActiveInput(pauseWhileInputActive: boolean): boolean {
 export function usePausablePoll(
   callback: () => void | Promise<void>,
   intervalMs: number,
-  opts?: { enabled?: boolean; pauseWhileInputActive?: boolean },
+  opts?: { enabled?: boolean; pauseWhileInputActive?: boolean; serialize?: boolean },
 ): void {
   const enabled = opts?.enabled ?? true;
   const pauseWhileInputActive = opts?.pauseWhileInputActive ?? false;
+  const serialize = opts?.serialize ?? false;
   // Read the latest callback via a ref so a changing callback identity doesn't
   // tear down and recreate the interval on every render.
   const cbRef = useRef(callback);
@@ -58,9 +61,14 @@ export function usePausablePoll(
   const inFlightRef = useRef(false);
 
   const run = useCallback(() => {
-    if (!enabled || inFlightRef.current) return;
+    if (!enabled) return;
     if (typeof document !== "undefined" && document.hidden) return;
     if (pollPausedForActiveInput(pauseWhileInputActive)) return;
+    if (!serialize) {
+      runRefreshSafely(cbRef.current);
+      return;
+    }
+    if (inFlightRef.current) return;
     inFlightRef.current = true;
     runRefreshSafely(async () => {
       try {
@@ -69,7 +77,7 @@ export function usePausablePoll(
         inFlightRef.current = false;
       }
     });
-  }, [enabled, pauseWhileInputActive]);
+  }, [enabled, pauseWhileInputActive, serialize]);
 
   useEffect(() => {
     if (!enabled) return;

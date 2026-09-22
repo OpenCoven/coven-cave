@@ -7,8 +7,8 @@ const src = readFileSync(new URL("./use-pausable-poll.ts", import.meta.url), "ut
 // ── Signature ────────────────────────────────────────────────────────────────
 assert.match(
   src,
-  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{ enabled\?: boolean; pauseWhileInputActive\?: boolean \},\s*\): void/,
-  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive }) returns void",
+  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{ enabled\?: boolean; pauseWhileInputActive\?: boolean; serialize\?: boolean \},\s*\): void/,
+  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive, serialize }) returns void",
 );
 
 // ── Recurring poll pauses while the tab is hidden ────────────────────────────
