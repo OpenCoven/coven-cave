@@ -79,3 +79,29 @@ test("a fenced proposal-review marker stays literal example text", async ({ page
   await expect(chat.getByRole("group", { name: /^Proposal review:/ })).toHaveCount(0);
   await expect(chat.locator("code", { hasText: "coven:proposal-review" }).first()).toBeVisible();
 });
+
+// A live marker and a fenced one in the same reply: fence tracking must not
+// leak across them. The fenced example uses verdict="permit" so a leaked
+// card would be unmistakable, and the live card must still be a receipt with
+// no interactive control of any kind.
+const FENCED_PERMIT = '<coven:proposal-review tool="fenced_example" verdict="permit" />';
+const MIXED_REPLY = [
+  "Here is the proposed patch.",
+  MARKER,
+  "The marker looks like this:",
+  "```text",
+  FENCED_PERMIT,
+  "```",
+  "That is example text.",
+].join("\n");
+
+test("a live marker and a fenced marker in one reply yield exactly one card", async ({ page }) => {
+  const chat = await setup(page, MIXED_REPLY);
+  await expect(chat.getByText("That is example text.", { exact: true })).toBeVisible();
+  const cards = chat.getByRole("group", { name: /^Proposal review:/ });
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toHaveAttribute("data-verdict", "proposal_only");
+  await expect(chat.locator('[data-verdict="permit"]')).toHaveCount(0);
+  await expect(chat.locator("pre, code").filter({ hasText: 'tool="fenced_example"' }).first()).toBeVisible();
+  await expect(cards.first().locator("button, a, input, [role=button], meter, progress")).toHaveCount(0);
+});
