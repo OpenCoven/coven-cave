@@ -40,7 +40,7 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
+  /visible: approveSplit\.restore\(\s*(?:stripProposalReviewMarkers\()?stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)\)?,/,
   "preview/GitHub/image markers strip unconditionally and LAST — after every control extractor has seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
