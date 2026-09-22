@@ -246,6 +246,8 @@ import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
 import { ChatApproveCard, type ApproveSubmissionResult } from "@/components/chat-approve-card";
 import { approveRequestKey, protectApproveMarkers, sliceApproveBlocks } from "@/lib/approve-blocks";
+import { ProposalReviewCard } from "@/components/proposal-review-card";
+import { proposalReviewKey, sliceProposalReviewBlocks } from "@/lib/proposal-review-blocks";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -8928,6 +8930,27 @@ function splitSegmentsForApprove(
   });
 }
 
+// Proposal-review receipts (#5520): evidence-only cards for a reviewer's
+// verdict on a proposed action. Runs OUTERMOST in the segment chain so every
+// earlier splitter sees the prose it always did; the card carries no handlers
+// because it grants nothing.
+function splitSegmentsForProposalReviews(
+  segments: MessageBubbleSegment[],
+): MessageBubbleSegment[] {
+  return segments.flatMap((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceProposalReviewBlocks(segment.text).map((piece, pieceIndex): MessageBubbleSegment =>
+      piece.kind === "text"
+        ? { kind: "text", text: piece.text }
+        : {
+            kind: "block",
+            key: `proposal-review-${segmentIndex}-${pieceIndex}-${proposalReviewKey(piece.review)}`,
+            node: <ProposalReviewCard review={piece.review} />,
+          },
+    );
+  });
+}
+
 function splitSegmentsForPreviews(
   segments: MessageBubbleSegment[],
   onOpenPreview?: (url: string) => void,
@@ -9546,24 +9569,26 @@ function TurnRowImpl({
     // Keep prompt/option backticks opaque to sibling Markdown-based parsers
     // without splitting image groups that span a question card.
     const protectedQuestions = protectApproveMarkers(visibleWithGh);
-    const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(
-        splitSegmentsForApprove(
-          splitSegmentsForImages(
-            splitSegmentsForPreviews(
-              splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
-              onOpenPreview,
-              onOpenUrl,
+    const split = splitSegmentsForProposalReviews(
+      splitSegmentsForGitHub(
+        splitSegmentsForArtifacts(
+          splitSegmentsForApprove(
+            splitSegmentsForImages(
+              splitSegmentsForPreviews(
+                splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+                onOpenPreview,
+                onOpenUrl,
+              ),
             ),
+            (text) => handlersRef.current.sendApprovalAnswers(turn.id, text),
+            approvalDisabledReason,
+            (text) => protectedQuestions.restore(text, true),
           ),
-          (text) => handlersRef.current.sendApprovalAnswers(turn.id, text),
-          approvalDisabledReason,
-          (text) => protectedQuestions.restore(text, true),
+          artifactCtx,
         ),
-        artifactCtx,
+        onOpenUrl,
+        ghFamiliar,
       ),
-      onOpenUrl,
-      ghFamiliar,
     );
     renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
 

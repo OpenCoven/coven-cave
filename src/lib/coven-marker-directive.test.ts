@@ -212,3 +212,22 @@ assert.match(
 );
 
 console.log("coven-marker-directive: all assertions passed");
+
+// ── Proposal-review receipts (#5520): directive ↔ parser lockstep ─────────
+{
+  const { sliceProposalReviewBlocks } = await import("./proposal-review-blocks.ts");
+  const example = directive.match(/<coven:proposal-review\s[^>]*\/>/)?.[0];
+  assert.ok(example, "directive teaches a real proposal-review marker");
+  const piece = sliceProposalReviewBlocks(example!)[0];
+  assert.equal(piece?.kind, "proposal-review", "the taught example parses as a review");
+  if (piece?.kind === "proposal-review") {
+    assert.equal(piece.review.tool, "propose_patch");
+    assert.equal(piece.review.verdict, "proposal_only");
+    assert.equal(piece.review.answers.length, 4);
+    assert.equal(piece.review.answers[0]?.confidence, 0.93);
+  }
+  assert.match(directive, /permit, proposal_only, reject, or unavailable/);
+  assert.match(directive, /1–6 id:answer:confidence triples/);
+  assert.match(directive, /offers no approve or deny control, and grants no execution authority/);
+  assert.match(directive, /never describe a permit verdict as permission to act/);
+}

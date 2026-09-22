@@ -265,7 +265,7 @@ test("the shared projection extracts research and strips display markers only af
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*(?:stripProposalReviewMarkers\()?stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)\)?,/,
     "research extraction and preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
   );
 });
