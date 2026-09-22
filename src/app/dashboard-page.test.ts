@@ -52,7 +52,7 @@ assert.doesNotMatch(
   /\/api\/github\/assigned/,
   "github rail does not merge an independently capped feed into the completeness-aware activity response",
 );
-assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared pausable interval");
+assert.match(bento, /usePausablePoll\(load, 30_000, \{ serialize: true \}\)/, "bounded Dashboard refreshes opt into the shared serialized interval");
 assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
   bento,

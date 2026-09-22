@@ -62,8 +62,8 @@
   gap: 1px;
 }
 
-/* Neutral resets — the design is all text-styled controls. */
-.bento-dash button {
+/* Neutral resets for dashboard controls. Shared buttons keep their chrome. */
+.bento-dash button:where(:not(.ui-btn)) {
   appearance: none;
   border: 0;
   margin: 0;

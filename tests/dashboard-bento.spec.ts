@@ -106,6 +106,34 @@ test("stat tiles read live totals and the streak pips render", async ({ page }) 
   await expect(page.locator(".bd-pips-best")).toContainText(/best \d+d/);
 });
 
+test("failed metrics keep their last values and keyboard retry has a stable focus destination", async ({ page }) => {
+  await gotoDashboard(page);
+  const stats = page.getByRole("region", { name: "Dashboard statistics" });
+  await expect(stats.locator(".bd-stat-value")).toHaveText(["8", "8", "4", "2"]);
+  await page.route("**/api/sessions/list**", route => route.fulfill({ status: 503, json: { ok: false } }));
+  await page.route("**/api/familiars", route => route.fulfill({ status: 503, json: { ok: false } }));
+  await page.route("**/api/projects", route => route.fulfill({ status: 503, json: { ok: false } }));
+  // The foreground hook is the user-visible refresh trigger. Initial source
+  // reads settle independently, so wait until a focus-triggered refresh owns it.
+  const retry = page.getByRole("button", { name: "Retry dashboard refresh" });
+  await expect.poll(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    return retry.isVisible();
+  }).toBe(true);
+  await page.setViewportSize({ width: 760, height: 720 });
+  await expect(retry).toBeInViewport();
+  await expect(retry).toHaveCSS("border-top-width", "1px");
+  await expect(stats.locator(".bd-stat-value")).toHaveText(["8", "8", "4", "2"]);
+  await page.route("**/api/sessions/list**", route => route.fulfill({ json: { sessions: [] } }));
+  await page.route("**/api/familiars", route => route.fulfill({ json: { familiars: [] } }));
+  await page.route("**/api/projects", route => route.fulfill({ json: { projects: [] } }));
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(stats).toBeFocused();
+  await expect(stats.locator(".bd-stat-value")).toHaveText(["0", "0", "0", "0"]);
+  await expect(retry).toHaveCount(0);
+});
+
 test("heatmap is an aria-expanded collapsible spanning the adaptive activity window", async ({ page }) => {
   await gotoDashboard(page);
 
@@ -181,6 +209,7 @@ test("carousel leads with the coven aggregate and pages through top familiars", 
   const dots = page.locator(".bd-carousel-dots button");
   await expect(dots).toHaveCount(5);
   await expect(dots.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(dots.nth(1)).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   // Next → the busiest familiar (Sage) with its weekly total.
   await page.getByRole("button", { name: "Next familiar chart" }).click();

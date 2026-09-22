@@ -39,7 +39,7 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /return \(\) => \{ cancelled = true; clearTimeout\(t\); \};/,
+  /return \(\) => \{ cancelled = true; controller\.abort\(\); clearTimeout\(t\); \};/,
   "closing the palette cancels the in-flight corpus refresh",
 );
 assert.doesNotMatch(

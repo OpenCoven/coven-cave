@@ -60,7 +60,7 @@ test("GitHub cache resources stay demand-loaded without a standalone sidebar war
 
 test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {
   const hook = await source("use-surface-warmup.ts");
-  assert.match(hook, /requestAnimationFrame\(\(\) => window\.requestAnimationFrame\(begin\)\)/);
+  assert.match(hook, /requestAnimationFrame\(\(\) => \{ raf = window\.requestAnimationFrame\(begin\); \}\)/);
   assert.match(hook, /document\.hidden/);
   assert.match(hook, /window\.addEventListener\("offline", pause\)/);
   assert.match(hook, /abortWarm\(\)/);

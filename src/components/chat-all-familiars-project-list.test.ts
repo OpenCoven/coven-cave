@@ -79,7 +79,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void loadGitHubTasks\(\), GITHUB_TASKS_POLL_MS/,
+  /usePausablePoll\(\(\) => loadGitHubTasks\(\), GITHUB_TASKS_POLL_MS/,
   "Workspace refreshes GitHub task context on its dedicated slow cadence",
 );
 assert.doesNotMatch(

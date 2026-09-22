@@ -19,6 +19,34 @@ function cssName(name: string): string {
   return name.startsWith("--") ? name : `--${name}`;
 }
 
+/** Commit a palette swap in one paint, then restore ordinary control motion. */
+export function applyThemeWithoutTransitions(apply: () => void): () => void {
+  const style = document.createElement("style");
+  style.textContent = "*,*::before,*::after{transition:none !important}";
+  document.head.append(style);
+  let frame = 0;
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    window.cancelAnimationFrame(frame);
+    style.remove();
+  };
+  try {
+    apply();
+    // Flush the new palette while transitions are disabled. Restore after its
+    // first paint; the caller also restores on a newer selection or unmount.
+    void document.documentElement.offsetHeight;
+    frame = window.requestAnimationFrame(() => {
+      frame = window.requestAnimationFrame(restore);
+    });
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  return restore;
+}
+
 /** Resolve an explicit choice, or the current OS choice when following system. */
 export function resolveThemeMode(
   theme: Pick<CaveThemePreferences, "modePreference">,

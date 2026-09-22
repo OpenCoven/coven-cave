@@ -7,15 +7,7 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-### Added
-- **Client v1 release gates** (#4781). Release and candidate validation now
-  verify the committed Client v1 contract fixture against source and run the
-  Client v1 release smoke against the freshly built server before any
-  installer or updater manifest is produced. `docs/client-v1-release.md`
-  documents the compatibility metadata a release advertises and what those
-  gates prove.
-
-## [0.5.0] - 2026-09-16
+## [0.5.0] - 2026-09-22
 
 > The Needs-you inbox, and a pass that removes what the app could not back.
 
@@ -25,6 +17,12 @@ after v0.4.2 was published and missed that cut — it has been on `main`,
 unreleased, since 2026-09-14.
 
 ### Added
+- **Client v1 release gates** (#4781). Release and candidate validation now
+  verify the committed Client v1 contract fixture against source and run the
+  Client v1 release smoke against the freshly built server before any
+  installer or updater manifest is produced. `docs/client-v1-release.md`
+  documents the compatibility metadata a release advertises and what those
+  gates prove.
 - **The Needs-you inbox** (#5411). Replaces the running-activity popover in the
   desktop menu bar. It drops `running` entirely and shows only what cannot
   advance without you, ordered oldest-wait-first. Rows compose through the same
@@ -35,6 +33,10 @@ unreleased, since 2026-09-14.
   until they click the bell.
 
 ### Changed
+- Theme changes apply together without briefly animating through mixed colors
+  (#5456).
+- Background surface preloading pauses when data saver is enabled or a 2G
+  connection is reported, and resumes when the connection recovers (#5456).
 - Settings loads its sections on demand, and the summary and controls now read
   one source instead of two (#5421, #5424).
 - The Dashboard's loading path is simpler and its attention states stay
@@ -49,6 +51,13 @@ unreleased, since 2026-09-14.
 - Settings controls that were present but did nothing (#5421).
 
 ### Fixed
+- Search clears outdated results as you type, reports failed searches with a
+  retry action, and avoids a redundant chat search for structured queries
+  (#5456).
+- Dashboard refresh failures preserve the last loaded counts, identify partial
+  data, and offer retry without waiting for slow sibling requests (#5456).
+- Core workspace polling waits for a pending refresh before starting another
+  from its timer or a window-focus event (#5456).
 - Sessions grouping labels are fully readable again (#5437).
 - The command palette stops its conversation search when dismissed, instead of
   leaving it running (#5428).
