@@ -36,7 +36,7 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*(?:stripProposalReviewMarkers\()?stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)\)?,/,
   "preview/image/GitHub markers strip unconditionally and LAST, after all control extraction — raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
