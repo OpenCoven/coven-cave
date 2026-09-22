@@ -1,15 +1,15 @@
 {
   "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
   "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
-  "fileCount": 7351,
+  "fileCount": 7601,
   "measurement": {
-    "on": "2026-09-02",
-    "reference": "v0.3.13-rc.1 / GitHub Actions run 33587097523",
+    "on": "2026-09-22",
+    "reference": "v0.5.0-rc.2 / GitHub Actions run 35743277066",
     "governingPlatform": "windows",
-    "windows": 7201,
-    "windowsObserved": false,
-    "ubuntu": 7198,
-    "macos": 7194,
+    "windows": 7451,
+    "windowsObserved": true,
+    "ubuntu": 7447,
+    "macos": 7443,
     "headroom": 150,
     "featureDelta": {
       "fileCount": 139,
@@ -34,19 +34,34 @@
       }
     },
     "releaseDelta": {
-      "fileCount": 327,
-      "nextTraceFileCount": 18,
-      "changedAppFileCount": 64,
-      "addedRouteCount": 18,
+      "fileCount": 191,
+      "nextTraceFileCount": 7,
+      "changedAppFileCount": 31,
+      "addedRouteCount": 7,
       "runtimeKind": "generated-next-output",
       "nativeOrPlatformSubtree": false,
       "tracedPackageCountChanged": false,
+      "baselineReference": "v0.5.0-rc.1 / GitHub Actions run 35121097012",
       "baseline": {
-        "windows": 6874,
-        "ubuntu": 6871,
-        "macos": 6867
+        "windows": 7260,
+        "ubuntu": 7256,
+        "macos": 7252
+      },
+      "generatedFileDeltas": {
+        ".next/server/app": 39,
+        ".next/server/chunks": 89,
+        ".next/static/chunks": 63
+      },
+      "localComparison": {
+        "platform": "macos-arm64",
+        "baselineCommit": "c5bd11f7efcc6ecddcbe879b9bd186537b44e7c3",
+        "candidateCommit": "2b1a81c2fc268564273ae06f2e24bf37d788bbbc",
+        "baselineUnpackedBytes": 123297593,
+        "candidateUnpackedBytes": 125383342,
+        "dependencyAndNativeFileCountsChanged": false,
+        "runtimeRootFileCountsChanged": false
       }
     },
-    "headroomRationale": "v0.3.13-rc.1 measured 7,194 files on macOS and 7,198 on Ubuntu after 140 mainline commits. Both platforms increased by exactly 327 files over the last successful candidate (6,867 and 6,871), while Next trace files increased from 335 to 353 and traced package counts remained unchanged. The delta is generated .next server/static output from 64 changed src/app files, including 18 added routes; no forbidden root, dependency subtree, native subtree, source map, or test tree entered the closure. The Windows job failed before assembly, so its 7,201 baseline is the prior measured 6,874 plus the identical 327-file cross-platform delta. Preserve the established 150-file headroom from that conservative Windows projection, yielding 7,351. A clean zero-warning Turbopack build still measured 7,194 files on macOS, independently proving the sidecar increase is ordinary generated application output rather than broad filesystem tracing. The expanded-byte ceiling remains unchanged."
+    "headroomRationale": "v0.5.0-rc.2 measured 7,443 files on macOS, 7,447 on Linux, and 7,451 on Windows: exactly 191 above rc.1 on each platform. Windows is observed, not projected. A clean same-machine rc.1 reconstruction reproduced 7,252 files; its inventory comparison accounts for the complete net file-count growth in generated .next output: server/app +39, server/chunks +89, static/chunks +63. Seven new route/page traces (352 -> 359) and 31 changed src/app files accompany this growth. Traced package names, dependency/native subtree counts, and first-party runtime-root counts are unchanged; no development-only subtree entered the closure. Local expanded bytes increased by 2,085,749 to 125,383,342. Preserve the established 150-file headroom from the measured Windows maximum, yielding 7,601. The expanded-byte ceiling remains strictly below 200 MiB."
   }
 }
