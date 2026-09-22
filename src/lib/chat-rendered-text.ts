@@ -6,6 +6,7 @@ import { extractChatResultMarkers } from "./chat-result-markers.ts";
 import { splitReasoning } from "./chat-reasoning.ts";
 import { stripGitHubMarkers } from "./github-blocks.ts";
 import { stripImageMarkers } from "./image-blocks.ts";
+import { stripIncompleteProposalReviewMarker, stripProposalReviewMarkers } from "./proposal-review-blocks.ts";
 import {
   stripIncompletePreviewMarker,
   stripPreviewMarkers,
@@ -70,10 +71,10 @@ export function extractChatRenderedText(
 
   return {
     visible: approveSplit.restore(
-      stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(researchSplit.visible))),
+      stripProposalReviewMarkers(stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(researchSplit.visible)))),
       false,
     ),
-    cardText: approveSplit.restore(stripIncompletePreviewMarker(cardSource), true),
+    cardText: approveSplit.restore(stripIncompleteProposalReviewMarker(stripIncompletePreviewMarker(cardSource)), true),
     inlineReasoning: approveSplit.restore(reasoningSplit.reasoning, true),
     skillUpdates: skillSplit.updates,
     researchRuns: researchSplit.runs,

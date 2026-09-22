@@ -57,8 +57,10 @@ const VERDICTS: ReadonlySet<ProposalReviewVerdict> = new Set([
 ]);
 
 // A new protocol opener always belongs to its own marker, even after a broken
-// quote (same guard as approve-blocks.ts).
-const MARKER_RE = /<coven:proposal-review\b((?:\s+[a-zA-Z-]+="(?:(?!<\/?coven:)[^"])*")*)\s*\/?>/y;
+// quote (same guard as approve-blocks.ts). The marker is self-closing by
+// contract: a bare `>` never completes a receipt, so an ordinary opening tag
+// that happens to carry tool/q attributes is malformed and dropped.
+const MARKER_RE = /<coven:proposal-review\b((?:\s+[a-zA-Z-]+="(?:(?!<\/?coven:)[^"])*")*)\s*\/>/y;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 const ANSWER_ID_RE = /^[a-z][a-z0-9_-]*$/i;
 
@@ -175,6 +177,40 @@ export function sliceProposalReviewBlocks(text: string): ProposalReviewPiece[] {
   }
   pushText(text.slice(cursor));
   return pieces;
+}
+
+/**
+ * Prose-only projection for the streaming path: complete markers are removed
+ * (the settled renderer turns them into cards from `cardText`) and an
+ * unterminated tail is hidden so `<coven:proposal-review tool="…` never
+ * renders as response text while the stream is still writing it.
+ */
+export function stripProposalReviewMarkers(text: string): string {
+  if (!text || !text.includes("<coven:p")) return text;
+  if (!text.includes(OPENER)) return text;
+  const markers = scanMarkers(text);
+  if (markers.length === 0) return text;
+  let out = "";
+  let cursor = 0;
+  for (const marker of markers) {
+    out += text.slice(cursor, marker.start);
+    cursor = marker.end;
+  }
+  return out + text.slice(cursor);
+}
+
+/** Remove only an unterminated marker tail, preserving complete markers for
+ *  callers that still turn them into cards (mirrors stripIncompletePreviewMarker). */
+export function stripIncompleteProposalReviewMarker(text: string): string {
+  if (!text || !text.includes("<coven:p")) return text;
+  const tail = text.lastIndexOf("<coven:p");
+  if (tail === -1 || unquotedGtAfter(text, tail) !== -1) return text;
+  const fragment = text.slice(tail);
+  const afterName = fragment.slice(OPENER.length, OPENER.length + 1);
+  if (!OPENER.startsWith(fragment.slice(0, OPENER.length))) return text;
+  if (afterName && !/[\s/>]/.test(afterName)) return text;
+  if (markdownCodeRanges(text).some(([from, to]) => tail >= from && tail < to)) return text;
+  return text.slice(0, tail);
 }
 
 /** Stable identity for one review, for React keys and in-place updates. */

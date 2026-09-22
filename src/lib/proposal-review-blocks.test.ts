@@ -123,3 +123,26 @@ test("key: identity covers every rendered field", () => {
   assert.notEqual(proposalReviewKey(a.review), proposalReviewKey(b.review));
   assert.equal(proposalReviewKey(a.review), proposalReviewKey(sliceProposalReviewBlocks(MARKER)[0].kind === "proposal-review" ? (sliceProposalReviewBlocks(MARKER)[0] as { review: typeof a.review }).review : a.review));
 });
+
+// ── Review follow-ups (#5522) ────────────────────────────────────────────────
+test("slice: the marker is self-closing by contract; a bare > opening tag is dropped, not carded", () => {
+  const pieces = sliceProposalReviewBlocks(
+    'before <coven:proposal-review tool="propose_patch" q="addresses_task:yes:0.9"> after',
+  );
+  assert.deepEqual(pieces, [{ kind: "text", text: "before " }, { kind: "text", text: " after" }]);
+});
+
+test("strip: the streaming projection drops complete markers and hides a partial tail", async () => {
+  const { stripProposalReviewMarkers, stripIncompleteProposalReviewMarker } = await import("./proposal-review-blocks.ts");
+  assert.equal(stripProposalReviewMarkers(`a\n${MARKER}\nb`), "a\n\nb");
+  assert.equal(stripProposalReviewMarkers('a <coven:proposal-review tool="x" verdict="per'), "a ");
+  assert.equal(stripProposalReviewMarkers("no markers here"), "no markers here");
+  const fenced = ["```", MARKER, "```"].join("\n");
+  assert.equal(stripProposalReviewMarkers(fenced), fenced, "fenced example text is not stripped");
+  // The card source keeps complete markers and hides only the unterminated tail.
+  assert.equal(stripIncompleteProposalReviewMarker(`a ${MARKER} b`), `a ${MARKER} b`);
+  assert.equal(stripIncompleteProposalReviewMarker('a <coven:proposal-review tool="x'), "a ");
+  assert.equal(stripIncompleteProposalReviewMarker("a <coven:prop"), "a ", "any prefix of the tag name is a tail");
+  assert.equal(stripIncompleteProposalReviewMarker("a <coven:preview url=\"http://127.0.0.1/x"), "a <coven:preview url=\"http://127.0.0.1/x", "another marker's tail is not ours");
+  assert.equal(stripIncompleteProposalReviewMarker(fenced), fenced);
+});
