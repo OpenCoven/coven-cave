@@ -31,6 +31,7 @@ import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/status.ts";
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
@@ -541,7 +542,8 @@ type StandaloneDiscoveryPublicationFailure =
   | "root-symlink"
   | "target-not-file"
   | "endpoint-invalid"
-  | "authority-init";
+  | "authority-init"
+  | "target-owned-by-live-instance";
 
 // Keep diagnostic attribution separate from raw exception text and causes.
 const standaloneDiscoveryPublicationFailures =
@@ -869,6 +871,25 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
 
   const path = clientV1DiscoveryFile();
   assertStandaloneDiscoveryTarget(path, windowsAclProbeDeadline);
+  // The discovery file is a single slot per Cave home. Every server sharing
+  // the home — the packaged app, a `pnpm dev`, a second session's dev server,
+  // a daemon-less release smoke — used to overwrite whatever was there and
+  // then, on exit, delete its own record; the last one out left every
+  // survivor undiscoverable while it still believed it had published (#5517).
+  // A record owned by a live foreign process is therefore refused, not
+  // replaced. A stale record (dead pid, unreadable, malformed) is replaceable.
+  const occupant = readLiveForeignDiscoveryOccupant(path);
+  if (occupant) {
+    throw discoveryPublicationFailure(
+      "target-owned-by-live-instance",
+      new Error(
+        `Another Cave process (pid ${occupant.pid}) already owns ${path} and`
+        + ` points paired clients at ${occupant.endpoint}; this server (${endpoint})`
+        + " will not replace a live instance's record. Stop that instance and"
+        + " restart this one, or give each instance its own COVEN_CAVE_HOME.",
+      ),
+    );
+  }
   let record:
     | {
       version: 1;
@@ -948,6 +969,98 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     if (fd !== null) closeSync(fd);
     if (ownsTemporaryPath) rmSync(temporaryPath, { force: true });
     throw error;
+  }
+}
+
+function processIsLive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to someone else; still live.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * The live process, other than this one, whose record currently occupies the
+ * discovery slot — or null when the slot is free, stale, unreadable, or ours.
+ */
+function readLiveForeignDiscoveryOccupant(
+  path: string,
+): { pid: number; endpoint: string } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const { pid, nonce, endpoint } = parsed as {
+    pid?: unknown;
+    nonce?: unknown;
+    endpoint?: unknown;
+  };
+  if (nonce === CLIENT_V1_DISCOVERY_NONCE) return null;
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+  if (pid === process.pid || !processIsLive(pid)) return null;
+  return {
+    pid,
+    endpoint: typeof endpoint === "string" ? endpoint : "an unknown endpoint",
+  };
+}
+
+/**
+ * Publication outcome for the Settings status route (status.ts), which runs
+ * in this process but through Next's own module graph: a module-level flag
+ * here is invisible there, so the registry lives on globalThis next to the
+ * authority bootstrap. `republish` covers exactly one case — this process
+ * published, and another instance sharing the home has since removed the
+ * record — and goes back through the publisher, which still refuses to
+ * replace a live foreign record.
+ */
+function registerClientV1DiscoveryPublication(endpoint: string, error: unknown): void {
+  const failure = error === null
+    ? undefined
+    : {
+      category: typeof error === "object" && error !== null
+        ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other"
+        : "disabled-other",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  const publication: ClientV1DiscoveryPublication = {
+    path: clientV1DiscoveryFile(),
+    endpoint,
+    nonce: CLIENT_V1_DISCOVERY_NONCE,
+    published: clientV1DiscoveryPublished,
+    failure,
+    republish: () => republishStandaloneClientV1DiscoveryRecord(endpoint),
+  };
+  globalThis.__covenCaveClientV1Discovery = publication;
+}
+
+function republishStandaloneClientV1DiscoveryRecord(endpoint: string): boolean {
+  if (!clientV1DiscoveryPublished) return false;
+  try {
+    lstatSync(clientV1DiscoveryFile());
+    // A record appeared between the caller's read and this call; it may be a
+    // foreign instance's. Claim nothing — the next status read classifies it.
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
+  try {
+    publishStandaloneClientV1DiscoveryRecord(endpoint);
+    console.warn(
+      "[cave] client-v1 discovery record had been removed by another Cave instance"
+      + " sharing this home; republished.",
+    );
+    registerClientV1DiscoveryPublication(endpoint, null);
+    return true;
+  } catch (error) {
+    reportClientV1DiscoveryUnavailable(error);
+    registerClientV1DiscoveryPublication(endpoint, error);
+    return false;
   }
 }
 
@@ -2289,8 +2402,10 @@ function reportClientV1DiscoveryUnavailable(error: unknown): void {
 server.listen(port, hostname, () => {
   try {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
+    registerClientV1DiscoveryPublication(loopbackHttpEndpoint(hostname, port), null);
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
+    registerClientV1DiscoveryPublication(loopbackHttpEndpoint(hostname, port), error);
   } finally {
     // A refused discovery record disables client v1, but pairing still gets
     // its own independent, fail-closed ownership verification.

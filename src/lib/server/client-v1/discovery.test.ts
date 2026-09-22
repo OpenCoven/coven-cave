@@ -459,6 +459,29 @@ test("server lifecycle publishes only from listener readiness and performs nonce
   );
 });
 
+test("server refuses to replace a live foreign discovery record and records its publication outcome (#5517)", async () => {
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+  assert.match(source, /\| "target-owned-by-live-instance";/u, "the refusal has its own failure category");
+  const publish = source.indexOf("function publishStandaloneClientV1DiscoveryRecord(");
+  const occupantCheck = source.indexOf("readLiveForeignDiscoveryOccupant(path)", publish);
+  const temporaryWrite = source.indexOf("openSync(temporaryPath", publish);
+  assert.ok(occupantCheck > publish, "the publisher consults the live occupant");
+  assert.ok(
+    occupantCheck < temporaryWrite,
+    "a live foreign record is refused before any byte is written",
+  );
+  const listen = source.indexOf("server.listen(port, hostname");
+  assert.match(
+    source.slice(listen, listen + 700),
+    /registerClientV1DiscoveryPublication\(loopbackHttpEndpoint\(hostname,\s*port\),\s*null\)[\s\S]*registerClientV1DiscoveryPublication\(loopbackHttpEndpoint\(hostname,\s*port\),\s*error\)/u,
+    "both publication outcomes reach the Settings status route",
+  );
+  const republish = /function republishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(republish, "server.ts must define republishStandaloneClientV1DiscoveryRecord");
+  assert.match(republish![0], /if \(!clientV1DiscoveryPublished\) return false;/u, "republish only after an own publication");
+  assert.match(republish![0], /publishStandaloneClientV1DiscoveryRecord\(endpoint\)/u, "republish goes through the refusing publisher");
+});
+
 test("standalone authority boot is default-off, one-key, public-only, and fail-closed", async () => {
   const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
   const prepare = source.indexOf("await app.prepare()");
