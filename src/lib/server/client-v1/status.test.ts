@@ -6,6 +6,7 @@ import test from "node:test";
 import { CLIENT_V1_DISCOVERY_FILE } from "./discovery.ts";
 import {
   CLIENT_V1_DISCOVERY_UNAVAILABLE_DETAIL,
+  type ClientV1DiscoveryPublication,
   resolveClientV1DiscoveryStatus,
   resolveClientV1OwnershipWaiverStatus,
   resolveClientV1Status,
@@ -66,12 +67,90 @@ test("reports discovery available for a valid record published by a live process
   });
 });
 
-test("reports discovery unavailable with the banner detail when no record exists", async () => {
+test("reports discovery unavailable with the no-attempt detail when no record exists and nothing was recorded", async () => {
   await withScratchRoot(async (root) => {
-    assert.deepEqual(await resolveClientV1DiscoveryStatus(root), {
+    assert.deepEqual(await resolveClientV1DiscoveryStatus(root, undefined), {
       available: false,
       reason: CLIENT_V1_DISCOVERY_UNAVAILABLE_DETAIL,
     });
+  });
+});
+
+function publication(overrides: Partial<ClientV1DiscoveryPublication> = {}): ClientV1DiscoveryPublication {
+  return {
+    path: "/home/operator/.coven/cave/client-v1-discovery.json",
+    endpoint: "http://127.0.0.1:3000",
+    nonce: "status-test-nonce",
+    published: true,
+    ...overrides,
+  };
+}
+
+test("reports available when the record on disk is this process's own publication", async () => {
+  await withScratchRoot(async (root) => {
+    await writeFile(join(root, CLIENT_V1_DISCOVERY_FILE), JSON.stringify(v1Record()), "utf8");
+    assert.deepEqual(await resolveClientV1DiscoveryStatus(root, publication()), { available: true });
+  });
+});
+
+test("names the other live instance when its record occupies the slot (#5517)", async () => {
+  await withScratchRoot(async (root) => {
+    await writeFile(
+      join(root, CLIENT_V1_DISCOVERY_FILE),
+      JSON.stringify(v1Record({ nonce: "someone-elses-nonce", endpoint: "http://127.0.0.1:3020" })),
+      "utf8",
+    );
+    const status = await resolveClientV1DiscoveryStatus(root, publication());
+    assert.equal(status.available, false);
+    const reason = (status as { reason: string }).reason;
+    assert.match(reason, new RegExp(`Another Cave process \\(pid ${process.pid}\\)`, "u"));
+    assert.match(reason, /http:\/\/127\.0\.0\.1:3020/u);
+    assert.match(reason, /this server \(http:\/\/127\.0\.0\.1:3000\) is not discoverable/u);
+    assert.match(reason, /COVEN_CAVE_HOME/u);
+  });
+});
+
+test("explains a startup refusal with its category and message", async () => {
+  await withScratchRoot(async (root) => {
+    const status = await resolveClientV1DiscoveryStatus(root, publication({
+      published: false,
+      failure: {
+        category: "root-owner-shared",
+        message: "Client v1 discovery root must be owned by the current user.",
+      },
+    }));
+    assert.deepEqual(status, {
+      available: false,
+      reason: "Publication was refused when this server started (root-owner-shared): "
+        + "Client v1 discovery root must be owned by the current user. Repair the cause and restart.",
+    });
+  });
+});
+
+test("republishes when this process's record was removed by another instance", async () => {
+  await withScratchRoot(async (root) => {
+    let republished = 0;
+    const status = await resolveClientV1DiscoveryStatus(root, publication({
+      republish: () => {
+        republished += 1;
+        return true;
+      },
+    }));
+    assert.equal(republished, 1);
+    assert.deepEqual(status, { available: true });
+  });
+});
+
+test("reports published-then-removed when republication is unavailable or fails", async () => {
+  await withScratchRoot(async (root) => {
+    const withoutHook = await resolveClientV1DiscoveryStatus(root, publication());
+    assert.equal(withoutHook.available, false);
+    assert.match((withoutHook as { reason: string }).reason, /has since been removed/u);
+    assert.match((withoutHook as { reason: string }).reason, /client-v1-discovery\.json exited and cleaned it up/u);
+
+    const failing = await resolveClientV1DiscoveryStatus(root, publication({ republish: () => false }));
+    assert.equal(failing.available, false);
+    assert.match((failing as { reason: string }).reason, /Restart this server to publish it again/u);
   });
 });
 

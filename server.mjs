@@ -9787,6 +9787,7 @@ var CLIENT_V1_DISCOVERY_NONCE = CLIENT_V1_AUTHORITY_BOOTSTRAP && !("unavailable"
   CLIENT_V1_AUTHORITY_BOOTSTRAP.runtimeNonce
 ).toString("base64url") : randomUUID3();
 var clientV1DiscoveryPublished = false;
+var clientV1DiscoveryEndpoint = "";
 function standaloneCaveHome() {
   const covenHome2 = process.env.COVEN_HOME || join3(homedir3(), ".coven");
   return resolve2(process.env.COVEN_CAVE_HOME || join3(covenHome2, "cave"));
@@ -10178,6 +10179,7 @@ function assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline) {
   }
 }
 function publishStandaloneClientV1DiscoveryRecord(endpoint) {
+  clientV1DiscoveryEndpoint = endpoint;
   const windowsAclProbeDeadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join3(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 448 });
@@ -10215,6 +10217,15 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   }
   const path5 = clientV1DiscoveryFile();
   assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline);
+  const occupant = readLiveForeignDiscoveryOccupant(path5);
+  if (occupant) {
+    throw discoveryPublicationFailure(
+      "target-owned-by-live-instance",
+      new Error(
+        `Another Cave process (pid ${occupant.pid}) already owns ${path5} and points paired clients at ${occupant.endpoint}; this server (${endpoint}) will not replace a live instance's record. Stop that instance and restart this one, or give each instance its own COVEN_CAVE_HOME.`
+      )
+    );
+  }
   let record2;
   if (CLIENT_V1_AUTHORITY_MODE === "off") {
     record2 = {
@@ -10269,10 +10280,80 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
     ownsTemporaryPath = false;
     chmodSync(path5, 384);
     clientV1DiscoveryPublished = true;
+    registerClientV1DiscoveryPublication(endpoint, null);
   } catch (error) {
     if (fd !== null) closeSync(fd);
     if (ownsTemporaryPath) rmSync(temporaryPath, { force: true });
     throw error;
+  }
+}
+function processIsLive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+function readLiveForeignDiscoveryOccupant(path5) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path5, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const { pid, nonce, endpoint } = parsed;
+  if (nonce === CLIENT_V1_DISCOVERY_NONCE) return null;
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+  if (pid === process.pid || !processIsLive(pid)) return null;
+  return {
+    pid,
+    endpoint: typeof endpoint === "string" ? endpoint : "an unknown endpoint"
+  };
+}
+function describePublicationError(error) {
+  if (error instanceof Error) {
+    try {
+      const message = error.message;
+      if (typeof message === "string" && message.length > 0) return message;
+    } catch {
+    }
+  }
+  return "no diagnostic text was recorded";
+}
+function registerClientV1DiscoveryPublication(endpoint, error) {
+  const failure = error === null ? void 0 : {
+    category: typeof error === "object" && error !== null ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other" : "disabled-other",
+    message: describePublicationError(error)
+  };
+  const publication = {
+    path: clientV1DiscoveryFile(),
+    endpoint,
+    nonce: CLIENT_V1_DISCOVERY_NONCE,
+    published: clientV1DiscoveryPublished,
+    failure,
+    republish: () => republishStandaloneClientV1DiscoveryRecord(endpoint)
+  };
+  globalThis.__covenCaveClientV1Discovery = publication;
+}
+function republishStandaloneClientV1DiscoveryRecord(endpoint) {
+  if (!clientV1DiscoveryPublished) return false;
+  try {
+    lstatSync(clientV1DiscoveryFile());
+    return false;
+  } catch (error) {
+    if (error.code !== "ENOENT") return false;
+  }
+  try {
+    publishStandaloneClientV1DiscoveryRecord(endpoint);
+    console.warn(
+      "[cave] client-v1 discovery record had been removed by another Cave instance sharing this home; republished."
+    );
+    return true;
+  } catch (error) {
+    reportClientV1DiscoveryUnavailable(error);
+    return false;
   }
 }
 function removeStandaloneClientV1DiscoveryRecord(nonce) {
@@ -11126,6 +11207,7 @@ server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
 function reportClientV1DiscoveryUnavailable(error) {
   clientV1DiscoveryPublished = false;
+  registerClientV1DiscoveryPublication(clientV1DiscoveryEndpoint, error);
   const category = typeof error === "object" && error !== null ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other" : "disabled-other";
   console.error("[cave] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 CLIENT V1 DISABLED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
   console.error(`[cave] client-v1 discovery publication refused: ${category}`);

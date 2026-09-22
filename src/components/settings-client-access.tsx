@@ -625,10 +625,9 @@ function ClientV1StatusSection({ status }: { status: ClientV1Status }) {
         >
           <h3>Client v1 is disabled</h3>
           <p>
-            The client v1 discovery record was not published, so paired clients
-            cannot find this server and every client v1 request stays refused.
-            Everything else on this server is running normally. Repair the path
-            and restart to restore client v1 pairing.
+            This server has no published client v1 discovery record, so paired
+            clients cannot find this server and every client v1 request stays
+            refused. Everything else on this server is running normally.
           </p>
           {status.discovery.reason ? (
             <p className="settings-client-access__alert-detail">

@@ -39,11 +39,60 @@ export type ClientV1Status = {
   ownershipWaiver: ClientV1OwnershipWaiverStatus;
 };
 
-/** The banner's own explanation, restated for a reader of the Settings page. */
+/**
+ * What server.ts records about its own publication attempt, so this module
+ * can tell four states apart that all look like "no usable record" from the
+ * filesystem alone (#5517): refused at startup, published then removed by
+ * another instance sharing the home, owned by another live instance, and no
+ * attempt recorded at all. `republish` re-runs publication for the
+ * published-then-removed case only; it never replaces a live foreign record.
+ */
+export type ClientV1DiscoveryPublication = {
+  path: string;
+  endpoint: string;
+  nonce: string;
+  published: boolean;
+  failure?: { category: string; message: string };
+  republish?: () => boolean;
+};
+
+declare global {
+  var __covenCaveClientV1Discovery: ClientV1DiscoveryPublication | undefined;
+}
+
+/** The reason when this process recorded no publication attempt at all. */
 export const CLIENT_V1_DISCOVERY_UNAVAILABLE_DETAIL =
-  "The client v1 discovery record was NOT published, so paired clients cannot "
-  + "find this server and every client v1 request stays refused. Everything "
-  + "else on this server is running normally.";
+  "No client v1 discovery record exists for this Cave home, and this process "
+  + "recorded no publication attempt.";
+
+export function clientV1DiscoveryPublication(): ClientV1DiscoveryPublication | undefined {
+  return globalThis.__covenCaveClientV1Discovery;
+}
+
+function foreignOwnerReason(
+  record: { pid: number; endpoint: string },
+  publication: ClientV1DiscoveryPublication,
+): string {
+  return `Another Cave process (pid ${record.pid}) owns the client v1 discovery `
+    + `record for this Cave home and points paired clients at ${record.endpoint}; `
+    + `this server (${publication.endpoint}) is not discoverable. Stop that `
+    + "instance and restart this one, or give each instance its own COVEN_CAVE_HOME.";
+}
+
+function removedReason(publication: ClientV1DiscoveryPublication): string {
+  return "This server published its client v1 discovery record at startup, but "
+    + "the record has since been removed — another Cave instance sharing "
+    + `${publication.path} exited and cleaned it up. Restart this server to `
+    + "publish it again.";
+}
+
+function refusedReason(publication: ClientV1DiscoveryPublication): string {
+  const failure = publication.failure;
+  const category = failure?.category ?? "disabled-other";
+  const message = failure?.message ?? "no detail was recorded";
+  return `Publication was refused when this server started (${category}): `
+    + `${message}${/[.!?]$/u.test(message) ? "" : "."} Repair the cause and restart.`;
+}
 
 export function resolveClientV1OwnershipWaiverStatus(
   env: Record<string, string | undefined> = process.env,
@@ -56,16 +105,31 @@ export function resolveClientV1OwnershipWaiverStatus(
 
 export async function resolveClientV1DiscoveryStatus(
   root?: string,
+  publication: ClientV1DiscoveryPublication | undefined = clientV1DiscoveryPublication(),
 ): Promise<ClientV1DiscoveryStatus> {
   const path = clientV1DiscoveryPath(root);
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (!publication) {
       return { available: false, reason: CLIENT_V1_DISCOVERY_UNAVAILABLE_DETAIL };
     }
-    throw error;
+    if (!publication.published) {
+      return { available: false, reason: refusedReason(publication) };
+    }
+    // Published, then removed: another instance sharing the home exited and
+    // cleaned up. The slot is free, so the server republishes its own record
+    // rather than staying dark until an operator notices and restarts.
+    if (publication.republish?.() === true) {
+      return { available: true };
+    }
+    const after = clientV1DiscoveryPublication();
+    if (after && !after.published && after.failure) {
+      return { available: false, reason: refusedReason(after) };
+    }
+    return { available: false, reason: removedReason(publication) };
   }
 
   let parsed: unknown;
@@ -78,8 +142,9 @@ export async function resolveClientV1DiscoveryStatus(
     };
   }
 
+  let record: ReturnType<typeof validateClientV1DiscoveryRecord>;
   try {
-    validateClientV1DiscoveryRecord(parsed);
+    record = validateClientV1DiscoveryRecord(parsed);
   } catch (error) {
     return {
       available: false,
@@ -89,6 +154,9 @@ export async function resolveClientV1DiscoveryStatus(
     };
   }
 
+  if (publication && record.nonce !== publication.nonce) {
+    return { available: false, reason: foreignOwnerReason(record, publication) };
+  }
   return { available: true };
 }
 
