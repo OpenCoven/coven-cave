@@ -146,3 +146,14 @@ test("strip: the streaming projection drops complete markers and hides a partial
   assert.equal(stripIncompleteProposalReviewMarker("a <coven:preview url=\"http://127.0.0.1/x"), "a <coven:preview url=\"http://127.0.0.1/x", "another marker's tail is not ours");
   assert.equal(stripIncompleteProposalReviewMarker(fenced), fenced);
 });
+
+test("strip: an opener prefix shorter than the full tag is hidden from streaming prose too", async () => {
+  const { stripProposalReviewMarkers } = await import("./proposal-review-blocks.ts");
+  for (const fragment of ["<coven:pro", "<coven:proposal", "<coven:proposal-rev"]) {
+    assert.equal(stripProposalReviewMarkers(`Visible before ${fragment}`), "Visible before ", fragment);
+  }
+  // Other markers that share the `<coven:p` prefix are not this helper's to hide.
+  assert.equal(stripProposalReviewMarkers("See <coven:preview"), "See <coven:preview");
+  // A prefix inside code is example text.
+  assert.equal(stripProposalReviewMarkers("Type `<coven:proposal`"), "Type `<coven:proposal`");
+});

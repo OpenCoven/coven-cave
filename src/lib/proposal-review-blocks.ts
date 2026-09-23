@@ -187,16 +187,17 @@ export function sliceProposalReviewBlocks(text: string): ProposalReviewPiece[] {
  */
 export function stripProposalReviewMarkers(text: string): string {
   if (!text || !text.includes("<coven:p")) return text;
-  if (!text.includes(OPENER)) return text;
-  const markers = scanMarkers(text);
-  if (markers.length === 0) return text;
+  // A tail shorter than the full opener (`<coven:proposal`) has no complete
+  // marker to scan yet, but it is still an unterminated marker and must not
+  // flash as prose while the stream writes the rest of it.
+  const markers = text.includes(OPENER) ? scanMarkers(text) : [];
   let out = "";
   let cursor = 0;
   for (const marker of markers) {
     out += text.slice(cursor, marker.start);
     cursor = marker.end;
   }
-  return out + text.slice(cursor);
+  return stripIncompleteProposalReviewMarker(out + text.slice(cursor));
 }
 
 /** Remove only an unterminated marker tail, preserving complete markers for
