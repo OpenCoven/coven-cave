@@ -6,7 +6,12 @@ import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
 import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { signResearchMediaTicket } from "../research-media-ticket.ts";
 import * as apiSecurity from "./api-security.ts";
-import { readJsonBody, rejectNonLocalRequest, rejectResearchMediaRequest } from "./api-security.ts";
+import {
+  readJsonBody,
+  rejectNonLocalOrMobileRequest,
+  rejectNonLocalRequest,
+  rejectResearchMediaRequest,
+} from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
 
@@ -193,3 +198,53 @@ test("readJsonBody accepts an object root", async () => {
 });
 
 console.log("api-security.test.ts: ok");
+
+test("mobile-capable guard admits proxy-authenticated mobile ingress", () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+
+  // Over Tailscale Serve the phone's Host is a tailnet CGNAT address; only the proxy's
+  // post-validation marker makes this acceptable (iOS archive/pin/delete).
+  const res = rejectNonLocalOrMobileRequest(
+    request({ host: "100.101.102.103:8443", [MOBILE_ACCESS_HEADER]: "1" }),
+  );
+
+  assert.equal(res, null);
+});
+
+test("mobile-capable guard still applies the strict local rule without the marker", async () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+
+  const remote = rejectNonLocalOrMobileRequest(request({ host: "100.101.102.103:8443" }));
+  assert.ok(remote);
+  assert.equal(remote.status, 403);
+  assert.deepEqual(await remote.json(), {
+    ok: false,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+    error: "forbidden",
+  });
+
+  const crossOrigin = rejectNonLocalOrMobileRequest(
+    request({ host: "127.0.0.1:3000", origin: "https://cave.example.test" }),
+  );
+  assert.ok(crossOrigin);
+  assert.equal(crossOrigin.status, 403);
+
+  assert.equal(rejectNonLocalOrMobileRequest(request({ host: "127.0.0.1:3000" })), null);
+});
+
+test("mobile-capable guard still enforces the sidecar token for non-mobile callers", () => {
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
+
+  const wrong = rejectNonLocalOrMobileRequest(
+    request({ host: "127.0.0.1:3000", [TOKEN_HEADER]: "wrong" }),
+  );
+  assert.ok(wrong);
+  assert.equal(wrong.status, 403);
+
+  assert.equal(
+    rejectNonLocalOrMobileRequest(
+      request({ host: "127.0.0.1:3000", [TOKEN_HEADER]: "sidecar-secret" }),
+    ),
+    null,
+  );
+});

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { rejectNonLocalOrMobileRequest } from "@/lib/server/api-security";
 import { isValidSessionId } from "@/lib/server/session-id";
 import {
   archiveSessionLocal,
@@ -49,7 +49,10 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const forbidden = rejectNonLocalRequest(req);
+  // Mobile-capable on purpose: the iOS chat list archives, pins and deletes
+  // server conversations through this route (#5429). The proxy has already
+  // validated the phone's credential before the mobile marker is present.
+  const forbidden = rejectNonLocalOrMobileRequest(req);
   if (forbidden) return forbidden;
 
   const { id } = await params;
@@ -221,7 +224,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const forbidden = rejectNonLocalRequest(req);
+  const forbidden = rejectNonLocalOrMobileRequest(req);
   if (forbidden) return forbidden;
 
   const { id } = await params;

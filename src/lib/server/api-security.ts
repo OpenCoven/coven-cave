@@ -165,3 +165,22 @@ export async function readJsonBody<T>(req: Request, maxBytes: number): Promise<J
 
   return { ok: true, body: parsed as T };
 }
+
+/**
+ * Local-origin gate for routes the phone legitimately mutates. The iOS chat
+ * list owns archive, pin and delete for server-side conversations (#5429) and
+ * reaches `/api/sessions/{id}` over the mobile proxy, where every request
+ * carries the mobile-access marker — which `rejectNonLocalRequest` treats as
+ * a desktop-only violation, so the phone's archive silently rolled back.
+ *
+ * The proxy strips any client-supplied marker and re-adds it only after the
+ * mobile credential AND the CSRF source gate have passed (see proxy.ts), so
+ * the marker is proof of authenticated mobile ingress, not a client claim.
+ * Everything else — loopback Host, sidecar token, Origin — still has to pass
+ * the strict local rule. Do not reach for this on routes that launch local
+ * binaries or touch the filesystem with the user's authority.
+ */
+export function rejectNonLocalOrMobileRequest(req: Request): NextResponse | null {
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return null;
+  return rejectNonLocalRequest(req);
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 import {
   autoArchiveReflectedSessionLocal,
+  autoArchiveReviewRunLocal,
   loadConfig,
 } from "@/lib/cave-config";
 import {
@@ -17,13 +18,14 @@ import {
 } from "@/lib/server/familiar-self-reports";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { parseSelfReportJsonObject } from "@/lib/server/self-report-json";
-import type {
-  BlockerCategory,
-  BlockerImpact,
-  CapabilityImportance,
-  CapabilityState,
-  ContextPressure,
-  ThreadSelfReport,
+import {
+  selfReportRequiresHumanAction,
+  type BlockerCategory,
+  type BlockerImpact,
+  type CapabilityImportance,
+  type CapabilityState,
+  type ContextPressure,
+  type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { callDaemon } from "@/lib/coven-daemon";
 
@@ -38,6 +40,11 @@ type SelfReportBody = {
    *  via the chat bridge; the daemon has no LLM endpoint). The route validates and
    *  persists it. */
   payload?: unknown;
+  /** The one-shot `enhance` run that generated `payload` (the "Thread review"
+   *  session the chat lists otherwise accumulate). Archived once the report
+   *  lands unless the report raised a call-to-action. Optional: older clients
+   *  and callers without a run id simply leave it unset. */
+  reviewSessionId?: unknown;
 };
 
 const TRIGGERS = new Set(["auto", "manual", "periodic"]);
@@ -115,6 +122,7 @@ async function loadReflectedSession(sessionId: string): Promise<ReflectedSession
 async function maybeAutoArchiveReflectedThread(
   sessionId: string,
   trigger: ReflectionTrigger,
+  requiresHumanAction: boolean,
 ): Promise<string | null> {
   try {
     const [config, reflectedSession] = await Promise.all([
@@ -127,10 +135,34 @@ async function maybeAutoArchiveReflectedThread(
       trigger,
       policy,
       lastActivityAt: reflectedSession.lastActivityAt,
+      requiresHumanAction,
       sessionExists: async () => Boolean(await loadReflectedSession(sessionId)),
     });
     if (archivedAt) await resolveArchiveNudges(sessionId);
     return archivedAt;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Auto-archive the review run that produced this report. The reflect prompt
+ * runs as an ephemeral `enhance` session; on surfaces that do not hide that
+ * origin these pile up as "Thread you just completed…" rows. Once the report
+ * has landed the run has done its job and files away — unless the report
+ * carries a call-to-action the human still has to read, in which case it
+ * stays put. Never touches the reflected thread itself (that is the policy
+ * path above). Best-effort: a failure never fails the self-report.
+ */
+async function maybeAutoArchiveReviewRun(
+  reviewSessionId: string,
+  reflectedSessionId: string,
+  requiresHumanAction: boolean,
+): Promise<string | null> {
+  if (!reviewSessionId || reviewSessionId === reflectedSessionId) return null;
+  if (requiresHumanAction) return null;
+  try {
+    return await autoArchiveReviewRunLocal(reviewSessionId);
   } catch {
     return null;
   }
@@ -213,6 +245,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (typeof body.trigger !== "string" || !TRIGGERS.has(body.trigger)) {
     return NextResponse.json({ ok: false, error: "invalid trigger" }, { status: 400 });
   }
+  const reviewSessionId = typeof body.reviewSessionId === "string" ? body.reviewSessionId : "";
+  if (reviewSessionId && !SELF_REPORT_SESSION_ID_RE.test(reviewSessionId)) {
+    return NextResponse.json({ ok: false, error: "invalid review session id" }, { status: 400 });
+  }
 
   // The familiar's reflection is generated client-side through the chat bridge
   // (the daemon has no LLM endpoint) and posted here as raw JSON text. This route
@@ -229,11 +265,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       threadTitle: optionalText(body.threadTitle),
     }));
     await appendSelfReport(id, report);
+    // "Unless there is a CTA": a report that asks the human for something
+    // keeps both the reflected thread and its review run visible.
+    const requiresHumanAction = selfReportRequiresHumanAction(report);
     const archivedAt = await maybeAutoArchiveReflectedThread(
       sessionId,
       body.trigger as ReflectionTrigger,
+      requiresHumanAction,
     );
-    return NextResponse.json({ ok: true, report, ...(archivedAt ? { archivedAt } : {}) });
+    const reviewArchivedAt = await maybeAutoArchiveReviewRun(
+      reviewSessionId,
+      sessionId,
+      requiresHumanAction,
+    );
+    return NextResponse.json({
+      ok: true,
+      report,
+      requiresHumanAction,
+      ...(archivedAt ? { archivedAt } : {}),
+      ...(reviewArchivedAt ? { reviewArchivedAt } : {}),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "self-report failed";
     return NextResponse.json({ ok: false, error: redactSecretText(message) });

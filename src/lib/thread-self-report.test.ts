@@ -13,6 +13,7 @@ import {
   contextPressureLabel,
   deriveThreadScore,
   metricTone,
+  selfReportRequiresHumanAction,
   type ThreadSelfReport,
 } from "./thread-self-report.ts";
 
@@ -725,5 +726,41 @@ describe("in-chat Thread Signal card builders", () => {
   it("degrades a one-item batch to the single-signal prompt", () => {
     const [row] = buildThreadSignalRows(fullReport());
     assert.equal(buildThreadSignalBatchResolutionPrompt([row]), buildThreadSignalResolutionPrompt(row));
+  });
+});
+
+describe("selfReportRequiresHumanAction (auto-archive CTA gate)", () => {
+  const quiet = {
+    persistentBlockers: [],
+    capabilitiesLacking: [],
+    skillsNeedingAccess: [],
+  };
+  const blocker = (impact: ThreadSelfReport["persistentBlockers"][number]["impact"]) => ({
+    id: "b", title: "Blocker", category: "auth" as const, impact, detail: "detail",
+  });
+
+  it("is false for a report with nothing the human must act on", () => {
+    assert.equal(selfReportRequiresHumanAction(quiet), false);
+    assert.equal(selfReportRequiresHumanAction({
+      ...quiet,
+      persistentBlockers: [blocker("low"), blocker("medium")],
+      capabilitiesLacking: [{ name: "x", importance: "important", detail: "d" }],
+    }), false, "low/medium blockers and non-blocking gaps are signals, not CTAs");
+  });
+
+  it("is true for high or blocking persistent blockers", () => {
+    assert.equal(selfReportRequiresHumanAction({ ...quiet, persistentBlockers: [blocker("high")] }), true);
+    assert.equal(selfReportRequiresHumanAction({ ...quiet, persistentBlockers: [blocker("blocking")] }), true);
+  });
+
+  it("is true for a blocking capability gap or a skill needing access", () => {
+    assert.equal(selfReportRequiresHumanAction({
+      ...quiet,
+      capabilitiesLacking: [{ name: "gh token", importance: "blocking", detail: "no auth" }],
+    }), true);
+    assert.equal(selfReportRequiresHumanAction({
+      ...quiet,
+      skillsNeedingAccess: [{ skillId: "deploy", reason: "needs credential" }],
+    }), true);
   });
 });

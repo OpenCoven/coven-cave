@@ -257,11 +257,16 @@ export function shouldAutoArchiveOnReflection(
     /** ISO timestamp of the thread's last activity; null/absent = unknown. */
     lastActivityAt?: string | null;
     now?: Date;
+    /** The landed report asks the human for something (see
+     *  selfReportRequiresHumanAction). A thread with an open call-to-action is
+     *  not wrapped up, whatever the trigger — it stays visible until acted on. */
+    requiresHumanAction?: boolean;
   },
 ): boolean {
   if (!sessionId) return false;
   if (trigger === "periodic") return false;
   if (!policy.enabled || !policy.archiveOnReflection) return false;
+  if (context.requiresHumanAction) return false;
   if (context.keep[sessionId]) return false;
   if (trigger === "auto") {
     const last = context.lastActivityAt ? Date.parse(context.lastActivityAt) : NaN;

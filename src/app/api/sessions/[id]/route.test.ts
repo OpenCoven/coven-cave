@@ -203,3 +203,18 @@ try {
 }
 
 console.log("sessions [id] route.test.ts: ok");
+
+// The iOS chat list archives/pins/deletes server conversations through this
+// route over the mobile proxy (#5429). The strict desktop-only guard rejects
+// every mobile-marked request, which made the phone's archive roll back with
+// a 403; both handlers must use the mobile-capable variant.
+assert.doesNotMatch(
+  route,
+  /rejectNonLocalRequest\(/,
+  "session PATCH/DELETE must not use the desktop-only local guard (blocks iOS archive)",
+);
+assert.equal(
+  (route.match(/rejectNonLocalOrMobileRequest\(req\)/g) ?? []).length,
+  2,
+  "both PATCH and DELETE admit proxy-authenticated mobile ingress",
+);

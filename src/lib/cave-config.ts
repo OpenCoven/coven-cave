@@ -1368,6 +1368,9 @@ export type ReflectionArchiveRequest = {
   trigger: ReflectionTrigger;
   policy: ChatAutoArchivePolicy;
   lastActivityAt?: string | null;
+  /** The landed report carries a call-to-action for the human; the thread
+   *  stays visible (see selfReportRequiresHumanAction). */
+  requiresHumanAction?: boolean;
   sessionExists?: () => Promise<boolean>;
 };
 
@@ -1396,8 +1399,33 @@ export async function autoArchiveReflectedSessionLocal(
         keep: state.sessionKeep,
         archivedSessionIds: Object.keys(state.sessionArchived),
         lastActivityAt: request.lastActivityAt,
+        requiresHumanAction: request.requiresHumanAction,
       },
     )) return;
+    const now = new Date().toISOString();
+    state.sessionArchived[sessionId] = now;
+    archivedAt = now;
+  });
+  if (archivedAt) invalidateSessionsListCache();
+  return archivedAt;
+}
+
+/**
+ * Archive the one-shot review run — the `enhance`-origin session that produced
+ * a thread self-report — once its report has landed. The run is machine
+ * scaffolding (its transcript is the reflect prompt and a JSON blob), so it
+ * files away as soon as it has served its purpose; the caller withholds it
+ * when the report raised a call-to-action the human still has to see.
+ * Keep-marked, sacrificed and already-archived runs are left alone, decided
+ * inside the same state write that sets the timestamp. Returns the archive
+ * timestamp when archived by this call, else null.
+ */
+export async function autoArchiveReviewRunLocal(sessionId: string): Promise<string | null> {
+  let archivedAt: string | null = null;
+  await updateState((state) => {
+    if (state.sessionSacrificed[sessionId]) return;
+    if (state.sessionKeep[sessionId]) return;
+    if (state.sessionArchived[sessionId]) return;
     const now = new Date().toISOString();
     state.sessionArchived[sessionId] = now;
     archivedAt = now;
