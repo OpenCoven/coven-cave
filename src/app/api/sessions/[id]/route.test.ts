@@ -87,11 +87,12 @@ try {
   const { PATCH } = await import("./route.ts");
   const id = "sparkle-title-cas";
   const params = { params: Promise.resolve({ id }) };
-  const patch = async (body: unknown) => {
+  const patch = async (body: unknown, extraHeaders: Record<string, string> = {}) => {
     const response = await PATCH(
       new Request(`http://127.0.0.1/api/sessions/${id}`, {
         method: "PATCH",
         headers: {
+          ...extraHeaders,
           "content-type": "application/json",
           host: "127.0.0.1",
           ...(process.env.COVEN_CAVE_AUTH_TOKEN
@@ -197,6 +198,34 @@ try {
   assert.equal(numericOneRejection.status, 400, "numeric replaceManualTitle is rejected");
   state = await config.loadState();
   assert.equal(state.sessionTitles[id], "Ordinary manual rename", "title not overwritten by numeric replaceManualTitle");
+
+  // Mobile ingress archives and pins only; everything else keeps the strict
+  // local rule, and a mixed body is refused before any mutation lands.
+  const { MOBILE_ACCESS_HEADER } = await import("../../../../proxy-helpers.ts");
+  const mobile = { [MOBILE_ACCESS_HEADER]: "1" };
+  for (const body of [
+    { title: "Phone rename" },
+    { keep: true },
+    { extendDays: 7 },
+    { archived: true, title: "Phone rename" },
+  ]) {
+    const refused = await patch(body, mobile);
+    assert.equal(refused.status, 403, `mobile PATCH refuses ${Object.keys(body).join("+")}`);
+  }
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[id], "Ordinary manual rename", "a refused mobile PATCH changes no title");
+  assert.equal(state.sessionArchived[id], undefined, "a refused mixed mobile PATCH does not archive");
+  assert.equal(state.sessionKeep[id], undefined, "a refused mobile PATCH does not mark keep");
+
+  const mobilePin = await patch({ pinned: true }, mobile);
+  assert.equal(mobilePin.status, 200);
+  assert.equal(mobilePin.body.pinned, true, "mobile PATCH pins");
+  const mobileArchive = await patch({ archived: true }, mobile);
+  assert.equal(mobileArchive.status, 200);
+  assert.ok(mobileArchive.body.archivedAt, "mobile PATCH archives");
+  const mobileSummon = await patch({ archived: false, pinned: false }, mobile);
+  assert.equal(mobileSummon.status, 200);
+  assert.equal(mobileSummon.body.archivedAt, null, "mobile PATCH summons");
 } finally {
   process.env.HOME = previousHome;
   await rm(testHome, { recursive: true, force: true });

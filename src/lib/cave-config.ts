@@ -1413,14 +1413,29 @@ export async function autoArchiveReflectedSessionLocal(
 /**
  * Archive the one-shot review run — the `enhance`-origin session that produced
  * a thread self-report — once its report has landed. The run is machine
- * scaffolding (its transcript is the reflect prompt and a JSON blob), so it
- * files away as soon as it has served its purpose; the caller withholds it
- * when the report raised a call-to-action the human still has to see.
+ * scaffolding (its transcript is the reflect prompt and a JSON blob) that no
+ * chat list shows, so it files away whether or not the report raised a
+ * call-to-action; the CTA stays actionable on the reflected thread itself.
+ *
+ * The id arrives from the client, so `isReviewRun` must confirm server-side
+ * that it names an existing `enhance` run of the reporting familiar; an
+ * unknown id or an ordinary chat is never archived (no ghost tombstones).
  * Keep-marked, sacrificed and already-archived runs are left alone, decided
  * inside the same state write that sets the timestamp. Returns the archive
  * timestamp when archived by this call, else null.
  */
-export async function autoArchiveReviewRunLocal(sessionId: string): Promise<string | null> {
+export async function autoArchiveReviewRunLocal(
+  sessionId: string,
+  isReviewRun: () => Promise<boolean>,
+): Promise<string | null> {
+  let verified: boolean;
+  try {
+    verified = await isReviewRun();
+  } catch {
+    return null;
+  }
+  if (!verified) return null;
+
   let archivedAt: string | null = null;
   await updateState((state) => {
     if (state.sessionSacrificed[sessionId]) return;

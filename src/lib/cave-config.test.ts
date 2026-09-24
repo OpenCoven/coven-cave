@@ -639,6 +639,57 @@ try {
     );
     await config.setSessionKeepLocal("reflect-race", false);
 
+    // ── autoArchiveReviewRunLocal: provenance-gated review-run tombstone ─────
+    {
+      const unverified = await config.autoArchiveReviewRunLocal("review-ghost", async () => false);
+      assert.equal(unverified, null, "an id that fails provenance is a no-op");
+      const throwing = await config.autoArchiveReviewRunLocal("review-ghost", async () => {
+        throw new Error("lookup failed");
+      });
+      assert.equal(throwing, null, "a failed provenance lookup is a no-op, not a throw");
+      state = await config.loadState();
+      assert.equal(state.sessionArchived["review-ghost"], undefined, "no ghost tombstone for an unverified id");
+
+      const reviewCacheKey = "review:eligible";
+      await sessionsListCache.get(reviewCacheKey, async () => ({
+        payload: { ok: true, sessions: [{ id: "review-run" }] },
+      }));
+      const reviewAt = await config.autoArchiveReviewRunLocal("review-run", async () => true);
+      assert.ok(
+        typeof reviewAt === "string" && Number.isFinite(Date.parse(reviewAt)),
+        "a verified review run is archived and a timestamp is returned",
+      );
+      let reviewRecomputes = 0;
+      await sessionsListCache.get(reviewCacheKey, async () => {
+        reviewRecomputes++;
+        return { payload: { ok: true, sessions: [] } };
+      });
+      assert.equal(reviewRecomputes, 1, "a review-run archive invalidates the sessions-list cache");
+      state = await config.loadState();
+      assert.equal(state.sessionArchived["review-run"], reviewAt, "archive timestamp persisted");
+      assert.equal(
+        await config.autoArchiveReviewRunLocal("review-run", async () => true),
+        null,
+        "an already-archived review run is not restamped",
+      );
+      state = await config.loadState();
+      assert.equal(state.sessionArchived["review-run"], reviewAt, "original timestamp survives");
+
+      await config.setSessionKeepLocal("review-kept", true);
+      assert.equal(await config.autoArchiveReviewRunLocal("review-kept", async () => true), null, "Keep wins");
+      const [, racedReview] = await Promise.all([
+        config.setSessionKeepLocal("review-race", true),
+        config.autoArchiveReviewRunLocal("review-race", async () => true),
+      ]);
+      assert.equal(racedReview, null, "a concurrent Keep queued first wins inside the state write");
+      state = await config.loadState();
+      assert.equal(state.sessionArchived["review-kept"], undefined);
+      assert.equal(state.sessionArchived["review-race"], undefined);
+      await config.setSessionKeepLocal("review-kept", false);
+      await config.setSessionKeepLocal("review-race", false);
+      await config.summonSessionLocal("review-run");
+    }
+
     await conversations.saveConversation({
       sessionId: "reflect-policy-gated",
       familiarId: "nova",

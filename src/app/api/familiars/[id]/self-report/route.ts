@@ -146,23 +146,36 @@ async function maybeAutoArchiveReflectedThread(
 }
 
 /**
+ * True when `reviewSessionId` names a saved `enhance` conversation of this
+ * familiar. The id comes from the client, so provenance is resolved from
+ * Cave's own record (the send route stamps origin there) rather than trusted:
+ * a stale id or an ordinary chat must never be archived.
+ */
+async function isReviewRunOf(reviewSessionId: string, familiarId: string): Promise<boolean> {
+  const conversation = await loadConversation(reviewSessionId);
+  return conversation?.origin === "enhance" && conversation.familiarId === familiarId;
+}
+
+/**
  * Auto-archive the review run that produced this report. The reflect prompt
- * runs as an ephemeral `enhance` session; on surfaces that do not hide that
- * origin these pile up as "Thread you just completed…" rows. Once the report
- * has landed the run has done its job and files away — unless the report
- * carries a call-to-action the human still has to read, in which case it
- * stays put. Never touches the reflected thread itself (that is the policy
- * path above). Best-effort: a failure never fails the self-report.
+ * runs as an ephemeral `enhance` session, which chat lists hide; older phone
+ * builds did not, so these piled up as "Thread you just completed…" rows.
+ * Once the report has landed the run has done its job and files away. A
+ * call-to-action does not keep it: the run is never shown, and the CTA stays
+ * on the reflected thread (see maybeAutoArchiveReflectedThread). Never touches
+ * the reflected thread itself. Best-effort: a failure never fails the report.
  */
 async function maybeAutoArchiveReviewRun(
   reviewSessionId: string,
   reflectedSessionId: string,
-  requiresHumanAction: boolean,
+  familiarId: string,
 ): Promise<string | null> {
   if (!reviewSessionId || reviewSessionId === reflectedSessionId) return null;
-  if (requiresHumanAction) return null;
   try {
-    return await autoArchiveReviewRunLocal(reviewSessionId);
+    return await autoArchiveReviewRunLocal(
+      reviewSessionId,
+      () => isReviewRunOf(reviewSessionId, familiarId),
+    );
   } catch {
     return null;
   }
@@ -266,18 +279,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }));
     await appendSelfReport(id, report);
     // "Unless there is a CTA": a report that asks the human for something
-    // keeps both the reflected thread and its review run visible.
+    // keeps the reflected thread visible until they act on it.
     const requiresHumanAction = selfReportRequiresHumanAction(report);
     const archivedAt = await maybeAutoArchiveReflectedThread(
       sessionId,
       body.trigger as ReflectionTrigger,
       requiresHumanAction,
     );
-    const reviewArchivedAt = await maybeAutoArchiveReviewRun(
-      reviewSessionId,
-      sessionId,
-      requiresHumanAction,
-    );
+    const reviewArchivedAt = await maybeAutoArchiveReviewRun(reviewSessionId, sessionId, id);
     return NextResponse.json({
       ok: true,
       report,

@@ -184,7 +184,7 @@ describe("reflection auto-archive CTA gate and review-run archive", () => {
     );
   });
 
-  it("archives the review run only without a CTA, never the reflected thread, and validates its id", () => {
+  it("archives a verified review run whatever the CTA, never the reflected thread, and validates its id", () => {
     assert.match(
       routeSource,
       /if \(reviewSessionId && !SELF_REPORT_SESSION_ID_RE\.test\(reviewSessionId\)\)/,
@@ -192,13 +192,23 @@ describe("reflection auto-archive CTA gate and review-run archive", () => {
     );
     assert.match(
       routeSource,
-      /async function maybeAutoArchiveReviewRun[\s\S]*?if \(!reviewSessionId \|\| reviewSessionId === reflectedSessionId\) return null;\s*if \(requiresHumanAction\) return null;/,
-      "the review run is left alone when it is the reflected thread or the report raised a CTA",
+      /async function maybeAutoArchiveReviewRun[\s\S]*?if \(!reviewSessionId \|\| reviewSessionId === reflectedSessionId\) return null;\s*try \{/,
+      "the review run is left alone only when it is the reflected thread; a CTA stays on that thread",
     );
     assert.match(
       routeSource,
-      /async function maybeAutoArchiveReviewRun[\s\S]*?return await autoArchiveReviewRunLocal\(reviewSessionId\);[\s\S]*?catch \{\s*return null;\s*\}/,
-      "review-run archiving is best-effort and goes through the atomic state helper",
+      /async function isReviewRunOf[\s\S]*?loadConversation\(reviewSessionId\)[\s\S]*?origin === "enhance" && conversation\.familiarId === familiarId/,
+      "provenance is resolved server-side: an enhance run of the reporting familiar",
+    );
+    assert.match(
+      routeSource,
+      /return await autoArchiveReviewRunLocal\(\s*reviewSessionId,\s*\(\) => isReviewRunOf\(reviewSessionId, familiarId\),\s*\);[\s\S]*?catch \{\s*return null;\s*\}/,
+      "review-run archiving is best-effort and goes through the provenance-gated state helper",
+    );
+    assert.match(
+      routeSource,
+      /maybeAutoArchiveReviewRun\(reviewSessionId, sessionId, id\)/,
+      "the reporting familiar id scopes the provenance check",
     );
     assert.match(
       routeSource,

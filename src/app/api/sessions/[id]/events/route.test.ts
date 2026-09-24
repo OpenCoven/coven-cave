@@ -112,7 +112,7 @@ const apiSecuritySource = readFileSync(
 );
 assert.match(
   apiSecuritySource,
-  /export function rejectNonLocalOrMobileRequest[\s\S]{0,200}=== "1"\) return null;\s*return rejectNonLocalRequest\(req\);/,
+  /export function rejectNonLocalOrMobileRequest[\s\S]{0,200}if \(isMobileAccessRequest\(req\)\) return null;\s*return rejectNonLocalRequest\(req\);[\s\S]*export function isMobileAccessRequest[\s\S]{0,120}MOBILE_ACCESS_HEADER\) === "1";/,
   "the mobile variant admits only the proxy marker and otherwise applies the strict local rule",
 );
 

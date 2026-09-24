@@ -181,6 +181,16 @@ export async function readJsonBody<T>(req: Request, maxBytes: number): Promise<J
  * binaries or touch the filesystem with the user's authority.
  */
 export function rejectNonLocalOrMobileRequest(req: Request): NextResponse | null {
-  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return null;
+  if (isMobileAccessRequest(req)) return null;
   return rejectNonLocalRequest(req);
+}
+
+/**
+ * True when the proxy admitted this request as mobile ingress. Only meaningful
+ * after rejectNonLocalOrMobileRequest: the proxy strips any client-sent marker
+ * and sets it only once the phone's credential and CSRF gate pass. Routes use
+ * it to narrow what a phone may change to the fields it actually edits.
+ */
+export function isMobileAccessRequest(req: Request): boolean {
+  return req.headers.get(MOBILE_ACCESS_HEADER) === "1";
 }
