@@ -115,7 +115,7 @@ test("reports the degraded states when the record is missing", async () => {
       ownershipWaiver: { granted: boolean };
     };
     assert.equal(status.discovery.available, false);
-    assert.match(status.discovery.reason ?? "", /discovery record was NOT published/u);
+    assert.match(status.discovery.reason ?? "", /No client v1 discovery record exists for this Cave home/u);
     assert.deepEqual(status.ownershipWaiver, { granted: false });
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);

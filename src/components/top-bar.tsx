@@ -114,7 +114,7 @@ export function TopBar(props: Props) {
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
-      : "Starting..."
+      : "Starting…"
     : "Enhance tasks";
 
   return (
@@ -170,7 +170,7 @@ export function TopBar(props: Props) {
           className="top-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Search or ask Salem..."
+          placeholder="Search or ask Salem…"
           aria-label={SEARCH_LABEL}
           title={`Search everything — or ask Salem, the familiar trained on the OpenCoven docs (${searchShortcut})`}
           autoComplete="off"

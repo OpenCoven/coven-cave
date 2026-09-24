@@ -1,6 +1,16 @@
 # Chat v1 Phase 7 — Packaging, Compatibility, Publishing, and Rollout: Verified Program Status
 
-> **Current refresh — 2026-09-04:** Phase 7 remains blocked in canonical
+> **Current refresh — 2026-09-21:** the consolidated #4781 checklist was
+> reconciled against live state on every owner repository. Cave v0.4.2 is a
+> signed, notarized, rollback-ready line (baseline v0.4.1, updater chain PASS,
+> installed-app Client v1 smoke ok). Chat's only successful release run is an
+> `allow_unsigned` rehearsal (adhoc-signed, un-notarized); all five
+> `@opencoven/*` SDK packages remain private and unpublished; the Coven client
+> crate is unrenamed and unpublished; the protected conformance canary still
+> fails on `win32-x64`; the acceptance results directory is still empty.
+> #4781 remains open and blocked. See the 2026-09-21 refresh section below.
+
+> **Previous refresh — 2026-09-04:** Phase 7 remains blocked in canonical
 > Beads; it is no longer tracker-unverifiable. Chat's `v0.0.1-demo.1`
 > prerelease is macOS-arm64 demo evidence, not the signed cross-platform
 > production/updater candidate required by this program. Coven has advanced to
@@ -11,6 +21,104 @@
 Issue: [OpenCoven/coven-cave#4820](https://github.com/OpenCoven/coven-cave/issues/4820) · Bead `cave-j65ie` · Lane `program-coordination`
 
 **Verified: 2026-08-30.** Read-only verification. This document records verified program status only; it closes nothing and changes no bead.
+
+## Refresh — 2026-09-21 (consolidated checklist reconciled against live state)
+
+**Verified: 2026-09-21, 06:00–06:35 UTC.** Read-only reconciliation of the
+[#4781](https://github.com/OpenCoven/coven-cave/issues/4781) consolidated
+checklist (which now owns the former #4820 parent gate), plus the executable
+evidence tooling run on a darwin-arm64 host (macOS 26.6.2, Node v24.18.1).
+This refresh changes no release, deployment, hold, or tracker state and
+authorizes nothing. Facts only.
+
+**Bases read:** `OpenCoven/coven-cave` `origin/main` at `376c51f2d`;
+`OpenCoven/chat` `origin/main` at `01adf7185`; `OpenCoven/sdk` `origin/main`
+at `d94ed37c9` (PR #306, 2026-09-21); `OpenCoven/coven` default branch via the
+contents API. Registry probes: registry.npmjs.org and crates.io (both 06:12
+UTC). GitHub Actions runs read through the REST API in the same half hour.
+
+### Per-item verdict
+
+| Checklist item (legacy id) | Verified state 2026-09-21 | Verdict |
+|---|---|---|
+| Cave/Coven authority compatibility releases (`cave-mbekl`) | **Cave half delivered and re-verified.** v0.4.2 published 2026-09-14 from annotated tag `22d41fe44` → commit `ecdcdcf8a`; release run `34901963985` succeeded end to end, including *Verify tag matches stamped source*, *Verify rollback readiness*, signed + notarized macOS DMGs, MSI, AppImage, `latest.json`, and `SHA256SUMS`. Today the v0.4.2 Client v1 release smoke (script set archived from the `v0.4.2` tag) passed against the **installed** `/Applications/CovenCave.app` 0.4.2 server on `127.0.0.1:3020`: `ok (release 0.4.2, instance da3bafc4-…)`. `export-client-v1-contract.mjs --check` passes on `main`. **Coven half not delivered.** Coven v0.4.4 is published (2026-09-14), but `crates/coven-client` is still `coven-client` 0.1.0 (plan name `opencoven-coven-client`); `.github/workflows/release-crates.yml`, `scripts/verify-coven-client-package.mjs`, `crates/coven-client/{README.md,tests/package_contract.rs}`, and `docs/reference/coven-client-crate.md` are absent; crates.io: `opencoven-coven-client` does not exist. | Cave: **verified**. Coven: **blocked** (owner: OpenCoven/coven) |
+| Chat signed packages/updater (`cave-gcb0i`, historical #4776) | `.github/workflows/release.yml` (signed-tag pipeline) and `docs/releasing.md` now exist on Chat `main`. The only successful run, `35174981698` (2026-09-17, `workflow_dispatch` on `main` at `99e7dac78`), was an **`allow_unsigned` rehearsal**: its logs warn *"Apple signing material is absent or incomplete; producing an UNSIGNED, un-notarized macOS build"* and the Windows equivalent. The run artifact `OpenCoven Chat_0.0.1_aarch64.dmg` (SHA-256 `c8844dd37262ffa7159cdc206118a4ca5654ac30d52cd053e3936eb0e7b21de5`) was downloaded and inspected: `Signature=adhoc`, `TeamIdentifier=not set`, no notarization ticket. The `v0.0.1` tag-push run `35164730079` failed; no `v0.0.1` GitHub Release exists — only the `v0.0.1-demo.1` prerelease (macOS aarch64 only, 2026-09-02). `src-tauri/tauri.conf.json`: `createUpdaterArtifacts: false`, no updater plugin configuration. `docs/rollback.md`, `scripts/verify-package.mjs`, `scripts/release-context.mjs`, and `compatibility-canary.yml` remain absent. | **Blocked** on Apple Developer ID/notarization and Windows code-signing material in the `release-signing` environment, an updater keypair, and a signed tag (owner: OpenCoven/chat; credentials are human-held) |
+| SDK publishing and documentation (`cave-563z7`) | All five `@opencoven/*` packages are `private` (`sdk-core`, `cave-client`, `coven-client`, `sdk` at 0.0.1; `dev-cli` at 0.1.0) and return **404** from registry.npmjs.org (`@opencoven/cli`, Coven-owned, is the only published name). `release.config.json`: `publishingEnabled: false`, `conformanceEvidence.aggregateRecord: null`; `RELEASING.md` records a frozen private 0.0.1 candidate (`96804bc48`) with a **BLOCK** disposition and states that `@opencoven/dev-cli` "is not part of the 0.0.1 release group" and "must not [be] pack[ed], publish[ed], attest[ed]". `compatibility/manifest.json`, `docs/pairing.md`, `docs/migration.md` absent; no SDK release workflow runs exist. `which opencoven` → not found on this host. | **Blocked** (owner: OpenCoven/sdk release owner). **Scope conflict to decide:** this issue's `cli-install`…`cli-scaffold` steps require a published `@opencoven/dev-cli`, which the SDK release decision currently excludes. |
+| Cross-repository compatibility canaries (`cave-as76u`) | Chat has a protected `client-v1-conformance.yml` (`workflow_dispatch`, `main` only). SDK `docs/client-v1-cross-repository-results/README.md`: *"There is no passing record yet."* Every dispatch since 2026-09-16 (`35138402347`, `35146928092`, `35417839851`, `35500732205`) failed at `platform-conformance (win32-x64)` while `darwin-arm64` and `linux-x64` passed; run `35566636457` (in progress at 06:00 UTC today) already shows `win32-x64` failed. No scheduled minimum/latest/main canary exists in any repository (`compatibility-canary.yml`, `authority-canary.yml` absent). | **Blocked** on the Windows native conformance job; scheduled canaries not implemented (owner: OpenCoven/chat + OpenCoven/sdk) |
+| OS acceptance and rollout (`cave-udcn7`, this issue) | `docs/release-acceptance-results/` still holds only `.gitkeep`. No Chat candidate exists to install, and no CLI exists to install, so no step of the three-OS journey can be executed honestly. Tooling verified today (see commands below): 19 steps listed; a fresh `template 0.4.2` validates `incomplete` with the expected field errors; stage table intact; 129 tooling tests pass. | **Not executed — blocked** by the three rows above and by the human-operator requirement on fresh macOS, Windows, and Linux machines |
+| Production v1 gate (`cave-ilh1h`, historical #4777) | Cannot pass while any row above is blocked. Cave-side gate commands and their results are retained below as the Cave contribution to the eventual gate record. | **Not passable** |
+| Pilot and rollback | **Prior stable and rollback metadata verified today** for the live Cave line: `release-rollback-readiness.mjs` for `v0.4.2` → `ready=true`, baseline `v0.4.1` (published 2026-09-09), platforms `darwin-aarch64, darwin-x86_64, linux-x86_64, windows-x86_64`, nothing missing, `baseline-waived=false`; `verify-release-updater.mjs` → **PASS** (`latest.json` 0.4.2 == release v0.4.2, all four platform signatures valid against key `ab97b0f03eb6dbea`). No staged cohort, pilot health, or observation window exists for a Chat candidate. The rollback drill was **not** run: its second step republishes `latest.json` on the live Cave release, which is not authorized by this reconciliation and is independently held by #5339. | Prior-stable verification: **verified**. Pilot and drill: **not observed — blocked** |
+
+### Commands executed 2026-09-21 (darwin-arm64 host) and results
+
+```bash
+# Cave checkout main 376c51f2d
+node scripts/release-acceptance.mjs steps                    # 19 steps (12 desktop + 7 CLI)
+node scripts/release-acceptance.mjs template 0.4.2 > t.json  # exit 0
+node scripts/release-acceptance.mjs validate t.json          # acceptance: incomplete; 3 OS × 19 pending;
+                                                             # ✗ candidate.commit / artifacts[0] / osVersion / caveVersion (expected)
+node scripts/release-rollout.mjs stages                      # maintainer 0% 24h · private-beta 0% 48h · stable-5 5% 24h · stable-25 25% 48h · stable-100
+node --test scripts/release-acceptance.test.mjs scripts/release-rollout.test.mjs \
+  scripts/release-rollback-readiness.test.mjs scripts/client-v1-release-smoke.test.mjs \
+  scripts/verify-release-updater.test.mjs                    # 129 pass, 0 fail
+node scripts/export-client-v1-contract.mjs --check           # exit 0
+node scripts/verify-release-updater.mjs                      # RESULT: PASS — updater chain verified end to end (v0.4.2)
+RELEASE_TAG=v0.4.2 GITHUB_REPOSITORY=OpenCoven/coven-cave GITHUB_TOKEN=… \
+  node scripts/release-rollback-readiness.mjs                # ready=true baseline-tag=v0.4.1 rollback-platforms=4/4
+
+# Installed-artifact smoke: script set from the v0.4.2 tag against the running CovenCave.app 0.4.2 server
+git archive v0.4.2 scripts/client-v1-release-smoke.mjs package.json \
+  src/lib/server/client-v1/contract-fixture.json | tar -x -C <scratch>
+node <scratch>/scripts/client-v1-release-smoke.mjs --origin http://127.0.0.1:3020
+                                                             # ok (release 0.4.2, instance da3bafc4-5f76-4fa9-94bc-490c0d7ffaf3)
+
+# Chat unsigned-rehearsal artifact inspection (run 35174981698, installers-macos-aarch64)
+codesign -dv --verbose=2 "OpenCoven Chat.app"                # Signature=adhoc, TeamIdentifier=not set
+xcrun stapler validate "OpenCoven Chat.app"                  # does not have a ticket stapled to it
+```
+
+Not run, deliberately: `pnpm release:verify` and `pnpm test:api` on the dev
+checkout (version `0.5.0`, unreleased; these gates already ran inside the
+v0.4.2 release run), and `release-rollout.mjs restore-plan`/the drill itself
+(mutating; not authorized here).
+
+### Dependency and hold state
+
+- Phase 1 gate [#4833](https://github.com/OpenCoven/coven-cave/issues/4833): **closed** 2026-09-09. Phase 2 gate [#4839](https://github.com/OpenCoven/coven-cave/issues/4839): **closed** 2026-09-15. Phase 2 real-authority conformance [#4838](https://github.com/OpenCoven/coven-cave/issues/4838): **open** (updated 2026-09-20). #4837 no longer resolves as an issue in this repository. Phase 6 gate (`cave-b6wsl`): still no tracker card (search returns only #4776).
+- [#5339](https://github.com/OpenCoven/coven-cave/issues/5339) (P0 security release hold): **open**; its 2026-09-20 reconciliation keeps per-target hold disposition pending. It remains independently binding on any rollout.
+- Cave Project 9 status for #4781 could not be read: the available token lacks the `read:project` scope. Project coverage is therefore **unknown**; Cave Board/task execution records were not searched (**partial**).
+
+### Progress later on 2026-09-21 (after the reconciliation above)
+
+Executed in the same day, after the reconciliation was recorded. Each item is
+verified by a merge commit or an issue reference; nothing below publishes,
+signs, or rolls out anything.
+
+| Row | Delivered | Evidence | Still human-held |
+|---|---|---|---|
+| Coven authority compatibility release (Coven half) | Crate packaged as `opencoven-coven-client` (library name stays `coven_client`; `coven-cli` unchanged), publication metadata and explicit include list, crate README, `tests/package_contract.rs`, `scripts/verify-coven-client-package.mjs`, `docs/reference/coven-client-crate.md`, and `release-crates.yml` (signed `coven-client-v*` tag on `main` → workspace gates → `cargo package` → verifier → `cargo publish --dry-run` → publish only with `CARGO_REGISTRY_TOKEN` in the `crates-io-release` environment, failing closed otherwise). Review points (immutable action SHAs, `gpg.format ssh` before `git verify-tag`, release-stress selector) fixed before merge. | [OpenCoven/coven#1140](https://github.com/OpenCoven/coven/issues/1140) → [#1141](https://github.com/OpenCoven/coven/pull/1141), merged `68da978c7e2308a8a90e692a0f21772f575f6986`. Local: `opencoven-coven-client-0.1.0.crate` sha256 `368d23fa679f5ca039c52afafec1915c2befffa27aaee52b4a5f041dfe2cb7ae`, dry-run ok. | crates.io name ownership + `CARGO_REGISTRY_TOKEN`; a signed `coven-client-v0.1.0` tag |
+| Cave authority compatibility release (Task 2 residue) | `release.yml` had **no** Client v1 gate and `docs/client-v1-release.md` did not exist. Both validation paths now run `export-client-v1-contract.mjs --check` and the Client v1 release smoke against the built `server.mjs` after the web build and before any installer/checksum/updater job; the workflow contract test pins the ordering and refuses conditional or advisory gates. | [#5513](https://github.com/OpenCoven/coven-cave/pull/5513), merged `9e6a67bfb2ded0b94bdf6716b6757e6e7d7ad4a1`. Local: contract tests 20/20, fixture check exit 0, the smoke step verbatim against the built server → `ok (release 0.5.0)`. | — |
+| Chat signed packages/updater | Owner-repo tracker opened with the verified state and the four decisions/prerequisites (window minimum 820×600 vs 480×520, `opencoven-chat` protocol, updater keypair + `createUpdaterArtifacts`, Apple/Windows signing secrets). `scripts/verify-package.mjs` is deliberately **not** written until those are decided; asserting a contract the config does not declare would be fiction. | [OpenCoven/chat#356](https://github.com/OpenCoven/chat/issues/356) | all four items |
+| Cross-repository canaries | Not touched. [OpenCoven/chat#219](https://github.com/OpenCoven/chat/issues/219) has a live owner and a root cause posted 2026-09-21 (`MAX_PATH` overflow in the `aws-lc-sys` build script on the Windows lane). Chat's `contract-canary.mjs` already pins exact SDK/Cave revisions; the plan's minimum/latest/main matrix does not exist and was not started, to avoid a second design in an actively worked lane. | — | Windows lane repair; matrix design |
+| SDK publishing | Not touched, by decision. The SDK **formally excluded** `@opencoven/dev-cli` from its release ([sdk#37](https://github.com/OpenCoven/sdk/issues/37), `docs/superpowers/plans/2026-08-25-cli-release-scope.md`, 2026-08-25): native trust requirements unmet; a standalone CLI needs a separate reviewed design. It also chose a release-manifest/lock design over the plan's `compatibility/manifest.json`. | — | SHIP disposition (#40), aggregate record, publication |
+| Pilot and rollback | Non-mutating drill evidence for the live line: a v0.4.2 state file with the verified readiness verdict → `release-rollout.mjs gate` = **hold** (acceptance incomplete, five metrics unmeasured, five canaries missing, 0h of 24h observed), `restore-plan` prints the bounded three-step drill naming v0.4.1. The drill's mutating step was not run. | this record | cohort, observation window, drill execution, #5339 disposition |
+
+**Consequence for the `cli-*` acceptance steps.** They now conflict with an
+owner-repo decision, not merely an unpublished package. Until Val either
+commissions the standalone-CLI design or amends this issue and
+`docs/workflows/release-acceptance.md` to defer the seven `cli-*` steps, the
+acceptance record cannot reach `complete` and the rollout gate cannot advance.
+
+### What clears each blocker (imperative, by owner)
+
+1. **OpenCoven/chat** — provision Apple Developer ID + notarization and Windows code-signing secrets in the `release-signing` environment; generate the updater keypair and enable `createUpdaterArtifacts`; land `docs/rollback.md` and `scripts/verify-package.mjs`; push a signed `v0.0.1` (or `-rc.N`) tag and let `release.yml` publish. Fix the `platform-conformance (win32-x64)` job.
+2. **OpenCoven/sdk** — obtain an accepted three-platform protected aggregate (needs the Windows job above), set `conformanceEvidence.aggregateRecord`, obtain the #40 SHIP disposition, flip `publishingEnabled`, and publish the 0.0.1 group through trusted publishing. Add `compatibility/manifest.json`, `docs/pairing.md`, `docs/migration.md`.
+3. **Decision needed (Val):** either publish `@opencoven/dev-cli` so the `cli-*` acceptance steps can run as written, or amend this issue and `docs/workflows/release-acceptance.md` to drop or defer those steps. Until decided, the acceptance record cannot reach `complete`.
+4. **OpenCoven/coven** — rename/package `opencoven-coven-client`, add the crate contract test, verify script, docs, and `release-crates.yml`; obtain crates.io authority.
+5. **Cross-repository** — add the scheduled minimum/latest/main canaries and retain outcomes against authenticated identities.
+6. **Then, humans on fresh machines** — execute the journey on macOS, Windows, and Linux from packaged installs with no source checkout; record one `docs/release-acceptance-results/<tag>.json`; stage `maintainer` → `private-beta` → `stable-5` with observed metrics; run the bounded rollback drill; dispose the #5339 hold per target.
+
+**Verdict after refresh:** #4781 remains **open and blocked**. Cave's half of the compatibility release and the prior-stable/rollback-metadata verification are verified today; every other checklist row is blocked on artifacts, credentials, or observations that do not exist yet. Nothing in this refresh substitutes for them.
 
 ## Refresh — 2026-08-30 (second sweep, re-verified against upstream main)
 

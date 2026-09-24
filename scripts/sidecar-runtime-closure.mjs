@@ -302,6 +302,15 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 150-file headroom. A separate zero-warning Turbopack build still measured
   // 7,194 on macOS, proving the increase is generated application output rather
   // than broad filesystem tracing; leave the expanded-byte ceiling unchanged.
+  //
+  // 2026-09-22 (v0.5.0-rc.2, #5456): CI observed 7,443 files on macOS,
+  // 7,447 on Linux, and 7,451 on Windows, exactly +191 over rc.1 on each.
+  // A clean same-machine inventory comparison accounts for the complete net file-count growth:
+  // .next/server/app +39, .next/server/chunks +89, .next/static/chunks +63.
+  // Seven new route/page traces account for the 352 -> 359 trace increase;
+  // dependency/native subtrees and first-party runtime-root counts did not
+  // change. Restore the established 150-file headroom from the observed
+  // Windows maximum without relaxing the expanded-byte ceiling.
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });

@@ -1282,7 +1282,7 @@ function OmnigentSettingsGroup() {
             disabled={saving}
             leadingIcon="ph:floppy-disk-bold"
           >
-            {saving ? "Saving..." : "Save Omnigent"}
+            {saving ? "Saving…" : "Save Omnigent"}
           </Button>
         </div>
       </div>

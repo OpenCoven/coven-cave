@@ -12,6 +12,7 @@ import {
 import { reapplyIndependentAppearance } from "@/lib/appearance-restore";
 import {
   applyThemeToRoot,
+  applyThemeWithoutTransitions,
   remoteThemeNeedsRefresh,
   resolveThemeMode,
   themeRuntimeSignature,
@@ -95,6 +96,7 @@ export function RemoteThemeController() {
     let cancelled = false;
     let publishGeneration = 0;
     let lastRuntimeSignature = "";
+    let restoreThemeTransitions = () => {};
     const initialTheme = readAppPreferences().appearance.theme;
     let lastAppliedCustom = initialTheme.id === "custom" ? initialTheme.custom : null;
     const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -120,10 +122,13 @@ export function RemoteThemeController() {
         html.getAttribute("data-mode") !== mode;
 
       if (needsApply) {
-        applyThemeToRoot(html, theme, mode, lastAppliedCustom);
-        lastAppliedCustom = theme.id === "custom" ? theme.custom : null;
-        lastRuntimeSignature = signature;
-        reapplyIndependentAppearance({ preserveCustomDefaults: theme.id === "custom" });
+        restoreThemeTransitions();
+        restoreThemeTransitions = applyThemeWithoutTransitions(() => {
+          applyThemeToRoot(html, theme, mode, lastAppliedCustom);
+          lastAppliedCustom = theme.id === "custom" ? theme.custom : null;
+          lastRuntimeSignature = signature;
+          reapplyIndependentAppearance({ preserveCustomDefaults: theme.id === "custom" });
+        });
         window.dispatchEvent(
           new CustomEvent("cave:theme-changed", { detail: { themeId: theme.id, mode } }),
         );
@@ -185,6 +190,7 @@ export function RemoteThemeController() {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      restoreThemeTransitions();
       publishGeneration += 1;
       unsubscribe();
       colorScheme.removeEventListener("change", onColorSchemeChange);

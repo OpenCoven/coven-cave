@@ -133,7 +133,7 @@ assert.doesNotMatch(status, /packageName: "coven-code"/, "bare coven-code is a d
 assert.match(status, /const compatible =[\s\S]*packageVerified[\s\S]*!!probe\.version[\s\S]*compareSemver\(probe\.version, tool\.minimumVersion\) >= 0/, "compatibility requires both the expected executable package and the Cave minimum");
 assert.match(status, /const state = openCovenToolState/, "server status derives a truthful explicit state");
 assert.match(status, /state,/, "server status returns the derived state");
-assert.match(status, /verifyOpenCovenToolInstall[\s\S]*refreshCovenSpawnEnv\(\)/, "post-install verification refreshes PATH before probing the selected tool");
+assert.match(status, /verifyOpenCovenToolInstall[\s\S]*await refreshCovenSpawnEnvAsync\(\)/, "post-install verification refreshes PATH before probing the selected tool");
 assert.match(about, /import \{[\s\S]*OpenCovenToolsUpdate[\s\S]*\}/, "About imports the OpenCoven tools update component");
 assert.match(
   about,

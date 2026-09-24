@@ -292,7 +292,11 @@
 }
 
 @container (max-width: 620px) {
-  .cave-context-chip { max-width: 46%; height: var(--touch-target); }
+  /* The chips live in a horizontally scrollable row (.cave-context-controls),
+     so cap each chip at the same phone width the chat composer uses rather
+     than a percentage of a shrink-wrapped row — 46% of a lone chip's row
+     rendered "Claude Code" as "C" on a 390px viewport. */
+  .cave-context-chip { max-width: 9rem; height: var(--touch-target); }
 }
 
 /* ── Textarea ──────────────────────────────────────────────────────────────

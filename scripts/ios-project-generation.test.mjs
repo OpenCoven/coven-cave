@@ -49,11 +49,11 @@ assert.match(
   /set -euo pipefail/,
   "the wrapper should abort on any failing step",
 );
-// wrapperCode, not wrapper: the header comment names all three files, so a
+// wrapperCode, not wrapper: resource names also appear in comments, so a
 // full-text search passes even when the check loop does not mention them. This
 // is the third assertion in this file to have that shape — see the two notes
 // above. Search executable lines only.
-for (const resource of ["markdown.html", "markdown.css", "markdown-mermaid.js"]) {
+for (const resource of ["markdown.html", "markdown.css", "markdown-mermaid.js", "markdown-highlight.js"]) {
   assert.ok(
     wrapperCode.includes(resource),
     `the wrapper should assert ${resource} exists before generating the project`,

@@ -10,6 +10,7 @@ overrides:
   nanoid@3: 3.3.18
   postcss@<8.5.23: ^8.5.26
   sharp: 0.35.4
+  '@opencoven/sdk-core': file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
 
 importers:
 
@@ -63,6 +64,12 @@ importers:
       '@openclaw/gateway-protocol':
         specifier: 2026.7.2-beta.5
         version: 2026.7.2-beta.5
+      '@opencoven/coven-client':
+        specifier: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz
+        version: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz
+      '@opencoven/sdk-core':
+        specifier: file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
+        version: file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
       '@tailwindcss/browser':
         specifier: 4.3.3
         version: 4.3.3
@@ -1182,6 +1189,16 @@ packages:
   '@openclaw/gateway-protocol@2026.7.2-beta.5':
     resolution: {integrity: sha512-/gMRJsruvVAbPqWMQR3kz2u3K+0Y0oXe5ZXK5xvbj5i7wAZK+B4QW5khRBIwYnrhTxPa9IbLJUgUNlomhx/wbw==}
     engines: {node: '>=22.19.0'}
+
+  '@opencoven/coven-client@file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz':
+    resolution: {integrity: sha512-FY1Xbpc2eMmlPHUumn4/jPQ7wqMrMPoJetdAf7wO11G8nrtIa45yuDeYE8XniLJVfbqIt5nA3CDRmIN6qi5p8Q==, tarball: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz}
+    version: 0.0.1
+    engines: {node: '>=24.18.0 <25'}
+
+  '@opencoven/sdk-core@file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz':
+    resolution: {integrity: sha512-+t7NvFh7ZkkEhOtCu53wEufN+1RBn6NcGQdEx/OzAX8nPlrqmR3OCNTO8sGhGfb3yXnJJoobRPRZcYIfqbEYdg==, tarball: file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz}
+    version: 0.0.1
+    engines: {node: '>=24.18.0 <25'}
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
@@ -4809,6 +4826,12 @@ snapshots:
   '@openclaw/gateway-protocol@2026.7.2-beta.5':
     dependencies:
       typebox: 1.3.6
+
+  '@opencoven/coven-client@file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz':
+    dependencies:
+      '@opencoven/sdk-core': file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
+
+  '@opencoven/sdk-core@file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz': {}
 
   '@oxc-project/types@0.133.0': {}
 

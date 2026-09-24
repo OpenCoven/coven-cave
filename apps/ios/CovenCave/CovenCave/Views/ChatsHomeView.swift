@@ -39,6 +39,7 @@ struct ChatsHomeView: View {
     @State private var query = ""
     @State private var searchMeasurementRevision: UInt64 = 0
     @State private var searchMeasurement: CavePerformanceSpan?
+    @State private var listSnapshotCache = ChatListSnapshotCache()
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
     /// The sidebar selection: a familiar (drills into its threads in the detail
@@ -145,7 +146,7 @@ struct ChatsHomeView: View {
         let snapshot = app.performanceRecorder.measureSynchronous(
             CavePerformanceSpanName.chatListProjection.rawValue
         ) {
-            ChatListSnapshot(
+            listSnapshotCache.resolve(
                 threads: app.chatThreads,
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
@@ -200,8 +201,7 @@ struct ChatsHomeView: View {
                 }
             }
             .refreshable {
-                await app.loadFamiliars()
-                await app.loadSessions()
+                await app.refreshChats()
             }
             // Sessions load once; reconnects and pull-to-refresh handle
             // subsequent reloads, so re-appearing destinations don't refetch the list.

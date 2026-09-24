@@ -377,3 +377,19 @@ test("questions inside reasoning never become cards or leak protection tokens", 
   assert.equal(result.cardText, "Visible answer");
   assert.equal(result.inlineReasoning, `${marker}\nprivate reasoning`);
 });
+
+// ── Proposal-review receipts (#5520 / #5522): streaming never shows the marker ──
+test("proposal-review markers never reach visible prose; cardText keeps complete ones and hides a partial tail", () => {
+  const marker = '<coven:proposal-review tool="propose_patch" verdict="permit" q="addresses_task:yes:0.9" />';
+  const settled = extractChatRenderedText(`Here.\n${marker}\nDone.`);
+  assert.ok(!settled.visible.includes("<coven:proposal-review"), "visible prose drops the complete marker");
+  assert.match(settled.visible, /Here\.\n\nDone\./);
+  assert.ok(settled.cardText.includes(marker), "cardText retains the complete marker for the settled splitter");
+
+  const streaming = extractChatRenderedText('Reviewing.\n<coven:proposal-review tool="propose_patch" verd', { pending: true });
+  assert.equal(streaming.visible, "Reviewing.\n", "a partial tail is hidden from streaming prose");
+  assert.equal(streaming.cardText, "Reviewing.\n", "and from the card source");
+
+  const fenced = extractChatRenderedText(["```", marker, "```"].join("\n"));
+  assert.ok(fenced.visible.includes("<coven:proposal-review"), "fenced example text stays literal");
+});

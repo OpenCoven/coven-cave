@@ -533,30 +533,18 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.deepEqual(res.data?.[0]?.authority, { state: "legacy", reviewKind: "coherence" });
   });
 
-  it("preserves a staged-only legacy coherence reviewKind when the daemon is unavailable", async () => {
-    const { home } = homeWithPending("coherence");
-    const adapter = new DaemonThreadsAdapter({
-      call: async () => ({ ok: false, status: 0, data: null, error: "connect ENOENT" }),
-      covenHomeDir: home,
-    });
-
-    const res = await adapter.proposals();
-    assert.deepEqual(res.data?.[0]?.authority, { state: "legacy", reviewKind: "coherence" });
-  });
-
-  it("preserves scheduled staged details but blocks authority when the daemon is unavailable", async () => {
-    const { home } = homeWithScheduled("awaiting-human-approval");
-    const adapter = new DaemonThreadsAdapter({
-      call: async () => ({ ok: false, status: 0, data: null, error: "connect ENOENT" }),
-      covenHomeDir: home,
-    });
-
-    const res = await adapter.proposals();
-    assert.equal(res.blocked, false);
-    assert.equal(res.meta.verified, true);
-    assert.equal(res.data?.[0]?.parse, "ok");
-    assert.equal(res.data?.[0]?.payload?.id, "cccccccc-0000-4000-8000-000000000501");
-    assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-unavailable" });
+  it("blocks legacy and scheduled queue reads while the daemon is unavailable", async () => {
+    for (const { home } of [homeWithPending("coherence"), homeWithScheduled("awaiting-human-approval")]) {
+      const adapter = new DaemonThreadsAdapter({
+        call: async () => ({ ok: false, status: 0, data: null, error: "connect ENOENT" }),
+        covenHomeDir: home,
+      });
+      const res = await adapter.proposals();
+      assert.equal(res.blocked, true);
+      assert.equal(res.meta.verified, false);
+      assert.equal(res.why, "daemon-unavailable");
+      assert.equal(res.data, null);
+    }
   });
 
   it("fails closed when staged and daemon legacy reviewKind values disagree", async () => {
@@ -607,6 +595,106 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.notEqual(joined.meta.sourceCursor, missing.meta.sourceCursor);
   });
 
+  it("joins authority from the current daemon paginated envelope", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const calls: string[] = [];
+    const cursor = Buffer.from("first.json").toString("base64url");
+    const adapter = new DaemonThreadsAdapter({
+      call: async <T>(req: { path: string; timeoutMs?: number; hardTimeoutMs?: number; retryTransportFailure?: boolean }) => {
+        assert.equal(req.retryTransportFailure, false);
+        assert.ok(req.hardTimeoutMs! > 0);
+        assert.equal(req.hardTimeoutMs, req.timeoutMs);
+        calls.push(req.path);
+        return { ok: true, status: 200, data: (calls.length === 1
+          ? { proposals: [{ degraded: { file: "first.json" } }], limit: 1, hasMore: true, nextCursor: cursor }
+          : { proposals: [summary], limit: 1, hasMore: false, nextCursor: null }) as T };
+      },
+      covenHomeDir: home,
+    });
+    const res = await adapter.proposals();
+    assert.equal(res.data?.[0]?.authority?.state, "verified");
+    assert.deepEqual(calls, [DAEMON_PROPOSALS_PATH, `${DAEMON_PROPOSALS_PATH}?limit=1&cursor=${cursor}`]);
+  });
+
+  it("never publishes partial authority after a malformed, failed or looping page", async () => {
+    const cursor = Buffer.from("first.json").toString("base64url");
+    for (const mode of ["failed", "repeated", "malformed", "legacy", "duplicate", "changed-pending"]) {
+      const { home, summary, pendingFile } = homeWithScheduled("awaiting-human-approval");
+      let calls = 0;
+      const adapter = new DaemonThreadsAdapter({
+        call: async <T>() => {
+          calls++;
+          if (calls === 1) return { ok: true, status: 200, data: {
+            proposals: [summary], limit: 1, hasMore: true, nextCursor: cursor,
+          } as T };
+          if (mode === "failed") return { ok: false, status: 503, error: "unavailable", data: null };
+          if (mode === "changed-pending") writeFileSync(pendingFile, "{}");
+          const data = mode === "legacy" ? { proposals: [] }
+            : mode === "malformed" ? { proposals: [], limit: 1, hasMore: false, nextCursor: cursor }
+            : mode === "repeated" ? { proposals: [{ degraded: {} }], limit: 1, hasMore: true, nextCursor: cursor }
+            : { proposals: mode === "duplicate" ? [summary] : [], limit: 1, hasMore: false, nextCursor: null };
+          return { ok: true, status: 200, data: data as T };
+        },
+        covenHomeDir: home,
+      });
+      const res = await adapter.proposals();
+      assert.equal(calls, 2, mode);
+      assert.equal(res.blocked, true, mode);
+      assert.equal(res.data, null, mode);
+      assert.equal(res.meta.verified, false, mode);
+    }
+  });
+
+  it("bounds pagination and discards authority when the response exceeds the total deadline", async (t) => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    let calls = 0;
+    const bounded = new DaemonThreadsAdapter({
+      call: async <T>() => {
+        calls++;
+        return { ok: true, status: 200, data: {
+          proposals: calls === 1 ? [summary] : [{ degraded: {} }], limit: 1, hasMore: true,
+          nextCursor: Buffer.from(`${String(calls).padStart(3, "0")}.json`).toString("base64url"),
+        } as T };
+      }, covenHomeDir: home,
+    });
+    const exhausted = await bounded.proposals();
+    assert.equal(calls, 64);
+    assert.equal(exhausted.blocked, true);
+    assert.equal(exhausted.data, null);
+
+    let now = 0;
+    t.mock.method(performance, "now", () => now);
+    const delayed = new DaemonThreadsAdapter({
+      call: async <T>() => {
+        now = 11;
+        return { ok: true, status: 200, data: { proposals: [summary] } as T };
+      }, covenHomeDir: home, timeoutMs: 10,
+    });
+    const expired = await delayed.proposals();
+    assert.equal(expired.blocked, true);
+    assert.equal(expired.data, null);
+  });
+
+  it("rejects malformed pagination metadata and duplicate proposal IDs", async () => {
+    const { home, summary } = homeWithScheduled("awaiting-human-approval");
+    const valid = { proposals: [summary], limit: 64, hasMore: false, nextCursor: null };
+    for (const data of [
+      { ...valid, limit: 65 }, { ...valid, limit: 0 }, { ...valid, hasMore: "false" },
+      { ...valid, nextCursor: "unexpected" }, { ...valid, extra: true },
+      { ...valid, proposals: [summary, summary] },
+      { ...valid, limit: 1, hasMore: true, nextCursor: Buffer.from("../bad.json").toString("base64url") },
+      { ...valid, limit: 1, hasMore: true, nextCursor: "%%%" },
+    ]) {
+      const adapter = new DaemonThreadsAdapter({
+        call: async <T>() => ({ ok: true, status: 200, data: data as T }), covenHomeDir: home,
+      });
+      const res = await adapter.proposals();
+      assert.equal(res.blocked, true);
+      assert.equal(res.why, "unparseable");
+      assert.equal(res.data, null);
+    }
+  });
+
   it("accepts only the daemon's real proposals envelope shape", async () => {
     const { home, summary } = homeWithScheduled("awaiting-human-approval");
     for (const data of [[summary], { proposals: [summary], extra: "contract drift" }]) {
@@ -616,8 +704,9 @@ describe("daemon adapter — proposals and decisions", () => {
       });
 
       const res = await adapter.proposals();
-      assert.equal(res.meta.verified, true);
-      assert.deepEqual(res.data?.[0]?.authority, { state: "blocked", why: "daemon-unparseable" });
+      assert.equal(res.meta.verified, false);
+      assert.equal(res.why, "unparseable");
+      assert.equal(res.data, null);
     }
   });
 
@@ -646,7 +735,7 @@ describe("daemon adapter — proposals and decisions", () => {
   it("reads staged proposals from ~/.coven/pending", async () => {
     const { home } = homeWithPending();
     const adapter = new DaemonThreadsAdapter({
-      call: async () => ({ ok: false, status: 0, data: null }),
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [] } as T }),
       covenHomeDir: home,
     });
     const res = await adapter.proposals();
@@ -654,10 +743,10 @@ describe("daemon adapter — proposals and decisions", () => {
     assert.equal(res.data?.[0]?.payload?.id, PROPOSAL_OK);
   });
 
-  it("a coven home with no pending dir is verified-empty; no home at all is blocked", async () => {
+  it("a bare home requires a live empty daemon summary; no home at all is blocked", async () => {
     const home = tempDir("phase4-bare-home-");
     const adapter = new DaemonThreadsAdapter({
-      call: async () => ({ ok: false, status: 0, data: null }),
+      call: async <T>() => ({ ok: true, status: 200, data: { proposals: [] } as T }),
       covenHomeDir: home,
     });
     assert.deepEqual((await adapter.proposals()).data, []);
@@ -687,6 +776,8 @@ describe("daemon adapter — proposals and decisions", () => {
 
   it("approve forwards the exact expected revision and note without touching the pending file", async () => {
     const { home, pending } = homeWithPending();
+    const file = path.join(pending, `eeeeeeee-0000-4000-8000-000000000001-${PROPOSAL_OK}.json`);
+    const before = readFileSync(file, "utf8");
     const calls: { method?: string; path: string; body?: unknown }[] = [];
     const adapter = new DaemonThreadsAdapter({
       call: async <T>(req: { method?: string; path: string; body?: unknown }) => {
@@ -707,8 +798,7 @@ describe("daemon adapter — proposals and decisions", () => {
       },
     ]);
     // Forward-only: removing the staged file is the daemon's job.
-    const still = await adapter.proposals();
-    assert.equal(still.data?.length, 1, "pending file untouched by the forwarder");
+    assert.equal(readFileSync(file, "utf8"), before, "pending file untouched by the forwarder");
     assert.ok(pending.length > 0);
   });
 

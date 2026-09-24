@@ -1,6 +1,15 @@
 # Chat v1 Phase 7 — OS acceptance, staged rollout, and rollback drill: verified status + acceptance evidence runbook
 
-> **Current refresh — 2026-09-04:** Phase 7 remains blocked in canonical
+> **Current refresh — 2026-09-21:** re-verified from a darwin-arm64 host.
+> The evidence tooling, the v0.4.2 updater chain, rollback readiness to
+> v0.4.1, and the installed-app Client v1 release smoke all pass; the
+> acceptance journey itself still has no Chat candidate (Chat's only successful
+> release run is an unsigned rehearsal) and no published `@opencoven/dev-cli`
+> to install, so `docs/release-acceptance-results/` remains empty. The full
+> per-item reconciliation lives in
+> [`2026-08-30-chat-v1-phase-7-rollout-status.md`](2026-08-30-chat-v1-phase-7-rollout-status.md#refresh--2026-09-21-consolidated-checklist-reconciled-against-live-state).
+
+> **Previous refresh — 2026-09-04:** Phase 7 remains blocked in canonical
 > Beads. Chat now has the `v0.0.1-demo.1` macOS-arm64 prerelease, but it is not
 > a signed cross-platform production candidate and updater artifacts remain
 > disabled. Published npm/crate artifacts, compatibility canaries, three-OS

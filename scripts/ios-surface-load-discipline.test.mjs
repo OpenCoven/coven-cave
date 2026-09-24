@@ -26,7 +26,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatsHome,
-  /\.refreshable \{\s*await app\.loadFamiliars\(\)\s*await app\.loadSessions\(\)\s*\}/,
+  /\.refreshable \{\s*await app\.refreshChats\(\)\s*\}/,
   "Chats pull-to-refresh must stay an unconditional familiar + session reload",
 );
 

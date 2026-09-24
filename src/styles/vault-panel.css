@@ -1,4 +1,5 @@
-.vault-row:focus-within .vault-row-actions {
+.vault-row:focus-within .vault-row-actions,
+.vault-row[data-needs-confirmation="true"] .vault-row-actions {
   opacity: 1;
 }
 
@@ -44,6 +45,16 @@
   color: var(--text-muted);
   font-weight: 400;
   line-height: var(--leading-normal);
+}
+
+.vault-storage-options > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.vault-storage-options[open] > :not(summary) {
+  margin-top: var(--space-3);
 }
 
 .vault-paste-field {

@@ -27,3 +27,20 @@ assert.equal(sessionDisplayTitle({ title: null }), "New chat");
 assert.equal(sessionDisplayTitle({}), "New chat");
 
 console.log("session-title.test.ts: ok");
+
+// Harness-transcript titles leak markdown syntax into session rows
+// ("## Prior conversation **User:** …" was live in the Chat launch list).
+// The scaffold heading is rejected outright; other markdown is stripped.
+assert.equal(sessionDisplayTitle({ title: "## Prior conversation **User:** Push cody/astra" }), "New chat");
+assert.equal(sessionDisplayTitle({ title: "# **Fixing the parser**" }), "Fixing the parser");
+assert.equal(sessionDisplayTitle({ title: "Rename `foo_bar` to _fooBar_" }), "Rename foo_bar to fooBar");
+assert.equal(sessionDisplayTitle({ title: "Compute 2*3 in snake_case" }), "Compute 2*3 in snake_case");
+
+console.log("session-title.test.ts: markdown ok");
+
+// Preamble leaks wrapped in markdown only become anchored once the syntax is
+// stripped, so the canon and runtime-scope checks run again on the plain text.
+assert.equal(sessionDisplayTitle({ title: "## Runtime filesystem boundary: - This is the local…" }), "New chat");
+assert.equal(sessionDisplayTitle({ title: "**Coven identity canon:** - Each familiar has…" }), "New chat");
+
+console.log("session-title.test.ts: wrapped-leak ok");

@@ -107,6 +107,7 @@ const LIFECYCLE_VALUES = new Map<string, ProposalLifecycleView>([
 const LEGACY_REVIEW_KIND_VALUES = new Set<ProposalLegacyReviewKindView>(["authority", "coherence"]);
 
 const DAEMON_SUMMARY_FIELDS = new Set([
+  "probeSummary",
   "proposalId",
   "familiarId",
   "familiarUuid",
@@ -145,6 +146,9 @@ const SCHEDULED_ENVELOPE_FIELDS = [
 ] as const;
 const SCHEDULED_ENVELOPE_ALLOWED_FIELDS = new Set([
   ...SCHEDULED_ENVELOPE_FIELDS,
+  "identityEvidence",
+  "autoRegressionEvidence",
+  "probes",
   "decisionRequest",
   "decisionState",
 ]);
@@ -236,7 +240,7 @@ function daysInMonth(year: number, month: number): number {
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-function isStrictRfc3339(value: unknown): value is string {
+export function isStrictRfc3339(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = RFC3339_RE.exec(value);
   if (!match) return false;
@@ -695,10 +699,53 @@ function hasConsistentScheduledEnvelopeBindings(raw: RawRecord): boolean {
   return sameSet(classifiedRegions, evidencedRegions);
 }
 
+const PROBE_STATUSES = new Set(["passed", "failed", "unscored"]);
+const PROBE_IDS = new Set(["parse", "size-delta", "protected-region", "pattern-lint"]);
+const PROBE_REPORT_FIELDS = ["target", "surface", "baselineSha256", "proposedSha256", "status", "results"];
+const PROBE_RESULT_FIELDS = ["id", "configuredSurface", "configurationSha256", "status", "summary"];
+
+// Coven's StagedScheduledProposalFile and ward_probes wire contract. These
+// diagnostics remain part of the canonical revision; none grants authority.
+function isProbeReport(value: unknown): boolean {
+  if (!isRecord(value) || !hasRequiredKeys(value, PROBE_REPORT_FIELDS)
+    || !hasOnlyKeys(value, new Set([...PROBE_REPORT_FIELDS, "error"]))) return false;
+  return typeof value.target === "string" && typeof value.surface === "string"
+    && (value.baselineSha256 === null || (typeof value.baselineSha256 === "string" && HEX_64_RE.test(value.baselineSha256)))
+    && typeof value.proposedSha256 === "string" && HEX_64_RE.test(value.proposedSha256)
+    && typeof value.status === "string" && PROBE_STATUSES.has(value.status)
+    && (!("error" in value) || typeof value.error === "string")
+    && Array.isArray(value.results) && value.results.every(result =>
+      isRecord(result) && hasRequiredKeys(result, PROBE_RESULT_FIELDS)
+      && hasOnlyKeys(result, new Set([...PROBE_RESULT_FIELDS, "detail"]))
+      && typeof result.id === "string" && PROBE_IDS.has(result.id)
+      && typeof result.configuredSurface === "string"
+      && typeof result.configurationSha256 === "string" && HEX_64_RE.test(result.configurationSha256)
+      && typeof result.status === "string" && PROBE_STATUSES.has(result.status)
+      && typeof result.summary === "string");
+}
+
+function hasValidProducerEvidence(raw: RawRecord): boolean {
+  // AUTO replay is bound to a producer commitment; a matching envelope hash
+  // alone cannot establish that the required evidence was ever supplied.
+  if (isRecord(raw.classification) && isRecord(raw.classification.approval_path)
+    && raw.classification.approval_path.kind === "auto_regression"
+    && !isByteArray(raw.autoRegressionEvidence, 32)) return false;
+  return ["identityEvidence", "autoRegressionEvidence"].every(key => !(key in raw) || isByteArray(raw[key], 32))
+    && (!("probes" in raw) || (Array.isArray(raw.probes) && raw.probes.every(isProbeReport)));
+}
+
+function isProbeSummary(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["status", "passed", "failed", "unscored", "targets"])) return false;
+  return typeof value.status === "string" && PROBE_STATUSES.has(value.status)
+    && ["passed", "failed", "unscored", "targets"].every(key =>
+      typeof value[key] === "number" && Number.isSafeInteger(value[key]) && value[key] >= 0);
+}
+
 function isCompleteScheduledEnvelope(raw: RawRecord): boolean {
   return (
     hasRequiredKeys(raw, SCHEDULED_ENVELOPE_FIELDS) &&
     hasOnlyKeys(raw, SCHEDULED_ENVELOPE_ALLOWED_FIELDS) &&
+    hasValidProducerEvidence(raw) &&
     raw.schema === "phase5_v1" &&
     isPendingShape(raw.pending) &&
     isClassificationShape(raw.classification) &&
@@ -827,6 +874,7 @@ function normalizeApprovalPath(source: RawRecord): ProposalAuthorityVerifiedView
 
 function normalizeDaemonSummary(raw: RawRecord): DaemonProposalSummary | null {
   if (!hasOnlyKeys(raw, DAEMON_SUMMARY_FIELDS)) return null;
+  if ("probeSummary" in raw && !isProbeSummary(raw.probeSummary)) return null;
   if (
     typeof raw.proposalId !== "string" ||
     typeof raw.familiarId !== "string" ||

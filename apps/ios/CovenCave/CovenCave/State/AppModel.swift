@@ -465,7 +465,15 @@ final class AppModel {
     @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
     @ObservationIgnored let isPerformanceFixture: Bool
 
-    var familiars: [Familiar] = []
+    var familiars: [Familiar] = [] {
+        didSet {
+            // Preserve first-match semantics if a malformed roster duplicates
+            // an ID. Rebuild on replacement, reordering and avatar edits.
+            familiarIndex = Dictionary(familiars.enumerated().map { ($0.element.id, $0.offset) },
+                                       uniquingKeysWith: { first, _ in first })
+        }
+    }
+    @ObservationIgnored private var familiarIndex: [String: Int] = [:]
     var familiarsError: String?
     var familiarsLoaded = false
     /// User's preferred familiar order (ids), applied over the server's order
@@ -1130,6 +1138,11 @@ final class AppModel {
     ) {
         state.lastApplied = token
     }
+
+    private typealias CoordinatedSessionsResult = (
+        token: CoordinatedLoadToken,
+        result: Result<[SessionRow], any Error>
+    )
 
     private func coordinatedSessionsLoad(
         using client: any ProjectContextLoadingClient,
@@ -3027,7 +3040,11 @@ final class AppModel {
     #endif
 
     func familiar(_ id: String) -> Familiar? {
-        familiars.first { $0.id == id }
+        // Read the observed roster even for a miss: arrival/removal must still
+        // invalidate rows that previously had no familiar to display.
+        let roster = familiars
+        guard let index = familiarIndex[id] else { return nil }
+        return roster[index]
     }
 
     func project(_ id: String) -> ProjectInfo? {
@@ -4143,17 +4160,36 @@ final class AppModel {
         using client: any ProjectContextLoadingClient,
         projects nextProjects: [ProjectInfo],
         loadNonce: UInt64,
-        navigationGeneration: UInt64?
+        navigationGeneration: UInt64?,
+        prefetchedSessions: CoordinatedSessionsResult? = nil
     ) async throws -> ProjectContextSelectionResolution {
         await awaitThreadHydration()
         guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
             throw CancellationError()
         }
 
-        let haveUsableSessions = sessionsLoaded && sessionsError == nil
+        var haveUsableSessions = sessionsLoaded && sessionsError == nil
         let haveUsableTasks = tasksLoaded && tasksError == nil
         var resolvedSessions = haveUsableSessions ? serverSessions : []
         let resolvedTasks = haveUsableTasks ? tasks : []
+        var fetchedSessions: [SessionRow]?
+        var sessionsError: String?
+        var sessionsLoadToken: CoordinatedLoadToken?
+        if let prefetchedSessions {
+            sessionsLoadToken = prefetchedSessions.token
+            switch prefetchedSessions.result {
+            case .success(let rows):
+                haveUsableSessions = true
+                resolvedSessions = rows.filter { $0.archivedAt == nil }
+                fetchedSessions = rows
+            case .failure(let error):
+                haveUsableSessions = false
+                resolvedSessions = []
+                // Only applySessionsLoad may mutate connection state, after
+                // its freshness fence. A superseded error is selection data.
+                sessionsError = error.localizedDescription
+            }
+        }
         var explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
         let needsAuthoritativeSessionHistory = !haveUsableSessions
             && needsAuthoritativeSessionHistoryForProjectContextSelection(
@@ -4173,7 +4209,7 @@ final class AppModel {
             tasks: resolvedTasks,
             allowAlphabeticalFallback: false
         )
-        if immediateProjectContextSelectionIsFinal(
+        if sessionsError == nil && immediateProjectContextSelectionIsFinal(
             immediateDecision,
             hasUsableSessions: haveUsableSessions,
             needsAuthoritativeSessionHistory: needsAuthoritativeSessionHistory
@@ -4184,15 +4220,16 @@ final class AppModel {
                 threads: immediateThreads,
                 sessions: resolvedSessions,
                 tasks: resolvedTasks,
-                allowAlphabeticalFallback: false
+                allowAlphabeticalFallback: false,
+                fetchedSessions: fetchedSessions,
+                sessionsLoadToken: sessionsLoadToken
             )
         }
 
+        // A refresh result is an attempted read even when it failed. Never
+        // turn that failure into a second request through a different scope.
         // Legacy default selection may consult chat history, never task APIs.
-        var fetchedSessions: [SessionRow]?
-        var sessionsError: String?
-        var sessionsLoadToken: CoordinatedLoadToken?
-        if !haveUsableSessions {
+        if !haveUsableSessions && prefetchedSessions == nil {
             let loadedSessions = await coordinatedSessionsLoad(
                 using: client,
                 generation: navigationGeneration,
@@ -4325,6 +4362,16 @@ final class AppModel {
         mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = [],
         preservingSelection: Bool = false
     ) async {
+        await loadProjectContext(using: client, mirrorFailuresTo: mirroredSurfaces,
+                                 preservingSelection: preservingSelection, sessionsRefresh: nil)
+    }
+
+    private func loadProjectContext(
+        using client: any ProjectContextLoadingClient,
+        mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces,
+        preservingSelection: Bool,
+        sessionsRefresh: Task<CoordinatedSessionsResult, Never>?
+    ) async {
         let navigationGeneration = currentProjectNavigationConnectionGeneration()
         noteProjectNavigationSurfaceAttempt(.projects, generation: navigationGeneration)
         projectContextLoadNonce &+= 1
@@ -4340,6 +4387,7 @@ final class AppModel {
             let nextProjects = try await loadedProjects
             let grants = try await loadedGrants
             let nextFamiliars = try await loadedFamiliars
+            let prefetchedSessions = await sessionsRefresh?.value
 
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
 
@@ -4354,7 +4402,8 @@ final class AppModel {
                 using: client,
                 projects: nextProjects,
                 loadNonce: loadNonce,
-                navigationGeneration: navigationGeneration
+                navigationGeneration: navigationGeneration,
+                prefetchedSessions: prefetchedSessions
             )
 
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
@@ -5846,13 +5895,30 @@ final class AppModel {
     /// required". Kept separate from `discoverBaseURL` so the paired
     /// sequential path keeps its credential-safety semantics untouched.
     static func previewDiscoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        guard !candidates.isEmpty else { return .unreachable(nil) }
+        guard !Task.isCancelled, !candidates.isEmpty else { return .unreachable(nil) }
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
             for (index, base) in candidates.enumerated() {
                 group.addTask { (index, await Self.probe(base, sendCredential: false)) }
             }
             var collected = [ProbeResult?](repeating: nil, count: candidates.count)
-            for await (index, result) in group { collected[index] = result }
+            var earliestTerminal: Int?
+            for await (index, result) in group {
+                collected[index] = result
+                switch result {
+                case .ok, .unauthorized, .managedPairingRequired, .credentialFailure:
+                    earliestTerminal = min(earliestTerminal ?? index, index)
+                case .failed:
+                    break
+                }
+                // Keep endpoint preference authoritative, including pairing
+                // gates. Once every earlier probe has answered, slower sibling
+                // ports cannot change the result and must not delay the preview.
+                if let winner = earliestTerminal,
+                   (0..<winner).allSatisfy({ collected[$0] != nil }) {
+                    group.cancelAll()
+                    break
+                }
+            }
             return collected
         }
         return adjudicateDiscoveryResults(results, candidates: candidates)
@@ -5925,6 +5991,27 @@ final class AppModel {
               (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil
         else { return .failed(.wrongServer) }
         return .ok
+    }
+
+    /// Overlap independent metadata reads with one session refresh. Both the
+    /// selection resolver and chat rows consume the same attempted result.
+    func refreshChats() async {
+        guard let client = coreResourceClient else { return }
+        let generation = currentProjectNavigationConnectionGeneration()
+        noteProjectNavigationSurfaceAttempt(.sessions, generation: generation)
+        let sessionsRefresh = Task {
+            let load = await coordinatedSessionsLoad(using: client, generation: generation)
+            applySessionsLoad(load, generation: generation, preservingSelection: false)
+            return load
+        }
+        await withTaskCancellationHandler {
+            await loadProjectContext(using: client, mirrorFailuresTo: [.familiars],
+                                     preservingSelection: false, sessionsRefresh: sessionsRefresh)
+            // Metadata failure must not abandon an otherwise valid session read.
+            _ = await sessionsRefresh.value
+        } onCancel: {
+            sessionsRefresh.cancel()
+        }
     }
 
     func loadFamiliars() async {
@@ -6070,6 +6157,14 @@ final class AppModel {
             using: client,
             generation: navigationGeneration
         )
+        applySessionsLoad(load, generation: navigationGeneration, preservingSelection: preservingSelection)
+    }
+
+    private func applySessionsLoad(
+        _ load: CoordinatedSessionsResult,
+        generation navigationGeneration: UInt64?,
+        preservingSelection: Bool
+    ) {
         guard !Task.isCancelled,
               coordinatedLoadShouldApply(load.token, state: sessionsLoadState) else { return }
         markCoordinatedLoadApplied(load.token, state: &sessionsLoadState)

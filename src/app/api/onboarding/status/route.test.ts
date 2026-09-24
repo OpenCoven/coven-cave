@@ -66,7 +66,7 @@ assert.match(
 );
 assert.match(source, /const ONBOARDING_STATUS_DEADLINE_MS = 4_000/);
 assert.match(source, /const ONBOARDING_DISCOVERY_DEADLINE_MS = 2_000/);
-assert.match(source, /covenSpawnEnv\(\{ discoveryDeadline \}\)/);
+assert.match(source, /await covenSpawnEnvAsync\(\{ discoveryDeadline \}\)/, "readiness env discovery runs off the event loop under the status deadline");
 assert.match(
   source,
   /discoveryState = environmentDiscoveryState\(Date\.now\(\), discoveryDeadline\)/,

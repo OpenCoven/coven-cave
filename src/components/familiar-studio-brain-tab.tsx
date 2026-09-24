@@ -925,7 +925,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                             }]
                           : []),
                         ...modelOptions.map((option) => ({ value: option.id, label: option.label })),
-                        ...(allowCustomModel ? [{ value: "__custom__", label: "Custom..." }] : []),
+                        ...(allowCustomModel ? [{ value: "__custom__", label: "Custom…" }] : []),
                       ]}
                     />
                   ) : null}
@@ -1430,7 +1430,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           value: option.id,
                           label: option.label,
                         })),
-                        { value: "__custom__", label: "Custom..." },
+                        { value: "__custom__", label: "Custom…" },
                       ]}
                     />
                     {imageModelIsCustom ? (

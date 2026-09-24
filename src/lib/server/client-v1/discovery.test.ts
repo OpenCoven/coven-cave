@@ -459,6 +459,37 @@ test("server lifecycle publishes only from listener readiness and performs nonce
   );
 });
 
+test("server refuses to replace a live foreign discovery record and records its publication outcome (#5517)", async () => {
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+  assert.match(source, /\| "target-owned-by-live-instance";/u, "the refusal has its own failure category");
+  const publish = source.indexOf("function publishStandaloneClientV1DiscoveryRecord(");
+  const occupantCheck = source.indexOf("readLiveForeignDiscoveryOccupant(path)", publish);
+  const temporaryWrite = source.indexOf("openSync(temporaryPath", publish);
+  assert.ok(occupantCheck > publish, "the publisher consults the live occupant");
+  assert.ok(
+    occupantCheck < temporaryWrite,
+    "a live foreign record is refused before any byte is written",
+  );
+  const publisher = /function publishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(publisher, "server.ts must define publishStandaloneClientV1DiscoveryRecord");
+  assert.match(
+    publisher![0],
+    /clientV1DiscoveryPublished = true;\s*registerClientV1DiscoveryPublication\(endpoint, null\);/u,
+    "a successful publication reaches the Settings status route",
+  );
+  const report = /function reportClientV1DiscoveryUnavailable\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(report, "server.ts must define reportClientV1DiscoveryUnavailable");
+  assert.match(
+    report![0],
+    /clientV1DiscoveryPublished = false;\s*registerClientV1DiscoveryPublication\(clientV1DiscoveryEndpoint, error\);/u,
+    "a refused publication reaches the Settings status route with its category",
+  );
+  const republish = /function republishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/u.exec(source);
+  assert.ok(republish, "server.ts must define republishStandaloneClientV1DiscoveryRecord");
+  assert.match(republish![0], /if \(!clientV1DiscoveryPublished\) return false;/u, "republish only after an own publication");
+  assert.match(republish![0], /publishStandaloneClientV1DiscoveryRecord\(endpoint\)/u, "republish goes through the refusing publisher");
+});
+
 test("standalone authority boot is default-off, one-key, public-only, and fail-closed", async () => {
   const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
   const prepare = source.indexOf("await app.prepare()");
@@ -659,7 +690,7 @@ test("the standalone server enforces ownership on Windows with this module's scr
   );
   assert.match(
     source,
-    /if \(findings\.length > 0\) \{\s*throw discoveryPublicationFailure\(\s*`\$\{label\}-owner-shared`,\s*new Error\(/,
+    /if \(findings\.length > 0\) \{[\s\S]{0,800}?throw discoveryPublicationFailure\(\s*`\$\{label\}-owner-shared`,\s*new Error\(/,
     "the standalone server must refuse on any finding, not merely collect them",
   );
 });
@@ -925,6 +956,46 @@ test("standalone Windows owner observations distinguish unreadable and shared wi
         `[cave] client-v1 discovery publication refused: ${label}-owner-${verdict}`,
       ));
       assert.doesNotMatch(runtime.messages.join("\n"), /private|foreign/);
+    }
+  }
+});
+
+test("standalone Windows discovery logs bounded refused ACL state without publishing", async () => {
+  for (const label of ["root", "target"]) {
+    for (const repaired of [false, true]) {
+      let now = 100;
+      const root = resolve("private-discovery-root");
+      const runtime = await standalonePublisher({
+        performance: { now: () => now },
+        process: { pid: 4310, platform: "win32", env: {} },
+        execFileSync: (_exe: string, _args: string[], options: { env: Record<string, string> }) => {
+          now += 5;
+          const selected = (options.env.COVEN_CAVE_CLIENT_V1_ACL_PATH === root) === (label === "root");
+          return JSON.stringify({
+            self: "private-self", owner: "private-self", protected: !selected,
+            repaired: selected && repaired, removed: ["private-principal"],
+            aces: [{ sid: "private-self", type: "Allow", rights: 0 }],
+          });
+        },
+      });
+      assert.throws(() => runtime.publish("http://127.0.0.1:4310"), (error) => {
+        runtime.report(error);
+        return true;
+      });
+      assert.equal(runtime.published(), false);
+      assert.deepEqual(runtime.writes, []);
+      const diagnostics = runtime.messages.filter((message) => message.startsWith("[windows-acl-state] "));
+      assert.equal(diagnostics.length, 1);
+      const { at, ...state } = JSON.parse(diagnostics[0]!.slice("[windows-acl-state] ".length));
+      assert.equal(Number.isFinite(Date.parse(at)), true);
+      assert.deepEqual(state, {
+        discoveryPath: label, durationMs: 5, repairAttempted: repaired,
+        protected: false, ownerMatches: true, aceCount: 1, removedPrincipalCount: 1,
+      });
+      assert.doesNotMatch(runtime.messages.join("\n"), /private/);
+      assert.ok(runtime.messages.includes(
+        `[cave] client-v1 discovery publication refused: ${label}-owner-shared`,
+      ));
     }
   }
 });

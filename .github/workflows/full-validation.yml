@@ -56,6 +56,35 @@ jobs:
           echo "::error::pnpm build failed after 3 attempts"
           exit 1
 
+      # Client v1 compatibility gates (Chat v1 Phase 7, Task 2). External
+      # clients read /api/client/v1/health before they pair; a release whose
+      # committed contract fixture drifted from source, or whose built server
+      # answers that route wrongly, must never reach the installer builds.
+      - name: Client v1 contract fixture matches source
+        run: node scripts/export-client-v1-contract.mjs --check
+      - name: Client v1 release smoke against the built server
+        shell: bash
+        env:
+          COVEN_CAVE_E2E: "1"
+          COVEN_CAVE_PORT: "3123"
+        run: |
+          set -euo pipefail
+          node server.mjs > client-v1-release-smoke-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:${COVEN_CAVE_PORT}/api/client/v1/health" >/dev/null 2>&1; then
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              echo "::error::the built Cave server exited before answering /api/client/v1/health"
+              cat client-v1-release-smoke-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          node scripts/client-v1-release-smoke.mjs --origin "http://127.0.0.1:${COVEN_CAVE_PORT}"
+
   rust:
     name: Validate candidate Rust
     runs-on: ubuntu-24.04

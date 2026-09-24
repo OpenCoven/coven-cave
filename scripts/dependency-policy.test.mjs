@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 
@@ -8,11 +9,30 @@ const workspaceConfig = parse(await readFile(new URL("../pnpm-workspace.yaml", i
 const exactVersion = /^(?:\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?|workspace:\*)$/;
 const depBlocks = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
 
+// The selected SDK is not published. These two reviewed tarballs are immutable
+// source-pinned exceptions, not general permission for file/git dependencies.
+const sdkPins = {
+  "@opencoven/sdk-core": ["opencoven-sdk-core-0.0.1.tgz", "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b"],
+  "@opencoven/coven-client": ["opencoven-coven-client-0.0.1.tgz", "74c6a2d984e52f681d47c96d872c37da2caf7b64783d9d97d0aeca476608f79c"],
+};
+const sdkProvenance = JSON.parse(await readFile(new URL("../vendor/opencoven-sdk/provenance.json", import.meta.url), "utf8"));
+assert.equal(sdkProvenance.repository, "https://github.com/OpenCoven/sdk");
+assert.equal(sdkProvenance.revision, "d4cf105df882271497ab9eeacf075af87e8d6330");
+assert.equal(sdkProvenance.packages.length, 2);
+for (const [name, [file, digest]] of Object.entries(sdkPins)) {
+  const bytes = await readFile(new URL(`../vendor/opencoven-sdk/${file}`, import.meta.url));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), digest, `${name} archive integrity`);
+  const entry = sdkProvenance.packages.find(entry => entry.name === name);
+  assert.deepEqual([entry?.file, entry?.sha256, entry?.bytes], [file, digest, bytes.length]);
+  assert.equal(packageJson.dependencies[name], `file:vendor/opencoven-sdk/${file}`);
+}
+assert.equal(packageJson.pnpm.overrides["@opencoven/sdk-core"], packageJson.dependencies["@opencoven/sdk-core"]);
+
 for (const blockName of depBlocks) {
   const block = packageJson[blockName] ?? {};
   for (const [name, version] of Object.entries(block)) {
     assert.equal(
-      exactVersion.test(version),
+      exactVersion.test(version) || (blockName === "dependencies" && Object.hasOwn(sdkPins, name) && version === `file:vendor/opencoven-sdk/${sdkPins[name][0]}`),
       true,
       `${blockName}.${name} must be pinned to an exact version, got ${version}`,
     );

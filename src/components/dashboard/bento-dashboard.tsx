@@ -24,6 +24,7 @@ import {
   type FamiliarFileMemoryStat,
   type MemoryAvailability,
 } from "@/components/familiars-view-stats";
+import { Button } from "@/components/ui/button";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useHeatTip } from "@/components/ui/heat-tip";
 import { formatHeatTip } from "@/lib/heat-tip";
@@ -83,9 +84,9 @@ const EMPTY: BentoData = {
   projects: null,
 };
 
-async function getJson<T>(url: string): Promise<T | null> {
+async function getJson<T>(url: string, signal: AbortSignal): Promise<T | null> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", signal });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -101,15 +102,15 @@ function retryAfterHeaderSeconds(value: string | null): number {
   return Number.isNaN(date) ? 0 : Math.max(0, Math.ceil((date - Date.now()) / 1000));
 }
 
-async function getGitHubActivity(): Promise<{
+async function getGitHubActivity(signal: AbortSignal): Promise<{
   data: GitHubActivityPayload | null;
   retryAfterSeconds: number;
 }> {
   try {
-    const response = await fetch("/api/github/activity", { cache: "no-store" });
+    const response = await fetch("/api/github/activity", { cache: "no-store", signal });
     const data = await response.json().catch(() => null) as GitHubActivityPayload | null;
     return {
-      data,
+      data: response.ok ? data : null,
       retryAfterSeconds: Math.max(
         typeof data?.retryAfterSeconds === "number" ? data.retryAfterSeconds : 0,
         retryAfterHeaderSeconds(response.headers.get("retry-after")),
@@ -132,6 +133,9 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
   const profile = useUserProfile();
   const [data, setData] = useState<BentoData>(EMPTY);
   const [ready, setReady] = useState<ReadonlySet<keyof BentoData>>(new Set());
+  const [failedMetrics, setFailedMetrics] = useState<ReadonlySet<string>>(new Set());
+  const loadControllerRef = useRef<AbortController | null>(null);
+  const statsRef = useRef<HTMLDivElement | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Keep setState off an unmounted tree: polled loads may resolve after unmount.
@@ -141,49 +145,66 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      loadControllerRef.current?.abort();
+      loadControllerRef.current = null;
     };
   }, []);
 
   const load = useCallback(() => {
+    if (loadControllerRef.current) return;
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+    const requests: Promise<unknown>[] = [];
     const put = <K extends keyof BentoData>(key: K, value: BentoData[K]) => {
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || controller.signal.aborted) return;
       setData((d) => ({ ...d, [key]: value }));
       setReady((r) => new Set(r).add(key));
       setLastUpdated(new Date());
     };
     const attentionResult = <K extends "cards" | "inbox">(key: K, value: BentoData[K] | null) => {
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || controller.signal.aborted) return;
       // Failed refreshes retain the last successful snapshot, including server seeds.
       if (value !== null) put(key, value);
       setAttentionStatus((previous) => ({ ...previous, [key]: value === null ? "error" : "ready" }));
     };
-    void getJson<{ ok?: boolean; cards?: Card[] }>("/api/board").then((r) =>
+    const metricResult = <K extends "sessions" | "familiars" | "projects">(key: K, value: BentoData[K] | null) => {
+      if (!aliveRef.current || controller.signal.aborted) return;
+      if (value !== null) put(key, value);
+      setFailedMetrics((previous) => {
+        const next = new Set(previous);
+        if (value === null) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+    };
+    requests.push(getJson<{ ok?: boolean; cards?: Card[] }>("/api/board", signal).then((r) =>
       attentionResult("cards", r?.ok !== false && Array.isArray(r?.cards) ? r.cards : null),
-    );
-    void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
-    // Needs-attention derives from this list — keep the last known good copy
-    // on a failed poll rather than flashing "all clear".
-    void getJson<{ ok?: boolean; items?: InboxItem[] }>("/api/inbox").then((r) =>
+    ));
+    requests.push(getJson<{ ok?: boolean; familiars?: Familiar[] }>("/api/familiars", signal).then((r) =>
+      metricResult("familiars", r?.ok !== false && Array.isArray(r?.familiars) ? r.familiars : null),
+    ));
+    requests.push(getJson<{ ok?: boolean; items?: InboxItem[] }>("/api/inbox", signal).then((r) =>
       attentionResult("inbox", r?.ok !== false && Array.isArray(r?.items) ? r.items : null),
-    );
-    void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
-    // Familiar memory counts came from the canonical vault, which now lives in
-    // the dedicated memory application. The MEMORY.md scan is the remaining
-    // source, so the stat keeps meaning something instead of going blank.
-    void getJson<{ ok?: boolean; entries?: FamiliarFileMemoryStat[] }>("/api/memory").then((r) => {
+    ));
+    requests.push(getJson<{ ok?: boolean; sessions?: SessionRow[] }>("/api/sessions/list", signal).then((r) =>
+      metricResult("sessions", r?.ok !== false && Array.isArray(r?.sessions) ? r.sessions : null),
+    ));
+    // The dedicated memory application owns the vault; this is the remaining
+    // MEMORY.md file count, and an unavailable scan must stay distinguishable.
+    requests.push(getJson<{ ok?: boolean; entries?: FamiliarFileMemoryStat[] }>("/api/memory", signal).then((r) => {
       if (r?.ok && Array.isArray(r.entries)) {
         put("memory", r.entries);
         put("memoryAvailability", "ready");
       } else {
         put("memoryAvailability", "unavailable");
       }
-    });
-    void getJson<{ ok: boolean; projects: unknown[] }>("/api/projects").then((r) =>
-      put("projects", Array.isArray(r?.projects) ? r.projects.length : null),
-    );
-    if (Date.now() < githubRetryUntilRef.current) return;
-    void getGitHubActivity().then(({ data: act, retryAfterSeconds }) => {
-      if (!aliveRef.current) return;
+    }));
+    requests.push(getJson<{ ok?: boolean; projects?: unknown[] }>("/api/projects", signal).then((r) =>
+      metricResult("projects", r?.ok !== false && Array.isArray(r?.projects) ? r.projects.length : null),
+    ));
+    if (Date.now() >= githubRetryUntilRef.current) requests.push(getGitHubActivity(signal).then(({ data: act, retryAfterSeconds }) => {
+      if (!aliveRef.current || controller.signal.aborted) return;
       const activityItems = act?.ok && Array.isArray(act.items) ? act.items : null;
       const requestFailed = activityItems === null;
       const complete = !requestFailed
@@ -214,14 +235,17 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
         return { ...d, github: [...map.values()], githubComplete: complete };
       });
       setReady((r) => new Set(r).add("github").add("githubComplete"));
-      setLastUpdated(new Date());
+      if (!requestFailed) setLastUpdated(new Date());
+    }));
+    return Promise.allSettled(requests).then(() => {
+      if (loadControllerRef.current === controller) loadControllerRef.current = null;
     });
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
-  usePausablePoll(load, 30_000);
+  usePausablePoll(load, 30_000, { serialize: true });
 
   // Server-rendered model is the first-paint seed; each poll rebuilds it from
   // the fresh inbox so needs-attention stays live.
@@ -383,30 +407,43 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
 
   return (
     <div className="bento-dash">
+      {failedMetrics.size > 0 ? (
+        <div role="alert" className="sticky left-0 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--danger-border)] bg-[var(--danger-bg)] p-3 text-[length:var(--text-xs)] text-[var(--danger-text)]">
+          <span>Couldn't refresh {Array.from(failedMetrics).sort().join(", ")}. Last loaded values remain visible.</span>
+          <Button size="sm" aria-label="Retry dashboard refresh" onClick={() => {
+            statsRef.current?.focus();
+            // Explicit retry replaces a partly failed batch, even while a
+            // sibling endpoint is slow. Its late results cannot publish.
+            loadControllerRef.current?.abort();
+            loadControllerRef.current = null;
+            void load();
+          }}>Retry</Button>
+        </div>
+      ) : null}
       <div className="bd-frame">
         {/* ── Stats row ── */}
-        <div className="bd-stats">
+        <div className="bd-stats focus-ring" ref={statsRef} tabIndex={-1} role="region" aria-label="Dashboard statistics">
           <div className="bd-cell bd-stat">
             <div className="bd-label">total sessions</div>
-            <div className="bd-stat-value">{totals.total}</div>
+            <div className="bd-stat-value">{ready.has("sessions") ? totals.total : "—"}</div>
           </div>
           <div className="bd-cell bd-stat">
             <div className="bd-label">sessions (30d)</div>
-            <div className="bd-stat-value">{totals.last30d}</div>
+            <div className="bd-stat-value">{ready.has("sessions") ? totals.last30d : "—"}</div>
           </div>
           <div className="bd-cell bd-streak">
             <div className="bd-label">activity streak</div>
-            <div className="bd-streak-value">{streak}d</div>
+            <div className="bd-streak-value">{ready.has("sessions") ? `${streak}d` : "—"}</div>
             <div className="bd-pips">
               {Array.from({ length: 5 }, (_, i) => (
                 <span key={i} className={`bd-pip${i < pipsFilled ? " bd-pip--filled" : ""}`} />
               ))}
-              <span className="bd-pips-best">best {bestStreak}d</span>
+              <span className="bd-pips-best">best {ready.has("sessions") ? `${bestStreak}d` : "—"}</span>
             </div>
           </div>
           <div className="bd-cell bd-stat">
             <div className="bd-label">familiars</div>
-            <div className="bd-stat-value">{data.familiars.length}</div>
+            <div className="bd-stat-value">{ready.has("familiars") ? data.familiars.length : "—"}</div>
           </div>
           <div className="bd-cell bd-stat">
             <div className="bd-label">projects</div>
@@ -433,7 +470,7 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
               </div>
               <div className="bd-human-row">
                 <span className="bd-label">coven sessions</span>
-                <span className="bd-human-count">{totals.total}</span>
+                <span className="bd-human-count">{ready.has("sessions") ? totals.total : "—"}</span>
               </div>
             </div>
             <div className="bd-cell bd-feed">
@@ -760,7 +797,7 @@ export function BentoDashboard({ model: initialModel }: { model?: DashboardModel
           </div>
           <span className="bd-footer-spacer" />
           <span className="bd-footer-stamp">
-            COVEN CAVE · updated{" "}
+            COVEN CAVE · {failedMetrics.size > 0 ? "partial update" : "updated"}{" "}
             {lastUpdated ? (
               <time dateTime={lastUpdated.toISOString()}>{relativeTime(lastUpdated.toISOString(), Date.now(), "bare") || "just now"}</time>
             ) : (

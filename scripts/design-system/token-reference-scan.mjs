@@ -463,7 +463,6 @@ export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
   ["--citation-card-w", 2],
   ["--composer-pill-gold", 11],
   ["--gh-diff-gutter", 2],
-  ["--metric-accent", 2],
   ["--shadow-panel", 1],
 ]);
 

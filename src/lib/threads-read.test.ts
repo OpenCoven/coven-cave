@@ -1541,6 +1541,7 @@ describe("normalizeProposal (§2.6)", () => {
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
     const autoStaged = {
       ...staged,
+      autoRegressionEvidence: Array(32).fill(7),
       classification: {
         ...staged.classification,
         approval_path: { kind: "auto_regression", veto: null },
@@ -1657,6 +1658,7 @@ describe("normalizeProposal (§2.6)", () => {
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
     const autoWithNoVeto = {
       ...staged,
+      autoRegressionEvidence: Array(32).fill(7),
       classification: {
         ...staged.classification,
         approval_path: { kind: "auto_regression", veto: null },
@@ -1932,6 +1934,7 @@ describe("normalizeProposal (§2.6)", () => {
     const { staged: vetoStaged, daemon: vetoDaemon } = vetoContractFixture();
     const autoStaged = {
       ...vetoStaged,
+      autoRegressionEvidence: Array(32).fill(7),
       classification: {
         ...vetoStaged.classification,
         approval_path: {

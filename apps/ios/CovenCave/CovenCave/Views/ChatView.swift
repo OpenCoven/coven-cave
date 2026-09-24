@@ -2424,7 +2424,7 @@ struct ChatView: View {
         let excerpt = message.text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let clipped = excerpt.count > 140 ? "\(excerpt.prefix(137))..." : excerpt
+        let clipped = excerpt.count > 140 ? "\(excerpt.prefix(137))…" : excerpt
         return "Forwarded from \(sender): \(clipped)"
     }
 

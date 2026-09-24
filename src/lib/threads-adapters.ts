@@ -38,6 +38,7 @@ import {
   type WeaveListEntry,
   type WeaveDetail,
 } from "./threads-read.ts";
+import { normalizeProposalTerminal, type ProposalTerminalReceipt } from "./proposal-terminal.ts";
 import { normalizeProposal } from "./proposal-normalize.ts";
 
 export interface ThreadsReadAdapter {
@@ -48,6 +49,7 @@ export interface ThreadsReadAdapter {
   strands(threadId: string): Promise<ThreadsEnvelope<StrandView[]>>;
   audit(threadId: string, before?: number): Promise<ThreadsEnvelope<AuditEntryView[]>>;
   proposals(): Promise<ThreadsEnvelope<ProposalView[]>>;
+  proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>>;
   approve(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
   reject(proposalId: string, expectedRevision?: string, note?: string): Promise<ThreadsEnvelope<unknown>>;
 }
@@ -97,7 +99,7 @@ type PendingSnapshot = {
 };
 
 type ProposalSummarySource =
-  | { state: "available"; byId: Map<string, unknown> }
+  | { state: "available"; byId: Map<string, unknown>; total: number }
   | { state: "unavailable" }
   | { state: "unparseable" };
 
@@ -160,9 +162,39 @@ function proposalSummarySource(raw: unknown): ProposalSummarySource {
   for (const proposal of proposals) {
     if (typeof proposal !== "object" || proposal === null || Array.isArray(proposal)) continue;
     const proposalId = (proposal as Record<string, unknown>).proposalId;
-    if (typeof proposalId === "string") byId.set(proposalId, proposal);
+    if (typeof proposalId === "string") {
+      if (byId.has(proposalId)) return { state: "unparseable" };
+      byId.set(proposalId, proposal);
+    }
   }
-  return { state: "available", byId };
+  return { state: "available", byId, total: proposals.length };
+}
+
+// Current producer: Coven api.rs threads_proposals_response. Keep the legacy
+// single-page wrapper for supported older daemons and recorded fixtures.
+function proposalSummaryPage(raw: unknown): { source: ProposalSummarySource; limit: number; next: string | null } | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const page = raw as Record<string, unknown>;
+  if (Object.keys(page).length === 1 && Object.hasOwn(page, "proposals")) {
+    const source = proposalSummarySource(page);
+    return source.state === "available" ? { source, limit: 64, next: null } : null;
+  }
+  const keys = ["proposals", "limit", "hasMore", "nextCursor"];
+  if (Object.keys(page).length !== keys.length || !keys.every((key) => Object.hasOwn(page, key))) return null;
+  if (!Number.isInteger(page.limit) || (page.limit as number) < 1 || (page.limit as number) > 64
+    || !Array.isArray(page.proposals) || page.proposals.length > (page.limit as number)
+    || typeof page.hasMore !== "boolean") return null;
+  if (page.hasMore) {
+    if (page.proposals.length !== page.limit || typeof page.nextCursor !== "string"
+      || page.nextCursor.length > 340 || !/^[A-Za-z0-9_-]+$/.test(page.nextCursor)) return null;
+    const decoded = Buffer.from(page.nextCursor, "base64url");
+    const file = decoded.toString("utf8");
+    if (decoded.toString("base64url") !== page.nextCursor || decoded.length > 255
+      || !Buffer.from(file).equals(decoded) || !file.endsWith(".json") || /[/\\]/.test(file)) return null;
+  } else if (page.nextCursor !== null) return null;
+  const source = proposalSummarySource({ proposals: page.proposals });
+  return source.state === "available"
+    ? { source, limit: page.limit as number, next: page.nextCursor as string | null } : null;
 }
 
 function proposalSummaryCursor(raw: unknown): string {
@@ -348,6 +380,10 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     return okEnvelope(page, this.meta(cursor, true));
   }
 
+  async proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>> {
+    return blockedEnvelope("no-fixture", this.meta("terminal:fixtures-unavailable", false));
+  }
+
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const timeout = this.timedOut<ProposalView[]>();
     if (timeout) return timeout;
@@ -360,7 +396,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     }
     if (this.phase5FixtureDir === null) {
       return okEnvelope(
-        joinProposalSummaries(staged, { state: "available", byId: new Map() }),
+        joinProposalSummaries(staged, { state: "available", byId: new Map(), total: 0 }),
         this.meta(pendingDirCursor(this.pendingDir), true),
       );
     }
@@ -420,6 +456,8 @@ type DaemonCall = <T>(req: {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  hardTimeoutMs?: number;
+  retryTransportFailure?: boolean;
 }) => Promise<DaemonResponse<T>>;
 
 export type DaemonAdapterOptions = {
@@ -551,13 +589,92 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     }
   }
 
+  private async proposalSummaries(): Promise<{ source: ProposalSummarySource; cursor: string }> {
+    const byId = new Map<string, unknown>();
+    let total = 0;
+    const seen = new Set<string>();
+    const digest = createHash("sha256");
+    const deadline = performance.now() + this.timeoutMs;
+    let requestPath = DAEMON_PROPOSALS_PATH;
+    let pageLimit: number | null = null;
+    // Bound total work, not just each page. Exhaustion never publishes partial authority.
+    for (let index = 0; index < 64; index++) {
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };
+      const res = await this.call<unknown>({
+        path: requestPath, timeoutMs: remaining, hardTimeoutMs: remaining, retryTransportFailure: false,
+      });
+      if (!res.ok) return { source: { state: "unavailable" }, cursor: `unavailable:${res.status}` };
+      if (performance.now() >= deadline) return { source: { state: "unavailable" }, cursor: "pagination:timeout" };
+      digest.update(proposalSummaryCursor(res.data));
+      const page = proposalSummaryPage(res.data);
+      if (!page || page.source.state !== "available") return { source: { state: "unparseable" }, cursor: "pagination:invalid" };
+      if (pageLimit !== null && (page.limit !== pageLimit
+        || !Object.hasOwn(res.data as object, "hasMore"))) {
+        return { source: { state: "unparseable" }, cursor: "pagination:changed-contract" };
+      }
+      pageLimit = page.limit;
+      total += page.source.total;
+      for (const [id, summary] of page.source.byId) {
+        if (byId.has(id)) return { source: { state: "unparseable" }, cursor: "pagination:duplicate" };
+        byId.set(id, summary);
+      }
+      if (page.next === null) return { source: { state: "available", byId, total }, cursor: digest.digest("hex").slice(0, 16) };
+      if (seen.has(page.next)) return { source: { state: "unparseable" }, cursor: "pagination:repeated-cursor" };
+      seen.add(page.next);
+      requestPath = `${DAEMON_PROPOSALS_PATH}?limit=${page.limit}&cursor=${encodeURIComponent(page.next)}`;
+    }
+    return { source: { state: "unparseable" }, cursor: "pagination:limit" };
+  }
+
+  async proposalOutcomes(): Promise<ThreadsEnvelope<ProposalTerminalReceipt[]>> {
+    const dbPath = path.join(/* turbopackIgnore: true */ this.home, "coven.sqlite3");
+    if (!existsSync(/* turbopackIgnore: true */ dbPath)) return blockedEnvelope("no-audit-store", this.meta("terminal:absent", false));
+    let receipts: ProposalTerminalReceipt[];
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        // Check uniqueness across the whole audit, not just the display page.
+        const rows = db.prepare(`WITH recent AS MATERIALIZED (
+          SELECT id, proposal_id, event_type, substr(detail, 1, 16384) AS detail, decided_at
+          FROM ward_audit WHERE event_type IN ('proposal_approved', 'proposal_rejected', 'proposal_vetoed')
+          ORDER BY id DESC LIMIT 50
+        ), counts AS MATERIALIZED (
+          SELECT proposal_id, COUNT(*) AS terminal_count FROM ward_audit
+          WHERE proposal_id IN (SELECT proposal_id FROM recent)
+            AND event_type IN ('proposal_approved', 'proposal_rejected', 'proposal_vetoed')
+          GROUP BY proposal_id
+        ) SELECT recent.*, counts.terminal_count FROM recent
+          LEFT JOIN counts USING (proposal_id) ORDER BY recent.id DESC`).all();
+        receipts = [];
+        for (const row of rows) {
+          const receipt = normalizeProposalTerminal(row);
+          if (!receipt || row.terminal_count !== 1) return blockedEnvelope("unparseable", this.meta("terminal:invalid", false));
+          receipts.push(receipt);
+        }
+      } finally { db.close(); }
+    } catch { return blockedEnvelope("no-audit-store", this.meta("terminal:unreadable", false)); }
+    // A persisted receipt alone cannot make an unavailable daemon look live.
+    const summaries = await this.proposalSummaries();
+    if (summaries.source.state !== "available") return blockedEnvelope("daemon-unavailable", this.meta("terminal:daemon-unavailable", false));
+    if (receipts.some(receipt => summaries.source.state === "available" && summaries.source.byId.has(receipt.proposalId))) {
+      return blockedEnvelope("unparseable", this.meta("terminal:still-pending", false));
+    }
+    return okEnvelope(receipts, this.meta(`terminal:${receipts[0]?.auditId ?? 0}:${summaries.cursor}`, true));
+  }
+
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const pendingDir = path.join(/* turbopackIgnore: true */ this.home, "pending");
     if (!existsSync(/* turbopackIgnore: true */ pendingDir)) {
-      // No pending dir but a real coven home: nothing has ever been staged —
-      // verified empty. No coven home at all: nothing to verify against.
-      if (existsSync(/* turbopackIgnore: true */ this.home)) return okEnvelope([], this.meta("pending:empty", true));
-      return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
+      if (!existsSync(/* turbopackIgnore: true */ this.home)) return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
+      const summaries = await this.proposalSummaries();
+      if (summaries.source.state !== "available") return blockedEnvelope(
+        summaries.source.state === "unparseable" ? "unparseable" : "daemon-unavailable", this.meta("pending:unverified", false));
+      if (summaries.source.total !== 0 || existsSync(/* turbopackIgnore: true */ pendingDir)) {
+        return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));
+      }
+      return okEnvelope([], this.meta(`pending:empty:${summaries.cursor}`, true));
     }
     const snapshot = readPendingSnapshot(pendingDir);
     if (snapshot === null) {
@@ -565,18 +682,20 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       // never a throw and never an empty-healthy answer.
       return blockedEnvelope("unparseable", this.meta("pending:unreadable", false));
     }
-    if (snapshot.staged.length === 0) return okEnvelope([], this.meta(snapshot.cursor, true));
 
-    const res = await this.call<unknown>({ path: DAEMON_PROPOSALS_PATH, timeoutMs: this.timeoutMs });
+    const summaries = await this.proposalSummaries();
+    if (summaries.source.state !== "available") return blockedEnvelope(
+      summaries.source.state === "unparseable" ? "unparseable" : "daemon-unavailable", this.meta(`${snapshot.cursor}:unverified`, false));
+    if (snapshot.staged.length === 0 && summaries.source.total !== 0) {
+      return blockedEnvelope("unparseable", this.meta("pending:missing-staged", false));
+    }
     const confirmedSnapshot = readPendingSnapshot(pendingDir);
     if (confirmedSnapshot === null || confirmedSnapshot.cursor !== snapshot.cursor) {
       return blockedEnvelope("unparseable", this.meta("pending:changed-during-summary", false));
     }
-    const summaries = res.ok ? proposalSummarySource(res.data) : { state: "unavailable" as const };
-    const summariesCursor = res.ok ? proposalSummaryCursor(res.data) : `unavailable:${res.status}`;
     return okEnvelope(
-      joinProposalSummaries(snapshot.staged, summaries),
-      this.meta(`${snapshot.cursor}:${summariesCursor}`, true),
+      joinProposalSummaries(snapshot.staged, summaries.source),
+      this.meta(`${snapshot.cursor}:${summaries.cursor}`, true),
     );
   }
 

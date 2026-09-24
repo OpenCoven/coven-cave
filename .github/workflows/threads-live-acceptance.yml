@@ -1,0 +1,81 @@
+name: Threads live acceptance
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Real daemon (${{ matrix.browser }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      COVEN_THREADS_E2E_BROWSER: ${{ matrix.browser }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Record invocation identity
+        shell: bash
+        run: |
+          mkdir -p test-results/threads-live-metadata
+          node --input-type=module <<'NODE'
+          import { writeFileSync, readFileSync } from 'node:fs';
+          const keys = ['GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'COVEN_THREADS_E2E_BROWSER'];
+          const identity = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+          identity.pins = JSON.parse(readFileSync('tests/threads-live-daemon/compatibility.json', 'utf8'));
+          identity.rustToolchain = '1.98.1';
+          identity.startedAt = new Date().toISOString();
+          writeFileSync('test-results/threads-live-metadata/invocation.json', JSON.stringify(identity, null, 2) + '\n');
+          NODE
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install browser and system dependencies
+        run: pnpm exec playwright install --with-deps "$COVEN_THREADS_E2E_BROWSER"
+      - name: Prepare exact Coven source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$RUNNER_TEMP/coven-source"
+          pin="$(node -p "require('./tests/threads-live-daemon/compatibility.json').covenCommit")"
+          [[ "$pin" =~ ^[a-f0-9]{40}$ ]]
+          git init "$source_dir"
+          git -C "$source_dir" remote add origin https://github.com/OpenCoven/coven.git
+          git -C "$source_dir" fetch --depth=1 origin "$pin"
+          git -C "$source_dir" checkout --detach FETCH_HEAD
+          test "$(git -C "$source_dir" rev-parse HEAD)" = "$pin"
+          bash "$source_dir/scripts/install-native-link-dependencies.sh"
+          rustup toolchain install 1.98.1 --profile minimal
+          echo "RUSTUP_TOOLCHAIN=1.98.1" >> "$GITHUB_ENV"
+      - name: Build isolated clock-enabled daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          provenance="$(node scripts/build-threads-live-daemon.mjs "$RUNNER_TEMP/coven-source")"
+          test -f "$provenance"
+          echo "COVEN_THREADS_E2E_PROVENANCE=$provenance" >> "$GITHUB_ENV"
+      - name: Run first-attempt journeys
+        run: pnpm exec playwright test --config playwright.threads-live.config.ts --retries=0
+      - name: Retain sanitized acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: threads-live-${{ matrix.browser }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/threads-live-daemon
+            test-results/threads-live-metadata
+          if-no-files-found: error
+          retention-days: 90

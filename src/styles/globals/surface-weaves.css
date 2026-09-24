@@ -11,6 +11,7 @@
    stale) has exactly one tint recipe per tone here, shared by both surfaces. */
 
 .wv-page {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -38,6 +39,20 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+}
+@container (max-width: 40rem) {
+  .wv-head--actions {
+    height: auto;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+  }
+  .wv-head--actions .wv-head__lead {
+    flex-basis: 100%;
+  }
+  .wv-head--actions .wv-crumbs {
+    flex-wrap: wrap;
+  }
 }
 .wv-toggle {
   flex: none;

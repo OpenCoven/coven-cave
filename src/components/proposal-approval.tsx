@@ -9,8 +9,10 @@
 // is in front of you at a time, with its authority envelope, its full desired
 // contents, and — pinned to the bottom of the pane — the decision itself, so
 // the buttons never scroll away from the evidence they act on.
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ProposalSubmission } from "@/components/proposal-submission";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   BlockedSurface,
   SurfaceBanners,
@@ -21,6 +23,7 @@ import { StatusPill } from "@/components/weave-rail";
 import {
   decisionAvailability,
   decisionOutcomeFromResponse,
+  reconcileDecisionOutcomes,
   editPreviews,
   fraySummary,
   proposalListModel,
@@ -32,6 +35,8 @@ import {
   responseEnvelopeStateAt,
   useResponseEnvelopeFreshness,
 } from "@/lib/response-envelope-freshness";
+import type { ProposalTerminalReceipt } from "@/lib/proposal-terminal";
+import "./proposal-terminal.css";
 import type { ProposalView } from "@/lib/threads-read";
 import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/weave-rail";
 
@@ -49,14 +54,44 @@ async function fetchProposals(): Promise<SurfaceState<ProposalView[]>> {
   }
 }
 
+async function fetchTerminalOutcomes(): Promise<SurfaceState<ProposalTerminalReceipt[]>> {
+  try {
+    const response = await fetch("/api/proposals?view=outcomes", { cache: "no-store" });
+    return surfaceStateFromPayload<ProposalTerminalReceipt[]>(await response.json());
+  } catch {
+    return { kind: "blocked", why: "daemon-unreachable", message: blockedMessage("daemon-unreachable"), meta: null };
+  }
+}
+
+function TerminalOutcomes({ state, onRefresh }: { state: SurfaceState<ProposalTerminalReceipt[]>; onRefresh: () => void }) {
+  if (state.kind === "loading") return <p role="status">Reading proposal outcomes…</p>;
+  if (state.kind !== "ready" || !state.meta.verified || state.meta.adapter !== "daemon"
+    || state.banners.some(banner => banner.kind === "stale")) {
+    return <section aria-label="Recent proposal outcomes" className="proposal-terminal">
+      <p role="status">Proposal outcomes are unavailable or stale. Refresh to verify the daemon’s result.</p>
+      <button type="button" className="wv-act focus-ring" onClick={onRefresh}>Refresh outcomes</button>
+    </section>;
+  }
+  if (state.data.length === 0) return null;
+  return <section aria-label="Recent proposal outcomes" className="proposal-terminal">
+    <h2>Recent outcomes</h2>
+    <ul tabIndex={0} className="focus-ring" aria-label="Recent proposal outcomes">
+      {state.data.map(receipt => <li key={receipt.proposalId}>
+        <p role="status">The daemon confirmed this proposal as {receipt.terminal}.
+          {receipt.reason !== receipt.terminal ? ` Reason: ${receipt.reason}.` : ""}</p>
+        <p className="wv-footmeta">Proposal {receipt.proposalId} · <time dateTime={receipt.decidedAt}>{receipt.decidedAt}</time></p>
+      </li>)}
+    </ul>
+  </section>;
+}
+
 function OutcomeNote({ outcome }: { outcome: DecisionOutcome }) {
-  if (outcome.kind === "applied") {
+  if (outcome.kind === "confirmed") {
     return (
       <p role="status" aria-live="polite" className="wv-outcome wv-outcome--applied">
         <Icon name="ph:check-circle" aria-hidden />
         <span>
-          Decision carried by the daemon ({outcome.decision}) — it re-validated before applying. The
-          proposal has left the queue and the change is recorded in ward.audit.
+          The daemon confirmed this proposal as {outcome.terminal}.
         </span>
       </p>
     );
@@ -184,17 +219,30 @@ function StagedContents({ proposal }: { proposal: ProposalView }) {
 function ProposalDetail({
   proposal,
   state,
-  onDecided,
+  onRefresh,
+  onUnconfirmed,
+  unconfirmedOutcome,
   onBack,
+  decisionPending,
+  beginDecision,
+  endDecision,
 }: {
   proposal: ProposalView;
   state: SurfaceState<ProposalView[]>;
-  onDecided: () => void;
+  onRefresh: () => void;
+  onUnconfirmed: (outcome: DecisionOutcome) => void;
+  unconfirmedOutcome: DecisionOutcome | null;
   onBack: () => void;
+  decisionPending: boolean;
+  beginDecision: () => boolean;
+  endDecision: () => void;
 }) {
+  const { announce } = useAnnouncer();
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
   const [outcome, setOutcome] = useState<DecisionOutcome | null>(null);
+  const visibleOutcome = outcome ?? unconfirmedOutcome;
+  const needsReconciliation = unconfirmedOutcome?.kind === "unconfirmed" || outcome?.kind === "unconfirmed";
   const availability = decisionAvailability(state, proposal, note);
   const payload = proposal.payload;
   const noteInputId = useId();
@@ -211,9 +259,9 @@ function ProposalDetail({
   const decide = useCallback(
     async (decision: "approve" | "reject") => {
       const currentAvailability = decisionAvailability(responseEnvelopeStateAt(state), proposal, note);
-      if (!payload || submitting || !currentAvailability.allowed) return;
+      if (!payload || submitting || needsReconciliation || !currentAvailability.allowed) return;
       const action = currentAvailability.actions.find((candidate) => candidate.decision === decision);
-      if (!action?.enabled) return;
+      if (!action?.enabled || !beginDecision()) return;
       setSubmitting(decision);
       setOutcome(null);
       try {
@@ -226,16 +274,23 @@ function ProposalDetail({
           }),
         });
         const body: unknown = await res.json().catch(() => null);
-        const result = decisionOutcomeFromResponse(decision, res.status, body);
+        const result = decisionOutcomeFromResponse(decision, res.status, body, payload.id);
         setOutcome(result);
-        if (result.kind === "applied") onDecided();
+        if (result.kind === "unconfirmed") onUnconfirmed(result);
+        if (result.kind === "confirmed") {
+          announce(`The daemon confirmed this proposal as ${result.terminal}.`);
+          onRefresh();
+        }
       } catch {
-        setOutcome(decisionOutcomeFromResponse(decision, 0, { blocked: true, why: "daemon-unreachable" }));
+        const result = decisionOutcomeFromResponse(decision, 0, { blocked: true, why: "daemon-unreachable" }, payload.id);
+        setOutcome(result);
+        onUnconfirmed(result);
       } finally {
         setSubmitting(null);
+        endDecision();
       }
     },
-    [state, proposal, note, payload, submitting, onDecided],
+    [state, proposal, note, payload, submitting, needsReconciliation, announce, onRefresh, onUnconfirmed, beginDecision, endDecision],
   );
 
   const frayState = payload?.fray.state;
@@ -336,7 +391,7 @@ function ProposalDetail({
                   <button
                     key={action.decision}
                     type="button"
-                    disabled={submitting !== null || !action.enabled}
+                    disabled={decisionPending || submitting !== null || needsReconciliation || !action.enabled}
                     onClick={() => void decide(action.decision)}
                     className={`wv-act focus-ring ${action.decision === "approve" ? "wv-act--approve" : "wv-act--reject"}`}
                   >
@@ -358,7 +413,12 @@ function ProposalDetail({
               <span>{availability.reason}</span>
             </p>
           )}
-          {outcome ? <OutcomeNote outcome={outcome} /> : null}
+          {visibleOutcome ? <OutcomeNote outcome={visibleOutcome} /> : null}
+          {needsReconciliation ? (
+            <button type="button" className="wv-act focus-ring" onClick={onRefresh}>
+              Refresh proposals
+            </button>
+          ) : null}
         </section>
       </div>
     </section>
@@ -367,15 +427,45 @@ function ProposalDetail({
 
 export function ProposalApproval() {
   const [state, setState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
+  const [terminalState, setTerminalState] = useState<SurfaceState<ProposalTerminalReceipt[]>>({ kind: "loading" });
+  const terminalResponse = useResponseEnvelopeFreshness(terminalState);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [unconfirmedOutcomes, setUnconfirmedOutcomes] = useState<ReadonlyMap<string, DecisionOutcome>>(new Map());
+  // Queue-owned synchronous guard survives keyed detail remounts and closes
+  // the interval before React publishes the pending state to the buttons.
+  const pendingDecisionRef = useRef(false);
+  const [decisionPending, setDecisionPending] = useState(false);
+  const beginDecision = useCallback(() => {
+    if (pendingDecisionRef.current) return false;
+    pendingDecisionRef.current = true;
+    setDecisionPending(true);
+    return true;
+  }, []);
+  const endDecision = useCallback(() => {
+    pendingDecisionRef.current = false;
+    setDecisionPending(false);
+  }, []);
+  const unconfirmedRef = useRef(unconfirmedOutcomes);
+  const reconcileOutcomes = useCallback((event: Parameters<typeof reconcileDecisionOutcomes>[1]) => {
+    unconfirmedRef.current = reconcileDecisionOutcomes(unconfirmedRef.current, event);
+    setUnconfirmedOutcomes(unconfirmedRef.current);
+  }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [narrowPane, setNarrowPane] = useState<"list" | "detail">("list");
   const responseState = useResponseEnvelopeFreshness(state);
 
+  const loadGeneration = useRef(0);
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    const covered = unconfirmedRef.current;
     setState({ kind: "loading" });
-    setState(await fetchProposals());
-  }, []);
+    setTerminalState({ kind: "loading" });
+    const [next, outcomes] = await Promise.all([fetchProposals(), fetchTerminalOutcomes()]);
+    if (generation !== loadGeneration.current) return;
+    reconcileOutcomes({ kind: "refresh", state: next, covered });
+    setState(next);
+    setTerminalState(outcomes);
+  }, [reconcileOutcomes]);
 
   useEffect(() => {
     void load();
@@ -403,6 +493,11 @@ export function ProposalApproval() {
   const pendingCount = model ? model.ok.length : null;
   const header = (
     <ThreadsHeader
+      actions={<ProposalSubmission available={() => {
+        const current = responseEnvelopeStateAt(state);
+        return current.kind === "ready" && current.meta.adapter === "daemon" && current.meta.verified
+          && !current.banners.some(banner => banner.kind === "stale");
+      }} onRefresh={() => void load()} />}
       surface="proposals"
       pendingCount={pendingCount}
       listCollapsed={collapsed}
@@ -437,11 +532,14 @@ export function ProposalApproval() {
     );
   }
 
+  const terminalOutcomes = <TerminalOutcomes state={terminalResponse} onRefresh={() => void load()} />;
+
   if (queue.length === 0) {
     return (
       <div className="wv-page">
         {header}
         <SurfaceBanners banners={responseState.banners} />
+        {terminalOutcomes}
         <div className="wv-center">
           <div role="status" className="wv-verified-empty">
             <span className="wv-verified-empty__seal">
@@ -481,6 +579,7 @@ export function ProposalApproval() {
         </p>
       </div>
       <SurfaceBanners banners={responseState.banners} />
+      {terminalOutcomes}
 
       <div className="wv-grid" data-pane={narrowPane} data-collapsed={collapsed ? "true" : "false"}>
         <section aria-label="Proposal queue" className="wv-pane-list">
@@ -534,7 +633,17 @@ export function ProposalApproval() {
           key={selected.file}
           proposal={selected}
           state={responseState}
-          onDecided={() => {
+          decisionPending={decisionPending}
+          beginDecision={beginDecision}
+          endDecision={endDecision}
+          unconfirmedOutcome={unconfirmedOutcomes.get(selected.payload?.id ?? "") ?? null}
+          onUnconfirmed={(outcome) => {
+            if (selected.payload) {
+              const proposalId = selected.payload.id;
+              reconcileOutcomes({ kind: "outcome", proposalId, outcome });
+            }
+          }}
+          onRefresh={() => {
             setSelectedFile(null);
             void load();
           }}

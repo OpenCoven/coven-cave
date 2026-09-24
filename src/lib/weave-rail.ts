@@ -174,6 +174,10 @@ export function surfaceStateFromPayload<T>(payload: unknown, now: Date = new Dat
     typeof meta.observedAt !== "string" ||
     typeof meta.staleAfter !== "string" ||
     typeof meta.sourceCursor !== "string" ||
+    !Number.isFinite(Date.parse(meta.observedAt)) ||
+    !Number.isFinite(Date.parse(meta.staleAfter)) ||
+    Date.parse(meta.staleAfter) < Date.parse(meta.observedAt) ||
+    meta.sourceCursor.trim().length === 0 ||
     typeof meta.verified !== "boolean" ||
     (meta.adapter !== "daemon" && meta.adapter !== "fixtures")
   ) {

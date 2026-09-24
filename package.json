@@ -121,6 +121,8 @@
     "@noble/hashes": "2.4.0",
     "@openclaw/gateway-client": "2026.7.2-beta.5",
     "@openclaw/gateway-protocol": "2026.7.2-beta.5",
+    "@opencoven/coven-client": "file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz",
+    "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz",
     "@tailwindcss/browser": "4.3.3",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",
@@ -187,7 +189,8 @@
       "enhanced-resolve": "5.23.0",
       "nanoid@3": "3.3.18",
       "postcss@<8.5.23": "^8.5.26",
-      "sharp": "0.35.4"
+      "sharp": "0.35.4",
+      "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz"
     },
     "supportedArchitectures": {
       "os": [

@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import {
   decisionAvailability,
   decisionOutcomeFromResponse,
+  reconcileDecisionOutcomes,
   editPreviews,
   fraySummary,
   proposalListModel,
@@ -393,37 +394,92 @@ describe("decisionAvailability — authority-driven, decision-specific actions",
   });
 });
 
-describe("decisionOutcomeFromResponse — refusals are visible, never quiet", () => {
-  it("200 unblocked = applied (the daemon carried and audited it)", () => {
-    assert.deepEqual(decisionOutcomeFromResponse("approve", 200, { data: { applied: true }, blocked: false }), {
-      kind: "applied",
-      decision: "approve",
-    });
+describe("decisionOutcomeFromResponse — only bound daemon outcomes confirm decisions", () => {
+  const envelope = (data: unknown) => ({ blocked: false, data, meta: makeThreadsMeta({ adapter: "daemon", verified: true, sourceCursor: "decision" }) });
+  const receipt = (decision: string, proposalId = "proposal-a") => ({ ok: true, decision, proposalId });
+
+  it("confirms only the matching proposal and typed decision", () => {
+    for (const terminal of ["approved", "rejected", "vetoed", "superseded"] as const) {
+      const decision = terminal === "approved" ? "approve" : "reject";
+      assert.deepEqual(decisionOutcomeFromResponse(decision, 200, envelope(receipt(terminal)), "proposal-a"), {
+        kind: "confirmed", decision, terminal,
+      });
+    }
   });
 
-  it("503 daemon-unavailable = refused, proposal stays pending", () => {
-    const outcome = decisionOutcomeFromResponse("approve", 503, { blocked: true, why: "daemon-unavailable" });
-    assert.equal(outcome.kind, "refused");
-    assert.match(outcome.kind === "refused" ? outcome.message : "", /stays pending/i);
+  it("never confirms empty, malformed, unknown, mismatched or unverified success responses", () => {
+    for (const body of [
+      null, {}, [], "ok", { blocked: false }, envelope(null), envelope({ applied: true }),
+      envelope(receipt("unknown")), envelope(receipt("approved", "another-proposal")),
+      envelope({ ...receipt("approved"), ok: false }),
+      { ...envelope(receipt("approved")), blocked: true },
+      { ...envelope(receipt("approved")), meta: { adapter: "fixtures", verified: true } },
+      { ...envelope(receipt("approved")), meta: { adapter: "daemon", verified: false } },
+      envelope(receipt("rejected")),
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, observedAt: "invalid" } },
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, sourceCursor: "" } },
+      { ...envelope(receipt("approved")), meta: { adapter: "daemon", verified: true } },
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, staleAfter: "2000-01-01T00:00:00Z" } },
+      { ...envelope(receipt("approved")), meta: { ...envelope(null).meta, staleAfter: "invalid" } },
+    ]) {
+      assert.equal(decisionOutcomeFromResponse("approve", 200, body, "proposal-a").kind, "unconfirmed");
+    }
+    assert.equal(decisionOutcomeFromResponse("reject", 200, envelope(receipt("approved")), "proposal-a").kind, "unconfirmed");
   });
 
-  it("409 proposal-corrupt = refused without assuming where corruption was detected", () => {
-    const outcome = decisionOutcomeFromResponse("reject", 409, { blocked: true, why: "proposal-corrupt" });
-    assert.equal(outcome.kind, "refused");
-    assert.match(outcome.kind === "refused" ? outcome.message : "", /decision was not applied/i);
-    assert.doesNotMatch(outcome.kind === "refused" ? outcome.message : "", /never asked/i);
+  it("does not claim non-application or pending state after an uncertain response", () => {
+    for (const [status, body] of [
+      [0, { blocked: true, why: "daemon-unreachable" }],
+      [503, { blocked: true, why: "daemon-unavailable" }],
+      [504, { blocked: true, why: "daemon-timeout" }],
+      [500, "garbage"], [202, envelope(receipt("approved"))],
+    ] as const) {
+      const outcome = decisionOutcomeFromResponse("approve", status, body, "proposal-a");
+      assert.equal(outcome.kind, "unconfirmed");
+      assert.ok("message" in outcome);
+      assert.match(outcome.message, /not confirmed/i);
+      assert.doesNotMatch(outcome.message, /nothing was applied|stays pending/i);
+    }
   });
 
-  it("409 proposal-refused warns that daemon revalidation may consume the pending proposal", () => {
-    const outcome = decisionOutcomeFromResponse("approve", 409, { blocked: true, why: "proposal-refused" });
-    assert.equal(outcome.kind, "refused");
-    assert.match(outcome.kind === "refused" ? outcome.message : "", /may no longer be pending/i);
+  it("preserves explicit refusal reasons without inferring terminal queue state", () => {
+    for (const why of ["proposal-corrupt", "proposal-refused", "not-found", "invalid-id", "daemon-endpoint-missing"]) {
+      const outcome = decisionOutcomeFromResponse("reject", 409, { blocked: true, why }, "proposal-a");
+      assert.equal(outcome.kind, "refused");
+    }
+  });
+});
+
+describe("uncertain decision reconciliation", () => {
+  it("does not let an earlier read clear a later uncertain response", () => {
+    const prior = decisionOutcomeFromResponse("approve", 504, null, "A");
+    const covered = reconcileDecisionOutcomes(new Map(), { kind: "outcome", proposalId: "A", outcome: prior });
+    const later = decisionOutcomeFromResponse("approve", 504, null, "A");
+    let current = reconcileDecisionOutcomes(covered, { kind: "outcome", proposalId: "A", outcome: later });
+    const b = decisionOutcomeFromResponse("reject", 504, null, "B");
+    current = reconcileDecisionOutcomes(current, { kind: "outcome", proposalId: "B", outcome: b });
+    const fresh = surfaceStateFromPayload(okEnvelope([], makeThreadsMeta({ adapter: "daemon", verified: true, sourceCursor: "fresh" })));
+    const reconciled = reconcileDecisionOutcomes(current, { kind: "refresh", state: fresh, covered });
+    assert.equal(reconciled.get("A"), later);
+    assert.equal(reconciled.get("B"), b);
   });
 
-  it("an unrecognized failure still reads as a refusal with nothing applied", () => {
-    const outcome = decisionOutcomeFromResponse("approve", 500, "garbage");
-    assert.equal(outcome.kind, "refused");
-    assert.match(outcome.kind === "refused" ? outcome.message : "", /nothing was applied/i);
+  it("retains A across B selection and unsuccessful, stale or fixture reads", () => {
+    const outcome = decisionOutcomeFromResponse("approve", 504, null, "A");
+    let current = reconcileDecisionOutcomes(new Map(), { kind: "outcome", proposalId: "A", outcome });
+    assert.equal(current.get("B"), undefined);
+    assert.equal(current.get("A"), outcome);
+    for (const state of [
+      { kind: "loading" } as const,
+      surfaceStateFromPayload(null),
+      surfaceStateFromPayload(okEnvelope([], makeThreadsMeta({ adapter: "fixtures", verified: true, sourceCursor: "fixtures" }))),
+      surfaceStateFromPayload(okEnvelope([], makeThreadsMeta({ adapter: "daemon", verified: true, sourceCursor: "old", observedAt: new Date(0) }))),
+    ]) {
+      current = reconcileDecisionOutcomes(current, { kind: "refresh", state, covered: current });
+      assert.equal(current.get("A"), outcome);
+    }
+    const fresh = surfaceStateFromPayload(okEnvelope([], makeThreadsMeta({ adapter: "daemon", verified: true, sourceCursor: "fresh" })));
+    assert.equal(reconcileDecisionOutcomes(current, { kind: "refresh", state: fresh, covered: current }).size, 0);
   });
 });
 

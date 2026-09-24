@@ -41,8 +41,16 @@ assert.ok(
 // screen until a manual Retry. A quiet poll now retries while the error shows.
 assert.match(
   source,
-  /usePausablePoll\(\(\) => void loadFamiliars\(\), 4_000, \{\s*enabled: familiarsError !== null,\s*\}\)/,
+  /usePausablePoll\(\(\) => loadFamiliars\(\), 4_000, \{\s*serialize: true,\s*enabled: familiarsError !== null,\s*\}\)/,
   "loadFamiliars auto-retries every 4s while familiarsError is set",
 );
+
+// A serialized poll must settle even when the server stops responding, or a
+// hung background request can suppress every later timer/focus refresh.
+for (const name of ["loadFamiliars", "loadGitHubTasks", "loadSessions", "refreshEscalations"]) {
+  const callback = source.slice(source.indexOf(`const ${name} = useCallback`)).split("}, []);")[0];
+  assert.match(callback, /signal: (?:force \? undefined : )?AbortSignal\.timeout\(15_000\)/,
+    `${name} bounds its background fetch so polling can recover`);
+}
 
 console.log("workspace-feedback.test.ts: ok");

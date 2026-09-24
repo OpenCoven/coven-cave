@@ -527,6 +527,8 @@ COVEN_CAVE_REFRESH_WHISPER=1 bash "$ROOT/scripts/whisper-runtime-bundle.sh"
 echo "==> installing locked prod deps with pnpm in staging dir"
 cp "$ROOT/package.json" "$PNPM_STAGE/package.json"
 cp "$ROOT/pnpm-lock.yaml" "$PNPM_STAGE/pnpm-lock.yaml"
+mkdir -p "$PNPM_STAGE/vendor"
+cp -R "$ROOT/vendor/opencoven-sdk" "$PNPM_STAGE/vendor/opencoven-sdk"
 if [ -f "$ROOT/.npmrc" ]; then
   cp "$ROOT/.npmrc" "$PNPM_STAGE/.npmrc"
 fi

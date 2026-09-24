@@ -327,7 +327,7 @@ assert.doesNotMatch(drawer, /ProjectContextButton|openProjectSwitcher/,
   "there is no global project switcher in the drawer");
 assert.match(
   drawer,
-  /private var recentThreads: \[ChatThread\] \{[\s\S]*app\.chatThreads[\s\S]*prefix\(5\)/,
+  /private var recentThreads: \[ChatThread\] \{[\s\S]*app\.chatThreads[\s\S]*guard index < 5[\s\S]*recent\.count > 5/,
   "drawer recents span conversations rather than a global project",
 );
 assert.match(
@@ -896,7 +896,7 @@ assert.match(
 );
 assert.match(
   home,
-  /ChatListSnapshot\([\s\S]{0,220}familiars: app\.familiars/,
+  /listSnapshotCache\.resolve\([\s\S]{0,220}familiars: app\.familiars/,
   "global Chats keeps exact familiar identity without a project filter",
 );
 assert.match(

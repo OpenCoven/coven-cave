@@ -12,9 +12,11 @@ import {
   covenBinaryFromEnvironment,
   covenLaunchCommandForBinary,
   covenSpawnEnv,
+  covenSpawnEnvAsync,
   covenWrapperSpawnEnv,
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
+  refreshCovenSpawnEnvAsync,
 } from "./coven-bin.ts";
 import {
   evaluateOpenCovenToolVerification,
@@ -164,14 +166,18 @@ async function commandPath(
     }
   };
 
-  const env = options.env ?? (options.refresh ? refreshCovenSpawnEnv() : covenSpawnEnv());
+  // Async discovery: the first-run login-shell probe runs off the event loop
+  // and concurrent probes share one subprocess (issue #5448).
+  const env =
+    options.env ??
+    (options.refresh ? await refreshCovenSpawnEnvAsync() : await covenSpawnEnvAsync());
   const found = await find(env);
   if (found.path || found.error || options.refresh || options.env) return found;
 
   // A desktop Cave may have started before an installer added a new bin dir.
   // Normal status checks get one fresh retry on a miss; post-install checks
   // request a refresh up front so they never trust the pre-install PATH.
-  return find(refreshCovenSpawnEnv());
+  return find(await refreshCovenSpawnEnvAsync());
 }
 
 async function resolvedExecutablePath(binaryPath: string): Promise<string | null> {
@@ -246,7 +252,7 @@ export async function discoverOpenCovenTool(
   tool: OpenCovenToolSpec,
   options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
-  const env = options.env ?? refreshCovenSpawnEnv();
+  const env = options.env ?? await refreshCovenSpawnEnvAsync();
   const located = await commandPath(tool.binary, { env, timeoutMs: options.timeoutMs });
   if (!located.path) {
     return {
@@ -268,9 +274,10 @@ export async function discoverOpenCovenTool(
 export async function probeOpenCovenBinaryAt(
   tool: Pick<OpenCovenToolSpec, "binary" | "versionArgs">,
   binaryPath: string,
-  env: NodeJS.ProcessEnv = refreshCovenSpawnEnv(),
+  env?: NodeJS.ProcessEnv,
   options: { timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
+  const probeEnv = env ?? await refreshCovenSpawnEnvAsync();
   const executablePath = await resolvedExecutablePath(binaryPath);
   const identity = executablePath
     ? await packageIdentityForExecutable(executablePath, tool.binary)
@@ -293,7 +300,7 @@ export async function probeOpenCovenBinaryAt(
       [...launch.fixedArgs, ...tool.versionArgs],
       {
         windowsHide: true,
-        env: tool.binary === "coven" ? covenWrapperSpawnEnv(env) : env,
+        env: tool.binary === "coven" ? covenWrapperSpawnEnv(probeEnv) : probeEnv,
         timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS,
       },
     );
@@ -583,7 +590,7 @@ export async function verifyOpenCovenToolInstall(
   // Rebuild PATH before both discovery and registry lookup. This is the
   // authoritative post-install check: it must not inherit the pre-install
   // cache that made a stale launcher look like a successful update.
-  const env = options.env ?? refreshCovenSpawnEnv();
+  const env = options.env ?? await refreshCovenSpawnEnvAsync();
   const [probe, latestCheck] = await Promise.all([
     options.binaryPath
       ? probeOpenCovenBinaryAt(tool, options.binaryPath, env)
@@ -606,7 +613,7 @@ async function toolStatus(
 }
 
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {
-  const env = refreshCovenSpawnEnv();
+  const env = await refreshCovenSpawnEnvAsync();
   return Promise.all(OPEN_COVEN_TOOLS.map((tool) => toolStatus(tool, env)));
 }
 
@@ -618,7 +625,7 @@ export async function openCovenToolReadinessStatuses(
     discover?: typeof discoverOpenCovenTool;
   } = {},
 ): Promise<OpenCovenToolReadinessStatus[]> {
-  const env = options.env ?? refreshCovenSpawnEnv();
+  const env = options.env ?? await refreshCovenSpawnEnvAsync();
   const discover = options.discover ?? discoverOpenCovenTool;
   return Promise.all(
     OPEN_COVEN_TOOLS.map(async (tool) =>
