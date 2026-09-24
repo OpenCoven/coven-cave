@@ -22,6 +22,7 @@ export function ChatThreadsSheet({
   open,
   onClose,
   sessions,
+  sessionsError = false,
   activeFamiliarId,
   activeSessionId,
   onOpenSession,
@@ -32,6 +33,7 @@ export function ChatThreadsSheet({
   open: boolean;
   onClose: () => void;
   sessions: SessionRow[];
+  sessionsError?: boolean;
   activeFamiliarId: string | null;
   activeSessionId: string | null;
   onOpenSession: (session: SessionRow) => void;
@@ -60,6 +62,7 @@ export function ChatThreadsSheet({
       >
         <SidebarChatsSection
           sessions={sessions}
+          sessionsError={sessionsError}
           activeFamiliarId={activeFamiliarId}
           activeSessionId={activeSessionId}
           onOpenSession={(session) => {

@@ -1056,6 +1056,7 @@ export const SUITES = {
     "src/components/cwd-picker-field.test.ts",
     "src/components/inbox-feed-a11y.test.ts",
     "src/components/rituals-tabs.test.ts",
+    "src/components/interface-copy-contract.test.ts",
     "src/components/canonical-nav-names.test.ts",
     "src/components/workspace-alias-modes.test.ts",
     "src/components/palette-canonical-names.test.ts",

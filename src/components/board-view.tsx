@@ -1476,7 +1476,7 @@ export function BoardView({
               </span>
               <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
               <p className="mt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
-                The board collects work in flight across your familiars. Add a task and assign it to whoever should pick it up &mdash; chat threads can link back to it later.
+                The task board collects work in flight across your familiars. Add a task and assign it to whoever should pick it up &mdash; chat threads can link back to it later.
               </p>
               <button
                 type="button"

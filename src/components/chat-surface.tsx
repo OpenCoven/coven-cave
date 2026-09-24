@@ -547,6 +547,7 @@ export function ChatSurface({
         <aside className="chat-inner-rail" aria-label="Chat threads">
           <SidebarChatsSection
             sessions={browseSessions}
+            sessionsError={sessionsError}
             browseScope={effectiveBrowseScope}
             activeFamiliarId={activeFamiliarId}
             activeSessionId={railActiveSessionId}
@@ -781,6 +782,7 @@ export function ChatSurface({
         open={threadsSheetOpen}
         onClose={() => setThreadsSheetOpen(false)}
         sessions={browseSessions}
+        sessionsError={sessionsError}
         activeFamiliarId={activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}

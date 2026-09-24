@@ -159,7 +159,7 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
   if (expectRail) await page.waitForSelector(RAIL, { timeout: 30_000 });
 }
 
-async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } = {}) {
+async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS, sessionsFail = false } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
@@ -170,7 +170,9 @@ async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } =
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
   await page.route("**/api/sessions/list**", (route) =>
-    route.fulfill({ json: { ok: true, sessions } }),
+    sessionsFail
+      ? route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } })
+      : route.fulfill({ json: { ok: true, sessions } }),
   );
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: PROJECTS } }),
@@ -180,6 +182,16 @@ async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } =
 }
 
 test.describe("chat threads rail", () => {
+  test("a failed sessions read says so and offers Retry instead of claiming no conversations", async ({ page }) => {
+    // Design language §10: a failed request never renders as a convincing
+    // empty collection (#5527).
+    await gotoChat(page, { sessionsFail: true });
+    const rail = page.locator(RAIL);
+    await expect(rail.getByRole("alert")).toContainText("Couldn't load chats", { timeout: 30_000 });
+    await expect(rail.getByRole("button", { name: "Retry loading chats" })).toBeVisible();
+    await expect(rail.getByText("No conversations yet.")).toHaveCount(0);
+  });
+
   test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));

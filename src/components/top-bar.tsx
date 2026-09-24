@@ -170,7 +170,9 @@ export function TopBar(props: Props) {
           className="top-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Search or ask Salem…"
+          // The phone bar fits about eight characters; the label and title carry
+          // "ask Salem" (#5527).
+          placeholder="Search…"
           aria-label={SEARCH_LABEL}
           title={`Search everything — or ask Salem, the familiar trained on the OpenCoven docs (${searchShortcut})`}
           autoComplete="off"

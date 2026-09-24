@@ -373,7 +373,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
         ) : null}
         {artifacts.length === 0 ? (
           <p className="chat-canvas-add__hint">
-            Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
+            Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then “Save to Canvas”.
           </p>
         ) : null}
       </div>
