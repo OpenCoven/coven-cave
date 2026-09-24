@@ -157,3 +157,17 @@ test("strip: an opener prefix shorter than the full tag is hidden from streaming
   // A prefix inside code is example text.
   assert.equal(stripProposalReviewMarkers("Type `<coven:proposal`"), "Type `<coven:proposal`");
 });
+
+test("strip: a cut-off proposal fragment is hidden even when a complete sibling marker follows it", async () => {
+  const { stripIncompleteProposalReviewMarker, stripProposalReviewMarkers } = await import("./proposal-review-blocks.ts");
+  const preview = '<coven:preview url="http://127.0.0.1:3000/x" />';
+  for (const fragment of ["<coven:proposal", '<coven:proposal-review tool="x']) {
+    assert.equal(stripIncompleteProposalReviewMarker(`a ${fragment}${preview} b`), `a ${preview} b`, fragment);
+  }
+  // Visible prose and card text agree once the preview marker is gone.
+  assert.equal(stripProposalReviewMarkers(`a <coven:proposal${preview}`.replace(preview, "")), "a ");
+  // A complete proposal marker before a preview stays for the card parser.
+  assert.equal(stripIncompleteProposalReviewMarker(`${MARKER}${preview}`), `${MARKER}${preview}`);
+  // Prose that merely mentions a prefix mid-sentence is not a fragment.
+  assert.equal(stripIncompleteProposalReviewMarker(`use <coven:pro tags ${preview}`), `use <coven:pro tags ${preview}`);
+});
