@@ -37,7 +37,7 @@ assert.match(
 const sidebar = read("./workspace-sidebar.tsx");
 assert.match(
   sidebar,
-  /!hasSearch && sessionsError \? \([\s\S]{0,120}role="alert"[\s\S]{0,160}Couldn&apos;t load chats[\s\S]{0,400}Retry loading chats/,
+  /: sessionsError \? \([\s\S]{0,120}role="alert"[\s\S]{0,160}Couldn&apos;t load chats[\s\S]{0,400}Retry loading chats/,
   "a failed sessions read says so with Retry instead of 'No conversations yet.'",
 );
 

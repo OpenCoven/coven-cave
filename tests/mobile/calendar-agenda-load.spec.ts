@@ -11,6 +11,9 @@ test.beforeEach(({ isMobile }) => {
 
 test("a failed reminders read says so, and Retry recovers to the honest empty state", async ({ page }) => {
   let inboxReads = 0;
+  // `/` decides on the server whether to render onboarding, from this cookie.
+  const host = new URL(test.info().project.use.baseURL ?? "http://127.0.0.1").hostname;
+  await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: host, path: "/" }]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:active-familiar", "nova");
     localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -32,7 +35,8 @@ test("a failed reminders read says so, and Retry recovers to the honest empty st
   await page.waitForFunction(
     () => {
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "calendar" } }));
-      return document.querySelector(".calendar-empty-action, [role='alert']") !== null;
+      // Wait for the agenda itself: unrelated alerts exist on every surface.
+      return document.getElementById("calendar-view-panel") !== null;
     },
     undefined,
     { timeout: 30_000 },

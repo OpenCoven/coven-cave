@@ -902,7 +902,7 @@ export function SidebarChatsSection({
                 </section>
               ) : null}
             {recentBuckets.length === 0 ? (
-              attentionSessions.length > 0 && !hasSearch ? null : !hasSearch && sessionsError ? (
+              attentionSessions.length > 0 && !hasSearch ? null : sessionsError ? (
               <div className="cnav__empty" role="alert">
                 <p>Couldn&apos;t load chats. They&apos;re safe, and Cave retries automatically.</p>
                 {onSessionsChanged ? (
