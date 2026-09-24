@@ -15,6 +15,9 @@ struct ChatListSnapshot {
         let updatedAt: Date
         let pinned: Bool
         let archived: Bool
+        /// Participants, for the home's familiar filter: a direct or group
+        /// thread's members, or a server row's owning familiar.
+        let familiarIds: [String]
         let searchText: String
     }
 
@@ -25,19 +28,33 @@ struct ChatListSnapshot {
 
     let entries: [Entry]
     let archivedCount: Int
+    /// Every familiar that participates in at least one conversation (active
+    /// or archived), so the familiar filter offers only names that select
+    /// something. Unaffected by filtering, like `archivedCount`.
+    let familiarIds: Set<String>
 
-    private init(entries: [Entry], archivedCount: Int) {
+    private init(entries: [Entry], archivedCount: Int, familiarIds: Set<String>) {
         self.entries = entries
         self.archivedCount = archivedCount
+        self.familiarIds = familiarIds
     }
 
     /// Filtering preserves the already sorted order; a search edit need not
     /// parse dates, reconcile sessions, rebuild search text, or sort again.
-    func filtered(query: String, includeArchived: Bool) -> ChatListSnapshot {
+    /// `familiarId` keeps only conversations that familiar takes part in.
+    func filtered(query: String, includeArchived: Bool, familiarId: String? = nil) -> ChatListSnapshot {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return ChatListSnapshot(entries: entries.filter {
-            (includeArchived || !$0.archived) && (search.isEmpty || $0.searchText.contains(search))
-        }, archivedCount: archivedCount)
+            Self.matches($0, search: search, includeArchived: includeArchived, familiarId: familiarId)
+        }, archivedCount: archivedCount, familiarIds: familiarIds)
+    }
+
+    private static func matches(
+        _ entry: Entry, search: String, includeArchived: Bool, familiarId: String?
+    ) -> Bool {
+        (includeArchived || !entry.archived)
+            && (familiarId == nil || entry.familiarIds.contains(familiarId!))
+            && (search.isEmpty || entry.searchText.contains(search))
     }
 
     init(
@@ -45,7 +62,8 @@ struct ChatListSnapshot {
         sessions: [SessionRow],
         familiars: [Familiar],
         query: String = "",
-        includeArchived: Bool = false
+        includeArchived: Bool = false,
+        familiarId: String? = nil
     ) {
         var names: [String: String] = [:]
         for familiar in familiars {
@@ -81,6 +99,7 @@ struct ChatListSnapshot {
                 updatedAt: activity,
                 pinned: thread.pinned,
                 archived: thread.archived,
+                familiarIds: thread.familiarIds,
                 searchText: (titles + thread.familiarIds.compactMap { names[$0] })
                     .joined(separator: " ").lowercased()
             ))
@@ -96,14 +115,16 @@ struct ChatListSnapshot {
                 updatedAt: caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast,
                 pinned: session.pinned == true,
                 archived: session.archivedAt != nil,
+                familiarIds: session.familiarId.map { [$0] } ?? [],
                 searchText: [session.title, session.familiarId.flatMap { names[$0] } ?? ""]
                     .joined(separator: " ").lowercased()
             ))
         }
         archivedCount = all.lazy.filter(\.archived).count
+        familiarIds = Set(all.flatMap(\.familiarIds))
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         entries = all.filter {
-            (includeArchived || !$0.archived) && (search.isEmpty || $0.searchText.contains(search))
+            Self.matches($0, search: search, includeArchived: includeArchived, familiarId: familiarId)
         }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
@@ -139,7 +160,7 @@ final class ChatListSnapshotCache {
     private var snapshot: ChatListSnapshot?
 
     func resolve(threads: [ChatThread], sessions: [SessionRow], familiars: [Familiar],
-                 query: String, includeArchived: Bool) -> ChatListSnapshot {
+                 query: String, includeArchived: Bool, familiarId: String? = nil) -> ChatListSnapshot {
         let nextThreads = threads.map {
             ThreadKey(identity: ObjectIdentifier($0), title: $0.title,
                       familiarIds: $0.familiarIds, sessionIds: $0.sessionIds,
@@ -154,6 +175,6 @@ final class ChatListSnapshotCache {
             sessionKeys = sessions
             familiarKeys = nextFamiliars
         }
-        return snapshot!.filtered(query: query, includeArchived: includeArchived)
+        return snapshot!.filtered(query: query, includeArchived: includeArchived, familiarId: familiarId)
     }
 }

@@ -23,7 +23,7 @@ assert.match(models, /case origin, generated/, "…and both ride CodingKeys");
 assert.match(models, /var isGeneratedRun: Bool/, "SessionRow exposes isGeneratedRun");
 assert.match(
   models,
-  /\["cron", "heartbeat", "canvas", "journal"\]\.contains\(origin\)/,
+  /\["cron", "heartbeat", "canvas", "journal", "enhance"\]\.contains\(origin\)/,
   "hidden origins match the web's CHAT_HIDDEN_ORIGINS",
 );
 assert.match(
@@ -46,7 +46,7 @@ assert.match(
 
 // Drift guard: the web rule still contains the same origins + prefixes, so a
 // change there should visit this file too.
-for (const origin of ["cron", "heartbeat", "canvas", "journal"]) {
+for (const origin of ["cron", "heartbeat", "canvas", "journal", "enhance"]) {
   assert.ok(web.includes(`"${origin}"`), `web CHAT_HIDDEN_ORIGINS still includes ${origin}`);
 }
 assert.ok(

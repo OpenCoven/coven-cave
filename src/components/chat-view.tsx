@@ -2131,7 +2131,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
       const prompt = buildThreadReflectPrompt({ sessionId, transcript: reflectTranscript });
-      const { text, error } = await streamFamiliarText({
+      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
         origin: "enhance",
@@ -2145,6 +2145,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           trigger: "manual",
           threadTitle: session?.title ?? familiar.display_name,
           payload: text,
+          // The ephemeral review run files itself away once the report lands
+          // (unless the report raised a CTA) — see the self-report route.
+          ...(reviewSessionId ? { reviewSessionId } : {}),
         }),
       });
       const json = await res.json() as
@@ -2166,7 +2169,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
       const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
-      const { text, error } = await streamFamiliarText({
+      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
         origin: "enhance",
@@ -2180,6 +2183,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           trigger: "auto",
           threadTitle: session?.title ?? familiar.display_name,
           payload: text,
+          ...(reviewSessionId ? { reviewSessionId } : {}),
         }),
       });
       const json = await res.json().catch(() => null) as

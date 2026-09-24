@@ -98,10 +98,22 @@ assert.match(
 
 // ── session route (kill / general) ───────────────────────────────────────────
 
+// PATCH/DELETE admit the proxy-authenticated mobile marker so the phone can
+// archive, pin and delete; everything else still gets the strict local rule.
+assert.equal(
+  (sessionSource.match(/const forbidden = rejectNonLocal(?:OrMobile)?Request\(req\);/g) ?? []).length,
+  (sessionSource.match(/^export async function (?:GET|POST|PATCH|PUT|DELETE)\b/gm) ?? []).length,
+  "every session route handler must reject non-local requests",
+);
+
+const apiSecuritySource = readFileSync(
+  new URL("../../../../../lib/server/api-security.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  sessionSource,
-  /rejectNonLocalRequest/,
-  "session route must reject non-local requests",
+  apiSecuritySource,
+  /export function rejectNonLocalOrMobileRequest[\s\S]{0,200}if \(isMobileAccessRequest\(req\)\) return null;\s*return rejectNonLocalRequest\(req\);[\s\S]*export function isMobileAccessRequest[\s\S]{0,120}MOBILE_ACCESS_HEADER\) === "1";/,
+  "the mobile variant admits only the proxy marker and otherwise applies the strict local rule",
 );
 
 assert.match(

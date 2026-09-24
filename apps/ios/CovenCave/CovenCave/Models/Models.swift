@@ -119,12 +119,15 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var isFlowRun: Bool { origin == "flow" || flow != nil }
 
     /// Mirrors the web's isGeneratedChatSession (chat-projects.ts): generated
-    /// runs stay out of thread lists. Legacy journal runs predate the origin
-    /// tag, so their exact machine-prompt titles match too — at the truncated
-    /// lengths the store actually keeps.
+    /// runs stay out of thread lists. `enhance` is the one-shot utility lane
+    /// (prompt enhance, reply recommendation, thread reflection); the web has
+    /// always hidden it, and without it here every "Thread you just
+    /// completed…" review run landed in the phone's chat list. Legacy journal
+    /// runs predate the origin tag, so their exact machine-prompt titles match
+    /// too — at the truncated lengths the store actually keeps.
     var isGeneratedRun: Bool {
         if generated == true || isFlowRun { return true }
-        if let origin, ["cron", "heartbeat", "canvas", "journal"].contains(origin) { return true }
+        if let origin, ["cron", "heartbeat", "canvas", "journal", "enhance"].contains(origin) { return true }
         return title.hasPrefix("Write a short narrative of my day (")
             || title.hasPrefix("Write a short, first-person reflective journal entry")
     }
