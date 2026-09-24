@@ -90,7 +90,7 @@ type AutomationTab = "overview" | "calendar" | "crons";
 const RITUAL_TABS = [
   { id: "overview", label: "Overview" },
   { id: "calendar", label: "Calendar" },
-  { id: "crons", label: "Crons" },
+  { id: "crons", label: "Scheduled jobs" },
 ] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
 // Fire a cross-surface navigation from the GitHub subscriptions manager.

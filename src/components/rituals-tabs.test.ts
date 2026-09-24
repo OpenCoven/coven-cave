@@ -77,7 +77,7 @@ assert.match(
 );
 assert.match(
   automations,
-  /const\s+RITUAL_TABS\s*=\s*\[[\s\S]{0,300}\{\s*id:\s*"overview",\s*label:\s*"Overview"\s*\}[\s\S]{0,160}\{\s*id:\s*"calendar",\s*label:\s*"Calendar"\s*\}[\s\S]{0,160}\{\s*id:\s*"crons",\s*label:\s*"Crons"\s*\}[\s\S]{0,240}satisfies\s+ReadonlyArray<TabItem<AutomationTab>>/,
+  /const\s+RITUAL_TABS\s*=\s*\[[\s\S]{0,300}\{\s*id:\s*"overview",\s*label:\s*"Overview"\s*\}[\s\S]{0,160}\{\s*id:\s*"calendar",\s*label:\s*"Calendar"\s*\}[\s\S]{0,160}\{\s*id:\s*"crons",\s*label:\s*"Scheduled jobs"\s*\}[\s\S]{0,240}satisfies\s+ReadonlyArray<TabItem<AutomationTab>>/,
   "RITUAL_TABS should define Overview, Calendar, and Crons as typed shared tab items",
 );
 assert.match(

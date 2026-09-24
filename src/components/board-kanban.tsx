@@ -673,7 +673,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                                   onClick={() => { setComposerKey(`${key}:${col.id}`); setComposerText(""); }}
                                 >
                                   <Icon name="ph:plus" width={11} />
-                                  Add a card
+                                  Add task
                                 </button>
                               )}
                             </li>

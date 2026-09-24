@@ -280,6 +280,10 @@
 .settings-overview--control-sheet .settings-overview__description,
 .settings-overview__summary {
   margin-top: var(--space-1);
+  /* The summary carries the workspace path; one long segment must wrap
+     inside the card rather than run past its border on phone. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
 }
