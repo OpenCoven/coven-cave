@@ -1484,8 +1484,12 @@
     display: none;
   }
 
+  /* On phone it sits beside the 44px bell and avatar; the desktop 28px size
+     is a bar-alignment choice, not a touch target (#5527). */
   .shell-top > .shell-top-toggle--right {
     display: inline-flex;
+    width: var(--touch-target);
+    height: var(--touch-target);
   }
 
   .mobile-bottom-tabs {

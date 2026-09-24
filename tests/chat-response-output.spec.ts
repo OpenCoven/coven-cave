@@ -31,7 +31,33 @@ const SESSIONS = [
     created_at: ISO,
     updated_at: ISO,
   },
+  {
+    id: "s-response-wide",
+    title: "Wide output",
+    status: "idle",
+    project_root: "/tmp/coven-cave",
+    harness: "claude",
+    familiarId: "nova",
+    model: "test",
+    runtime: "local:/tmp/coven-cave",
+    exit_code: null,
+    archived_at: null,
+    created_at: ISO,
+    updated_at: ISO,
+  },
 ];
+
+const WIDE_MARKDOWN = `Here is the plan.
+
+\`\`\`ts
+const reallyLongIdentifierThatShouldScrollHorizontallyInsideTheCodeBlockAndNotBreakThePageLayoutEvenOnADesktopWideColumn = await reconcileServeRoutes();
+\`\`\`
+
+| Column A | Column B | Column C | Column D | Column E | Column F | Column G |
+| --- | --- | --- | --- | --- | --- | --- |
+| a long cell value here | another long cell value | third long cell value | fourth value that is long | fifth long value | sixth long value | seventh long value |
+
+See https://github.com/OpenCoven/coven-cave/pull/5465/files#diff-${"a".repeat(160)}`;
 
 const COMPLETE_MARKDOWN = `[READY]
 
@@ -81,7 +107,22 @@ async function setup(page: Page) {
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
   await page.route("**/api/chat/conversation/**", (route) => {
-    const error = route.request().url().includes("s-response-error");
+    const url = route.request().url();
+    if (url.includes("s-response-wide")) {
+      return route.fulfill({
+        json: {
+          ok: true,
+          conversation: {
+            activeLeafId: "a-wide",
+            turns: [
+              { id: "u-wide", parentId: null, role: "user", text: "Show wide output", createdAt: ISO },
+              { id: "a-wide", parentId: "u-wide", role: "assistant", text: WIDE_MARKDOWN, createdAt: ISO },
+            ],
+          },
+        },
+      });
+    }
+    const error = url.includes("s-response-error");
     const userId = error ? "u-error" : "u-complete";
     const assistantId = error ? "a-error" : "a-complete";
     return route.fulfill({
@@ -164,6 +205,28 @@ test("completed assistant responses render editorial Markdown and accessible con
     "aria-checked",
     "false",
   );
+});
+
+test("wide code, tables and URLs scroll inside the reply instead of widening it", async ({ page }) => {
+  await setup(page);
+  await page.goto("/?mode=chat#chat-s-response-wide", { waitUntil: "domcontentloaded" });
+
+  const bubble = page.locator('.cave-bubble-assistant[data-state="complete"]').last();
+  await expect(bubble.getByText("Here is the plan.")).toBeVisible({ timeout: 30_000 });
+  // An auto-sized grid track grew to the widest child, so the reply ran past
+  // its column and the overflow was clipped instead of scrolling (#5527).
+  const fits = await bubble.evaluate((element) => {
+    const column = element.getBoundingClientRect();
+    const md = element.querySelector(".streaming-turn-prose .cave-md")?.getBoundingClientRect();
+    const pre = element.querySelector("pre");
+    const scroller = element.querySelector(".cave-table-scroll") ?? element.querySelector("table");
+    return {
+      mdInside: Boolean(md) && md!.right <= column.right + 1,
+      preScrolls: Boolean(pre) && pre!.scrollWidth > pre!.clientWidth,
+      tableContained: Boolean(scroller) && scroller!.getBoundingClientRect().right <= column.right + 1,
+    };
+  });
+  expect(fits).toEqual({ mdInside: true, preScrolls: true, tableContained: true });
 });
 
 test("interrupted responses preserve partial text and keep Retry visible", async ({ page }) => {

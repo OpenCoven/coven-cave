@@ -196,8 +196,9 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  /* Only shown below the rail breakpoint, where it is a touch target. */
+  width: var(--touch-target);
+  height: var(--touch-target);
   margin-inline-end: calc(var(--space-1) * -1);
   border: 0;
   border-radius: var(--radius-control);

@@ -1133,9 +1133,17 @@
 @media (prefers-reduced-motion: reduce) {
   .cave-chat-drop { transition: none; }
 }
+/* One sized track: an auto track grows to its widest child, so a long code
+   line, table or URL pushed the reply past its column and got clipped
+   instead of scrolling inside its own box (#5527). */
 .streaming-turn-response {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.streaming-turn-prose {
   min-width: 0;
 }
 
