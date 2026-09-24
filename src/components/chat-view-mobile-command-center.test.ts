@@ -70,7 +70,7 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(var\(--space-6\) \+ var\(--composer-kb-offset, 0px\)\)[\s\S]*overscroll-behavior\s*:\s*contain[\s\S]*scroll-padding-bottom\s*:\s*calc\(var\(--space-8\) \+ var\(--composer-kb-offset, 0px\)\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(var\(--space-6\) \+ var\(--composer-kb-offset, 0px\) \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain[\s\S]*scroll-padding-bottom\s*:\s*calc\(var\(--space-8\) \+ var\(--composer-kb-offset, 0px\) \+ var\(--sai-bottom\)\)/,
   "Mobile transcript reserves breathing room plus the keyboard offset, not a fixed composer-height gap (#5527)",
 );
 

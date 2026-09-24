@@ -843,14 +843,14 @@
   }
 
   /* The composer dock is the transcript's sibling, not an overlay, so the
-     transcript reserves only breathing room plus the keyboard height the dock
-     rides up by. A fixed 324px reserve opened every thread on blank space. */
+     transcript reserves only breathing room, the keyboard height the dock
+     rides up by, and the home-indicator inset for when the composer hides. A fixed 324px reserve opened every thread on blank space. */
   .cave-chat-linear .cave-chat-transcript {
     padding: var(--space-4) var(--space-3) 96px;
-    padding-bottom: calc(var(--space-6) + var(--composer-kb-offset, 0px));
+    padding-bottom: calc(var(--space-6) + var(--composer-kb-offset, 0px) + var(--sai-bottom));
     overscroll-behavior: contain;
     scroll-padding-top: calc(var(--sai-top) + 64px);
-    scroll-padding-bottom: calc(var(--space-8) + var(--composer-kb-offset, 0px));
+    scroll-padding-bottom: calc(var(--space-8) + var(--composer-kb-offset, 0px) + var(--sai-bottom));
     -webkit-overflow-scrolling: touch;
   }
 
