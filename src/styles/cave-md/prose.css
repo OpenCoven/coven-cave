@@ -155,6 +155,8 @@
 }
 
 .cave-md a {
+  /* A bare URL is one unbreakable word; let it wrap instead of widening the reply. */
+  overflow-wrap: anywhere;
   color: var(--accent-presence-soft);
   text-decoration: underline;
   text-underline-offset: 2px;

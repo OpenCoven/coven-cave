@@ -7502,7 +7502,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <footer
       ref={composerDockRef}
       className="cave-composer-dock"
-      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
     >
       {historyState === "offline" && sessionId ? (
         <div
@@ -8130,6 +8129,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      // On the root, not the dock: the dock rides up by it and the transcript
+      // reserves the same height so its last turn is never under the keyboard.
+      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
       data-auto-mode={autoMissionActive ? "running" : autoModeSelected ? "selected" : undefined}
     >
       {dropActive ? (

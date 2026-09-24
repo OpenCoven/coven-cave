@@ -83,3 +83,25 @@ test("structured search recovers without an unused parallel chat search", async 
   expect(globalRequests).toBe(2);
   expect(chatRequests).toBe(0);
 });
+
+test("Tab cycles inside the palette and never lands on the results scroller or the page", async ({ page }) => {
+  const { palette } = await openPalette(page);
+  // Walk well past the palette's tab stops; every stop must stay inside the
+  // aria-modal dialog. Chromium made the scrollable results list a Tab stop
+  // the trap did not know about, and the next Tab left the modal (#5527).
+  for (let step = 0; step < 24; step += 1) {
+    await page.keyboard.press("Tab");
+    const where = await page.evaluate(() => {
+      const active = document.activeElement;
+      const dialog = document.querySelector('[role="dialog"][aria-label="Command palette"]');
+      return {
+        inside: Boolean(dialog && active && dialog.contains(active)),
+        isResults: active?.getAttribute("role") === "listbox",
+        tag: active?.tagName ?? "none",
+      };
+    });
+    expect(where.inside, `Tab ${step + 1} stayed in the palette (on ${where.tag})`).toBe(true);
+    expect(where.isResults, `Tab ${step + 1} skipped the results scroller`).toBe(false);
+  }
+  await expect(palette).toBeVisible();
+});

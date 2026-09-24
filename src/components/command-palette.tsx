@@ -1373,6 +1373,10 @@ export function CommandPalette({
           id="command-palette-listbox"
           role="listbox"
           className="command-palette__results"
+          // The input owns the listbox through aria-activedescendant. Chromium
+          // otherwise makes this scroller a Tab stop the focus trap does not
+          // list, and Tab escapes the modal from it (#5527).
+          tabIndex={-1}
         >
           {displayRows.length === 0 ? (
             <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">

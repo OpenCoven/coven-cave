@@ -70,8 +70,8 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(324px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(340px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
-  "Mobile transcript should reserve bottom safe-area breathing room above the shorter composer",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(var\(--space-6\) \+ var\(--composer-kb-offset, 0px\)\)[\s\S]*overscroll-behavior\s*:\s*contain[\s\S]*scroll-padding-bottom\s*:\s*calc\(var\(--space-8\) \+ var\(--composer-kb-offset, 0px\)\)/,
+  "Mobile transcript reserves breathing room plus the keyboard offset, not a fixed composer-height gap (#5527)",
 );
 
 assert.match(
