@@ -10,6 +10,7 @@ import {
   restoreGrantedVaultGitHubTokenEnv,
   subtractScopedVaultKeys,
   vaultFreeDiscoveryEnv,
+  warmHarnessSpawnPath,
 } from "./harness-spawn-env.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, normalizeVaultScope, saveVaultMap } from "./vault.ts";
 import { setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
@@ -445,6 +446,28 @@ try {
   }
   loadVaultMap(true);
   rmSync(tokenDir, { recursive: true, force: true });
+}
+
+// ── #5448: the spawn-PATH warm-up runs off the event loop, credential-free ────
+{
+  const seen = [];
+  await warmHarnessSpawnPath({
+    sourceEnv: { PATH: "/launch-path", SHARED_TOKEN: "shared-secret", NOVA_ONLY: "scoped", UNRELATED: "keep" },
+    loadMap: () => map,
+    spawnEnvAsync: async (options) => {
+      seen.push(options);
+      return {};
+    },
+  });
+  assert.equal(seen.length, 1, "one async discovery");
+  assert.equal(seen[0].discoveryEnv.PATH, "/launch-path");
+  assert.equal(seen[0].discoveryEnv.SHARED_TOKEN, undefined, "vault keys never reach the login shell");
+  assert.equal(seen[0].discoveryEnv.NOVA_ONLY, undefined);
+  assert.equal(seen[0].discoveryEnv.UNRELATED, "keep");
+
+  // Best effort: a failing discovery or vault read never throws to the request.
+  await warmHarnessSpawnPath({ loadMap: () => map, spawnEnvAsync: async () => { throw new Error("shell failed"); } });
+  await warmHarnessSpawnPath({ loadMap: () => { throw new Error("vault unreadable"); }, spawnEnvAsync: async () => ({}) });
 }
 
 console.log("harness-spawn-env.test.ts: ok");
