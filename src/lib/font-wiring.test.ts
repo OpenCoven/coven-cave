@@ -32,8 +32,13 @@ assert.match(
 //    declared `.variable` classes actually reach the DOM.
 assert.match(
   layoutSrc,
-  /import\s*\{\s*fontVariables\s*\}\s*from\s*["']\.\/fonts["']/,
-  "layout.tsx must import { fontVariables } from ./fonts",
+  /import\s*\{\s*fontFamilyStyle,\s*fontVariables\s*\}\s*from\s*["']\.\/fonts["']/,
+  "layout.tsx must import { fontFamilyStyle, fontVariables } from ./fonts",
+);
+assert.match(
+  layoutSrc,
+  /<html[\s\S]*?style=\{fontFamilyStyle\}/,
+  "layout.tsx applies every cssVar's vendored subset stack to <html>",
 );
 const htmlTag = layoutSrc.match(/<html[\s\S]*?>/);
 assert.ok(htmlTag, "layout.tsx must render an <html> element");

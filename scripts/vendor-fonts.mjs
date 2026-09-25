@@ -4,7 +4,8 @@
 // Builds used to fetch 24 families from Google at compile time through
 // next/font/google, and a failed fetch failed the whole job. This script runs
 // the same Next.js Google Fonts pipeline once (validation, axes, CSS URL,
-// fetch, fallback-font choice), keeps the latin @font-face files, and writes:
+// fetch, fallback-font choice), keeps every subset's @font-face files, and
+// writes:
 //
 //   src/assets/fonts/*.woff2          the font files
 //   src/assets/fonts/manifest.json    per-file weight, style, unicode-range, sha256
@@ -26,7 +27,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const FONT_DIR = path.join(ROOT, "src/assets/fonts");
 export const MANIFEST_PATH = path.join(FONT_DIR, "manifest.json");
 export const FONTS_MODULE_PATH = path.join(ROOT, "src/app/fonts.ts");
-const SUBSETS = ["latin"];
+// The subset that owns each family's CSS variable, preload and fallback, as
+// `subsets: ["latin"]` did for next/font/google. The other subsets Google
+// serves are vendored too: next/font/google always shipped them, and dropping
+// them sends extended-Latin, Cyrillic, Greek and Vietnamese text to the
+// system fallback.
+const PRIMARY_SUBSET = "latin";
 const GOOGLE_FONTS_REPO = "https://raw.githubusercontent.com/google/fonts/main";
 
 /**
@@ -79,15 +85,16 @@ const GROUP_HEADERS = {
 const sha256 = (buffer) => createHash("sha256").update(buffer).digest("hex");
 const slug = (family) => family.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
-/** Parse the @font-face blocks Google returns, keeping the requested subsets. */
-export function parseFontFaces(css, subsets = SUBSETS) {
+/** Parse the @font-face blocks Google returns; `subsets` limits them (default: all). */
+export function parseFontFaces(css, subsets = null) {
   const faces = [];
   const block = /\/\*\s*([\w-]+)\s*\*\/\s*@font-face\s*\{([^}]*)\}/g;
   for (const [, subset, body] of css.matchAll(block)) {
-    if (!subsets.includes(subset)) continue;
+    if (subsets && !subsets.includes(subset)) continue;
     const prop = (name) => body.match(new RegExp(`${name}\\s*:\\s*([^;]+);`))?.[1].trim();
     const url = prop("src")?.match(/url\(([^)]+)\)/)?.[1];
     const face = {
+      subset,
       style: prop("font-style"),
       weight: prop("font-weight"),
       unicodeRange: prop("unicode-range"),
@@ -164,7 +171,7 @@ async function downloadInto(directory, next) {
   const families = [];
   for (const spec of FAMILIES) {
     const options = validateGoogleFontFunctionCall(spec.fn, {
-      subsets: SUBSETS,
+      subsets: [PRIMARY_SUBSET],
       variable: spec.variable,
       ...(spec.weight ? { weight: spec.weight } : {}),
       ...(spec.style ? { style: spec.style } : {}),
@@ -172,18 +179,33 @@ async function downloadInto(directory, next) {
     const axes = getFontAxes(options.fontFamily, options.weights, options.styles, options.selectedVariableAxes);
     const url = getGoogleFontsUrl(options.fontFamily, axes, options.display);
     const faces = parseFontFaces(await fetchCSSFromGoogleFonts(url, options.fontFamily, false));
-    if (faces.length === 0) throw new Error(`No latin faces for ${options.fontFamily}`);
-    const ranges = new Set(faces.map((face) => face.unicodeRange));
-    if (ranges.size !== 1) throw new Error(`${options.fontFamily}: latin faces disagree on unicode-range`);
-
-    const files = [];
+    // Google lists every subset of one style before the next style, so group
+    // by subset across the whole stylesheet, keeping first-seen order.
+    const bySubset = new Map();
     for (const face of faces) {
-      const file = `${slug(options.fontFamily)}-${face.style}-${face.weight.replace(/\s+/g, "-")}.woff2`;
-      const buffer = await fetchFontFile(face.url, false);
-      writeFileSync(path.join(directory, file), buffer);
-      files.push({ file, weight: face.weight, style: face.style, sha256: sha256(buffer) });
-      console.log(`  ${file} (${buffer.length} bytes)`);
+      if (!bySubset.has(face.subset)) bySubset.set(face.subset, []);
+      bySubset.get(face.subset).push(face);
     }
+    if (!bySubset.has(PRIMARY_SUBSET)) throw new Error(`No ${PRIMARY_SUBSET} faces for ${options.fontFamily}`);
+
+    const subsets = [];
+    for (const [subset, subsetFaces] of bySubset) {
+      const ranges = new Set(subsetFaces.map((face) => face.unicodeRange));
+      if (ranges.size !== 1) throw new Error(`${options.fontFamily}: ${subset} faces disagree on unicode-range`);
+      const files = [];
+      for (const face of subsetFaces) {
+        // Latin keeps its original name; other subsets are prefixed with theirs.
+        const prefix = subset === PRIMARY_SUBSET ? "" : `${subset}-`;
+        const file = `${slug(options.fontFamily)}-${prefix}${face.style}-${face.weight.replace(/\s+/g, "-")}.woff2`;
+        const buffer = await fetchFontFile(face.url, false);
+        writeFileSync(path.join(directory, file), buffer);
+        files.push({ file, weight: face.weight, style: face.style, sha256: sha256(buffer) });
+        console.log(`  ${file} (${buffer.length} bytes)`);
+      }
+      subsets.push({ subset, unicodeRange: [...ranges][0], files });
+    }
+    const primary = subsets.find((entry) => entry.subset === PRIMARY_SUBSET);
+
     // Every catalog family is OFL-1.1, which must travel with the font files.
     const licenseUrl = `${GOOGLE_FONTS_REPO}/ofl/${options.fontFamily.toLowerCase().replace(/[^a-z0-9]/g, "")}/OFL.txt`;
     const licenseFile = `${slug(options.fontFamily)}-OFL.txt`;
@@ -196,17 +218,20 @@ async function downloadInto(directory, next) {
       licenseFile: `licenses/${licenseFile}`,
       googleCssUrl: url,
       fallbackFont: getFallbackFontOverrideMetrics(options.fontFamily)?.fallbackFont ?? "Arial",
-      unicodeRange: [...ranges][0],
-      files,
+      unicodeRange: primary.unicodeRange,
+      files: primary.files,
+      otherSubsets: subsets.filter((entry) => entry !== primary),
     });
   }
-  return { source: "Google Fonts via next/font/google helpers", subsets: SUBSETS, families };
+  return { source: "Google Fonts via next/font/google helpers", primarySubset: PRIMARY_SUBSET, families };
 }
 
 /** Generate src/app/fonts.ts from the manifest. Pure, so --check can compare. */
 export function renderFontsModule(manifest) {
   const byId = new Map(manifest.families.map((family) => [family.id, family]));
   const sections = [];
+  const subsetFaces = [];
+  const stacks = [];
   let group = null;
   for (const spec of FAMILIES) {
     const family = byId.get(spec.id);
@@ -227,9 +252,33 @@ export function renderFontsModule(manifest) {
     lines.push(`  adjustFontFallback: "${family.fallbackFont}",`);
     lines.push(`  declarations: [{ prop: "unicode-range", value: "${family.unicodeRange}" }],`);
     lines.push("});");
+    // Each other subset is its own instance with Google's unicode-range. Its
+    // family joins the cssVar's stack (see familyStack), so the browser still
+    // fetches it only for text in that range.
+    const subsetIds = [];
+    for (const entry of family.otherSubsets ?? []) {
+      const id = `${spec.id}${pascal(entry.subset)}`;
+      subsetFaces.push(id);
+      subsetIds.push(id);
+      lines.push(`const ${id} = localFont({`);
+      lines.push("  src: [");
+      for (const file of entry.files) {
+        lines.push(`    { path: "../assets/fonts/${file.file}", weight: "${file.weight}", style: "${file.style}" },`);
+      }
+      lines.push("  ],");
+      lines.push("  preload: false,");
+      lines.push("  adjustFontFallback: false,");
+      lines.push(`  declarations: [{ prop: "unicode-range", value: "${entry.unicodeRange}" }],`);
+      lines.push("});");
+    }
+    // Google declares subsets in one family and the last-declared face wins
+    // where ranges overlap (vietnamese and latin-ext share U+0102-0103). In a
+    // family stack the first family wins, so list them in reverse order.
+    stacks.push(`  "${spec.variable}": familyStack(${spec.id}, [${[...subsetIds].reverse().join(", ")}]),`);
     sections.push(lines.join("\n"));
   }
   return `${HEADER}
+import type { CSSProperties } from "react";
 import localFont from "next/font/local";
 
 // GENERATED by scripts/vendor-fonts.mjs from src/assets/fonts/manifest.json.
@@ -247,8 +296,32 @@ ${FAMILIES.map((spec) => `  ${spec.id},`).join("\n")}
 
 /** Space-joined \`.variable\` classes for the root <html> element. */
 export const fontVariables = ALL_FONTS.map((f) => f.variable).join(" ");
+
+/** Non-latin subsets. Referenced so their @font-face rules always ship. */
+export const vendoredSubsetFaces = [
+${subsetFaces.map((id) => `  ${id},`).join("\n")}
+];
+
+type LoadedFont = { style: { fontFamily: string } };
+
+/** Latin family, then the other subsets' families, then the fallback. Built
+ *  from each instance's documented \`style.fontFamily\` so the names always
+ *  match the emitted @font-face rules; a shared custom font-family does not
+ *  survive Turbopack (vercel/next.js#88894). */
+function familyStack(latin: LoadedFont, subsets: readonly LoadedFont[]): string {
+  const [primary, ...fallback] = latin.style.fontFamily.split(",").map((part) => part.trim());
+  return [primary, ...subsets.map((font) => font.style.fontFamily), ...fallback].join(", ");
+}
+
+/** Inline style for the root <html>: every cssVar with its full subset stack.
+ *  It overrides the latin-only value each \`.variable\` class sets. */
+export const fontFamilyStyle = {
+${stacks.join("\n")}
+} as CSSProperties;
 `;
 }
+
+const pascal = (subset) => subset.replace(/(^|-)([a-z0-9])/g, (_, __, ch) => ch.toUpperCase());
 
 const HEADER = `/**
  * Bundled font declarations — the runtime half of the typography feature.
@@ -268,9 +341,12 @@ const HEADER = `/**
  * classes are concatenated into \`fontVariables\`, which the root layout
  * spreads onto <html>.
  *
- * The files are vendored latin subsets of the Google Fonts families (#5533),
- * so builds never reach the network for fonts. Each family keeps the fallback
- * font next/font/google chose for it and Google's latin unicode-range.
+ * The files are the vendored Google Fonts families (#5533), so builds never
+ * reach the network for fonts. Each family's latin instance owns its cssVar,
+ * preload flag and the fallback next/font/google chose; every other subset
+ * Google serves is its own instance with Google's unicode-range, and
+ * \`fontFamilyStyle\` stacks those families into the cssVar, so text in those
+ * scripts still gets the chosen font and pages download only what they use.
  */`;
 
 /** Offline verification: fonts.ts is the rendering of the manifest, and every file matches its hash. */
@@ -289,7 +365,7 @@ export function checkVendoredFonts() {
     } catch {
       problems.push(`missing license for ${family.family}`);
     }
-    for (const file of family.files) {
+    for (const file of [...family.files, ...(family.otherSubsets ?? []).flatMap((entry) => entry.files)]) {
       listed.add(file.file);
       let buffer;
       try {

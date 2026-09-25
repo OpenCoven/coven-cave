@@ -144,8 +144,12 @@ test("wide code, tables and URLs scroll inside the reply instead of widening it"
   expect(md.x + md.width).toBeLessThanOrEqual(column.x + column.width + 1);
 
   const code = reply.locator("pre").first();
-  const scrolls = await code.evaluate((element) => element.scrollWidth > element.clientWidth);
-  expect(scrolls, "the long code line scrolls inside its own block").toBe(true);
+  // Measure after layout settles: a web font swap can re-lay out the block.
+  await expect
+    .poll(() => code.evaluate((element) => element.scrollWidth > element.clientWidth), {
+      message: "the long code line scrolls inside its own block",
+    })
+    .toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
