@@ -33,7 +33,7 @@ test("no source declares a next/font/google font", () => {
   assert.equal(hits, "", `next/font/google imported in:\n${hits}`);
 });
 
-test("every catalog family is vendored with its fallback and latin range", () => {
+test("every catalog family is vendored with its fallback, latin range and other subsets", () => {
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   assert.deepEqual(manifest.families.map((family) => family.id), FAMILIES.map((spec) => spec.id));
   for (const family of manifest.families) {
@@ -45,14 +45,32 @@ test("every catalog family is vendored with its fallback and latin range", () =>
   const source = readFileSync(FONTS_MODULE_PATH, "utf8");
   const preloaded = FAMILIES.filter((spec) => spec.preload).map((spec) => spec.id);
   assert.deepEqual(preloaded, ["ebGaramond", "inter", "jetbrainsMono"]);
+  const byId = new Map(manifest.families.map((family) => [family.id, family]));
   for (const spec of FAMILIES) {
     const call = source.match(new RegExp(`const ${spec.id} = localFont\\(\\{[\\s\\S]*?\\n\\}\\);`))?.[0];
     assert.ok(call, `fonts.ts declares ${spec.id}`);
     assert.equal(call.includes("preload: false"), !spec.preload, `${spec.id} preload matches the catalog`);
+    const family = byId.get(spec.id);
+    assert.ok(call.includes(`value: "'${family.family}'"`), `${spec.id} names its font-family`);
+    // next/font/google shipped every subset Google serves; losing them sends
+    // those scripts to the system fallback (#5533 follow-up).
+    assert.ok(family.otherSubsets.length > 0, `${family.family} vendors its non-latin subsets`);
+    for (const entry of family.otherSubsets) {
+      assert.notEqual(entry.subset, "latin");
+      const id = `${spec.id}${entry.subset.replace(/(^|-)([a-z0-9])/g, (_, __, ch) => ch.toUpperCase())}`;
+      const subsetCall = source.match(new RegExp(`const ${id} = localFont\\(\\{[\\s\\S]*?\\n\\}\\);`))?.[0];
+      assert.ok(subsetCall, `fonts.ts declares ${id}`);
+      assert.ok(subsetCall.includes("preload: false"), `${id} never preloads`);
+      assert.ok(subsetCall.includes("adjustFontFallback: false"), `${id} leaves the fallback to latin`);
+      assert.ok(subsetCall.includes(`value: "'${family.family}'"`), `${id} shares ${family.family}'s font-family`);
+      assert.ok(subsetCall.includes(`value: "${entry.unicodeRange}"`), `${id} keeps Google's unicode-range`);
+      assert.doesNotMatch(subsetCall, /variable:/, `${id} does not own a cssVar`);
+      assert.match(source, new RegExp(`export const vendoredSubsetFaces = \\[[\\s\\S]*\\n  ${id},`), `${id} ships`);
+    }
   }
 });
 
-test("parseFontFaces keeps only requested subsets and reads each descriptor", () => {
+test("parseFontFaces reads every subset by default, or only the requested ones", () => {
   const css = `
 /* cyrillic */
 @font-face {
@@ -72,8 +90,10 @@ test("parseFontFaces keeps only requested subsets and reads each descriptor", ()
   src: url(https://fonts.gstatic.com/s/inter/latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131;
 }`;
-  assert.deepEqual(parseFontFaces(css), [
+  assert.deepEqual(parseFontFaces(css).map((face) => face.subset), ["cyrillic", "latin"]);
+  assert.deepEqual(parseFontFaces(css, ["latin"]), [
     {
+      subset: "latin",
       style: "italic",
       weight: "400",
       unicodeRange: "U+0000-00FF, U+0131",
@@ -96,6 +116,9 @@ function stubbedHelpers({ failOnFontFetch = Infinity } = {}) {
     ...google("get-font-axes"),
     ...google("get-google-fonts-url"),
     fetchCSSFromGoogleFonts: async (_url, family) =>
+      `/* cyrillic */ @font-face { font-family: '${family}'; font-style: normal; font-weight: 400; ` +
+      `src: url(https://fonts.gstatic.com/${encodeURIComponent(family)}-cyr.woff2) format('woff2'); ` +
+      `unicode-range: U+0400-045F; }\n` +
       `/* latin */ @font-face { font-family: '${family}'; font-style: normal; font-weight: 400; ` +
       `src: url(https://fonts.gstatic.com/${encodeURIComponent(family)}.woff2) format('woff2'); ` +
       `unicode-range: U+0000-00FF; }`,
@@ -154,6 +177,11 @@ test("a successful --refresh replaces the fonts, manifest and fonts.ts together"
     await refresh({ fontDir, fontsModulePath, next: stubbedHelpers() });
     const manifest = JSON.parse(readFileSync(path.join(fontDir, "manifest.json"), "utf8"));
     assert.equal(manifest.families.length, FAMILIES.length);
+    const inter = manifest.families.find((family) => family.id === "inter");
+    assert.deepEqual(inter.files.map((file) => file.file), ["inter-normal-400.woff2"], "latin keeps its file name");
+    assert.deepEqual(inter.otherSubsets.map((entry) => [entry.subset, entry.files[0].file]), [
+      ["cyrillic", "inter-cyrillic-normal-400.woff2"],
+    ]);
     assert.equal(readFileSync(fontsModulePath, "utf8"), renderFontsModule(manifest));
     assert.ok(!readdirSync(fontDir).includes("stale.woff2"), "files outside the new catalog are gone");
     assert.deepEqual(readdirSync(sandbox).sort(), ["fonts", "fonts.ts"], "no staging or previous copies remain");
