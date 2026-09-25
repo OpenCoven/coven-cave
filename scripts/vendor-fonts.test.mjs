@@ -51,7 +51,17 @@ test("every catalog family is vendored with its fallback, latin range and other 
     assert.ok(call, `fonts.ts declares ${spec.id}`);
     assert.equal(call.includes("preload: false"), !spec.preload, `${spec.id} preload matches the catalog`);
     const family = byId.get(spec.id);
-    assert.ok(call.includes(`value: "'${family.family}'"`), `${spec.id} names its font-family`);
+    // A custom font-family declaration desyncs the cssVar from the emitted
+    // @font-face under Turbopack (vercel/next.js#88894); names come from the
+    // instances instead, through fontFamilyStyle.
+    assert.doesNotMatch(call, /prop: "font-family"/, `${spec.id} keeps its generated family name`);
+    const subsetIds = family.otherSubsets.map(
+      (entry) => `${spec.id}${entry.subset.replace(/(^|-)([a-z0-9])/g, (_, __, ch) => ch.toUpperCase())}`,
+    );
+    assert.ok(
+      source.includes(`  "${spec.variable}": familyStack(${spec.id}, [${[...subsetIds].reverse().join(", ")}]),`),
+      `${spec.variable} stacks latin, then the subsets in Google's reverse declaration order`,
+    );
     // next/font/google shipped every subset Google serves; losing them sends
     // those scripts to the system fallback (#5533 follow-up).
     assert.ok(family.otherSubsets.length > 0, `${family.family} vendors its non-latin subsets`);
@@ -62,7 +72,7 @@ test("every catalog family is vendored with its fallback, latin range and other 
       assert.ok(subsetCall, `fonts.ts declares ${id}`);
       assert.ok(subsetCall.includes("preload: false"), `${id} never preloads`);
       assert.ok(subsetCall.includes("adjustFontFallback: false"), `${id} leaves the fallback to latin`);
-      assert.ok(subsetCall.includes(`value: "'${family.family}'"`), `${id} shares ${family.family}'s font-family`);
+      assert.doesNotMatch(subsetCall, /prop: "font-family"/, `${id} keeps its generated family name`);
       assert.ok(subsetCall.includes(`value: "${entry.unicodeRange}"`), `${id} keeps Google's unicode-range`);
       assert.doesNotMatch(subsetCall, /variable:/, `${id} does not own a cssVar`);
       assert.match(source, new RegExp(`export const vendoredSubsetFaces = \\[[\\s\\S]*\\n  ${id},`), `${id} ships`);

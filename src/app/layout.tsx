@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { fontVariables } from "./fonts";
+import { fontFamilyStyle, fontVariables } from "./fonts";
 import "./globals.css";
 import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
 import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
@@ -75,6 +75,8 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${fontVariables} h-full antialiased`}
+      // Each --font-* var with every vendored subset's family (fonts.ts).
+      style={fontFamilyStyle}
       // ThemeScript sets data-theme/data-mode on <html> before hydration, so the
       // server markup intentionally differs from the post-script client markup.
       // Suppress the resulting attribute hydration mismatch (the next-themes pattern).
