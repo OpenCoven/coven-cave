@@ -3,6 +3,7 @@ import {
   CLAUDE_OPUS_5_CAVE_ID,
   parseClaudeCodeVersion,
   withClaudeOpus5,
+  withClaudeOpus55,
 } from "../claude-models.ts";
 import { canonicalProbeSpawnEnv, harnessSpawnEnv } from "../harness-spawn-env.ts";
 import { catalogForRuntime, type RuntimeModelOption } from "../runtime-models.ts";
@@ -170,10 +171,8 @@ async function discoverClaudeModels(
   dependencies: ClaudeModelDependencies,
 ): Promise<{ models: RuntimeModelOption[] }> {
   const versionOutput = await readVersion(dependencies);
-  const models = withClaudeOpus5(seedModels(), {
-    versionOutput,
-    env: providerEnv,
-  });
+  const probe = { versionOutput, env: providerEnv };
+  const models = withClaudeOpus55(withClaudeOpus5(seedModels(), probe), probe);
   if (parseClaudeCodeVersion(versionOutput)) {
     const now = dependencies.now ?? Date.now;
     const currentTime = now();
@@ -253,10 +252,8 @@ export async function claudeOpus5Routability(
   // Caching here is safe for the same reason discoverClaudeModels' write is —
   // both sit behind the parse guard above, so only a probe that actually ran is
   // ever stored. An unusable probe returns "unknown" and writes nothing.
-  const models = withClaudeOpus5(seedModels(), {
-    versionOutput,
-    env: providerEnv,
-  });
+  const probe = { versionOutput, env: providerEnv };
+  const models = withClaudeOpus55(withClaudeOpus5(seedModels(), probe), probe);
   const currentTime = now();
   pruneExpiredCache(currentTime);
   cacheModels(
