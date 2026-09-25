@@ -8,12 +8,10 @@ import {
   clearRoleSurfaceStateForTest,
 } from "@/lib/role-surface-state";
 import type { Card } from "@/lib/cave-board-types";
-import type { Escalation } from "@/lib/escalations-types";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { IndexerSurface } from "./indexer-surface";
 import { NavigatorSurface } from "./navigator-surface";
 import { ScribeSurface } from "./scribe-surface";
-import { SentinelSurface } from "./sentinel-surface";
 import { SurfaceLoading, SurfaceRail } from "./surface-room";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -122,19 +120,6 @@ function card(id: string, title: string): Card {
   };
 }
 
-function alert(id: string, title: string): Escalation {
-  return {
-    id,
-    createdAt: "2026-07-26T00:00:00.000Z",
-    updatedAt: "2026-07-26T00:00:00.000Z",
-    origin: "heartbeat",
-    title,
-    severity: "warn",
-    state: "new",
-    decisionRequired: false,
-  };
-}
-
 function memoryEntry(path: string): SurfaceMemoryEntry {
   return {
     relPath: path,
@@ -150,8 +135,7 @@ async function renderSurface(
   component:
     | typeof IndexerSurface
     | typeof NavigatorSurface
-    | typeof ScribeSurface
-    | typeof SentinelSurface,
+    | typeof ScribeSurface,
   surfaceContext: RoleSurfaceContext,
   createNodeMock?: Parameters<typeof create>[1]["createNodeMock"],
 ): Promise<ReactTestRenderer> {
@@ -257,13 +241,6 @@ describe("SurfaceLoading live ownership", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Sentinel exposes one live status per independent request", async () => {
-    globalThis.fetch = vi.fn(() => pending());
-    const renderer = await renderSurface(SentinelSurface, context("sentinel-loading"));
-    expect(liveLoadingCount(renderer)).toBe(2);
-    await act(async () => renderer.unmount());
-  });
-
 });
 
 describe("active selections control compact inspectors", () => {
@@ -303,28 +280,6 @@ describe("active selections control compact inspectors", () => {
     expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — Second voyage");
     await act(async () => renderer.unmount());
   });
-
-  test("Sentinel opens alert details for the newly selected alert", async () => {
-    const alerts = [alert("alert-1", "First watch"), alert("alert-2", "Second watch")];
-    globalThis.fetch = vi.fn(async (input) => {
-      const url = String(input);
-      if (url === "/api/escalations") return response({ ok: true, items: alerts });
-      if (url === "/api/hosts") return response({ ok: true, hosts: [] });
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    const renderer = await renderSurface(SentinelSurface, context("sentinel-selection"));
-
-    await act(async () => buttonContaining(renderer, "First watch").props.onClick());
-    expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
-
-    await act(async () => rightRail(renderer, "Alert details").props.onExpandedChange(false));
-    expect(rightRail(renderer, "Alert details").props.expanded).toBe(false);
-
-    await act(async () => buttonContaining(renderer, "Second watch").props.onClick());
-    expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
-    await act(async () => renderer.unmount());
-  });
-
 
   test("Scribe opens Publishing when a new draft becomes active", async () => {
     globalThis.fetch = vi.fn(async (input) => {
@@ -407,121 +362,4 @@ describe("mutation revalidation keeps the selected inspector usable", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Sentinel retains the alert during triage refresh and restores focus to its inspector", async () => {
-    const initial = alert("alert-focus", "Keep watch");
-    const refreshed = { ...initial, state: "resolved" as const };
-    const refresh = deferred<Response>();
-    let escalationReads = 0;
-    globalThis.fetch = vi.fn(async (input, init) => {
-      const url = String(input);
-      if (url === "/api/escalations") {
-        escalationReads += 1;
-        return escalationReads === 1
-          ? response({ ok: true, items: [initial] })
-          : refresh.promise;
-      }
-      if (url === "/api/hosts") return response({ ok: true, hosts: [] });
-      if (url === "/api/escalations/alert-focus" && init?.method === "PATCH") {
-        return response({ ok: true });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-
-    const focused: string[] = [];
-    const renderer = await renderSurface(
-      SentinelSurface,
-      context("sentinel-focus"),
-      (element) => {
-        if (element.type === "p" && element.props.className?.includes("role-surface-memory-path")) {
-          return {
-            focus: () => focused.push(String(element.props.children)),
-          };
-        }
-        return null;
-      },
-    );
-    await act(async () => buttonContaining(renderer, "Keep watch").props.onClick());
-
-    await act(async () => {
-      buttonContaining(renderer, "Resolve").props.onClick();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(buttonContaining(renderer, "Keep watch")).toBeDefined();
-    expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
-    expect(buttonContaining(renderer, "Resolve").props.disabled).toBe(true);
-    expect(
-      renderer.root.findAllByType(SurfaceLoading).some((node) => node.props.label === "Loading alert details…"),
-    ).toBe(false);
-
-    await act(async () => refresh.resolve(response({ ok: true, items: [refreshed] })));
-    const focusTarget = renderer.root
-      .findAllByType("p")
-      .find((node) => node.props.className?.includes("role-surface-memory-path"))!;
-    expect(focusTarget.props.tabIndex).toBe(-1);
-    expect(focusTarget.props.className).toContain("focus-ring");
-    expect(focused).toEqual(["Keep watch"]);
-    await act(async () => renderer.unmount());
-  });
-
-  test("Sentinel retains the alert and restores focus after a custom RPC action", async () => {
-    const initial = {
-      ...alert("alert-rpc", "Inspect source"),
-      actions: [
-        {
-          id: "recheck",
-          label: "Re-check source",
-          kind: "rpc" as const,
-          target: "/api/escalation-actions/recheck",
-        },
-      ],
-    };
-    const refresh = deferred<Response>();
-    let escalationReads = 0;
-    globalThis.fetch = vi.fn(async (input, init) => {
-      const url = String(input);
-      if (url === "/api/escalations") {
-        escalationReads += 1;
-        return escalationReads === 1
-          ? response({ ok: true, items: [initial] })
-          : refresh.promise;
-      }
-      if (url === "/api/hosts") return response({ ok: true, hosts: [] });
-      if (url === "/api/escalation-actions/recheck" && init?.method === "POST") {
-        return response({ ok: true });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-
-    const focused: string[] = [];
-    const renderer = await renderSurface(
-      SentinelSurface,
-      context("sentinel-rpc-focus"),
-      (element) => {
-        if (element.type === "p" && element.props.className?.includes("role-surface-memory-path")) {
-          return {
-            focus: () => focused.push(String(element.props.children)),
-          };
-        }
-        return null;
-      },
-    );
-    await act(async () => buttonContaining(renderer, "Inspect source").props.onClick());
-
-    await act(async () => {
-      buttonContaining(renderer, "Re-check source").props.onClick();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(buttonContaining(renderer, "Inspect source")).toBeDefined();
-    expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
-    expect(buttonContaining(renderer, "Re-check source").props.disabled).toBe(true);
-    expect(
-      renderer.root.findAllByType(SurfaceLoading).some((node) => node.props.label === "Loading alert details…"),
-    ).toBe(false);
-
-    await act(async () => refresh.resolve(response({ ok: true, items: [initial] })));
-    expect(focused).toEqual(["Inspect source"]);
-    await act(async () => renderer.unmount());
-  });
 });

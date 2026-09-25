@@ -181,7 +181,6 @@ export const SUITES = {
     "src/lib/research-generations.test.ts",
     "src/lib/research-paper-view.test.ts",
     "src/lib/research-resource-browser.test.ts",
-    "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
     "src/components/role-surfaces/navigator-surface.test.ts",
     "src/components/role-surfaces/chart-room-model.test.ts",

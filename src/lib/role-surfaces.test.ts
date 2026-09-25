@@ -217,10 +217,10 @@ test("a familiar without matching roles sees no role surfaces", () => {
 test("a dummy surface registered from a separate module appears without shell edits", async () => {
   clearRoleSurfacesForTest();
   // Simulates a drop-in module: registration happens entirely through the
-  // public registry API — nothing in the Cave shell knows about "watchtower".
+  // public registry API — nothing in the Cave shell knows about "lookout".
   const dummyModule = () => {
     registerRoleSurface(
-      makeSurface({ id: "watchtower", role: "sentinel", title: "Watchtower", priority: 5 }),
+      makeSurface({ id: "lookout", role: "sentinel", title: "Lookout", priority: 5 }),
     );
   };
   dummyModule();
@@ -233,7 +233,7 @@ test("a dummy surface registered from a separate module appears without shell ed
     familiarRoleIds(context.activeFamiliar),
     context,
   );
-  assert.deepEqual(visible.map((s) => s.id), ["watchtower"]);
+  assert.deepEqual(visible.map((s) => s.id), ["lookout"]);
 });
 
 test("workspace-mode bridge round-trips surface ids through one generic prefix", () => {
@@ -312,15 +312,16 @@ test("matchesShortcutCombo survives a keydown event with no readable key (cave-l
 });
 
 test("registry keeps retired types and their live role labels reachable (cave-lgcb)", () => {
-  // The vocabulary reduction removed watch/planning/writing/indexing from the
-  // Type picker. Their rooms stay reachable through free-text Role labels only
+  // The vocabulary reduction removed planning/writing/indexing from the Type
+  // picker. Their rooms stay reachable through free-text Role labels only
   // because register.tsx carries both retired vocabulary and the labels used by
   // the production familiars. Pin both so continuity cannot silently drift.
+  // (The Watchtower, which carried watch/guardian, was removed with its room.)
   const source = readFileSync(
     new URL("../components/role-surfaces/register.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(source, /aliases:\s*\["watch",\s*"guardian"\]/);
+  assert.doesNotMatch(source, /aliases:\s*\["watch",\s*"guardian"\]/);
   assert.match(source, /aliases:\s*\["planner",\s*"planning",\s*"navigation"\]/);
   assert.match(source, /aliases:\s*\["editor",\s*"writer",\s*"writing"\]/);
   assert.match(

@@ -50,7 +50,6 @@ A production build ships `PRODUCTION_ROOM_IDS`:
 | X Comms (`x-comms`) | ✅ — requires X publishing capability; planning is demo-backed |
 | Coding Desk (`code`) | dev only — under construction |
 | Writing Desk (`scribe-writing-desk`) | dev only — under construction |
-| Watchtower (`sentinel-watchtower`) | dev only — under construction |
 | The Archive (`indexer-archive`) | dev only — under construction |
 
 A **dev build shows every room**, so an unfinished room is fully workable; it
@@ -96,7 +95,7 @@ Analyst"` → `research-analyst` + `research` + `analyst`):
 A surface may also declare `aliases` — synonym roles matched exactly like its
 primary `role`. The Chart Room serves `navigator` + `planner`/`planning`; the
 Writing Desk serves `scribe` + `editor`/`writer`/`writing`; The Archive serves `indexer` +
-`archivist`/`indexing`; the Watchtower serves `sentinel` + `watch`/`guardian`.
+`archivist`/`indexing`.
 
 Familiars can also carry an explicit **Type** (Familiar Studio → Identity;
 `FAMILIAR_TYPES` in `src/lib/familiar-types.ts`) that grants its room's role
@@ -122,16 +121,16 @@ the room, but they are not room-visibility or unlock records.
 import { registerRoleSurface } from "@/lib/role-surfaces";
 
 registerRoleSurface({
-  id: "sentinel-watchtower",
-  role: "sentinel",
-  title: "Watchtower",
-  iconName: "ph:binoculars",       // must be in ICON_NAMES (src/lib/icon.tsx)
-  description: "Alerts, monitors, and perimeter state",
+  id: "example-room",
+  role: "example",
+  title: "Example Room",
+  iconName: "ph:compass",           // must be in ICON_NAMES (src/lib/icon.tsx)
+  description: "What this room is for",
   accentHue: 40,                    // the room's glow
   priority: 15,
   shouldDisplay: () => true,
   getContributions: (ctx) => ({ /* commands, shortcuts, status… */ }),
-  render: (ctx) => <WatchtowerSurface context={ctx} />,
+  render: (ctx) => <ExampleSurface context={ctx} />,
 });
 ```
 
@@ -166,10 +165,6 @@ never fake production data.
 - **The Archive** (`indexer-archive`, role `indexer`) — real memory inventory
   grouped into collections, semantic tags/clusters, provenance details,
   redacted content preview, indexing-activity drawer.
-- **Watchtower** (`sentinel-watchtower`, role `sentinel`) — the Cave's real
-  escalations as a triageable alert board (acknowledge/snooze/resolve/dismiss
-  through the shared Inbox store), session watch over running/failed sessions,
-  perimeter reachability from live ssh-host probes, watch-log drawer.
 - **Writing Desk** (`scribe-writing-desk`, role `scribe`) — local drafts with
   live word counts, source material from the familiar's real memory and recent
   journal days, real publishing into the Knowledge Vault (republish-in-place,
