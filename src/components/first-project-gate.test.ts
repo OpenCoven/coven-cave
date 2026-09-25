@@ -10,7 +10,7 @@ test("the first-project gate is a detail-scoped dialog with no dismiss path", ()
   assert.match(src, /if \(!open\) return null;/, "visibility is controlled entirely by Workspace policy");
   assert.doesNotMatch(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "pending retry no longer bypasses Workspace policy locally");
   assert.match(src, /<section[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=\{titleId\}[\s\S]*aria-describedby=\{copyId\}/, "renders a labelled, described dialog scoped to the detail pane (#5528)");
-  assert.match(src, /useFocusTrap\(open, dialogRef, \{ focusFirst: false \}\)/, "Tab stays inside the gate without taking over its initial focus");
+  assert.match(src, /useFocusTrap\(open, dialogRef, \{\s*focusFirst: false,\s*restoreFocus: \(\) => !leavingForTasksRef\.current,\s*\}\)/, "Tab stays inside the gate; leaving for Tasks doesn't hand focus back to <body>");
   assert.match(src, /\[background:var\(--backdrop-scrim\)\]/, "the scrim is the shared token, not a raw color");
   assert.doesNotMatch(src, /bg-black\//, "no raw black scrim");
   assert.match(src, /onOpenTasks \? \([\s\S]*?Open Tasks[\s\S]*?\) : null/, "keyboard users have an in-gate way out");

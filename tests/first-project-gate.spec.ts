@@ -32,5 +32,9 @@ test.describe("first-project gate", () => {
     await page.keyboard.press("Enter");
     await expect(gate).toBeHidden();
     await expect(page.getByRole("region", { name: "Tasks" })).toBeVisible({ timeout: 30_000 });
+    // Focus follows the keyboard user into Tasks instead of falling to <body>.
+    await expect
+      .poll(() => page.evaluate(() => document.getElementById("shell-main-content")?.contains(document.activeElement) ?? false))
+      .toBe(true);
   });
 });

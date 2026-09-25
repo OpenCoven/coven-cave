@@ -84,10 +84,17 @@ export function FirstProjectGate({
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Set when the gate is left through "Open Tasks": the destination takes
+  // focus, so the trap must not hand it back to whatever held it before the
+  // gate opened (usually <body>).
+  const leavingForTasksRef = useRef(false);
   // Tab cycles inside the gate (#5528); the surface behind it is already inert.
   // No Escape: the gate has nothing to dismiss to. Initial focus stays with the
   // effect below, which picks the field or the locked project's action.
-  useFocusTrap(open, dialogRef, { focusFirst: false });
+  useFocusTrap(open, dialogRef, {
+    focusFirst: false,
+    restoreFocus: () => !leavingForTasksRef.current,
+  });
   const wasVisibleRef = useRef(false);
   // An empty select value is the explicit "Add a different project…" path,
   // not an uninitialized choice. Only apply the convenient default once.
@@ -402,7 +409,16 @@ export function FirstProjectGate({
 
                 <div className={`flex items-center gap-3 ${onOpenTasks ? "justify-between" : "justify-end"}`}>
                   {onOpenTasks ? (
-                    <Button variant="ghost" size="sm" onClick={onOpenTasks} disabled={submitting} className="!h-10">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        leavingForTasksRef.current = true;
+                        onOpenTasks();
+                      }}
+                      disabled={submitting}
+                      className="!h-10"
+                    >
                       Open Tasks
                     </Button>
                   ) : null}
