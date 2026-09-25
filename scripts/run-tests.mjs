@@ -1299,6 +1299,7 @@ export const SUITES = {
     "src/lib/hub-access-token.test.ts",
     "src/lib/font-storage.test.ts",
     "src/lib/font-css-vars.test.ts",
+    "src/lib/font-vendoring.test.ts",
     "src/components/font-boot.test.ts",
     "src/components/settings-fonts.test.ts",
     "src/lib/reading-leading.test.ts",

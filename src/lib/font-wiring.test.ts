@@ -2,7 +2,7 @@
 // Cross-check: the catalog (data) vs the runtime declarations (src/app/fonts.ts)
 // + the root layout wiring. font-catalog.ts on its own can list cssVars that
 // nothing declares — this test fails if a catalog entry has no matching
-// `next/font/google` instance, or if the layout stops applying them to <html>.
+// `next/font` instance, or if the layout stops applying them to <html>.
 // Source is read as text (not imported): next/font only resolves under the
 // Next build, so importing fonts.ts in the node test runner would throw.
 import assert from "node:assert/strict";
@@ -46,7 +46,7 @@ assert.match(
 //    should linger in layout.tsx — fonts.ts is the single source of truth.
 assert.doesNotMatch(
   layoutSrc,
-  /from\s+["']next\/font\/google["']/,
+  /from\s+["']next\/font\/(?:google|local)["']/,
   "layout.tsx must not declare fonts directly; they live in src/app/fonts.ts",
 );
 
