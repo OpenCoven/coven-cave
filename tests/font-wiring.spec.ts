@@ -30,11 +30,16 @@ test("every font variable names declared families, and non-latin text loads its 
       if (!stack.at(-1)?.endsWith(" fallback")) problems.push(`${variable} does not end in its fallback`);
     }
 
-    // Cyrillic text in Inter must fetch Inter's cyrillic subset face (browsers
-    // serialize the range without leading zeros: U+400-45F).
-    const inter = style.getPropertyValue("--font-inter");
-    const loaded = await document.fonts.load(`16px ${inter}`, "Привет");
-    const cyrillic = loaded.some((face) => /U\+0?400-0?45F/i.test(face.unicodeRange));
+    // Inter's stack must include its cyrillic subset, and that face must load.
+    // Load the face itself, not the whole stack: the stack ends in a metric
+    // fallback declared as local(Arial), which Linux CI runners do not have.
+    // (Browsers serialize the range without leading zeros: U+400-45F.)
+    const interStack = style.getPropertyValue("--font-inter").split(",").map(unquote);
+    const cyrillicFaces = [...document.fonts].filter(
+      (face) => interStack.includes(unquote(face.family)) && /U\+0?400-0?45F/i.test(face.unicodeRange),
+    );
+    await Promise.all(cyrillicFaces.map((face) => face.load()));
+    const cyrillic = cyrillicFaces.length > 0 && cyrillicFaces.every((face) => face.status === "loaded");
     return { problems, cyrillic, families: declared.size };
   }, FAMILIES.map((spec) => spec.variable));
 
