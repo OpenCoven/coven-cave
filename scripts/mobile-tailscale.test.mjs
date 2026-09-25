@@ -24,35 +24,49 @@ test.after(() => rmSync(identityBinary, { force: true }));
 /** Tag a fixture command so leaked copies can be found after cleanup. */
 const fixtureMarker = (fixture) => `// cave-fixture:${fixture}`;
 
+/** Fixture processes: [pid, pgid, command] for every process tagged with the marker. */
+function fixtureProcesses(marker) {
+  return spawnSync("ps", ["-A", "-ww", "-o", "pid=,pgid=,command="], { encoding: "utf8" }).stdout
+    .split("\n")
+    .filter((line) => line.includes(marker))
+    .map((line) => {
+      const [, pid, pgid, command] = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/) ?? [];
+      return { pid: Number(pid), pgid: Number(pgid), command };
+    })
+    .filter((entry) => Number.isInteger(entry.pid) && entry.pid > 0);
+}
+
 /**
- * SIGKILL every owned fixture process and report any that survive (#5542).
- * The supervisor and backend-root each lead their own process group, and the
- * backend command runs inside backend-root's group, so killing only the
- * recorded pids orphaned the command. Kill each group, then the pid itself.
+ * SIGKILL every fixture process and report any that survive (#5542). The
+ * supervisor and backend-root each lead their own process group, and the
+ * backend command runs inside backend-root's group, so killing only recorded
+ * pids orphaned the command. The marker is on every process in the tree
+ * (each carries the command's arguments), so cleanup needs no pid from setup
+ * and still works when setup threw part-way.
  */
-async function cleanupFixtureProcesses(fixture, pids) {
-  for (const pid of pids) {
-    if (!Number.isInteger(pid) || pid <= 0) continue;
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch {}
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {}
-  }
+async function cleanupFixtureProcesses(fixture) {
   const marker = fixtureMarker(fixture);
-  const survivors = () =>
-    spawnSync("ps", ["-A", "-o", "pid=,command="], { encoding: "utf8" }).stdout
-      .split("\n")
-      .filter((line) => line.includes(marker))
-      .map((line) => line.trim());
+  const ownGroup = Number(
+    spawnSync("ps", ["-o", "pgid=", "-p", String(process.pid)], { encoding: "utf8" }).stdout.trim(),
+  );
   const deadline = Date.now() + 3_000;
-  let left = survivors();
+  let left = fixtureProcesses(marker);
   while (left.length > 0 && Date.now() < deadline) {
+    for (const { pid, pgid } of left) {
+      // Never signal the test runner's own group.
+      if (pgid > 1 && pgid !== ownGroup) {
+        try {
+          process.kill(-pgid, "SIGKILL");
+        } catch {}
+      }
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
-    left = survivors();
+    left = fixtureProcesses(marker);
   }
-  return left;
+  return left.map(({ pid, command }) => `${pid} ${command}`);
 }
 const repoRoot = join(scriptsDir, "..");
 const scriptPath = join(scriptsDir, "mobile-tailscale.sh");
@@ -198,27 +212,27 @@ test("mobile tailscale stop preserves foreign Serve but stops its tracked backen
 
   const ownerPath = join(stateDir, "next.owner.json");
   const backendPidPath = join(fixture, "backend.pid");
-  const launched = await launchOwnedProcess({
-    ownerPath,
-    backendUrl: "http://127.0.0.1:3000",
-    cwd: fixture,
-    command: process.execPath,
-    args: [
-      "-e",
-      `require("node:fs").writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`,
-    ],
-    logPath: join(stateDir, "next.log"),
-    env: process.env,
-  });
-  assert.equal(launched.kind, "launched");
-  await waitForFile(backendPidPath);
-  const sleeperOwner = readProcessOwner(ownerPath);
-  const sleeperPid = sleeperOwner.backendRoot.pid;
-  const backendPid = Number(readFileSync(backendPidPath, "utf8"));
-  const supervisorPid = sleeperOwner.supervisor.pid;
-
   let leaked = [];
   try {
+    const launched = await launchOwnedProcess({
+      ownerPath,
+      backendUrl: "http://127.0.0.1:3000",
+      cwd: fixture,
+      command: process.execPath,
+      args: [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`,
+      ],
+      logPath: join(stateDir, "next.log"),
+      env: process.env,
+    });
+    assert.equal(launched.kind, "launched");
+    await waitForFile(backendPidPath);
+    const sleeperOwner = readProcessOwner(ownerPath);
+    const sleeperPid = sleeperOwner.backendRoot.pid;
+    const backendPid = Number(readFileSync(backendPidPath, "utf8"));
+    const supervisorPid = sleeperOwner.supervisor.pid;
+
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
       encoding: "utf8",
@@ -249,7 +263,7 @@ test("mobile tailscale stop preserves foreign Serve but stops its tracked backen
     );
     assert.equal(existsSync(ownerPath), false);
   } finally {
-    leaked = await cleanupFixtureProcesses(fixture, [sleeperPid, backendPid, supervisorPid]);
+    leaked = await cleanupFixtureProcesses(fixture);
     rmSync(fixture, { recursive: true, force: true });
   }
   assert.deepEqual(leaked, [], "no fixture process outlives the test");
@@ -265,33 +279,33 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
   });
 
   const ownerPath = join(stateDir, "next.owner.json");
-  const launched = await launchOwnedProcess({
-    ownerPath,
-    backendUrl: "http://127.0.0.1:3000",
-    cwd: fixture,
-    command: process.execPath,
-    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
-    logPath: join(stateDir, "next.log"),
-    env: process.env,
-  });
-  assert.equal(launched.kind, "launched");
-  const foreignOwner = readProcessOwner(ownerPath);
-  const foreignPid = foreignOwner.backendRoot.pid;
-  const supervisorPid = foreignOwner.supervisor.pid;
-  writeFileSync(ownerPath, JSON.stringify({
-    ...foreignOwner,
-    supervisor: {
-      ...foreignOwner.supervisor,
-      processToken: "macos:999999:1:1",
-    },
-    backendRoot: {
-      ...foreignOwner.backendRoot,
-      processToken: "macos:999998:1:1",
-    },
-  }));
-
   let leaked = [];
   try {
+    const launched = await launchOwnedProcess({
+      ownerPath,
+      backendUrl: "http://127.0.0.1:3000",
+      cwd: fixture,
+      command: process.execPath,
+      args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
+      logPath: join(stateDir, "next.log"),
+      env: process.env,
+    });
+    assert.equal(launched.kind, "launched");
+    const foreignOwner = readProcessOwner(ownerPath);
+    const foreignPid = foreignOwner.backendRoot.pid;
+    const supervisorPid = foreignOwner.supervisor.pid;
+    writeFileSync(ownerPath, JSON.stringify({
+      ...foreignOwner,
+      supervisor: {
+        ...foreignOwner.supervisor,
+        processToken: "macos:999999:1:1",
+      },
+      backendRoot: {
+        ...foreignOwner.backendRoot,
+        processToken: "macos:999998:1:1",
+      },
+    }));
+
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
       encoding: "utf8",
@@ -314,7 +328,7 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     );
     assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
-    leaked = await cleanupFixtureProcesses(fixture, [foreignPid, supervisorPid]);
+    leaked = await cleanupFixtureProcesses(fixture);
     rmSync(fixture, { recursive: true, force: true });
   }
   assert.deepEqual(leaked, [], "no fixture process outlives the test");
@@ -333,41 +347,41 @@ test("default stop evaluates each tracked backend identity independently", async
   });
   const ipv6Owner = join(ipv6Dir, "next.owner.json");
   const ipv4Owner = join(ipv4Dir, "next.owner.json");
-  const ipv6Launch = await launchOwnedProcess({
-    ownerPath: ipv6Owner,
-    backendUrl: "http://[::1]:3007",
-    cwd: fixture,
-    command: process.execPath,
-    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
-    logPath: join(ipv6Dir, "next.log"),
-    env: process.env,
-  });
-  const ipv4Launch = await launchOwnedProcess({
-    ownerPath: ipv4Owner,
-    backendUrl: "http://127.0.0.1:3008",
-    cwd: fixture,
-    command: process.execPath,
-    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
-    logPath: join(ipv4Dir, "next.log"),
-    env: process.env,
-  });
-  assert.equal(ipv6Launch.kind, "launched");
-  assert.equal(ipv4Launch.kind, "launched");
-  const ipv6State = readProcessOwner(ipv6Owner);
-  const ipv4State = readProcessOwner(ipv4Owner);
-  const ipv6Pid = ipv6State.backendRoot.pid;
-  const ipv4Pid = ipv4State.backendRoot.pid;
-  const ipv6SupervisorPid = ipv6State.supervisor.pid;
-  const ipv4SupervisorPid = ipv4State.supervisor.pid;
-  assert.equal(
-    JSON.parse(readFileSync(ipv6Owner, "utf8")).backendUrl,
-    "http://[::1]:3007",
-    "the IPv6 start path persists its exact normalized backend identity",
-  );
-  writeFileSync(join(ipv4Dir, "access-token"), "dev-secret");
-  writeFileSync(join(ipv4Dir, "sidecar-auth-token"), "packaged-secret");
   let leaked = [];
   try {
+    const ipv6Launch = await launchOwnedProcess({
+      ownerPath: ipv6Owner,
+      backendUrl: "http://[::1]:3007",
+      cwd: fixture,
+      command: process.execPath,
+      args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
+      logPath: join(ipv6Dir, "next.log"),
+      env: process.env,
+    });
+    const ipv4Launch = await launchOwnedProcess({
+      ownerPath: ipv4Owner,
+      backendUrl: "http://127.0.0.1:3008",
+      cwd: fixture,
+      command: process.execPath,
+      args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
+      logPath: join(ipv4Dir, "next.log"),
+      env: process.env,
+    });
+    assert.equal(ipv6Launch.kind, "launched");
+    assert.equal(ipv4Launch.kind, "launched");
+    const ipv6State = readProcessOwner(ipv6Owner);
+    const ipv4State = readProcessOwner(ipv4Owner);
+    const ipv6Pid = ipv6State.backendRoot.pid;
+    const ipv4Pid = ipv4State.backendRoot.pid;
+    const ipv6SupervisorPid = ipv6State.supervisor.pid;
+    const ipv4SupervisorPid = ipv4State.supervisor.pid;
+    assert.equal(
+      JSON.parse(readFileSync(ipv6Owner, "utf8")).backendUrl,
+      "http://[::1]:3007",
+      "the IPv6 start path persists its exact normalized backend identity",
+    );
+    writeFileSync(join(ipv4Dir, "access-token"), "dev-secret");
+    writeFileSync(join(ipv4Dir, "sidecar-auth-token"), "packaged-secret");
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
       encoding: "utf8",
@@ -409,7 +423,7 @@ test("default stop evaluates each tracked backend identity independently", async
       "verified dev cleanup preserves packaged sidecar credentials",
     );
   } finally {
-    leaked = await cleanupFixtureProcesses(fixture, [ipv6Pid, ipv6SupervisorPid, ipv4Pid, ipv4SupervisorPid]);
+    leaked = await cleanupFixtureProcesses(fixture);
     rmSync(fixture, { recursive: true, force: true });
   }
   assert.deepEqual(leaked, [], "no fixture process outlives the test");
