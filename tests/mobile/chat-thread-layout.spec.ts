@@ -272,3 +272,47 @@ test("at rest the composer is its input and Tools; focus or text brings the cont
   await chat.locator(".cave-chat-transcript").click({ position: { x: 8, y: 8 } });
   await expect(controls).toBeHidden();
 });
+
+test("while typing, the composer is two lines and the transcript keeps half the screen", async ({ page }) => {
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  // Engage the composer the way a tap does (WebKit's Tab never reaches it).
+  await page.locator(".cave-chat-linear textarea").focus();
+  await expect(page.locator(".cave-chat-linear")).not.toHaveAttribute("data-composer-rest", "true");
+
+  // #5548: engaged, the four-row composer (206px) is two lines (129px):
+  // 40.4% -> 52.0% on iPhone 13 and 45.6% -> 56.2% on Pixel 5.
+  const transcript = await box(page.locator(".cave-chat-linear .cave-chat-transcript"));
+  const viewportHeight = page.viewportSize()!.height;
+  expect(transcript.height / viewportHeight, `engaged transcript ${Math.round(transcript.height)}px of ${viewportHeight}px`)
+    .toBeGreaterThanOrEqual(0.5);
+
+  const composer = page.locator(".cave-chat-linear .cave-composer-panel");
+  const input = await box(composer.locator(".cave-composer-input-wrap"));
+  const mic = await box(composer.getByRole("button", { name: "Voice call" }));
+  const send = await box(composer.getByRole("button", { name: "Send message" }));
+  const chips = await box(composer.locator(".cave-composer-footer-band"));
+  const enhance = await box(composer.locator(".composer-enhance-control"));
+  const middle = (rect: { y: number; height: number }) => rect.y + rect.height / 2;
+  for (const [name, rect] of [["mic", mic], ["send", send]] as const) {
+    expect(Math.abs(middle(rect) - middle(input)), `${name} sits on the message line`).toBeLessThanOrEqual(8);
+    expect(rect.width, `${name} width`).toBeGreaterThanOrEqual(44);
+    expect(rect.height, `${name} height`).toBeGreaterThanOrEqual(44);
+  }
+  expect(chips.y, "chips sit below the message line").toBeGreaterThanOrEqual(input.y + input.height - 1);
+  expect(Math.abs(middle(enhance) - middle(chips)), "enhance shares the chips line").toBeLessThanOrEqual(8);
+  expect(input.width, "the message field keeps a usable width").toBeGreaterThanOrEqual(200);
+
+  // The chips keep room for their names instead of truncating to "Cho…".
+  const labels = await composer.locator(".cave-composer-footer-band .cave-context-chip").evaluateAll((chips) =>
+    chips.flatMap((chip) =>
+      [...chip.querySelectorAll("span")]
+        .filter((span) => span.textContent?.trim() && !span.querySelector("span"))
+        .map((span) => ({ text: span.textContent!.trim(), clipped: span.scrollWidth > span.clientWidth + 1 })),
+    ),
+  );
+  expect(labels.length, "the chips' labels were measured").toBeGreaterThanOrEqual(2);
+  expect(labels.filter((label) => label.clipped).map((label) => label.text), "no chip label is truncated").toEqual([]);
+});

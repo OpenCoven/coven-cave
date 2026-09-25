@@ -910,18 +910,18 @@
   }
 
   .cave-new-response-content {
-    /* Sit just above the composer dock: the ~84px textarea, one compact
-       action footer and dock padding, ~214px in all, so hug just above it
-       rather than floating high in the transcript. */
-    bottom: calc(214px + var(--sai-bottom));
+    /* Sit just above the engaged composer (#5548's two lines, measured as
+       section bottom minus panel top: 137px), so the pill hugs it rather
+       than floating high in the transcript. */
+    bottom: calc(137px + var(--sai-bottom));
     -webkit-tap-highlight-color: transparent;
   }
 
   /* #5529: with the keyboard up the 70px action strip returns above the
      composer and the dock rides up by the keyboard, so the pill clears both
-     instead of sitting on the strip (measured at 390×844: strip 498–568). */
+     instead of sitting on the strip (70px + the 137px engaged composer). */
   .cave-chat-linear[data-keyboard-open="true"] .cave-new-response-content {
-    bottom: calc(284px + var(--composer-kb-offset, 0px) + var(--sai-bottom));
+    bottom: calc(207px + var(--composer-kb-offset, 0px) + var(--sai-bottom));
   }
 
   /* #5546: at rest the composer is just its input and Tools, so the pill
@@ -975,6 +975,82 @@
   .cave-chat-linear[data-composer-rest="true"] .cave-composer-controls,
   .cave-chat-linear[data-composer-rest="true"] .cave-composer-footer-band {
     display: none;
+  }
+
+  /* #5548: while the composer is engaged (typing, something staged, a reply
+     running, or the keyboard up; #5546 owns the rest state) it drops from
+     four rows to two: the message field shares its line with mic and
+     send, and the project/model chips share theirs with enhance. The controls
+     wrappers dissolve (display: contents) so their buttons join the panel's
+     wrapping row, ::after forces the break between the two lines, and the
+     Tools edge row reserves only the half of its tab inside the panel. Every
+     control stays, at 44px, and the chips keep room for their names. */
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-2);
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel > * {
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel > .cave-composer-controls,
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel .cave-composer-control-row,
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel .cave-composer-submit-row {
+    display: contents;
+  }
+
+  /* Bleed to the panel edges (cancelling its side padding) and fill the whole
+     line, so nothing else can share it; reserve only the tab's inner half. */
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel > .cave-composer-edge-actions {
+    flex: 1 0 calc(100% + 2 * var(--space-3));
+    margin: 0 calc(-1 * var(--space-3)) calc(var(--touch-target) / -2);
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel > .cave-composer-input-wrap {
+    order: 1;
+    flex: 1 1 0;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel .cave-composer-submit-row > button {
+    order: 2;
+    flex: none;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel::after {
+    content: "";
+    order: 3;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel > .cave-composer-footer-band {
+    order: 4;
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    padding: 0;
+    border-top: 0;
+    background: transparent;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-panel .composer-enhance-control {
+    order: 5;
+    flex: none;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-footer-band__cluster {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-footer-band .cave-context-chip {
+    min-width: 0;
+    flex: 0 1 auto;
   }
 
   .cave-composer-panel {
