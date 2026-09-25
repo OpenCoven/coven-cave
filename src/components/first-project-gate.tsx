@@ -6,6 +6,7 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { projectErrorCode } from "@/lib/project-errors";
@@ -42,6 +43,10 @@ type FirstProjectGateProps = {
     options?: CreateProjectOptions,
   ) => Promise<CaveProject>;
   reloadProjects: () => void;
+  /** Leaves Home/Chat for Tasks, which closes the gate. Keyboard focus stays
+   *  inside the gate, so this is the keyboard route out that mouse users get
+   *  from the nav (#5528). */
+  onOpenTasks?: () => void;
 };
 
 const STORAGE_REQUIRED_ERROR =
@@ -59,6 +64,7 @@ export function FirstProjectGate({
   registeredProjects: availableProjects,
   createProjectOrThrow,
   reloadProjects,
+  onOpenTasks,
 }: FirstProjectGateProps) {
   const { announce } = useAnnouncer();
   const [nameDraft, setNameDraft] = useState("");
@@ -77,6 +83,11 @@ export function FirstProjectGate({
   const [selectedExistingProjectId, setSelectedExistingProjectId] = useState("");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  // Tab cycles inside the gate (#5528); the surface behind it is already inert.
+  // No Escape: the gate has nothing to dismiss to. Initial focus stays with the
+  // effect below, which picks the field or the locked project's action.
+  useFocusTrap(open, dialogRef, { focusFirst: false });
   const wasVisibleRef = useRef(false);
   // An empty select value is the explicit "Add a different project…" path,
   // not an uninitialized choice. Only apply the convenient default once.
@@ -107,9 +118,13 @@ export function FirstProjectGate({
     }
     if (wasVisibleRef.current) return;
 
-    wasVisibleRef.current = true;
     const initialFocusTarget = lockedProject ? submitButtonRef.current : nameInputRef.current;
+    // Mark the gate as focused only once focus really lands. Marking it before
+    // the frame meant a cleanup that cancelled the frame (a lockedProject
+    // change, or StrictMode's mount/unmount/mount) left focus on <body> for
+    // good, because the re-run saw the gate as already handled (#5528).
     const frame = window.requestAnimationFrame(() => {
+      wasVisibleRef.current = true;
       initialFocusTarget?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
@@ -223,10 +238,12 @@ export function FirstProjectGate({
   return (
     <>
       <section
-        role="region"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={copyId}
-        className="absolute inset-0 z-[20] overflow-auto bg-black/60 p-4"
+        className="absolute inset-0 z-[20] overflow-auto [background:var(--backdrop-scrim)] p-4"
       >
         <div className="flex min-h-full items-center justify-center">
           <div className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-xl">
@@ -383,7 +400,12 @@ export function FirstProjectGate({
                   </p>
                 </div> : null}
 
-                <div className="flex items-center justify-end">
+                <div className={`flex items-center gap-3 ${onOpenTasks ? "justify-between" : "justify-end"}`}>
+                  {onOpenTasks ? (
+                    <Button variant="ghost" size="sm" onClick={onOpenTasks} disabled={submitting} className="!h-10">
+                      Open Tasks
+                    </Button>
+                  ) : null}
                   <Button
                     ref={submitButtonRef}
                     type="submit"

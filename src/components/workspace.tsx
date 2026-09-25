@@ -4586,6 +4586,7 @@ export function Workspace() {
             registeredProjects={registeredProjects}
             createProjectOrThrow={createProjectOrThrow}
             reloadProjects={reloadProjects}
+            onOpenTasks={() => setMode("board")}
           />
         ) : null}
         <div
