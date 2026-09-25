@@ -43,6 +43,11 @@ const MILESTONE_ITEM = {
 };
 
 async function boot(page: Page) {
+  // The server picks the onboarding gate or the workspace from this cookie
+  // (src/app/page.tsx); localStorage alone only covers the client.
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
@@ -165,6 +170,11 @@ test("a toast keeps its own controls reachable", async ({ page }) => {
 test("a toast leaves a surface header's actions usable", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1440, height: 900 });
+  // The server picks the onboarding gate or the workspace from this cookie
+  // (src/app/page.tsx); localStorage alone only covers the client.
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
