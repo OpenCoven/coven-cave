@@ -4586,6 +4586,17 @@ export function Workspace() {
             registeredProjects={registeredProjects}
             createProjectOrThrow={createProjectOrThrow}
             reloadProjects={reloadProjects}
+            onOpenTasks={() => {
+              setMode("board");
+              // The gate hands focus to the destination (#5528): land keyboard
+              // users on the main region once Tasks has rendered, so the next
+              // Tab goes into Tasks rather than starting over from <body>.
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                  document.getElementById("shell-main-content")?.focus({ preventScroll: true });
+                });
+              });
+            }}
           />
         ) : null}
         <div

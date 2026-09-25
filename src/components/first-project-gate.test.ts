@@ -4,15 +4,21 @@ import { readFileSync } from "node:fs";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-test("the first-project gate is a non-modal detail-scoped panel with no dismiss path", () => {
+test("the first-project gate is a detail-scoped dialog with no dismiss path", () => {
   const src = read("./first-project-gate.tsx");
   assert.doesNotMatch(src, /import \{ createPortal \} from "react-dom"/, "does not portal to document.body");
-  assert.doesNotMatch(src, /useFocusTrap/, "does not install an outer focus trap");
-  assert.doesNotMatch(src, /role="dialog"/, "does not expose dialog semantics");
-  assert.doesNotMatch(src, /aria-modal="true"/, "is not a modal");
   assert.match(src, /if \(!open\) return null;/, "visibility is controlled entirely by Workspace policy");
   assert.doesNotMatch(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "pending retry no longer bypasses Workspace policy locally");
-  assert.match(src, /<section[\s\S]*role="region"[\s\S]*aria-labelledby=\{titleId\}[\s\S]*aria-describedby=\{copyId\}/, "renders an accessible labelled region/section");
+  assert.match(src, /<section[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=\{titleId\}[\s\S]*aria-describedby=\{copyId\}/, "renders a labelled, described dialog scoped to the detail pane (#5528)");
+  assert.match(src, /useFocusTrap\(open, dialogRef, \{\s*focusFirst: false,\s*restoreFocus: \(\) => !leavingForTasksRef\.current,\s*\}\)/, "Tab stays inside the gate; leaving for Tasks doesn't hand focus back to <body>");
+  assert.match(src, /\[background:var\(--backdrop-scrim\)\]/, "the scrim is the shared token, not a raw color");
+  assert.doesNotMatch(src, /bg-black\//, "no raw black scrim");
+  assert.match(src, /onOpenTasks \? \([\s\S]*?Open Tasks[\s\S]*?\) : null/, "keyboard users have an in-gate way out");
+  assert.match(
+    src,
+    /const frame = window\.requestAnimationFrame\(\(\) => \{\s*wasVisibleRef\.current = true;\s*initialFocusTarget\?\.focus/,
+    "initial focus is only marked done once it lands, so a cancelled frame retries",
+  );
   assert.match(src, /className="absolute inset-0[^\"]*"/, "covers only the detail area, not the whole viewport");
   assert.doesNotMatch(src, /className="fixed inset-0/, "does not use a viewport-fixed scrim");
   assert.match(src, /aria-hidden=\{pickerOpen \|\| undefined\}/, "hides the underlying gate subtree from assistive tech while the picker is open");
@@ -46,7 +52,7 @@ test("the gate stays prop-driven and focuses the correct first control on first 
   );
   assert.match(
     src,
-    /const initialFocusTarget = lockedProject \? submitButtonRef\.current : nameInputRef\.current;[\s\S]*window\.requestAnimationFrame\(\(\) => \{\s*initialFocusTarget\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
+    /const initialFocusTarget = lockedProject \? submitButtonRef\.current : nameInputRef\.current;[\s\S]*window\.requestAnimationFrame\(\(\) => \{\s*wasVisibleRef\.current = true;\s*initialFocusTarget\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
     "requestAnimationFrame restores initial focus to a grant or retry action when a project is selected, otherwise the name field",
   );
   assert.match(src, /ref=\{nameInputRef\}/, "the stable focus ref is wired to the project-name input");
