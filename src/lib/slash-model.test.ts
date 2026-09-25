@@ -27,7 +27,11 @@ assert.equal(modelSlashOptions("/m ", "claude").length, all.length, "the /m alia
 
 const opus = modelSlashOptions("/model opus", "claude");
 assert.ok(opus.every((m) => /opus/i.test(m.label)), "filters by partial label");
-assert.equal(opus.length, 2, "‘opus’ narrows to the two Opus models");
+assert.deepEqual(
+  opus.map((m) => m.label),
+  ["Claude Opus 4.8", "Claude Opus 5.5", "Claude Opus 4.7"],
+  "‘opus’ narrows to the Opus models, in picker order",
+);
 
 assert.equal(modelSlashOptions("/model haiku", "codex").length, 0, "codex catalog has no haiku");
 

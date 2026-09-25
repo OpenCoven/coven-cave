@@ -44,7 +44,7 @@ contract. It does not claim account entitlement:
 
 | Harness | Catalog behavior |
 | --- | --- |
-| Claude Code | Uses the generated Anthropic seed. Capability-gated additions such as Opus 5 may be prepended after a local CLI/provider probe. |
+| Claude Code | Uses the generated Anthropic seed. Capability-gated additions such as Opus 5 may be prepended after a local CLI/provider probe. Opus 5 launches through the `opus` alias, which Claude Code 2.1.280 moved to Opus 5.5, so the probe offers it only below that release unless `ANTHROPIC_DEFAULT_OPUS_MODEL` pins it; Opus 5.5 is an explicit seed entry. |
 | GitHub Copilot CLI | Uses the generated GitHub seed only when account-scoped `models.list` discovery is unavailable. A successful live inventory replaces the seed and honors account policy. |
 | OpenCode | Uses authenticated `opencode models` discovery and keeps an empty static list. |
 | Grok Build | Uses live discovery where available and otherwise defers to its runtime default. |

@@ -24,7 +24,44 @@ const available = (
 
 assert.equal(available("2.1.218 (Claude Code)"), false, "the release before Opus 5 fails closed");
 assert.equal(available("2.1.219 (Claude Code)"), true, "the Opus 5 Claude Code release is accepted");
-assert.equal(available("2.2.0 (Claude Code)"), true, "later compatible releases are accepted");
+// Claude Code 2.1.280 moved the `opus` alias to Opus 5.5 (read from the
+// shipped alias tables: 2.1.278 → claude-opus-5, 2.1.280 → claude-opus-5-5).
+// Offering "Opus 5" through the alias there would launch 5.5 under its name.
+assert.equal(available("2.1.279 (Claude Code)"), true, "the last release whose alias is Opus 5");
+assert.equal(available("2.1.280 (Claude Code)"), false, "the alias means Opus 5.5 from 2.1.280");
+assert.equal(available("2.1.281 (Claude Code)"), false, "and in every later release");
+assert.equal(available("2.2.0 (Claude Code)"), false, "including minor bumps");
+for (const provider of [{ CLAUDE_CODE_USE_BEDROCK: "1" }, { CLAUDE_CODE_USE_VERTEX: "1" }]) {
+  assert.equal(available("2.1.281 (Claude Code)", provider), false, "provider aliases moved too");
+}
+assert.equal(
+  available("2.1.281 (Claude Code)", { ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5" }),
+  true,
+  "an explicit mapping that pins opus to Opus 5 still offers it",
+);
+assert.equal(
+  available("2.1.281 (Claude Code)", { ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5" }),
+  false,
+  "a mapping to Opus 5.5 is not Opus 5",
+);
+assert.equal(
+  available("2.1.219 (Claude Code)", { ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5" }),
+  false,
+  "an Opus 5.5 mapping is not Opus 5 on any version",
+);
+assert.equal(
+  available("2.1.219 (Claude Code)", { ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-20260101" }),
+  true,
+  "a dated Opus 5 snapshot is still Opus 5",
+);
+assert.equal(
+  available("2.1.219 (Claude Code)", {
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "prod-opus",
+    ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: "Claude Opus 5.5",
+  }),
+  false,
+  "a deployment named Claude Opus 5.5 is not Opus 5",
+);
 assert.equal(available("invalid"), false, "an unverified version never advertises Opus 5");
 
 assert.equal(

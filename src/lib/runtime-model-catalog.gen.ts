@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: efafe579b86ccbb4c7fcc4793235f9d68b8e9e34e2b47ec4f9058be53e137643
+// sha256: 1423b5baa5691928601d1b946a19dd555a7374a9b7d26d130cb516a3203938d1
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "efafe579b86ccbb4c7fcc4793235f9d68b8e9e34e2b47ec4f9058be53e137643",
+  sha256: "1423b5baa5691928601d1b946a19dd555a7374a9b7d26d130cb516a3203938d1",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -77,6 +77,10 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
       {
         "id": "anthropic/claude-opus-4-8",
         "label": "Claude Opus 4.8"
+      },
+      {
+        "id": "anthropic/claude-opus-5-5",
+        "label": "Claude Opus 5.5"
       },
       {
         "id": "anthropic/claude-fable-5-1",
@@ -253,6 +257,7 @@ export const GENERATED_MODEL_CONTEXT_WINDOWS: Record<string, number> =
   "openai/gpt-5.1": 400000,
   "anthropic/claude-opus-5": 1000000,
   "github/claude-opus-5": 1000000,
+  "anthropic/claude-opus-5-5": 1000000,
   "anthropic/claude-opus-4-8": 1000000,
   "github/claude-opus-4-8": 1000000,
   "anthropic/claude-fable-5-1": 1000000,

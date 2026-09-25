@@ -3,6 +3,9 @@ import type { RuntimeModelOption } from "./runtime-models.ts";
 export const CLAUDE_OPUS_5_CAVE_ID = "anthropic/claude-opus-5";
 export const CLAUDE_OPUS_5_NATIVE_MODEL = "anthropic/opus";
 export const CLAUDE_OPUS_5_MINIMUM_CODE_VERSION = "2.1.219";
+/** From this release Claude Code resolves the `opus` alias to Opus 5.5, so the
+ * alias no longer launches Opus 5 unless an explicit provider mapping pins it. */
+export const CLAUDE_CODE_OPUS_ALIAS_OPUS_5_5_VERSION = "2.1.280";
 
 type ClaudeModelEnvironment = Record<string, string | undefined>;
 
@@ -54,8 +57,10 @@ function explicitOpus5Mapping(env: ClaudeModelEnvironment): boolean | null {
   const model = env.ANTHROPIC_DEFAULT_OPUS_MODEL?.trim();
   if (!model) return null;
   const displayName = env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME?.trim() ?? "";
-  return /(?:^|[._:/-])claude[._-]opus[._-]5(?:$|[._:@/+\-[\]])/i.test(model) ||
-    /\bclaude\s+opus\s+5\b/i.test(displayName);
+  // Opus 5 itself, or a dated snapshot of it, but never a minor release such
+  // as claude-opus-5-5 / "Claude Opus 5.5", which is a different model.
+  return /(?:^|[._:/-])claude[._-]opus[._-]5(?![._-]\d(?!\d))(?:$|[._:@/+\-[\]])/i.test(model) ||
+    /\bclaude\s+opus\s+5(?![.,]\d)\b/i.test(displayName);
 }
 
 function hasCustomAnthropicBaseUrl(value: string | undefined): boolean {
@@ -81,6 +86,9 @@ export function claudeOpus5Available(probe: ClaudeOpus5Probe): boolean {
 
   const explicitMapping = explicitOpus5Mapping(probe.env);
   if (explicitMapping !== null) return explicitMapping;
+  // The alias moved to Opus 5.5; offering "Opus 5" here would launch 5.5
+  // under the Opus 5 name. Opus 5.5 is its own explicit catalog entry.
+  if ((compareVersion(version, CLAUDE_CODE_OPUS_ALIAS_OPUS_5_5_VERSION) ?? 1) >= 0) return false;
 
   const providerModes = [
     enabled(probe.env.CLAUDE_CODE_USE_BEDROCK),
