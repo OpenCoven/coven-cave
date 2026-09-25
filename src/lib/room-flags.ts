@@ -33,7 +33,6 @@ import {
   NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
-  SENTINEL_SURFACE_ID,
   X_COMMS_SURFACE_ID,
   // Relative + extensioned, like role-surfaces.ts's own imports, so the rules
   // stay runnable under bare `node --experimental-strip-types`.
@@ -50,7 +49,6 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
   NAVIGATOR_SURFACE_ID,
   CODE_SURFACE_ID,
   SCRIBE_SURFACE_ID,
-  SENTINEL_SURFACE_ID,
   INDEXER_SURFACE_ID,
   X_COMMS_SURFACE_ID,
 ];
