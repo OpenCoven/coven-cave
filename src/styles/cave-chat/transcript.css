@@ -910,12 +910,18 @@
   }
 
   .cave-new-response-content {
-    /* Sit just above the composer dock. The mobile composer still keeps the
-       action strip, the ~84px textarea, one compact action footer, and dock
-       padding — ~214px total — so hug just above it rather than floating high
-       in the transcript. */
+    /* Sit just above the composer dock: the ~84px textarea, one compact
+       action footer and dock padding, ~214px in all, so hug just above it
+       rather than floating high in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* #5529: with the keyboard up the 70px action strip returns above the
+     composer and the dock rides up by the keyboard, so the pill clears both
+     instead of sitting on the strip (measured at 390×844: strip 498–568). */
+  .cave-chat-linear[data-keyboard-open="true"] .cave-new-response-content {
+    bottom: calc(284px + var(--composer-kb-offset, 0px) + var(--sai-bottom));
   }
 
   .cave-chat-linear .cave-composer-dock {

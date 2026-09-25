@@ -436,13 +436,20 @@
 }
 
 /* Section tabs at the top of the chat-list sheet: the phone's route to
-   Sessions / Projects / Familiar while a conversation is open. */
+   Sessions / Projects / Familiar while a conversation is open. Tablet widths
+   keep the tabs strip, so the sheet doesn't repeat it there. */
 .chat-threads-sheet__sections {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--touch-target);
-  padding-inline: var(--space-3);
-  border-bottom: 1px solid var(--border-hairline);
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .chat-threads-sheet__sections {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--touch-target);
+    padding-inline: var(--space-3);
+    border-bottom: 1px solid var(--border-hairline);
+  }
 }
