@@ -5,9 +5,25 @@ import { openFirstProjectGate } from "../fixtures/first-project-gate";
 // its Create button. Each must own the pixel at its own centre, the device's
 // own height and a taller 390×844 frame alike.
 
+/** The element at the target's own centre is the target (or inside it).
+ *  The box is read once it has stopped moving: a scroll or reflow in flight
+ *  would otherwise hit-test stale coordinates. The hit test itself runs once,
+ *  so a genuinely covered target fails straight away. */
 async function expectOwnsCentre(target: Locator, label: string) {
-  const box = await target.boundingBox();
-  if (!box) throw new Error(`${label} did not lay out`);
+  let previous = "";
+  await expect
+    .poll(
+      async () => {
+        const box = await target.boundingBox();
+        const current = box ? [box.x, box.y, box.width, box.height].map(Math.round).join(",") : "none";
+        const settled = current !== "none" && current === previous;
+        previous = current;
+        return settled;
+      },
+      { message: `${label} stops moving`, timeout: 10_000, intervals: [100] },
+    )
+    .toBe(true);
+  const box = (await target.boundingBox())!;
   const hit = await target.evaluate(
     (element, point) => {
       const top = document.elementFromPoint(point.x, point.y);
@@ -35,7 +51,9 @@ for (const height of [undefined, 844] as const) {
     await gate.getByLabel("Project name").fill("Demo");
     await gate.getByLabel("Absolute root").fill("/tmp/demo");
     const create = gate.getByRole("button", { name: "Create" });
-    await create.scrollIntoViewIfNeeded();
+    // scrollIntoViewIfNeeded leaves a partly visible button where it is (half
+    // under the bottom tabs); centre it inside the scrolling gate instead.
+    await create.evaluate((element) => element.scrollIntoView({ block: "center" }));
     await expectOwnsCentre(create, "Create");
     await expect(create).toBeEnabled();
   });
