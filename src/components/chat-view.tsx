@@ -3751,6 +3751,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // desktop both are equal so the offset stays 0.
   const vv = useVisualViewport();
   const isMobile = useIsMobile();
+  // #5546: set when the composer input takes focus, and kept while focus stays
+  // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
+  // the phone composer never collapses under the control being used.
+  const [composerEngaged, setComposerEngaged] = useState(false);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
@@ -4669,7 +4673,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    const composer = inputRef.current;
+    if (!composer) return;
+    // Touch devices read first when a thread opens on the chat surface (#5546).
+    // A programmatic focus pops the keyboard on Android and, on iOS, leaves the
+    // composer focused with no keyboard, which also holds the phone composer
+    // expanded. A chat inside a dialog (the mobile Chat drawer) still takes
+    // focus: a modal dialog must hold it whatever the pointer. Checked
+    // synchronously: useIsCoarsePointer() is false on the first render.
+    if (window.matchMedia("(pointer: coarse)").matches && !composer.closest('[role="dialog"]')) return;
+    composer.focus();
   }, [sessionId]);
 
   // Auto-grow the composer with its content (shared with the home composer).
@@ -7797,7 +7810,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onVoice={() => setVoiceCallOpen(true)}
             />
 
-            <div className="cave-composer-panel" data-access-mode={permissionMode}>
+            <div
+              className="cave-composer-panel"
+              data-access-mode={permissionMode}
+              onBlur={(event) => {
+                const dock = event.currentTarget.closest(".cave-composer-dock") ?? event.currentTarget;
+                if (!dock.contains(event.relatedTarget as Node | null)) setComposerEngaged(false);
+              }}
+            >
               <div className="cave-composer-edge-actions">
                 <ComposerActionsMenu
                   attach={{
@@ -7963,6 +7983,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
+                onFocus={() => setComposerEngaged(true)}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -8156,6 +8177,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // rest its actions live in the composer's Tools menu. Browser chrome can
       // shift the visual viewport a few px, so only a real keyboard counts.
       data-keyboard-open={keyboardOffset > KEYBOARD_OPEN_THRESHOLD_PX ? "true" : undefined}
+      // #5546: on a phone the composer collapses to its input (and Tools) at
+      // rest; CSS keeps it expanded while the composer holds focus, so tapping
+      // in brings Send, Enhance, voice and the context chips straight back.
+      // Any staged composer state (text, attachments, a reply target, an armed
+      // task, live dictation, a drag in progress) keeps it expanded.
+      data-composer-rest={
+        keyboardOffset <= KEYBOARD_OPEN_THRESHOLD_PX && !hasStagedComposerInput && !busy && !composerEngaged
+          ? "true"
+          : undefined
+      }
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">

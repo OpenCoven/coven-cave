@@ -231,4 +231,19 @@ assert.doesNotMatch(
   "Desktop hide rules should no longer carry the removed linked-context strip",
 );
 
+// #5546: the phone composer rests only when nothing is staged (text,
+// attachments, a reply target, an armed task, dictation, a drag) and the
+// composer isn't engaged; focus kept in the dock keeps it engaged.
+assert.match(
+  source,
+  /data-composer-rest=\{\s*keyboardOffset <= KEYBOARD_OPEN_THRESHOLD_PX && !hasStagedComposerInput && !busy && !composerEngaged/,
+  "the rest state uses the canonical staged-input predicate and the engaged flag",
+);
+assert.match(source, /onFocus=\{\(\) => setComposerEngaged\(true\)\}/, "focusing the input engages the composer");
+assert.match(
+  source,
+  /if \(!dock\.contains\(event\.relatedTarget as Node \| null\)\) setComposerEngaged\(false\);/,
+  "only focus leaving the composer dock disengages it",
+);
+
 console.log("chat-view-mobile-command-center.test.ts: ok");
