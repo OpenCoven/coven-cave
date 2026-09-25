@@ -148,7 +148,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useVisualViewport } from "@/lib/use-viewport";
+import { useIsMobile, useVisualViewport } from "@/lib/use-viewport";
+import { ChatPhoneCodeRailToggle, ChatPhoneThreadsToggle } from "@/components/chat-phone-header-controls";
 import { ChatFindBand } from "@/components/chat-find-band";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
@@ -1930,6 +1931,10 @@ function MobileChatContextMenu({
     </details>
   );
 }
+
+/** Visual-viewport shrink beyond which the on-screen keyboard is up (#5529).
+ *  Mobile browser toolbars move it by far less than a keyboard's height. */
+const KEYBOARD_OPEN_THRESHOLD_PX = 120;
 
 function MobileChatActionStrip({
   autoSelected,
@@ -3745,10 +3750,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Keyboard height ≈ window.innerHeight - visualViewport.height; on
   // desktop both are equal so the offset stays 0.
   const vv = useVisualViewport();
+  const isMobile = useIsMobile();
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
       : 0;
+  // Shared by the phone action strip and the Tools menu's phone actions.
+  const summarizeSession = () => {
+    setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
+    inputRef.current?.focus();
+  };
 
   // Inline slash menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
@@ -7781,10 +7792,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onAuto={toggleMobileAutoMode}
               onRetry={retryLastSend}
               onStop={cancelSend}
-              onSummarize={() => {
-                setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
-                inputRef.current?.focus();
-              }}
+              onSummarize={summarizeSession}
               onAttach={() => fileInputRef.current?.click()}
               onVoice={() => setVoiceCallOpen(true)}
             />
@@ -7864,6 +7872,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
                   triggerVariant="tools"
+                  phoneActions={isMobile ? {
+                    auto: {
+                      selected: autoModeSelected,
+                      running: autoMissionActive,
+                      disabled: busy && !autoMissionActive,
+                      onSelect: toggleMobileAutoMode,
+                    },
+                    retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
+                    summarize: { disabled: busy, onSelect: summarizeSession },
+                    call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
+                  } : undefined}
                 />
                 {linkedContext?.task && onOpenTask ? (
                   <button
@@ -8133,6 +8152,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // reserves the same height so its last turn is never under the keyboard.
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
       data-auto-mode={autoMissionActive ? "running" : autoModeSelected ? "selected" : undefined}
+      // #5529: the phone action strip only shows while the keyboard is up; at
+      // rest its actions live in the composer's Tools menu. Browser chrome can
+      // shift the visual viewport a few px, so only a real keyboard counts.
+      data-keyboard-open={keyboardOffset > KEYBOARD_OPEN_THRESHOLD_PX ? "true" : undefined}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
@@ -8144,6 +8167,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
       <header className="cave-chat-linear-header reveal-scope">
         <div className="cave-mobile-header-identity">
+          <ChatPhoneThreadsToggle />
           <div className="cave-mobile-header-familiar">
                   <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
@@ -8163,6 +8187,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <span aria-hidden />
             {daemonRunning === false ? "offline" : "ready"}
           </span>
+          <ChatPhoneCodeRailToggle />
           <MobileChatContextMenu
             familiar={familiar}
             session={session ?? null}

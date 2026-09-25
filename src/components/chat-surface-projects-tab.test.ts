@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   surface,
-  /<Tabs<FamiliarsScope>[\s\S]*?\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
+  /const CHAT_SECTION_ITEMS[^=]*= \[\s*\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}[\s\S]*?<Tabs<FamiliarsScope>[\s\S]*?items=\{CHAT_SECTION_ITEMS\}/,
   "Chat tab list is Sessions + Projects",
 );
 assert.match(surface, /scope === "projects" \? \(/, "projects browse still renders ProjectsView as a sub-state of Chat");

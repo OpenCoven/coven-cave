@@ -22,6 +22,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { ChatThreadsSheet } from "@/components/chat-threads-sheet";
+import { ChatPhoneHeaderControlsContext, type ChatPhoneHeaderControlsValue } from "@/components/chat-phone-header-controls";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
 import {
   CHAT_RAIL_TOGGLE_EVENT,
@@ -121,6 +122,14 @@ type Props = {
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
+
+
+/** The chat section tabs, shared by the strip and the phone chat-list sheet. */
+const CHAT_SECTION_ITEMS: Array<{ id: FamiliarsScope; label: string }> = [
+  { id: "conversation", label: "Sessions" },
+  { id: "projects", label: "Projects" },
+  { id: "familiar", label: "Familiar" },
+];
 
 export function ChatSurface({
   familiars,
@@ -510,7 +519,17 @@ export function ChatSurface({
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  // #5529: on a phone an open thread folds the section tabs strip away; its
+  // chat-list and code-rail toggles move into the chat header through this.
+  const phoneHeaderControls: ChatPhoneHeaderControlsValue = {
+    threads: railAvailable ? { open: threadsSheetOpen, onOpen: () => setThreadsSheetOpen(true) } : null,
+    codeRail: mobileRail && scope === "conversation"
+      ? { open: mobileRailOpen, changeCount: changeCount ?? 0, onToggle: () => setMobileRailOpen((v) => !v) }
+      : null,
+  };
+
   return (
+    <ChatPhoneHeaderControlsContext.Provider value={phoneHeaderControls}>
     <section ref={surfaceRef} className="chat-surface relative flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Inner threads rail (cave-fh9so).
           Mounted HERE, at the surface, rather than inside ChatList — ChatList
@@ -606,11 +625,7 @@ export function ChatSurface({
                 window.setTimeout(() => routerRef.current?.goToList(), 0);
               }
             }}
-            items={[
-              { id: "conversation", label: "Sessions" },
-              { id: "projects", label: "Projects" },
-              { id: "familiar", label: "Familiar" },
-            ]}
+            items={CHAT_SECTION_ITEMS}
           />
           <div className="flex shrink-0 items-center gap-1.5">
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
@@ -789,7 +804,37 @@ export function ChatSurface({
         onDeleteSession={deleteThreadFromRail}
         onSessionsChanged={onSessionsChanged}
         onOpenUrl={onOpenUrl}
+        sections={
+          <div className="chat-threads-sheet__sections">
+            <Tabs<FamiliarsScope>
+              bordered={false}
+              ariaLabel="Chat sections"
+              className="min-w-0 flex-1"
+              value={scope}
+              onChange={(s) => {
+                setThreadsSheetOpen(false);
+                selectScope(s);
+                window.setTimeout(() => routerRef.current?.goToList(), 0);
+              }}
+              items={CHAT_SECTION_ITEMS}
+            />
+            <button
+              type="button"
+              className={`chat-scope-group-btn focus-ring${scope === "coven" ? " is-active" : ""}`}
+              aria-label="Group chat — broadcast one prompt to a coven of familiars"
+              aria-pressed={scope === "coven"}
+              title="Group chat — broadcast one prompt to a coven of familiars"
+              onClick={() => {
+                setThreadsSheetOpen(false);
+                window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "groupchat" } }));
+              }}
+            >
+              <Icon name="ph:users-three" width={16} aria-hidden />
+            </button>
+          </div>
+        }
       />
     </section>
+    </ChatPhoneHeaderControlsContext.Provider>
   );
 }

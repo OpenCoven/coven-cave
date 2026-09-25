@@ -34,7 +34,7 @@ import {
   PopoverSubmenu,
   usePopoverInitialFocus,
 } from "@/components/ui/popover";
-import { AddMenuRow, ComposerAddMenu } from "@/components/composer-add-menu";
+import { AddMenuRow, ComposerAddMenu, type AddMenuPhoneActions } from "@/components/composer-add-menu";
 import { Icon } from "@/lib/icon";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import type { SkillOption } from "@/lib/slash-skill";
@@ -90,6 +90,8 @@ export type ComposerActionsMenuProps = {
   disabled?: boolean;
   /** The docked chat composer presents the same menu as an edge-mounted Tools control. */
   triggerVariant?: "icon" | "tools";
+  /** Phone only (#5529): the folded action strip's actions, listed first. */
+  phoneActions?: AddMenuPhoneActions;
 };
 
 export function ComposerActionsMenu({
@@ -101,6 +103,7 @@ export function ComposerActionsMenu({
   skills,
   disabled,
   triggerVariant = "icon",
+  phoneActions,
 }: ComposerActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [contextView, setContextView] = useState<ComposerContextView>(null);
@@ -196,6 +199,7 @@ export function ComposerActionsMenu({
             open={open}
             onClose={closePanel}
             attach={attach}
+            phoneActions={phoneActions}
             projects={{
               projects: context.sortedProjects.map((p) => ({
                 id: p.id,
