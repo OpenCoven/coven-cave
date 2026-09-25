@@ -924,6 +924,12 @@
     bottom: calc(284px + var(--composer-kb-offset, 0px) + var(--sai-bottom));
   }
 
+  /* #5546: at rest the composer is just its input and Tools, so the pill
+     hugs that (measured at 390×844: section bottom 783, panel top 683). */
+  .cave-chat-linear[data-composer-rest="true"]:not(:has(.cave-composer-input:focus)) .cave-new-response-content {
+    bottom: calc(100px + var(--sai-bottom));
+  }
+
   .cave-chat-linear .cave-composer-dock {
     position: sticky;
     bottom: 0;
@@ -957,6 +963,17 @@
 
   .cave-chat-linear[data-keyboard-open="true"] .cave-mobile-action-strip {
     display: flex;
+  }
+
+  /* #5546: at rest (keyboard down, nothing typed or attached, no reply
+     running) the composer is just its input and Tools. The controls row
+     (Send, Enhance, voice, context meter) and the context chips return the
+     moment the input takes focus. Only the input counts: focusing Tools must
+     not reflow the composer under the finger mid-tap. The busy Cancel
+     control never hides, because a running reply clears data-composer-rest. */
+  .cave-chat-linear[data-composer-rest="true"] .cave-composer-panel:not(:has(.cave-composer-input:focus)) .cave-composer-controls,
+  .cave-chat-linear[data-composer-rest="true"] .cave-composer-panel:not(:has(.cave-composer-input:focus)) .cave-composer-footer-band {
+    display: none;
   }
 
   .cave-composer-panel {

@@ -192,11 +192,9 @@ test("phone chat toggles meet the 44px touch target", async ({ page }) => {
   }
 });
 
-// Measured with the folds on origin/main's chrome: 40.4% on iPhone 13
-// (664px), 45.6% on Pixel 5 (727px), up from about 14–16%. The remaining fixed
-// chrome is the top bar, the chat header, a 206px composer panel and the
-// bottom tabs; reaching 50% on short phones needs a slimmer composer.
-const TRANSCRIPT_FLOOR = 0.4;
+// Measured at rest (#5529 folds + #5546 composer): 57.7% on iPhone 13
+// (664px), 61.4% on Pixel 5 (727px), 66.7% at 390×844, up from about 14–16%.
+const TRANSCRIPT_FLOOR = 0.5;
 
 test("an open thread folds the phone chrome so the transcript gets the height", async ({ page }, testInfo) => {
   // A running daemon, so no status banner takes height the chrome doesn't own.
@@ -227,4 +225,38 @@ test("at 390×844 the transcript gets at least half the screen", async ({ page }
   await openThread(page);
   const transcript = await box(page.locator(".cave-chat-linear .cave-chat-transcript"));
   expect(transcript.height / 844, `transcript ${Math.round(transcript.height)}px of 844px`).toBeGreaterThanOrEqual(0.5);
+});
+
+test("at rest the composer is its input and Tools; focus or text brings the controls back", async ({ page }) => {
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const chat = page.locator(".cave-chat-linear");
+  const input = chat.locator(".cave-composer-input");
+  const controls = chat.locator(".cave-composer-controls");
+  const chips = chat.locator(".cave-composer-footer-band");
+  const send = chat.getByRole("button", { name: "Send message" });
+
+  // #5546: a touch device doesn't focus the composer on open, so it rests.
+  await expect(input).not.toBeFocused();
+  await expect(input).toBeVisible();
+  await expect(chat.locator(".cave-composer-tools-tab").first()).toBeVisible();
+  await expect(controls).toBeHidden();
+  await expect(chips).toBeHidden();
+
+  await input.focus();
+  await expect(controls).toBeVisible();
+  await expect(chips).toBeVisible();
+
+  // With text the controls stay, even once focus moves on.
+  await input.fill("Draft a reply");
+  await chat.locator(".cave-chat-transcript").click({ position: { x: 8, y: 8 } });
+  await expect(input).not.toBeFocused();
+  await expect(send).toBeVisible();
+
+  // Cleared and unfocused, it rests again.
+  await input.fill("");
+  await chat.locator(".cave-chat-transcript").click({ position: { x: 8, y: 8 } });
+  await expect(controls).toBeHidden();
 });

@@ -4669,6 +4669,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
+    // Touch devices read first when a thread opens (#5546). A programmatic
+    // focus pops the keyboard on Android and, on iOS, leaves the composer
+    // focused with no keyboard, which also holds the phone composer expanded.
+    // Checked synchronously: useIsCoarsePointer() is false on the first render.
+    if (window.matchMedia("(pointer: coarse)").matches) return;
     inputRef.current?.focus();
   }, [sessionId]);
 
@@ -8156,6 +8161,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // rest its actions live in the composer's Tools menu. Browser chrome can
       // shift the visual viewport a few px, so only a real keyboard counts.
       data-keyboard-open={keyboardOffset > KEYBOARD_OPEN_THRESHOLD_PX ? "true" : undefined}
+      // #5546: on a phone the composer collapses to its input (and Tools) at
+      // rest; CSS keeps it expanded while the composer holds focus, so tapping
+      // in brings Send, Enhance, voice and the context chips straight back.
+      data-composer-rest={
+        keyboardOffset <= KEYBOARD_OPEN_THRESHOLD_PX && !input.trim() && attachments.length === 0 && !busy
+          ? "true"
+          : undefined
+      }
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
