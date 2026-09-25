@@ -17,7 +17,7 @@
 // To add or change a family, edit FAMILIES below and run --refresh.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,18 +101,66 @@ export function parseFontFaces(css, subsets = SUBSETS) {
   return faces;
 }
 
-async function refresh() {
+function loadNextGoogleHelpers() {
   const require = createRequire(path.join(ROOT, "package.json"));
   const google = (file) => require(`next/dist/compiled/@next/font/dist/google/${file}`);
-  const { validateGoogleFontFunctionCall } = google("validate-google-font-function-call");
-  const { getFontAxes } = google("get-font-axes");
-  const { getGoogleFontsUrl } = google("get-google-fonts-url");
-  const { fetchCSSFromGoogleFonts } = google("fetch-css-from-google-fonts");
-  const { fetchFontFile } = google("fetch-font-file");
-  const { getFallbackFontOverrideMetrics } = google("get-fallback-font-override-metrics");
+  return {
+    ...google("validate-google-font-function-call"),
+    ...google("get-font-axes"),
+    ...google("get-google-fonts-url"),
+    ...google("fetch-css-from-google-fonts"),
+    ...google("fetch-font-file"),
+    ...google("get-fallback-font-override-metrics"),
+    fetchLicense: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return response.text();
+    },
+  };
+}
 
-  rmSync(FONT_DIR, { recursive: true, force: true });
-  mkdirSync(path.join(FONT_DIR, "licenses"), { recursive: true });
+/** Re-download every family. Paths and helpers are injectable for tests. */
+export async function refresh({
+  fontDir = FONT_DIR,
+  fontsModulePath = FONTS_MODULE_PATH,
+  next = loadNextGoogleHelpers(),
+} = {}) {
+
+  // Build everything in a sibling staging directory and swap it in only after
+  // every download succeeded, so a network failure leaves the checked-in
+  // fonts, manifest and fonts.ts untouched.
+  const staging = `${fontDir}.staging-${process.pid}`;
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(path.join(staging, "licenses"), { recursive: true });
+  try {
+    const manifest = await downloadInto(staging, next);
+    const fontsModule = renderFontsModule(manifest);
+    writeFileSync(path.join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    const moduleStaging = `${fontsModulePath}.staging-${process.pid}`;
+    writeFileSync(moduleStaging, fontsModule);
+
+    const previous = `${fontDir}.previous-${process.pid}`;
+    if (existsSync(fontDir)) renameSync(fontDir, previous);
+    renameSync(staging, fontDir);
+    renameSync(moduleStaging, fontsModulePath);
+    rmSync(previous, { recursive: true, force: true });
+    console.log(`Vendored ${manifest.families.length} families into ${path.relative(ROOT, fontDir)}`);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+    rmSync(`${fontsModulePath}.staging-${process.pid}`, { force: true });
+  }
+}
+
+async function downloadInto(directory, next) {
+  const {
+    validateGoogleFontFunctionCall,
+    getFontAxes,
+    getGoogleFontsUrl,
+    fetchCSSFromGoogleFonts,
+    fetchFontFile,
+    getFallbackFontOverrideMetrics,
+    fetchLicense,
+  } = next;
   const families = [];
   for (const spec of FAMILIES) {
     const options = validateGoogleFontFunctionCall(spec.fn, {
@@ -132,16 +180,14 @@ async function refresh() {
     for (const face of faces) {
       const file = `${slug(options.fontFamily)}-${face.style}-${face.weight.replace(/\s+/g, "-")}.woff2`;
       const buffer = await fetchFontFile(face.url, false);
-      writeFileSync(path.join(FONT_DIR, file), buffer);
+      writeFileSync(path.join(directory, file), buffer);
       files.push({ file, weight: face.weight, style: face.style, sha256: sha256(buffer) });
       console.log(`  ${file} (${buffer.length} bytes)`);
     }
     // Every catalog family is OFL-1.1, which must travel with the font files.
     const licenseUrl = `${GOOGLE_FONTS_REPO}/ofl/${options.fontFamily.toLowerCase().replace(/[^a-z0-9]/g, "")}/OFL.txt`;
-    const licenseResponse = await fetch(licenseUrl);
-    if (!licenseResponse.ok) throw new Error(`No OFL license for ${options.fontFamily} at ${licenseUrl}`);
     const licenseFile = `${slug(options.fontFamily)}-OFL.txt`;
-    writeFileSync(path.join(FONT_DIR, "licenses", licenseFile), await licenseResponse.text());
+    writeFileSync(path.join(directory, "licenses", licenseFile), await fetchLicense(licenseUrl));
 
     families.push({
       id: spec.id,
@@ -154,10 +200,7 @@ async function refresh() {
       files,
     });
   }
-  const manifest = { source: "Google Fonts via next/font/google helpers", subsets: SUBSETS, families };
-  writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
-  writeFileSync(FONTS_MODULE_PATH, renderFontsModule(manifest));
-  console.log(`Vendored ${families.length} families into ${path.relative(ROOT, FONT_DIR)}`);
+  return { source: "Google Fonts via next/font/google helpers", subsets: SUBSETS, families };
 }
 
 /** Generate src/app/fonts.ts from the manifest. Pure, so --check can compare. */

@@ -1,8 +1,11 @@
 // Vendored fonts (#5533): builds must not fetch Google Fonts, and the checked-in
 // files, manifest and generated fonts.ts must agree. Runs offline.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   FAMILIES,
@@ -10,6 +13,7 @@ import {
   MANIFEST_PATH,
   checkVendoredFonts,
   parseFontFaces,
+  refresh,
   renderFontsModule,
 } from "./vendor-fonts.mjs";
 
@@ -80,6 +84,82 @@ test("parseFontFaces keeps only requested subsets and reads each descriptor", ()
     () => parseFontFaces("/* latin */ @font-face { font-style: normal; src: url(x.woff2); }"),
     /Incomplete @font-face/,
   );
+});
+
+/** Next's offline helpers plus stubbed network calls; `failOnFontFetch` makes the Nth font download throw. */
+function stubbedHelpers({ failOnFontFetch = Infinity } = {}) {
+  const require = createRequire(import.meta.url);
+  const google = (file) => require(`next/dist/compiled/@next/font/dist/google/${file}`);
+  let fontFetches = 0;
+  return {
+    ...google("validate-google-font-function-call"),
+    ...google("get-font-axes"),
+    ...google("get-google-fonts-url"),
+    fetchCSSFromGoogleFonts: async (_url, family) =>
+      `/* latin */ @font-face { font-family: '${family}'; font-style: normal; font-weight: 400; ` +
+      `src: url(https://fonts.gstatic.com/${encodeURIComponent(family)}.woff2) format('woff2'); ` +
+      `unicode-range: U+0000-00FF; }`,
+    fetchFontFile: async (url) => {
+      fontFetches += 1;
+      if (fontFetches >= failOnFontFetch) throw new Error("simulated network failure");
+      return Buffer.from(`font bytes for ${url}`);
+    },
+    getFallbackFontOverrideMetrics: () => ({ fallbackFont: "Arial" }),
+    fetchLicense: async () => "Copyright ... SIL Open Font License, Version 1.1",
+  };
+}
+
+function snapshot(directory) {
+  const entries = {};
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else entries[path.relative(directory, full)] = readFileSync(full).toString("base64");
+    }
+  };
+  walk(directory);
+  return entries;
+}
+
+test("a failed --refresh download leaves the checked-in fonts and fonts.ts untouched", async () => {
+  const sandbox = mkdtempSync(path.join(tmpdir(), "vendor-fonts-"));
+  try {
+    const fontDir = path.join(sandbox, "fonts");
+    const fontsModulePath = path.join(sandbox, "fonts.ts");
+    cpSync(path.dirname(MANIFEST_PATH), fontDir, { recursive: true });
+    writeFileSync(fontsModulePath, readFileSync(FONTS_MODULE_PATH));
+    const before = snapshot(sandbox);
+
+    await assert.rejects(
+      refresh({ fontDir, fontsModulePath, next: stubbedHelpers({ failOnFontFetch: 3 }) }),
+      /simulated network failure/,
+    );
+    assert.deepEqual(snapshot(sandbox), before, "no file was added, removed or changed");
+    assert.deepEqual(readdirSync(sandbox).sort(), ["fonts", "fonts.ts"], "no staging leftovers");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("a successful --refresh replaces the fonts, manifest and fonts.ts together", async () => {
+  const sandbox = mkdtempSync(path.join(tmpdir(), "vendor-fonts-"));
+  try {
+    const fontDir = path.join(sandbox, "fonts");
+    const fontsModulePath = path.join(sandbox, "fonts.ts");
+    cpSync(path.dirname(MANIFEST_PATH), fontDir, { recursive: true });
+    writeFileSync(path.join(fontDir, "stale.woff2"), "left over from an older catalog");
+    writeFileSync(fontsModulePath, "stale");
+
+    await refresh({ fontDir, fontsModulePath, next: stubbedHelpers() });
+    const manifest = JSON.parse(readFileSync(path.join(fontDir, "manifest.json"), "utf8"));
+    assert.equal(manifest.families.length, FAMILIES.length);
+    assert.equal(readFileSync(fontsModulePath, "utf8"), renderFontsModule(manifest));
+    assert.ok(!readdirSync(fontDir).includes("stale.woff2"), "files outside the new catalog are gone");
+    assert.deepEqual(readdirSync(sandbox).sort(), ["fonts", "fonts.ts"], "no staging or previous copies remain");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
 });
 
 test("renderFontsModule refuses a manifest missing a catalog family", () => {
