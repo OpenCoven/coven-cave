@@ -86,6 +86,19 @@ assert.doesNotMatch(
   "no desktop-only positioning utilities back on the stack root",
 );
 
+// #5531: the stack starts below any shared surface header band in its column
+// (Tasks' Filter / New task / Select tasks / ⋯ were covered at 1440×900).
+// tests/inbox-toast-chrome-clearance.spec.ts is the geometric guard.
+assert.match(src, /<div ref=\{stackRef\} className="inbox-toast-stack">/, "the stack is measured");
+assert.match(src, /useToastHeaderClearance\(stackRef, toasts\.length > 0\)/, "measuring runs only while toasts show");
+assert.match(src, /stack\.style\.setProperty\("--inbox-toast-clearance"/, "the measured edge reaches dash-act.css");
+const dashAct = readFileSync(new URL("../styles/dash-act.css", import.meta.url), "utf8");
+assert.match(
+  dashAct,
+  /top: max\(calc\(34px \+ var\(--space-2\)\), var\(--inbox-toast-clearance, 0px\)\);/,
+  "desktop top never rises above the shell band and follows the measured header edge",
+);
+
 // ── Surface discipline ───────────────────────────────────────────────────────
 assert.match(src, /glass-overlay/, "toast cards use the shared glass token surface");
 assert.match(
