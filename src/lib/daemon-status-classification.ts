@@ -154,7 +154,7 @@ export type DaemonStatusProblemCopy = {
 // Ordered: a permission or timeout failure also reads "connect …", so those
 // patterns must win before the generic connection family.
 const DAEMON_STATUS_PROBLEMS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/\b(EACCES|EPERM)\b/i, "Cave doesn’t have permission to reach the Coven daemon"],
+  [/\b(EACCES|EPERM)\b|permission denied/i, "Cave doesn’t have permission to reach the Coven daemon"],
   [/\bETIMEDOUT\b|timed out|\btimeout\b|\baborted\b/i, "The Coven daemon didn’t answer in time"],
   [
     /\b(ECONNREFUSED|ECONNRESET|ENOENT|EINVAL|EPIPE|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN)\b|\bconnect\b/i,

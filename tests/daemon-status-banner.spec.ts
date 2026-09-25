@@ -26,6 +26,11 @@ async function openRituals(page: Page, daemon: "unreachable" | "online") {
   );
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [] } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  // The server decides between the onboarding gate and the workspace from this
+  // cookie (src/app/page.tsx); localStorage alone only covers the client.
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });

@@ -402,6 +402,7 @@ for (const [reason, title] of [
   ["connect ENOENT /Users/me/.coven/coven.sock", "Can’t reach the Coven daemon"],
   ["read ECONNRESET", "Can’t reach the Coven daemon"],
   ["connect EACCES /Users/me/.coven/coven.sock", "Cave doesn’t have permission to reach the Coven daemon"],
+  ["Permission denied opening the daemon socket", "Cave doesn’t have permission to reach the Coven daemon"],
   ["connect ETIMEDOUT 10.0.0.2:7777", "The Coven daemon didn’t answer in time"],
   ["The operation was aborted due to timeout", "The Coven daemon didn’t answer in time"],
   ["status service returned http 502", "The daemon status check returned something Cave couldn’t read"],
