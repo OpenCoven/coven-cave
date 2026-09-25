@@ -168,8 +168,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "The released-reader control should clear the retained mobile composer stack",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(137px \+ var\(--sai-bottom\)\)/,
+  "The released-reader control should clear the engaged two-line mobile composer (#5548)",
 );
 
 assert.match(
