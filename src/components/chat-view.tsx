@@ -4669,12 +4669,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
-    // Touch devices read first when a thread opens (#5546). A programmatic
-    // focus pops the keyboard on Android and, on iOS, leaves the composer
-    // focused with no keyboard, which also holds the phone composer expanded.
-    // Checked synchronously: useIsCoarsePointer() is false on the first render.
-    if (window.matchMedia("(pointer: coarse)").matches) return;
-    inputRef.current?.focus();
+    const composer = inputRef.current;
+    if (!composer) return;
+    // Touch devices read first when a thread opens on the chat surface (#5546).
+    // A programmatic focus pops the keyboard on Android and, on iOS, leaves the
+    // composer focused with no keyboard, which also holds the phone composer
+    // expanded. A chat inside a dialog (the mobile Chat drawer) still takes
+    // focus: a modal dialog must hold it whatever the pointer. Checked
+    // synchronously: useIsCoarsePointer() is false on the first render.
+    if (window.matchMedia("(pointer: coarse)").matches && !composer.closest('[role="dialog"]')) return;
+    composer.focus();
   }, [sessionId]);
 
   // Auto-grow the composer with its content (shared with the home composer).
