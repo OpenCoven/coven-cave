@@ -989,6 +989,81 @@
     padding: 0 10px 10px !important;
   }
 
+  /* Short phones need the transcript height (#5548). The chat composer drops
+     from four rows to two: the message field shares its line with mic and
+     send, and the project/model chips share theirs with enhance. The controls
+     wrappers dissolve (display: contents) so their buttons join the panel's
+     wrapping row, ::after forces the break between the two lines, and the
+     Tools edge row reserves only the half of its tab inside the panel. Every
+     control stays, at 44px, and the chips keep room for their names. */
+  .cave-chat-linear .cave-composer-panel {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-2);
+  }
+
+  .cave-chat-linear .cave-composer-panel > * {
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+
+  .cave-chat-linear .cave-composer-panel > .cave-composer-controls,
+  .cave-chat-linear .cave-composer-panel .cave-composer-control-row,
+  .cave-chat-linear .cave-composer-panel .cave-composer-submit-row {
+    display: contents;
+  }
+
+  /* Bleed to the panel edges (cancelling its side padding) and fill the whole
+     line, so nothing else can share it; reserve only the tab's inner half. */
+  .cave-chat-linear .cave-composer-panel > .cave-composer-edge-actions {
+    flex: 1 0 calc(100% + 2 * var(--space-3));
+    margin: 0 calc(-1 * var(--space-3)) calc(var(--touch-target) / -2);
+  }
+
+  .cave-chat-linear .cave-composer-panel > .cave-composer-input-wrap {
+    order: 1;
+    flex: 1 1 0;
+  }
+
+  .cave-chat-linear .cave-composer-panel .cave-composer-submit-row > button {
+    order: 2;
+    flex: none;
+  }
+
+  .cave-chat-linear .cave-composer-panel::after {
+    content: "";
+    order: 3;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  .cave-chat-linear .cave-composer-panel > .cave-composer-footer-band {
+    order: 4;
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    padding: 0;
+    border-top: 0;
+    background: transparent;
+  }
+
+  .cave-chat-linear .cave-composer-panel .composer-enhance-control {
+    order: 5;
+    flex: none;
+  }
+
+  .cave-chat-linear .cave-composer-footer-band__cluster {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .cave-chat-linear .cave-composer-footer-band .cave-context-chip {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
   .cave-composer-control-row {
     grid-template-columns: minmax(0, 1fr) auto;
     min-height: 48px;

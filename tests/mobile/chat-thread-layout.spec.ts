@@ -192,11 +192,10 @@ test("phone chat toggles meet the 44px touch target", async ({ page }) => {
   }
 });
 
-// Measured with the folds on origin/main's chrome: 40.4% on iPhone 13
-// (664px), 45.6% on Pixel 5 (727px), up from about 14–16%. The remaining fixed
-// chrome is the top bar, the chat header, a 206px composer panel and the
-// bottom tabs; reaching 50% on short phones needs a slimmer composer.
-const TRANSCRIPT_FLOOR = 0.4;
+// With the chrome folds (#5529) and the two-line composer (#5548): 52.0% on
+// iPhone 13 (664px) and 56.3% on Pixel 5 (727px), up from 40.4% and 45.6%
+// with the four-row, 206px composer panel (now 129px).
+const TRANSCRIPT_FLOOR = 0.5;
 
 test("an open thread folds the phone chrome so the transcript gets the height", async ({ page }, testInfo) => {
   // A running daemon, so no status banner takes height the chrome doesn't own.
@@ -227,4 +226,39 @@ test("at 390×844 the transcript gets at least half the screen", async ({ page }
   await openThread(page);
   const transcript = await box(page.locator(".cave-chat-linear .cave-chat-transcript"));
   expect(transcript.height / 844, `transcript ${Math.round(transcript.height)}px of 844px`).toBeGreaterThanOrEqual(0.5);
+});
+
+test("the phone composer is two lines: message with mic and send, then chips with enhance", async ({ page }) => {
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const composer = page.locator(".cave-chat-linear .cave-composer-panel");
+  const input = await box(composer.locator(".cave-composer-input-wrap"));
+  const mic = await box(composer.getByRole("button", { name: "Voice call" }));
+  const send = await box(composer.getByRole("button", { name: "Send message" }));
+  const chips = await box(composer.locator(".cave-composer-footer-band"));
+  const enhance = await box(composer.locator(".composer-enhance-control"));
+  const middle = (rect: { y: number; height: number }) => rect.y + rect.height / 2;
+
+  // Mic and send share the message line; chips and enhance share the next.
+  for (const [name, rect] of [["mic", mic], ["send", send]] as const) {
+    expect(Math.abs(middle(rect) - middle(input)), `${name} sits on the message line`).toBeLessThanOrEqual(8);
+    expect(rect.width, `${name} width`).toBeGreaterThanOrEqual(44);
+    expect(rect.height, `${name} height`).toBeGreaterThanOrEqual(44);
+  }
+  expect(chips.y, "chips sit below the message line").toBeGreaterThanOrEqual(input.y + input.height - 1);
+  expect(Math.abs(middle(enhance) - middle(chips)), "enhance shares the chips line").toBeLessThanOrEqual(8);
+  expect(input.width, "the message field keeps a usable width").toBeGreaterThanOrEqual(200);
+
+  // The chips keep room for their names instead of truncating to "Cho…".
+  const labels = await composer.locator(".cave-composer-footer-band .cave-context-chip").evaluateAll((chips) =>
+    chips.flatMap((chip) =>
+      [...chip.querySelectorAll("span")]
+        .filter((span) => span.textContent?.trim() && !span.querySelector("span"))
+        .map((span) => ({ text: span.textContent!.trim(), clipped: span.scrollWidth > span.clientWidth + 1 })),
+    ),
+  );
+  expect(labels.length, "the chips' labels were measured").toBeGreaterThanOrEqual(2);
+  expect(labels.filter((label) => label.clipped).map((label) => label.text), "no chip label is truncated").toEqual([]);
 });
