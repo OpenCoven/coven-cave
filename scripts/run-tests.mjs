@@ -1285,6 +1285,7 @@ export const SUITES = {
     "src/tailnet-identity.test.ts",
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
+    "scripts/vendor-fonts.test.mjs",
     "src/lib/inference-routes.test.ts",
     "src/lib/inference-route-config.test.ts",
     "src/lib/server/inference-launch-plan.test.ts",
