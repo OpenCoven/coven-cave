@@ -1043,15 +1043,14 @@
     flex: none;
   }
 
+  /* Chips keep the shared .cave-context-controls contract (flex: 0 0 auto,
+     horizontal scroll), so a repo chat's worktree/branch chips scroll into
+     view instead of ellipsizing the project and model names. */
   .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-footer-band__cluster {
     flex-wrap: nowrap;
-    overflow: hidden;
+    min-width: 0;
   }
 
-  .cave-chat-linear:not([data-composer-rest="true"]) .cave-composer-footer-band .cave-context-chip {
-    min-width: 0;
-    flex: 0 1 auto;
-  }
 
   .cave-composer-panel {
     position: relative;

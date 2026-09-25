@@ -316,3 +316,33 @@ test("while typing, the composer is two lines and the transcript keeps half the 
   expect(labels.length, "the chips' labels were measured").toBeGreaterThanOrEqual(2);
   expect(labels.filter((label) => label.clipped).map((label) => label.text), "no chip label is truncated").toEqual([]);
 });
+
+test("the Latest pill stays clear of the composer however tall the draft grows", async ({ page }) => {
+  // The pill is sticky inside the transcript scroller and the composer dock
+  // is its sibling, so a growing draft shrinks the transcript instead of
+  // covering the pill. Pin that, so a future overlaying composer can't hide it.
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const textarea = page.locator(".cave-chat-linear textarea");
+  const transcript = page.locator(".cave-chat-linear .cave-chat-transcript");
+  // A staged draft keeps the composer docked while reading older output.
+  await textarea.fill("one line draft");
+  await transcript.evaluate((el) => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -300, bubbles: true }));
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event("scroll"));
+  });
+  const pill = page.locator(".cave-new-response-content");
+  const dock = page.locator(".cave-chat-linear .cave-composer-dock");
+  await expect(pill).toBeVisible();
+  for (const draft of ["one line draft", "line\n".repeat(8)]) {
+    await textarea.fill(draft);
+    await expect(async () => {
+      const pillBox = await box(pill);
+      const dockBox = await box(dock);
+      expect(pillBox.y + pillBox.height, `pill clears the dock (${draft.length}-char draft)`).toBeLessThanOrEqual(dockBox.y);
+    }).toPass({ timeout: 5_000 });
+  }
+});
