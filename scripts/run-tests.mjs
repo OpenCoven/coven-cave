@@ -1071,6 +1071,7 @@ export const SUITES = {
     "src/lib/inbox-title.test.ts",
     "src/lib/toast-groups.test.ts",
     "src/components/inbox-toast-stack.test.ts",
+    "src/lib/toast-header-clearance.test.ts",
     "src/app/daily-report-page.test.ts",
     "src/components/shipped-table.test.ts",
     "src/components/reminder-link-field.test.ts",

@@ -86,6 +86,26 @@ assert.doesNotMatch(
   "no desktop-only positioning utilities back on the stack root",
 );
 
+// #5531: the stack starts below any shared surface header band in its column
+// (Tasks' Filter / New task / Select tasks / ⋯ were covered at 1440×900).
+// tests/inbox-toast-chrome-clearance.spec.ts is the geometric guard.
+assert.match(src, /<div ref=\{stackRef\} className="inbox-toast-stack">/, "the stack is measured");
+assert.match(src, /useToastHeaderClearance\(stackRef, toasts\.length > 0\)/, "measuring runs only while toasts show");
+assert.match(src, /stack\.style\.setProperty\("--inbox-toast-clearance"/, "the measured edge reaches dash-act.css");
+const dashAct = readFileSync(new URL("../styles/dash-act.css", import.meta.url), "utf8");
+assert.match(
+  dashAct,
+  /top: max\(calc\(34px \+ var\(--space-2\)\), var\(--inbox-toast-clearance, 0px\)\);/,
+  "desktop top never rises above the shell band and follows the measured header edge",
+);
+
+// A header can move without a resize or DOM insertion: the browser pane's
+// toolbar stays mounted and slides in by class. Those changes re-measure, and
+// an inert / aria-hidden header (no reachable controls) doesn't count.
+assert.match(src, /attributeFilter: \["class", "style", "hidden", "inert", "aria-hidden"\]/, "header class/visibility changes re-measure");
+assert.match(src, /document\.addEventListener\("transitionend", onTransitionEnd, true\)/, "a header transform transition re-measures where it lands");
+assert.match(src, /!header\.closest\("\[inert\], \[aria-hidden='true'\]"\)/, "hidden toolbars don't push the stack down");
+
 // ── Surface discipline ───────────────────────────────────────────────────────
 assert.match(src, /glass-overlay/, "toast cards use the shared glass token surface");
 assert.match(

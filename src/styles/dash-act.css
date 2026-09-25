@@ -88,7 +88,10 @@
  * toast's own controls must stay clickable. */
 .inbox-toast-stack {
   position: fixed;
-  top: calc(34px + var(--space-2));
+  /* --inbox-toast-clearance is measured by the stack: the bottom of any
+     surface header band in its column plus a gap (#5531). Without one, the
+     stack sits under the shell band as before. */
+  top: max(calc(34px + var(--space-2)), var(--inbox-toast-clearance, 0px));
   right: var(--space-4);
   z-index: 50;
   display: flex;
@@ -104,7 +107,7 @@
 
 @media (max-width: 1023px) {
   .inbox-toast-stack {
-    top: calc(52px + var(--sai-top) + var(--space-2));
+    top: max(calc(52px + var(--sai-top) + var(--space-2)), var(--inbox-toast-clearance, 0px));
     right: calc(var(--space-3) + var(--sai-right));
     /* Also fixes an unrelated overflow at the narrow end: a fixed 20rem card
        ran off the left edge of a 320px viewport. */
