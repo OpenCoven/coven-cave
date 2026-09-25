@@ -20,6 +20,40 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const identityBinary = join(scriptsDir, `.mobile-process-identity-shell-test-${process.pid}`);
 process.env.COVEN_CAVE_PROCESS_IDENTITY_BIN = identityBinary;
 test.after(() => rmSync(identityBinary, { force: true }));
+
+/** Tag a fixture command so leaked copies can be found after cleanup. */
+const fixtureMarker = (fixture) => `// cave-fixture:${fixture}`;
+
+/**
+ * SIGKILL every owned fixture process and report any that survive (#5542).
+ * The supervisor and backend-root each lead their own process group, and the
+ * backend command runs inside backend-root's group, so killing only the
+ * recorded pids orphaned the command. Kill each group, then the pid itself.
+ */
+async function cleanupFixtureProcesses(fixture, pids) {
+  for (const pid of pids) {
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
+  const marker = fixtureMarker(fixture);
+  const survivors = () =>
+    spawnSync("ps", ["-A", "-o", "pid=,command="], { encoding: "utf8" }).stdout
+      .split("\n")
+      .filter((line) => line.includes(marker))
+      .map((line) => line.trim());
+  const deadline = Date.now() + 3_000;
+  let left = survivors();
+  while (left.length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    left = survivors();
+  }
+  return left;
+}
 const repoRoot = join(scriptsDir, "..");
 const scriptPath = join(scriptsDir, "mobile-tailscale.sh");
 const script = readFileSync(
@@ -171,7 +205,7 @@ test("mobile tailscale stop preserves foreign Serve but stops its tracked backen
     command: process.execPath,
     args: [
       "-e",
-      `require("node:fs").writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));setInterval(() => {}, 1000)`,
+      `require("node:fs").writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`,
     ],
     logPath: join(stateDir, "next.log"),
     env: process.env,
@@ -183,6 +217,7 @@ test("mobile tailscale stop preserves foreign Serve but stops its tracked backen
   const backendPid = Number(readFileSync(backendPidPath, "utf8"));
   const supervisorPid = sleeperOwner.supervisor.pid;
 
+  let leaked = [];
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
@@ -214,13 +249,10 @@ test("mobile tailscale stop preserves foreign Serve but stops its tracked backen
     );
     assert.equal(existsSync(ownerPath), false);
   } finally {
-    for (const pid of [sleeperPid, supervisorPid]) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {}
-    }
+    leaked = await cleanupFixtureProcesses(fixture, [sleeperPid, backendPid, supervisorPid]);
     rmSync(fixture, { recursive: true, force: true });
   }
+  assert.deepEqual(leaked, [], "no fixture process outlives the test");
 });
 
 test("mobile tailscale stop never signals a reused foreign PID", async () => {
@@ -238,7 +270,7 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     backendUrl: "http://127.0.0.1:3000",
     cwd: fixture,
     command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1000)"],
+    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
     logPath: join(stateDir, "next.log"),
     env: process.env,
   });
@@ -258,6 +290,7 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     },
   }));
 
+  let leaked = [];
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
@@ -281,13 +314,10 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     );
     assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
-    for (const pid of [foreignPid, supervisorPid]) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {}
-    }
+    leaked = await cleanupFixtureProcesses(fixture, [foreignPid, supervisorPid]);
     rmSync(fixture, { recursive: true, force: true });
   }
+  assert.deepEqual(leaked, [], "no fixture process outlives the test");
 });
 
 test("default stop evaluates each tracked backend identity independently", async () => {
@@ -308,7 +338,7 @@ test("default stop evaluates each tracked backend identity independently", async
     backendUrl: "http://[::1]:3007",
     cwd: fixture,
     command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1000)"],
+    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
     logPath: join(ipv6Dir, "next.log"),
     env: process.env,
   });
@@ -317,7 +347,7 @@ test("default stop evaluates each tracked backend identity independently", async
     backendUrl: "http://127.0.0.1:3008",
     cwd: fixture,
     command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1000)"],
+    args: ["-e", `setInterval(() => {}, 1000) ${fixtureMarker(fixture)}`],
     logPath: join(ipv4Dir, "next.log"),
     env: process.env,
   });
@@ -336,6 +366,7 @@ test("default stop evaluates each tracked backend identity independently", async
   );
   writeFileSync(join(ipv4Dir, "access-token"), "dev-secret");
   writeFileSync(join(ipv4Dir, "sidecar-auth-token"), "packaged-secret");
+  let leaked = [];
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
       cwd: repoRoot,
@@ -378,13 +409,10 @@ test("default stop evaluates each tracked backend identity independently", async
       "verified dev cleanup preserves packaged sidecar credentials",
     );
   } finally {
-    for (const pid of [ipv6Pid, ipv6SupervisorPid, ipv4Pid, ipv4SupervisorPid]) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {}
-    }
+    leaked = await cleanupFixtureProcesses(fixture, [ipv6Pid, ipv6SupervisorPid, ipv4Pid, ipv4SupervisorPid]);
     rmSync(fixture, { recursive: true, force: true });
   }
+  assert.deepEqual(leaked, [], "no fixture process outlives the test");
 });
 
 test("IPv6 readiness recognizes the canonical bracketed backend URL", () => {
