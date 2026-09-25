@@ -936,12 +936,21 @@
     will-change: transform;
   }
 
+  /* #5529: at rest the strip is folded into the composer's Tools menu
+     (Auto, Retry, Summarize and the call are listed first there; Attach is
+     already its first row, and Stop stays on the composer's busy button). It
+     only returns while the keyboard is up, where its one-tap chips help while
+     writing. */
   .cave-mobile-action-strip {
-    display: flex;
+    display: none;
     margin-inline: -2px;
     padding-inline: 2px;
     scroll-padding-inline: 2px;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .cave-chat-linear[data-keyboard-open="true"] .cave-mobile-action-strip {
+    display: flex;
   }
 
   .cave-composer-panel {

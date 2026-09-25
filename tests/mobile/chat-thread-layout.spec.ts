@@ -153,11 +153,26 @@ test("wide code, tables and URLs scroll inside the reply instead of widening it"
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("the Tools tab does not sit on the Auto chip", async ({ page }) => {
+test("at rest the action strip folds into Tools; with the keyboard up it clears the Tools tab", async ({ page }) => {
   await openThread(page);
-  const tools = page.locator(".cave-chat-linear .cave-composer-tools-tab").first();
-  const auto = page.locator(".cave-chat-linear .cave-mobile-action-chip--auto").first();
-  await expect(tools).toBeVisible();
+  const chat = page.locator(".cave-chat-linear");
+  const strip = chat.locator(".cave-mobile-action-strip");
+  const tools = chat.locator(".cave-composer-tools-tab").first();
+  // #5529: at rest the strip is folded; its actions are listed first in Tools.
+  await expect(strip).toBeHidden();
+  await tools.click();
+  const menu = page.getByRole("menu", { name: "Tools" });
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Select Auto mode" })).toBeVisible();
+  for (const name of ["Retry last message", "Summarize session", "Start voice call"]) {
+    await expect(menu.getByRole("menuitem", { name })).toBeVisible();
+  }
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  // ChatView sets data-keyboard-open from the visual viewport, which a desktop
+  // browser can't shrink; set the same attribute to check the layout it gates.
+  await chat.evaluate((section) => section.setAttribute("data-keyboard-open", "true"));
+  const auto = strip.locator(".cave-mobile-action-chip--auto");
   await expect(auto).toBeVisible();
   const a = await box(tools);
   const b = await box(auto);
@@ -167,11 +182,49 @@ test("the Tools tab does not sit on the Auto chip", async ({ page }) => {
 
 test("phone chat toggles meet the 44px touch target", async ({ page }) => {
   await openThread(page);
-  for (const selector of [".mobile-threads-toggle", ".shell-top > .shell-top-toggle--right"]) {
+  // #5529: with a thread open the chat-list toggle lives in the chat header.
+  for (const selector of [".cave-mobile-header-threads", ".shell-top > .shell-top-toggle--right"]) {
     const toggle = page.locator(selector).first();
     await expect(toggle, selector).toBeVisible();
     const rect = await box(toggle);
     expect(rect.width, `${selector} width`).toBeGreaterThanOrEqual(44);
     expect(rect.height, `${selector} height`).toBeGreaterThanOrEqual(44);
   }
+});
+
+// Measured with the folds on origin/main's chrome: 40.4% on iPhone 13
+// (664px), 45.6% on Pixel 5 (727px), up from about 14–16%. The remaining fixed
+// chrome is the top bar, the chat header, a 206px composer panel and the
+// bottom tabs; reaching 50% on short phones needs a slimmer composer.
+const TRANSCRIPT_FLOOR = 0.4;
+
+test("an open thread folds the phone chrome so the transcript gets the height", async ({ page }, testInfo) => {
+  // A running daemon, so no status banner takes height the chrome doesn't own.
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const chat = page.locator(".chat-surface");
+  // The familiar row, the section tabs strip and the action strip are folded;
+  // the familiar picker stays in the top bar and the tabs in the chat-list sheet.
+  await expect(chat.locator(".chat-familiar-context")).toBeHidden();
+  await expect(chat.locator(".chat-scope-tabs")).toBeHidden();
+  await expect(chat.locator(".cave-mobile-action-strip")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Show chat list" })).toBeVisible();
+
+  const transcript = await box(page.locator(".cave-chat-linear .cave-chat-transcript"));
+  const viewportHeight = page.viewportSize()!.height;
+  const share = transcript.height / viewportHeight;
+  testInfo.annotations.push({ type: "transcript", description: `${Math.round(transcript.height)}px of ${viewportHeight}px (${(share * 100).toFixed(1)}%)` });
+  expect(share, "transcript share of the viewport").toBeGreaterThanOrEqual(TRANSCRIPT_FLOOR);
+});
+
+test("at 390×844 the transcript gets at least half the screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const transcript = await box(page.locator(".cave-chat-linear .cave-chat-transcript"));
+  expect(transcript.height / 844, `transcript ${Math.round(transcript.height)}px of 844px`).toBeGreaterThanOrEqual(0.5);
 });
