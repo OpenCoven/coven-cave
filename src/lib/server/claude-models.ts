@@ -224,7 +224,10 @@ export async function claudeOpus5Routability(
   let providerEnv: Record<string, string | undefined>;
   // Only the real env builder needs the warm-up; an injected scopedEnv never
   // reads the spawn PATH (and tests stay off the user's login shell).
-  await (dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath))?.();
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
@@ -285,7 +288,10 @@ export async function listClaudeModelInventory(
   let providerEnv: Record<string, string | undefined>;
   // Only the real env builder needs the warm-up; an injected scopedEnv never
   // reads the spawn PATH (and tests stay off the user's login shell).
-  await (dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath))?.();
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),

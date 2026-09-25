@@ -323,7 +323,10 @@ export async function listCopilotModelInventory(
   let env: Record<string, string | undefined>;
   // Only the real env builder needs the warm-up; an injected scopedEnv never
   // reads the spawn PATH (and tests stay off the user's login shell).
-  await (dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath))?.();
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     // Match the chat launch path and scope both cached and in-flight discovery
     // to the exact environment that will reach the provider. The fingerprint

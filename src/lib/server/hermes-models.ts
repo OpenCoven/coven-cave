@@ -194,7 +194,10 @@ export async function listHermesModelInventory(
   let config: HermesApiConfig | null;
   // Only the real env builder needs the warm-up; an injected scopedEnv never
   // reads the spawn PATH (and tests stay off the user's login shell).
-  await (dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath))?.();
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     const env = (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId);
     config = hermesApiConfig({
