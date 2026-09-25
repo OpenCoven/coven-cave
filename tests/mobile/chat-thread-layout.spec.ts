@@ -249,6 +249,18 @@ test("at rest the composer is its input and Tools; focus or text brings the cont
   await expect(controls).toBeVisible();
   await expect(chips).toBeVisible();
 
+  // Focus moving on from the input into the composer (with an empty draft the
+  // controls row is disabled, so to a context chip) keeps it expanded: nothing
+  // vanishes under the control being used. Moved directly rather than with
+  // Tab, which WebKit, like Safari, doesn't send to buttons by default.
+  await chips.getByRole("button").first().focus();
+  await expect(input).not.toBeFocused();
+  await expect
+    .poll(() => chips.evaluate((band) => band.contains(document.activeElement)))
+    .toBe(true);
+  await expect(controls).toBeVisible();
+  await expect(chips).toBeVisible();
+
   // With text the controls stay, even once focus moves on.
   await input.fill("Draft a reply");
   await chat.locator(".cave-chat-transcript").click({ position: { x: 8, y: 8 } });
