@@ -104,6 +104,7 @@ import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
+  describeDaemonStatusProblem,
 } from "@/lib/daemon-status-classification";
 import {
   createDaemonConnectionSupervisor,
@@ -1733,10 +1734,12 @@ export function Workspace() {
       dismissBanner("daemon-status-unavailable");
       return;
     }
+    const problem = describeDaemonStatusProblem(daemonStatusUnavailable);
     pushBanner({
       id: "daemon-status-unavailable",
       severity: "warning",
-      title: `Daemon status unavailable — ${daemonStatusUnavailable}`,
+      title: problem.title,
+      ...(problem.detail ? { detail: problem.detail } : {}),
       cta: {
         label: "Retry",
         onClick: () => {

@@ -511,6 +511,42 @@ button:active > .edge-rail-chip {
    * (e.g. "…but new tasks may not start"). */
 }
 
+/* Diagnostic detail (#5530): "Details" sits inline with the banner. Opened,
+ * it takes its own full-width row, so a long socket path wraps there instead
+ * of pushing Retry and dismiss off screen. */
+.shell-banner {
+  flex-wrap: wrap;
+}
+
+.shell-banner__detail {
+  font-size: var(--text-xs);
+}
+
+.shell-banner__detail[open] {
+  order: 1;
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.shell-banner__detail > summary {
+  cursor: pointer;
+  opacity: 0.8;
+  border-radius: var(--radius-control);
+}
+
+.shell-banner__detail > summary:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.shell-banner__detail > code {
+  display: block;
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
 .shell-banner__cta {
   background: transparent;
   border: 1px solid currentColor;

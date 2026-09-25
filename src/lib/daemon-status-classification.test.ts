@@ -5,6 +5,7 @@ import {
   classifyDaemonFailureAvailability,
   classifyDaemonStatusPoll,
   describeDaemonAvailability,
+  describeDaemonStatusProblem,
 } from "./daemon-status-classification.ts";
 
 for (const [name, input, expected] of [
@@ -388,6 +389,41 @@ assert.deepEqual(
   classifyDaemonStatusPoll({ responseStatus: 401, responseOk: false, payload: null }),
   { kind: "auth-expired" },
   "the Cave access-token gate remains distinct from daemon availability",
+);
+
+// #5530: the status banner speaks plainly and keeps Node's error text as a
+// diagnostic detail instead of the headline.
+for (const [reason, title] of [
+  [
+    "connect EINVAL /var/folders/xx/T/cave-e2e-scratch-3f9a/very/long/path/coven.sock - Local (undefined:undefined)",
+    "Can’t reach the Coven daemon",
+  ],
+  ["connect ECONNREFUSED 127.0.0.1:7777", "Can’t reach the Coven daemon"],
+  ["connect ENOENT /Users/me/.coven/coven.sock", "Can’t reach the Coven daemon"],
+  ["read ECONNRESET", "Can’t reach the Coven daemon"],
+  ["connect EACCES /Users/me/.coven/coven.sock", "Cave doesn’t have permission to reach the Coven daemon"],
+  ["connect ETIMEDOUT 10.0.0.2:7777", "The Coven daemon didn’t answer in time"],
+  ["The operation was aborted due to timeout", "The Coven daemon didn’t answer in time"],
+  ["status service returned http 502", "The daemon status check returned something Cave couldn’t read"],
+  ["status service returned an invalid response", "The daemon status check returned something Cave couldn’t read"],
+  ["daemon status returned contradictory health evidence", "The daemon status check returned something Cave couldn’t read"],
+  ["something nobody anticipated", "Can’t confirm the Coven daemon’s status"],
+]) {
+  assert.deepEqual(
+    describeDaemonStatusProblem(reason),
+    { title, detail: reason },
+    `plain copy for: ${reason}`,
+  );
+}
+assert.deepEqual(
+  describeDaemonStatusProblem("access check failed"),
+  { title: "Couldn’t confirm access to the Coven daemon", detail: null },
+  "the access gate has no extra diagnostic worth disclosing",
+);
+assert.deepEqual(
+  describeDaemonStatusProblem("   "),
+  { title: "Can’t confirm the Coven daemon’s status", detail: null },
+  "an empty reason has no detail",
 );
 
 console.log("daemon-status-classification.test.ts: ok");

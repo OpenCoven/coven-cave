@@ -1544,6 +1544,12 @@ function ShellBannerStrip() {
           role={b.severity === "error" ? "alert" : "status"}
         >
           <span className="shell-banner__title">{b.title}</span>
+          {b.detail ? (
+            <details className="shell-banner__detail">
+              <summary>Details</summary>
+              <code>{b.detail}</code>
+            </details>
+          ) : null}
           {b.cta ? (
             <button
               type="button"
