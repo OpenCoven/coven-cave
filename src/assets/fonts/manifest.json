@@ -1,0 +1,517 @@
+{
+  "source": "Google Fonts via next/font/google helpers",
+  "subsets": [
+    "latin"
+  ],
+  "families": [
+    {
+      "id": "ebGaramond",
+      "family": "EB Garamond",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/eb-garamond-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "eb-garamond-italic-400-800.woff2",
+          "weight": "400 800",
+          "style": "italic",
+          "sha256": "d2761541b314509e02df3539cd35fc712954a48a50f4e0ab424dde817c699c2a"
+        },
+        {
+          "file": "eb-garamond-normal-400-800.woff2",
+          "weight": "400 800",
+          "style": "normal",
+          "sha256": "68fd4b247dde89984ee835d99953d235e4927be2b1b732ad81173b519869cee8"
+        }
+      ]
+    },
+    {
+      "id": "inter",
+      "family": "Inter",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/inter-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "inter-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "c940764593d0fe5d596be327ca7558855e018039fb78509aa21921fd3644c3e4"
+        }
+      ]
+    },
+    {
+      "id": "jetbrainsMono",
+      "family": "JetBrains Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/jetbrains-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "jetbrains-mono-normal-100-800.woff2",
+          "weight": "100 800",
+          "style": "normal",
+          "sha256": "1e06740a02a443fb7f3eeda8fcaa685a0f6c620e3f01e6666e847295469ce3ad"
+        }
+      ]
+    },
+    {
+      "id": "geistSans",
+      "family": "Geist",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/geist-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "geist-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608"
+        }
+      ]
+    },
+    {
+      "id": "geistMono",
+      "family": "Geist Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/geist-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "geist-mono-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b"
+        }
+      ]
+    },
+    {
+      "id": "fredoka",
+      "family": "Fredoka",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fredoka-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fredoka-normal-300.woff2",
+          "weight": "300",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        }
+      ]
+    },
+    {
+      "id": "instrumentSerif",
+      "family": "Instrument Serif",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/instrument-serif-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;1,400&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "instrument-serif-italic-400.woff2",
+          "weight": "400",
+          "style": "italic",
+          "sha256": "6ee678c33f388dd7ba59700ebea635deb98821baafd817b09891f7927177f702"
+        },
+        {
+          "file": "instrument-serif-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "60c06664b5a95c7de6cc3e00d1f9034d78bd1e40b564016b241674449a067d4d"
+        }
+      ]
+    },
+    {
+      "id": "fraunces",
+      "family": "Fraunces",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fraunces-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fraunces:wght@100..900&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fraunces-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "88e17be075f1be50ab67b057b99e3701b828f44ed28f9452df6c02645bb0cba9"
+        }
+      ]
+    },
+    {
+      "id": "roboto",
+      "family": "Roboto",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/roboto-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "roboto-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "0a44e0bb6ba5c8537e8814c148ef7755f1bce12112361231f595ecc584a18d7a"
+        }
+      ]
+    },
+    {
+      "id": "openSans",
+      "family": "Open Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/open-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Open+Sans:wght@300..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "open-sans-normal-300-800.woff2",
+          "weight": "300 800",
+          "style": "normal",
+          "sha256": "441af0def989ebfdbd6ad85ffaed85e967ab21a05f1dd342f16259464a206dd0"
+        }
+      ]
+    },
+    {
+      "id": "lato",
+      "family": "Lato",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/lato-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "lato-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "d4ae5188a65370ecfe28f42293bbee8297cfd5712c6aadfdb270d48f2bcd88b0"
+        },
+        {
+          "file": "lato-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "7a7ce1a34f3e9944fe88fc61abbc93b6db383afa2b90815fd7ccea456fbce4e5"
+        }
+      ]
+    },
+    {
+      "id": "sourceSans3",
+      "family": "Source Sans 3",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/source-sans-3-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "source-sans-3-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "ac057a5593cbe3df0d2585da5dd5f33b8efa84aa30550c710fe061b37fc5c54b"
+        }
+      ]
+    },
+    {
+      "id": "notoSans",
+      "family": "Noto Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/noto-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "noto-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "afc7a910f4ff04ee2ff7b3a2ef8b24f8340b8ea8d8125f2779f1f0b69d1b56b9"
+        }
+      ]
+    },
+    {
+      "id": "ibmPlexSans",
+      "family": "IBM Plex Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/ibm-plex-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "ibm-plex-sans-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        }
+      ]
+    },
+    {
+      "id": "workSans",
+      "family": "Work Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/work-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Work+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "work-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "72cd8f67849cc714f3364eeeb378df9a49f4aff00e6a3640fad36c9c93a9b197"
+        }
+      ]
+    },
+    {
+      "id": "dmSans",
+      "family": "DM Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/dm-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=DM+Sans:wght@100..1000&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "dm-sans-normal-100-1000.woff2",
+          "weight": "100 1000",
+          "style": "normal",
+          "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb"
+        }
+      ]
+    },
+    {
+      "id": "manrope",
+      "family": "Manrope",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/manrope-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "manrope-normal-200-800.woff2",
+          "weight": "200 800",
+          "style": "normal",
+          "sha256": "e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f"
+        }
+      ]
+    },
+    {
+      "id": "figtree",
+      "family": "Figtree",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/figtree-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "figtree-normal-300-900.woff2",
+          "weight": "300 900",
+          "style": "normal",
+          "sha256": "8330490a01c60c196eae00b823de8102275aaa5862e7b76a7af21b8745338928"
+        }
+      ]
+    },
+    {
+      "id": "publicSans",
+      "family": "Public Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/public-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Public+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "public-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "c1b6da516e0062e9c2f341b3a51dd2d621d946da72f06c6cfe05fd9d2dd8622d"
+        }
+      ]
+    },
+    {
+      "id": "firaCode",
+      "family": "Fira Code",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fira-code-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fira-code-normal-300-700.woff2",
+          "weight": "300 700",
+          "style": "normal",
+          "sha256": "d32d5b5a7c9720cf3812f7d1e3ebdb54116f8f656e7471a03a5a93bdd93c98b3"
+        }
+      ]
+    },
+    {
+      "id": "sourceCodePro",
+      "family": "Source Code Pro",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/source-code-pro-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "source-code-pro-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "2c935ccea0efa74f1d034628790a2aebfe2ccb6f5d60e8f5b224366066e10188"
+        }
+      ]
+    },
+    {
+      "id": "ibmPlexMono",
+      "family": "IBM Plex Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/ibm-plex-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "ibm-plex-mono-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "c36f509c0a8f9f85f29cb44bc8701d8a9e0b14c499e77a884f789ead7093a7ac"
+        },
+        {
+          "file": "ibm-plex-mono-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "a76f53ca6612e7b3828eec2311098675b7f9849ae4169a8bcef6302aec02a6c0"
+        },
+        {
+          "file": "ibm-plex-mono-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "ad4580d8cb4b5f627c2d18457656732f7f7b070f7837fbc380e08054157e6f6c"
+        },
+        {
+          "file": "ibm-plex-mono-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "9e1455e6e9c5866f607e464fffb7855486dcf575b7e69b83a3d234e587fce41b"
+        }
+      ]
+    },
+    {
+      "id": "robotoMono",
+      "family": "Roboto Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/roboto-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@100..700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "roboto-mono-normal-100-700.woff2",
+          "weight": "100 700",
+          "style": "normal",
+          "sha256": "2ed6ac9efae6d21f51b2946176a0eef79a4043d643f9ac976e66d7fc4d57803a"
+        }
+      ]
+    },
+    {
+      "id": "spaceMono",
+      "family": "Space Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/space-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "space-mono-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "e0c8e616bda27642f4c3cebaecff6525d901e73afc8a227cbbb0f2af4810f300"
+        },
+        {
+          "file": "space-mono-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "af7cf6d2b897ec453acdcdacde4e9bcc8410718af5914de865b453e09f10eebc"
+        }
+      ]
+    },
+    {
+      "id": "inconsolata",
+      "family": "Inconsolata",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/inconsolata-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "inconsolata-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "9f330ef4aa423d083046fe006a54f1be21a8e00d05b14ee43d50167b0496db46"
+        }
+      ]
+    }
+  ]
+}
