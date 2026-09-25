@@ -1,6 +1,8 @@
 import type { RuntimeModelOption } from "./runtime-models.ts";
 
 export const CLAUDE_OPUS_5_CAVE_ID = "anthropic/claude-opus-5";
+/** Launched by its explicit id, never through the `opus` alias. */
+export const CLAUDE_OPUS_5_5_CAVE_ID = "anthropic/claude-opus-5-5";
 export const CLAUDE_OPUS_5_NATIVE_MODEL = "anthropic/opus";
 export const CLAUDE_OPUS_5_MINIMUM_CODE_VERSION = "2.1.219";
 /** From this release Claude Code resolves the `opus` alias to Opus 5.5, so the
@@ -115,5 +117,36 @@ export function withClaudeOpus5(
   return [
     { id: CLAUDE_OPUS_5_CAVE_ID, label: "Claude Opus 5" },
     ...seed.filter((model) => model.id !== CLAUDE_OPUS_5_CAVE_ID),
+  ];
+}
+
+/** Whether this Claude Code/provider configuration can run Opus 5.5 by its
+ * explicit id. Claude Code learned the model in 2.1.280 (first-party, Bedrock
+ * and Vertex ids); Foundry deployments and custom gateways use names Cave
+ * cannot infer, so they are left out rather than advertised. */
+export function claudeOpus55Available(probe: ClaudeOpus5Probe): boolean {
+  const version = parseClaudeCodeVersion(probe.versionOutput);
+  if (!version || (compareVersion(version, CLAUDE_CODE_OPUS_ALIAS_OPUS_5_5_VERSION) ?? -1) < 0) {
+    return false;
+  }
+  const providerModes = [
+    enabled(probe.env.CLAUDE_CODE_USE_BEDROCK),
+    enabled(probe.env.CLAUDE_CODE_USE_VERTEX),
+    enabled(probe.env.CLAUDE_CODE_USE_FOUNDRY),
+  ];
+  if (providerModes.filter(Boolean).length > 1) return false;
+  return !enabled(probe.env.CLAUDE_CODE_USE_FOUNDRY) &&
+    !hasCustomAnthropicBaseUrl(probe.env.ANTHROPIC_BASE_URL);
+}
+
+/** Add Opus 5.5 ahead of the fallback seed when this install can run it. */
+export function withClaudeOpus55(
+  seed: readonly RuntimeModelOption[],
+  probe: ClaudeOpus5Probe,
+): RuntimeModelOption[] {
+  if (!claudeOpus55Available(probe)) return [...seed];
+  return [
+    { id: CLAUDE_OPUS_5_5_CAVE_ID, label: "Claude Opus 5.5" },
+    ...seed.filter((model) => model.id !== CLAUDE_OPUS_5_5_CAVE_ID),
   ];
 }

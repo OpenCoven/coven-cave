@@ -3,6 +3,8 @@ import {
   CLAUDE_OPUS_5_CAVE_ID,
   CLAUDE_OPUS_5_NATIVE_MODEL,
   claudeOpus5Available,
+  claudeOpus55Available,
+  withClaudeOpus55,
   parseClaudeCodeVersion,
   withClaudeOpus5,
 } from "./claude-models.ts";
@@ -156,3 +158,38 @@ assert.deepEqual(seed, [
 ]);
 
 console.log("claude-models.test.ts: ok");
+
+// Opus 5.5 is capability-gated: Claude Code learned claude-opus-5-5 in 2.1.280,
+// and it launches by that explicit id, never through the alias.
+const available55 = (version: string, env: Record<string, string | undefined> = {}) =>
+  claudeOpus55Available({ versionOutput: version, env });
+assert.equal(available55("2.1.279 (Claude Code)"), false, "releases before 2.1.280 do not know Opus 5.5");
+assert.equal(available55("2.1.280 (Claude Code)"), true, "2.1.280 introduced Opus 5.5");
+assert.equal(available55("2.2.0 (Claude Code)"), true, "later releases keep it");
+assert.equal(available55("invalid"), false, "an unverified version never advertises Opus 5.5");
+assert.equal(available55("2.1.281 (Claude Code)", { CLAUDE_CODE_USE_BEDROCK: "1" }), true, "Bedrock maps it");
+assert.equal(available55("2.1.281 (Claude Code)", { CLAUDE_CODE_USE_VERTEX: "1" }), true, "Vertex maps it");
+assert.equal(available55("2.1.281 (Claude Code)", { CLAUDE_CODE_USE_FOUNDRY: "1" }), false, "Foundry names are unknown");
+assert.equal(
+  available55("2.1.281 (Claude Code)", { ANTHROPIC_BASE_URL: "https://gateway.example.test" }),
+  false,
+  "a custom gateway may not serve it",
+);
+assert.equal(
+  available55("2.1.281 (Claude Code)", { CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1" }),
+  false,
+  "conflicting provider modes fail closed",
+);
+{
+  const seed = [{ id: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8" }];
+  assert.deepEqual(
+    withClaudeOpus55(seed, { versionOutput: "2.1.281 (Claude Code)", env: {} }).map((m) => m.id),
+    ["anthropic/claude-opus-5-5", "anthropic/claude-opus-4-8"],
+    "a supporting install prepends Opus 5.5",
+  );
+  assert.deepEqual(
+    withClaudeOpus55(seed, { versionOutput: "2.1.279 (Claude Code)", env: {} }).map((m) => m.id),
+    ["anthropic/claude-opus-4-8"],
+    "an older install leaves the seed alone",
+  );
+}

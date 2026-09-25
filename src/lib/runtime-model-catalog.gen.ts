@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: 1423b5baa5691928601d1b946a19dd555a7374a9b7d26d130cb516a3203938d1
+// sha256: 8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "1423b5baa5691928601d1b946a19dd555a7374a9b7d26d130cb516a3203938d1",
+  sha256: "8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -77,10 +77,6 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
       {
         "id": "anthropic/claude-opus-4-8",
         "label": "Claude Opus 4.8"
-      },
-      {
-        "id": "anthropic/claude-opus-5-5",
-        "label": "Claude Opus 5.5"
       },
       {
         "id": "anthropic/claude-fable-5-1",
