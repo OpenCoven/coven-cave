@@ -6,6 +6,7 @@ import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
+import { externalizeInlineImages } from "./server/externalize-inline-images.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
@@ -811,6 +812,9 @@ export async function withConversationLock<T>(
 
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
+  // Inline base64 images leave the transcript for the attachment store on the
+  // conversation's next write (#5587), so reopening it no longer ships them.
+  await externalizeInlineImages(conv.turns);
   conv.updatedAt = new Date().toISOString();
   // Atomic replace (cave-1v95): conversations are the highest-churn store —
   // a crash mid-write must leave the previous transcript intact, never a

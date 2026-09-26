@@ -675,6 +675,51 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   clearConversationListMetadataCache();
 }
 
+// Issue #5587: inline base64 images move to the attachment store on save.
+{
+  const { CONV_DIR } = await import("./cave-conversations.ts");
+  const { readChatImageAttachment } = await import("./server/chat-attachment-store.ts");
+  const { readFile: readRaw } = await import("node:fs/promises");
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  await saveConversation({
+    sessionId: "inline-images-5587",
+    familiarId: "charm",
+    harness: "codex",
+    createdAt: "2026-09-26T00:00:00.000Z",
+    updatedAt: "2026-09-26T00:00:00.000Z",
+    turns: [
+      { id: "u1", role: "user", text: "draw it", createdAt: "2026-09-26T00:00:00.000Z" },
+      {
+        id: "a1",
+        parentId: "u1",
+        role: "assistant",
+        text: "here",
+        createdAt: "2026-09-26T00:00:01.000Z",
+        attachments: [
+          { name: "pic.png", type: "image/png", mimeType: "image/png", size: 70, dataUrl: PNG },
+          { name: "broken.png", type: "image/png", dataUrl: "data:image/png;base64," },
+        ],
+      },
+    ],
+  });
+  const onDisk = JSON.parse(await readRaw(path.join(CONV_DIR, "inline-images-5587.json"), "utf8"));
+  const [moved, broken] = onDisk.turns[1].attachments;
+  assert.equal(moved.dataUrl, undefined, "the inline image left the transcript");
+  assert.ok(moved.storedId?.endsWith(".png"), "it is referenced by a stored id");
+  assert.equal(moved.name, "pic.png");
+  const stored = await readChatImageAttachment(moved.storedId);
+  assert.equal(stored.mimeType, "image/png");
+  assert.equal(broken.dataUrl, "data:image/png;base64,", "what the store refuses stays inline");
+  assert.equal(broken.storedId, undefined);
+
+  // A later save keeps the same stored id: each image moves once.
+  const reloaded = await loadConversation("inline-images-5587");
+  await saveConversation(reloaded);
+  const again = JSON.parse(await readRaw(path.join(CONV_DIR, "inline-images-5587.json"), "utf8"));
+  assert.equal(again.turns[1].attachments[0].storedId, moved.storedId);
+  assert.equal(await deleteConversation("inline-images-5587"), true);
+}
+
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
 // directly into CONV_DIR (still pointing at the temp HOME from above).
