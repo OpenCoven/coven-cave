@@ -148,7 +148,13 @@ export function subtractScopedVaultKeys(
 }
 
 // One warm-up at a time; concurrent callers join it (see warmHarnessSpawnPath).
-let inFlightWarmUp: Promise<void> | null = null;
+// Process-wide like the PATH cache in coven-bin: the server's startup warm-up
+// and a route request arriving mid-warm-up live in different bundle copies of
+// this module and must still join one discovery.
+const WARM_UP_STATE = Symbol.for("opencoven.cave.spawnPathWarmUp");
+const warmUpState: { inFlight: Promise<void> | null } = ((globalThis as {
+  [WARM_UP_STATE]?: { inFlight: Promise<void> | null };
+})[WARM_UP_STATE] ??= { inFlight: null });
 
 /**
  * Warm the shared spawn-PATH cache off the event loop (#5448).
@@ -173,7 +179,7 @@ export function warmHarnessSpawnPath(
   // in-flight discovery only for default options, and this passes an explicit
   // discovery env, so without this every simultaneous request (or client)
   // would start its own login shell.
-  inFlightWarmUp ??= (async () => {
+  warmUpState.inFlight ??= (async () => {
     try {
       const map = (dependencies.loadMap ?? (() => loadVaultMap(true)))();
       await (dependencies.spawnEnvAsync ?? covenSpawnEnvAsync)({
@@ -183,9 +189,9 @@ export function warmHarnessSpawnPath(
       // Best effort: the synchronous builders remain the source of truth.
     }
   })().finally(() => {
-    inFlightWarmUp = null;
+    warmUpState.inFlight = null;
   });
-  return inFlightWarmUp;
+  return warmUpState.inFlight;
 }
 
 /**

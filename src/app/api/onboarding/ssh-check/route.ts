@@ -1,3 +1,4 @@
+import { warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { stripAnsi } from "@/lib/ansi";
@@ -23,6 +24,9 @@ const SSH_TIMEOUT_MS = 15_000;
 const PROBE_MARKER = "__coven_cave_ssh_probe__";
 
 export async function POST(req: Request) {
+  // The PATH discovery behind covenSpawnEnv() is synchronous; join the
+  // server's warm-up (or run it) off the event loop first (#5448).
+  await warmHarnessSpawnPath();
   let body: { host?: unknown };
   try {
     body = await req.json();
