@@ -228,9 +228,13 @@ test("project browsing filters the rail without rebinding the open conversation 
   await expect(composer).toHaveValue("Draft only for B");
 
   await switchProject(page, "alpha");
-  const filteredTitles = page.locator(".chat-inner-rail .cnav__thread-title");
+  // The project filter lists only Alpha's thread; the still-open Beta thread
+  // stays reachable in its own "Outside this project" section (#5585).
+  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside this project"]');
+  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside this project"]) .cnav__thread-title');
   await expect(filteredTitles).toHaveCount(1);
   await expect(filteredTitles).toHaveAttribute("title", "Context thread A");
+  await expect(outside.locator(".cnav__thread-title")).toHaveAttribute("title", "Context thread B");
   await expect(composer).toHaveValue("Draft only for B");
   await expect(page.getByTestId("chat-main").locator('[data-turn-id="context-b-999"]')).toBeAttached();
   await page.screenshot({ path: test.info().outputPath("project-browse.png") });
