@@ -233,7 +233,9 @@ enum CavePerformanceFixture {
     static func applyStreamingFrame(_ frame: Int, to thread: ChatThread) {
         guard thread.id == identifier("chat", 0) else { return }
         let count = ((max(0, frame) % streamingFrameCount) + 1) * streamingToken.count
-        thread.updateText(identifier("message", 0), richMarkdown + "\n\n" + streamingResponse.prefix(count))
+        // Live replies append without touching `updatedAt`; `updateText`
+        // would re-sort and rebuild the whole Chats list on every frame.
+        thread.replaceStreamingText(identifier("message", 0), richMarkdown + "\n\n" + streamingResponse.prefix(count))
     }
 
     private static func identifier(_ kind: String, _ index: Int) -> String {

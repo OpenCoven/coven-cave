@@ -1548,6 +1548,13 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    /// Replace a message's text the way a live stream flush does: the
+    /// transcript changes but `updatedAt` does not, so the Chats list keeps
+    /// its cached projection instead of rebuilding every chat per frame.
+    func replaceStreamingText(_ messageId: String, _ text: String) {
+        mutate(messageId) { $0.text = text }
+    }
+
     /// Remove every message, keeping the thread (mirrors web `/clear`).
     func clearMessages() {
         messages.removeAll()

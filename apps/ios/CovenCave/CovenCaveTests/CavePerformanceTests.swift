@@ -490,9 +490,13 @@ final class CavePerformanceTests: XCTestCase {
         let fixture = CavePerformanceFixture.make()
         let thread = fixture.threads[0]
         let otherText = fixture.threads[1].messages[0].text
+        let listedAt = thread.updatedAt
         CavePerformanceFixture.applyStreamingFrame(0, to: thread)
         let initial = thread.messages[0].text
         CavePerformanceFixture.applyStreamingFrame(199, to: thread)
+        // Live flushes leave list order alone; a bumped date would rebuild
+        // the 1,000-chat home on every frame and inflate every warm span.
+        XCTAssertEqual(thread.updatedAt, listedAt)
         XCTAssertGreaterThan(thread.messages[0].text.count, initial.count)
         XCTAssertLessThan(thread.messages[0].text.count, 6_000)
         XCTAssertTrue(thread.messages[0].streaming)
