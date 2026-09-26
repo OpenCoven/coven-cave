@@ -745,7 +745,7 @@ export function SidebarChatsSection({
     // which every e2e run depends on — so dropping these class names would
     // break the suite far outside this component (cave-fh9so).
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
-        {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
+        {/* Title row: "Chats" plus the rail's collapse toggle, and nothing
             else. It replaces the old search row, which also carried the
             Organize menu. Search and the archived-visibility toggle went with
             it — the list below is already grouped by attention and recency,
@@ -761,7 +761,7 @@ export function SidebarChatsSection({
           title={collapseLabel}
           onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
         >
-          <span className="cnav__title">Sessions</span>
+          <span className="cnav__title">Chats</span>
           <span className="cnav__title-toggle" aria-hidden>
             <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
           </span>

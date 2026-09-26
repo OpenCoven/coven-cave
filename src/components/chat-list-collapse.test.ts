@@ -11,10 +11,10 @@ assert.match(primitives, /ph:caret-(right|down)/, "toggle header shows a caret")
 assert.match(src, /collapsedSections, setCollapsedSections\] = useState<Set<string>>\(\(\) => new Set\(\)\)/, "collapsedSections state defaults empty");
 assert.match(src, /function toggleSection|const toggleSection/, "has a toggleSection updater");
 assert.match(src, /label="Pinned"[\s\S]*?onToggle=\{\(\) => toggleSection\("pinned"\)\}/, "Pinned header is collapsible");
-// The flat "Sessions" header only renders when activity bands are NOT owning
+// The flat "Chats" header only renders when activity bands are NOT owning
 // the slot (cave-n3jg2); when they are, there is no header to collapse, so the
 // stale flag must not hide rows — asserted on visibleIds and rowCollapsed below.
-assert.match(src, /!bandsByIndex && idx === firstRestIdx[\s\S]*?label="Sessions"[\s\S]*?onToggle=\{\(\) => toggleSection\("sessions"\)\}/, "Sessions header is collapsible when it is the header in play");
+assert.match(src, /!bandsByIndex && idx === firstRestIdx[\s\S]*?label="Chats"[\s\S]*?onToggle=\{\(\) => toggleSection\("sessions"\)\}/, "Sessions header is collapsible when it is the header in play");
 assert.match(src, /rowCollapsed/, "rows compute a rowCollapsed flag");
 assert.match(src, /!rowCollapsed && \(/, "collapsed section's rows are not rendered");
 
