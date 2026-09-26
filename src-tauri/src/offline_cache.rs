@@ -894,6 +894,16 @@ fn write_entry(
     enforce_caps(context, Some(&path))
 }
 
+/// Remove one entry. An absent entry is not an error: the caller wanted it
+/// gone (e.g. a transcript whose chat was deleted, #5583).
+fn delete_entry(context: &OfflineCacheContext, scope: &str, key: &str) -> Result<(), String> {
+    match std::fs::remove_file(context.entry_path(scope, key)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("could not delete the offline cache entry".to_string()),
+    }
+}
+
 fn clear_entries(context: &OfflineCacheContext, scope: Option<&str>) -> Result<(), String> {
     let target = match scope {
         Some(scope) => context.scope_dir(scope),
@@ -1110,6 +1120,19 @@ pub(super) fn offline_cache_clear(
         validate_name(scope, "scope")?;
     }
     state.with_context(|context| clear_entries(context, scope.as_deref()))
+}
+
+#[tauri::command]
+pub(super) fn offline_cache_delete(
+    webview: Webview,
+    state: tauri::State<'_, Arc<OfflineCacheState>>,
+    scope: String,
+    key: String,
+) -> Result<(), String> {
+    crate::pty::ensure_trusted_main_caller(&webview, "Offline cache")?;
+    validate_name(&scope, "scope")?;
+    validate_name(&key, "key")?;
+    state.with_context(|context| delete_entry(context, &scope, &key))
 }
 
 #[tauri::command]
@@ -1662,6 +1685,20 @@ mod tests {
         assert!(read_entry(&context, "summary", "abc").entry.is_none());
         // Clearing an absent cache is not an error; the caller wanted it gone.
         assert!(clear_entries(&context, None).is_ok());
+        cleanup(&context);
+    }
+
+    #[test]
+    fn delete_removes_one_entry_and_tolerates_an_absent_one() {
+        let context = context("delete");
+        write_entry(&context, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
+        write_entry(&context, "conversation", "def", "{\"b\":2}", "r", 1).unwrap();
+
+        delete_entry(&context, "conversation", "abc").unwrap();
+        assert!(read_entry(&context, "conversation", "abc").entry.is_none());
+        assert!(read_entry(&context, "conversation", "def").entry.is_some());
+        // Deleting an absent entry is not an error; the caller wanted it gone.
+        assert!(delete_entry(&context, "conversation", "abc").is_ok());
         cleanup(&context);
     }
 

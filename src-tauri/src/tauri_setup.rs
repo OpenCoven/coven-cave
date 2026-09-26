@@ -314,6 +314,7 @@ pub fn run() {
             offline_cache::offline_cache_read,
             offline_cache::offline_cache_write,
             offline_cache::offline_cache_clear,
+            offline_cache::offline_cache_delete,
             offline_cache::offline_cache_status,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
