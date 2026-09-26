@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { computeSessionsList } from "@/lib/server/sessions-list";
 import { sessionsListCache } from "@/lib/server/sessions-list-cache";
+import { ifNoneMatchIncludes, serializeJsonWithEtag } from "@/lib/server/json-etag";
 
 export const dynamic = "force-dynamic";
 
@@ -37,5 +38,19 @@ export async function GET(req: Request) {
   const result = await sessionsListCache.get(cacheKey, () =>
     computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace, { classifyFamiliarWorkspace }),
   );
-  return NextResponse.json(result.payload, result.init);
+  // Conditional responses (#5571): the workspace polls every 4s and the list
+  // is usually unchanged, so a matching If-None-Match gets a bodiless 304
+  // instead of the full list (hundreds of KB on a real profile). The body and
+  // tag are computed once per cached result, not per poll. Failures are never
+  // tagged, so a client can't pin one.
+  const { body, etag } = serializeJsonWithEtag(result.payload);
+  const headers = new Headers(result.init?.headers);
+  headers.set("Content-Type", "application/json");
+  headers.set("Cache-Control", "no-store");
+  if (!result.payload.ok) return new NextResponse(body, { ...result.init, headers });
+  headers.set("ETag", etag);
+  if (ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
+    return new NextResponse(null, { status: 304, headers });
+  }
+  return new NextResponse(body, { ...result.init, headers });
 }
