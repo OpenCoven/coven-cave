@@ -465,6 +465,27 @@ try {
   assert.equal(seen[0].discoveryEnv.NOVA_ONLY, undefined);
   assert.equal(seen[0].discoveryEnv.UNRELATED, "keep");
 
+  // Concurrent callers join one warm-up rather than each starting a shell.
+  let discoveries = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const joined = [1, 2, 3].map(() =>
+    warmHarnessSpawnPath({
+      loadMap: () => map,
+      spawnEnvAsync: async () => {
+        discoveries += 1;
+        await gate;
+        return {};
+      },
+    }),
+  );
+  release();
+  await Promise.all(joined);
+  assert.equal(discoveries, 1, "three concurrent warm-ups share one discovery");
+  // Once settled, a later warm-up runs again (the PATH cache, not this, makes it cheap).
+  await warmHarnessSpawnPath({ loadMap: () => map, spawnEnvAsync: async () => { discoveries += 1; return {}; } });
+  assert.equal(discoveries, 2);
+
   // Best effort: a failing discovery or vault read never throws to the request.
   await warmHarnessSpawnPath({ loadMap: () => map, spawnEnvAsync: async () => { throw new Error("shell failed"); } });
   await warmHarnessSpawnPath({ loadMap: () => { throw new Error("vault unreadable"); }, spawnEnvAsync: async () => ({}) });
