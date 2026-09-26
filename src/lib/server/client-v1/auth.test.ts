@@ -1541,8 +1541,9 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
   // A remote request runs through the compression middleware (#5576), which
   // must still hand it to device access only after the stamps are applied.
   const remote = { headers: { [LOCAL_PEER_HEADER]: "caller-spoofed-loopback" } };
-  const handled = [];
-  let compressionSawStamped = null;
+  type StampedRequest = { headers: Record<string, string | undefined> };
+  const handled: StampedRequest[] = [];
+  let compressionSawStamped: string | null | undefined = null;
   applyServerStamp(
     remote,
     {},
@@ -1553,9 +1554,9 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
     () => false,
     () => null,
     () => undefined,
-    { handle: async (req) => { handled.push(req); return true; } },
+    { handle: async (req: StampedRequest) => { handled.push(req); return true; } },
     () => true,
-    (req, _res, next) => {
+    (req: StampedRequest, _res: unknown, next: () => void) => {
       compressionSawStamped = req.headers[LOCAL_PEER_HEADER];
       next();
     },
