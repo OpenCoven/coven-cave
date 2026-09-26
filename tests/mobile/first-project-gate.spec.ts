@@ -8,11 +8,14 @@ import { openFirstProjectGate } from "../fixtures/first-project-gate";
 /** The element at the target's own centre is the target (or inside it).
  *  The whole measurement is retried for a few seconds: on WebKit in CI the
  *  gate can still reflow (project loading states) or finish scrolling after a
- *  single read, so one snapshot flakes. A target that stays covered still
- *  fails, naming what covers it. `prepare` re-runs before each attempt (e.g.
- *  to scroll the target into view again). */
+ *  single read, so one snapshot flakes. It passes only after two consecutive
+ *  owning reads, so a transient pass mid-reflow can't hide a target that ends
+ *  up covered. A target that stays covered still fails, naming what covers it.
+ *  `prepare` re-runs before each attempt (e.g. to scroll the target into view
+ *  again). */
 async function expectOwnsCentre(target: Locator, label: string, prepare?: () => Promise<void>) {
   let last = "was never measured";
+  let owningReads = 0;
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (prepare) await prepare();
@@ -28,9 +31,15 @@ async function expectOwnsCentre(target: Locator, label: string, prepare?: () => 
         },
         { x: box.x + box.width / 2, y: box.y + box.height / 2 },
       );
-      if (hit.owns) return;
-      last = `at y ${Math.round(box.y)} is covered by ${hit.covering}`;
+      if (hit.owns) {
+        owningReads += 1;
+        if (owningReads >= 2) return;
+      } else {
+        owningReads = 0;
+        last = `at y ${Math.round(box.y)} is covered by ${hit.covering}`;
+      }
     } else {
+      owningReads = 0;
       last = "has no layout box";
     }
     await target.page().waitForTimeout(150);
