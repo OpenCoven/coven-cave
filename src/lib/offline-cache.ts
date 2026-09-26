@@ -338,6 +338,23 @@ export async function writeOfflineCache(
   }
 }
 
+/** Drop one entry, e.g. a deleted chat's transcript (#5583). Absent is fine. */
+export async function deleteOfflineCacheEntry(
+  scope: OfflineCacheScope,
+  key: string,
+  dependencies: OfflineCacheDependencies = {},
+): Promise<boolean> {
+  if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return false;
+  const invoke = await resolveInvoke(dependencies);
+  if (!invoke) return false;
+  try {
+    await invoke("offline_cache_delete", { scope, key });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Drop one scope, or the whole cache for this instance when scope is omitted. */
 export async function clearOfflineCache(
   scope?: OfflineCacheScope,

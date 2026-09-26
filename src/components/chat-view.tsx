@@ -80,7 +80,7 @@ import {
 } from "@/lib/conversation-cache";
 import { fetchToolOutput } from "@/lib/tool-output-fetch";
 import { sameConversationRevision } from "@/lib/conversation-revision";
-import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { deleteOfflineCacheEntry, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -543,7 +543,10 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
+// "revalidating": the desktop's encrypted offline copy painted first while the
+// network load is still in flight (#5583). The thread is live and sendable;
+// only a network failure turns it into the read-only "offline" state.
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline" | "revalidating";
 
 async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
   const params = new URLSearchParams({ sessionId });
@@ -4383,7 +4386,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         paintedConversation = payload;
         setLinkedContext(durableConversation.context ?? null);
         paintHistory(durableConversation);
-        setHistoryState("offline");
+        // The network is still in flight: a slow request is not an outage.
+        setHistoryState("revalidating");
       };
       const historyLoad = startChatTranscriptLoad<ConversationHistoryPayload>({
         loadNetwork: () => loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>,
@@ -4510,6 +4514,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [sessionId, historyRetryKey, flowBackedSession]);
+
+  // A 404 for a chat that is no longer in the list is a deleted (or moved)
+  // chat, not a transcript still to be written (#5583): say so, refresh the
+  // list so its row goes, and drop the transcript's encrypted offline copy.
+  // The open chat's `session` row is deliberately retained by the router after
+  // it leaves the list, so absence is read from the list itself.
+  const chatListed = Boolean(sessionId) && (sessions ?? []).some((entry) => entry.id === sessionId);
+  const chatGone = historyState === "missing" && Boolean(sessionId) && !chatListed && !flowBackedSession;
+  const goneChatHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Once per chat: onSessionsChanged need not be a stable identity, and a
+    // list refresh must not re-trigger this cleanup.
+    if (!chatGone || !sessionId || goneChatHandledRef.current === sessionId) return;
+    goneChatHandledRef.current = sessionId;
+    invalidateConversation(sessionId);
+    void deleteOfflineCacheEntry("conversation", sessionId);
+    onSessionsChanged?.();
+  }, [chatGone, sessionId, onSessionsChanged]);
 
   // Pin: while following, snap the scroller to the bottom INSTANTLY
   // (scrollTop assignment inside a rAF, coalescing multiple triggers per
@@ -7528,6 +7550,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ref={composerDockRef}
       className="cave-composer-dock"
     >
+      {historyState === "revalidating" && sessionId ? (
+        <div role="status" className="px-1 pb-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          Showing the saved copy · updating…
+        </div>
+      ) : null}
       {historyState === "offline" && sessionId ? (
         <div
           role="status"
@@ -8447,6 +8474,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
+              />
+            ) : historyState === "missing" && chatGone ? (
+              <ChatHistoryNotice
+                variant="empty"
+                title="This chat was deleted or moved"
+                body="It is no longer in your chat list, and Coven Cave has no saved transcript for it."
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (

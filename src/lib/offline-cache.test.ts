@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   OFFLINE_CACHE_MAX_ENTRY_BYTES,
   clearOfflineCache,
+  deleteOfflineCacheEntry,
   isOfflineCacheSupported,
   readOfflineCache,
   readOfflineCacheStatus,
@@ -306,6 +307,15 @@ test("a native failure is absorbed rather than surfaced", async () => {
   assert.deepEqual(warnings, ["[cave] offline cache write is unavailable"]);
 });
 
+test("deleting targets one entry and fails soft", async () => {
+  const { calls, dependencies } = recorder(null);
+  assert.equal(await deleteOfflineCacheEntry("conversation", "abc", dependencies), true);
+  assert.deepEqual(calls.map((call) => [call.command, call.args]), [["offline_cache_delete", { scope: "conversation", key: "abc" }]]);
+  assert.equal(await deleteOfflineCacheEntry("conversation", "bad\u0000key", dependencies), false, "invalid keys never reach the bridge");
+  const failing = { supported: () => true, invoke: () => Promise.reject(new Error("locked")) };
+  assert.equal(await deleteOfflineCacheEntry("conversation", "abc", failing), false);
+});
+
 test("clearing targets one scope or the whole instance", async () => {
   const { calls, dependencies } = recorder(null);
   await clearOfflineCache("conversation", dependencies);
@@ -338,13 +348,19 @@ test("conversation loading persists live history and falls back to a labelled re
     /readOfflineCache<ConversationHistoryPayload>\("conversation", sessionId\)/,
   );
   assert.match(chatView, /writeOfflineCache\(\s*"conversation",\s*sessionId,\s*json,/);
-  // The durable copy is painted through `paintDurable` now, so that the local
-  // system turns added while the load was in flight survive the repaint. What
-  // this pin protects is unchanged: the durable payload reaches
-  // applyConversationPayload and the surface is then labelled offline.
+  // The durable copy is painted through `paintDurable`, so that the local
+  // system turns added while the load was in flight survive the repaint. It is
+  // labelled "revalidating" while the network is still in flight (#5583) — a
+  // slow request is not an outage — and the surface turns read-only "offline"
+  // only once the network load has actually failed.
   assert.match(
     chatView,
-    /const paintDurable = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?durableConversation = payload;[\s\S]*?paintHistory\(durableConversation\);\s*setHistoryState\("offline"\);/,
+    /const paintDurable = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?durableConversation = payload;[\s\S]*?paintHistory\(durableConversation\);[\s\S]*?setHistoryState\("revalidating"\);/,
+  );
+  assert.match(
+    chatView,
+    /\(durableConversation \|\| cachedConversation\)\s*&& !\(error instanceof ConversationLoadError && error\.status === 404\)\s*\) \{\s*setHistoryState\("offline"\);/,
+    "a failed network load over a painted durable copy is what makes the chat read-only",
   );
   assert.match(
     chatView,
@@ -378,6 +394,7 @@ test("native cache commands require the exact trusted main origin", () => {
     "offline_cache_read",
     "offline_cache_write",
     "offline_cache_clear",
+    "offline_cache_delete",
     "offline_cache_status",
   ]) {
     assert.match(

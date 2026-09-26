@@ -266,3 +266,21 @@ test("chat-view paints cached payloads and shares revalidation with prefetch", (
   // sidebar, and split-pane deletes cannot drift apart.
   assert.match(workspace, /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\)/);
 });
+
+test("the transcript fetch is bounded and a timed-out load doesn't pin Retry (#5583)", async () => {
+  clearConversationCache();
+  let attempt = 0;
+  const calls = stubFetch((_url, init) => {
+    attempt += 1;
+    assert.ok(init?.signal instanceof AbortSignal, "every transcript request carries an abort signal");
+    if (attempt === 1) {
+      // A stalled route: reject the way the timeout signal would.
+      return Promise.reject(new DOMException("The operation timed out.", "TimeoutError"));
+    }
+    return Promise.resolve(new Response(JSON.stringify(payload("after retry")), { status: 200 }));
+  });
+  await assert.rejects(loadConversation("timeout-1"), (error) => error?.name === "TimeoutError");
+  const retried = await loadConversation("timeout-1");
+  assert.equal(retried.conversation.turns[0].text, "after retry", "Retry starts a fresh request");
+  assert.equal(calls.length, 2);
+});

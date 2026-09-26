@@ -113,6 +113,8 @@ export function clearConversationCache(): void {
   cancelHoverPrefetch();
 }
 
+export const CONVERSATION_FETCH_TIMEOUT_MS = 20_000;
+
 /** Fetches a conversation and shares an existing request for the same session. */
 export function loadConversation(
   sessionId: string,
@@ -133,8 +135,12 @@ export function loadConversation(
     const endSpan = startSpan(TRANSCRIPT_FETCH_SPAN);
     try {
       // Older, larger tool outputs load when their card opens (#5581).
+      // Bounded (#5583): a stalled route otherwise holds the skeleton forever,
+      // and Retry would re-join the same in-flight promise. The entry clears
+      // when this settles, so Retry after a timeout starts a fresh request.
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
         cache: "no-store",
+        signal: AbortSignal.timeout(CONVERSATION_FETCH_TIMEOUT_MS),
       });
       const json = (await res.json().catch(() => null)) as CachedConversationPayload & {
         error?: string;

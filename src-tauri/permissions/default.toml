@@ -31,5 +31,6 @@ permissions = [
   "allow-offline-cache-read",
   "allow-offline-cache-write",
   "allow-offline-cache-clear",
+  "allow-offline-cache-delete",
   "allow-offline-cache-status",
 ]
