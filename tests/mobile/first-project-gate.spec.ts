@@ -6,35 +6,36 @@ import { openFirstProjectGate } from "../fixtures/first-project-gate";
 // own height and a taller 390×844 frame alike.
 
 /** The element at the target's own centre is the target (or inside it).
- *  The box is read once it has stopped moving: a scroll or reflow in flight
- *  would otherwise hit-test stale coordinates. The hit test itself runs once,
- *  so a genuinely covered target fails straight away. */
-async function expectOwnsCentre(target: Locator, label: string) {
-  let previous = "";
-  await expect
-    .poll(
-      async () => {
-        const box = await target.boundingBox();
-        const current = box ? [box.x, box.y, box.width, box.height].map(Math.round).join(",") : "none";
-        const settled = current !== "none" && current === previous;
-        previous = current;
-        return settled;
-      },
-      { message: `${label} stops moving`, timeout: 10_000, intervals: [100] },
-    )
-    .toBe(true);
-  const box = (await target.boundingBox())!;
-  const hit = await target.evaluate(
-    (element, point) => {
-      const top = document.elementFromPoint(point.x, point.y);
-      return {
-        owns: !!top && (top === element || element.contains(top)),
-        covering: top ? `${top.tagName.toLowerCase()}.${String((top as HTMLElement).className).slice(0, 80)}` : "none",
-      };
-    },
-    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-  );
-  expect(hit.owns, `${label} at y ${Math.round(box.y)} is covered by ${hit.covering}`).toBe(true);
+ *  The whole measurement is retried for a few seconds: on WebKit in CI the
+ *  gate can still reflow (project loading states) or finish scrolling after a
+ *  single read, so one snapshot flakes. A target that stays covered still
+ *  fails, naming what covers it. `prepare` re-runs before each attempt (e.g.
+ *  to scroll the target into view again). */
+async function expectOwnsCentre(target: Locator, label: string, prepare?: () => Promise<void>) {
+  let last = "was never measured";
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (prepare) await prepare();
+    const box = await target.boundingBox();
+    if (box) {
+      const hit = await target.evaluate(
+        (element, point) => {
+          const top = document.elementFromPoint(point.x, point.y);
+          return {
+            owns: !!top && (top === element || element.contains(top)),
+            covering: top ? `${top.tagName.toLowerCase()}.${String((top as HTMLElement).className).slice(0, 80)}` : "none",
+          };
+        },
+        { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      );
+      if (hit.owns) return;
+      last = `at y ${Math.round(box.y)} is covered by ${hit.covering}`;
+    } else {
+      last = "has no layout box";
+    }
+    await target.page().waitForTimeout(150);
+  }
+  expect(false, `${label} ${last}`).toBe(true);
 }
 
 for (const height of [undefined, 844] as const) {
@@ -52,9 +53,11 @@ for (const height of [undefined, 844] as const) {
     await gate.getByLabel("Absolute root").fill("/tmp/demo");
     const create = gate.getByRole("button", { name: "Create" });
     // scrollIntoViewIfNeeded leaves a partly visible button where it is (half
-    // under the bottom tabs); centre it inside the scrolling gate instead.
-    await create.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    await expectOwnsCentre(create, "Create");
+    // under the bottom tabs); centre it inside the scrolling gate instead, and
+    // again on each attempt in case the gate was still growing.
+    await expectOwnsCentre(create, "Create", () =>
+      create.evaluate((element) => element.scrollIntoView({ block: "center" })),
+    );
     await expect(create).toBeEnabled();
   });
 }
