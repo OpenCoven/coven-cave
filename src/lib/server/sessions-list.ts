@@ -42,7 +42,7 @@
  */
 
 import fs from "node:fs";
-import { callDaemon } from "@/lib/coven-daemon";
+import { callDaemonConditional } from "@/lib/coven-daemon";
 import type { CaveState } from "@/lib/cave-config";
 import { loadFlowSessionState } from "@/lib/server/flow-store";
 import { scheduleFlowSessionReconciliation } from "@/lib/server/flow-session-reconcile";
@@ -314,7 +314,9 @@ export async function computeSessionsList(
   const withGitContext = async (rows: SessionRow[]): Promise<SessionRow[]> =>
     enrichGit ? enrichSessionsWithGitContext(rows) : rows;
   const [res, state, projects, familiarWorkspaceRoots] = await Promise.all([
-    callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
+    // Conditional (#5588): an unchanged 1.4 MB list isn't re-sent or re-parsed.
+    // The rows are shared with the cache and only ever read below.
+    callDaemonConditional<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadFlowSessionState(sweepArchives),
     loadProjects(),
     loadFamiliarWorkspaceRoots(collapseFamiliarWorkspace, classifyFamiliarWorkspace),
