@@ -69,12 +69,19 @@ struct ChatListSnapshot {
         for familiar in familiars {
             names[familiar.id] = familiar.displayName
         }
+        // Parse each session's activity once: both passes below need it, and a
+        // timestamp parse dominated the cost of rebuilding a large list (#5600).
+        let sessionActivity = sessions.map { session -> Date in
+            session.isGeneratedRun
+                ? .distantPast
+                : caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast
+        }
         var serverMetadata: [SessionIdentity: (title: String, activity: Date)] = [:]
-        for session in sessions where !session.isGeneratedRun {
+        for (index, session) in sessions.enumerated() where !session.isGeneratedRun {
             if let familiarId = session.familiarId {
                 serverMetadata[SessionIdentity(familiarId: familiarId, sessionId: session.id)] = (
                     session.title,
-                    caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast
+                    sessionActivity[index]
                 )
             }
         }
@@ -104,7 +111,7 @@ struct ChatListSnapshot {
                     .joined(separator: " ").lowercased()
             ))
         }
-        for session in sessions where !session.isGeneratedRun {
+        for (index, session) in sessions.enumerated() where !session.isGeneratedRun {
             if let familiarId = session.familiarId,
                represented.contains(SessionIdentity(familiarId: familiarId, sessionId: session.id)) {
                 continue
@@ -112,7 +119,7 @@ struct ChatListSnapshot {
             all.append(Entry(
                 id: "server:\(session.id)",
                 conversation: .server(session),
-                updatedAt: caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast,
+                updatedAt: sessionActivity[index],
                 pinned: session.pinned == true,
                 archived: session.archivedAt != nil,
                 familiarIds: session.familiarId.map { [$0] } ?? [],
