@@ -6,8 +6,11 @@
 // the shared slot is what a second, separately imported copy returns.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { delimiter } from "node:path";
 
 const SLOT = Symbol.for("opencoven.cave.spawnPathState");
+// A single directory, so the check holds on any platform's PATH delimiter.
+const SENTINEL = process.platform === "win32" ? "C:\\shared-sentinel\\bin" : "/opt/shared-sentinel/bin";
 const first = await import(`./coven-bin.ts?copy=first-${Date.now()}`);
 const second = await import(`./coven-bin.ts?copy=second-${Date.now()}`);
 const state = globalThis[SLOT];
@@ -15,16 +18,16 @@ assert.ok(state, "coven-bin publishes its PATH state on a process-wide slot");
 
 const saved = { ...state };
 try {
-  state.cachedPath = "/opt/shared-sentinel/bin";
+  state.cachedPath = SENTINEL;
   const path = second.covenSpawnEnv().PATH ?? second.covenSpawnEnv().Path ?? "";
   // spawnEnv puts Cave's managed toolchain dirs first; the sentinel can only
   // appear at all if this copy read the shared slot rather than discovering.
   assert.ok(
-    path.split(":").includes("/opt/shared-sentinel/bin"),
+    path.split(delimiter).includes(SENTINEL),
     `a second module copy reads the cache the first published (got ${path.slice(0, 120)})`,
   );
   const fromFirst = await first.covenSpawnEnvAsync();
-  assert.ok((fromFirst.PATH ?? fromFirst.Path ?? "").split(":").includes("/opt/shared-sentinel/bin"), "the async API reads the same slot");
+  assert.ok((fromFirst.PATH ?? fromFirst.Path ?? "").split(delimiter).includes(SENTINEL), "the async API reads the same slot");
 } finally {
   Object.assign(state, saved);
 }
