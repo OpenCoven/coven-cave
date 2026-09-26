@@ -407,13 +407,19 @@ export function Workspace() {
   } = useProjects();
   const selectedWorkspaceProject =
     registeredProjects.find((project) => project.id === selectedWorkspaceProjectId) ?? null;
-  const chatBrowseScope = useMemo<ChatBrowseScope>(() => ({
-    selection: selectedWorkspaceProjectId ?? "all",
-    ready: workspaceContextHydrated && (
+  const chatBrowseScope = useMemo<ChatBrowseScope>(() => {
+    const ready = workspaceContextHydrated && (
       selectedWorkspaceProjectId === null
       || (projectsLoadedSuccessfully && !projectsLoading && projectsError === null && selectedWorkspaceProject !== null)
-    ),
-  }), [selectedWorkspaceProjectId, workspaceContextHydrated, projectsLoadedSuccessfully, projectsLoading, projectsError, selectedWorkspaceProject]);
+    );
+    return {
+      selection: selectedWorkspaceProjectId ?? "all",
+      ready,
+      // Still arriving (hydration, the project fetch) rather than failed or
+      // pointing at a project that no longer exists (#5585).
+      loading: !ready && projectsError === null && (!workspaceContextHydrated || projectsLoading || !projectsLoadedSuccessfully),
+    };
+  }, [selectedWorkspaceProjectId, workspaceContextHydrated, projectsLoadedSuccessfully, projectsLoading, projectsError, selectedWorkspaceProject]);
   const {
     familiars: projectCrewRecords,
     loading: projectCrewLoading,

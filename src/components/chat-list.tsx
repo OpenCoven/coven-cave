@@ -1259,7 +1259,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
 
       {/* ── List ── */}
       <div className="chat-list-scroll min-h-0 flex-1 overflow-y-auto">
-        {!sessionsLoaded && !hasAny ? (
+        {(!sessionsLoaded || (browseScope && !browseScope.ready && browseScope.loading)) && !hasAny ? (
           <div aria-hidden className="space-y-px px-4 py-3">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="flex gap-3 px-0 py-3.5">
@@ -1283,6 +1283,19 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
               icon="ph:plugs"
               headline="Can't load chats right now"
               subtitle="Your chats are safe — the list didn't load. Retrying automatically; check the daemon banner if this persists."
+            />
+          </div>
+        ) : !hasAny && browseScope && (!browseScope.ready || browseScope.selection !== "all") ? (
+          /* Project-scoped and empty (#5585): an unavailable scope or an empty
+             project is not a first run, so it never reads "Ready for a new
+             thread". Loading is handled by the skeleton above. */
+          <div className="flex h-full flex-col justify-between px-4 py-4">
+            <EmptyState
+              compact
+              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon={browseScope.ready ? "ph:folder-open" : "ph:warning-circle"}
+              headline={browseScope.ready ? "No chats in this project" : "Project context is unavailable"}
+              subtitle={browseScope.ready ? "Start a chat here, or choose another project." : "Choose another project or retry."}
             />
           </div>
         ) : !hasAny ? (

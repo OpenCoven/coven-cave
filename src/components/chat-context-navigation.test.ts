@@ -8,7 +8,9 @@ const surface = read("./chat-surface.tsx");
 const router = read("./chat-router.tsx");
 const sidebar = read("./workspace-sidebar.tsx");
 assert.match(workspace, /selection: selectedWorkspaceProjectId \?\? "all"/);
-assert.match(workspace, /ready: workspaceContextHydrated &&/);
+assert.match(workspace, /const ready = workspaceContextHydrated &&/);
+assert.match(workspace, /loading: !ready && projectsError === null && \(!workspaceContextHydrated \|\| projectsLoading \|\| !projectsLoadedSuccessfully\)/,
+  "the workspace scope reports hydration and project loading apart from failure (#5585)");
 assert.match(workspace, /<ChatSurface[\s\S]*?browseScope=\{chatBrowseScope\}/);
 assert.match(workspace, /composeProjectRoot=\{selectedWorkspaceProject\?\.root \?\? null\}/);
 assert.match(surface, /<SidebarChatsSection[\s\S]*?sessions=\{browseSessions\}/);

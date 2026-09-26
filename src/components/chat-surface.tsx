@@ -39,7 +39,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
 import { CodeRailReopen } from "@/components/code-rail-reopen";
-import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
+import { effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useProjects } from "@/lib/use-projects";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 
@@ -177,17 +177,20 @@ export function ChatSurface({
   const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
     useProjects({ familiarId: activeFamiliarId });
   const projectOverrides = useProjectOverrides();
-  const effectiveBrowseScope = useMemo(() => browseScope ? ({
-    ...browseScope,
-    ready: browseScope.ready && (
-      browseScope.selection === "all"
-      || (projectsLoaded && !projectsLoading && projectsError === null)
-    ),
-  }) : undefined, [browseScope, projectsLoaded, projectsLoading, projectsError]);
+  const effectiveBrowseScope = useMemo(
+    () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
+    [browseScope, projectsLoaded, projectsLoading, projectsError],
+  );
   const browseSessions = useMemo(
     () => scopeChatBrowseSessions(sessions, projects, projectOverrides, effectiveBrowseScope),
     [sessions, projects, projectOverrides, effectiveBrowseScope],
   );
+  // The open chat, when the project filter hides it from the rail (#5585).
+  const outOfScopeActiveSession = useMemo(() => {
+    if (!railActiveSessionId || !effectiveBrowseScope?.ready) return null;
+    if (browseSessions.some((session) => session.id === railActiveSessionId)) return null;
+    return sessions.find((session) => session.id === railActiveSessionId) ?? null;
+  }, [railActiveSessionId, effectiveBrowseScope, browseSessions, sessions]);
 
   // Rail collapse. Open is the SSR/first-paint default and the stored
   // preference is applied after mount, so server and client markup match —
@@ -582,6 +585,7 @@ export function ChatSurface({
             sessionsError={sessionsError}
             sessionsDegraded={sessionsDegraded}
             browseScope={effectiveBrowseScope}
+            outOfScopeActiveSession={outOfScopeActiveSession}
             activeFamiliarId={activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
@@ -803,6 +807,8 @@ export function ChatSurface({
         sessions={browseSessions}
         sessionsError={sessionsError}
         sessionsDegraded={sessionsDegraded}
+        browseScope={effectiveBrowseScope}
+        outOfScopeActiveSession={outOfScopeActiveSession}
         activeFamiliarId={activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}

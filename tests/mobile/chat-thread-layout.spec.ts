@@ -102,10 +102,16 @@ async function openThread(page: Page) {
     { timeout: 25_000 },
   );
   // On phone the chat list is the landing view; open the thread as a user does.
-  await page.locator(".chat-surface").getByRole("button", { name: /Phone layout/ }).first().click();
-  await expect(page.getByText("The last line of the reply is what the phone must show first.")).toBeAttached({
-    timeout: 30_000,
-  });
+  // The row can render, then re-render when the sessions list settles, so a
+  // single early tap could land on a node React is replacing (#5585, the
+  // ~1-2% flake). Wait for the row, then retry tap-and-verify as one step.
+  const row = page.locator(".chat-surface").getByRole("button", { name: /Phone layout/ }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const lastLine = page.getByText("The last line of the reply is what the phone must show first.");
+  await expect(async () => {
+    if (!(await lastLine.count())) await row.click({ timeout: 5_000 });
+    await expect(lastLine).toBeAttached({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 async function box(locator: Locator) {
