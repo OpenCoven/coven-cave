@@ -182,7 +182,7 @@ test("per-outcome counts are used when totalTestCount is absent", () => {
 
 const declarations = (...names) => new Map(names.map((name) => [name, [`${name}.swift`]]));
 const entry = (overrides = {}) => ({
-  bead: "cave-vz17i",
+  issue: "#4946",
   reason: "repaired by #4958",
   expires: "2099-01-01",
   ...overrides,
@@ -291,8 +291,8 @@ test("an expired entry fails even while the test is still failing", () => {
   assert.ok(verdict.problems.some((problem) => /EXPIRED on 2026-01-01/.test(problem)));
 });
 
-test("an entry missing its bead, reason or expiry is refused", () => {
-  for (const field of ["bead", "reason", "expires"]) {
+test("an entry missing its issue, reason or expiry is refused", () => {
+  for (const field of ["issue", "reason", "expires"]) {
     const broken = entry();
     delete broken[field];
     const problems = validateQuarantine({

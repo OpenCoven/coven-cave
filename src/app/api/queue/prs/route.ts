@@ -5,11 +5,11 @@ import { caveToolSpawnEnv } from "@/lib/coven-bin";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import {
-  extractBeadIds,
+  extractIssueRefs,
   summarizePullRequest,
   type GitHubPullRequestInput,
-} from "@/lib/beads-pr-management";
-import type { MergedPrRef } from "@/lib/beads-work-queue";
+} from "@/lib/pr-management";
+import type { MergedPrRef } from "@/lib/work-queue";
 
 // Browser-facing half of the PR bridge (cave-hlv.4). The Familiar Work Queue
 // surface can't shell `gh`, so this route runs it server-side and hands the
@@ -27,7 +27,7 @@ const MAX_GH_BUFFER = 16 * 1024 * 1024;
 const OPEN_PR_FIELDS =
   "number,title,url,isDraft,headRefName,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup,updatedAt,body,labels";
 // Merged PRs only feed the post-merge-cleanup lane, which needs just identity
-// + bead links, so we request a lighter field set.
+// + issue links, so we request a lighter field set.
 const MERGED_PR_FIELDS = "number,title,url,headRefName,body,labels,mergedAt";
 const MERGED_PR_LIMIT = "30";
 
@@ -49,7 +49,7 @@ function toMergedRef(pr: GitHubPullRequestInput & { mergedAt?: string | null }):
     number: pr.number,
     title: pr.title,
     url: pr.url,
-    beadIds: extractBeadIds(pr),
+    issueIds: extractIssueRefs(pr),
     mergedAt: pr.mergedAt ?? null,
     headRefName: pr.headRefName ?? null,
   };

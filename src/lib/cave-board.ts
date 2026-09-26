@@ -14,7 +14,6 @@ import {
   type BoardAgenticScopedInverse,
   type BoardAgenticProposalState,
   type CardAsanaLink,
-  type CardBeadRef,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
@@ -68,7 +67,6 @@ export {
   type BoardAgenticProposalRecord,
   type BoardAgenticProposalState,
   type CardAsanaLink,
-  type CardBeadRef,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
@@ -236,22 +234,6 @@ function normalizeBoardDate(value: string | null | undefined): string | null {
   return date.toISOString().slice(0, 10) === trimmed ? trimmed : null;
 }
 
-/**
- * A link only counts when both halves are present and non-empty. Normalizing
- * here matters in both directions: a malformed value must not fake a link (which
- * would make a card undeletable for no reason), and must not be quietly dropped
- * either — a half-written ref is treated as no link, which is the safe reading
- * because deletion protection is then simply not claimed.
- */
-function normalizeBeadRef(value: unknown): CardBeadRef | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Partial<CardBeadRef>;
-  const id = typeof raw.id === "string" ? raw.id.trim() : "";
-  const projectId = typeof raw.projectId === "string" ? raw.projectId.trim() : "";
-  if (!id || !projectId) return null;
-  return { id, projectId };
-}
-
 function normalizeAgenticEnhance(value: unknown): BoardAgenticEnhanceState {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { proposals: [], audit: [] };
@@ -318,7 +300,6 @@ function backfillCard(c: Card | LegacyCard): Card {
     status: statusForLifecycle(lifecycle, c.status),
     cwd: normalizeCwd(c.cwd),
     projectId: c.projectId ?? null,
-    beadRef: normalizeBeadRef((c as Card).beadRef),
     modelOverride: normalizeModelOverride(c.modelOverride),
     modelOverrideHarness: normalizeModelOverrideHarness(c.modelOverrideHarness),
     links,
@@ -1683,7 +1664,7 @@ export async function transitionCard(
 
 /** A linked mirror is a durable reference target; routine cleanup must not take
  *  it. `linked` is refused rather than silently skipped so the caller can say so. */
-export type DeleteCardOutcome = "deleted" | "not-found" | "linked";
+export type DeleteCardOutcome = "deleted" | "not-found";
 
 function repairDeletedTaskReferences(
   card: Card,
@@ -1788,22 +1769,15 @@ function hasOnlySettledDependencies(card: Card): boolean {
 
 /**
  * Delete a card.
- *
- * A card carrying a `beadRef` is refused with `"linked"` unless the caller
- * passes `allowLinked` — the explicit stronger removal action. This guard is
- * server-side on purpose: client filtering improves the experience, but the
- * store is the retention boundary, and a Board mirror deleted by a stray client
- * takes a closed Bead's only durable pointer with it (cave-xddxs).
  */
 export async function deleteCard(
   id: string,
-  options: { allowLinked?: boolean; actor?: string } = {},
+  options: { actor?: string } = {},
 ): Promise<DeleteCardOutcome> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const card = board.cards.find((c) => c.id === id);
   if (!card) return "not-found";
-  if (card.beadRef && !options.allowLinked) return "linked";
   const now = new Date().toISOString();
   const actor = options.actor?.trim() || "human";
   const remaining = board.cards.filter((candidate) => candidate.id !== id);
@@ -1842,7 +1816,7 @@ export async function deleteCard(
  *
  * Undo used to re-create cleared cards through the normal create path, which
  * mints a fresh id and carries only the subset of fields that path accepts — so
- * every Bead or GitHub reference to the old id broke, and step state, asana
+ * every GitHub reference to the old id broke, and step state, asana
  * links, dependencies and lifecycle history were silently dropped. Restoring
  * writes the stored record back verbatim.
  *
@@ -1876,18 +1850,6 @@ export async function restoreCards(
     if (restored.length > 0) await saveBoard(board);
     return { restored, skipped };
   });
-}
-
-/**
- * The live card mirroring a Bead, by Bead id.
- *
- * Pure so a caller can resolve against any snapshot. This is what lets a closed
- * Bead's notes point at a card without appending supersession prose every time
- * the Board is tidied: the reference is structured, and the id no longer churns.
- */
-export function cardForBeadRef(cards: readonly Card[], beadId: string): Card | null {
-  if (!beadId) return null;
-  return cards.find((c) => c.beadRef?.id === beadId) ?? null;
 }
 
 export async function unlinkSessionFromCards(sessionId: string): Promise<number> {

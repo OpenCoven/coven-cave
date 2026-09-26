@@ -10,7 +10,7 @@ const home = await mkdtemp(path.join(tmpdir(), "cave-board-retention-"));
 process.env.COVEN_CAVE_HOME = home;
 const BOARD = path.join(home, "board.json");
 
-const { deleteCard, restoreCards, cardForBeadRef, loadBoard } = await import("./cave-board.ts");
+const { deleteCard, restoreCards, loadBoard } = await import("./cave-board.ts");
 
 const ISO = "2026-08-09T00:00:00.000Z";
 const card = (over: Record<string, unknown> = {}) => ({
@@ -36,50 +36,25 @@ const card = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const LINKED = card({
-  id: "c-linked",
-  title: "Linked mirror",
-  beadRef: { id: "cave-abc12", projectId: "proj-1" },
-});
-
 async function seed(cards: unknown[]) {
   await mkdir(path.dirname(BOARD), { recursive: true });
   await writeFile(BOARD, JSON.stringify({ version: 1, cards }), "utf8");
 }
 const ids = async () => (await loadBoard()).cards.map((c) => c.id).sort();
 
-// ── Retention: a linked mirror survives routine deletion ────────────────────
-await seed([card(), LINKED]);
-assert.equal(await deleteCard("c-linked"), "linked", "a linked card is refused, not deleted");
-assert.deepEqual(await ids(), ["c-linked", "c-plain"], "the refused card is still on the board");
-
-assert.equal(await deleteCard("c-plain"), "deleted", "an unlinked card deletes normally");
-assert.deepEqual(await ids(), ["c-linked"]);
-
-assert.equal(await deleteCard("c-missing"), "not-found", "a missing id is distinguishable from a refusal");
-
-// The explicit stronger action is the only way past the guard.
-assert.equal(
-  await deleteCard("c-linked", { allowLinked: true }),
-  "deleted",
-  "an explicit unlink-and-delete removes the linked card",
-);
+// ── Deletion ─────────────────────────────────────────────────────────────────
+await seed([card(), card({ id: "c-old-link", beadRef: { id: "cave-abc12", projectId: "proj-1" } })]);
+assert.equal(await deleteCard("c-plain"), "deleted");
+assert.equal(await deleteCard("c-missing"), "not-found", "a missing id is distinguishable from a deletion");
+// Boards saved before #5566 may still carry a beadRef; it no longer protects the card.
+assert.equal(await deleteCard("c-old-link"), "deleted", "a legacy beadRef does not block deletion");
 assert.deepEqual(await ids(), []);
-
-// ── A malformed ref is not a link ───────────────────────────────────────────
-// Both halves are required: a half-written ref must not make a card permanently
-// undeletable, which would be a worse failure than the one being fixed.
-for (const bad of [{ id: "cave-abc12" }, { projectId: "proj-1" }, { id: "", projectId: "p" }, "nope", null]) {
-  await seed([card({ id: "c-bad", beadRef: bad })]);
-  assert.equal(await deleteCard("c-bad"), "deleted", `beadRef ${JSON.stringify(bad)} is not a link`);
-}
 
 // ── Restore: same id, full fields ───────────────────────────────────────────
 const rich = card({
   id: "c-rich",
   title: "Rich card",
   notes: "kept",
-  beadRef: { id: "cave-zzz99", projectId: "proj-9" },
   asana: [{
     id: "asana-1",
     kind: "task",
@@ -95,7 +70,7 @@ const rich = card({
 });
 await seed([rich]);
 const stored = (await loadBoard()).cards[0];
-assert.equal(await deleteCard("c-rich", { allowLinked: true }), "deleted");
+assert.equal(await deleteCard("c-rich"), "deleted");
 assert.deepEqual(await ids(), [], "precondition: the card is gone");
 
 const result = await restoreCards([stored]);
@@ -105,7 +80,6 @@ assert.deepEqual(result.skipped, []);
 const back = (await loadBoard()).cards[0];
 assert.equal(back.id, "c-rich", "the ORIGINAL id is restored — the whole point");
 assert.equal(back.createdAt, "2026-01-01T00:00:00.000Z", "createdAt is not reset to now");
-assert.deepEqual(back.beadRef, { id: "cave-zzz99", projectId: "proj-9" }, "the Bead link survives");
 assert.equal(back.asana.length, 1, "Asana links survive (the create path drops them entirely)");
 assert.deepEqual(back.labels, ["alpha", "beta"]);
 assert.equal(back.retryCount, 2);
@@ -151,12 +125,6 @@ const second = await restoreCards([impostor]);
 assert.deepEqual(second.restored, [], "a live id is not restored over");
 assert.deepEqual(second.skipped, ["c-rich"], "and is reported as skipped");
 assert.equal((await loadBoard()).cards[0].title, "Rich card", "the live card is untouched");
-
-// ── Bead → card resolution needs no prose ───────────────────────────────────
-const cards = (await loadBoard()).cards;
-assert.equal(cardForBeadRef(cards, "cave-zzz99")?.id, "c-rich", "a closed Bead resolves to its live card");
-assert.equal(cardForBeadRef(cards, "cave-nope"), null);
-assert.equal(cardForBeadRef(cards, ""), null, "an empty id never matches a card");
 
 // ── The board file is still well-formed after all of it ─────────────────────
 const raw = JSON.parse(await readFile(BOARD, "utf8"));

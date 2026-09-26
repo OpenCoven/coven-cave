@@ -9000,18 +9000,6 @@ var PREREQUISITES = [
     manualRecovery: "Install Git through the documented platform flow."
   },
   {
-    id: "beads",
-    label: "Beads CLI",
-    tier: "feature",
-    capabilities: ["queue"],
-    platforms: ["win32", "darwin", "linux"],
-    probe: "command",
-    install: { kind: "manual", manualRecovery: "Install Beads for the selected Queue project." },
-    requiresPrivilege: false,
-    restart: "none",
-    manualRecovery: "Install Beads for the selected Queue project."
-  },
-  {
     id: "ripgrep",
     label: "ripgrep",
     tier: "feature",
@@ -9027,13 +9015,13 @@ var PREREQUISITES = [
     id: "github-cli",
     label: "GitHub CLI",
     tier: "feature",
-    capabilities: ["github"],
+    capabilities: ["github", "queue"],
     platforms: ["win32", "darwin", "linux"],
     probe: "command",
-    install: { kind: "manual", manualRecovery: "Install GitHub CLI and sign in when GitHub operations are enabled." },
+    install: { kind: "manual", manualRecovery: "Install GitHub CLI and sign in when GitHub operations or the Queue are enabled." },
     requiresPrivilege: false,
     restart: "none",
-    manualRecovery: "Install GitHub CLI and sign in when GitHub operations are enabled."
+    manualRecovery: "Install GitHub CLI and sign in when GitHub operations or the Queue are enabled."
   },
   {
     id: "openssh",

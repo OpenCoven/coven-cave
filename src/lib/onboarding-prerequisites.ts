@@ -32,7 +32,6 @@ export type PrerequisiteId =
   | "runtime-copilot"
   | "runtime-openclaw"
   | "git"
-  | "beads"
   | "ripgrep"
   | "github-cli"
   | "openssh"
@@ -270,13 +269,10 @@ export const PREREQUISITES: readonly PrerequisiteDefinition[] = [
     id: "git", label: "Git", tier: "feature", capabilities: ["queue"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install Git through the documented platform flow." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install Git through the documented platform flow.",
   },
   {
-    id: "beads", label: "Beads CLI", tier: "feature", capabilities: ["queue"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install Beads for the selected Queue project." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install Beads for the selected Queue project.",
-  },
-  {
     id: "ripgrep", label: "ripgrep", tier: "feature", capabilities: ["project-search"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install ripgrep with the documented platform package." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install ripgrep with the documented platform package.",
   },
   {
-    id: "github-cli", label: "GitHub CLI", tier: "feature", capabilities: ["github"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install GitHub CLI and sign in when GitHub operations are enabled." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install GitHub CLI and sign in when GitHub operations are enabled.",
+    id: "github-cli", label: "GitHub CLI", tier: "feature", capabilities: ["github", "queue"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install GitHub CLI and sign in when GitHub operations or the Queue are enabled." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install GitHub CLI and sign in when GitHub operations or the Queue are enabled.",
   },
   {
     id: "openssh", label: "OpenSSH client", tier: "feature", capabilities: ["remote-familiar"], platforms: ["win32", "darwin", "linux"], probe: "command", install: { kind: "manual", manualRecovery: "Install or enable the OpenSSH client, then configure key-based access." }, requiresPrivilege: false, restart: "none", manualRecovery: "Install or enable the OpenSSH client, then configure key-based access.",

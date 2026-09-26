@@ -47,7 +47,7 @@ assert.match(
 // These two assertions used to pin the opposite — "undo re-creates cards via
 // POST /api/board" and "undo maps steps to {text}[] for POST". That was the
 // defect written down as a contract: re-creating minted a new card id (breaking
-// every Bead/GitHub reference to a completed mirror) and the {text}-only step
+// every GitHub reference to a completed mirror) and the {text}-only step
 // mapping is precisely how step state was lost. cave-xddxs replaced it.
 const undoFn = source.match(/const handleUndoClear = async[\s\S]*?\n {2}\};/)?.[0] ?? "";
 assert.match(

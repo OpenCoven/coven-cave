@@ -409,10 +409,10 @@ async function mockWorkScheduler(page: Page) {
       },
     }),
   );
-  await page.route("**/api/beads?mode=ready**", (route) =>
+  await page.route("**/api/queue/issues?mode=ready**", (route) =>
     route.fulfill({ json: { ok: true, data: [] } }),
   );
-  await page.route("**/api/beads?mode=blocked**", (route) =>
+  await page.route("**/api/queue/issues?mode=blocked**", (route) =>
     route.fulfill({ json: { ok: true, data: [], blockers: [] } }),
   );
 }

@@ -28,12 +28,12 @@ test("the Queue project comes from the Queue's own selection, not the chat's", (
   );
   assert.match(
     hook,
-    /\/api\/beads\?mode=ready&projectRoot=\$\{encodeURIComponent\(project\.root\)\}/,
-    "ready beads are read for that project root",
+    /\/api\/queue\/issues\?mode=ready&projectRoot=\$\{encodeURIComponent\(project\.root\)\}/,
+    "ready issues are read for that project root",
   );
   assert.match(
     hook,
-    /if \(!project\?\.root\) \{[\s\S]{0,120}setBeads\(\[\]\)/,
+    /if \(!project\?\.root\) \{[\s\S]{0,120}setIssues\(\[\]\)/,
     "no selected project resolves to an empty snapshot, not an error",
   );
 });
@@ -41,7 +41,7 @@ test("the Queue project comes from the Queue's own selection, not the chat's", (
 test("a failing queue adapter degrades to absence, not to a broken group", () => {
   assert.match(
     hook,
-    /\} catch \{[\s\S]{0,400}setBeads\(\[\]\);/,
+    /\} catch \{[\s\S]{0,400}setIssues\(\[\]\);/,
     "a brand-new chat can't act on a queue failure — swallow to empty",
   );
 });
@@ -101,8 +101,8 @@ test("starting a follow-up opens the work in place", () => {
   // composer, so it fills that instead of navigating away.
   assert.match(
     dashboard,
-    /new CustomEvent\("cave:agents-new-chat", \{[\s\S]{0,200}initialPrompt: `Pick up \$\{beadId\}: \$\{title\}`/,
-    "the dashboard briefs a new chat with the bead",
+    /new CustomEvent\("cave:agents-new-chat", \{[\s\S]{0,200}initialPrompt: `Pick up \$\{issueId\}: \$\{title\}`/,
+    "the dashboard briefs a new chat with the issue",
   );
   assert.match(
     emptyState,

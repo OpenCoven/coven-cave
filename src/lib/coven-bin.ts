@@ -1054,7 +1054,7 @@ export function covenWrapperSpawnEnv(
 
 /**
  * Augmented, scrubbed environment for user-selected project tooling (Git,
- * Beads, GitHub CLI). Preserve the actual launch/login PATH before Cave's
+ * GitHub CLI). Preserve the actual launch/login PATH before Cave's
  * fallback directories so Finder/Spotlight launches behave like the user's
  * shell and a deliberately selected tool is never shadowed by Cave's own
  * binary-discovery priority.

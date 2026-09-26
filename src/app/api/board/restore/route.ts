@@ -5,8 +5,8 @@ import { restoreCards, type Card } from "@/lib/cave-board";
  * Put whole cards back under their original ids.
  *
  * Undo previously re-created cleared cards through `POST /api/board`, which
- * mints a fresh id and accepts only a subset of fields — so every Bead and
- * GitHub reference to the old id broke, and step state, Asana links,
+ * mints a fresh id and accepts only a subset of fields — so every GitHub
+ * reference to the old id broke, and step state, Asana links,
  * dependencies and lifecycle history were dropped on the floor (cave-xddxs).
  *
  * Restore is additive by construction: an id that is currently live is reported

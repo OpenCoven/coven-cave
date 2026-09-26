@@ -10,7 +10,7 @@
 Make GitHub a first-class power layer inside the chat workspace: issues, PRs,
 checks, reviews, commits, and Actions readable **and** actionable inline from
 the conversation; skill invocations visible in-thread; work stage consistent
-across the chat UI, GitHub, and Beads. The unified chat+code workspace
+across the chat UI and GitHub. The unified chat+code workspace
 (2026-07-03 design) already solved the chat↔coding seam — this design adds the
 GitHub layer on top of it.
 
@@ -195,7 +195,9 @@ see `gh-review-draft.ts` and its tests.
 > failing-checks rail badge were retired when the dedicated **Code surface**
 > took ownership of stage/PR context (per-session PR panel). `stage-model.ts`
 > lives on as the shared model behind the Code surface's PR panel and the
-> Beads work queue. The sections below are kept as historical design record.
+> Queue, which reads GitHub Issues since #5566 (Beads was removed). The
+> sections below are kept as historical design record and describe the Beads
+> era: "bead" there is now a GitHub issue.
 
 **`src/lib/stage-model.ts` (new, extracted):** the bead↔PR↔session join and
 lane resolution currently inside `src/lib/beads-work-queue.ts` (lanes:
