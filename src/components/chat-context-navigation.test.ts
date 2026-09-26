@@ -34,8 +34,8 @@ const paletteSwitch = workspace.slice(workspace.indexOf('if (intent.kind === "sw
 assert.match(paletteSwitch, /selectFamiliarScope\(intent\.familiarId\)/);
 assert.doesNotMatch(paletteSwitch, /showFamiliarChatList|goToList/);
 assert.match(workspace, /!opts\?\.multi && !opts\?\.preserveSurface[\s\S]*?routerRef\.current\?\.newChat\(undefined, undefined, id\)/);
-assert.match(surface, /onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onFamiliarScopeChange\(id\)/,
-  "header and command palette use the same explicit-switch path");
+assert.doesNotMatch(surface, /onSelectFamiliar=/,
+  "Chat has no familiar picker of its own; the top-of-page switcher and the command palette share selectFamiliarScope (#5565)");
 assert.match(surface, /const onFamiliarSelect =[\s\S]*?routerRef\.current\?\.newChat\(undefined, undefined, d\.familiarId\)/,
   "inline familiar Switch also opens a blank compose, not the list");
 assert.match(sidebar, /if \(selectMode\) return;\s*cancelHoverPrefetch\(\);\s*void prefetchConversation\(sessionId\)/);
