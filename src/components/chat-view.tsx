@@ -10204,6 +10204,9 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // the native <details> disclosure state for AT that doesn't map summary
   // semantics.
   const [open, setOpen] = useState(false);
+  // The per-tool rows mount on the group's first open (#5572): a collapsed
+  // group otherwise builds every tool card of the turn up front.
+  const [runsMounted, setRunsMounted] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
   // The turn's own compact activity summary — count + distinct categories,
@@ -10248,7 +10251,14 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
       <details
         className="cave-tool-group cave-work-line mt-3"
         data-default-collapsed="true"
-        onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+        onToggle={(e) => {
+          // Nested tool cards' own toggle events bubble here; only this
+          // group's disclosure counts.
+          if (e.target !== e.currentTarget) return;
+          const next = e.currentTarget.open;
+          setOpen(next);
+          if (next) setRunsMounted(true);
+        }}
       >
         <summary
           className="cave-tool-summary focus-ring"
@@ -10262,9 +10272,11 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
         </summary>
-        <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
-          <ToolRuns tools={tools} />
-        </div>
+        {runsMounted ? (
+          <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+            <ToolRuns tools={tools} />
+          </div>
+        ) : null}
       </details>
     </>
   );
@@ -10507,6 +10519,15 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     );
   };
   const visual = toolVisual(tool.name);
+  // A card's body (highlighted input, output and diff) mounts on first open,
+  // not with the transcript (#5572): every SyntaxBlock detects a language and
+  // highlights on mount, and a long thread holds thousands of collapsed tool
+  // cards. The native toggle event also fires for programmatic opens, and the
+  // body stays mounted once opened so a re-open doesn't highlight again.
+  const [bodyMounted, setBodyMounted] = useState(false);
+  const mountBodyOnOpen = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (event.currentTarget.open) setBodyMounted(true);
+  };
   // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
   // NotebookEdit, i.e. `isEditTool`) stays visible in the transcript as a
   // compact details summary, and expands to the structured code diff. Review
@@ -10516,7 +10537,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     const displayPath = targetPath ?? (argSummary || tool.name);
     const base = displayPath.split("/").pop() || displayPath;
     return (
-      <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
+      <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
         <summary className="cave-edit-card__summary focus-ring">
           <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
           <span className="cave-edit-card__body">
@@ -10539,21 +10560,25 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           <DurationText durationMs={tool.durationMs} />
           <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
         </summary>
-        <div className="cave-tool-io mt-2">
-          <div className="cave-tool-io-label">Code changes</div>
-          <SyntaxBlock text={inputDiff} lang="diff" />
-        </div>
-        {tool.output ? (
-          <div className="cave-tool-io mt-2">
-            <div className="cave-tool-io-label">Output</div>
-            <SyntaxBlock text={prettyToolOutput(tool.output)} />
-          </div>
+        {bodyMounted ? (
+          <>
+            <div className="cave-tool-io mt-2">
+              <div className="cave-tool-io-label">Code changes</div>
+              <SyntaxBlock text={inputDiff} lang="diff" />
+            </div>
+            {tool.output ? (
+              <div className="cave-tool-io mt-2">
+                <div className="cave-tool-io-label">Output</div>
+                <SyntaxBlock text={prettyToolOutput(tool.output)} />
+              </div>
+            ) : null}
+          </>
         ) : null}
       </details>
     );
   }
   return (
-    <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
+    <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
@@ -10584,7 +10609,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         </span>
         <DurationText durationMs={tool.durationMs} />
       </summary>
-      {tool.input ? (
+      {bodyMounted && tool.input ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Input</div>
           {inputDiff ? (
@@ -10594,7 +10619,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           )}
         </div>
       ) : null}
-      {tool.output ? (
+      {bodyMounted && tool.output ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Output</div>
           <SyntaxBlock text={prettyToolOutput(tool.output)} />
