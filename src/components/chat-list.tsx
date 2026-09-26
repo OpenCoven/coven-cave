@@ -210,6 +210,8 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+const NO_ARCHIVED_ROWS: SessionRow[] = [];
+
 export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, sessionsDegraded = false, compact = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
@@ -257,7 +259,10 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   // opts into them with its own includeArchived fetch (the workspace's list
   // poll stays archive-free).
   const [showArchived, setShowArchived] = useState(false);
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  // Tagged with the familiar they were fetched for (#5594), so a switch never
+  // shows the previous familiar's archive while the new one loads.
+  const [archived, setArchived] = useState<{ familiarId: string | null; rows: SessionRow[] }>({ familiarId: null, rows: [] });
+  const archivedRows = archived.familiarId === (familiar?.id ?? null) ? archived.rows : NO_ARCHIVED_ROWS;
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
   // Bulk-select: pick several chats and delete/archive them in one pass. Resets
@@ -450,7 +455,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   // bumps archiveNonce so the opt-in list refetches after each change.
   useEffect(() => {
     if (!showArchived) {
-      setArchivedRows([]);
+      setArchived({ familiarId: null, rows: [] });
       return;
     }
     let cancelled = false;
@@ -459,10 +464,10 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
         // Scope archived rows to the active familiar's projects, same as the
         // live list — keeps forbidden-project sessions out of the archive view.
         const scope = familiar?.id ? `&familiarId=${encodeURIComponent(familiar.id)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
+        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const json = await res.json().catch(() => ({ ok: false }));
         if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+        setArchived({ familiarId: familiar?.id ?? null, rows: (json.sessions as SessionRow[]).filter((s) => s.archived_at) });
       } catch {
         // keep whatever archived rows we already have
       }
