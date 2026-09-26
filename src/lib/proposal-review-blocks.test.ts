@@ -146,3 +146,28 @@ test("strip: the streaming projection drops complete markers and hides a partial
   assert.equal(stripIncompleteProposalReviewMarker("a <coven:preview url=\"http://127.0.0.1/x"), "a <coven:preview url=\"http://127.0.0.1/x", "another marker's tail is not ours");
   assert.equal(stripIncompleteProposalReviewMarker(fenced), fenced);
 });
+
+test("strip: an opener prefix shorter than the full tag is hidden from streaming prose too", async () => {
+  const { stripProposalReviewMarkers } = await import("./proposal-review-blocks.ts");
+  for (const fragment of ["<coven:pro", "<coven:proposal", "<coven:proposal-rev"]) {
+    assert.equal(stripProposalReviewMarkers(`Visible before ${fragment}`), "Visible before ", fragment);
+  }
+  // Other markers that share the `<coven:p` prefix are not this helper's to hide.
+  assert.equal(stripProposalReviewMarkers("See <coven:preview"), "See <coven:preview");
+  // A prefix inside code is example text.
+  assert.equal(stripProposalReviewMarkers("Type `<coven:proposal`"), "Type `<coven:proposal`");
+});
+
+test("strip: a cut-off proposal fragment is hidden even when a complete sibling marker follows it", async () => {
+  const { stripIncompleteProposalReviewMarker, stripProposalReviewMarkers } = await import("./proposal-review-blocks.ts");
+  const preview = '<coven:preview url="http://127.0.0.1:3000/x" />';
+  for (const fragment of ["<coven:proposal", '<coven:proposal-review tool="x']) {
+    assert.equal(stripIncompleteProposalReviewMarker(`a ${fragment}${preview} b`), `a ${preview} b`, fragment);
+  }
+  // Visible prose and card text agree once the preview marker is gone.
+  assert.equal(stripProposalReviewMarkers(`a <coven:proposal${preview}`.replace(preview, "")), "a ");
+  // A complete proposal marker before a preview stays for the card parser.
+  assert.equal(stripIncompleteProposalReviewMarker(`${MARKER}${preview}`), `${MARKER}${preview}`);
+  // Prose that merely mentions a prefix mid-sentence is not a fragment.
+  assert.equal(stripIncompleteProposalReviewMarker(`use <coven:pro tags ${preview}`), `use <coven:pro tags ${preview}`);
+});

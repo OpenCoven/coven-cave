@@ -182,7 +182,9 @@ export function BoardTokenSearch({ value, onChange, familiars, cards, inputRef }
           onChange={onInput}
           onKeyDown={onKeyDown}
           onFocus={() => setOpen(true)}
-          placeholder={chips.length ? "Add filter…" : "Search tasks or type is:open cwd:coven-cave url:github"}
+          // Syntax (is:open, cwd:, url:) is taught by the focus suggestions, not the
+          // placeholder, which the phone clipped mid-token (#5527).
+          placeholder={chips.length ? "Add filter…" : "Search tasks…"}
         />
         <kbd aria-hidden className="board-token-kbd">/</kbd>
       </div>

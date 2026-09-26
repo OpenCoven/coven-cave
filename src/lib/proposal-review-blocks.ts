@@ -187,30 +187,38 @@ export function sliceProposalReviewBlocks(text: string): ProposalReviewPiece[] {
  */
 export function stripProposalReviewMarkers(text: string): string {
   if (!text || !text.includes("<coven:p")) return text;
-  if (!text.includes(OPENER)) return text;
-  const markers = scanMarkers(text);
-  if (markers.length === 0) return text;
+  // A tail shorter than the full opener (`<coven:proposal`) has no complete
+  // marker to scan yet, but it is still an unterminated marker and must not
+  // flash as prose while the stream writes the rest of it.
+  const markers = text.includes(OPENER) ? scanMarkers(text) : [];
   let out = "";
   let cursor = 0;
   for (const marker of markers) {
     out += text.slice(cursor, marker.start);
     cursor = marker.end;
   }
-  return out + text.slice(cursor);
+  return stripIncompleteProposalReviewMarker(out + text.slice(cursor));
 }
 
 /** Remove only an unterminated marker tail, preserving complete markers for
- *  callers that still turn them into cards (mirrors stripIncompletePreviewMarker). */
+ *  callers that still turn them into cards (mirrors stripIncompletePreviewMarker).
+ *  The tail is the last proposal-shaped `<coven:p…` fragment, not merely the
+ *  last `<coven:p…`: a complete sibling `<coven:preview …/>` after it must not
+ *  shield it, or card text would show what visible prose already hides. */
 export function stripIncompleteProposalReviewMarker(text: string): string {
   if (!text || !text.includes("<coven:p")) return text;
-  const tail = text.lastIndexOf("<coven:p");
-  if (tail === -1 || unquotedGtAfter(text, tail) !== -1) return text;
-  const fragment = text.slice(tail);
-  const afterName = fragment.slice(OPENER.length, OPENER.length + 1);
-  if (!OPENER.startsWith(fragment.slice(0, OPENER.length))) return text;
-  if (afterName && !/[\s/>]/.test(afterName)) return text;
-  if (markdownCodeRanges(text).some(([from, to]) => tail >= from && tail < to)) return text;
-  return text.slice(0, tail);
+  for (let tail = text.lastIndexOf("<coven:p"); tail !== -1; tail = text.lastIndexOf("<coven:p", tail - 1)) {
+    const next = text.indexOf("<coven:", tail + 1);
+    const nameEnd = tail + text.slice(tail + 1).search(/[\s/><]|$/) + 1;
+    const name = text.slice(tail, nameEnd);
+    if (!OPENER.startsWith(name)) continue;
+    // A strict prefix is a fragment only where the stream (or the next marker) cut it off.
+    if (name !== OPENER && nameEnd !== text.length && nameEnd !== next) continue;
+    if (unquotedGtAfter(text, tail) !== -1) return text;
+    if (markdownCodeRanges(text).some(([from, to]) => tail >= from && tail < to)) return text;
+    return text.slice(0, tail) + (next === -1 ? "" : text.slice(next));
+  }
+  return text;
 }
 
 /** Stable identity for one review, for React keys and in-place updates. */

@@ -240,7 +240,6 @@ export const ICON_NAMES = [
   "ph:detective",
   "ph:paper-plane-tilt",
   "ph:tree-structure",
-  "ph:binoculars",
   "ph:feather",
   "ph:compass",
   "ph:trend-up",

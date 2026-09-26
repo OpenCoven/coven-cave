@@ -1,0 +1,2071 @@
+{
+  "source": "Google Fonts via next/font/google helpers",
+  "primarySubset": "latin",
+  "families": [
+    {
+      "id": "ebGaramond",
+      "family": "EB Garamond",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/eb-garamond-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "eb-garamond-italic-400-800.woff2",
+          "weight": "400 800",
+          "style": "italic",
+          "sha256": "d2761541b314509e02df3539cd35fc712954a48a50f4e0ab424dde817c699c2a"
+        },
+        {
+          "file": "eb-garamond-normal-400-800.woff2",
+          "weight": "400 800",
+          "style": "normal",
+          "sha256": "68fd4b247dde89984ee835d99953d235e4927be2b1b732ad81173b519869cee8"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "eb-garamond-cyrillic-ext-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "8b2dcef53a6ade1cbbe7038372cccf1585cc766a09ff1db0b70246bca39d6b72"
+            },
+            {
+              "file": "eb-garamond-cyrillic-ext-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "2db942ef6f5237810b751b686706fbd08969a28d055318a9a8fb4a1ec99bbcce"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "eb-garamond-cyrillic-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "d2c4018bf5127a0d3d761c537ab8d96d4bbfb27c592835d23f7ac9db77c11980"
+            },
+            {
+              "file": "eb-garamond-cyrillic-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "171a104fa20c9ccf6c25945151a98b37ed2ae26986c2e01f9afda65ee2fa9f77"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "eb-garamond-greek-ext-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "6f05b7834287650ff917192744e045ca26b78fbfce32a68879fa8169e556275b"
+            },
+            {
+              "file": "eb-garamond-greek-ext-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "65f7302476afd8d89c200101a987691cd99da017e25fb4bf8f57c385f69e9b6f"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "eb-garamond-greek-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "09d8e9535aa76ce24b659ab15c402765d8c1741222f2ba7a10661ceec69f02ef"
+            },
+            {
+              "file": "eb-garamond-greek-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "19e98f32f56c0f648cc511d29305b295f6f63a7cf1f1c72eb8516dd21e69a705"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "eb-garamond-vietnamese-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "ad65742680d232e669d8457524be63fd6a847ddc4f94f26ee81e3ac1c3d03960"
+            },
+            {
+              "file": "eb-garamond-vietnamese-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "d858010614321f668ca37def13edb91c98f9747d5126092a9dcbff264d6eb948"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "eb-garamond-latin-ext-italic-400-800.woff2",
+              "weight": "400 800",
+              "style": "italic",
+              "sha256": "0077bd5045a699e2d26d1fc5a6071f865ec0698ba419cad62ce9465b59b6d47c"
+            },
+            {
+              "file": "eb-garamond-latin-ext-normal-400-800.woff2",
+              "weight": "400 800",
+              "style": "normal",
+              "sha256": "c2fa6862b03629214873944b171b0df1189420be52aabd82142d45f96fdce588"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inter",
+      "family": "Inter",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/inter-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "inter-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "c940764593d0fe5d596be327ca7558855e018039fb78509aa21921fd3644c3e4"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "inter-cyrillic-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "fccca918fea40089dacadc7045861314d1a6bc91f1f323cc1eeb22ebcdb321b5"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "inter-cyrillic-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "aebf2ab4a4ce6810d73c1ac7be7cafb4e5ec4cee2d6db5fb3e09691747ec4bd6"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "inter-greek-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "a2e2c783ca6f9c20486e81e72a279203e86730bbf8f01ff6a5ee9dbd09e1c271"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "inter-greek-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "46dd4cdca58c26ae87cc6927657bf83b2e8abfc39ffd0ab176e301a8d28d22bf"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "inter-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "8db00ff46c67b22cda8bed865acf7077651cac8d2841d5b40980556b48961931"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "inter-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "a28eb6d3ccb534ae0c94ca999371df024aab60b08c3c8a5720ee9e32fa0faaa2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jetbrainsMono",
+      "family": "JetBrains Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/jetbrains-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "jetbrains-mono-normal-100-800.woff2",
+          "weight": "100 800",
+          "style": "normal",
+          "sha256": "1e06740a02a443fb7f3eeda8fcaa685a0f6c620e3f01e6666e847295469ce3ad"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "jetbrains-mono-cyrillic-ext-normal-100-800.woff2",
+              "weight": "100 800",
+              "style": "normal",
+              "sha256": "992eea2f70210457ddd1196de4df3240919ffe068ad188c79d985fba4565d3bf"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "jetbrains-mono-cyrillic-normal-100-800.woff2",
+              "weight": "100 800",
+              "style": "normal",
+              "sha256": "af7486955880be1c2b972e9c766acffb776768d669b6576ed9a0919ce72e7ca6"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "jetbrains-mono-greek-normal-100-800.woff2",
+              "weight": "100 800",
+              "style": "normal",
+              "sha256": "3edf363dbf9d5fa0cdc784ae2b431a8a4152f4055a8a8858028c0bd668808273"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "jetbrains-mono-vietnamese-normal-100-800.woff2",
+              "weight": "100 800",
+              "style": "normal",
+              "sha256": "1390e86cc2823e759358918c01c4fcc1b6e4f01bca915bdbeb6d68eb5c244405"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "jetbrains-mono-latin-ext-normal-100-800.woff2",
+              "weight": "100 800",
+              "style": "normal",
+              "sha256": "7db7affbce1fdee69c1ffc2641bbca289b049867f524c9d861fe35ab6670bf29"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "geistSans",
+      "family": "Geist",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/geist-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "geist-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "geist-cyrillic-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "b7a545bbb08256bd809f11cfe66d88da3e22d169ea4407737b1ef0ec1ed3d791"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "geist-cyrillic-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "6129fc8571c3e0cb0a4c41f5160c974a843b055009dc4ad8858bd808e18a2d86"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "geist-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "f689f638f29fff460a2d5749edb5d5c38d7bef0389f32032d871f23fc6ebb008"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "geist-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "58a6b173d5ca1dec92166ea3c6cb1a84a4144556d10928ac14e8e6b40e4787bd"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "geistMono",
+      "family": "Geist Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/geist-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "geist-mono-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "geist-mono-cyrillic-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "e27f657e38d52887baa3b6b2f812bef93dfdd356f0810e40edd4ee284cc7e9f6"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "geist-mono-cyrillic-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "75b3bedbebc35f347c0ae3b416aa871941555357e7b0f83767eb5987875589ed"
+            }
+          ]
+        },
+        {
+          "subset": "symbols2",
+          "unicodeRange": "U+2000-2001, U+2004-2008, U+200A, U+23B8-23BD, U+2500-259F",
+          "files": [
+            {
+              "file": "geist-mono-symbols2-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "d67e4a94ba498635f764ddca7d1ec4271f5642f032eb24b426764480f66f8497"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "geist-mono-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "16e1d48b6dd29eb240aec5db36184eb182933c082cd43de7f35af686d58087d2"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "geist-mono-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "745994b5cd950ec201b66526375f057d540847cccfc70f4f24f5f571d26d3923"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fredoka",
+      "family": "Fredoka",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fredoka-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fredoka-normal-300.woff2",
+          "weight": "300",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        },
+        {
+          "file": "fredoka-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "hebrew",
+          "unicodeRange": "U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F",
+          "files": [
+            {
+              "file": "fredoka-hebrew-normal-300.woff2",
+              "weight": "300",
+              "style": "normal",
+              "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
+            },
+            {
+              "file": "fredoka-hebrew-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
+            },
+            {
+              "file": "fredoka-hebrew-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
+            },
+            {
+              "file": "fredoka-hebrew-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
+            },
+            {
+              "file": "fredoka-hebrew-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "fredoka-latin-ext-normal-300.woff2",
+              "weight": "300",
+              "style": "normal",
+              "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
+            },
+            {
+              "file": "fredoka-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
+            },
+            {
+              "file": "fredoka-latin-ext-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
+            },
+            {
+              "file": "fredoka-latin-ext-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
+            },
+            {
+              "file": "fredoka-latin-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "instrumentSerif",
+      "family": "Instrument Serif",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/instrument-serif-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;1,400&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "instrument-serif-italic-400.woff2",
+          "weight": "400",
+          "style": "italic",
+          "sha256": "6ee678c33f388dd7ba59700ebea635deb98821baafd817b09891f7927177f702"
+        },
+        {
+          "file": "instrument-serif-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "60c06664b5a95c7de6cc3e00d1f9034d78bd1e40b564016b241674449a067d4d"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "instrument-serif-latin-ext-italic-400.woff2",
+              "weight": "400",
+              "style": "italic",
+              "sha256": "a04fc7ed18a8037149ce0bfda58076709d8e0840e136ed00abbdc196b7992443"
+            },
+            {
+              "file": "instrument-serif-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "a8c4bd7cd7073180e740d2d83a616b5cb0845579b73207eeafeae8532e70c901"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fraunces",
+      "family": "Fraunces",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fraunces-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fraunces:wght@100..900&display=swap",
+      "fallbackFont": "Times New Roman",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fraunces-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "88e17be075f1be50ab67b057b99e3701b828f44ed28f9452df6c02645bb0cba9"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "fraunces-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "250cc2966c658fb6d336731de9d82a8129025e9839c20c253bbc477852f6cf4f"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "fraunces-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "f1451edd6434085c4f9f3a8b4a674182dd7d6acccf53bfced19fd167f0705a06"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roboto",
+      "family": "Roboto",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/roboto-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "roboto-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "0a44e0bb6ba5c8537e8814c148ef7755f1bce12112361231f595ecc584a18d7a"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "roboto-cyrillic-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "e44224eb71a96cb33bd046ded16a4e22bb441b170bdfbcba0268a754141b97c8"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "roboto-cyrillic-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "32886c5ec61a0d06e5677a98c5ed78a5f1c788c18c5e8d7dcd931c4b6dc19830"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "roboto-greek-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "5fdfeaf926cac990770dfa66011bdb87d6b69f43c42aa759dcdcf0a7a197c19a"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "roboto-greek-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "4813e3dfbbb23708c817ef7fd3fd9c82cd0d33c778def0897f0447f1c364ce64"
+            }
+          ]
+        },
+        {
+          "subset": "math",
+          "unicodeRange": "U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF",
+          "files": [
+            {
+              "file": "roboto-math-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "297193369eea600161f4b5219bd7b08850180fcfe0752f1a2eaa436575cd03b7"
+            }
+          ]
+        },
+        {
+          "subset": "symbols",
+          "unicodeRange": "U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF",
+          "files": [
+            {
+              "file": "roboto-symbols-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "fab8a0056d92fdd8d64fed4b049744144e1d24d08762c513bff78265299ed7a3"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "roboto-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "2071148c26bd0430cad316373c26db399e0cf8f6275b9e1a2c1b831f05ee7dc3"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "roboto-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "cdd53dc5576a79f35cf280dfbd9c1cb2a5dd2f0ede30afba9b9ccdc7fe12e7d0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "openSans",
+      "family": "Open Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/open-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Open+Sans:wght@300..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "open-sans-normal-300-800.woff2",
+          "weight": "300 800",
+          "style": "normal",
+          "sha256": "441af0def989ebfdbd6ad85ffaed85e967ab21a05f1dd342f16259464a206dd0"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "open-sans-cyrillic-ext-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "d0edd1c6d7e0e0cd8b9146888db311e0472e09be88faf70bb01ad57e17316551"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "open-sans-cyrillic-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "01978402fabbdca7d046ebda60da8bae6ea9b5420e58af6350bcbeffc74af097"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "open-sans-greek-ext-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "d68a324be8ffcb8b21734398f8419885b526a3cc8443786dcdacff5fb0560727"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "open-sans-greek-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "206b8987ebc5510c1f3add37d9dd1f308559224fa9b45805d024eebf7425e90c"
+            }
+          ]
+        },
+        {
+          "subset": "hebrew",
+          "unicodeRange": "U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F",
+          "files": [
+            {
+              "file": "open-sans-hebrew-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "3e8f4b311fef0dc52856f9bee03af7ef4f8bdaa26e4bfb8a0a766b79e5351bc4"
+            }
+          ]
+        },
+        {
+          "subset": "math",
+          "unicodeRange": "U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF",
+          "files": [
+            {
+              "file": "open-sans-math-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "4f0cad5800eed7600b524be7d5b99a5510a792ba8f83427a4a2c553fc49164ec"
+            }
+          ]
+        },
+        {
+          "subset": "symbols",
+          "unicodeRange": "U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF",
+          "files": [
+            {
+              "file": "open-sans-symbols-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "c9d43888d70004923f98079bd0e68cabec6275d22829ef4fe9c12a71b4c336a4"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "open-sans-vietnamese-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "f49cd0972b92df6ad4d34589333df653d9fcedcf3ecb71cf8191441b4e1a6081"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "open-sans-latin-ext-normal-300-800.woff2",
+              "weight": "300 800",
+              "style": "normal",
+              "sha256": "2d4c25a2a206d16537302b054f6a3b847ff79175207963a5fed6e12af26dd8e0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lato",
+      "family": "Lato",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/lato-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "lato-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "d4ae5188a65370ecfe28f42293bbee8297cfd5712c6aadfdb270d48f2bcd88b0"
+        },
+        {
+          "file": "lato-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "7a7ce1a34f3e9944fe88fc61abbc93b6db383afa2b90815fd7ccea456fbce4e5"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "lato-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "b85c84c655bcbba3bd628b2c1fea0fbdb5b158a9022281a2f910e82fd6da5098"
+            },
+            {
+              "file": "lato-latin-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "78e850d569834892d3f4bdfd2084c7a7c0dc64ae4226f3231af30dae706400e2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sourceSans3",
+      "family": "Source Sans 3",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/source-sans-3-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "source-sans-3-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "ac057a5593cbe3df0d2585da5dd5f33b8efa84aa30550c710fe061b37fc5c54b"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "source-sans-3-cyrillic-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "ce21e07f81120c29845d627644a977b85027fc564b68e23349ea599402e55e96"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "source-sans-3-cyrillic-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "44aa5fb37c5aa2a2b44ceab9c077b42de47d50d47c0dcbefa2555082c38df8dd"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "source-sans-3-greek-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "cd19f948c227b68e6feb8af39da356315dd47f8bd1406cc8bab78baf2c6ea85e"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "source-sans-3-greek-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "5045881eda8b85134f65682ac27163c2b060d1aeed619e21498f98f5448239d1"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "source-sans-3-vietnamese-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "7a9ba93945d3cd9e6c2ad459d242c2281b423dd305e3ccb9956279f12deddfd3"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "source-sans-3-latin-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "ed3571ea9ff752f1c846f1c9ad2b0006de42f478a2db9163a74db0729a4eb281"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "notoSans",
+      "family": "Noto Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/noto-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "noto-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "afc7a910f4ff04ee2ff7b3a2ef8b24f8340b8ea8d8125f2779f1f0b69d1b56b9"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "noto-sans-cyrillic-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "b01aece68a50d45fe0502697b9c927c0c6fac49b4c02587708699675cf263742"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "noto-sans-cyrillic-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "70af9f676b2ab2b28a248ec79b498762cc981ec6d52d6a6dc8b42a3ba5c05f50"
+            }
+          ]
+        },
+        {
+          "subset": "devanagari",
+          "unicodeRange": "U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20B9, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF, U+11B00-11B09",
+          "files": [
+            {
+              "file": "noto-sans-devanagari-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "a0ccd5ee85958452fe9ff5ac9a3188766dd31c73864efda3cbba76188b4e90b0"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "noto-sans-greek-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "7174158c4f3bc92adcd0801b6190607d74185f859543ac1fc4cab088512ff254"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "noto-sans-greek-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "4fbef7965ae028d5311a527385a1f40d4b36adcb911d4edb4297f40d30b8b125"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "noto-sans-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "233281c01fdba521af3bb0bd691bf6f49b3e8c06d93d10c8f83f8fe07d8ff75f"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "noto-sans-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "be4f6d04a074f3887553c9b1c09e563470f3fe975456a13fc5bf7e20b5612976"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ibmPlexSans",
+      "family": "IBM Plex Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/ibm-plex-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "ibm-plex-sans-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        },
+        {
+          "file": "ibm-plex-sans-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "ibm-plex-sans-cyrillic-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-ext-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-ext-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "ibm-plex-sans-cyrillic-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
+            },
+            {
+              "file": "ibm-plex-sans-cyrillic-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "ibm-plex-sans-greek-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
+            },
+            {
+              "file": "ibm-plex-sans-greek-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
+            },
+            {
+              "file": "ibm-plex-sans-greek-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
+            },
+            {
+              "file": "ibm-plex-sans-greek-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "ibm-plex-sans-vietnamese-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
+            },
+            {
+              "file": "ibm-plex-sans-vietnamese-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
+            },
+            {
+              "file": "ibm-plex-sans-vietnamese-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
+            },
+            {
+              "file": "ibm-plex-sans-vietnamese-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "ibm-plex-sans-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
+            },
+            {
+              "file": "ibm-plex-sans-latin-ext-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
+            },
+            {
+              "file": "ibm-plex-sans-latin-ext-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
+            },
+            {
+              "file": "ibm-plex-sans-latin-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workSans",
+      "family": "Work Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/work-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Work+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "work-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "72cd8f67849cc714f3364eeeb378df9a49f4aff00e6a3640fad36c9c93a9b197"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "work-sans-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "a7685ec477b23edc368efaa59d8f717a1e01208b68f52982673552a04f9398d3"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "work-sans-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "fe0af300ce56932381af82ed960d8582dc8308ac2b7b48dd505dd49573a83ada"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dmSans",
+      "family": "DM Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/dm-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=DM+Sans:wght@100..1000&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "dm-sans-normal-100-1000.woff2",
+          "weight": "100 1000",
+          "style": "normal",
+          "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "dm-sans-latin-ext-normal-100-1000.woff2",
+              "weight": "100 1000",
+              "style": "normal",
+              "sha256": "219b02c7d8884817d3d6ad4c8771f2c000ce4c5669a67ef4e2e5617ffa25c4cc"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manrope",
+      "family": "Manrope",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/manrope-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "manrope-normal-200-800.woff2",
+          "weight": "200 800",
+          "style": "normal",
+          "sha256": "e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "manrope-cyrillic-ext-normal-200-800.woff2",
+              "weight": "200 800",
+              "style": "normal",
+              "sha256": "e8c0b39992f06b3dc9a9834494088014859f363bf6ca8792b6bb07e17c7965f3"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "manrope-cyrillic-normal-200-800.woff2",
+              "weight": "200 800",
+              "style": "normal",
+              "sha256": "95a493061fe0a8d0d027c2892747134ba747141112d3be4d5022e70ab7d3a1a6"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "manrope-greek-normal-200-800.woff2",
+              "weight": "200 800",
+              "style": "normal",
+              "sha256": "40af11327fe5308166c6cb5787808b042db6da889abf602f0a4876c49675d87e"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "manrope-vietnamese-normal-200-800.woff2",
+              "weight": "200 800",
+              "style": "normal",
+              "sha256": "bab757f8a0a1bc04055ee98cb5777f3254aab11f6d222366e1f40a36f390506a"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "manrope-latin-ext-normal-200-800.woff2",
+              "weight": "200 800",
+              "style": "normal",
+              "sha256": "ce093b341d9c10658ee1eaa85c5f8042ff3307bc6ccfc5f405616eb437f0009e"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "figtree",
+      "family": "Figtree",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/figtree-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "figtree-normal-300-900.woff2",
+          "weight": "300 900",
+          "style": "normal",
+          "sha256": "8330490a01c60c196eae00b823de8102275aaa5862e7b76a7af21b8745338928"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "figtree-latin-ext-normal-300-900.woff2",
+              "weight": "300 900",
+              "style": "normal",
+              "sha256": "f153aa07c1b16fbb12391c2512860c97819a0a9fd014f338b2b3f12496479d13"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "publicSans",
+      "family": "Public Sans",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/public-sans-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Public+Sans:wght@100..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "public-sans-normal-100-900.woff2",
+          "weight": "100 900",
+          "style": "normal",
+          "sha256": "c1b6da516e0062e9c2f341b3a51dd2d621d946da72f06c6cfe05fd9d2dd8622d"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "public-sans-vietnamese-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "e43b193880fdb1d6adf494192bcdf77b008cafe910b0cb07d44d46a564d1cdae"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "public-sans-latin-ext-normal-100-900.woff2",
+              "weight": "100 900",
+              "style": "normal",
+              "sha256": "1c8a26c0ed4312dacc36670714794c9f4b4a0972ccb45f2936646bd8d444d5f8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "firaCode",
+      "family": "Fira Code",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/fira-code-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "fira-code-normal-300-700.woff2",
+          "weight": "300 700",
+          "style": "normal",
+          "sha256": "d32d5b5a7c9720cf3812f7d1e3ebdb54116f8f656e7471a03a5a93bdd93c98b3"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "fira-code-cyrillic-ext-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "45638fab5a7c56ed76ef5e61424c5826bc97499512b75caeacbf33efe34cb3f3"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "fira-code-cyrillic-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "98651a0dc8960be552a69783b5b35d3a00ccb999584d9a152b50632c8e87bbcf"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "fira-code-greek-ext-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "54147107b78ecf1f4ccce9f752507293ccb7b63b548f2381a6ca75a4230fd096"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "fira-code-greek-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "f8a20a104de9ca42e6d0ea37517a7da69f25c11662e4aff37c562b106be45ab8"
+            }
+          ]
+        },
+        {
+          "subset": "symbols2",
+          "unicodeRange": "U+2000-2001, U+2004-2008, U+200A, U+23B8-23BD, U+2500-259F",
+          "files": [
+            {
+              "file": "fira-code-symbols2-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "905afdfcb3963107879503dcce99224d4b82084189a2090c1ff0d43863133d29"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "fira-code-latin-ext-normal-300-700.woff2",
+              "weight": "300 700",
+              "style": "normal",
+              "sha256": "e08f04687410bb5216c443be9c5b7239077a9105ce5c658321e5120cfdb44f01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sourceCodePro",
+      "family": "Source Code Pro",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/source-code-pro-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "source-code-pro-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "2c935ccea0efa74f1d034628790a2aebfe2ccb6f5d60e8f5b224366066e10188"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "source-code-pro-cyrillic-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "988c861cdcf9e94e466878631c72c27397b589f848aa6cc35a8d529238a3ca26"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "source-code-pro-cyrillic-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "f72e6bfa20177f128b7d70aa587540ebcb6e73a388a4e6f146d877721af0680b"
+            }
+          ]
+        },
+        {
+          "subset": "greek-ext",
+          "unicodeRange": "U+1F00-1FFF",
+          "files": [
+            {
+              "file": "source-code-pro-greek-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "7628e30c5954b97d34fc8086868ac9aa8ccb36b01135ef84217506755682efaa"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "source-code-pro-greek-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "feba30dcf7c8f227a19255909161c02f159a6f637754babf6d1718d695f543a9"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "source-code-pro-vietnamese-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "3d4fe0b00fe09b7b14c45e9e9624bbdb9d5d4e8762c92439ae2922b689736c45"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "source-code-pro-latin-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "1954e099c19e7e8eb50d644339b34552351d8851da8d6830158be848990a3290"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ibmPlexMono",
+      "family": "IBM Plex Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/ibm-plex-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "ibm-plex-mono-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "c36f509c0a8f9f85f29cb44bc8701d8a9e0b14c499e77a884f789ead7093a7ac"
+        },
+        {
+          "file": "ibm-plex-mono-normal-500.woff2",
+          "weight": "500",
+          "style": "normal",
+          "sha256": "a76f53ca6612e7b3828eec2311098675b7f9849ae4169a8bcef6302aec02a6c0"
+        },
+        {
+          "file": "ibm-plex-mono-normal-600.woff2",
+          "weight": "600",
+          "style": "normal",
+          "sha256": "ad4580d8cb4b5f627c2d18457656732f7f7b070f7837fbc380e08054157e6f6c"
+        },
+        {
+          "file": "ibm-plex-mono-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "9e1455e6e9c5866f607e464fffb7855486dcf575b7e69b83a3d234e587fce41b"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "ibm-plex-mono-cyrillic-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "c6f09ee0e0a24b7c85ecb2a601eb99332f65b1f6b37c31e0bbe73fb307625eca"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-ext-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "311098be73eac339128f0b5a6e33d72645b6f87488541fdf467c402152d297fd"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-ext-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "f746246b6b0b641f99d9e26e0bf4e42197bde692126857857f0195a94362d52a"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "c7fa87a1d7be5a6f94a1039b4c43d8ac2e8af035280dabcc5734d0da9f6afcf2"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "ibm-plex-mono-cyrillic-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "7b59d6bf7f8b8408ac28f27d01dca9a890abeae77045d343b1d8ccb089a92e54"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "d524dc8ff6dbf7ed69772f3b2ff4affaf5a89b5762b270e36c3f21da0d4e39f5"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "b814a03d7e57b0626a906f76911b9361d173a1aabc5544c40f72d6a35a1e4940"
+            },
+            {
+              "file": "ibm-plex-mono-cyrillic-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "bb7642ad6085595ee4d28c89965450943c78e9772403e79e655d4e347a293d12"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "ibm-plex-mono-vietnamese-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "0a8b854cc18641bd1b8222afa7ec82a75e59bc6501f777744ec87db1b6cd7a2c"
+            },
+            {
+              "file": "ibm-plex-mono-vietnamese-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "b2529fba93fd07a50ffb8fc3d103eb04b0c298d4f6564d2833c44fde286de7e4"
+            },
+            {
+              "file": "ibm-plex-mono-vietnamese-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "69744cabbccc9faf77516ce9b744361e1e6be7f8081400006035a153797d2965"
+            },
+            {
+              "file": "ibm-plex-mono-vietnamese-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "429a912c8121ee6755458dc215abed11c9e783d6ce0fea883f699823bdd0a62a"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "ibm-plex-mono-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "f1050dc5317b43434c0aeda599d4624c774ffc162e87a8cf204b949b6a85816d"
+            },
+            {
+              "file": "ibm-plex-mono-latin-ext-normal-500.woff2",
+              "weight": "500",
+              "style": "normal",
+              "sha256": "77f03e26f981c582bdba3a7abed4baa2d3149211c01366bb3ab3ba7622ec4ae5"
+            },
+            {
+              "file": "ibm-plex-mono-latin-ext-normal-600.woff2",
+              "weight": "600",
+              "style": "normal",
+              "sha256": "1b6b18fd0fd240bc6d5850f4df621484722d4b5d3650ebdd1e3a8bbd81c75854"
+            },
+            {
+              "file": "ibm-plex-mono-latin-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "099842414ddad0cb366cf984641b14e75c01a2c6e3f42fa13a6e89d1f4c3fc20"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "robotoMono",
+      "family": "Roboto Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/roboto-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@100..700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "roboto-mono-normal-100-700.woff2",
+          "weight": "100 700",
+          "style": "normal",
+          "sha256": "2ed6ac9efae6d21f51b2946176a0eef79a4043d643f9ac976e66d7fc4d57803a"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "cyrillic-ext",
+          "unicodeRange": "U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F",
+          "files": [
+            {
+              "file": "roboto-mono-cyrillic-ext-normal-100-700.woff2",
+              "weight": "100 700",
+              "style": "normal",
+              "sha256": "30ad1ddfda39454ba31e2e5eeffba0669714c736b271db69f419168a544bccdd"
+            }
+          ]
+        },
+        {
+          "subset": "cyrillic",
+          "unicodeRange": "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116",
+          "files": [
+            {
+              "file": "roboto-mono-cyrillic-normal-100-700.woff2",
+              "weight": "100 700",
+              "style": "normal",
+              "sha256": "6f1e779fee122555935f377afc3688430e8840a220f39616891006905e49f9cd"
+            }
+          ]
+        },
+        {
+          "subset": "greek",
+          "unicodeRange": "U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF",
+          "files": [
+            {
+              "file": "roboto-mono-greek-normal-100-700.woff2",
+              "weight": "100 700",
+              "style": "normal",
+              "sha256": "23a1a29784942542956830f32090ed8fee9c86f27ff9244e06445b2269dff4df"
+            }
+          ]
+        },
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "roboto-mono-vietnamese-normal-100-700.woff2",
+              "weight": "100 700",
+              "style": "normal",
+              "sha256": "6f1e6273e1ac677732b6d7dcd785081b9d56b51411c44ab67364d0757b84ae6b"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "roboto-mono-latin-ext-normal-100-700.woff2",
+              "weight": "100 700",
+              "style": "normal",
+              "sha256": "2cb74c78294bf69bb4c40e56d703014eecb0776df9a23418be836392fc7fdf89"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spaceMono",
+      "family": "Space Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/space-mono-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "space-mono-normal-400.woff2",
+          "weight": "400",
+          "style": "normal",
+          "sha256": "e0c8e616bda27642f4c3cebaecff6525d901e73afc8a227cbbb0f2af4810f300"
+        },
+        {
+          "file": "space-mono-normal-700.woff2",
+          "weight": "700",
+          "style": "normal",
+          "sha256": "af7cf6d2b897ec453acdcdacde4e9bcc8410718af5914de865b453e09f10eebc"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "space-mono-vietnamese-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "1ab5cb4b90a56d6031db3618250a1f1bb52a275df5a0ec9ae8e62686550f1af4"
+            },
+            {
+              "file": "space-mono-vietnamese-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "e9c42e9aad5bf74da01a810f8777a1ce45d924c4f28faf3a19b046b8f813321c"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "space-mono-latin-ext-normal-400.woff2",
+              "weight": "400",
+              "style": "normal",
+              "sha256": "b4f90459adf4851575a46d9a492c17ee34c97fe40d56979521de67d1ee77d75a"
+            },
+            {
+              "file": "space-mono-latin-ext-normal-700.woff2",
+              "weight": "700",
+              "style": "normal",
+              "sha256": "512458b32bf452ac0e4b33fd6277bf4f07821acefb59db2d1498aa107679a1a6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inconsolata",
+      "family": "Inconsolata",
+      "license": "OFL-1.1",
+      "licenseFile": "licenses/inconsolata-OFL.txt",
+      "googleCssUrl": "https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&display=swap",
+      "fallbackFont": "Arial",
+      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+      "files": [
+        {
+          "file": "inconsolata-normal-200-900.woff2",
+          "weight": "200 900",
+          "style": "normal",
+          "sha256": "9f330ef4aa423d083046fe006a54f1be21a8e00d05b14ee43d50167b0496db46"
+        }
+      ],
+      "otherSubsets": [
+        {
+          "subset": "vietnamese",
+          "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
+          "files": [
+            {
+              "file": "inconsolata-vietnamese-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "c8b182c185f60c3c56b0c59cac9f00a7ddd5c1771c56c16398c7cb6e3d7621e3"
+            }
+          ]
+        },
+        {
+          "subset": "latin-ext",
+          "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF",
+          "files": [
+            {
+              "file": "inconsolata-latin-ext-normal-200-900.woff2",
+              "weight": "200 900",
+              "style": "normal",
+              "sha256": "36b1d9723a02800e46379a0b7c78550e1ffc9880e1fe9d3b51711548f846d0a0"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

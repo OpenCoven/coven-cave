@@ -121,8 +121,8 @@ assert.match(
 );
 assert.match(
   auxiliarySurfaces,
-  /@media \(min-width: 1024px\) \{[\s\S]*?\.chat-familiar-context \{\s*display: none;\s*\}[\s\S]*?\}/,
-  "desktop Chat hides the duplicate in-surface familiar selector",
+  /@media \(min-width: 1024px\), \(max-width: 767px\) \{[\s\S]*?\.chat-familiar-context \{\s*display: none;\s*\}[\s\S]*?\}/,
+  "desktop Chat hides the duplicate in-surface familiar selector, and a phone folds it into the top bar's picker (#5529)",
 );
 assert.match(
   chatSurface,

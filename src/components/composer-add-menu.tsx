@@ -145,10 +145,22 @@ export type AddMenuLegacySection = {
   };
 };
 
+/** The phone chat action strip's actions (#5529). At rest on a phone the
+ *  strip is folded away, so Auto, Retry, Summarize and the call live here;
+ *  Attach is already the first row and Stop stays on the composer's own
+ *  busy button. */
+export type AddMenuPhoneActions = {
+  auto: { selected: boolean; running: boolean; disabled?: boolean; onSelect: () => void };
+  retry: { disabled?: boolean; onSelect: () => void };
+  summarize: { disabled?: boolean; onSelect: () => void };
+  call: { disabled?: boolean; onSelect: () => void };
+};
+
 export function ComposerAddMenu({
   open,
   onClose,
   attach,
+  phoneActions,
   projects,
   github,
   skills,
@@ -166,6 +178,8 @@ export function ComposerAddMenu({
     /** Platform-aware shortcut hint (e.g. "⌘⇧A"). */
     hint?: string;
   };
+  /** Phone only: the folded action strip's actions, listed first. */
+  phoneActions?: AddMenuPhoneActions;
   projects?: AddMenuProjectsSection;
   /** "Add from GitHub" — either a plain row (onSelect) or a flyout hosting
    *  the chat's linked-work rows (submenu). */
@@ -190,6 +204,57 @@ export function ComposerAddMenu({
 
   return (
     <>
+      {phoneActions ? (
+        <>
+          <AddMenuRow
+            icon="ph:magic-wand-fill"
+            label={phoneActions.auto.running ? "Auto mission status" : "Auto mode"}
+            role={phoneActions.auto.running ? "menuitem" : "menuitemcheckbox"}
+            checked={phoneActions.auto.running ? undefined : phoneActions.auto.selected}
+            ariaLabel={
+              phoneActions.auto.running
+                ? "Check Auto mission status"
+                : phoneActions.auto.selected
+                  ? "Leave Auto mode"
+                  : "Select Auto mode"
+            }
+            disabled={phoneActions.auto.disabled}
+            onSelect={() => {
+              onClose();
+              phoneActions.auto.onSelect();
+            }}
+          />
+          <AddMenuRow
+            icon="ph:arrow-clockwise"
+            label="Retry last message"
+            disabled={phoneActions.retry.disabled}
+            onSelect={() => {
+              onClose();
+              phoneActions.retry.onSelect();
+            }}
+          />
+          <AddMenuRow
+            icon="ph:magnifying-glass"
+            label="Summarize session"
+            disabled={phoneActions.summarize.disabled}
+            onSelect={() => {
+              onClose();
+              phoneActions.summarize.onSelect();
+            }}
+          />
+          <AddMenuRow
+            icon="ph:phone"
+            label="Start a call"
+            ariaLabel="Start voice call"
+            disabled={phoneActions.call.disabled}
+            onSelect={() => {
+              onClose();
+              phoneActions.call.onSelect();
+            }}
+          />
+          <PopoverSeparator />
+        </>
+      ) : null}
       <AddMenuRow
         icon="ph:paperclip"
         label="Add files or photos"

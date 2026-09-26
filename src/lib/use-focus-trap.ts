@@ -11,6 +11,9 @@ export const FOCUSABLE = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
+/** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for the `Node` global. */
+const DOCUMENT_POSITION_FOLLOWING = 4;
+
 type Options = {
   /** Called on Escape. Caller usually closes the dialog. Identity-stable
    *  internally (we keep it in a ref) so passing an inline arrow is fine. */
@@ -357,6 +360,10 @@ export function useFocusTrap(
         ).filter(
           (el) =>
             !el.hasAttribute("disabled") &&
+            // Only real Tab stops. A roving-tabindex row (`tabindex="-1"` on a
+            // button) matches FOCUSABLE but Tab never lands on it; counting it
+            // as `last` meant Tab from the true last stop left the dialog (#5527).
+            !(el.tabIndex < 0) &&
             (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
         );
         if (focusables.length === 0) {
@@ -386,6 +393,20 @@ export function useFocusTrap(
         } else if (!e.shiftKey && activeEl === last) {
           e.preventDefault();
           first.focus();
+        } else if (
+          !focusables.includes(activeEl) &&
+          typeof activeEl.compareDocumentPosition === "function"
+        ) {
+          // Focus sits on a programmatic-only element inside the trap (an
+          // arrow-key row). Move to the neighbouring real stop ourselves, so a
+          // row after the last stop cannot hand Tab to the page behind.
+          const following = (el: HTMLElement) =>
+            Boolean(activeEl.compareDocumentPosition(el) & DOCUMENT_POSITION_FOLLOWING);
+          const target = e.shiftKey
+            ? [...focusables].reverse().find((el) => !following(el)) ?? last
+            : focusables.find(following) ?? first;
+          e.preventDefault();
+          target.focus();
         }
       }
     }

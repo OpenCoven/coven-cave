@@ -17,8 +17,14 @@ assert.match(
 const inbox = read("./automations-view.tsx");
 assert.match(
   inbox,
-  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(true\)[\s\S]*?Retry/,
+  /\{visibleError && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(true\)[\s\S]*?Retry/,
   "Inbox/automations load-failure banner has icon + Retry wired to a forced reload",
+);
+// #5530: a load failure defers to the shell's daemon banner; action errors don't.
+assert.match(
+  inbox,
+  /const visibleError = error \?\? \(daemonBannerVisible \? null : loadError\);/,
+  "Rituals hides only its load failure while the daemon banner is up",
 );
 
 const chatList = read("./chat-list.tsx");

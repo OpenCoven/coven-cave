@@ -21,6 +21,7 @@ import type {
 } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
+import { useDaemonShellBannerVisible } from "@/lib/shell-banners";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -90,7 +91,7 @@ type AutomationTab = "overview" | "calendar" | "crons";
 const RITUAL_TABS = [
   { id: "overview", label: "Overview" },
   { id: "calendar", label: "Calendar" },
-  { id: "crons", label: "Crons" },
+  { id: "crons", label: "Scheduled jobs" },
 ] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
 // Fire a cross-surface navigation from the GitHub subscriptions manager.
@@ -113,6 +114,13 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // A failed Schedules load is kept apart from action errors: when the shell
+  // already shows a daemon banner, the load failure is the same outage and
+  // stacking a second warning under it only repeats it (#5530). Action errors
+  // (save, delete, run) are always shown.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const daemonBannerVisible = useDaemonShellBannerVisible();
+  const visibleError = error ?? (daemonBannerVisible ? null : loadError);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Async CRUD results are announced for AT — errors already hit the
@@ -193,7 +201,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       ]);
       const inboxJson = inboxResult.data;
       if (!live()) return;
-      if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
+      if (!inboxJson.ok) { setLoadError(inboxJson.error ?? "load failed"); return; }
       // Content-equality guards (codebase convention — see board-view/workspace):
       // an unchanged poll keeps the previous references, so derived memos,
       // the selected-detail sync effect, and the per-cron runs fan-out all
@@ -206,9 +214,10 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
         const nextAutos = codexJson.automations ?? [];
         setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
       }
+      setLoadError(null);
       setError(null);
     } catch (err) {
-      if (live()) setError(err instanceof Error ? err.message : "fetch failed");
+      if (live()) setLoadError(err instanceof Error ? err.message : "fetch failed");
     } finally {
       if (live()) setInitialLoadDone(true);
     }
@@ -1063,13 +1072,13 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           />
         ))}
 
-        {error && (
+        {visibleError && (
           <div
             role="alert"
             className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{error}</span>
+            <span className="min-w-0 flex-1 truncate">{visibleError}</span>
             <button
               type="button"
               onClick={() => void load(true)}

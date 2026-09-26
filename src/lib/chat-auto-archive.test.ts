@@ -388,4 +388,37 @@ assert.deepEqual(
   "summon-grace extension keeps a just-unarchived chat out of the next sweep",
 );
 
+// 16. A reflection whose report raised a call-to-action (blocking blocker,
+//     blocking capability gap, skill access) never archives its thread — for
+//     manual AND idle-auto triggers. The human still has to see and act on it.
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    requiresHumanAction: true,
+  }),
+  false,
+  "a manual reflection with an open CTA keeps the thread visible",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: new Date(NOW.getTime() - REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS).toISOString(),
+    now: NOW,
+    requiresHumanAction: true,
+  }),
+  false,
+  "an idle thread with an open CTA still is not wrapped up",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    requiresHumanAction: false,
+  }),
+  true,
+  "an explicit false leaves the existing decision untouched",
+);
+
 console.log("chat-auto-archive.test.ts ok");

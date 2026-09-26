@@ -144,6 +144,43 @@ export function classifyDaemonConnectionTravelCadence(
  * "the local daemon is stopped". The legacy fallback keeps rolling upgrades
  * honest when an older status route returns the exact local-offline response.
  */
+export type DaemonStatusProblemCopy = {
+  /** Plain status fragment for the banner headline. */
+  title: string;
+  /** The underlying reason, kept for diagnostics behind a disclosure. */
+  detail: string | null;
+};
+
+// Ordered: a permission or timeout failure also reads "connect …", so those
+// patterns must win before the generic connection family.
+const DAEMON_STATUS_PROBLEMS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(EACCES|EPERM)\b|permission denied/i, "Cave doesn’t have permission to reach the Coven daemon"],
+  [/\bETIMEDOUT\b|timed out|\btimeout\b|\baborted\b/i, "The Coven daemon didn’t answer in time"],
+  [
+    /\b(ECONNREFUSED|ECONNRESET|ENOENT|EINVAL|EPIPE|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN)\b|\bconnect\b/i,
+    "Can’t reach the Coven daemon",
+  ],
+  [
+    /\bhttp \d{3}\b|invalid response|invalid target|contradictory/i,
+    "The daemon status check returned something Cave couldn’t read",
+  ],
+];
+
+/**
+ * Plain copy for an `unavailable` status reason (#5530). The reason is often
+ * Node's socket error verbatim ("connect EINVAL <path> - Local
+ * (undefined:undefined)"), which is diagnostic detail, not a headline.
+ */
+export function describeDaemonStatusProblem(reason: string): DaemonStatusProblemCopy {
+  const trimmed = reason.trim();
+  if (trimmed === "access check failed") {
+    return { title: "Couldn’t confirm access to the Coven daemon", detail: null };
+  }
+  if (!trimmed) return { title: "Can’t confirm the Coven daemon’s status", detail: null };
+  const match = DAEMON_STATUS_PROBLEMS.find(([pattern]) => pattern.test(trimmed));
+  return { title: match?.[1] ?? "Can’t confirm the Coven daemon’s status", detail: trimmed };
+}
+
 export function classifyDaemonStatusPoll(input: {
   responseStatus: number;
   responseOk: boolean;

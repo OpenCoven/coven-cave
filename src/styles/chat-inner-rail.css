@@ -196,8 +196,9 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  /* Only shown below the rail breakpoint, where it is a touch target. */
+  width: var(--touch-target);
+  height: var(--touch-target);
   margin-inline-end: calc(var(--space-1) * -1);
   border: 0;
   border-radius: var(--radius-control);
@@ -389,4 +390,66 @@
   background: color-mix(in oklch, var(--text-muted) 22%, transparent);
   color: var(--text-muted);
   cursor: default;
+}
+
+/* ── Phone chat chrome fold (#5529) ──────────────────────────────────────────
+ * At 390×844 the stacked chrome left the transcript about a third of the
+ * screen. On a phone:
+ *   - the familiar row under the top bar is folded away (in
+ *     auxiliary-surfaces.css, beside its base rule): the shell top bar
+ *     already carries the same familiar picker in the same header band;
+ *   - while a conversation is showing (ChatRouter's data-chat-view="chat"),
+ *     the section tabs strip is folded away. Its chat-list and code-rail
+ *     toggles move into the chat header, and the tabs move into the chat-list
+ *     sheet (.chat-threads-sheet__sections).
+ * The chat list itself keeps the tabs strip: there is no transcript to make
+ * room for there, and it is where a section is first chosen. */
+.cave-mobile-header-threads,
+.cave-mobile-header-code-rail {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .chat-surface:has([data-chat-view="chat"]) .chat-scope-tabs {
+    display: none;
+  }
+
+  .cave-mobile-header-threads,
+  .cave-mobile-header-code-rail {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .cave-mobile-header-threads:hover,
+  .cave-mobile-header-code-rail:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+}
+
+/* Section tabs at the top of the chat-list sheet: the phone's route to
+   Sessions / Projects / Familiar while a conversation is open. Tablet widths
+   keep the tabs strip, so the sheet doesn't repeat it there. */
+.chat-threads-sheet__sections {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .chat-threads-sheet__sections {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--touch-target);
+    padding-inline: var(--space-3);
+    border-bottom: 1px solid var(--border-hairline);
+  }
 }

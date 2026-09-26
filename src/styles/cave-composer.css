@@ -1502,6 +1502,23 @@
     min-height: var(--touch-target);
   }
 
+  /* The enhance control's rectangle is its touch target (see the segment
+     rule above), so on phones both segments meet it (#5555): still two flat
+     rectangles in one hairline frame, never the 44px circles of
+     .cave-composer-icon-button. Unlayered, so it outranks the component's
+     h-[30px] / h-[26px] utilities. */
+  .composer-enhance-control__segment {
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  /* The edge row rides half above the panel, so a touch-target tab overhangs
+     by half its height; the strip above keeps that clear so the Tools tab
+     never sits on the Auto chip (#5527). */
+  .cave-mobile-action-strip {
+    padding-bottom: calc(var(--touch-target) / 2 + var(--space-1));
+  }
+
   .cave-composer-context-meter {
     display: none;
   }

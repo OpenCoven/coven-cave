@@ -16,6 +16,7 @@ import {
 } from "./research-run-surface.ts";
 import type { ResearchMission } from "./research-missions.ts";
 import { sliceApproveBlocks } from "./approve-blocks.ts";
+import { sliceProposalReviewBlocks, type ProposalReview } from "./proposal-review-blocks.ts";
 
 const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "```coven:attachment",
@@ -392,4 +393,86 @@ test("proposal-review markers never reach visible prose; cardText keeps complete
 
   const fenced = extractChatRenderedText(["```", marker, "```"].join("\n"));
   assert.ok(fenced.visible.includes("<coven:proposal-review"), "fenced example text stays literal");
+});
+
+// ── Proposal-review receipts, projection-level coverage (#5520) ─────────────
+// The parser tests pin the marker grammar; these pin how the chat projection
+// hands markers to it: visible prose never shows one, cardText keeps complete
+// ones for the settled splitter, and literal examples never become cards.
+const PROPOSAL_REVIEW_MARKER =
+  '<coven:proposal-review tool="propose_patch" target="src/x.ts" verdict="proposal_only" reviewer="jev-1.13.0" q="addresses_task:yes:0.93|needs_clarification:yes:0.88" reason="needs clarification" />';
+
+function proposalReviewsIn(text: string): ProposalReview[] {
+  return sliceProposalReviewBlocks(text).flatMap((piece) => (piece.kind === "proposal-review" ? [piece.review] : []));
+}
+
+test("proposal-review markers leave visible prose on settled and pending turns and parse from cardText", () => {
+  const text = `Reviewed the patch.\n${PROPOSAL_REVIEW_MARKER}\nNext I would clarify.`;
+  for (const pending of [false, true]) {
+    const rendered = extractChatRenderedText(text, { pending });
+    assert.equal(rendered.visible, "Reviewed the patch.\n\nNext I would clarify.", `pending=${pending}`);
+    assert.doesNotMatch(rendered.visible, /coven:proposal-review/, `pending=${pending}`);
+    assert.ok(rendered.cardText.includes(PROPOSAL_REVIEW_MARKER), `cardText keeps the complete marker, pending=${pending}`);
+    const reviews = proposalReviewsIn(rendered.cardText);
+    assert.equal(reviews.length, 1, `pending=${pending}`);
+    assert.equal(reviews[0]?.tool, "propose_patch");
+    assert.equal(reviews[0]?.target, "src/x.ts");
+    assert.equal(reviews[0]?.verdict, "proposal_only");
+    assert.equal(reviews[0]?.reviewer, "jev-1.13.0");
+    assert.deepEqual(reviews[0]?.answers.map((a) => a.id), ["addresses_task", "needs_clarification"]);
+  }
+  assert.equal(
+    chatTurnVisibleText({ role: "assistant", text, pending: false }),
+    "Reviewed the patch.\n\nNext I would clarify.",
+  );
+});
+
+test("proposal-review markers sit beside the other rich cards without disturbing them", () => {
+  const rendered = extractChatRenderedText(`${CONTROL_HEAVY_ASSISTANT_TEXT}\n${PROPOSAL_REVIEW_MARKER}`);
+  assert.equal(rendered.visible.trim(), "The ordinary visible answer remains.");
+  assert.equal(proposalReviewsIn(rendered.cardText).length, 1);
+  assert.equal(rendered.researchRuns.length, 1);
+  assert.deepEqual(rendered.autoStatusUpdate, { state: "done" });
+  assert.deepEqual(rendered.attentionRequest, { reason: "decision" });
+  assert.match(rendered.cardText, /<coven:github/);
+  assert.match(rendered.cardText, /<coven:proposal-review/);
+  assert.match(rendered.cardText, /__coven\/research\/research-42/);
+});
+
+test("streaming proposal-review fragments never enter visible or card text", () => {
+  for (const fragment of [
+    "<coven:p",
+    "<coven:proposal",
+    "<coven:proposal-review",
+    '<coven:proposal-review tool="propose_patch" verdict="permit" reason="a > b',
+  ]) {
+    for (const pending of [true, false]) {
+      const rendered = extractChatRenderedText(`Visible before ${fragment}`, { pending });
+      assert.equal(rendered.visible, "Visible before ", `${fragment} pending=${pending}`);
+      assert.equal(rendered.cardText, "Visible before ", `${fragment} pending=${pending}`);
+      assert.deepEqual(proposalReviewsIn(rendered.cardText), [], `${fragment} pending=${pending}`);
+    }
+  }
+});
+
+test("proposal-review examples stay literal in inline code and language-tagged fences", () => {
+  for (const text of [
+    `\`${PROPOSAL_REVIEW_MARKER}\``,
+    `\`\`\`xml\n${PROPOSAL_REVIEW_MARKER}\n\`\`\``,
+  ]) {
+    const rendered = extractChatRenderedText(text);
+    assert.equal(rendered.visible, text);
+    assert.equal(rendered.cardText, text);
+    assert.deepEqual(proposalReviewsIn(rendered.cardText), []);
+  }
+});
+
+test("an unknown proposal-review verdict projects as unavailable, never as permission", () => {
+  const rendered = extractChatRenderedText(
+    '<coven:proposal-review tool="run_command" verdict="approved" q="addresses_task:yes:0.99" />',
+  );
+  assert.equal(rendered.visible, "");
+  const reviews = proposalReviewsIn(rendered.cardText);
+  assert.equal(reviews.length, 1);
+  assert.equal(reviews[0]?.verdict, "unavailable");
 });

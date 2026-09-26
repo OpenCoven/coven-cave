@@ -2,7 +2,7 @@
 // Cross-check: the catalog (data) vs the runtime declarations (src/app/fonts.ts)
 // + the root layout wiring. font-catalog.ts on its own can list cssVars that
 // nothing declares — this test fails if a catalog entry has no matching
-// `next/font/google` instance, or if the layout stops applying them to <html>.
+// `next/font/local` instance, or if the layout stops applying them to <html>.
 // Source is read as text (not imported): next/font only resolves under the
 // Next build, so importing fonts.ts in the node test runner would throw.
 import assert from "node:assert/strict";
@@ -12,7 +12,8 @@ import { FONT_OPTIONS } from "./font-catalog.ts";
 const fontsSrc = readFileSync(new URL("../app/fonts.ts", import.meta.url), "utf8");
 const layoutSrc = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
 
-// 1. Every catalog cssVar is declared as a next/font variable in fonts.ts.
+// 1. Every catalog cssVar is declared as a next/font variable in fonts.ts
+//    (vendored next/font/local files; scripts/vendor-fonts.test.mjs checks them).
 for (const o of FONT_OPTIONS) {
   assert.ok(
     fontsSrc.includes(`variable: "${o.cssVar}"`),
@@ -31,8 +32,13 @@ assert.match(
 //    declared `.variable` classes actually reach the DOM.
 assert.match(
   layoutSrc,
-  /import\s*\{\s*fontVariables\s*\}\s*from\s*["']\.\/fonts["']/,
-  "layout.tsx must import { fontVariables } from ./fonts",
+  /import\s*\{\s*fontFamilyStyle,\s*fontVariables\s*\}\s*from\s*["']\.\/fonts["']/,
+  "layout.tsx must import { fontFamilyStyle, fontVariables } from ./fonts",
+);
+assert.match(
+  layoutSrc,
+  /<html[\s\S]*?style=\{fontFamilyStyle\}/,
+  "layout.tsx applies every cssVar's vendored subset stack to <html>",
 );
 const htmlTag = layoutSrc.match(/<html[\s\S]*?>/);
 assert.ok(htmlTag, "layout.tsx must render an <html> element");
@@ -46,7 +52,7 @@ assert.match(
 //    should linger in layout.tsx — fonts.ts is the single source of truth.
 assert.doesNotMatch(
   layoutSrc,
-  /from\s+["']next\/font\/google["']/,
+  /from\s+["']next\/font\/(google|local)["']/,
   "layout.tsx must not declare fonts directly; they live in src/app/fonts.ts",
 );
 

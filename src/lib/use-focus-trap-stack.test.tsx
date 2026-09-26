@@ -735,4 +735,50 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
 
     expect(latestFullscreen).toBe(false);
   });
+
+  test("roving rows with tabindex -1 are not Tab stops, so Tab wraps from the true last stop (#5527)", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    // Document order: input, chip, then two arrow-key rows. The rows match the
+    // FOCUSABLE selector (they are buttons) but Tab never lands on them.
+    const ordered: Array<FakeElement & { tabIndex: number; compareDocumentPosition: (other: unknown) => number }> = [];
+    const make = (name: string, tabIndex: number) => {
+      const el = Object.assign(makeElement(name, activeHolder), {
+        tabIndex,
+        compareDocumentPosition: (other: unknown) =>
+          ordered.indexOf(other as never) > ordered.indexOf(el as never) ? 4 : 2,
+      });
+      ordered.push(el);
+      return el;
+    };
+    const input = make("input", 0);
+    const chip = make("chip", 0);
+    const rowA = make("row-a", -1);
+    const rowB = make("row-b", -1);
+    const container = makeContainer([input, chip, rowA, rowB], activeHolder);
+
+    act(() => {
+      renderer = create(<TrapProbe probeId="palette" active onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+    expect(activeHolder.current).toBe(input);
+
+    chip.focus();
+    act(() => win.dispatchKeydown({ key: "Tab" }));
+    expect(activeHolder.current, "Tab from the last real stop wraps to the first").toBe(input);
+
+    act(() => win.dispatchKeydown({ key: "Tab", shiftKey: true }));
+    expect(activeHolder.current, "Shift+Tab from the first wraps to the last real stop").toBe(chip);
+
+    rowB.focus();
+    act(() => win.dispatchKeydown({ key: "Tab" }));
+    expect(activeHolder.current, "Tab from a trailing row cannot leave the trap").toBe(input);
+
+    rowA.focus();
+    act(() => win.dispatchKeydown({ key: "Tab", shiftKey: true }));
+    expect(activeHolder.current, "Shift+Tab from a row returns to the preceding stop").toBe(chip);
+  });
 });

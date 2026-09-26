@@ -59,7 +59,7 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /\{ ok: true, report, \.\.\.\(archivedAt \? \{ archivedAt \} : \{\}\) \}/,
+      /ok: true,\s*report,[\s\S]*?\.\.\.\(archivedAt \? \{ archivedAt \} : \{\}\),/,
       "POST response must carry archivedAt so the chat can refresh its list",
     );
   });
@@ -162,5 +162,58 @@ describe("self-report route JSON parsing", () => {
     assert.equal(stripSelfReportJsonFence("```JSON\t\n{\"ok\":true}\n\t```"), "{\"ok\":true}");
     assert.equal(stripSelfReportJsonFence("```\n{\"ok\":true}\n```"), "{\"ok\":true}");
     assert.equal(stripSelfReportJsonFence("{\"ok\":true}\t\t"), "{\"ok\":true}");
+  });
+});
+
+describe("reflection auto-archive CTA gate and review-run archive", () => {
+  it("derives the call-to-action from the persisted report and feeds it to the thread archive", () => {
+    assert.match(
+      routeSource,
+      /const requiresHumanAction = selfReportRequiresHumanAction\(report\);/,
+      "the CTA decision comes from the shared pure helper, on the normalized report",
+    );
+    assert.match(
+      routeSource,
+      /maybeAutoArchiveReflectedThread\(\s*sessionId,\s*body\.trigger as ReflectionTrigger,\s*requiresHumanAction,\s*\)/,
+      "the reflected-thread archive receives the CTA flag",
+    );
+    assert.match(
+      routeSource,
+      /lastActivityAt: reflectedSession\.lastActivityAt,\s*requiresHumanAction,/,
+      "the atomic reflection helper is told about the CTA inside the same request",
+    );
+  });
+
+  it("archives a verified review run whatever the CTA, never the reflected thread, and validates its id", () => {
+    assert.match(
+      routeSource,
+      /if \(reviewSessionId && !SELF_REPORT_SESSION_ID_RE\.test\(reviewSessionId\)\)/,
+      "a supplied review session id is validated with the same session-id rule",
+    );
+    assert.match(
+      routeSource,
+      /async function maybeAutoArchiveReviewRun[\s\S]*?if \(!reviewSessionId \|\| reviewSessionId === reflectedSessionId\) return null;\s*try \{/,
+      "the review run is left alone only when it is the reflected thread; a CTA stays on that thread",
+    );
+    assert.match(
+      routeSource,
+      /async function isReviewRunOf[\s\S]*?loadConversation\(reviewSessionId\)[\s\S]*?origin === "enhance" && conversation\.familiarId === familiarId/,
+      "provenance is resolved server-side: an enhance run of the reporting familiar",
+    );
+    assert.match(
+      routeSource,
+      /return await autoArchiveReviewRunLocal\(\s*reviewSessionId,\s*\(\) => isReviewRunOf\(reviewSessionId, familiarId\),\s*\);[\s\S]*?catch \{\s*return null;\s*\}/,
+      "review-run archiving is best-effort and goes through the provenance-gated state helper",
+    );
+    assert.match(
+      routeSource,
+      /maybeAutoArchiveReviewRun\(reviewSessionId, sessionId, id\)/,
+      "the reporting familiar id scopes the provenance check",
+    );
+    assert.match(
+      routeSource,
+      /requiresHumanAction,\s*\.\.\.\(archivedAt \? \{ archivedAt \} : \{\}\),\s*\.\.\.\(reviewArchivedAt \? \{ reviewArchivedAt \} : \{\}\),/,
+      "the response reports the CTA verdict and both archive outcomes",
+    );
   });
 });

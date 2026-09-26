@@ -1130,7 +1130,9 @@
 
 /* ── Mobile familiar context row ───────────────────────────────────────────
  *   Desktop uses the shell titlebar selector. Keep this route above the Chat
- *   tabs only where the titlebar is unavailable. */
+ *   tabs only where the titlebar is unavailable: tablet widths. On a phone
+ *   (#5529) the shell top bar carries the same familiar picker in the same
+ *   header band, so this row is folded away for the transcript's sake. */
 .chat-familiar-context {
   display: flex;
   align-items: center;
@@ -1144,7 +1146,7 @@
   width: 100%;
   max-width: none;
 }
-@media (min-width: 1024px) {
+@media (min-width: 1024px), (max-width: 767px) {
   .chat-familiar-context {
     display: none;
   }

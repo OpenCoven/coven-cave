@@ -52,6 +52,11 @@ struct ChatsHomeView: View {
     /// pushing a conversation. Reset whenever the sidebar selection changes.
     @State private var detailPath: [ChatRoute] = []
     @State private var showArchived = false
+    /// Narrow the home list to conversations one familiar takes part in
+    /// (direct threads, groups they belong to, and their server-only rows).
+    /// Like search and the archive toggle, this is list organisation only —
+    /// it never changes a chat's project binding or selection.
+    @State private var familiarFilter: String?
     @State private var renamingThread: ChatThread?
     @State private var pendingDelete: ChatThread?
     /// Server-only rows have no ChatThread to hand the existing dialog, so
@@ -151,12 +156,14 @@ struct ChatsHomeView: View {
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
                 query: query,
-                includeArchived: showArchived
+                includeArchived: showArchived,
+                familiarId: familiarFilter
             )
         }
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
-                if snapshot.entries.isEmpty && query.isEmpty && snapshot.archivedCount == 0 {
+                if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
+                    && snapshot.archivedCount == 0 {
                     if let error = app.familiarsError ?? app.sessionsError {
                         loadFailure(error)
                     } else {
@@ -164,6 +171,8 @@ struct ChatsHomeView: View {
                     }
                 } else if snapshot.entries.isEmpty && !query.isEmpty {
                     ContentUnavailableView.search(text: query)
+                } else if snapshot.entries.isEmpty, let familiarId = familiarFilter {
+                    familiarFilterEmptyState(familiarId, snapshot: snapshot)
                 } else {
                     homeList(snapshot)
                 }
@@ -403,6 +412,8 @@ struct ChatsHomeView: View {
                 }
                 Spacer(minLength: 0)
                 Menu {
+                    familiarFilterPicker(snapshot)
+                    Divider()
                     Button { showArchived.toggle() } label: {
                         Label(
                             showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
@@ -410,11 +421,13 @@ struct ChatsHomeView: View {
                         )
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease.circle.fill")
                         .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(familiarFilter == nil ? chrome.textPrimary : chrome.accent)
                         .frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("Chat list options")
+                .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
+                .accessibilityIdentifier("Chat list options")
             }
             if dynamicTypeSize.isAccessibilitySize || sizeClass == .regular,
                let detail = visibleConversationLabel(snapshot.entries.count) {
@@ -423,11 +436,89 @@ struct ChatsHomeView: View {
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let familiarId = familiarFilter {
+                familiarFilterChip(familiarId)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 8)
         .glassChrome(.top)
+    }
+
+    /// Familiars offered by the filter: everyone with at least one conversation
+    /// (active or archived), by display name. A filter that names a familiar
+    /// with no chats left (all deleted) stays listed so it can be cleared.
+    private func filterableFamiliars(_ snapshot: ChatListSnapshot) -> [Familiar] {
+        app.familiars
+            .filter { snapshot.familiarIds.contains($0.id) || $0.id == familiarFilter }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func familiarDisplayName(_ familiarId: String) -> String {
+        app.familiars.first { $0.id == familiarId }?.displayName ?? familiarId
+    }
+
+    /// "Filter by familiar" submenu: one checkmarked choice, "All" first.
+    @ViewBuilder
+    private func familiarFilterPicker(_ snapshot: ChatListSnapshot) -> some View {
+        let familiars = filterableFamiliars(snapshot)
+        Menu {
+            Picker("Filter by familiar", selection: $familiarFilter) {
+                Label("All familiars", systemImage: "person.2").tag(String?.none)
+                ForEach(familiars) { familiar in
+                    Text(familiar.displayName).tag(Optional(familiar.id))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label(
+                familiarFilter.map { "Familiar: \(familiarDisplayName($0))" } ?? "Filter by familiar",
+                systemImage: "line.3.horizontal.decrease.circle"
+            )
+        }
+        .disabled(familiars.isEmpty && familiarFilter == nil)
+    }
+
+    /// The active filter, visible without opening the menu, and one tap to clear.
+    private func familiarFilterChip(_ familiarId: String) -> some View {
+        Button { withAnimation { familiarFilter = nil } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                Text(familiarDisplayName(familiarId))
+                    .lineLimit(1)
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(chrome.accent)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .glass(.control, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear familiar filter, \(familiarDisplayName(familiarId))")
+        .accessibilityIdentifier("Familiar filter chip")
+    }
+
+    /// Nothing left once the familiar filter applies (search, if any, already
+    /// matched nothing on its own branch).
+    private func familiarFilterEmptyState(_ familiarId: String, snapshot: ChatListSnapshot) -> some View {
+        let name = familiarDisplayName(familiarId)
+        return ContentUnavailableView {
+            Label("No chats with \(name)", systemImage: "line.3.horizontal.decrease.circle")
+        } description: {
+            Text(
+                snapshot.archivedCount > 0 && !showArchived
+                    ? "Archived chats are hidden. Show archived, or clear the filter."
+                    : "Start a new chat with \(name), or clear the filter."
+            )
+        } actions: {
+            Button("Show all familiars") { familiarFilter = nil }
+            if let familiar = app.familiars.first(where: { $0.id == familiarId }) {
+                Button("New chat with \(name)") { startNewChat(with: familiar) }
+            }
+        }
     }
 
     private var homeSearchBar: some View {

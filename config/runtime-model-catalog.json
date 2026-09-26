@@ -112,6 +112,14 @@
       "contextWindow": 1000000,
       "capabilityGated": true
     },
+    "claude-opus-5-5": {
+      "label": "Claude Opus 5.5",
+      "ids": {
+        "anthropic": "claude-opus-5-5"
+      },
+      "contextWindow": 1000000,
+      "capabilityGated": true
+    },
     "claude-opus-4-8": {
       "label": "Claude Opus 4.8",
       "ids": {

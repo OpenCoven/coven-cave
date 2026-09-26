@@ -122,6 +122,57 @@ final class ChatListSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.entries.map(\.id), ["server:chat"])
     }
 
+    func testFamiliarFilterKeepsOnlyConversationsThatFamiliarTakesPartIn() {
+        let direct = chat("direct", root: nil, familiars: ["nyx"])
+        let group = chat("group", root: nil, familiars: ["nyx", "lyra"])
+        let other = chat("other", root: nil, familiars: ["lyra"])
+        let server = SessionRow(id: "server-1", title: "Desktop chat", familiarId: "lyra")
+
+        let all = ChatListSnapshot(threads: [direct, group, other], sessions: [server], familiars: [])
+        XCTAssertEqual(all.entries.count, 4)
+        XCTAssertEqual(all.familiarIds, ["nyx", "lyra"])
+
+        let nyx = all.filtered(query: "", includeArchived: false, familiarId: "nyx")
+        XCTAssertEqual(Set(nyx.entries.map(\.id)), ["local:direct", "local:group"])
+
+        let lyra = ChatListSnapshot(
+            threads: [direct, group, other], sessions: [server], familiars: [], familiarId: "lyra"
+        )
+        XCTAssertEqual(Set(lyra.entries.map(\.id)), ["local:group", "local:other", "server:server-1"])
+        XCTAssertEqual(lyra.familiarIds, ["nyx", "lyra"], "the filter roster is not narrowed by the filter itself")
+    }
+
+    func testFamiliarFilterComposesWithSearchAndArchive() {
+        let visible = chat("Build review", root: nil, familiars: ["nyx"])
+        let archived = chat("Build archive", root: nil, familiars: ["nyx"])
+        archived.archived = true
+        // Built archived-inclusive, as the cache does, so `filtered` can widen
+        // and narrow the archive toggle without a rebuild.
+        let snapshot = ChatListSnapshot(
+            threads: [visible, archived], sessions: [], familiars: [], includeArchived: true
+        )
+
+        XCTAssertEqual(
+            snapshot.filtered(query: "build", includeArchived: false, familiarId: "nyx").entries.map(\.id),
+            ["local:Build review"]
+        )
+        XCTAssertEqual(
+            snapshot.filtered(query: "build", includeArchived: true, familiarId: "nyx").entries.count, 2
+        )
+        XCTAssertTrue(snapshot.filtered(query: "", includeArchived: true, familiarId: "lyra").entries.isEmpty)
+        XCTAssertEqual(snapshot.archivedCount, 1)
+    }
+
+    func testEnhanceOriginReviewRunsNeverBecomeConversations() throws {
+        let review = try JSONDecoder().decode(SessionRow.self, from: Data(
+            #"{"id":"review","title":"Thread you just completed (session…","origin":"enhance","familiarId":"nyx"}"#.utf8
+        ))
+        let chat = SessionRow(id: "chat", title: "Real chat", familiarId: "nyx")
+        XCTAssertTrue(review.isGeneratedRun, "the one-shot utility lane is hidden, matching the web")
+        let snapshot = ChatListSnapshot(threads: [], sessions: [review, chat], familiars: [])
+        XCTAssertEqual(snapshot.entries.map(\.id), ["server:chat"])
+    }
+
     private func chat(
         _ id: String,
         root: String?,

@@ -40,6 +40,11 @@ export type CalendarDeadline = {
 
 export type Props = {
   items: InboxItem[];
+  /** The reminders read failed; an empty agenda then says so instead of
+   *  claiming nothing is scheduled (#5527). */
+  itemsLoadFailed?: boolean;
+  /** Re-read reminders after a failed load. */
+  onRetryItems?: () => void;
   familiars: Familiar[];
   /** When set, the calendar hard-scopes to items belonging to this familiar.
    *  Defensive null escape: bypass the familiar filter entirely. Mirrors

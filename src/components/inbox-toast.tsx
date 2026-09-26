@@ -2,11 +2,12 @@
 
 import "@/styles/dash-act.css";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
 import { groupToasts, MAX_VISIBLE_TOAST_GROUPS } from "@/lib/toast-groups";
+import { TOAST_CLEARANCE_HEADER_SELECTOR, toastHeaderClearance } from "@/lib/toast-header-clearance";
 import { Icon, type IconName } from "@/lib/icon";
 
 export type Toast = {
@@ -72,6 +73,8 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
   // together, instead of member timers re-arming the card one removal at a
   // time. Pausing any member (they always pause as a set) holds the group.
   const groups = useMemo(() => groupToasts(toasts), [toasts]);
+  const stackRef = useRef<HTMLDivElement>(null);
+  useToastHeaderClearance(stackRef, toasts.length > 0);
 
   useEffect(() => {
     if (groups.length === 0) return;
@@ -91,7 +94,7 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
     // Geometry lives in dash-act.css, not in utilities here: the phone layout
     // has to clear the shell's top-right chrome, which a single desktop-shaped
     // set of utilities cannot express (cave-lcxc6).
-    <div className="inbox-toast-stack">
+    <div ref={stackRef} className="inbox-toast-stack">
       {visible.map((g) => {
         const t = g.lead;
         const title = normalizeInboxTitle(t.title);
@@ -211,4 +214,78 @@ export function toastFromItem(item: InboxItem): Toast {
     media: item.media,
     kind: item.kind,
   };
+}
+
+/**
+ * Keep the stack below any surface header band that shares its column (#5531),
+ * by publishing `--inbox-toast-clearance` for dash-act.css. Runs only while
+ * toasts are showing; re-measures on resize, header resize, header class or
+ * visibility changes, header transitions, and DOM changes (a mode switch swaps
+ * the header underneath a visible toast). Inert or aria-hidden headers have
+ * no reachable controls and don't count.
+ */
+function useToastHeaderClearance(stackRef: RefObject<HTMLDivElement | null>, active: boolean) {
+  useEffect(() => {
+    const stack = stackRef.current;
+    if (!active || !stack) return;
+    let frame = 0;
+    // Re-observed only when the set of headers changes: observe() always
+    // delivers one initial callback, so re-observing on every measure would
+    // re-schedule a measure every frame.
+    const headerObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    // A header can also appear or move without resizing or a DOM insertion: the
+    // browser pane's toolbar stays mounted and slides in by class (a transform).
+    const headerAttributes = new MutationObserver(schedule);
+    let observed: HTMLElement[] = [];
+    const measure = () => {
+      frame = 0;
+      const all = Array.from(document.querySelectorAll<HTMLElement>(TOAST_CLEARANCE_HEADER_SELECTOR))
+        .filter((header) => !stack.contains(header));
+      // Observed whether or not they count right now, so a header that becomes
+      // visible or interactive later triggers a re-measure.
+      const headers = all.filter((header) =>
+        getComputedStyle(header).visibility !== "hidden" && !header.closest("[inert], [aria-hidden='true']"),
+      );
+      if (all.length !== observed.length || all.some((header, index) => header !== observed[index])) {
+        headerObserver?.disconnect();
+        headerAttributes.disconnect();
+        for (const header of all) {
+          headerObserver?.observe(header);
+          headerAttributes.observe(header, {
+            attributes: true,
+            attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"],
+          });
+        }
+        observed = all;
+      }
+      const clearance = toastHeaderClearance(
+        stack.getBoundingClientRect(),
+        headers.map((header) => header.getBoundingClientRect()),
+        window.innerHeight,
+      );
+      if (clearance === null) stack.style.removeProperty("--inbox-toast-clearance");
+      else stack.style.setProperty("--inbox-toast-clearance", `${clearance}px`);
+    };
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(measure);
+    }
+    measure();
+    const mutations = new MutationObserver(schedule);
+    mutations.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", schedule);
+    // A class toggle starts a transform transition; measure where it lands.
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target instanceof Element && event.target.matches(TOAST_CLEARANCE_HEADER_SELECTOR)) schedule();
+    };
+    document.addEventListener("transitionend", onTransitionEnd, true);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      mutations.disconnect();
+      headerObserver?.disconnect();
+      headerAttributes.disconnect();
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("transitionend", onTransitionEnd, true);
+      stack.style.removeProperty("--inbox-toast-clearance");
+    };
+  }, [stackRef, active]);
 }

@@ -5,8 +5,8 @@
  *
  * The ONLY place the initial rooms are named. The Cave shell imports this
  * module for its side effect and otherwise knows nothing about specific
- * roles — adding a future room (Sentinel's watchtower, Scribe's writing
- * desk, Navigator's chart room…) means adding a module + one register call
+ * roles — adding a future room (Scribe's writing desk, Navigator's chart
+ * room…) means adding a module + one register call
  * here, never editing shell code. The registry itself is open: any module
  * can call registerRoleSurface at import time and appear identically.
  *
@@ -24,7 +24,6 @@ import {
   type RoleSurfaceContribution,
 } from "@/lib/role-surfaces";
 import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-state";
-import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
 import { researchEngineStatus } from "./researcher-status";
@@ -34,7 +33,6 @@ import {
   NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
-  SENTINEL_SURFACE_ID,
   X_COMMS_SURFACE_ID,
 } from "./ids";
 
@@ -48,10 +46,6 @@ function RoomFallback() {
 
 const IndexerSurface = dynamic(
   () => import("./indexer-surface").then((m) => m.IndexerSurface),
-  { ssr: false, loading: RoomFallback },
-);
-const SentinelSurface = dynamic(
-  () => import("./sentinel-surface").then((m) => m.SentinelSurface),
   { ssr: false, loading: RoomFallback },
 );
 const ScribeSurface = dynamic(
@@ -187,72 +181,6 @@ registerRoleSurface({
     } satisfies RoleSurfaceContribution;
   },
   render: (context) => <XCommsSurface context={context} />,
-});
-
-registerRoleSurface({
-  id: SENTINEL_SURFACE_ID,
-  role: "sentinel",
-  // "watch" was a familiar Type until the vocabulary reduction (cave-lgcb);
-  // these aliases keep the Watchtower reachable from Role labels like
-  // "guardian-watch" now that the type no longer grants it.
-  aliases: ["watch", "guardian"],
-  title: "Watchtower",
-  iconName: "ph:binoculars",
-  description: "Alerts, session watch, and perimeter reachability",
-  accentHue: 40,
-  priority: 15,
-  shouldDisplay: () => true,
-  getContributions(context) {
-    const state = readRoleSurfaceState<{ lastSummary?: { open: number; critical: number } | null }>(
-      context.activeFamiliar.id,
-      SENTINEL_SURFACE_ID,
-    );
-    const sweep = state?.lastSummary ?? null;
-    const status = sweep ? watchtowerStatus(sweep) : null;
-    return {
-      commands: [
-        {
-          id: "sentinel.toggle-drawer",
-          title: "Toggle watch log",
-          hint: "⌘⇧D",
-          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
-        },
-      ],
-      toolbarActions: [
-        {
-          id: "sentinel.drawer",
-          title: "Watch log",
-          iconName: "ph:list",
-          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
-        },
-      ],
-      keyboardShortcuts: [
-        {
-          id: "sentinel.drawer.kbd",
-          combo: "mod+shift+d",
-          description: "Toggle the watch log drawer",
-          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
-        },
-      ],
-      notifications: daemonNotices(context),
-      statusIndicators: [
-        status == null
-          ? {
-              id: "sentinel.alerts",
-              label: "no sweep yet",
-              tone: "muted" as const,
-              detail: "Alert counts appear after the Watchtower's first escalation sweep",
-            }
-          : {
-              id: "sentinel.alerts",
-              label: status.label,
-              tone: status.tone,
-              detail: "Unresolved escalations across the Cave, from the shared Inbox store",
-            },
-      ],
-    };
-  },
-  render: (context) => <SentinelSurface context={context} />,
 });
 
 registerRoleSurface({

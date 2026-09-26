@@ -1,5 +1,5 @@
 /**
- * Bundled font registry. Every entry corresponds to a `next/font/google`
+ * Bundled font registry. Every entry corresponds to a vendored `next/font/local`
  * instance declared in src/app/fonts.ts whose `.variable` class is spread
  * onto <html> by the root layout — so each cssVar resolves anywhere in the
  * app. Unselected fonts cost nothing at runtime: they're declared with

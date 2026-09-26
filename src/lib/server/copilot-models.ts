@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { normalizeCopilotModels } from "../copilot-models.ts";
 import { copilotStreamSpec } from "../copilot-stream.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { harnessSpawnEnv, warmHarnessSpawnPath } from "../harness-spawn-env.ts";
 import type { RuntimeModelOption } from "../runtime-models.ts";
 import {
   resolveCopilotRuntimeLaunch,
@@ -102,6 +102,8 @@ export function encodeCopilotRpcFrame(value: unknown): Buffer {
 
 type CopilotModelDependencies = {
   spawnImpl?: typeof spawn;
+  /** Warms the spawn-PATH cache off the event loop before the sync env builder runs. */
+  warmSpawnPath?: () => Promise<void>;
   scopedEnv?: (
     familiarId?: string | null,
   ) => Record<string, string | undefined>;
@@ -319,6 +321,12 @@ export async function listCopilotModelInventory(
   dependencies: CopilotModelDependencies = {},
 ): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
   let env: Record<string, string | undefined>;
+  // Only the real env builder needs the warm-up; an injected scopedEnv never
+  // reads the spawn PATH (and tests stay off the user's login shell).
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     // Match the chat launch path and scope both cached and in-flight discovery
     // to the exact environment that will reach the provider. The fingerprint

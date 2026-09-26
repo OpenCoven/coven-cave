@@ -104,6 +104,7 @@ import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
+  describeDaemonStatusProblem,
 } from "@/lib/daemon-status-classification";
 import {
   createDaemonConnectionSupervisor,
@@ -1216,6 +1217,11 @@ export function Workspace() {
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  // A failed /api/inbox read must not render as an empty calendar (#5527).
+  const [inboxLoadFailed, setInboxLoadFailed] = useState(false);
+  // Set once any read (stream snapshot or /api/inbox) succeeds; a later
+  // reconnect error is then transient, not "reminders never loaded".
+  const inboxReadOnceRef = useRef(false);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
@@ -1728,10 +1734,12 @@ export function Workspace() {
       dismissBanner("daemon-status-unavailable");
       return;
     }
+    const problem = describeDaemonStatusProblem(daemonStatusUnavailable);
     pushBanner({
       id: "daemon-status-unavailable",
       severity: "warning",
-      title: `Daemon status unavailable — ${daemonStatusUnavailable}`,
+      title: problem.title,
+      ...(problem.detail ? { detail: problem.detail } : {}),
       cta: {
         label: "Retry",
         onClick: () => {
@@ -2038,6 +2046,11 @@ export function Workspace() {
   // macOS system notifications. EventSource auto-reconnects on its own.
   useEffect(() => {
     const es = new EventSource("/api/inbox/stream");
+    // The first snapshot is the calendar's initial read. Until a read lands, a
+    // stream error means reminders never loaded, not that there are none.
+    es.onerror = () => {
+      if (!inboxReadOnceRef.current) setInboxLoadFailed(true);
+    };
     // Quiet delivery, not suppression: muted items still land in the inbox and
     // bell — they just skip the toast/native-notification/sound moment.
     const isMuted = (item: InboxItem) =>
@@ -2074,6 +2087,8 @@ export function Workspace() {
         // reference so inboxItemsWithEphemeral consumers don't re-render
         // (companion to #2762's content-equal guard on `updated` echoes).
         setInboxItems((prev) => (arrayContentEqual(prev, e.items) ? prev : e.items));
+        inboxReadOnceRef.current = true;
+        setInboxLoadFailed(false);
         return;
       }
       if (e.type === "created") {
@@ -2333,9 +2348,16 @@ export function Workspace() {
     try {
       const res = await fetch("/api/inbox", { cache: "no-store" });
       const json = await res.json();
-      if (json.ok) setInboxItems(json.items ?? []);
+      if (res.ok && json.ok) {
+        setInboxItems(json.items ?? []);
+        inboxReadOnceRef.current = true;
+        setInboxLoadFailed(false);
+      } else {
+        setInboxLoadFailed(true);
+      }
     } catch {
-      /* SSE will reconcile on next event */
+      // SSE still reconciles on its next event; until then say the read failed.
+      setInboxLoadFailed(true);
     }
   }, []);
 
@@ -4383,6 +4405,8 @@ export function Workspace() {
         calendarSlot={
           <CalendarView
             items={inboxItems}
+            itemsLoadFailed={inboxLoadFailed}
+            onRetryItems={() => void refreshInbox()}
             familiars={familiars}
             activeFamiliarId={calendarFamiliarId}
             scopeFamiliarIds={scopeIds}
@@ -4562,6 +4586,17 @@ export function Workspace() {
             registeredProjects={registeredProjects}
             createProjectOrThrow={createProjectOrThrow}
             reloadProjects={reloadProjects}
+            onOpenTasks={() => {
+              setMode("board");
+              // The gate hands focus to the destination (#5528): land keyboard
+              // users on the main region once Tasks has rendered, so the next
+              // Tab goes into Tasks rather than starting over from <body>.
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                  document.getElementById("shell-main-content")?.focus({ preventScroll: true });
+                });
+              });
+            }}
           />
         ) : null}
         <div

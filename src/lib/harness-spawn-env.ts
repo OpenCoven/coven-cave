@@ -18,6 +18,7 @@
 
 import {
   covenSpawnEnv,
+  covenSpawnEnvAsync,
   type CovenSpawnEnvOptions,
 } from "./coven-bin.ts";
 import {
@@ -144,6 +145,47 @@ export function subtractScopedVaultKeys(
     if (!isVaultKeyGrantedTo(entry, familiarId)) delete env[key];
   }
   return env;
+}
+
+// One warm-up at a time; concurrent callers join it (see warmHarnessSpawnPath).
+let inFlightWarmUp: Promise<void> | null = null;
+
+/**
+ * Warm the shared spawn-PATH cache off the event loop (#5448).
+ *
+ * `harnessSpawnEnv()` and `canonicalProbeSpawnEnv()` are synchronous, and the
+ * first PATH discovery runs the user's login shell (seconds, with a heavy rc).
+ * Run through the sync API on a request path, that blocks every request the
+ * server is handling: the first Chat open waited ~3.3s on model discovery, and
+ * an 8 KB static chunk served alongside it took as long. Request paths await
+ * this first, with the same vault-free discovery environment, so the sync
+ * builders that follow read the cache. A failed warm-up changes nothing: the
+ * sync path still discovers on its own.
+ */
+export function warmHarnessSpawnPath(
+  dependencies: {
+    sourceEnv?: NodeJS.ProcessEnv;
+    loadMap?: () => VaultMap;
+    spawnEnvAsync?: typeof covenSpawnEnvAsync;
+  } = {},
+): Promise<void> {
+  // Concurrent callers join one warm-up. covenSpawnEnvAsync shares its own
+  // in-flight discovery only for default options, and this passes an explicit
+  // discovery env, so without this every simultaneous request (or client)
+  // would start its own login shell.
+  inFlightWarmUp ??= (async () => {
+    try {
+      const map = (dependencies.loadMap ?? (() => loadVaultMap(true)))();
+      await (dependencies.spawnEnvAsync ?? covenSpawnEnvAsync)({
+        discoveryEnv: vaultFreeDiscoveryEnv(dependencies.sourceEnv ?? process.env, map),
+      });
+    } catch {
+      // Best effort: the synchronous builders remain the source of truth.
+    }
+  })().finally(() => {
+    inFlightWarmUp = null;
+  });
+  return inFlightWarmUp;
 }
 
 /**

@@ -46,6 +46,9 @@ import { ChatRowTitle } from "@/components/chat-row-title";
 
 type Props = {
   sessions: SessionRow[];
+  /** The sessions list request failed. With no rows to show, say so rather
+   *  than presenting the failure as an empty history (#5527). */
+  sessionsError?: boolean;
   browseScope?: ChatBrowseScope;
   /** Selected familiar (null = "All familiars"). Scopes the project list and
    *  the per-project session rows. */
@@ -525,6 +528,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin,
 
 export function SidebarChatsSection({
   sessions,
+  sessionsError = false,
   browseScope,
   activeFamiliarId = null,
   activeSessionId,
@@ -898,7 +902,16 @@ export function SidebarChatsSection({
                 </section>
               ) : null}
             {recentBuckets.length === 0 ? (
-              attentionSessions.length > 0 && !hasSearch ? null : (
+              attentionSessions.length > 0 && !hasSearch ? null : sessionsError ? (
+              <div className="cnav__empty" role="alert">
+                <p>Couldn&apos;t load chats. They&apos;re safe, and Cave retries automatically.</p>
+                {onSessionsChanged ? (
+                  <button type="button" className="ui-btn ui-btn--sm mt-2" aria-label="Retry loading chats" onClick={() => onSessionsChanged()}>
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+              ) : (
               <p className="cnav__empty">
                 {hasSearch ? "No threads match your search." : browseScope && !browseScope.ready
                   ? "Project context is unavailable. Choose another project or retry."

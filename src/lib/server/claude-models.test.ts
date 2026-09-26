@@ -220,4 +220,23 @@ const oversized = await listClaudeModels("sage", {
 assert.ok(!oversized.some((model) => model.id === "anthropic/claude-opus-5"));
 assert.equal(oversizedSignals[0], "SIGTERM", "oversized metadata output terminates the child");
 
+// #5448: discovery warms the spawn-PATH cache off the event loop before the
+// synchronous env builder runs, so the first Chat open doesn't block the server.
+{
+  clearClaudeModelCache();
+  const order: string[] = [];
+  await listClaudeModelInventory("warm-order", {
+    warmSpawnPath: async () => {
+      order.push("warm");
+    },
+    scopedEnv: () => {
+      order.push("scopedEnv");
+      return { PATH: "/scoped" };
+    },
+    probeEnv: () => ({ PATH: "/canonical" }),
+    spawnImpl: versionSpawn("2.1.219 (Claude Code)\n"),
+  });
+  assert.deepEqual(order.slice(0, 2), ["warm", "scopedEnv"], "the warm-up completes before the sync env builder");
+}
+
 console.log("server/claude-models.test.ts: ok");

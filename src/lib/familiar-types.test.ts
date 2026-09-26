@@ -189,11 +189,11 @@ test("a non-coding type still unlocks its own room", () => {
   assert.ok(!surfaceMatchesRoles(codeRoomShape, ids));
 });
 
-// Retired-type continuity (cave-lgcb): the four rooms whose types left the
-// picker stay reachable through free-text Role labels, because the registry
-// carries the retired words as aliases (register.tsx).
+// Retired-type continuity (cave-lgcb): the rooms whose types left the picker
+// stay reachable through free-text Role labels, because the registry carries
+// the retired words as aliases (register.tsx). The watch type's room, the
+// Watchtower, was removed outright, so it has no continuity to keep.
 const retiredRoomShapes = {
-  watch: { role: "sentinel", aliases: ["watch", "guardian"] },
   planning: { role: "navigator", aliases: ["planner", "planning"] },
   writing: { role: "scribe", aliases: ["editor", "writer", "writing"] },
   indexing: { role: "indexer", aliases: ["archivist", "indexing"] },
@@ -208,8 +208,6 @@ test("a retired type value no longer unlocks its old room", () => {
 
 test("role labels using retired words still reach the room via aliases", () => {
   const cases: Array<[string, keyof typeof retiredRoomShapes]> = [
-    ["guardian-watch", "watch"],
-    ["Watch", "watch"],
     ["Planning", "planning"],
     ["Planner", "planning"],
     ["Writer", "writing"],

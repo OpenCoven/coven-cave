@@ -89,6 +89,8 @@ const PROJECTING_VIEWS = new Set<ViewMode>(["agenda", "day", "week", "month"]);
 
 function AgendaView({
   items,
+  itemsLoadFailed = false,
+  onRetryItems,
   deadlines,
   projectedRuns,
   anchor,
@@ -97,6 +99,8 @@ function AgendaView({
   onOpenDeadline,
 }: {
   items: InboxItem[];
+  itemsLoadFailed?: boolean;
+  onRetryItems?: () => void;
   deadlines?: CalendarDeadline[];
   /** Cron occurrences projected onto this window — see calendar-cron-projection. */
   projectedRuns?: readonly ProjectedCronRun[];
@@ -168,7 +172,18 @@ function AgendaView({
     return (
       <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
         <Icon name="ph:calendar-blank" width={32} className="text-[var(--text-muted)]" />
-        <div>Nothing scheduled upcoming.</div>
+        {itemsLoadFailed ? (
+          <>
+            <div role="alert">Couldn't load reminders.</div>
+            {onRetryItems ? (
+              <Button size="sm" onClick={onRetryItems} className="calendar-empty-action" aria-label="Retry loading reminders">
+                Retry
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <div>Nothing upcoming.</div>
+        )}
         {pastCount > 0 && !showPast ? (
           <Button
             size="sm"
@@ -1651,7 +1666,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliarIds, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
+export function CalendarView({ items, itemsLoadFailed = false, onRetryItems, familiars, activeFamiliarId, scopeFamiliarIds, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
@@ -2140,6 +2155,8 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
+            itemsLoadFailed={itemsLoadFailed}
+            onRetryItems={onRetryItems}
             deadlines={scopedDeadlines}
             projectedRuns={projection.runs}
             anchor={anchor}

@@ -296,6 +296,21 @@ export function isThreadSelfReport(value: unknown): value is ThreadSelfReport {
   );
 }
 
+/**
+ * True when a landed self-report carries a call-to-action the human has to
+ * answer: a high/blocking persistent blocker, a blocking capability gap, or a
+ * skill that needs access granted. Auto-archive keeps such threads — and the
+ * review run that produced the report — visible until the human acts; a
+ * review with no CTA is wrapped up and can file away on its own.
+ */
+export function selfReportRequiresHumanAction(
+  report: Pick<ThreadSelfReport, "persistentBlockers" | "capabilitiesLacking" | "skillsNeedingAccess">,
+): boolean {
+  if (report.persistentBlockers.some((b) => b.impact === "high" || b.impact === "blocking")) return true;
+  if (report.capabilitiesLacking.some((c) => c.importance === "blocking")) return true;
+  return report.skillsNeedingAccess.length > 0;
+}
+
 export function deriveThreadScore(report: ThreadSelfReport): number {
   return Math.round(
     report.overallConfidence * 0.35 +

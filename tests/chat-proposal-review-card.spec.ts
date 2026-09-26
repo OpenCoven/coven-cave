@@ -105,3 +105,28 @@ test("a live marker and a fenced marker in one reply yield exactly one card", as
   await expect(chat.locator("pre, code").filter({ hasText: 'tool="fenced_example"' }).first()).toBeVisible();
   await expect(cards.first().locator("button, a, input, [role=button], meter, progress")).toHaveCount(0);
 });
+
+// Two live markers in one reply: each becomes its own receipt in place, and a
+// verdict outside the four known ones reads as unavailable, never as permission.
+const UNKNOWN_VERDICT = '<coven:proposal-review tool="run_command" verdict="approved" reviewer="jev-1.13.0" q="addresses_task:yes:0.99" />';
+const TWO_CARD_REPLY = [
+  "I reviewed the proposed patch.",
+  MARKER,
+  "I would clarify the target before applying.",
+  UNKNOWN_VERDICT,
+].join("\n");
+
+test("two live markers in one reply yield two receipts, and an unknown verdict reads as unavailable", async ({ page }) => {
+  const chat = await setup(page, TWO_CARD_REPLY);
+  const cards = chat.getByRole("group", { name: /^Proposal review:/ });
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toHaveAttribute("data-verdict", "proposal_only");
+  const unavailable = cards.nth(1);
+  await expect(unavailable).toHaveAttribute("data-verdict", "unavailable");
+  await expect(unavailable).toHaveAttribute("aria-label", /^Proposal review: review unavailable/);
+  await expect(unavailable).toContainText("run_command");
+  await expect(chat.locator('[data-verdict="permit"]')).toHaveCount(0);
+  // Prose between the markers survives, and the raw tag never shows.
+  await expect(chat.getByText("I would clarify the target before applying.", { exact: true })).toBeVisible();
+  await expect(chat).not.toContainText("<coven:proposal-review");
+});

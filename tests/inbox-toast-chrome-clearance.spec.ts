@@ -43,6 +43,11 @@ const MILESTONE_ITEM = {
 };
 
 async function boot(page: Page) {
+  // The server picks the onboarding gate or the workspace from this cookie
+  // (src/app/page.tsx); localStorage alone only covers the client.
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
@@ -154,4 +159,89 @@ test("a toast keeps its own controls reachable", async ({ page }) => {
 
   await dismiss.click();
   await expect(toast).toBeHidden();
+});
+
+// #5531: at 1440×900 first-run milestone toasts stacked at x 1104..1424 /
+// y 42..297 and covered Tasks' header actions (Filter, New task, Select tasks,
+// ⋯). The stack now starts below any shared surface header band in its
+// column. This case holds the milestone back until Tasks has rendered, so the
+// toast lands on the surface it used to cover instead of racing its 8s
+// auto-hide through a cold `next dev` compile.
+test("a toast leaves a surface header's actions usable", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The server picks the onboarding gate or the workspace from this cookie
+  // (src/app/page.tsx); localStorage alone only covers the client.
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    localStorage.setItem("cave:active-familiar", "cody");
+    localStorage.setItem("cave:shell:right-chat-open", "0");
+  });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
+  );
+  await page.route("**/api/sessions/list**", (route) =>
+    route.fulfill({ json: { ok: true, sessions: [] } }),
+  );
+  let releaseMilestone!: () => void;
+  const milestoneReleased = new Promise<void>((resolve) => {
+    releaseMilestone = resolve;
+  });
+  let streamed = false;
+  await page.route("**/api/inbox/stream**", async (route) => {
+    if (streamed) return route.fulfill({ status: 204, body: "" });
+    streamed = true;
+    await milestoneReleased;
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+      body:
+        `data: ${JSON.stringify({ type: "snapshot", items: [] })}\n\n` +
+        `data: ${JSON.stringify({ type: "created", item: MILESTONE_ITEM })}\n\n`,
+    });
+  });
+  await page.goto("/");
+  await page.waitForSelector(".shell-frame", { timeout: 30_000 });
+
+  const actions = page.locator(".board-header .ui-view-header-actions");
+  await expect(async () => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } })),
+    );
+    await expect(actions).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 60_000 });
+  releaseMilestone();
+
+  const toast = page.locator(TOAST, { hasText: "Mission complete" }).first();
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const toastBox = await toast.boundingBox();
+  if (!toastBox) throw new Error("toast did not lay out");
+
+  const controls = actions.locator("button, a[href], [role='button']");
+  const count = await controls.count();
+  expect(count, "the Tasks header exposes its action controls").toBeGreaterThan(0);
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    if (!(await control.isVisible())) continue;
+    const box = await control.boundingBox();
+    if (!box) continue;
+    const name = (await control.getAttribute("aria-label")) ?? (await control.innerText()).trim();
+    const overlaps =
+      box.x < toastBox.x + toastBox.width &&
+      box.x + box.width > toastBox.x &&
+      box.y < toastBox.y + toastBox.height &&
+      box.y + box.height > toastBox.y;
+    testInfo.annotations.push({
+      type: "geometry",
+      description:
+        `${name}: x ${Math.round(box.x)}..${Math.round(box.x + box.width)} y ${Math.round(box.y)}..${Math.round(box.y + box.height)}` +
+        ` | toast y ${Math.round(toastBox.y)}..${Math.round(toastBox.y + toastBox.height)}`,
+    });
+    expect(overlaps, `toast overlaps the header control "${name}"`).toBe(false);
+    const hit = await hitTest(page, box.x + box.width / 2, box.y + box.height / 2, ".ui-view-header-actions");
+    expect(hit.matched, `elementFromPoint at "${name}" resolved to ${hit.describe}`).toBe(true);
+  }
 });

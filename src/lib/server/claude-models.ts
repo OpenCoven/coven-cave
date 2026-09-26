@@ -3,8 +3,9 @@ import {
   CLAUDE_OPUS_5_CAVE_ID,
   parseClaudeCodeVersion,
   withClaudeOpus5,
+  withClaudeOpus55,
 } from "../claude-models.ts";
-import { canonicalProbeSpawnEnv, harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { canonicalProbeSpawnEnv, harnessSpawnEnv, warmHarnessSpawnPath } from "../harness-spawn-env.ts";
 import { catalogForRuntime, type RuntimeModelOption } from "../runtime-models.ts";
 import { claudeProbeEnvironment } from "./claude-runtime-compatibility.ts";
 
@@ -30,6 +31,8 @@ type ClaudeModelDependencies = {
     familiarId?: string | null,
   ) => Record<string, string | undefined>;
   probeEnv?: () => Record<string, string | undefined>;
+  /** Warms the spawn-PATH cache off the event loop before the sync env builders run. */
+  warmSpawnPath?: () => Promise<void>;
   timeoutMs?: number;
   forceKillGraceMs?: number;
   now?: () => number;
@@ -170,10 +173,8 @@ async function discoverClaudeModels(
   dependencies: ClaudeModelDependencies,
 ): Promise<{ models: RuntimeModelOption[] }> {
   const versionOutput = await readVersion(dependencies);
-  const models = withClaudeOpus5(seedModels(), {
-    versionOutput,
-    env: providerEnv,
-  });
+  const probe = { versionOutput, env: providerEnv };
+  const models = withClaudeOpus55(withClaudeOpus5(seedModels(), probe), probe);
   if (parseClaudeCodeVersion(versionOutput)) {
     const now = dependencies.now ?? Date.now;
     const currentTime = now();
@@ -221,6 +222,12 @@ export async function claudeOpus5Routability(
   dependencies: ClaudeModelDependencies = {},
 ): Promise<"available" | "unavailable" | "unknown"> {
   let providerEnv: Record<string, string | undefined>;
+  // Only the real env builder needs the warm-up; an injected scopedEnv never
+  // reads the spawn PATH (and tests stay off the user's login shell).
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
@@ -253,10 +260,8 @@ export async function claudeOpus5Routability(
   // Caching here is safe for the same reason discoverClaudeModels' write is —
   // both sit behind the parse guard above, so only a probe that actually ran is
   // ever stored. An unusable probe returns "unknown" and writes nothing.
-  const models = withClaudeOpus5(seedModels(), {
-    versionOutput,
-    env: providerEnv,
-  });
+  const probe = { versionOutput, env: providerEnv };
+  const models = withClaudeOpus55(withClaudeOpus5(seedModels(), probe), probe);
   const currentTime = now();
   pruneExpiredCache(currentTime);
   cacheModels(
@@ -281,6 +286,12 @@ export async function listClaudeModelInventory(
   dependencies: ClaudeModelDependencies = {},
 ): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" | "fallback" }> {
   let providerEnv: Record<string, string | undefined>;
+  // Only the real env builder needs the warm-up; an injected scopedEnv never
+  // reads the spawn PATH (and tests stay off the user's login shell).
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),

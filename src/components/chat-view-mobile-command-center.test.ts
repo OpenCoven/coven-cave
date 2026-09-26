@@ -70,8 +70,8 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(324px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(340px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
-  "Mobile transcript should reserve bottom safe-area breathing room above the shorter composer",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(var\(--space-6\) \+ var\(--composer-kb-offset, 0px\) \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain[\s\S]*scroll-padding-bottom\s*:\s*calc\(var\(--space-8\) \+ var\(--composer-kb-offset, 0px\) \+ var\(--sai-bottom\)\)/,
+  "Mobile transcript reserves breathing room plus the keyboard offset, not a fixed composer-height gap (#5527)",
 );
 
 assert.match(
@@ -168,8 +168,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "The released-reader control should clear the retained mobile composer stack",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(137px \+ var\(--sai-bottom\)\)/,
+  "The released-reader control should clear the engaged two-line mobile composer (#5548)",
 );
 
 assert.match(
@@ -229,6 +229,21 @@ assert.doesNotMatch(
   styles,
   /\.cave-mobile-header-identity,\s*\.cave-chat-linked-context,\s*\.cave-mobile-header-task,/,
   "Desktop hide rules should no longer carry the removed linked-context strip",
+);
+
+// #5546: the phone composer rests only when nothing is staged (text,
+// attachments, a reply target, an armed task, dictation, a drag) and the
+// composer isn't engaged; focus kept in the dock keeps it engaged.
+assert.match(
+  source,
+  /data-composer-rest=\{\s*keyboardOffset <= KEYBOARD_OPEN_THRESHOLD_PX && !hasStagedComposerInput && !busy && !composerEngaged/,
+  "the rest state uses the canonical staged-input predicate and the engaged flag",
+);
+assert.match(source, /onFocus=\{\(\) => setComposerEngaged\(true\)\}/, "focusing the input engages the composer");
+assert.match(
+  source,
+  /if \(!dock\.contains\(event\.relatedTarget as Node \| null\)\) setComposerEngaged\(false\);/,
+  "only focus leaving the composer dock disengages it",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

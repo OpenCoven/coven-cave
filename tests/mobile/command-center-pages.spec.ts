@@ -130,16 +130,33 @@ test.describe("mobile command center pages", () => {
     const chat = page.locator(".cave-chat-linear");
     const composer = page.locator(".cave-composer-input");
     const auto = page.locator(".cave-mobile-action-chip--auto");
-    const baseButtonBackground = await auto.evaluate((element) => getComputedStyle(element).backgroundColor);
+    // #5529: the action strip shows only while the keyboard is up. ChatView
+    // sets data-keyboard-open from the visual viewport, which a desktop
+    // browser can't shrink, so set the same attribute to reveal the strip.
+    const keyboard = (open: boolean) =>
+      chat.evaluate((section, up) => {
+        if (up) section.setAttribute("data-keyboard-open", "true");
+        else section.removeAttribute("data-keyboard-open");
+      }, open);
 
+    await keyboard(true);
     await expect(auto).toHaveAccessibleName("Select Auto mode");
     await expect(auto).toHaveAttribute("aria-pressed", "false");
-    await auto.click();
+    const baseButtonBackground = await auto.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await keyboard(false);
+    await expect(auto).toBeHidden();
+
+    // At rest Auto is in the Tools menu.
+    await chat.locator(".cave-composer-tools-tab").first().click();
+    const autoItem = page.getByRole("menu", { name: "Tools" }).getByRole("menuitemcheckbox", { name: "Select Auto mode" });
+    await expect(autoItem).toHaveAttribute("aria-checked", "false");
+    await autoItem.click();
 
     await expect(composer).toHaveValue("/auto ");
+    await expect(chat).toHaveAttribute("data-auto-mode", "selected");
+    await keyboard(true);
     await expect(auto).toHaveAccessibleName("Leave Auto mode");
     await expect(auto).toHaveAttribute("aria-pressed", "true");
-    await expect(chat).toHaveAttribute("data-auto-mode", "selected");
     await expect.poll(
       () => auto.evaluate((element) => getComputedStyle(element).backgroundColor),
     ).not.toBe(baseButtonBackground);

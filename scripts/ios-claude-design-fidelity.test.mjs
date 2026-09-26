@@ -659,7 +659,7 @@ assert.match(chat, /if !chatAccessLoaded[\s\S]{0,350}Button\("Refresh access"\)/
   "readable history offers access recovery without implying that sends are authorized");
 assert.match(
   home,
-  /if snapshot\.entries\.isEmpty && query\.isEmpty && snapshot\.archivedCount == 0[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
+  /if snapshot\.entries\.isEmpty && query\.isEmpty && familiarFilter == nil\s+&& snapshot\.archivedCount == 0[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
   "Chats renders first-load failure without hiding cached or archived conversations",
 );
 assert.match(

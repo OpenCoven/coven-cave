@@ -148,7 +148,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useVisualViewport } from "@/lib/use-viewport";
+import { useIsMobile, useVisualViewport } from "@/lib/use-viewport";
+import { ChatPhoneCodeRailToggle, ChatPhoneThreadsToggle } from "@/components/chat-phone-header-controls";
 import { ChatFindBand } from "@/components/chat-find-band";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
@@ -1931,6 +1932,10 @@ function MobileChatContextMenu({
   );
 }
 
+/** Visual-viewport shrink beyond which the on-screen keyboard is up (#5529).
+ *  Mobile browser toolbars move it by far less than a keyboard's height. */
+const KEYBOARD_OPEN_THRESHOLD_PX = 120;
+
 function MobileChatActionStrip({
   autoSelected,
   autoRunning,
@@ -2131,7 +2136,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
       const prompt = buildThreadReflectPrompt({ sessionId, transcript: reflectTranscript });
-      const { text, error } = await streamFamiliarText({
+      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
         origin: "enhance",
@@ -2145,6 +2150,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           trigger: "manual",
           threadTitle: session?.title ?? familiar.display_name,
           payload: text,
+          // The ephemeral review run files itself away once the report lands
+          // (unless the report raised a CTA) — see the self-report route.
+          ...(reviewSessionId ? { reviewSessionId } : {}),
         }),
       });
       const json = await res.json() as
@@ -2166,7 +2174,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
       const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
-      const { text, error } = await streamFamiliarText({
+      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
         origin: "enhance",
@@ -2180,6 +2188,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           trigger: "auto",
           threadTitle: session?.title ?? familiar.display_name,
           payload: text,
+          ...(reviewSessionId ? { reviewSessionId } : {}),
         }),
       });
       const json = await res.json().catch(() => null) as
@@ -3741,10 +3750,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Keyboard height ≈ window.innerHeight - visualViewport.height; on
   // desktop both are equal so the offset stays 0.
   const vv = useVisualViewport();
+  const isMobile = useIsMobile();
+  // #5546: set when the composer input takes focus, and kept while focus stays
+  // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
+  // the phone composer never collapses under the control being used.
+  const [composerEngaged, setComposerEngaged] = useState(false);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
       : 0;
+  // Shared by the phone action strip and the Tools menu's phone actions.
+  const summarizeSession = () => {
+    setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
+    inputRef.current?.focus();
+  };
 
   // Inline slash menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
@@ -4654,7 +4673,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    const composer = inputRef.current;
+    if (!composer) return;
+    // Touch devices read first when a thread opens on the chat surface (#5546).
+    // A programmatic focus pops the keyboard on Android and, on iOS, leaves the
+    // composer focused with no keyboard, which also holds the phone composer
+    // expanded. A chat inside a dialog (the mobile Chat drawer) still takes
+    // focus: a modal dialog must hold it whatever the pointer. Checked
+    // synchronously: useIsCoarsePointer() is false on the first render.
+    if (window.matchMedia("(pointer: coarse)").matches && !composer.closest('[role="dialog"]')) return;
+    composer.focus();
   }, [sessionId]);
 
   // Auto-grow the composer with its content (shared with the home composer).
@@ -7498,7 +7526,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <footer
       ref={composerDockRef}
       className="cave-composer-dock"
-      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
     >
       {historyState === "offline" && sessionId ? (
         <div
@@ -7778,15 +7805,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onAuto={toggleMobileAutoMode}
               onRetry={retryLastSend}
               onStop={cancelSend}
-              onSummarize={() => {
-                setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
-                inputRef.current?.focus();
-              }}
+              onSummarize={summarizeSession}
               onAttach={() => fileInputRef.current?.click()}
               onVoice={() => setVoiceCallOpen(true)}
             />
 
-            <div className="cave-composer-panel" data-access-mode={permissionMode}>
+            <div
+              className="cave-composer-panel"
+              data-access-mode={permissionMode}
+              onBlur={(event) => {
+                const dock = event.currentTarget.closest(".cave-composer-dock") ?? event.currentTarget;
+                if (!dock.contains(event.relatedTarget as Node | null)) setComposerEngaged(false);
+              }}
+            >
               <div className="cave-composer-edge-actions">
                 <ComposerActionsMenu
                   attach={{
@@ -7861,6 +7892,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
                   triggerVariant="tools"
+                  phoneActions={isMobile ? {
+                    auto: {
+                      selected: autoModeSelected,
+                      running: autoMissionActive,
+                      disabled: busy && !autoMissionActive,
+                      onSelect: toggleMobileAutoMode,
+                    },
+                    retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
+                    summarize: { disabled: busy, onSelect: summarizeSession },
+                    call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
+                  } : undefined}
                 />
                 {linkedContext?.task && onOpenTask ? (
                   <button
@@ -7941,6 +7983,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
+                onFocus={() => setComposerEngaged(true)}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -8126,7 +8169,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      // On the root, not the dock: the dock rides up by it and the transcript
+      // reserves the same height so its last turn is never under the keyboard.
+      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
       data-auto-mode={autoMissionActive ? "running" : autoModeSelected ? "selected" : undefined}
+      // #5529: the phone action strip only shows while the keyboard is up; at
+      // rest its actions live in the composer's Tools menu. Browser chrome can
+      // shift the visual viewport a few px, so only a real keyboard counts.
+      data-keyboard-open={keyboardOffset > KEYBOARD_OPEN_THRESHOLD_PX ? "true" : undefined}
+      // #5546: on a phone the composer collapses to its input (and Tools) at
+      // rest; CSS keeps it expanded while the composer holds focus, so tapping
+      // in brings Send, Enhance, voice and the context chips straight back.
+      // Any staged composer state (text, attachments, a reply target, an armed
+      // task, live dictation, a drag in progress) keeps it expanded.
+      data-composer-rest={
+        keyboardOffset <= KEYBOARD_OPEN_THRESHOLD_PX && !hasStagedComposerInput && !busy && !composerEngaged
+          ? "true"
+          : undefined
+      }
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
@@ -8138,6 +8198,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
       <header className="cave-chat-linear-header reveal-scope">
         <div className="cave-mobile-header-identity">
+          <ChatPhoneThreadsToggle />
           <div className="cave-mobile-header-familiar">
                   <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
@@ -8157,6 +8218,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <span aria-hidden />
             {daemonRunning === false ? "offline" : "ready"}
           </span>
+          <ChatPhoneCodeRailToggle />
           <MobileChatContextMenu
             familiar={familiar}
             session={session ?? null}

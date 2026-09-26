@@ -1027,7 +1027,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   );
 
   return (
-    <div className="flex h-full min-w-0">
+    // data-chat-view: whether a conversation (or a new chat) is showing, or
+    // the list. Phone CSS folds the section tabs away for a conversation (#5529).
+    <div className="flex h-full min-w-0" data-chat-view={view.kind}>
       {/* The project-grouped rail that used to sit here is gone (cave-fh9so).
           The chat surface now docks ONE threads rail beside the conversation
           (chat-surface.tsx); keeping this one meant the chat page rendered

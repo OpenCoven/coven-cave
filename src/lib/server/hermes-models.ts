@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { harnessSpawnEnv, warmHarnessSpawnPath } from "../harness-spawn-env.ts";
 import {
   hermesApiConfig,
   hermesResponsesUrl,
@@ -16,6 +16,8 @@ const MAX_CONCURRENT_DISCOVERIES = 4;
 
 type HermesModelDependencies = {
   fetchImpl?: typeof fetch;
+  /** Warms the spawn-PATH cache off the event loop before the sync env builder runs. */
+  warmSpawnPath?: () => Promise<void>;
   scopedEnv?: (
     familiarId?: string | null,
   ) => Record<string, string | undefined>;
@@ -190,6 +192,12 @@ export async function listHermesModelInventory(
   dependencies: HermesModelDependencies = {},
 ): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
   let config: HermesApiConfig | null;
+  // Only the real env builder needs the warm-up; an injected scopedEnv never
+  // reads the spawn PATH (and tests stay off the user's login shell).
+  // Awaited only when there is a warm-up to run: an unconditional await would
+  // defer the synchronous discovery bookkeeping below by a microtask.
+  const warmSpawnPath = dependencies.warmSpawnPath ?? (dependencies.scopedEnv ? undefined : warmHarnessSpawnPath);
+  if (warmSpawnPath) await warmSpawnPath();
   try {
     const env = (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId);
     config = hermesApiConfig({

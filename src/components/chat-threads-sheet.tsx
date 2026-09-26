@@ -13,7 +13,7 @@
 // Selecting a thread dismisses the sheet. A slide-over that stayed open over
 // the conversation it just navigated to would cover the thing you asked for.
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { SessionRow } from "@/lib/types";
@@ -22,22 +22,28 @@ export function ChatThreadsSheet({
   open,
   onClose,
   sessions,
+  sessionsError = false,
   activeFamiliarId,
   activeSessionId,
   onOpenSession,
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
+  sections,
 }: {
   open: boolean;
   onClose: () => void;
   sessions: SessionRow[];
+  sessionsError?: boolean;
   activeFamiliarId: string | null;
   activeSessionId: string | null;
   onOpenSession: (session: SessionRow) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   onSessionsChanged?: () => void;
   onOpenUrl?: (url: string) => void;
+  /** The chat section tabs (#5529). On a phone an open thread folds the tabs
+   *  strip away, so the sheet is where Sessions / Projects / Familiar live. */
+  sections?: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(open, panelRef, { onEscape: onClose });
@@ -58,8 +64,10 @@ export function ChatThreadsSheet({
         aria-label="Chat threads"
         tabIndex={-1}
       >
+        {sections}
         <SidebarChatsSection
           sessions={sessions}
+          sessionsError={sessionsError}
           activeFamiliarId={activeFamiliarId}
           activeSessionId={activeSessionId}
           onOpenSession={(session) => {
