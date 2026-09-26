@@ -1,4 +1,4 @@
-import { loadBoard } from "@/lib/cave-board";
+import { boardCardsForSession } from "@/lib/board-session-index";
 import type { CardGitHubKind } from "@/lib/cave-board-types";
 
 type LinkedTask = {
@@ -46,8 +46,8 @@ export type ChatLinkedContext = {
 };
 
 export async function linkedContextForSession(sessionId: string): Promise<ChatLinkedContext | null> {
-  const board = await loadBoard();
-  const cards = board.cards.filter((card) => card.sessionId === sessionId);
+  // Indexed (#5595): no longer a full board load and migration per request.
+  const cards = await boardCardsForSession(sessionId);
   if (cards.length === 0) return null;
 
   const tasks: LinkedTask[] = cards.map((card) => ({

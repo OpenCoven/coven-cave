@@ -20,7 +20,7 @@ type ProjectsFile = {
   projects: CaveProject[];
 };
 
-function projectsFilePath(): string {
+export function projectsFilePath(): string {
   return (
     process.env.CAVE_PROJECTS_PATH_OVERRIDE ??
     path.join(caveHome(), "projects.json")

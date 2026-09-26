@@ -26,9 +26,16 @@ assert.match(
 
 assert.match(
   contextLib,
-  /export async function linkedContextForSession\(sessionId: string\)[\s\S]*loadBoard\(\)[\s\S]*card\.sessionId === sessionId/,
+  /export async function linkedContextForSession\(sessionId: string\)[\s\S]*await boardCardsForSession\(sessionId\)/,
   "Linked context should resolve the board card tied to the opened chat session",
 );
+// #5595: the session lookup is an index over loadBoard(), keyed by
+// card.sessionId, not a per-request full board load.
+{
+  const indexSource = await source(new URL("../lib/board-session-index.ts", import.meta.url));
+  assert.match(indexSource, /const board = await loadBoard\(\);[\s\S]*if \(!card\.sessionId\) continue;/,
+    "the index is built from the board, keyed by each card's session");
+}
 
 assert.match(
   conversationRoute,
