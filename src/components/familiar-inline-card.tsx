@@ -188,7 +188,9 @@ export function FamiliarInlineCard({
   }
 
   function openSession(sessionId: string) {
-    act(() => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId } })));
+    // The card lists this familiar's own threads; say so, or the thread opens
+    // under whichever familiar is active (#5584).
+    act(() => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId, familiarId: familiar.id } })));
   }
 
   function runCardAction(action: CardAction) {

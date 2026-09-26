@@ -21,11 +21,11 @@ test("pending-chat-action: open kind carries autoVoice", () => {
 });
 
 test("chat-surface: open handler forwards autoVoice to the router", () => {
-  assert.match(chatSurface, /openSession\(pendingChatAction\.sessionId, findQuery, autoVoice\)/);
+  assert.match(chatSurface, /openSession\(pendingChatAction\.sessionId, findQuery, autoVoice(?:, familiarHint)?\)/);
 });
 
 test("chat-router: openSession accepts autoVoice and arms the voice nonce for its session", () => {
-  assert.match(chatRouter, /openSession: \(sessionId: string, findQuery\?: string, autoVoice\?: boolean\)/);
+  assert.match(chatRouter, /openSession: \(sessionId: string, findQuery\?: string, autoVoice\?: boolean(?:, familiarHint\?: string \| null)?\)/);
   // Unconditional set: a non-voice open must explicitly clear stale intent,
   // not just skip arming it.
   assert.match(chatRouter, /setPendingVoice\(autoVoice \? \{ nonce: Date\.now\(\), sessionId \} : null\)/);

@@ -133,7 +133,10 @@ type Props = {
 export type ChatRouterHandle = {
   goToList: () => void;
   newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
-  openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => void;
+  /** `familiarHint` is the thread's own familiar when the caller knows it: the
+   *  session list is scoped to the active familiar, so another familiar's
+   *  thread would otherwise open under the current one (#5584). */
+  openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean, familiarHint?: string | null) => void;
   /** Open a conversation in a split pane beside the current chat; falls back
    *  to a plain open when splits are unavailable (mobile, companion rail). */
   openSessionInSplit: (sessionId: string) => void;
@@ -586,6 +589,25 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // Inside a workspace project scope, async familiar hydration and restored
+  // project crews must not navigate a chat (effect below). An *unsent* compose
+  // is different: it already follows the project's root, so it follows the
+  // project's familiar too, or it would send as the previous familiar inside
+  // the new project (#5584). Open chats keep the familiar they were opened with.
+  const previousScopedFamiliarIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (browseScope === undefined) return;
+    const nextFamiliarId = familiar?.id ?? null;
+    const previous = previousScopedFamiliarIdRef.current;
+    previousScopedFamiliarIdRef.current = nextFamiliarId;
+    if (previous === undefined || previous === nextFamiliarId || nextFamiliarId === null) return;
+    setView((prev) =>
+      prev.kind === "chat" && prev.sessionId === null && !prev.started && prev.familiarId !== nextFamiliarId
+        ? { ...prev, familiarId: nextFamiliarId }
+        : prev,
+    );
+  }, [familiar?.id, browseScope]);
+
   useEffect(() => {
     if (browseScope !== undefined) return;
     const nextFamiliarId = familiar?.id ?? null;
@@ -693,10 +715,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           origin,
         });
       },
-      openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean) => {
+      openSession: (sessionId: string, findQuery?: string, autoVoice?: boolean, familiarHint?: string | null) => {
         const session = sessions.find((entry) => entry.id === sessionId);
-        const next = selectFamiliarForChat(session?.familiarId ?? null);
-        setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
+        const threadFamiliarId = session?.familiarId ?? familiarHint ?? null;
+        const next = selectFamiliarForChat(threadFamiliarId);
+        setView({ kind: "chat", sessionId, familiarId: next?.id ?? threadFamiliarId });
         const fq = findQuery?.trim();
         if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         setPendingVoice(autoVoice ? { nonce: Date.now(), sessionId } : null);
