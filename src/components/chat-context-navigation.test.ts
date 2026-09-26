@@ -47,4 +47,12 @@ assert.equal((sidebar.match(/\{\.\.\.prefetchHandlers\}/g) ?? []).length, 2,
   "both actual thread buttons, including pinned rows, receive prefetch handlers");
 assert.match(sidebar, /if \(selectMode\) return;\s*if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\)/,
   "keyboard split navigation remains unchanged outside select mode");
+// #5584: the inline card's Switch takes the same eligibility-gated path as
+// "New chat", and its thread links carry the card's own familiar.
+assert.match(surface, /const onFamiliarSelect =[\s\S]*?if \(onRequestNewChat\) \{[\s\S]*?onRequestNewChat\(\{ familiarId: d\.familiarId \}\);\s*return;/,
+  "cave:familiar-select goes through the workspace's gated new-chat path");
+assert.match(surface, /routerRef\.current\?\.openSession\(d\.sessionId!, undefined, undefined, d\.familiarId \?\? null\)/,
+  "cave:agents-open-session forwards the thread's familiar to the router");
+assert.match(read("./familiar-inline-card.tsx"), /"cave:agents-open-session", \{ detail: \{ sessionId, familiarId: familiar\.id \} \}/,
+  "the familiar card names the familiar whose thread it opens");
 console.log("chat-context-navigation.test.ts: ok");

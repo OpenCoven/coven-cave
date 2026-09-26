@@ -763,3 +763,57 @@ describe("ChatRouter reports every distinct compose attempt even when sessionId 
 });
 
 console.log("chat-router-removal-race.test.tsx wired");
+
+test("a project switch rebinds an unsent compose to the project's familiar, never a started one (#5584)", async () => {
+  const cody = familiar("cody");
+  const sage = familiar("sage");
+  const ref = { current: null as ChatRouterHandle | null };
+  const props = {
+    ref,
+    familiar: cody,
+    familiars: [cody, sage],
+    sessions: [],
+    browseScope: { selection: "alpha", ready: true },
+    composeProjectRoot: "/alpha",
+    onSessionsDeleted: vi.fn(),
+  };
+  await act(async () => { renderer = create(<ChatRouter {...props} />); });
+  expect(chatView.latestProps!.familiar).toBe(cody);
+  const mounts = chatView.mounts;
+  const composeInstance = chatView.latestProps!.composeInstance;
+  // Project beta's crew is sage: the unsent compose follows it in place.
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} familiar={sage} browseScope={{ selection: "beta", ready: true }} composeProjectRoot="/beta" />);
+  });
+  expect(chatView.latestProps!.familiar).toBe(sage);
+  expect(chatView.latestProps!.projectRoot).toBe("/beta");
+  expect(chatView.latestProps!.composeInstance).toBe(composeInstance);
+  expect(chatView.mounts).toBe(mounts, "the draft is not remounted");
+  // Once the compose has started (first send), a later switch leaves it alone.
+  await act(async () => { chatView.latestProps!.onComposeStarted?.(); });
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} familiar={cody} browseScope={{ selection: "alpha", ready: true }} composeProjectRoot="/alpha" />);
+  });
+  expect(chatView.latestProps!.familiar).toBe(sage);
+});
+
+test("openSession opens an unlisted thread under the familiar the caller names (#5584)", async () => {
+  const cody = familiar("cody");
+  const sage = familiar("sage");
+  const ref = { current: null as ChatRouterHandle | null };
+  await act(async () => {
+    renderer = create(
+      <ChatRouter
+        ref={ref}
+        familiar={cody}
+        familiars={[cody, sage]}
+        sessions={[]}
+        browseScope={{ selection: "all", ready: true }}
+        onSessionsDeleted={vi.fn()}
+      />,
+    );
+  });
+  await act(async () => { ref.current!.openSession("sage-thread", undefined, undefined, sage.id); });
+  expect(ref.current!.currentSessionId()).toBe("sage-thread");
+  expect(ref.current!.currentFamiliarId()).toBe(sage.id);
+});

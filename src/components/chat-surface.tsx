@@ -377,11 +377,18 @@ export function ChatSurface({
       if (!d?.sessionId) return;
       if (d.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.openSession(d.sessionId!), 0);
+      window.setTimeout(() => routerRef.current?.openSession(d.sessionId!, undefined, undefined, d.familiarId ?? null), 0);
     };
     const onFamiliarSelect = (e: Event) => {
       const d = (e as CustomEvent<{ familiarId?: string | null }>).detail;
       if (!d?.familiarId) return;
+      // The same gated path as "New chat" (#5584): the workspace checks the
+      // familiar is eligible for the current project before starting.
+      if (onRequestNewChat) {
+        setScope("conversation");
+        onRequestNewChat({ familiarId: d.familiarId });
+        return;
+      }
       onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
       window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, d.familiarId), 0);
@@ -453,7 +460,8 @@ export function ChatSurface({
       setScope("conversation");
       const findQuery = pendingChatAction.findQuery;
       const autoVoice = pendingChatAction.autoVoice;
-      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice), 0);
+      const familiarHint = pendingChatAction.familiarId ?? null;
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice, familiarHint), 0);
       onPendingChatActionHandled();
       return;
     }
