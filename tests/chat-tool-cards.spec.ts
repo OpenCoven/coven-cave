@@ -114,3 +114,79 @@ test("turn activity, tool groups and tool cards mount only once opened (#5572)",
   await expect(edit.locator(".cave-tool-io").first()).toBeVisible();
   await expect(edit.getByText(DIFF_MARKER).first()).toBeVisible();
 });
+
+// #5581: an older tool output arrives omitted (only its length), and the card
+// fetches it when opened, with a Retry after a failed fetch.
+test("an omitted tool output loads when its card opens, with Retry on failure (#5581)", async ({ page }) => {
+  const ISO_NOW = new Date().toISOString();
+  const FULL = "omitted-output-marker-5581 full body";
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+  );
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({ json: { ok: true, projects: [{ id: "project-repo", name: "repo", root: "/repo", createdAt: ISO_NOW, updatedAt: ISO_NOW }] } }),
+  );
+  await page.route("**/api/sessions/list**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        sessions: [{
+          id: "tools-2", title: "Omitted output", status: "completed", origin: "chat", project_root: "/repo",
+          harness: "claude", familiarId: "nova", exit_code: 0, archived_at: null,
+          created_at: ISO_NOW, updated_at: ISO_NOW, attention: { state: "none", since: null, reason: null },
+        }],
+      },
+    }),
+  );
+  let outputRequests = 0;
+  const conversationUrls: string[] = [];
+  await page.route("**/api/chat/conversation/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/tool-output")) {
+      outputRequests += 1;
+      expect(url.searchParams.get("toolId")).toBe("tool-old");
+      return outputRequests === 1
+        ? route.fulfill({ status: 503, json: { ok: false, error: "unavailable" } })
+        : route.fulfill({ json: { ok: true, output: FULL } });
+    }
+    conversationUrls.push(url.search);
+    return route.fulfill({
+      json: {
+        ok: true,
+        context: { task: null, github: [] },
+        conversation: {
+          familiarId: "nova",
+          activeLeafId: "t2",
+          turns: [
+            { id: "t1", parentId: null, role: "user", text: "Show the old output", createdAt: ISO_NOW },
+            {
+              id: "t2", parentId: "t1", role: "assistant", text: "Here it is.", createdAt: ISO_NOW,
+              tools: [{ id: "tool-old", name: "Bash", status: "ok", durationMs: 5, input: JSON.stringify({ command: "cat log" }), outputChars: FULL.length }],
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  await page.goto("/#chat-tools-2", { waitUntil: "domcontentloaded" });
+  const main = page.getByTestId("chat-main");
+  await expect(main.getByText("Here it is.")).toBeVisible({ timeout: 45_000 });
+  expect(conversationUrls.some((search) => search.includes("toolOutputs=recent"))).toBe(true);
+  expect(outputRequests).toBe(0);
+
+  await main.locator("details.streaming-turn-activity").first().locator(":scope > summary").click();
+  await main.locator(".cave-tool-group").first().locator(":scope > summary").click();
+  const card = main.locator(".cave-tool-block").filter({ has: page.locator("summary", { hasText: "Bash" }) }).first();
+  await card.locator("summary").click();
+
+  // The first fetch fails: the card says so and offers Retry.
+  await expect(card.getByRole("alert")).toContainText("Couldn't load this output.");
+  await card.getByRole("button", { name: "Retry" }).click();
+  await expect(card.getByText(FULL)).toBeVisible();
+  expect(outputRequests).toBe(2);
+});

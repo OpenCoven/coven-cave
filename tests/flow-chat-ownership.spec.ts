@@ -45,7 +45,7 @@ test("Flow runs stay separate until an explicit discussion is created", async ({
     sessions.push(discussion);
     return route.fulfill({ json: { ok: true, sessionId: "discussion", familiarId: "nova", session: discussion } });
   });
-  await page.route("**/api/chat/conversation/discussion", (route) => route.fulfill({ json: {
+  await page.route((url) => url.pathname === "/api/chat/conversation/discussion", (route) => route.fulfill({ json: {
     ok: true, conversation: {
       sessionId: "discussion", familiarId: "nova", harness: "copilot", origin: "chat",
       title: discussion.title, parentSessionId: "execution", updatedAt: now,

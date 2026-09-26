@@ -14,6 +14,7 @@ import {
   type ConversationFile,
 } from "@/lib/cave-conversations";
 import { linkedContextForSession } from "@/lib/chat-linked-context";
+import { slimConversationToolOutputs } from "@/lib/conversation-tool-output";
 import { unlinkSessionFromCards } from "@/lib/cave-board";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
@@ -483,11 +484,17 @@ function buildConversation(args: {
   };
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+  // The web chat view opts into on-demand tool outputs (#5581): older, larger
+  // outputs are omitted with their length and fetched from ./tool-output when
+  // a card opens. Every other reader of this route keeps the full payload.
+  const recentToolOutputsOnly = new URL(req.url).searchParams.get("toolOutputs") === "recent";
+  const presentConversation = <T extends Record<string, unknown>>(conversation: T): T =>
+    recentToolOutputsOnly ? slimConversationToolOutputs(conversation) : conversation;
 
   // Primary: cave-conversations JSON (written by chat/send for UI-originated chats)
   //
@@ -504,7 +511,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const context = await linkedContextForSession(id);
     return NextResponse.json({
       ok: true,
-      conversation: sanitizeConversationMetadata(conv),
+      conversation: presentConversation(sanitizeConversationMetadata(conv)),
       context,
     });
   }
@@ -520,7 +527,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       const context = await linkedContextForSession(id);
       return NextResponse.json({
         ok: true,
-        conversation: sanitizeConversationMetadata(jsonlConv),
+        conversation: presentConversation(sanitizeConversationMetadata(jsonlConv)),
         context,
       });
     }

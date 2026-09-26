@@ -812,3 +812,32 @@ test("a body createdAt seeds a NEW conversation and cannot rewrite a stored one"
   assert.equal(legacy.turns.length, 1, "the write landed");
   assert.equal("createdAt" in legacy, false);
 });
+
+// #5581: on-demand tool outputs for the web chat view.
+test("GET with toolOutputs=recent omits older large outputs; the default GET keeps everything", async () => {
+  const big = (label: string) => `${label} `.repeat(400);
+  const tool = (id: string, output: string) => ({ id, name: "Bash", status: "ok", output });
+  writeConversation("sess-lazy-tools", [
+    { id: "t1", parentId: null, role: "assistant", text: "one", createdAt: "2026-06-01T00:00:01Z", tools: [tool("a", big("a"))] },
+    { id: "t2", parentId: "t1", role: "assistant", text: "two", createdAt: "2026-06-01T00:00:02Z", tools: [tool("b", big("b")), tool("c", big("c")), tool("d", big("d"))] },
+  ]);
+  const slim = await (await GET(new Request("http://test/api/chat/conversation/sess-lazy-tools?toolOutputs=recent"), paramsFor("sess-lazy-tools"))).json();
+  const slimTools = slim.conversation.turns.flatMap((turn) => turn.tools);
+  assert.equal(slimTools[0].output, undefined, "an older large output is omitted");
+  assert.equal(slimTools[0].outputChars, big("a").length);
+  assert.deepEqual(slimTools.slice(1).map((t) => t.output), [big("b"), big("c"), big("d")], "the last three stay");
+
+  const full = await (await GET(new Request("http://test/api/chat/conversation/sess-lazy-tools"), paramsFor("sess-lazy-tools"))).json();
+  assert.equal(full.conversation.turns[0].tools[0].output, big("a"), "other readers keep the full payload");
+
+  const { GET: TOOL_OUTPUT } = await import("./tool-output/route.ts");
+  const found = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/sess-lazy-tools/tool-output?toolId=a"), paramsFor("sess-lazy-tools"));
+  assert.equal(found.status, 200);
+  assert.equal((await found.json()).output, big("a"), "the card fetches the full output");
+  const missing = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/sess-lazy-tools/tool-output?toolId=zzz"), paramsFor("sess-lazy-tools"));
+  assert.equal(missing.status, 404);
+  const noTool = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/sess-lazy-tools/tool-output"), paramsFor("sess-lazy-tools"));
+  assert.equal(noTool.status, 400);
+  const badId = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/x/tool-output?toolId=a"), paramsFor("../escape"));
+  assert.equal(badId.status, 400);
+});

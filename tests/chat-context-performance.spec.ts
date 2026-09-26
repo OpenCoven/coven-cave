@@ -153,7 +153,7 @@ for (const clearFirst of [false, true]) {
     await setup(page);
     let release!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/api/chat/conversation/context-a", async (route) => {
+    await page.route((url) => url.pathname === "/api/chat/conversation/context-a", async (route) => {
       await pending;
       await route.fallback();
     });
@@ -169,7 +169,7 @@ for (const clearFirst of [false, true]) {
       await composer.fill("/help");
       await composer.press("Enter");
       await expect(main.locator("[data-turn-id]")).toHaveCount(1);
-      const response = page.waitForResponse((response) => response.url().endsWith("/api/chat/conversation/context-a"));
+      const response = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/chat/conversation/context-a");
       release();
       await response;
       if (clearFirst) {

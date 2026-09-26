@@ -78,6 +78,7 @@ import {
   loadConversation,
   readCachedConversation,
 } from "@/lib/conversation-cache";
+import { fetchToolOutput } from "@/lib/tool-output-fetch";
 import { sameConversationRevision } from "@/lib/conversation-revision";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
@@ -8371,6 +8372,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
+      <ToolOutputSessionContext.Provider value={sessionId}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
@@ -8633,6 +8635,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
+      </ToolOutputSessionContext.Provider>
       </ToolProjectRootContext.Provider>
 
       {reflectError ? (
@@ -10370,6 +10373,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // `/api/changes` revert endpoint requires — without prop-threading through the
 // five ToolBlock/ToolGroup render sites.
 const ToolProjectRootContext = createContext<string | null>(null);
+// The session a tool card fetches an omitted output from (#5581).
+const ToolOutputSessionContext = createContext<string | null>(null);
 
 // Review + Undo actions for the Codex-style inline edit card. Review adapts to
 // where the edit can actually be reviewed: a file under the session's project
@@ -10528,6 +10533,39 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   const mountBodyOnOpen = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
     if (event.currentTarget.open) setBodyMounted(true);
   };
+  // An output the transcript was loaded without (#5581) is fetched on the
+  // card's first open, with its own loading and failure states.
+  const outputSessionId = useContext(ToolOutputSessionContext);
+  const outputOmitted = tool.output === undefined && (tool.outputChars ?? 0) > 0;
+  const [fetchedOutput, setFetchedOutput] = useState<{ status: "idle" | "loading" | "ready" | "error"; text?: string }>({ status: "idle" });
+  const loadOmittedOutput = useCallback(() => {
+    if (!outputSessionId) {
+      setFetchedOutput({ status: "error" });
+      return;
+    }
+    setFetchedOutput({ status: "loading" });
+    fetchToolOutput(outputSessionId, tool.id).then(
+      (text) => setFetchedOutput({ status: "ready", text }),
+      () => setFetchedOutput({ status: "error" }),
+    );
+  }, [outputSessionId, tool.id]);
+  useEffect(() => {
+    if (bodyMounted && outputOmitted && fetchedOutput.status === "idle") loadOmittedOutput();
+  }, [bodyMounted, outputOmitted, fetchedOutput.status, loadOmittedOutput]);
+  const output = tool.output ?? (fetchedOutput.status === "ready" ? fetchedOutput.text : undefined);
+  const omittedOutputState = !output && outputOmitted ? (
+    <div className="cave-tool-io mt-2">
+      <div className="cave-tool-io-label">Output</div>
+      {fetchedOutput.status === "error" ? (
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          Couldn&apos;t load this output.{" "}
+          <button type="button" onClick={loadOmittedOutput} className="focus-ring underline">Retry</button>
+        </p>
+      ) : (
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading output…</p>
+      )}
+    </div>
+  ) : null;
   // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
   // NotebookEdit, i.e. `isEditTool`) stays visible in the transcript as a
   // compact details summary, and expands to the structured code diff. Review
@@ -10566,12 +10604,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
               <div className="cave-tool-io-label">Code changes</div>
               <SyntaxBlock text={inputDiff} lang="diff" />
             </div>
-            {tool.output ? (
+            {output ? (
               <div className="cave-tool-io mt-2">
                 <div className="cave-tool-io-label">Output</div>
-                <SyntaxBlock text={prettyToolOutput(tool.output)} />
+                <SyntaxBlock text={prettyToolOutput(output)} />
               </div>
-            ) : null}
+            ) : omittedOutputState}
           </>
         ) : null}
       </details>
@@ -10619,12 +10657,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           )}
         </div>
       ) : null}
-      {bodyMounted && tool.output ? (
+      {bodyMounted && output ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Output</div>
-          <SyntaxBlock text={prettyToolOutput(tool.output)} />
+          <SyntaxBlock text={prettyToolOutput(output)} />
         </div>
-      ) : null}
+      ) : bodyMounted ? omittedOutputState : null}
     </details>
   );
 }
