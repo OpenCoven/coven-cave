@@ -286,25 +286,25 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
   await boot(page);
 
   const toggle = page.getByRole("button", { name: "Open Chat panel" });
-  await toggle.click();
-
   const drawer = page.getByRole("dialog", { name: "Chat panel" });
-  await expect(drawer).toBeVisible();
+  // Tap-and-verify (#5596): on a cold phone load the tap can land before the
+  // toggle's handler is hydrated, which left the drawer unopened.
+  await expect(async () => {
+    if (!(await drawer.isVisible())) await toggle.click({ timeout: 5_000 });
+    await expect(drawer).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 
   // The close strip is the dialog's FIRST focusable, so the trap usually
   // puts keyboard focus on it the moment the drawer opens. Don't depend on
-  // that landing: Tab through the trapped dialog — the trap wraps last→first,
-  // so a bounded loop visits every focusable, the close strip included — and
-  // prove we reached a real "Close drawer" control, not the phantom backdrop
-  // (which is display:none at this width and cannot be tabbed to at all).
-  for (let i = 0; i < 25; i += 1) {
-    const label = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
-    if (label === "Close drawer") break;
-    await page.keyboard.press("Tab");
-  }
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
-    .toBe("Close drawer");
+  // that landing, or on the trap having settled after a fixed number of
+  // presses: Tab through the trapped dialog until focus is on a real "Close
+  // drawer" control (the trap wraps last→first, so every focusable comes
+  // round), never the phantom backdrop (display:none at this width).
+  const activeLabel = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+  await expect(async () => {
+    if ((await activeLabel()) !== "Close drawer") await page.keyboard.press("Tab");
+    expect(await activeLabel()).toBe("Close drawer");
+  }).toPass({ timeout: 15_000, intervals: [50] });
 
   // Activate the focused close control with the keyboard; focus returns to
   // the toggle that opened the drawer.
