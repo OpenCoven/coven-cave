@@ -245,9 +245,6 @@ assert.deepEqual(
 
 const ROOT = new URL("../../", import.meta.url);
 const ROUTED_SCRIPTS = [
-  "scripts/worktree-lifecycle-create.ts",
-  "scripts/worktree-lifecycle-inventory.ts",
-  "scripts/worktree-lifecycle-metadata-repair.ts",
 ];
 
 /** Drop comments before the code guards: every one of these files *explains*

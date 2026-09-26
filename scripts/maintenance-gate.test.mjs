@@ -308,16 +308,9 @@ test("the real runner reports the argv it executed", () => {
   assert.equal(existsSync(stdout.trim()), false, "the fixture home is removed on exit");
 });
 
-test("lifecycle fixtures replace host discovery inputs before importing production modules", {
+test("the lifecycle fixture replaces host discovery inputs before importing production modules", {
   skip: process.platform === "win32",
 }, () => {
-  for (const suite of ["create", "patrol", "retirement"]) {
-    assert.match(
-      readFileSync(path.join(sourceRoot, "scripts", `worktree-lifecycle-${suite}.test.mjs`), "utf8"),
-      /^import "\.\/lifecycle-fixture-env\.mjs";/,
-      `${suite} must isolate HOME before coven-bin captures it`,
-    );
-  }
   const hostileHome = mkdtempSync(path.join(tmpdir(), "cave-host-profile-"));
   const hostileVault = path.join(hostileHome, "vault.yaml");
   writeFileSync(hostileVault, "HOST_FIXTURE_SENTINEL:\n  ref: op://fixture/host/secret\n");
@@ -665,7 +658,6 @@ test("maintenance capabilities name the released Coven protocol without claiming
       enforced: true,
       source: `@opencoven/cli@${COVEN_MAINTENANCE_MINIMUM_VERSION} maintenance`,
     },
-    beads: { enforced: false, source: "cave-wqa0b.3" },
     github: { enforced: false, source: "cave-wqa0b.4" },
     complete: false,
   });

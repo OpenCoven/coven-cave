@@ -9,8 +9,8 @@ depth. Bare inner-loop `continue` statements only skip the current enumeration
 entry.
 
 Use [GitHub work tracking](../../../../docs/workflows/github-work-tracking.md)
-for the curation issue and its evidence record. Do not query, claim, close, or
-sync Beads. Preserve historical refs and unresolved legacy ownership; missing
+for the curation issue and its evidence record. Preserve historical refs and
+unresolved legacy ownership; missing
 records are uncertainty, not clearance. GitHub assignment and comments are not
 atomic execution leases and cannot replace the exclusion required below.
 

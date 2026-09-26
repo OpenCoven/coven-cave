@@ -92,7 +92,6 @@ export const SUITES = {
     "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
-    "scripts/fence-refusal-message.test.mjs",
     "scripts/rules-of-hooks-gate.test.mjs",
     "scripts/eslint/react-hooks-gate.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
@@ -102,12 +101,6 @@ export const SUITES = {
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/work-continuity-contract.test.mjs",
     "scripts/install-git-hooks.test.mjs",
-    "scripts/worktree-lifecycle-retirement.test.mjs",
-    "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
-    "scripts/worktree-lifecycle-patrol.test.mjs",
-    "scripts/worktree-lifecycle-fence-renewal.test.mjs",
-    "scripts/worktree-lifecycle-filemode.test.mjs",
-    "scripts/worktree-lifecycle-windows-cwd.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "scripts/remote-hygiene.test.mjs",
@@ -349,7 +342,6 @@ export const SUITES = {
     "src/lib/beads-pr-management.test.ts",
     "src/lib/beads-pr-patrol.test.ts",
     "src/lib/beads-delivery.test.ts",
-    "src/lib/worktree-lifecycle.test.ts",
     "src/lib/beads-work-queue.test.ts",
     "src/lib/work-scheduler.test.ts",
     "src/components/familiar-work-queue-view.test.ts",
@@ -1519,7 +1511,6 @@ export const SUITES = {
     "scripts/main-health.test.mjs",
     "scripts/main-health-workflow.test.mjs",
     "scripts/threads-live-workflow.test.mjs",
-    "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/coven-home.test.ts",
     "src/lib/server/cave-home-migration-backup-recovery.test.ts",
@@ -1654,7 +1645,6 @@ export const SUITES = {
     "src/lib/daemon-socket-occupancy.test.ts",
     "src/lib/daemon-endpoint-faults.test.ts",
     "src/lib/daemon-endpoint-churn.test.ts",
-    "src/lib/maintenance-plane-admission.test.ts",
     "src/lib/daemon-startup-contract.test.ts",
     "src/lib/runtime-startup-throttle.test.ts",
     "src/lib/daemon-update-lifecycle.test.ts",
@@ -2109,13 +2099,6 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports the TypeScript Client v1 HPKE test codec
   "scripts/client-v1-authority-takeover.test.mjs",
-  // imports ./worktree-lifecycle-inventory.ts
-  "scripts/worktree-lifecycle-retirement.test.mjs",
-  "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
-  "scripts/worktree-lifecycle-fence-renewal.test.mjs",
-  // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
-  "scripts/worktree-lifecycle-filemode.test.mjs",
-  "scripts/worktree-lifecycle-windows-cwd.test.mjs",
   // imports the Topic Discovery runner/store TypeScript modules
   "scripts/research-topic-discovery-eval.test.mjs",
 ]);

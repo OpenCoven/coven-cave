@@ -38,7 +38,6 @@ export const DISPOSABLE_FILES = Object.freeze([
 ]);
 
 const PROTECTED_BRANCHES = new Set(["main", "master", "__dolt_remote_info__"]);
-const HEALTHY_LIFECYCLE_LANES = new Set(["active", "cooldown", "retire-after-gate"]);
 const repoScript = path.join(path.dirname(fileURLToPath(import.meta.url)), "worktree-status.mjs");
 
 function exec(command, args, cwd, options = {}) {
@@ -363,64 +362,9 @@ function mutateThin(root, options) {
   return result;
 }
 
-export function lifecycleUnitPostcondition(report, expected) {
-  const item = Array.isArray(report?.items)
-    ? report.items.find((candidate) => candidate && typeof candidate === "object" && candidate.branch === expected.branch && candidate.head === expected.head)
-    : null;
-  if (!item) return { ok: false, reason: "lifecycle unit disappeared from authoritative inventory" };
-  if (item.path !== null && (typeof item.path !== "string" || !path.isAbsolute(item.path))) {
-    return { ok: false, reason: "lifecycle unit returned a malformed path" };
-  }
-  if (expected.path !== null && (typeof expected.path !== "string" || !path.isAbsolute(expected.path))) {
-    return { ok: false, reason: "expected lifecycle identity has a malformed path" };
-  }
-  const actualPath = item.path === null ? null : path.resolve(item.path);
-  const expectedPath = expected.path === null ? null : path.resolve(expected.path);
-  if (item.kind !== expected.kind || actualPath !== expectedPath) {
-    return {
-      ok: false,
-      reason: `expected ${expected.kind} lifecycle unit at ${expectedPath ?? "null"}, got ${item.kind ?? "unknown"} at ${actualPath ?? "null"}`,
-    };
-  }
-  if (!HEALTHY_LIFECYCLE_LANES.has(item.lane)) {
-    const reasons = Array.isArray(item.reasons) && item.reasons.every((reason) => typeof reason === "string")
-      ? item.reasons.join("; ")
-      : "malformed or unavailable reasons";
-    return { ok: false, reason: `lifecycle unit became lane ${String(item.lane)}: ${reasons}` };
-  }
-  return { ok: true, lane: item.lane };
-}
-
-function postMutationLifecycleHealthy(root, expected) {
-  const patrol = exec(
-    "node",
-    ["--experimental-strip-types", path.join(path.dirname(repoScript), "worktree-lifecycle-patrol.ts"), "--repo", "OpenCoven/coven-cave", "--root", root, "--json"],
-    root,
-    { timeout: 90_000 },
-  );
-  if (!patrol.ok) return { ok: false, reason: patrol.stderr || patrol.stdout || "lifecycle patrol unavailable after mutation" };
-  let parsed;
-  try { parsed = JSON.parse(patrol.stdout); }
-  catch { return { ok: false, reason: "lifecycle patrol returned malformed JSON after mutation" }; }
-  return lifecycleUnitPostcondition(parsed, expected);
-}
-
-function branchStillExact(root, branch, head) {
-  const local = git(root, ["rev-parse", `refs/heads/${branch}`]);
-  return local.ok && local.stdout === head;
-}
-
-function pathStillRegistered(root, target) {
-  return parsePorcelainWorktrees(root).some((row) => path.resolve(row.path) === path.resolve(target));
-}
-
 export function parkedPathConfigKey(branch) {
   const branchDigest = createHash("sha256").update(branch).digest("hex");
   return `coven-hygiene.parked-path-${branchDigest}`;
-}
-
-function recordParkedPath(root, branch, target) {
-  return git(root, ["config", "--local", "--replace-all", parkedPathConfigKey(branch), path.resolve(target)]);
 }
 
 function readParkedPath(root, branch) {
@@ -430,10 +374,6 @@ function readParkedPath(root, branch) {
   }
   if (!path.isAbsolute(recorded.stdout)) throw new Error(`recorded parked path is not absolute: ${recorded.stdout}`);
   return path.resolve(recorded.stdout);
-}
-
-function clearParkedPath(root, branch) {
-  return git(root, ["config", "--local", "--unset-all", parkedPathConfigKey(branch)]);
 }
 
 function mutatePark(root, options) {
@@ -452,73 +392,7 @@ function mutatePark(root, options) {
       continue;
     }
     const disposable = details.ignored.paths.filter(isDisposableRelative);
-    const proposal = { branch: row.branch, path: row.path, head, retainedBy: retention.via, disposable, requiresPostLifecycleProbe: true };
-    if (!options.apply) {
-      result.parked.push({ ...proposal, dryRun: true });
-      continue;
-    }
-
-    const recorded = recordParkedPath(root, row.branch, row.path);
-    if (!recorded.ok) {
-      result.ok = false;
-      result.refused.push({ branch: row.branch, path: row.path, reasons: [`could not record exact parked path: ${recorded.stderr}`] });
-      break;
-    }
-    attempts += 1;
-    try {
-      removeDisposable(row.path, details.ignored.paths, true);
-    } catch (error) {
-      const cleared = clearParkedPath(root, row.branch);
-      result.ok = false;
-      result.refused.push({
-        branch: row.branch,
-        path: row.path,
-        reasons: [
-          `disposable cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-          ...(!cleared.ok ? [`recorded-path cleanup failed: ${cleared.stderr}`] : []),
-        ],
-      });
-      break;
-    }
-    const removed = git(root, ["worktree", "remove", row.path]);
-    if (!removed.ok) {
-      const cleared = clearParkedPath(root, row.branch);
-      result.ok = false;
-      result.refused.push({
-        branch: row.branch,
-        path: row.path,
-        reasons: [
-          `git worktree remove failed: ${removed.stderr}`,
-          ...(!cleared.ok ? [`recorded-path cleanup failed: ${cleared.stderr}`] : []),
-        ],
-      });
-      break;
-    }
-
-    let lifecycle;
-    try {
-      const branchExact = branchStillExact(root, row.branch, head);
-      const absent = !pathStillRegistered(root, row.path);
-      lifecycle = branchExact && absent
-        ? postMutationLifecycleHealthy(root, { branch: row.branch, head, kind: "branch-only", path: null })
-        : { ok: false, reason: `git postcondition failed (branchExact=${branchExact}, worktreeAbsent=${absent})` };
-    } catch (error) {
-      lifecycle = { ok: false, reason: `park postcondition probe threw: ${error instanceof Error ? error.message : String(error)}` };
-    }
-    if (!lifecycle.ok) {
-      const rollback = git(root, ["worktree", "add", row.path, row.branch]);
-      const cleared = rollback.ok ? clearParkedPath(root, row.branch) : { ok: true, stderr: "" };
-      result.ok = false;
-      result.rolledBack.push({
-        branch: row.branch,
-        path: row.path,
-        reason: lifecycle.reason,
-        rollbackOk: rollback.ok && cleared.ok,
-        rollbackError: !rollback.ok ? rollback.stderr : !cleared.ok ? `recorded-path cleanup failed: ${cleared.stderr}` : null,
-      });
-      break;
-    }
-    result.parked.push({ ...proposal, lifecycleLane: lifecycle.lane });
+    result.parked.push({ branch: row.branch, path: row.path, head, retainedBy: retention.via, disposable, dryRun: true });
   }
   return result;
 }
@@ -533,29 +407,7 @@ function mutateUnpark(root, options) {
   if (existsSync(target)) throw new Error(`target path already exists: ${target}`);
   const retention = remoteExact(root, options.branch, head);
   if (!retention.ok || !retention.retained) throw new Error(retention.reason);
-  if (!options.apply) return { action: "unpark", apply: false, branch: options.branch, path: target, head, retainedBy: retention.via };
-  const added = git(root, ["worktree", "add", target, options.branch]);
-  if (!added.ok) throw new Error(`git worktree add failed: ${added.stderr}`);
-  let lifecycle;
-  try {
-    const registered = pathStillRegistered(root, target);
-    const branchExact = branchStillExact(root, options.branch, head);
-    lifecycle = registered && branchExact
-      ? postMutationLifecycleHealthy(root, { branch: options.branch, head, kind: "worktree", path: target })
-      : { ok: false, reason: `git postcondition failed (branchExact=${branchExact}, worktreeRegistered=${registered})` };
-  } catch (error) {
-    lifecycle = { ok: false, reason: `unpark postcondition probe threw: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  if (!lifecycle.ok) {
-    const rollback = git(root, ["worktree", "remove", target]);
-    throw new Error(`unpark postcondition failed: ${lifecycle.reason}; rollback ${rollback.ok ? "succeeded" : `failed: ${rollback.stderr}`}`);
-  }
-  const cleared = clearParkedPath(root, options.branch);
-  if (!cleared.ok) {
-    const rollback = git(root, ["worktree", "remove", target]);
-    throw new Error(`could not clear recorded parked path: ${cleared.stderr}; rollback ${rollback.ok ? "succeeded" : `failed: ${rollback.stderr}`}`);
-  }
-  return { ok: true, action: "unpark", apply: true, branch: options.branch, path: target, head, retainedBy: retention.via, lifecycleLane: lifecycle.lane };
+  return { action: "unpark", apply: false, branch: options.branch, path: target, head, retainedBy: retention.via };
 }
 
 export function mutationExitCode(value) {
@@ -585,7 +437,7 @@ function main(argv = process.argv.slice(2)) {
   try {
     const { action, options } = parseArgs(argv);
     if (options.apply && (action === "park" || action === "unpark")) {
-      throw new Error(`${action} --apply unavailable: the Beads lifecycle proof is retired; preserve the unit and use the GitHub work-tracking retirement procedure`);
+      throw new Error(`${action} --apply unavailable: there is no lifecycle proof to verify it; preserve the unit and use the GitHub work-tracking retirement procedure`);
     }
     const root = requiredGit(options.root, ["rev-parse", "--show-toplevel"], "resolve repository root");
     if (action === "daily" || action === "weekly" || action === "scheduled") {
