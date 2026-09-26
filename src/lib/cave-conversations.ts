@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
+import { unlinkSync } from "node:fs";
 import { mkdir, readFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
-import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
@@ -264,6 +266,183 @@ export function getConversationListMetrics(): ConversationListMetrics {
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
   conversationCreatedAtByFile.clear();
+  // The persisted index is the same cache on disk; clearing one without the
+  // other would rehydrate what the caller just discarded.
+  summaryIndexGeneration += 1;
+  summaryIndexHydration = null;
+  summaryIndexDirty = false;
+  if (summaryIndexTimer) clearTimeout(summaryIndexTimer);
+  summaryIndexTimer = null;
+  try {
+    unlinkSync(SUMMARY_INDEX_PATH);
+  } catch {
+    /* absent is the goal */
+  }
+}
+
+// ── Persisted summary index (#5569) ─────────────────────────────────────────
+//
+// The stat-keyed summary cache above made warm scans cheap, but it lived only
+// in memory, so every server start re-read and parsed every transcript before
+// the first chat list could render: measured on a real profile, 4,158 files,
+// 444 MB and 1.1s, with single parses of 21 MB files blocking the event loop.
+// The index persists the same entries (same stat triple, same summaries) so a
+// restart reads only the files that changed while Cave was down.
+//
+// A persisted summary is only as current as the code that derived it, so the
+// index is keyed by SUMMARY_INDEX_VERSION plus a hash of the derivation
+// functions' own source. A release that changes how a summary is derived gets
+// a different key and rebuilds the index instead of serving stale rows. Bump
+// the version for a change the hash cannot see (e.g. in a helper not listed).
+
+const SUMMARY_INDEX_PATH = path.join(caveHome(), "conversation-summary-index.json");
+const SUMMARY_INDEX_VERSION = 1;
+const SUMMARY_INDEX_WRITE_DELAY_MS = 2_000;
+
+let summaryIndexKeyValue: string | null = null;
+let summaryIndexHydration: Promise<void> | null = null;
+let summaryIndexDirty = false;
+let summaryIndexTimer: ReturnType<typeof setTimeout> | null = null;
+let summaryIndexWriting: Promise<void> | null = null;
+// Bumped by clearConversationListMetadataCache so a hydration or write that
+// started before a clear cannot repopulate what it discarded.
+let summaryIndexGeneration = 0;
+
+function summaryIndexKey(): string {
+  if (summaryIndexKeyValue) return summaryIndexKeyValue;
+  const hash = createHash("sha256").update(`v${SUMMARY_INDEX_VERSION}`);
+  for (const derivation of [
+    readConversationSummary,
+    fallbackConversationSummary,
+    deriveConversationSignals,
+    activeConversationTurns,
+    hasDuplicateTurnIds,
+    isLegacyLinearHistory,
+    normalizeStableIsoTimestamp,
+    parseFiniteTimestamp,
+    normalizeStableAttentionRequest,
+    resolveAncestorChainFromMap,
+    resolveAncestorChain,
+    resolvableAncestorChainSize,
+    hasResolvableAncestorChain,
+    soleResolvableLeafId,
+    linearizeLegacy,
+    resolveActivePath,
+    isCanonicalIsoInstant,
+    normalizeChatAttentionOperationId,
+    normalizeChatAttentionOperationLineage,
+  ]) {
+    hash.update("\0").update(String(derivation));
+  }
+  summaryIndexKeyValue = hash.digest("hex");
+  return summaryIndexKeyValue;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hydrateSummaryIndex(): Promise<void> {
+  summaryIndexHydration ??= (async () => {
+    const generation = summaryIndexGeneration;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(SUMMARY_INDEX_PATH, "utf8"));
+    } catch {
+      return; // absent or torn: the scan rebuilds it
+    }
+    if (generation !== summaryIndexGeneration) return;
+    if (!isPlainRecord(parsed) || parsed.key !== summaryIndexKey() || !isPlainRecord(parsed.entries)) {
+      summaryIndexDirty = true; // stale key or shape: rewrite after this scan
+      return;
+    }
+    for (const [name, raw] of Object.entries(parsed.entries)) {
+      if (!name.endsWith(".json") || name !== path.basename(name)) continue;
+      if (
+        !isPlainRecord(raw)
+        || typeof raw.mtimeMs !== "number"
+        || typeof raw.ctimeMs !== "number"
+        || typeof raw.size !== "number"
+        || !isPlainRecord(raw.summary)
+        || typeof raw.summary.sessionId !== "string"
+        || typeof raw.summary.updatedAt !== "string"
+      ) continue;
+      const file = path.join(CONV_DIR, name);
+      if (conversationSummaryCache.has(file)) continue;
+      const summary = raw.summary as unknown as ConversationSummary;
+      conversationSummaryCache.set(file, {
+        mtimeMs: raw.mtimeMs,
+        ctimeMs: raw.ctimeMs,
+        size: raw.size,
+        summary,
+      });
+      if (typeof summary.createdAt === "string" && summary.createdAt.trim() && !conversationCreatedAtByFile.has(file)) {
+        conversationCreatedAtByFile.set(file, summary.createdAt);
+      }
+    }
+  })();
+  return summaryIndexHydration;
+}
+
+function scheduleSummaryIndexWrite(): void {
+  summaryIndexDirty = true;
+  if (summaryIndexTimer) return;
+  summaryIndexTimer = setTimeout(() => {
+    summaryIndexTimer = null;
+    void writeSummaryIndex();
+  }, SUMMARY_INDEX_WRITE_DELAY_MS);
+  // Never hold a process (or a test) open for a cache write.
+  summaryIndexTimer.unref?.();
+}
+
+async function writeSummaryIndex(): Promise<void> {
+  if (summaryIndexWriting) await summaryIndexWriting;
+  if (!summaryIndexDirty) return;
+  summaryIndexDirty = false;
+  const generation = summaryIndexGeneration;
+  const entries: Record<string, ConversationSummaryCacheEntry> = {};
+  for (const [file, entry] of conversationSummaryCache) {
+    if (!entry.summary || path.dirname(file) !== CONV_DIR) continue;
+    entries[path.basename(file)] = entry;
+  }
+  const write = (async () => {
+    try {
+      await writeFileAtomic(SUMMARY_INDEX_PATH, JSON.stringify({ key: summaryIndexKey(), entries }));
+      if (generation !== summaryIndexGeneration) {
+        try {
+          unlinkSync(SUMMARY_INDEX_PATH);
+        } catch {
+          /* already gone */
+        }
+      }
+    } catch {
+      summaryIndexDirty = true; // retried after the next scan
+    }
+  })();
+  summaryIndexWriting = write;
+  try {
+    await write;
+  } finally {
+    if (summaryIndexWriting === write) summaryIndexWriting = null;
+  }
+}
+
+/** Test seam: drop the in-memory cache but keep the index, as a restart does. */
+export function simulateConversationSummaryRestart(): void {
+  conversationSummaryCache.clear();
+  conversationCreatedAtByFile.clear();
+  summaryIndexHydration = null;
+}
+
+export const CONVERSATION_SUMMARY_INDEX_PATH = SUMMARY_INDEX_PATH;
+
+/** Test seam: write any pending index update now. */
+export async function flushConversationSummaryIndex(): Promise<void> {
+  if (summaryIndexTimer) {
+    clearTimeout(summaryIndexTimer);
+    summaryIndexTimer = null;
+  }
+  await writeSummaryIndex();
 }
 
 function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
@@ -889,6 +1068,9 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     await unlink(file);
     conversationSummaryCache.delete(file);
     conversationCreatedAtByFile.delete(file);
+    // A deleted transcript's summary (title included) must not outlive it in
+    // the persisted index until some later scan happens to rewrite it.
+    scheduleSummaryIndexWrite();
     invalidateSessionsListCache();
     return true;
   } catch {
@@ -976,12 +1158,14 @@ async function readConversationSummary(
         sessionId: conv.sessionId,
         ...(conv.harnessSessionId ? { harnessSessionId: conv.harnessSessionId } : {}),
         familiarId: conv.familiarId,
-        harness: conv.harness,
+        // Absent rather than `undefined`: a persisted summary (#5569) cannot
+        // carry an undefined key, and a hydrated row must equal a fresh read.
+        ...(conv.harness !== undefined ? { harness: conv.harness } : {}),
         ...(conv.inferenceRouteId ? { inferenceRouteId: conv.inferenceRouteId } : {}),
-        model: conv.model,
-        runtime: conv.runtime,
-        title: conv.title,
-        origin: conv.origin,
+        ...(conv.model !== undefined ? { model: conv.model } : {}),
+        ...(conv.runtime !== undefined ? { runtime: conv.runtime } : {}),
+        ...(conv.title !== undefined ? { title: conv.title } : {}),
+        ...(conv.origin !== undefined ? { origin: conv.origin } : {}),
         ...(conv.flowOutcome ? { flowOutcome: conv.flowOutcome } : {}),
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
@@ -990,7 +1174,7 @@ async function readConversationSummary(
           : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
         ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
-        createdAt: conv.createdAt,
+        ...(conv.createdAt !== undefined ? { createdAt: conv.createdAt } : {}),
         updatedAt: conv.updatedAt,
       },
       bytesRead: fileSize,
@@ -1031,11 +1215,16 @@ export async function listConversations(): Promise<ConversationSummary[]> {
     return [];
   }
 
+  await hydrateSummaryIndex();
   const names = entries.filter((name) => name.endsWith(".json"));
   const files = names.map((name) => path.join(CONV_DIR, name));
   const liveFiles = new Set(files);
+  let pruned = 0;
   for (const file of conversationSummaryCache.keys()) {
-    if (!liveFiles.has(file)) conversationSummaryCache.delete(file);
+    if (!liveFiles.has(file)) {
+      conversationSummaryCache.delete(file);
+      pruned += 1;
+    }
   }
   // The remembered createdAt outlives every change to a file, but not the file:
   // a transcript that is gone has no row to substitute, and a later transcript
@@ -1112,6 +1301,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
     ),
   );
 
+  if (cacheMisses > 0 || pruned > 0 || summaryIndexDirty) scheduleSummaryIndexWrite();
   const summaries = results.filter((summary): summary is ConversationSummary => Boolean(summary));
   summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   if (scanCount >= conversationListMetrics.scanCount) {
