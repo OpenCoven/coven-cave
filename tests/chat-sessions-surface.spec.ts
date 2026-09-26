@@ -242,7 +242,7 @@ test.describe("sessions list", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await page.route("**/api/chat/conversation/s-run", async (route) => {
+    await page.route((url) => url.pathname === "/api/chat/conversation/s-run", async (route) => {
       requestCount += 1;
       await gate;
       await route.fulfill({
