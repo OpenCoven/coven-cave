@@ -532,6 +532,9 @@ export type DaemonRequest = {
   diagnostics?: DaemonDiagnosticContext;
   diagnosticOperation?: string;
   diagnosticAttempt?: number;
+  /** Conditional GET (OpenCoven/coven#1153): a daemon that recognizes the tag
+   *  answers 304 with no body. */
+  ifNoneMatch?: string;
 };
 
 export type DaemonResponse<T = unknown> = {
@@ -539,6 +542,8 @@ export type DaemonResponse<T = unknown> = {
   status: number;
   data: T | null;
   error?: string;
+  /** The response's ETag, when the daemon sends one. */
+  etag?: string;
 };
 
 export async function callDaemon<T = unknown>(
@@ -554,6 +559,59 @@ export async function callDaemonTarget<T = unknown>(
   request: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
   return callDaemonTargetDecoded(target, request, raw => JSON.parse(raw.toString("utf8")) as T);
+}
+
+// The last successful body per daemon target and path, with its ETag, for
+// callDaemonConditional. Holds a handful of polled GETs, never request data.
+const conditionalReads = new Map<string, { etag: string; data: unknown }>();
+const CONDITIONAL_READS_MAX = 16;
+
+function daemonTargetKey(target: DaemonTarget): string | null {
+  if (target.mode === "local") return `local:${target.socketPath}`;
+  if (target.mode === "hub") return `hub:${target.url}`;
+  return null;
+}
+
+/**
+ * A GET that skips re-downloading and re-parsing an unchanged body (#5588).
+ * Sends the last ETag seen for this target and path; a daemon that answers
+ * 304 (OpenCoven/coven#1153) gets the cached, already-parsed data back as a
+ * normal 200. A daemon without ETags is never sent If-None-Match, so the
+ * behaviour there is unchanged. The cached value is shared: callers must treat
+ * it as read-only.
+ */
+export async function callDaemonConditional<T = unknown>(
+  request: Omit<DaemonRequest, "method" | "body" | "ifNoneMatch">,
+): Promise<DaemonResponse<T>> {
+  if (request.signal?.aborted) return cancelledDaemonResponse();
+  return callDaemonTargetConditional<T>(await loadDaemonTarget(), request);
+}
+
+export async function callDaemonTargetConditional<T = unknown>(
+  target: DaemonTarget,
+  request: Omit<DaemonRequest, "method" | "body" | "ifNoneMatch">,
+): Promise<DaemonResponse<T>> {
+  const targetKey = daemonTargetKey(target);
+  if (!targetKey) return callDaemonTarget<T>(target, request);
+  const key = `${targetKey} ${request.path}`;
+  const cached = conditionalReads.get(key);
+  const res = await callDaemonTarget<T>(target, { ...request, ...(cached ? { ifNoneMatch: cached.etag } : {}) });
+  if (res.status === 304 && cached) {
+    return { ok: true, status: 200, data: cached.data as T, etag: cached.etag };
+  }
+  if (res.ok && res.data !== null && res.etag) {
+    conditionalReads.delete(key);
+    conditionalReads.set(key, { etag: res.etag, data: res.data });
+    if (conditionalReads.size > CONDITIONAL_READS_MAX) {
+      conditionalReads.delete(conditionalReads.keys().next().value as string);
+    }
+  }
+  return res;
+}
+
+/** Test seam. */
+export function clearDaemonConditionalReads(): void {
+  conditionalReads.clear();
 }
 
 export type DaemonByteRequest = DaemonRequest & { maxResponseBytes: number };
@@ -596,6 +654,7 @@ async function callDaemonTargetDecoded<T>(
     diagnostics = createDaemonDiagnosticContext(),
     diagnosticOperation = "daemon-request",
     diagnosticAttempt = 1,
+    ifNoneMatch,
   }: DaemonRequest,
   decode: (raw: Buffer) => T,
   decodeEmpty = false,
@@ -632,6 +691,7 @@ async function callDaemonTargetDecoded<T>(
     diagnostics,
     diagnosticOperation,
     diagnosticAttempt,
+    ifNoneMatch,
   }, decode, decodeEmpty);
   // Retry transport-level failures (status 0: timeout/reset/refused) once for
   // reads unless the caller opts out — a briefly-busy daemon must not surface
@@ -658,6 +718,7 @@ async function callDaemonTargetDecoded<T>(
       diagnostics,
       diagnosticOperation,
       diagnosticAttempt: diagnosticAttempt + 1,
+      ifNoneMatch,
     }, decode, decodeEmpty);
   }
   return first;
@@ -690,6 +751,7 @@ function callDaemonTargetOnce<T = unknown>(
     diagnostics = createDaemonDiagnosticContext(),
     diagnosticOperation = "daemon-request",
     diagnosticAttempt = 1,
+    ifNoneMatch,
   }: DaemonRequest,
   decode: (raw: Buffer) => T,
   decodeEmpty: boolean,
@@ -759,6 +821,7 @@ function callDaemonTargetOnce<T = unknown>(
       headers.authorization = `Bearer ${target.accessToken}`;
     }
     headers[DAEMON_DIAGNOSTIC_CORRELATION_HEADER] = diagnostics.correlationId;
+    if (ifNoneMatch) headers["if-none-match"] = ifNoneMatch;
     const requestOptions =
       target.mode === "hub"
         ? (() => {
@@ -828,13 +891,19 @@ function callDaemonTargetOnce<T = unknown>(
           const raw = Buffer.concat(chunks);
           const status = res.statusCode ?? 0;
           const ok = status >= 200 && status < 300;
+          const etagHeader = res.headers?.etag;
+          const etag = typeof etagHeader === "string" && etagHeader ? { etag: etagHeader } : {};
+          if (status === 304) {
+            settle({ ok: false, status, data: null, ...etag });
+            return;
+          }
           if (raw.length === 0 && !decodeEmpty) {
-            settle({ ok, status, data: null });
+            settle({ ok, status, data: null, ...etag });
             return;
           }
           try {
             const parsed = decode(raw);
-            settle({ ok, status, data: parsed });
+            settle({ ok, status, data: parsed, ...etag });
           } catch {
             settle({
               ok: false,
