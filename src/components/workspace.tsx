@@ -281,6 +281,7 @@ import {
   globalSearchRequestFromDetail,
 } from "@/lib/global-search-request";
 import { publishSchedulesChanged } from "@/lib/board-cache-events";
+import { startSpan } from "@/lib/perf/marks";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
@@ -420,6 +421,22 @@ export function Workspace() {
       loading: !ready && projectsError === null && (!workspaceContextHydrated || projectsLoading || !projectsLoadedSuccessfully),
     };
   }, [selectedWorkspaceProjectId, workspaceContextHydrated, projectsLoadedSuccessfully, projectsLoading, projectsError, selectedWorkspaceProject]);
+  // Project-switch latency (#5448): from a project selection change until the
+  // chat scope for it is ready. The hydrated initial selection is not timed.
+  const projectSwitchSpanRef = useRef<(() => number | null) | null>(null);
+  const projectSwitchBaselineRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!workspaceContextHydrated) return;
+    const previous = projectSwitchBaselineRef.current;
+    projectSwitchBaselineRef.current = selectedWorkspaceProjectId;
+    if (previous === undefined || previous === selectedWorkspaceProjectId) return;
+    projectSwitchSpanRef.current = startSpan("chat:project-switch");
+  }, [selectedWorkspaceProjectId, workspaceContextHydrated]);
+  useEffect(() => {
+    if (!chatBrowseScope.ready || !projectSwitchSpanRef.current) return;
+    projectSwitchSpanRef.current();
+    projectSwitchSpanRef.current = null;
+  }, [chatBrowseScope.ready, chatBrowseScope.selection]);
   const {
     familiars: projectCrewRecords,
     loading: projectCrewLoading,
@@ -1885,6 +1902,10 @@ export function Workspace() {
   // accept path below, so projection and retirement behave exactly as if the
   // identical body had arrived, minus the download and parse.
   const sessionsListEtagRef = useRef<{ scopeKey: string; etag: string; payload: { ok?: boolean; degraded?: boolean; sessions?: unknown[] } } | null>(null);
+  // Familiar-switch latency (#5448): from the scope change until that scope's
+  // list is applied. The first load is boot, not a switch, so it's not timed.
+  const familiarSwitchSpanRef = useRef<{ scopeKey: string; end: () => number | null } | null>(null);
+  const familiarSwitchBaselineRef = useRef(false);
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
     // familiars-refresh event, and the active-scope effect. The callback stays
@@ -1986,6 +2007,10 @@ export function Workspace() {
         setSessionsScopeFamiliarId(capturedActiveId);
         setSessionsLoaded(true);
         baseSessionsApplied = true;
+        if (familiarSwitchSpanRef.current?.scopeKey === capturedScopeKey) {
+          familiarSwitchSpanRef.current.end();
+          familiarSwitchSpanRef.current = null;
+        }
       } catch {
         if (isCurrent()) {
           // Transient — the poll retries, backing off.
@@ -2030,6 +2055,13 @@ export function Workspace() {
     void loadGitHubTasks();
   }, [loadFamiliars, loadGitHubTasks]);
   useEffect(() => {
+    if (familiarSwitchBaselineRef.current) {
+      familiarSwitchSpanRef.current = {
+        scopeKey: chatAttentionProjectionScopeKey(activeId),
+        end: startSpan("chat:familiar-switch"),
+      };
+    }
+    familiarSwitchBaselineRef.current = true;
     void loadSessions();
   }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime

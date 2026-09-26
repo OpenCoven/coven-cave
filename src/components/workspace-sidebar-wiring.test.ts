@@ -192,7 +192,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*\n\s*void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
+  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
   "mount and each active familiar scope change explicitly reload sessions once",
 );
 
