@@ -484,3 +484,30 @@ for (const departure of ["project", "new-chat"] as const) {
     }
   });
 }
+
+test("a slow transcript for the previous thread never paints into the thread you switched to", async ({ page }) => {
+  await setup(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route((url) => url.pathname === "/api/chat/conversation/context-a", async (route) => {
+    await pending;
+    await route.fallback();
+  });
+  try {
+    // Open A while its transcript is held, then switch to B before it lands.
+    await page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first().click();
+    await openThread(page, "B");
+    const main = page.getByTestId("chat-main");
+
+    const lateA = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/chat/conversation/context-a");
+    release();
+    await lateA;
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+    // B keeps its transcript and A's late response never paints into it.
+    await expect(main.locator('[data-turn-id="context-b-999"]')).toBeAttached();
+    await expect(main.locator('[data-turn-id^="context-a-"]')).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
