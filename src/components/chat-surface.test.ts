@@ -126,7 +126,7 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\}/,
+  /\{\s*id:\s*"conversation",\s*label:\s*"Chats"\s*\}/,
   "ChatSurface should name the primary history tab Sessions inside the Familiars page",
 );
 

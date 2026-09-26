@@ -289,7 +289,7 @@ test.describe("chat threads rail", () => {
       await assertTailVisible(page.locator(RAIL), pinnedTitle);
     }
     await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Projects", exact: true }).click();
-    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Chats", exact: true }).click();
     const list = page.getByTestId("chat-main").locator(".chat-list-surface");
     await assertTailVisible(list, title);
     await assertTailVisible(list, pinnedTitle);
@@ -311,7 +311,7 @@ test.describe("chat threads rail", () => {
   test("desktop session-list actions have 32px targets and keyboard focus rings", async ({ page }, testInfo) => {
     await gotoChat(page);
     await page.getByRole("tab", { name: "Projects", exact: true }).click();
-    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    await page.getByRole("tab", { name: "Chats", exact: true }).click();
     const row = page.locator(".chat-list-row").filter({ hasText: "Refactor auth flow" });
     await row.hover();
     const actions = row.locator(".chat-list-row-actions button");

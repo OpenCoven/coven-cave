@@ -56,7 +56,7 @@ test("Flow runs stay separate until an explicit discussion is created", async ({
   await expect(page.locator(".shell-frame")).toBeVisible({ timeout: 30_000 });
   const scope = (name: RegExp) => page.locator('.chat-scope-tabs [role="tab"]').filter({ hasText: name }).first();
   await scope(/projects/i).click();
-  await scope(/sessions/i).click();
+  await scope(/chats/i).click();
   await expect(page.locator(".chat-session-card")).toHaveCount(1);
   await expect(page.locator(".chat-session-card")).toContainText("Flow: a human discussion");
   await page.getByRole("button", { name: "Session view options" }).click();
