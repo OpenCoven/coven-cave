@@ -28,8 +28,8 @@ assert.match(
 );
 assert.match(
   chatList,
-  /\{!sessionsLoaded && !hasAny \? \([\s\S]*?ui-skeleton[\s\S]*?\) : !hasAny \? \(/,
-  "ChatList shows shimmer skeleton rows instead of flashing the no-chats empty state on boot",
+  /\{\(!sessionsLoaded \|\| \(browseScope && !browseScope\.ready && browseScope\.loading\)\) && !hasAny \? \([\s\S]*?ui-skeleton[\s\S]*?\) : !hasAny \? \(/,
+  "ChatList shows shimmer skeleton rows instead of flashing the no-chats empty state on boot, or while a project scope loads (#5585)",
 );
 
 const workspace = read("./workspace.tsx");

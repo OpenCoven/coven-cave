@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { cancelHoverPrefetch, hoverPrefetchConversation, prefetchConversation } from "@/lib/conversation-cache";
-import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
+import { chatBrowseEmptyMessage, effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -53,6 +53,9 @@ type Props = {
   /** Last load had local rows only; the daemon was unreachable (#5563). */
   sessionsDegraded?: boolean;
   browseScope?: ChatBrowseScope;
+  /** The open chat when the project filter hides it (#5585): kept reachable at
+   *  the top of the rail instead of silently leaving it. */
+  outOfScopeActiveSession?: SessionRow | null;
   /** Selected familiar (null = "All familiars"). Scopes the project list and
    *  the per-project session rows. */
   activeFamiliarId?: string | null;
@@ -534,6 +537,7 @@ export function SidebarChatsSection({
   sessionsError = false,
   sessionsDegraded = false,
   browseScope,
+  outOfScopeActiveSession = null,
   activeFamiliarId = null,
   activeSessionId,
   onOpenSession,
@@ -584,20 +588,20 @@ export function SidebarChatsSection({
   // gets the plain visible set — but it can no longer drift from the list by
   // composing its own answer, which is how the two surfaces came to disagree
   // about how many chats a workspace had.
+  // The same readiness rule as ChatSurface (#5585): gated on this rail's own
+  // familiar-scoped project fetch, with loading kept apart from failure.
+  const railBrowseScope = useMemo(
+    () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
+    [browseScope, projectsLoaded, projectsLoading, projectsError],
+  );
   const visibleSessions = useMemo(
     () => scopeChatBrowseSessions(
       visibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
       projects,
       overrides,
-      browseScope ? {
-        ...browseScope,
-        ready: browseScope.ready && (
-          browseScope.selection === "all"
-          || (projectsLoaded && !projectsLoading && projectsError === null)
-        ),
-      } : undefined,
+      railBrowseScope,
     ),
-    [normalizedSessions, activeFamiliarId, projects, overrides, browseScope, projectsLoaded, projectsLoading, projectsError],
+    [normalizedSessions, activeFamiliarId, projects, overrides, railBrowseScope],
   );
 
   const groups = useMemo(
@@ -845,6 +849,44 @@ export function SidebarChatsSection({
           className="cnav__scroll focus-ring-inset"
         >
           <nav aria-label="Chat threads">
+          {!hasSearch && outOfScopeActiveSession ? (
+            <section aria-label="Open chat outside this project">
+              <div className="cnav__label">
+                <span className="cnav__label-text">Outside this project</span>
+                <span className="cnav__label-rule" aria-hidden />
+              </div>
+              <ul>
+                <li>
+                  <ThreadRow
+                    session={outOfScopeActiveSession}
+                    active
+                    pinned={isSessionPinned(pinnedIds, outOfScopeActiveSession.id)}
+                    confirming={confirmingSessionId === outOfScopeActiveSession.id}
+                    deleting={deletingSessionId === outOfScopeActiveSession.id}
+                    indent="flat"
+                    project={null}
+                    glyph={threadLeadingIcon(sessionRailTitle(outOfScopeActiveSession))}
+                    onOpenUrl={onOpenUrl}
+                    onOpen={() => onOpenSession(outOfScopeActiveSession)}
+                    onOpenInSplit={
+                      onOpenSessionInSplit ? () => onOpenSessionInSplit(outOfScopeActiveSession) : undefined
+                    }
+                    selectMode={false}
+                    selected={false}
+                    onToggleSelect={() => undefined}
+                    broadcast={null}
+                    onTogglePin={() => togglePin(outOfScopeActiveSession.id)}
+                    onToggleArchive={() => void setSessionArchived(outOfScopeActiveSession, !outOfScopeActiveSession.archived_at)}
+                    archiving={archivingId !== null}
+                    onRequestDelete={() => setConfirmingSessionId(outOfScopeActiveSession.id)}
+                    onCancelDelete={() => setConfirmingSessionId(null)}
+                    onConfirmDelete={() => void handleDeleteSession(outOfScopeActiveSession)}
+                    now={now}
+                  />
+                </li>
+              </ul>
+            </section>
+          ) : null}
           {!hasSearch && pinnedSessions.length > 0 ? (
             <section aria-label="Pinned threads">
               <div className="cnav__label">
@@ -935,11 +977,7 @@ export function SidebarChatsSection({
               </div>
               ) : (
               <p className="cnav__empty">
-                {hasSearch ? "No threads match your search." : browseScope && !browseScope.ready
-                  ? "Project context is unavailable. Choose another project or retry."
-                  : browseScope && browseScope.selection !== "all"
-                    ? "No chats in this project. Start a chat or choose another project."
-                    : "No conversations yet."}
+                {chatBrowseEmptyMessage(railBrowseScope, hasSearch)}
               </p>
               )
             ) : (
