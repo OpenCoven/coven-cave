@@ -473,8 +473,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*void loadSessions\(\);\s*\}, \[activeId, loadSessions\]\);/,
+  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\}, \[activeId, loadSessions\]\);/,
   "scope changes should explicitly launch a current-scope session-list request",
+);
+assert.match(
+  workspace,
+  /familiarSwitchSpanRef\.current = \{\s*scopeKey: chatAttentionProjectionScopeKey\(activeId\),\s*end: startSpan\("chat:familiar-switch"\),/,
+  "a familiar switch is timed until its scope's list is applied (#5448)",
 );
 
 // ── One recency-oriented list; project scope lives in the global selector. ───

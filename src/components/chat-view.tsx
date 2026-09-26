@@ -386,6 +386,7 @@ import {
   shouldReplacementRefreshOnDone,
 } from "@/lib/chat-creation-refresh";
 import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
@@ -546,6 +547,9 @@ export type ChatViewHandle = {
 // "revalidating": the desktop's encrypted offline copy painted first while the
 // network load is still in flight (#5583). The thread is live and sendable;
 // only a network failure turns it into the read-only "offline" state.
+/** Perf span: opening a thread until its transcript first paints (#5448). */
+const THREAD_OPEN_SPAN = "chat:thread-open";
+
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline" | "revalidating";
 
 async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
@@ -4343,12 +4347,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // instead of blanking to the history skeleton. The fetch below still runs
     // as revalidation, so a stale cache entry is corrected as soon as the
     // network answers — the cache is never the source of truth.
+    // Open-to-first-paint for this thread (#5448), recorded once and only when
+    // a transcript actually paints: a cache hit, the durable copy, or the
+    // network payload. An abandoned or failed open records nothing.
+    const endThreadOpenSpan = startSpan(THREAD_OPEN_SPAN);
     const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
     if (cachedConversation) {
       setLinkedContext(cachedConversation.context ?? null);
       applyConversationPayload(cachedConversation);
+      endThreadOpenSpan();
     } else if (isThreadSwitch) {
       // Thread switch: blank the PREVIOUS thread's transcript synchronously so
       // the history skeleton renders while this thread's history loads —
@@ -4378,6 +4387,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (additions === null || hasNewerGeneration()) return;
         localSystemTurns = [...localSystemTurns, ...additions];
         applyConversationPayload(payload, localSystemTurns);
+        endThreadOpenSpan();
         paintedTurns = turnsRef.current;
       };
       const paintDurable = (payload: ConversationHistoryPayload) => {
