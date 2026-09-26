@@ -17,6 +17,9 @@ export type ToolEvent = {
   name: string;
   input?: string;
   output?: string;
+  /** Set when a transcript was loaded without this tool's output (#5581): its
+   *  length, so the card can show it exists and fetch it when opened. */
+  outputChars?: number;
   status: "running" | "ok" | "error";
   durationMs?: number;
   /**

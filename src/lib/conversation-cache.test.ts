@@ -98,7 +98,7 @@ test("prefetch fetches, caches, and dedupes concurrent requests", async () => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const calls = stubFetch(async (url) => {
-    assert.equal(url, "/api/chat/conversation/s1");
+    assert.equal(url, "/api/chat/conversation/s1?toolOutputs=recent");
     await gate;
     return { ok: true, json: async () => payload("prefetched") };
   });
@@ -233,7 +233,7 @@ test("hovering another row re-arms the singleton timer onto the new session", as
   hoverPrefetchConversation("s2");
   await sleep(150);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], "/api/chat/conversation/s2");
+  assert.equal(calls[0][0], "/api/chat/conversation/s2?toolOutputs=recent");
 });
 
 // ── Wiring pins ─────────────────────────────────────────────────────────────

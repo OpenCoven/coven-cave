@@ -132,7 +132,8 @@ export function loadConversation(
     // zero-cost samples and flatter the percentile this span exists to report.
     const endSpan = startSpan(TRANSCRIPT_FETCH_SPAN);
     try {
-      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
+      // Older, larger tool outputs load when their card opens (#5581).
+      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
         cache: "no-store",
       });
       const json = (await res.json().catch(() => null)) as CachedConversationPayload & {

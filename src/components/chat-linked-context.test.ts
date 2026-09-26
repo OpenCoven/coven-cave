@@ -38,13 +38,13 @@ assert.match(
 
 assert.match(
   conversationRoute,
-  /NextResponse\.json\(\{\s*ok: true,\s*conversation: sanitizeConversationMetadata\(conv\),\s*context,\s*\}\)/,
+  /NextResponse\.json\(\{\s*ok: true,\s*conversation: presentConversation\(sanitizeConversationMetadata\(conv\)\),\s*context,\s*\}\)/,
   "Conversation API should return context alongside sanitized saved Cave conversations",
 );
 
 assert.match(
   conversationRoute,
-  /NextResponse\.json\(\{\s*ok: true,\s*conversation: sanitizeConversationMetadata\(jsonlConv\),\s*context,\s*\}\)/,
+  /NextResponse\.json\(\{\s*ok: true,\s*conversation: presentConversation\(sanitizeConversationMetadata\(jsonlConv\)\),\s*context,\s*\}\)/,
   "Conversation API should return context alongside sanitized OpenClaw JSONL conversations",
 );
 
