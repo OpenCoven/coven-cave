@@ -8,8 +8,8 @@ ownership, Cave Project 9, worktree creation, and completion.
 The central rule is **reduce checkout state before deleting identity**.
 A checkout can consume gigabytes while its branch costs little. Thin only
 authorized disposable output; retirement needs separate Branch Curator proof.
-Parking and unparking apply paths are unavailable while their legacy lifecycle
-proof is retired.
+Parking and unparking are preview-only: no lifecycle proof exists to verify
+an apply.
 
 ## Steady-state targets
 
@@ -58,10 +58,8 @@ node scripts/worktree-hygiene.mjs weekly --fetch
 Current weekly mode adds the read-only remote-hygiene audit, not a lifecycle
 patrol. Its report has no retirement authority.
 
-Older checkouts or scheduled copies may still invoke Beads-backed probes.
-Those are legacy tooling, not the current workflow. Do not run Beads to satisfy
-them; use `pnpm wt:status` for local evidence and preserve uncertain units.
-Retained compatibility code is not a replacement ownership proof.
+The lifecycle creator, inventory, and patrol were removed with Beads (#5566).
+Use `pnpm wt:status` for local evidence and preserve uncertain units.
 
 ## Thin a worktree
 
@@ -87,14 +85,14 @@ node scripts/worktree-hygiene.mjs thin --all-eligible --max 3
 
 Bulk apply always requires the explicit `--apply` flag. The maximum is capped at 10.
 
-The disposable set currently mirrors the lifecycle policy for `.next`, `.turbo`, `artifacts`, `coverage`, `dist`, `node_modules`, selected sandbox/generated roots, Rust/Tauri targets, test results, the generated pdf.js worker, and machine-local worktree-hook logs. The safety contract fails if hygiene claims a disposable path that the canonical lifecycle policy no longer recognizes.
+The disposable set covers `.next`, `.turbo`, `artifacts`, `coverage`, `dist`, `node_modules`, selected sandbox/generated roots, Rust/Tauri targets, test results, the generated pdf.js worker, and machine-local worktree-hook logs.
 
 ## Parking and unparking are report-only
 
 Parking's intended distinction is to remove a clean checkout while retaining
 the branch. It is not retirement. The current CLI refuses both `park --apply`
-and `unpark --apply` before any Git query or tracker operation because their
-postcondition still depends on the retired lifecycle proof. Do not bypass
+and `unpark --apply` before any Git query or tracker operation because no
+lifecycle proof exists to verify their postcondition. Do not bypass
 that refusal or manufacture metadata to make it pass.
 
 Dry-run proposals remain available:

@@ -224,7 +224,7 @@ export function hadRemoteTracking(worktreePath, branch) {
  * made the key true from birth for every canonically-created worktree, so this
  * signal was silently unconditional and `deletedUpstream` below always took the
  * archive-tag route — never the readable-branch route it promises for a
- * never-pushed branch (cave-t57kr). `worktree-lifecycle-create.ts` now passes
+ * never-pushed branch (cave-t57kr). Worktrees are now created with
  * `--no-track`, which restores the key to meaning what this doc comment says.
  */
 export function hasUpstreamConfig(worktreePath, branch) {

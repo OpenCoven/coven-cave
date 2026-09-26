@@ -13,7 +13,6 @@ import {
   assessThin,
   disposablePathSafety,
   isDisposableRelative,
-  lifecycleUnitPostcondition,
   mutationExitCode,
   parkedPathConfigKey,
   worktreeSlug,
@@ -114,75 +113,6 @@ assert.doesNotMatch(
   "branch punctuation must not alter git-config key structure",
 );
 
-const lifecycleItem = {
-  branch: "feat/cave-test-safe",
-  head: "a".repeat(40),
-  kind: "worktree",
-  path: "/tmp/custom-cave-worktree",
-  lane: "active",
-  reasons: [],
-};
-assert.equal(
-  lifecycleUnitPostcondition(
-    { items: [lifecycleItem] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-  ).ok,
-  true,
-  "unpark must accept the exact authoritative worktree identity",
-);
-assert.equal(
-  lifecycleUnitPostcondition(
-    { items: [{ ...lifecycleItem, path: "/tmp/different-worktree" }] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-  ).ok,
-  false,
-  "unpark must reject a lifecycle path mismatch",
-);
-assert.equal(
-  lifecycleUnitPostcondition(
-    { items: [{ ...lifecycleItem, lane: "uncertain" }] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-  ).ok,
-  false,
-  "unpark must reject an uncertain lifecycle unit",
-);
-for (const malformed of [
-  { ...lifecycleItem, path: undefined },
-  { ...lifecycleItem, reasons: { unexpected: true }, lane: "recovery" },
-]) {
-  assert.doesNotThrow(() => lifecycleUnitPostcondition(
-    { items: [malformed] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-  ));
-  assert.equal(
-    lifecycleUnitPostcondition(
-      { items: [malformed] },
-      { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-    ).ok,
-    false,
-    "malformed lifecycle data must fail closed without throwing",
-  );
-}
-assert.equal(
-  lifecycleUnitPostcondition(
-    { items: [{ ...lifecycleItem, lane: "future-lane" }] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-  ).ok,
-  false,
-  "unknown lifecycle lanes must fail closed",
-);
-assert.doesNotThrow(() => lifecycleUnitPostcondition(
-  { items: [null, "malformed"] },
-  { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "worktree", path: lifecycleItem.path },
-));
-assert.equal(
-  lifecycleUnitPostcondition(
-    { items: [{ ...lifecycleItem, kind: "branch-only", path: null, lane: "cooldown" }] },
-    { branch: lifecycleItem.branch, head: lifecycleItem.head, kind: "branch-only", path: null },
-  ).ok,
-  true,
-  "park must accept an exact healthy branch-only lifecycle unit",
-);
 assert.equal(mutationExitCode({ ok: true }), 0);
 assert.equal(mutationExitCode({ ok: false }), 2, "partial or failed mutations must exit nonzero");
 
@@ -245,17 +175,6 @@ assert.equal(
   false,
   "non-disposable ignored state would be destroyed by parking and must refuse",
 );
-
-// Keep the hygiene allowlist mechanically aligned with the canonical lifecycle
-// policy. A new category may be added there without automatically becoming
-// deletable here, but anything hygiene claims disposable must remain canonical.
-const lifecycle = readFileSync(path.join(root, "src", "lib", "worktree-lifecycle.ts"), "utf8");
-for (const entry of [...DISPOSABLE_ROOTS, ...DISPOSABLE_FILES]) {
-  assert.ok(
-    lifecycle.includes(`"${entry}"`),
-    `hygiene disposable path ${entry} must also exist in src/lib/worktree-lifecycle.ts`,
-  );
-}
 
 const workflow = readFileSync(path.join(root, ".github", "workflows", "worktree-hygiene-contract.yml"), "utf8");
 assert.doesNotMatch(workflow, /pnpm\/action-setup/, "dependency-free contract workflow must not initialize an unused pnpm store");
@@ -363,7 +282,7 @@ assert.doesNotMatch(workflow, /^\s*cache:\s*pnpm\s*$/m, "dependency-free contrac
     ]) {
       const result = spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: "utf8", env });
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /--apply unavailable: the Beads lifecycle proof is retired/);
+      assert.match(result.stderr, /--apply unavailable: there is no lifecycle proof to verify it/);
       assert.equal(result.stdout, "");
     }
     assert.equal(existsSync(marker), false, "refuse before even the first Git query");
@@ -375,30 +294,16 @@ assert.doesNotMatch(workflow, /^\s*cache:\s*pnpm\s*$/m, "dependency-free contrac
   }
 }
 
-// Weekly reports remain useful without invoking the retired lifecycle tracker.
+// Weekly reports remain useful without a lifecycle tracker.
 {
   const dir = repo();
   try {
-    const fakeBin = path.join(dir, "fake-bin");
-    mkdirSync(fakeBin);
-    const fakeNode = path.join(fakeBin, "node");
-    const marker = path.join(dir, "lifecycle-was-invoked");
-    writeFileSync(
-      fakeNode,
-      `#!/bin/sh\ncase "$*" in *worktree-lifecycle-patrol.ts*) printf called > ${JSON.stringify(marker)}; exit 99 ;; *) exec ${JSON.stringify(process.execPath)} "$@" ;; esac\n`,
-    );
-    chmodSync(fakeNode, 0o755);
-    const result = spawnSync(
-      process.execPath,
-      [script, "weekly", "--json"],
-      { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } },
-    );
+    const result = spawnSync(process.execPath, [script, "weekly", "--json"], { cwd: dir, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     assert.equal(report.authoritativeLifecycle, null);
     assert.equal(report.retirementAuthority, "unavailable");
     assert.ok(report.remoteHygiene, "preserve independent remote-hygiene reporting");
-    assert.equal(existsSync(marker), false, "weekly reporting must not invoke the legacy tracker");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

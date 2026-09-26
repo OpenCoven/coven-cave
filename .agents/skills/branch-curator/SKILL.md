@@ -32,9 +32,9 @@ Preserve a branch or worktree when any of these signals apply:
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
 
-Treat `main`, the default branch, preserved Beads/Dolt sync refs such as
+Treat `main`, the default branch, the leftover Dolt sync refs
 `__dolt_remote_info__` and `refs/dolt/data`, and other tool-owned refs as
-protected infrastructure. Tracker retirement does not authorize their deletion.
+protected infrastructure. Removing Beads does not authorize their deletion.
 
 ## Prevent accumulation
 Use [GitHub work tracking](../../../docs/workflows/github-work-tracking.md)
@@ -45,25 +45,22 @@ Raw Git does not enforce that budget.
 
 Exceeding the budget never authorizes deletion. A scoped exception must name
 the owner, reason, exact path, and expiry on the issue before creation.
-Do not run the retired Beads-managed creator or manufacture lifecycle metadata.
+Do not manufacture lifecycle metadata.
 
 Recovery and archive dispositions require an owner, reason, and review date.
 An overdue review creates follow-up work and never changes the item into a
 deletion candidate.
 
-## Routine evidence and legacy patrol
+## Routine evidence
 Use `pnpm wt:status` and the inventory below for local evidence, not proof of
-ownership or deletion authority. Do not invoke the Beads patrol for routine
-work. Legacy `retire-after-gate` is a classification, not authorization;
-missing metadata or a retired probe means uncertainty, not an unowned unit.
+ownership or deletion authority. A legacy `retire-after-gate` note is a
+classification, not authorization; missing metadata means uncertainty, not an
+unowned unit.
 
-Changing trackers does not implement the missing maintenance planes.
-`gate-incomplete` remains a successful safety decision: preserve every
-candidate. The legacy automatic contract still requires the full Coven,
-Beads, GitHub, and local maintenance transaction. Its batch bound remains at
-most three units by default, or an explicit `--max-retire` from 1 through 10.
-This is not an instruction to run retired tooling. Automatic mode never
-deletes remote refs; report proposals only.
+There is no automatic retirement. The lifecycle patrol and its maintenance
+planes were removed with Beads (#5566), so `gate-incomplete` is the standing
+decision: preserve every candidate whose disposition is unproven. Never
+delete remote refs automatically; report proposals only.
 
 ## Start with durable coordination
 Follow the canonical guide's bounded continuity check. Select one authorized
@@ -133,8 +130,7 @@ curation_issue_evidence=$(read_issue_evidence "$curation_issue_number") ||
 Retain and review these payloads; valid JSON is not owner clearance. A changed
 comment count or failed producer requires a fresh read, not an empty fallback.
 Include blocked/deferred issues and linked closed history in the ownership
-review. Preserve legacy records and original owners without querying or
-refreshing Beads. An old status or missing process does not authorize takeover.
+review. Preserve legacy records and original owners. An old status or missing process does not authorize takeover.
 
 ## Build the read-only inventory
 Refresh remote-tracking refs, then collect all signals before deciding:

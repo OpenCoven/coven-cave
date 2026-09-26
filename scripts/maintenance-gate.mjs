@@ -682,7 +682,7 @@ export function repositoryMaintenanceCapabilities({
       enforced: covenVersion.ok,
       source: covenVersion.ok
         ? `@opencoven/cli@${covenVersion.version} maintenance`
-        // The patrol prints this verbatim as what the plane is "blocked on", so
+        // Callers print this verbatim as what the plane is "blocked on", so
         // a version refusal has to name the install it judged here too — the
         // reason token alone reads as a missing client rather than a resolved
         // one that is simply too old (cave-6bb4m).
@@ -695,7 +695,6 @@ export function repositoryMaintenanceCapabilities({
               : null,
           ].filter(Boolean).join("; "),
     },
-    beads: { enforced: false, source: "cave-wqa0b.3" },
     github: { enforced: false, source: "cave-wqa0b.4" },
     complete: false,
   };

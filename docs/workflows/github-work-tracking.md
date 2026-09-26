@@ -101,9 +101,9 @@ authorize unlocking another session's checkout or deleting its worktree/branch.
 The old `worktree-sweep.sh` exits with an explicit retirement refusal before
 running any tracker or Git operation. Remove machine-specific schedules that
 still invoke it; repository changes do not uninstall external scheduler entries.
-The read-only hygiene report no longer runs a lifecycle inventory.
-Its `park` and `unpark --apply` paths are unavailable until their lifecycle
-proof is replaced; they must refuse before mutation, not skip a safety gate.
+The read-only hygiene report does not run a lifecycle inventory. Its `park`
+and `unpark --apply` paths are unavailable; they must refuse before mutation,
+not skip a safety gate.
 
 ## Worktrees
 
@@ -125,10 +125,9 @@ including its primary worktree. At the limit, preserve existing units and
 obtain an attributed, scoped exception on the issue before creating another;
 do not remove somebody else's unit to make room.
 
-The old managed creator and patrol are not the GitHub workflow.
-Do not manufacture `metadata.coven.worktree` records just to satisfy those
-tools. Legacy patrol output may classify an issue-owned
-worktree as `uncertain`; that is not permission to delete it.
+The managed worktree creator and lifecycle patrol were removed with Beads
+(#5566). Do not manufacture `metadata.coven.worktree` records. An `uncertain`
+classification in older patrol output is not permission to delete a worktree.
 
 `pnpm wt:status` is local evidence, not an ownership or deletion receipt.
 A paused merge/rebase can look like ordinary dirtiness. Preserve every dirty
