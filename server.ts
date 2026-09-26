@@ -36,6 +36,10 @@ import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
 import { warmHarnessSpawnPath } from "./src/lib/harness-spawn-env.ts";
+import {
+  createRemoteJsonCompression,
+  shouldCompressRemoteRequest,
+} from "./src/lib/server/remote-json-compression.ts";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
@@ -2226,24 +2230,33 @@ const deviceAccess = createDeviceAccessGateway({
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
+// Next's own bundled middleware (the one its router-server applies for
+// `compress`), which this custom server otherwise bypasses (#5576).
+const remoteJsonCompression = createRemoteJsonCompression(require("next/dist/compiled/compression"));
+
 const server = createServer((req, res) => {
   // Both stamps are trustworthy only because any client-supplied copy dies
   // here, before Next (and proxy.ts) ever see the request.
   delete req.headers[LOCAL_PEER_HEADER];
   delete req.headers[TAILNET_PEER_HEADER];
-  if (isDirectLoopbackRequest(req)) {
+  const directLoopback = isDirectLoopbackRequest(req);
+  if (directLoopback) {
     req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
   }
   const tailnetNodeId = resolveTailnetPeer(req);
   if (tailnetNodeId) {
     req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
-  void deviceAccess.handle(req, res).then((handled) => {
-    if (!handled) return handle(req, res);
-  }).catch((error: unknown) => {
-    console.error("[device-access] Request handling failed:", error);
-    res.destroy(error instanceof Error ? error : undefined);
-  });
+  const dispatch = () => {
+    void deviceAccess.handle(req, res).then((handled) => {
+      if (!handled) return handle(req, res);
+    }).catch((error: unknown) => {
+      console.error("[device-access] Request handling failed:", error);
+      res.destroy(error instanceof Error ? error : undefined);
+    });
+  };
+  if (shouldCompressRemoteRequest(req, directLoopback)) remoteJsonCompression(req, res, dispatch);
+  else dispatch();
 });
 
 server.on("close", () => {

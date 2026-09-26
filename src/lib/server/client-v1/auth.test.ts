@@ -1508,6 +1508,8 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
     "resolveTailnetPeer",
     "handle",
     "deviceAccess",
+    "shouldCompressRemoteRequest",
+    "remoteJsonCompression",
     stripTypeScriptTypes(match[1]),
   );
   const request = {
@@ -1528,9 +1530,38 @@ test("server request stamping removes spoofed loopback and tailnet markers befor
     () => null,
     () => undefined,
     { handle: async () => false },
+    () => false,
+    () => assert.fail("a direct loopback request is never compressed"),
   );
 
   assert.equal(request.headers[LOCAL_PEER_HEADER], "trusted-loopback");
   assert.equal(request.headers[TAILNET_PEER_HEADER], undefined);
   assert.equal(JSON.stringify(request.headers).includes("caller-spoofed"), false);
+
+  // A remote request runs through the compression middleware (#5576), which
+  // must still hand it to device access only after the stamps are applied.
+  const remote = { headers: { [LOCAL_PEER_HEADER]: "caller-spoofed-loopback" } };
+  type StampedRequest = { headers: Record<string, string | undefined> };
+  const handled: StampedRequest[] = [];
+  let compressionSawStamped: string | null | undefined = null;
+  applyServerStamp(
+    remote,
+    {},
+    LOCAL_PEER_HEADER,
+    TAILNET_PEER_HEADER,
+    "trusted-loopback",
+    "trusted-tailnet",
+    () => false,
+    () => null,
+    () => undefined,
+    { handle: async (req: StampedRequest) => { handled.push(req); return true; } },
+    () => true,
+    (req: StampedRequest, _res: unknown, next: () => void) => {
+      compressionSawStamped = req.headers[LOCAL_PEER_HEADER];
+      next();
+    },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(compressionSawStamped, undefined, "spoofed markers are gone before compression runs");
+  assert.equal(handled.length, 1, "the compressed path still dispatches to device access");
 });

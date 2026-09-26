@@ -10215,6 +10215,27 @@ function warmHarnessSpawnPath(dependencies = {}) {
   return warmUpState.inFlight;
 }
 
+// src/lib/server/remote-json-compression.ts
+var REMOTE_JSON_COMPRESSION_THRESHOLD_BYTES = 1024;
+var REMOTE_JSON_COMPRESSION_LEVEL = 1;
+function shouldCompressRemoteRequest(req, directLoopback) {
+  if (directLoopback) return false;
+  if (req.headers.upgrade !== void 0) return false;
+  const url = req.url ?? "";
+  return url === "/api" || url.startsWith("/api/") || url.startsWith("/api?");
+}
+function isCompressibleJsonResponse(res) {
+  const type = String(res.getHeader("content-type") ?? "").trim().toLowerCase();
+  return type === "application/json" || type.startsWith("application/json;");
+}
+function createRemoteJsonCompression(factory) {
+  return factory({
+    threshold: REMOTE_JSON_COMPRESSION_THRESHOLD_BYTES,
+    level: REMOTE_JSON_COMPRESSION_LEVEL,
+    filter: (_req, res) => isCompressibleJsonResponse(res)
+  });
+}
+
 // server.ts
 var require2 = createRequire(import.meta.url);
 var pty = require2("node-pty");
@@ -11656,22 +11677,28 @@ var deviceAccess = createDeviceAccessGateway({
 });
 await app.prepare();
 var nextUpgradeHandler = app.getUpgradeHandler();
+var remoteJsonCompression = createRemoteJsonCompression(require2("next/dist/compiled/compression"));
 var server = createServer((req, res) => {
   delete req.headers[LOCAL_PEER_HEADER];
   delete req.headers[TAILNET_PEER_HEADER];
-  if (isDirectLoopbackRequest(req)) {
+  const directLoopback = isDirectLoopbackRequest(req);
+  if (directLoopback) {
     req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
   }
   const tailnetNodeId = resolveTailnetPeer(req);
   if (tailnetNodeId) {
     req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
-  void deviceAccess.handle(req, res).then((handled) => {
-    if (!handled) return handle(req, res);
-  }).catch((error) => {
-    console.error("[device-access] Request handling failed:", error);
-    res.destroy(error instanceof Error ? error : void 0);
-  });
+  const dispatch = () => {
+    void deviceAccess.handle(req, res).then((handled) => {
+      if (!handled) return handle(req, res);
+    }).catch((error) => {
+      console.error("[device-access] Request handling failed:", error);
+      res.destroy(error instanceof Error ? error : void 0);
+    });
+  };
+  if (shouldCompressRemoteRequest(req, directLoopback)) remoteJsonCompression(req, res, dispatch);
+  else dispatch();
 });
 server.on("close", () => {
   void deviceAccess.close().then(() => deviceAccessStore.close()).catch((error) => {
