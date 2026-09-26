@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -460,6 +461,9 @@ final class AppModel {
     /// (foreground probe, path monitor, pill tap, retry tickers) collapse
     /// into one discovery sweep instead of stacking probes.
     @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
+    @ObservationIgnored let performanceRecorder: CavePerformanceRecorder
+    @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
+    @ObservationIgnored let isPerformanceFixture: Bool
 
     var familiars: [Familiar] = [] {
         didSet {
@@ -511,7 +515,7 @@ final class AppModel {
 
     /// The selected application destination. Mounted by `MainShellView`; set by
     /// drawer actions, deep links, and `/board` / `/chats`.
-    var selectedTab: AppTab = {
+    private var selectedTabValue: AppTab = {
         #if DEBUG
         // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
         // into a destination for screenshot automation.
@@ -524,6 +528,27 @@ final class AppModel {
         return .chats
     }()
 
+    var selectedTab: AppTab {
+        get { selectedTabValue }
+        set {
+            guard newValue != selectedTabValue else { return }
+            guard performanceRecorder.isEnabled else { selectedTabValue = newValue; return }
+            performanceSpans.begin(.destinationStableFrame)
+            let span = performanceSpans.span(for: .destinationStableFrame)
+            destinationPresentationReady = false
+            var transaction = Transaction()
+            transaction.addAnimationCompletion(criteria: .removed) { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, let span,
+                          self.performanceSpans.span(for: .destinationStableFrame) === span else { return }
+                    self.destinationPresentationReady = true
+                }
+            }
+            withTransaction(transaction) { selectedTabValue = newValue }
+        }
+    }
+    var destinationPresentationReady = true
+
     /// A thread the central resolver asked Chats to open. `ChatsHomeView`
     /// observes this, pushes the thread, and clears it back to nil.
     var threadToOpen: ChatThread?
@@ -535,13 +560,36 @@ final class AppModel {
     /// Global Claude Design navigation. Any top-level surface can open the
     /// shared drawer; one-shot requests let its Search/Chat actions hand off to
     /// the Chats split view without coupling the drawer to local view state.
-    var navigationDrawerOpen: Bool = {
+    private var navigationDrawerOpenValue: Bool = {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("--ui-open-drawer")
         #else
         return false
         #endif
     }()
+    var drawerPresentationReady = true
+    @ObservationIgnored private var drawerPresentationRevision: UInt64 = 0
+    var navigationDrawerOpen: Bool {
+        get { navigationDrawerOpenValue }
+        set {
+            guard newValue != navigationDrawerOpenValue else { return }
+            guard performanceRecorder.isEnabled else { navigationDrawerOpenValue = newValue; return }
+            drawerPresentationRevision &+= 1
+            let revision = drawerPresentationRevision
+            drawerPresentationReady = false
+            if newValue { performanceSpans.begin(.drawerOpen) }
+            else { performanceSpans.cancel(.drawerOpen) }
+            var transaction = Transaction()
+            transaction.addAnimationCompletion(criteria: .removed) { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.drawerPresentationRevision == revision else { return }
+                    self.drawerPresentationReady = true
+                }
+            }
+            withTransaction(transaction) { navigationDrawerOpenValue = newValue }
+        }
+    }
+
     var newChatRequested = false
     var chatSearchRequested = false
 
@@ -2219,6 +2267,10 @@ final class AppModel {
     init(
         defaults: UserDefaults = .standard,
         restoreLocalState: Bool = true,
+        loadPersistedConnection: Bool = true,
+        isPerformanceFixture: Bool = false,
+        performanceRecorder: CavePerformanceRecorder? = nil,
+        threadStoreURL: URL? = nil,
         widgetSnapshotDefaults: UserDefaults? = nil,
         threadSnapshotLoader: (@Sendable () async -> [ThreadSnapshot])? = nil,
         coreResourceClientFactory: @escaping @Sendable (CaveConnection) -> any AppModelCoreResourceClient = {
@@ -2229,7 +2281,11 @@ final class AppModel {
             await AppModel.discoverBaseURL(candidates)
         }
     ) {
-        let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
+        let performanceRecorder = performanceRecorder ?? .shared
+        let threadStore = ThreadSnapshotStore(url: threadStoreURL ?? AppModel.threadsFileURL)
+        self.performanceRecorder = performanceRecorder
+        self.performanceSpans = CavePerformanceSpanLifecycle(recorder: performanceRecorder)
+        self.isPerformanceFixture = isPerformanceFixture
         self.projectContextDefaults = defaults
         self.widgetSnapshotDefaults = widgetSnapshotDefaults
         self.threadStore = threadStore
@@ -2239,11 +2295,11 @@ final class AppModel {
         self.coreResourceClientFactory = coreResourceClientFactory
         self.reminderNotificationScheduler = reminderNotificationScheduler
         self.baseURLDiscoverer = baseURLDiscoverer
-        connection = CaveConnection.load(defaults: defaults)
+        connection = loadPersistedConnection && !isPerformanceFixture ? CaveConnection.load(defaults: defaults) : nil
         if connection != nil {
             projectNavigationConnectionGeneration = 1
         }
-        pendingProjectNavigationIntent = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
+        pendingProjectNavigationIntent = (isPerformanceFixture ? nil : ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"])
             .map { ProjectNavigationIntent(entity: .thread(id: $0), destination: .chats) }
         if !restoreLocalState {
             threadsHydrated = true
@@ -4549,7 +4605,7 @@ final class AppModel {
             projectContextID: projectContext?.id,
             updatedAt: now
         ), defaults: widgetSnapshotDefaults)
-        WidgetCenter.shared.reloadAllTimelines()
+        if !isPerformanceFixture { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     // MARK: - Deep links (home-screen widget)
@@ -4564,6 +4620,7 @@ final class AppModel {
     private var pendingPairingDestinationLease: ConnectionDispatchLease?
 
     func handleDeepLink(_ url: URL) {
+        guard !isPerformanceFixture else { return }
         guard url.scheme == "covencave" else { return }
         // covencave://connect?host=…&token=… — the desktop's pairing invite.
         // Queue it for the app-level lock/approval processor rather than
@@ -4850,6 +4907,7 @@ final class AppModel {
 
     @discardableResult
     func configure(host: String, token: String? = nil) async -> ConnectionDispatchLease? {
+        guard !isPerformanceFixture else { return nil }
         guard !Task.isCancelled else { return nil }
         // Revoke every owner of the previous authority before touching its
         // credential. A refresh can already be past discovery and suspended in
@@ -4958,6 +5016,7 @@ final class AppModel {
     }
 
     func disconnect() {
+        guard !isPerformanceFixture else { return }
         // An in-flight probe's outcome is moot once the endpoint is gone; the
         // post-probe `connection != nil` guard in refreshConnection catches
         // any that already resolved.
@@ -4992,6 +5051,7 @@ final class AppModel {
     }
 
     func startConnectionSupervisor() {
+        guard !isPerformanceFixture else { return }
         guard !connectionMonitorStarted else { return }
         connectionMonitorStarted = true
         connectionMonitor.pathUpdateHandler = { [weak self] path in
@@ -5007,6 +5067,7 @@ final class AppModel {
     /// supervisor sleeps while the app is backgrounded; BGAppRefreshTask owns
     /// a separate single maintenance ping when iOS grants background time.
     func setConnectionSupervisorActive(_ active: Bool) async {
+        guard !isPerformanceFixture else { return }
         connectionSupervisorActive = active
         if active {
             requestConnectionRecovery(.foreground)
@@ -5036,6 +5097,7 @@ final class AppModel {
     /// backing off, cancelling only its sleeper makes the real signal probe
     /// immediately; an in-flight probe is already the work this trigger wants.
     func requestConnectionRecovery(_ trigger: ConnectionRecoveryTrigger) {
+        guard !isPerformanceFixture else { return }
         if case .foreground = trigger {
             connectionSupervisorRefreshProfile = true
         }
@@ -5228,6 +5290,7 @@ final class AppModel {
     /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
     /// flash the reconnect pill over a perfectly good primary destination.
     func recoverConnectionInBackground() async {
+        guard !isPerformanceFixture else { return }
         guard connection != nil else { connectionState = .unconfigured; return }
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
@@ -5378,6 +5441,7 @@ final class AppModel {
         quiet: Bool = false,
         supervisorGeneration: UInt64? = nil
     ) async {
+        guard !isPerformanceFixture else { return }
         guard let connection else { connectionState = .unconfigured; return }
         let configurationGeneration = connectionConfigurationGeneration
         if !quiet { connectionState = .checking }
@@ -5693,6 +5757,7 @@ final class AppModel {
     /// launch/foreground/path/heartbeat recovery belongs exclusively to the
     /// lifecycle supervisor above, including its jittered backoff.
     func connectWithRetry() async {
+        guard !isPerformanceFixture else { return }
         guard connection != nil else { connectionState = .unconfigured; return }
         await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
     }
@@ -6010,6 +6075,22 @@ final class AppModel {
     /// Per-thread UserDefaults key for the composer's unsent draft.
     static func draftKey(_ threadId: String) -> String { "cave.chat.draft.\(threadId)" }
 
+    func persistedThreadDraft(_ threadId: String) -> String? {
+        projectContextDefaults.string(forKey: Self.draftKey(threadId))
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?) {
+        let key = Self.draftKey(threadId)
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            projectContextDefaults.set(text, forKey: key)
+            setThreadDraft(threadId, text: text)
+        } else {
+            projectContextDefaults.removeObject(forKey: key)
+            setThreadDraft(threadId, text: nil)
+        }
+    }
+
+
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
@@ -6023,7 +6104,7 @@ final class AppModel {
     /// Load persisted drafts for restored threads into the observable mirror.
     private func seedThreadDrafts() {
         for thread in threads where threadDrafts[thread.id] == nil {
-            if let saved = UserDefaults.standard.string(forKey: Self.draftKey(thread.id)),
+            if let saved = persistedThreadDraft(thread.id),
                !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 threadDrafts[thread.id] = saved
             }

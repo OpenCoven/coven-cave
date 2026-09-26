@@ -132,6 +132,25 @@ schemes:
     test:
       targets:
         - CovenCaveTests
-        - CovenCaveUITests
+        - name: CovenCaveUITests
+          skippedTests:
+            - PerformanceBaselineUITests
     run:
       config: Debug
+
+  # Profile the production Release app with a UI runner, without importing its
+  # internal module through the Debug-only @testable unit-test dependency.
+  CovenCavePerformance:
+    build:
+      targets:
+        CovenCave: all
+    test:
+      config: Release
+      targets:
+        - name: CovenCaveUITests
+          selectedTests:
+            - PerformanceBaselineUITests
+    run:
+      config: Release
+    profile:
+      config: Release

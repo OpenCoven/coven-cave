@@ -177,6 +177,27 @@ struct MainShellView: View {
             }
         }
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
+        .background {
+            if app.performanceRecorder.isEnabled {
+                if app.navigationDrawerOpen, app.drawerPresentationReady,
+                   let span = app.performanceSpans.span(for: .drawerOpen) {
+                    CavePerformanceStableFrame(token: String(describing: ObjectIdentifier(span))) {
+                        app.performanceSpans.finish(.drawerOpen, matching: span)
+                    }
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                }
+                if !app.navigationDrawerOpen, app.drawerPresentationReady,
+                   app.destinationPresentationReady,
+                   let span = app.performanceSpans.span(for: .destinationStableFrame) {
+                    CavePerformanceStableFrame(token: String(describing: ObjectIdentifier(span))) {
+                        app.performanceSpans.finish(.destinationStableFrame, matching: span)
+                    }
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
@@ -219,6 +240,7 @@ struct MainShellView: View {
             // Settings and access refreshes must not discard the active draft,
             // conversation selection, or scroll position.
             ChatsHomeView()
+                .environment(\.cavePerformancePresentationActive, app.selectedTab != .settings)
                 .opacity(app.selectedTab == .settings ? 0 : 1)
                 .allowsHitTesting(app.selectedTab != .settings)
                 .accessibilityHidden(app.selectedTab == .settings)

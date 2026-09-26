@@ -81,7 +81,19 @@ struct ReaderScrollCommand: Equatable { var index: Int; var token: Int }
 ///    Renders live during streaming (throttled; Mermaid deferred to settle).
 ///  - reader (`scrollable: true`): fills the screen, scrolls internally, and
 ///    honours `fontScale` / `theme`, with a TOC driven by `scrollCommand`.
+private struct CavePerformancePresentationActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var cavePerformancePresentationActive: Bool {
+        get { self[CavePerformancePresentationActiveKey.self] }
+        set { self[CavePerformancePresentationActiveKey.self] = newValue }
+    }
+}
+
 struct MarkdownWebView: UIViewRepresentable {
+    @Environment(\.cavePerformancePresentationActive) private var performancePresentationActive
     let markdown: String
     @Binding var height: CGFloat
     /// Render live while the reply streams in (bubble mode). Renders are
@@ -102,14 +114,19 @@ struct MarkdownWebView: UIViewRepresentable {
     var onFailure: (() -> Void)? = nil
     /// Reader TOC: the renderer's headings, in document order.
     var onHeadings: (([ReaderHeading]) -> Void)? = nil
+    /// Only assistant bubbles participate in the first-rich-content baseline.
+    var measureFirstRichRender = false
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(measureFirstRichRender: measureFirstRichRender && performancePresentationActive)
+    }
 
     func makeUIView(context: Context) -> WKWebView { context.coordinator.webView }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
         let c = context.coordinator
         guard !c.isInvalidated else { return }
+        c.setPresentationActive(performancePresentationActive)
         c.onHeight = { h in if abs(h - height) > 0.5 { height = h } }
         c.onFailure = onFailure
         c.onHeadings = onHeadings
@@ -163,6 +180,8 @@ struct MarkdownWebView: UIViewRepresentable {
         private var lastScrollToken: Int?
         private let performanceRecorder: CavePerformanceRecorder
         private var rendererAcquisitionSpan: CavePerformanceSpan?
+        private var firstRichRenderSpan: CavePerformanceSpan?
+        private var firstRichFrameReporter: CavePerformanceStableFrame.ReporterView?
 
         private struct Opts {
             var streaming = false
@@ -173,15 +192,23 @@ struct MarkdownWebView: UIViewRepresentable {
         }
         private var opts = Opts()
 
-        init(performanceRecorder: CavePerformanceRecorder? = nil) {
+        init(performanceRecorder: CavePerformanceRecorder? = nil,
+             measureFirstRichRender: Bool = false) {
             let recorder = performanceRecorder ?? .shared
             self.performanceRecorder = recorder
             self.rendererAcquisitionSpan = recorder.begin("markdown.webview.init")
+            if measureFirstRichRender {
+                self.firstRichRenderSpan = recorder.begin(CavePerformanceSpanName.chatFirstRichRender.rawValue)
+            }
             let config = WKWebViewConfiguration()
             let userContentController = WKUserContentController()
             config.userContentController = userContentController
             webView = WKWebView(frame: .zero, configuration: config)
             super.init()
+            if firstRichRenderSpan != nil {
+                NotificationCenter.default.addObserver(self, selector: #selector(cancelFirstRichRender),
+                                                       name: UIApplication.willResignActiveNotification, object: nil)
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(imageAuthorityDidChange),
                                                    name: .caveImageAuthorityChanged, object: nil)
             userContentController.add(WeakScriptMessageHandler(target: self), name: "cave")
@@ -215,6 +242,7 @@ struct MarkdownWebView: UIViewRepresentable {
             guard !isInvalidated else { return }
             isInvalidated = true
             NotificationCenter.default.removeObserver(self, name: .caveImageAuthorityChanged, object: nil)
+            NotificationCenter.default.removeObserver(self, name: UIApplication.willResignActiveNotification, object: nil)
             callbackGeneration &+= 1
             stopPendingWork()
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "cave")
@@ -228,7 +256,20 @@ struct MarkdownWebView: UIViewRepresentable {
             lastScrollToken = nil
         }
 
+        func setPresentationActive(_ active: Bool) {
+            if !active { cancelFirstRichRender() }
+        }
+
+        @objc private func cancelFirstRichRender() {
+            firstRichFrameReporter?.cancelPendingReport()
+            firstRichFrameReporter?.removeFromSuperview()
+            firstRichFrameReporter = nil
+            performanceRecorder.cancel(firstRichRenderSpan)
+            firstRichRenderSpan = nil
+        }
+
         private func stopPendingWork() {
+            cancelFirstRichRender()
             ready = false
             pending = nil
             rendering = false
@@ -360,6 +401,7 @@ struct MarkdownWebView: UIViewRepresentable {
                 case .success(let value):
                     if let h = value as? Double, h.isFinite, h > 0 {
                         self.onHeight?(CGFloat(h))
+                        self.scheduleFirstRichFrame()
                     } else if !o.streaming {
                         self.reportFailure()
                         return
@@ -417,6 +459,23 @@ struct MarkdownWebView: UIViewRepresentable {
             // Fail to the caller's readable fallback once, never auto-reload a
             // terminated renderer into a memory-pressure/reload loop.
             reportFailure()
+        }
+
+        private func scheduleFirstRichFrame() {
+            guard let span = firstRichRenderSpan, firstRichFrameReporter == nil else { return }
+            let reporter = CavePerformanceStableFrame.ReporterView()
+            reporter.isAccessibilityElement = false
+            reporter.isUserInteractionEnabled = false
+            firstRichFrameReporter = reporter
+            webView.addSubview(reporter)
+            reporter.schedule(token: "first-rich-render", minimumDelay: 0) { [weak self] in
+                guard let self, !self.isInvalidated, !self.failed,
+                      self.firstRichRenderSpan === span else { return }
+                self.performanceRecorder.end(span)
+                self.firstRichRenderSpan = nil
+                self.firstRichFrameReporter?.removeFromSuperview()
+                self.firstRichFrameReporter = nil
+            }
         }
 
         private func finishRendererAcquisition() {
