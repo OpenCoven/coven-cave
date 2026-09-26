@@ -274,6 +274,35 @@ test.describe("chat threads rail", () => {
     }
   });
 
+  test("an unchanged list poll is answered with 304 and keeps the rows (#5571)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    let tag = '"list-v1"';
+    let rows = SESSIONS;
+    const conditional: Array<string | null> = [];
+    let notModified = 0;
+    await page.route("**/api/sessions/list**", (route) => {
+      const sent = route.request().headers()["if-none-match"] ?? null;
+      conditional.push(sent);
+      if (sent === tag) {
+        notModified += 1;
+        return route.fulfill({ status: 304, headers: { ETag: tag } });
+      }
+      return route.fulfill({ json: { ok: true, sessions: rows }, headers: { ETag: tag } });
+    });
+    // The next poll picks up the tag, the ones after it send it back.
+    await expect.poll(() => notModified, { timeout: 30_000 }).toBeGreaterThan(1);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
+    expect(conditional.some((sent) => sent === '"list-v1"')).toBe(true);
+
+    // A changed list gets a new tag and a full body, and the rail shows it.
+    rows = SESSIONS.map((session) => (session.id === "s4" ? { ...session, title: "Wire the release pipeline" } : session));
+    tag = '"list-v2"';
+    await expect(rail.getByText("Wire the release pipeline")).toBeVisible({ timeout: 30_000 });
+  });
+
   test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));

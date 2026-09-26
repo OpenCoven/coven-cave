@@ -1874,6 +1874,11 @@ export function Workspace() {
     }
   }, []);
 
+  // The last accepted list payload and its ETag, per scope (#5571). A matching
+  // poll gets a bodiless 304 and replays this payload through the unchanged
+  // accept path below, so projection and retirement behave exactly as if the
+  // identical body had arrived, minus the download and parse.
+  const sessionsListEtagRef = useRef<{ scopeKey: string; etag: string; payload: { ok?: boolean; degraded?: boolean; sessions?: unknown[] } } | null>(null);
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
     // familiars-refresh event, and the active-scope effect. The callback stays
@@ -1910,8 +1915,20 @@ export function Workspace() {
         params.set("classifyFamiliarWorkspace", "1");
         if (capturedActiveId) params.set("familiarId", capturedActiveId);
         else params.set("collapseFamiliarWorkspace", "1");
-        const sessionsResult = await fetch(`/api/sessions/list?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-        const json = await sessionsResult.json();
+        const cachedList = sessionsListEtagRef.current?.scopeKey === capturedScopeKey ? sessionsListEtagRef.current : null;
+        const sessionsResult = await fetch(`/api/sessions/list?${params.toString()}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000),
+          ...(cachedList ? { headers: { "If-None-Match": cachedList.etag } } : {}),
+        });
+        let json;
+        if (sessionsResult.status === 304 && cachedList) {
+          json = cachedList.payload;
+        } else {
+          json = await sessionsResult.json();
+          const etag = sessionsResult.headers.get("ETag");
+          if (json?.ok && etag) sessionsListEtagRef.current = { scopeKey: capturedScopeKey, etag, payload: json };
+        }
         if (!isCurrent()) return; // superseded by a newer load / scope change
         if (!json.ok) {
           // A failed list is NOT "no chats" — flag it so the chat list can
