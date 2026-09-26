@@ -303,6 +303,12 @@ test("while typing, the composer is two lines and the transcript keeps half the 
   }
   expect(chips.y, "chips sit below the message line").toBeGreaterThanOrEqual(input.y + input.height - 1);
   expect(Math.abs(middle(enhance) - middle(chips)), "enhance shares the chips line").toBeLessThanOrEqual(8);
+  // #5555: the enhance rectangle is its touch target, so both segments meet it.
+  for (const name of ["Enhance prompt", "Enhance options"]) {
+    const segment = await box(composer.getByRole("button", { name }));
+    expect(segment.width, `${name} width`).toBeGreaterThanOrEqual(44);
+    expect(segment.height, `${name} height`).toBeGreaterThanOrEqual(44);
+  }
   expect(input.width, "the message field keeps a usable width").toBeGreaterThanOrEqual(200);
 
   // The chips keep room for their names instead of truncating to "Cho…".
