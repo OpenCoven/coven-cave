@@ -559,7 +559,7 @@ export function ChatSurface({
           onClick={() => requestChatRailToggle()}
         >
           <Icon name="ph:sidebar-simple" width={15} className="chat-inner-rail__spine-icon" aria-hidden />
-          <span className="chat-inner-rail__spine-label" aria-hidden>Sessions</span>
+          <span className="chat-inner-rail__spine-label" aria-hidden>Chats</span>
         </button>
       ) : null}
       {railAvailable && railOpen ? (

@@ -30,7 +30,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<ChatListSection[\s\S]*?label="Sessions"[\s\S]*?count=\{restCount\}/,
+  /<ChatListSection[\s\S]*?label="Chats"[\s\S]*?count=\{restCount\}/,
   "A counted SESSIONS section header is rendered for the flat list",
 );
 // Headers are placed by first-member index so order/interleaving can't dupe them.

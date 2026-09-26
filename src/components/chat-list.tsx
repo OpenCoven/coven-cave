@@ -612,7 +612,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
     if (effectiveSelection !== "all" || groupBy !== "none" || collapsedSections.size === 0) return displayIds;
     return displayIds.filter((id) => {
       const key = pinnedIdSet.has(id) ? "pinned" : "sessions";
-      // Mirrors the per-row `rowCollapsed`: banded lists have no "Sessions"
+      // Mirrors the per-row `rowCollapsed`: banded lists have no "Chats"
       // header, so its collapsed flag can never hide anything.
       if (key === "sessions" && bandsByIndex) return true;
       return !collapsedSections.has(key);
@@ -912,7 +912,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
             row is the surface's heading, not the familiar's. */}
         {!compact && (
         <div className="flex items-center gap-3 px-4 pb-0 pt-3">
-          <h1 className="chat-sessions-title min-w-0 truncate">Sessions</h1>
+          <h1 className="chat-sessions-title min-w-0 truncate">Chats</h1>
           <span className="chat-sessions-count shrink-0">
             {mine.length} {mine.length === 1 ? "session" : "sessions"}
           </span>
@@ -1431,7 +1431,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                     // Pinned/Sessions sections only split the flat ungrouped
                     // list; project/date grouping owns its own headers.
                     const sectioned = projectRoot === null && groupBy === "none";
-                    // With activity bands there is no "Sessions" header left to
+                    // With activity bands there is no "Chats" header left to
                     // toggle, so a stale collapsed flag must not hide rows.
                     const rowCollapsed =
                       sectioned
@@ -1472,7 +1472,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                         />
                       ) : null}
                       {/* Activity band (cave-n3jg2) — replaces the flat
-                          "Sessions" section header, which said the same thing
+                          "Chats" section header, which said the same thing
                           about every row below it. Bands say WHEN. */}
                       {band ? (
                         <li className="chat-activity-header" data-bucket={band.bucket}>
@@ -1484,7 +1484,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                       ) : null}
                       {sectioned && !bandsByIndex && idx === firstRestIdx ? (
                         <ChatListSection
-                          label="Sessions"
+                          label="Chats"
                           count={restCount}
                           collapsed={collapsedSections.has("sessions")}
                           onToggle={() => toggleSection("sessions")}
