@@ -23,9 +23,7 @@ const execFileAsync = promisify(execFile);
 const GH_TIMEOUT_MS = 30_000;
 const MAX_GH_BUFFER = 16 * 1024 * 1024;
 
-// Fields the lane classifier (summarizePullRequest) depends on. Kept in sync
-// with scripts/beads-pr-shared.ts's GH_PR_FIELDS — the CLI patrol and this
-// route must classify identically.
+// Fields the lane classifier (summarizePullRequest) depends on.
 const OPEN_PR_FIELDS =
   "number,title,url,isDraft,headRefName,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup,updatedAt,body,labels";
 // Merged PRs only feed the post-merge-cleanup lane, which needs just identity

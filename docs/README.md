@@ -23,7 +23,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Working in this repo
 
-- [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff after retiring Beads
+- [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
 - [`workflows/work-continuity.md`](workflows/work-continuity.md) — skill-driven discovery of existing work before planning or dispatch, with scoped evidence and honest handoff receipts
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
@@ -133,8 +133,6 @@ Point-in-time records. Read for intent, not for current behavior.
 
 ## Tombstone
 
-- [`workflows/beads-familiars.md`](workflows/beads-familiars.md): Beads retired from development tracking on 2026-09-14; legacy data and optional application compatibility remain
-- [`legacy/beads-remaining-2026-09-14.md`](legacy/beads-remaining-2026-09-14.md): frozen remaining-record inventory supporting that retirement, not a live queue
 - [`codeql.md`](codeql.md) — CodeQL retired 2026-07-31, in three ordered steps; nothing scans in its place
 
 ---
@@ -142,8 +140,8 @@ Point-in-time records. Read for intent, not for current behavior.
 ## Other trees under `docs/`
 
 - [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
-- [`superpowers/`](superpowers) — the approved spec and plan store beads cite (142 files)
-- [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: beads cite these by path, including one open unit. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
+- [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite (142 files)
+- [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
 - [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store
 - [`design-handoff/`](design-handoff), [`diagrams/`](diagrams), [`screenshots/`](screenshots), [`familiar-chatout-codex/`](familiar-chatout-codex) — supporting material
 

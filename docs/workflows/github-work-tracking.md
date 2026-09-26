@@ -13,9 +13,9 @@ gh project view 9 --owner OpenCoven
 `pnpm work:issues` and `pnpm work:project` are read-only shortcuts for these
 entrypoints. A bounded list is a starting point, not proof that no work matches.
 
-Issue #5399 records the 2026-09-14 decision to retire Beads from this
-repository's development workflow. You do not need `bd`, a Beads claim,
-or Dolt sync to start, implement, review, or hand off work.
+Issue #5399 moved development tracking to GitHub on 2026-09-14. Issue #5566
+removes Beads from the repository in stages: its data, tooling, and guidance
+first, then the worktree lifecycle tooling and the product surfaces.
 
 ## Find and own the work
 
@@ -47,7 +47,7 @@ Re-read ownership before proceeding. GitHub assignment and comments are
 coordination records, not atomic execution leases.
 
 Keep implementation decisions and evidence in the issue or linked approved
-documents. Do not maintain a parallel Beads queue or a permanent local
+documents. Do not maintain a parallel queue or a permanent local
 Markdown task list.
 
 ## Use the existing Project
@@ -75,32 +75,23 @@ Use the existing `Blocked by` and `Surface` fields when helpful. A blocked
 item must name what clears the blocker; a model's confidence is not approval.
 Do not leave a stopped session marked `Started`.
 
-Legacy `Bead ID`, `Bead status`, and `Bead owner` fields are historical notes.
-Do not refresh them from Beads or use them as the current execution queue.
-Do not delete those fields or old items as part of ordinary work.
+Old Project items may carry `Bead ID`, `Bead status`, and `Bead owner`
+fields. They are historical notes; do not delete them as part of ordinary work.
 
-## Git hooks without Beads
+## Git hooks
 
 Keep the existing secret-scanning and contributor-attribution hooks:
 
 ```bash
-bash scripts/install-git-hooks.sh --retire-beads
+bash scripts/install-git-hooks.sh
 git config --get core.hooksPath
 ```
 
-The explicit retirement option switches a recognized Beads hook directory to
-`scripts/git-hooks`. It must refuse unknown additional hooks rather than
-silently disabling custom protections. A custom non-Beads hook directory
-remains untouched.
-
-The legacy JSONL merge driver protects preserved files without invoking `bd`
-or syncing a database. Its presence does not make Beads an active tracker.
-Do not use `--no-verify` or an empty hook path to perform this migration.
-
-Repository Claude and Codex context hooks must not run Beads. This change
-does not uninstall tools from your machine or rewrite private global settings.
-Already-running sessions may retain older context; give them the current
-issue and this decision rather than changing their tasks or processes.
+The installer points `core.hooksPath` at `scripts/git-hooks`. It preserves a
+different, existing hook directory and warns about any guard missing from it.
+A configured directory that no longer exists, such as the removed
+`.beads/hooks`, is replaced. It also drops a stale `merge.beads-jsonl` driver
+section left in older clones. Do not use `--no-verify` or an empty hook path.
 
 The automatic `SessionEnd` cleanup hook and `wt:retire-on-exit` shortcut are
 removed. Stale calls to `scripts/worktree-session-exit-retirement.mjs` exit 2
@@ -110,7 +101,7 @@ authorize unlocking another session's checkout or deleting its worktree/branch.
 The old `worktree-sweep.sh` exits with an explicit retirement refusal before
 running any tracker or Git operation. Remove machine-specific schedules that
 still invoke it; repository changes do not uninstall external scheduler entries.
-The read-only hygiene report no longer runs a Beads lifecycle inventory.
+The read-only hygiene report no longer runs a lifecycle inventory.
 Its `park` and `unpark --apply` paths are unavailable until their lifecycle
 proof is replaced; they must refuse before mutation, not skip a safety gate.
 
@@ -134,9 +125,9 @@ including its primary worktree. At the limit, preserve existing units and
 obtain an attributed, scoped exception on the issue before creating another;
 do not remove somebody else's unit to make room.
 
-The old Beads-managed creator and patrol are not the GitHub workflow.
-Do not manufacture `metadata.coven.worktree` records or create a Bead just
-to satisfy those tools. Legacy patrol output may classify an issue-owned
+The old managed creator and patrol are not the GitHub workflow.
+Do not manufacture `metadata.coven.worktree` records just to satisfy those
+tools. Legacy patrol output may classify an issue-owned
 worktree as `uncertain`; that is not permission to delete it.
 
 `pnpm wt:status` is local evidence, not an ownership or deletion receipt.
@@ -185,26 +176,9 @@ The missing legacy maintenance planes are not made safe by changing trackers.
 No GitHub issue comment replaces a runtime exclusion lock. Preserve a unit
 whenever the required evidence or authority is unavailable.
 
-## Legacy Beads
+## Legacy references
 
-The [frozen remaining-record inventory](../legacy/beads-remaining-2026-09-14.md)
-notes 186 non-closed durable records and one ephemeral record from an isolated
-snapshot. Its capture limits are explicit; it is not a second queue.
-
-Preserve `.beads/`, existing sync refs, original IDs, owners, statuses, and
-historical citations. Do not create, claim, close, rewrite, or sync Beads as
-part of development.
-
-The committed `.beads/issues.jsonl` is an old passive export, not a live
-remaining-work report. The retirement inventory must state its actual source,
-observation time, and completeness limits. A frozen `in_progress` value is
-not proof that a session is running.
-
-Use an existing linked GitHub issue when legacy work is intentionally resumed.
-Otherwise, create one scoped issue for the selected outcome and cite the
-legacy ID. Do not bulk-import every old row, reopen completed work, or
-overwrite a human-authored blocker.
-
-The optional application integration and old migration/recovery utilities
-remain compatibility code in this slice. Their presence is not an instruction
-to run them. Historical plans are evidence, not the current operating guide.
+Historical plans, specs, and CHANGELOG entries cite old `cave-*` Bead IDs.
+They are evidence, not the current operating guide. When legacy work is
+intentionally resumed, create one scoped issue for the outcome and cite the
+old ID; do not bulk-import old records or reopen completed work.

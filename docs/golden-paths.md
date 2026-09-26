@@ -10,8 +10,9 @@ speak); this doc is about how journeys *flow*.
 **Ground rules for every plan:** no new architecture, no surface rewrites, no
 breaking API changes. Phases land independently behind the existing test-pin
 conventions, and each path names its "done means" so a session picking up the
-bead can verify completion. One bead per path, referenced inline — this doc is
-the map; the beads are the work.
+issue can verify completion. One tracked unit per path, referenced inline —
+this doc is the map; the issues are the work. The `cave-*` IDs below are the
+original Beads IDs, kept as history.
 
 ---
 

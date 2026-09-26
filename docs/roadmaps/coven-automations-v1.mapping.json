@@ -22,49 +22,9 @@
     "note": "Bootstrap seed for the Coven Automations v1 execution graph, provisioned through pnpm beads:create. Terminal: the 15 program beads and their 30 in-program blocked-first edges are seeded, dependency-verified, acyclic, and durable on the shared Dolt remote refs/dolt/data. The seed bead cave-tmegk is closed-verified and GitHub issue OpenCoven/coven-cave#5220 is closed.",
     "history": "Seeded 2026-09-01. The execution graph was seeded and dependency-verified in Cave's canonical embedded Dolt database `cave`, its blocks/dependsOn projections reconciled to the exact inverse of the live `bd dep` edges, and the graph synchronized to the shared remote refs/dolt/data (pnpm beads:sync pull+push exit 0; local embedded Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; empty `dolt diff --summary`; refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95; no force-push). Reconciled and closed-verified once the reconciliation PR referencing OpenCoven/coven-cave#5220 merged; the exact PR URL and merge SHA are recorded in the cave-tmegk bead close reason and on OpenCoven/coven-cave#5220."
   },
-  "sync": {
-    "snapshotAt": "2026-09-01T20:56:00Z",
-    "beadsTool": "bd 1.3.0-rc.1 (schema v66 capable)",
-    "beadSchemaVersion": 1,
-    "doltSchemaVersion": 66,
-    "database": "cave (embedded Dolt)",
-    "syncCommand": "pnpm beads:sync",
-    "doltOidPreMutation": "i5ltela5k233j55fks9abq612pidkkjl",
-    "doltOidPostMutation": "lnefjdsgcm7s44sqaut4dga082ca45sr",
-    "localDoltCommit": "thpoaq91d1nmqaas4lk6hhcs217foge2",
-    "localDurability": "verified: 15 program beads (seed + 14 outcomes) and 30 in-program blocked-first edges committed to the canonical embedded Dolt database `cave`; local `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2.",
-    "remoteRef": "refs/dolt/data",
-    "remoteOid": "7855b5bcb436bf4ac062c1c24c966f1450971e95",
-    "remoteSyncStatus": "historical snapshot: the documented wrapper `pnpm beads:sync` completed pull+push (exit 0) on 2026-09-01. Local embedded Dolt `main` and `remotes/origin/main` were equal at thpoaq91d1nmqaas4lk6hhcs217foge2, `dolt diff --summary remotes/origin/main main` was empty, and the shared remote `refs/dolt/data` was at 7855b5bcb436bf4ac062c1c24c966f1450971e95. No force-push occurred and no concurrent Dolt commit was discarded.",
-    "remoteSyncEvidence": "Historical 2026-09-01 evidence: git ls-remote origin refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95 before and after a successful `pnpm beads:sync` (exit 0); local Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; `dolt diff --summary remotes/origin/main main` empty; graph re-verified (15 beads, 30 in-program blocked-first edges, none missing).",
-    "currentRemoteObservation": "Read-only audit on 2026-09-04 observed refs/dolt/data at 11c53114f4e6b79029f806ea88e57db01a13585b. No sync or current local/remote equality check was performed.",
-    "knownToolingLimitations": [
-      "The canonical embedded Dolt database is at schema v66, so every `bd` command requires a v66-capable client (bd 1.3.0-rc.1). Homebrew `bd` 1.2.2 (schema v53) cannot operate on it and must not be used.",
-      "`pnpm beads:doctor` (`bd doctor && bd lint`) exits 1: `bd doctor` is not yet supported in embedded mode, and `bd lint` reports a repository-wide template-convention backlog (57 issues / 63 warnings, e.g. missing '## Acceptance Criteria') that also covers the Automations v1 outcome beads. It is an advisory convention, not a CI gate, and was recorded rather than weakened.",
-      "`pnpm beads:surfaces` exits 1 on a repository-wide backlog of 245 beads missing shared-ownership labels. None of the 15 Automations v1 beads appears in that list; each carries exactly one `surface:shared` label. Recorded, not weakened."
-    ]
-  },
-  "canonicalBeads": {
-    "repository": "OpenCoven/coven-cave",
-    "backend": "embedded-dolt",
-    "database": "cave",
-    "syncCommand": "pnpm beads:sync",
-    "createCommand": "pnpm beads:create",
-    "liveReadCommands": [
-      "bd prime",
-      "bd ready --json",
-      "bd show <id> --json"
-    ],
-    "reviewExport": ".beads/issues.jsonl",
-    "reviewExportIsCanonical": false
-  },
   "invariants": [
-    "Each public GitHub outcome maps to exactly one live Bead.",
-    "Each new Bead has exactly one surface:shared ownership label.",
-    "Beads owns implementation execution state; GitHub owns public outcome, review, and CI state.",
+    "Each public GitHub outcome is the execution record for its work; GitHub owns execution, public outcome, review, and CI state.",
     "Coven owns production automation definitions, occurrences, runs, attempts, leases, approvals, artifacts, events, and receipts.",
-    "Every Bead ID here is confirmed from live Dolt state (bd show / bd list).",
-    "Dependency direction is proven with bd dep list and bd ready --json.",
     "P2 expansion cannot block the v1 critical path.",
     "Broad unattended external side effects remain gated until coven#857 and coven#858 pass."
   ],
@@ -305,10 +265,11 @@
   ],
   "graphProof": {
     "edgeCount": 30,
-    "method": "bd dep list <id> --direction down --json across all 15 program beads; the blocks projections in this file are the exact inverse of those live edges, and every outcome's dependsOn equals its live down-edges.",
-    "cycles": "none (bd dep cycles -> 'No dependency cycles detected')",
+    "method": "Historical (Beads era, verified 2026-09-04): bd dep list across all 15 program beads; the blocks projections in this file are the exact inverse of those edges. Beads was removed in OpenCoven/coven-cave#5566; current dependencies live on the GitHub issues.",
+    "cycles": "none at verification time (historical Beads check)",
     "parentEpicEdges": "cave-hlv.9 and cave-hlv.10 additionally carry a parent-child edge to cave-hlv, the pre-existing familiar-issue-tracking epic they are children of. That hierarchy edge is outside the Automations v1 program set and is not a v1 release blocker, so it is excluded from the 30 in-program blocked-first edges.",
-    "verifiedAt": "2026-09-04T04:39:00Z"
+    "verifiedAt": "2026-09-04T04:39:00Z",
+    "historical": true
   },
   "releaseGates": {
     "A": "durable-local-scheduler",
@@ -320,6 +281,11 @@
     "github": [
       "OpenCoven/coven#855"
     ],
-    "description": "Task 1 and program control are closed. Continue OpenCoven/coven#855 (Bead cave-tm1y0), currently in progress. Familiar embodiment OpenCoven/familiar-contract#17 / cave-6jswi and automation authority OpenCoven/coven-threads#29 / cave-m9tw3 are closed-verified. OpenCoven/coven#856 remains open and dependency-blocked while protocol work continues; OpenCoven/coven#922 is active work, not terminal evidence."
+    "description": "Task 1 and program control are closed. Continue OpenCoven/coven#855, currently in progress. Familiar embodiment OpenCoven/familiar-contract#17 and automation authority OpenCoven/coven-threads#29 are closed-verified. OpenCoven/coven#856 remains open and dependency-blocked while protocol work continues; OpenCoven/coven#922 is active work, not terminal evidence."
+  },
+  "tracking": {
+    "executionQueue": "GitHub issues (outcomes[].github)",
+    "beadsRemoved": "OpenCoven/coven-cave#5566",
+    "legacyIds": "seed.beadId and outcomes[].beadId are the original Beads IDs, kept as history; graphProof records the Beads-era dependency proof."
   }
 }

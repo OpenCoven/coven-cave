@@ -12,8 +12,9 @@ across all three.
 
 **Ground rules** (same as [`golden-paths.md`](golden-paths.md)): no new
 architecture, no surface rewrites, no breaking API changes. Every path reuses
-a shipped primitive rather than growing a new one. One bead per path,
-referenced inline — this doc is the map; the beads are the work.
+a shipped primitive rather than growing a new one. One tracked unit per path,
+referenced inline — this doc is the map; the issues are the work. The `cave-*`
+IDs below are the original Beads IDs, kept as history.
 
 ---
 
