@@ -112,17 +112,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path5) {
-      const ctrl = callVisitor(key, node, visitor, path5);
+    function visit_(key, node, visitor, path6) {
+      const ctrl = callVisitor(key, node, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visit_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visit_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path6 = Object.freeze(path6.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path5);
+            const ci = visit_(i, node.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -133,13 +133,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = visit_("key", node.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node));
+          const ck = visit_("key", node.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path5);
+          const cv = visit_("value", node.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -160,17 +160,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path5) {
-      const ctrl = await callVisitor(key, node, visitor, path5);
+    async function visitAsync_(key, node, visitor, path6) {
+      const ctrl = await callVisitor(key, node, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visitAsync_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visitAsync_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path6 = Object.freeze(path6.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path5);
+            const ci = await visitAsync_(i, node.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -181,13 +181,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path5);
+          const cv = await visitAsync_("value", node.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -214,23 +214,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path5) {
+    function callVisitor(key, node, visitor, path6) {
       if (typeof visitor === "function")
-        return visitor(key, node, path5);
+        return visitor(key, node, path6);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path5);
+        return visitor.Map?.(key, node, path6);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path5);
+        return visitor.Seq?.(key, node, path6);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path5);
+        return visitor.Pair?.(key, node, path6);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path5);
+        return visitor.Scalar?.(key, node, path6);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path5);
+        return visitor.Alias?.(key, node, path6);
       return void 0;
     }
-    function replaceNode(key, path5, node) {
-      const parent = path5[path5.length - 1];
+    function replaceNode(key, path6, node) {
+      const parent = path6[path6.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -840,10 +840,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path5, value) {
+    function collectionFromPath(schema, path6, value) {
       let v = value;
-      for (let i = path5.length - 1; i >= 0; --i) {
-        const k = path5[i];
+      for (let i = path6.length - 1; i >= 0; --i) {
+        const k = path6[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -862,7 +862,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path5) => path5 == null || typeof path5 === "object" && !!path5[Symbol.iterator]().next().done;
+    var isEmptyPath = (path6) => path6 == null || typeof path6 === "object" && !!path6[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -892,11 +892,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path5, value) {
-        if (isEmptyPath(path5))
+      addIn(path6, value) {
+        if (isEmptyPath(path6))
           this.add(value);
         else {
-          const [key, ...rest] = path5;
+          const [key, ...rest] = path6;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -910,8 +910,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        const [key, ...rest] = path5;
+      deleteIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -925,8 +925,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        const [key, ...rest] = path5;
+      getIn(path6, keepScalar) {
+        const [key, ...rest] = path6;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -944,8 +944,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path5) {
-        const [key, ...rest] = path5;
+      hasIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -955,8 +955,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        const [key, ...rest] = path5;
+      setIn(path6, value) {
+        const [key, ...rest] = path6;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3471,9 +3471,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path5, value) {
+      addIn(path6, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path5, value);
+          this.contents.addIn(path6, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3548,14 +3548,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        if (Collection.isEmptyPath(path5)) {
+      deleteIn(path6) {
+        if (Collection.isEmptyPath(path6)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path5) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path6) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3570,10 +3570,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        if (Collection.isEmptyPath(path5))
+      getIn(path6, keepScalar) {
+        if (Collection.isEmptyPath(path6))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path5, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path6, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3584,10 +3584,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path5) {
-        if (Collection.isEmptyPath(path5))
+      hasIn(path6) {
+        if (Collection.isEmptyPath(path6))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path5) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path6) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3604,13 +3604,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        if (Collection.isEmptyPath(path5)) {
+      setIn(path6, value) {
+        if (Collection.isEmptyPath(path6)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path5), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path6), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path5, value);
+          this.contents.setIn(path6, value);
         }
       }
       /**
@@ -5570,9 +5570,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path5) => {
+    visit.itemAtPath = (cst, path6) => {
       let item = cst;
-      for (const [field, index] of path5) {
+      for (const [field, index] of path6) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5581,23 +5581,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path5) => {
-      const parent = visit.itemAtPath(cst, path5.slice(0, -1));
-      const field = path5[path5.length - 1][0];
+    visit.parentCollection = (cst, path6) => {
+      const parent = visit.itemAtPath(cst, path6.slice(0, -1));
+      const field = path6[path6.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path5, item, visitor) {
-      let ctrl = visitor(item, path5);
+    function _visit(path6, item, visitor) {
+      let ctrl = visitor(item, path6);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path5.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path6.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5608,10 +5608,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path5);
+            ctrl = ctrl(item, path6);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path5) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path6) : ctrl;
     }
     exports.visit = visit;
   }
@@ -7363,7 +7363,7 @@ var require_dist = __commonJS({
 });
 
 // server.ts
-import { execFile as execFile4, execFileSync as execFileSync2 } from "node:child_process";
+import { execFile as execFile5, execFileSync as execFileSync3 } from "node:child_process";
 import {
   createHash as createHash2,
   createHmac,
@@ -7375,21 +7375,21 @@ import {
   closeSync,
   fsyncSync,
   lstatSync,
-  mkdirSync,
+  mkdirSync as mkdirSync2,
   openSync,
-  readFileSync,
-  realpathSync,
-  readdirSync,
-  renameSync,
+  readFileSync as readFileSync3,
+  realpathSync as realpathSync2,
+  readdirSync as readdirSync2,
+  renameSync as renameSync2,
   rmSync,
-  statSync as statSync2,
-  unlinkSync,
-  writeFileSync
+  statSync as statSync3,
+  unlinkSync as unlinkSync2,
+  writeFileSync as writeFileSync2
 } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { homedir as homedir3 } from "node:os";
-import { join as join3, resolve as resolve2 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join4, resolve as resolve2 } from "node:path";
 import { performance as performance2 } from "node:perf_hooks";
 import { promisify as promisify4 } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
@@ -7484,14 +7484,14 @@ function resolveUnverifiedOwnershipWaiver(env) {
   }
   return { granted: true, reason };
 }
-function unverifiableOwnershipRefusal(subject, path5, cause, note) {
-  return `${subject} ownership could not be verified on Windows: ${cause.message}. Refusing ${path5}; inspect it with: icacls "${path5}". ${note}`;
+function unverifiableOwnershipRefusal(subject, path6, cause, note) {
+  return `${subject} ownership could not be verified on Windows: ${cause.message}. Refusing ${path6}; inspect it with: icacls "${path6}". ${note}`;
 }
-function unverifiedOwnershipDisclosure(subject, path5, cause, reason) {
-  return `SECURITY WAIVER \u2014 ${subject} is being used UNVERIFIED. Its DACL could not be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV} is set, so ${path5} is trusted on the operator's word alone: reason given \u2014 ${reason}. Any principal that can write ${path5} can mint credentials or point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV} to restore the check.`;
+function unverifiedOwnershipDisclosure(subject, path6, cause, reason) {
+  return `SECURITY WAIVER \u2014 ${subject} is being used UNVERIFIED. Its DACL could not be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV} is set, so ${path6} is trusted on the operator's word alone: reason given \u2014 ${reason}. Any principal that can write ${path6} can mint credentials or point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV} to restore the check.`;
 }
-function sharedOwnershipRefusal(subject, path5, findings, waiver) {
-  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. Refusing ${path5}; inspect it with: icacls "${path5}"` + (waiver.granted ? `. ${UNVERIFIED_OWNERSHIP_ENV} does not cover a DACL that was read: this one was, and it is shared. Repair it with: icacls "${path5}" /reset` : "");
+function sharedOwnershipRefusal(subject, path6, findings, waiver) {
+  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. Refusing ${path6}; inspect it with: icacls "${path6}"` + (waiver.granted ? `. ${UNVERIFIED_OWNERSHIP_ENV} does not cover a DACL that was read: this one was, and it is shared. Repair it with: icacls "${path6}" /reset` : "");
 }
 var WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -7698,11 +7698,11 @@ function sanitizedWindowsAclProbeFailure(error) {
     `Windows ACL probe failed (code=${code ?? "unknown"}, status=${status ?? "unknown"}, signal=${signal === null ? "null" : signal ?? "unknown"}, killed=${killed ?? "unknown"}, stage=${stage}, stdoutBytes=${bytes(failure.stdout)}, stderrBytes=${bytes(failure.stderr)}).`
   ), { code, status, signal, killed });
 }
-function windowsProbeEnv(path5) {
+function windowsProbeEnv(path6) {
   const systemRoot = windowsSystemRoot();
   const system32 = join(systemRoot, "System32");
   return {
-    COVEN_CAVE_CLIENT_V1_ACL_PATH: path5,
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path6,
     // Next augments ProcessEnv to require this. It carries no secret.
     NODE_ENV: process.env.NODE_ENV,
     SystemRoot: systemRoot,
@@ -7742,7 +7742,7 @@ function parseClientV1WindowsAclReport(raw) {
   };
 }
 function createClientV1WindowsAclProbe(execute = execFileAsync) {
-  return async (path5) => {
+  return async (path6) => {
     for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
       let stdout;
       try {
@@ -7760,7 +7760,7 @@ function createClientV1WindowsAclProbe(execute = execFileAsync) {
             WINDOWS_ACL_SCRIPT
           ],
           {
-            env: windowsProbeEnv(path5),
+            env: windowsProbeEnv(path6),
             encoding: "utf8",
             windowsHide: true,
             timeout: WINDOWS_ACL_PROBE_TIMEOUT_MS,
@@ -7806,7 +7806,7 @@ var CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS = 3e4;
 var verifiedWindowsPaths = /* @__PURE__ */ new Map();
 var waivedWindowsPaths = /* @__PURE__ */ new Map();
 var refusedWindowsPaths = /* @__PURE__ */ new Map();
-async function assertExclusivePathOwnership(path5, metadata, subject, options = {}) {
+async function assertExclusivePathOwnership(path6, metadata, subject, options = {}) {
   const platform = options.platform ?? process.platform;
   const getuid = options.getuid === void 0 ? process.getuid : options.getuid;
   if (typeof getuid === "function") {
@@ -7817,15 +7817,15 @@ async function assertExclusivePathOwnership(path5, metadata, subject, options = 
   }
   if (platform !== "win32") {
     throw new Error(
-      `${subject} ownership cannot be verified on ${platform}: this platform exposes neither a uid nor a Windows ACL, so ${path5} is refused.`
+      `${subject} ownership cannot be verified on ${platform}: this platform exposes neither a uid nor a Windows ACL, so ${path6} is refused.`
     );
   }
-  if (verifiedWindowsPaths.has(path5) || waivedWindowsPaths.has(path5)) return;
+  if (verifiedWindowsPaths.has(path6) || waivedWindowsPaths.has(path6)) return;
   const now = options.now ?? Date.now;
-  const cachedRefusal = refusedWindowsPaths.get(path5);
+  const cachedRefusal = refusedWindowsPaths.get(path6);
   if (cachedRefusal !== void 0) {
     if (cachedRefusal.expiresAt > now()) throw cachedRefusal.error;
-    refusedWindowsPaths.delete(path5);
+    refusedWindowsPaths.delete(path6);
   }
   const warn = options.warn ?? console.warn;
   const waiver = resolveUnverifiedOwnershipWaiver(options.env ?? process.env);
@@ -7833,30 +7833,30 @@ async function assertExclusivePathOwnership(path5, metadata, subject, options = 
   let report;
   const probeStartedAt = performance.now();
   try {
-    report = await probe(path5);
+    report = await probe(path6);
   } catch (cause) {
     if (!waiver.granted) {
       const error = new ClientV1PathOwnershipError(
-        unverifiableOwnershipRefusal(subject, path5, cause, waiver.note),
+        unverifiableOwnershipRefusal(subject, path6, cause, waiver.note),
         { cause }
       );
-      refusedWindowsPaths.set(path5, {
+      refusedWindowsPaths.set(path6, {
         expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
         error
       });
       warn(error.message);
       throw error;
     }
-    waivedWindowsPaths.set(path5, waiver.reason);
-    warn(unverifiedOwnershipDisclosure(subject, path5, cause, waiver.reason));
+    waivedWindowsPaths.set(path6, waiver.reason);
+    warn(unverifiedOwnershipDisclosure(subject, path6, cause, waiver.reason));
     return;
   }
   const findings = exclusivityFindings(report);
   if (findings.length > 0) {
     const error = new ClientV1PathOwnershipError(
-      sharedOwnershipRefusal(subject, path5, findings, waiver)
+      sharedOwnershipRefusal(subject, path6, findings, waiver)
     );
-    refusedWindowsPaths.set(path5, {
+    refusedWindowsPaths.set(path6, {
       expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
       error
     });
@@ -7876,10 +7876,10 @@ async function assertExclusivePathOwnership(path5, metadata, subject, options = 
   if (report.repaired) {
     const removed = report.removed.length > 0 ? report.removed.join(", ") : "inherited entries";
     warn(
-      `${subject} had no enforced access control on Windows; restricted ${path5} to the current user and revoked ${removed}.`
+      `${subject} had no enforced access control on Windows; restricted ${path6} to the current user and revoked ${removed}.`
     );
   }
-  verifiedWindowsPaths.set(path5, report);
+  verifiedWindowsPaths.set(path6, report);
 }
 
 // src/lib/server/device-access/contract.ts
@@ -8017,19 +8017,19 @@ var SCHEMA = `
   ) STRICT;
   ${POLICY_SCHEMA}
 `;
-async function secureFile(path5, required = false) {
+async function secureFile(path6, required = false) {
   let metadata;
   try {
-    metadata = await lstat(path5);
+    metadata = await lstat(path6);
   } catch (error) {
     if (!required && error.code === "ENOENT") return;
     throw error;
   }
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
-    throw new Error(`Device access database files must be regular files without symlinks or hardlinks: ${path5}.`);
+    throw new Error(`Device access database files must be regular files without symlinks or hardlinks: ${path6}.`);
   }
-  await assertExclusivePathOwnership(path5, metadata, "Device access database file");
-  await chmod(path5, 384);
+  await assertExclusivePathOwnership(path6, metadata, "Device access database file");
+  await chmod(path6, 384);
 }
 async function initializeLocation(root) {
   const configuredRoot = resolve(root);
@@ -8286,10 +8286,10 @@ var SqliteDeviceAccessStore = class {
     if (typeof input.path !== "string" || input.path.length > 16384 || !input.path.startsWith("/") || input.path.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(input.path)) {
       throw new DeviceAccessError("invalid_request", "Access paths must be origin-relative request paths.");
     }
-    const path5 = text(input.path.split(/[?#]/, 1)[0], "access path", 2048);
+    const path6 = text(input.path.split(/[?#]/, 1)[0], "access path", 2048);
     let decodedPath;
     try {
-      decodedPath = decodeURIComponent(path5);
+      decodedPath = decodeURIComponent(path6);
     } catch {
       throw new DeviceAccessError("invalid_request", "Invalid access path encoding.");
     }
@@ -8302,7 +8302,7 @@ var SqliteDeviceAccessStore = class {
       if (input.status === 0 && (device.status !== "allowed" || !this.isTailnetAllowed(device.tailnet))) {
         throw new DeviceAccessError("forbidden", "This device is no longer allowed to access the app.");
       }
-      this.audit(this.timestamp(), id, `device:${id}`, "access", { requestId, method, path: path5, status: input.status });
+      this.audit(this.timestamp(), id, `device:${id}`, "access", { requestId, method, path: path6, status: input.status });
     });
   }
   close() {
@@ -8341,14 +8341,14 @@ import { randomUUID as randomUUID2, timingSafeEqual as timingSafeEqual2 } from "
 import { userInfo } from "node:os";
 
 // src/lib/server/device-access/peers.ts
-import { execFile as execFile3 } from "node:child_process";
+import { execFile as execFile4 } from "node:child_process";
 import { isIP } from "node:net";
 import { promisify as promisify3 } from "node:util";
 
 // src/lib/mobile-handoff.ts
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import path4 from "node:path";
+import { execFileSync as execFileSync2, spawn } from "node:child_process";
+import { existsSync as existsSync3, statSync as statSync2 } from "node:fs";
+import path5 from "node:path";
 
 // scripts/ports.mjs
 var CAVE_PORTS = Object.freeze({
@@ -8738,8 +8738,8 @@ var CLIENT_V1_IDENTITY_KIND_SET = new Set(CLIENT_V1_IDENTITY_KINDS);
 
 // src/proxy-helpers.ts
 var CLIENT_V1_PATH_PARAMETER = /^:[A-Za-z0-9_]+$/;
-function clientV1PathPattern(path5) {
-  const segments = path5.split("/").map(
+function clientV1PathPattern(path6) {
+  const segments = path6.split("/").map(
     (segment) => CLIENT_V1_PATH_PARAMETER.test(segment) ? "[^/]+" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   );
   return new RegExp(`^${segments.join("/")}$`);
@@ -8758,8 +8758,10 @@ var CLIENT_V1_AUTHENTICATED_PATHS = [
 ].map(clientV1PathPattern);
 
 // src/lib/coven-bin.ts
+import { execFile as execFile3, execFileSync } from "node:child_process";
+import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync2, realpathSync, statSync } from "node:fs";
 import os from "node:os";
-import path3 from "node:path";
+import path4 from "node:path";
 
 // src/lib/child-spawn-env.ts
 var FORBIDDEN_SPAWN_ENV_KEYS = [
@@ -8791,9 +8793,21 @@ function scrubSidecarInternalEnv(env, platform = process.platform) {
   }
   return env;
 }
+function vaultFreeDiscoveryEnv(source, map, platform = process.platform) {
+  const env = scrubSidecarInternalEnv({ ...source }, platform);
+  const managedKeys = new Set(
+    Object.keys(map).map((key) => comparableEnvKey(key, platform))
+  );
+  for (const key of Object.keys(env)) {
+    if (managedKeys.has(comparableEnvKey(key, platform))) delete env[key];
+  }
+  return env;
+}
 
 // src/lib/server/managed-node-toolchain.ts
 import { execFile as execFile2 } from "node:child_process";
+import { homedir as homedir3 } from "node:os";
+import path3 from "node:path";
 import { promisify as promisify2 } from "node:util";
 
 // src/lib/onboarding-prerequisites.ts
@@ -9062,28 +9076,541 @@ var PREREQUISITES = [
 // src/lib/server/managed-node-toolchain.ts
 var execFileAsync2 = promisify2(execFile2);
 var INSTALL_TIMEOUT_MS = 5 * 6e4;
+function supportedPlatform(platform) {
+  return platform === "win32" || platform === "darwin" || platform === "linux";
+}
+function supportedArchitecture(architecture) {
+  return architecture === "x64" || architecture === "arm64";
+}
+function pathApi(platform) {
+  return platform === "win32" ? path3.win32 : path3.posix;
+}
+function managedNodeRoot(platform = process.platform, env = process.env, home = homedir3()) {
+  const paths = platform === "win32" ? path3.win32 : path3.posix;
+  if (platform === "win32") {
+    return paths.join(env.LOCALAPPDATA || paths.join(home, "AppData", "Local"), "OpenCoven", "CovenCave", "toolchains");
+  }
+  if (platform === "darwin") return paths.join(home, "Library", "Application Support", "OpenCoven", "CovenCave", "toolchains");
+  return paths.join(env.XDG_DATA_HOME || paths.join(home, ".local", "share"), "opencoven", "coven-cave", "toolchains");
+}
+function managedNodePaths(platform = process.platform, architecture = process.arch, env = process.env, home = homedir3()) {
+  if (!supportedPlatform(platform) || !supportedArchitecture(architecture)) return null;
+  const pathOps = pathApi(platform);
+  const root = managedNodeRoot(platform, env, home);
+  const installDir = pathOps.join(root, "node", `v${MANAGED_NODE_VERSION}`, `${platform}-${architecture}`);
+  const npmPrefix = pathOps.join(root, "npm");
+  const node = platform === "win32" ? pathOps.join(installDir, "node.exe") : pathOps.join(installDir, "bin", "node");
+  const npmCli = platform === "win32" ? pathOps.join(installDir, "node_modules", "npm", "bin", "npm-cli.js") : pathOps.join(installDir, "lib", "node_modules", "npm", "bin", "npm-cli.js");
+  return {
+    platform,
+    root,
+    stagingRoot: pathOps.join(root, "staging"),
+    installDir,
+    node,
+    npmCli,
+    npmPrefix,
+    npmBin: platform === "win32" ? npmPrefix : pathOps.join(npmPrefix, "bin")
+  };
+}
+function managedNodeSpawnEnv(base, paths = managedNodePaths()) {
+  if (!paths) return null;
+  const pathOps = pathApi(paths.platform);
+  const nodeBin = pathOps.dirname(paths.node);
+  const basePath = base.PATH ?? (paths.platform === "win32" ? Object.entries(base).find(([key]) => key.toUpperCase() === "PATH")?.[1] : void 0);
+  const parts = [paths.npmBin, nodeBin, basePath].filter(Boolean);
+  const env = { ...base };
+  if (paths.platform === "win32") {
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH") delete env[key];
+    }
+  }
+  return {
+    ...env,
+    PATH: parts.join(paths.platform === "win32" ? ";" : ":"),
+    NPM_CONFIG_PREFIX: paths.npmPrefix,
+    npm_config_prefix: paths.npmPrefix
+  };
+}
 
 // src/lib/vault.ts
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 var import_yaml = __toESM(require_dist(), 1);
+import { delimiter, dirname, join as join3 } from "node:path";
 
 // src/lib/local-encrypted-vault.ts
 import { DatabaseSync } from "node:sqlite";
 
+// src/lib/vault.ts
+function isBundle() {
+  return process.env.COVEN_CAVE_BUNDLE === "1";
+}
+function vaultYamlPath() {
+  const override = process.env.COVEN_VAULT_FILE?.trim();
+  if (override) return override;
+  if (isBundle()) return join3(
+    /* turbopackIgnore: true */
+    caveHome(),
+    "vault.yaml"
+  );
+  return join3(
+    /* turbopackIgnore: true */
+    process.cwd(),
+    "vault.yaml"
+  );
+}
+var _vaultMap = null;
+function readVaultMap(strict) {
+  const vaultYaml = vaultYamlPath();
+  if (!existsSync(
+    /* turbopackIgnore: true */
+    vaultYaml
+  )) return {};
+  try {
+    const raw = readFileSync(
+      /* turbopackIgnore: true */
+      vaultYaml,
+      "utf8"
+    );
+    const parsed = (0, import_yaml.parse)(raw);
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed) || Object.values(parsed).some(
+      (entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+    )) {
+      throw new Error("invalid Vault metadata shape");
+    }
+    return parsed;
+  } catch {
+    if (strict) {
+      throw new Error("Vault metadata is invalid; repair vault.yaml before saving changes");
+    }
+    return {};
+  }
+}
+function loadVaultMap(force = false) {
+  if (_vaultMap && !force) return _vaultMap;
+  _vaultMap = readVaultMap(false);
+  return _vaultMap;
+}
+
 // src/lib/coven-bin.ts
+var SPAWN_PATH_STATE = /* @__PURE__ */ Symbol.for("opencoven.cave.spawnPathState");
+var pathState = globalThis[SPAWN_PATH_STATE] ??= { cachedPath: null, cachedToolPath: null, pendingPathDiscovery: null, discoveryGeneration: 0 };
+function discoveryOptions(options = {}) {
+  return {
+    env: options.discoveryEnv ?? vaultFreeDiscoveryEnv(process.env, loadVaultMap(true)),
+    deadline: options.discoveryDeadline,
+    now: options.now ?? Date.now
+  };
+}
+function remainingDiscoveryTimeout(maximum, deadline, now) {
+  if (deadline === void 0) return maximum;
+  return Math.min(maximum, deadline - now());
+}
 var HOME = os.homedir();
-var NVM_ROOT = path3.join(
+var execFileProbeAsync = (command, args, options) => new Promise((resolve3, reject) => {
+  execFile3(
+    /* turbopackIgnore: true */
+    command,
+    args,
+    {
+      timeout: options.timeout,
+      // Literal on purpose: the Windows console-window scanner reads source text.
+      windowsHide: true,
+      env: options.env,
+      shell: options.shell
+    },
+    (error) => error ? reject(error) : resolve3(void 0)
+  );
+});
+async function runnableNodeToolchainDirsAsync(directories, dependencies = {}) {
+  const platform = dependencies.platform ?? process.platform;
+  const exists = dependencies.exists ?? existsSync2;
+  const probe = dependencies.probe ?? execFileProbeAsync;
+  const sourceEnv = dependencies.env ?? process.env;
+  const now = dependencies.now ?? Date.now;
+  const verdicts = await Promise.all(
+    directories.map(async (directory) => {
+      const context = toolchainProbeContext(directory, { platform, exists, sourceEnv });
+      if (!context) return false;
+      const { node, npm, env, npmNeedsShell } = context;
+      try {
+        const nodeTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+        if (nodeTimeout <= 0) return false;
+        await probe(node, ["--version"], {
+          timeout: nodeTimeout,
+          stdio: "ignore",
+          windowsHide: true,
+          env
+        });
+        const npmTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+        if (npmTimeout <= 0) return false;
+        await probe(npm, ["--version"], {
+          timeout: npmTimeout,
+          stdio: "ignore",
+          windowsHide: true,
+          env,
+          shell: npmNeedsShell
+        });
+        return remainingDiscoveryTimeout(
+          Number.POSITIVE_INFINITY,
+          dependencies.deadline,
+          now
+        ) > 0;
+      } catch {
+        return false;
+      }
+    })
+  );
+  return directories.filter((_, index) => verdicts[index]);
+}
+function toolchainProbeContext(directory, dependencies) {
+  const { platform, exists, sourceEnv } = dependencies;
+  const nodeName = platform === "win32" ? "node.exe" : "node";
+  const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
+  const node = path4.join(
+    /* turbopackIgnore: true */
+    directory,
+    nodeName
+  );
+  const npmName = npmNames.find((name) => exists(path4.join(
+    /* turbopackIgnore: true */
+    directory,
+    name
+  )));
+  if (!exists(node) || !npmName) return null;
+  const npm = path4.join(
+    /* turbopackIgnore: true */
+    directory,
+    npmName
+  );
+  const env = scrubSidecarInternalEnv(
+    withSearchPath(
+      sourceEnv,
+      [
+        directory,
+        environmentValue(sourceEnv, "PATH", platform)
+      ].filter(Boolean).join(path4.delimiter),
+      platform
+    ),
+    platform
+  );
+  return { node, npm, env, npmNeedsShell: platform === "win32" && /\.(cmd|bat)$/i.test(npm) };
+}
+function versionManagerBinDirs(root, segments) {
+  if (!existsSync2(
+    /* turbopackIgnore: true */
+    root
+  )) return [];
+  try {
+    return readdirSync(
+      /* turbopackIgnore: true */
+      root
+    ).map((v) => path4.join(
+      /* turbopackIgnore: true */
+      root,
+      v,
+      ...segments
+    )).filter((d) => existsSync2(
+      /* turbopackIgnore: true */
+      d
+    )).sort().reverse();
+  } catch {
+    return [];
+  }
+}
+var NVM_ROOT = path4.join(
   /* turbopackIgnore: true */
   HOME,
   ".nvm",
   "versions",
   "node"
 );
-var FNM_ROOT = path3.join(
+var FNM_ROOT = path4.join(
   /* turbopackIgnore: true */
   HOME,
   ".fnm",
   "node-versions"
 );
+function nodeNvmBinDirsAsync(discovery) {
+  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
+  if (directories.length === 0) return Promise.resolve([]);
+  return runnableNodeToolchainDirsAsync(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now
+  });
+}
+function fnmBinDirsAsync(discovery) {
+  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
+  if (directories.length === 0) return Promise.resolve([]);
+  return runnableNodeToolchainDirsAsync(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now
+  });
+}
+function windowsNpmBinDirs(discovery) {
+  if (process.platform === "win32") {
+    const dirs = [
+      discovery.env.APPDATA ? path4.join(
+        /* turbopackIgnore: true */
+        discovery.env.APPDATA,
+        "npm"
+      ) : null,
+      discovery.env.npm_config_prefix ?? null
+    ].filter((d) => !!d && existsSync2(
+      /* turbopackIgnore: true */
+      d
+    ));
+    return Array.from(new Set(dirs));
+  }
+  return [];
+}
+async function candidateDirsAsync(discovery) {
+  const [nvm, fnm] = await Promise.all([
+    nodeNvmBinDirsAsync(discovery),
+    fnmBinDirsAsync(discovery)
+  ]);
+  return assembleCandidateDirs(nvm, fnm, discovery);
+}
+function assembleCandidateDirs(nvmDirs, fnmDirs, discovery) {
+  const managed = managedNodePaths();
+  return [
+    // Cave's verified user-scoped Node/npm lane precedes opportunistic host
+    // managers. It never edits system PATH; this only affects Cave children.
+    managed?.npmBin,
+    managed ? path4.dirname(managed.node) : null,
+    ...nvmDirs,
+    ...fnmDirs,
+    ...windowsNpmBinDirs(discovery),
+    path4.join(
+      /* turbopackIgnore: true */
+      HOME,
+      "Library",
+      "pnpm"
+    ),
+    path4.join(
+      /* turbopackIgnore: true */
+      HOME,
+      ".bun",
+      "bin"
+    ),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    path4.join(
+      /* turbopackIgnore: true */
+      HOME,
+      ".local",
+      "bin"
+    ),
+    // Grok Build's official installer uses ~/.grok/bin on macOS, Linux, and
+    // Windows. A desktop app can start without the user's shell PATH, so keep
+    // the direct runtime discoverable even when the installer could not add
+    // its symlink or profile entry.
+    path4.join(
+      /* turbopackIgnore: true */
+      HOME,
+      ".grok",
+      "bin"
+    ),
+    // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
+    // missing flags. Prefer the npm-published binary when both exist.
+    path4.join(
+      /* turbopackIgnore: true */
+      HOME,
+      ".cargo",
+      "bin"
+    )
+  ].filter((d) => !!d && existsSync2(
+    /* turbopackIgnore: true */
+    d
+  ));
+}
+function loginShellPathAsync(discovery) {
+  if (process.platform === "win32") return Promise.resolve(null);
+  const env = discovery.env;
+  const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
+  const timeout = remainingDiscoveryTimeout(4e3, discovery.deadline, discovery.now);
+  if (timeout <= 0) return Promise.resolve(null);
+  return new Promise((resolve3) => {
+    execFile3(
+      /* turbopackIgnore: true */
+      shell,
+      ["-ilc", "echo $PATH"],
+      { windowsHide: true, encoding: "utf-8", timeout, env: discovery.env },
+      (error, stdout) => {
+        if (error) {
+          resolve3(null);
+          return;
+        }
+        const out = String(stdout).trim();
+        resolve3(out || null);
+      }
+    );
+  });
+}
+function windowsPathFromRegQuery(output, env = process.env) {
+  const match = /^\s*Path\s+(REG_SZ|REG_EXPAND_SZ)\s+(.+)$/im.exec(output);
+  const type = match?.[1];
+  const value = match?.[2]?.trim();
+  if (!type || !value) return null;
+  if (type.toUpperCase() !== "REG_EXPAND_SZ") return value;
+  const lookup = new Map(
+    Object.entries(env).map(([key, val]) => [key.toUpperCase(), val])
+  );
+  return value.replace(
+    /%([^%;=]+)%/g,
+    (whole, name) => lookup.get(name.toUpperCase()) ?? whole
+  );
+}
+function windowsRegistryPath(discovery) {
+  const systemRoot = discovery.env.SystemRoot ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "SYSTEMROOT"
+  )?.[1];
+  const regExecutable = systemRoot ? path4.join(
+    /* turbopackIgnore: true */
+    systemRoot,
+    "System32",
+    "reg.exe"
+  ) : null;
+  if (!regExecutable || !path4.isAbsolute(regExecutable) || !existsSync2(regExecutable)) {
+    return null;
+  }
+  const keys = [
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+    "HKCU\\Environment"
+  ];
+  const parts = [];
+  for (const key of keys) {
+    const timeout = remainingDiscoveryTimeout(2e3, discovery.deadline, discovery.now);
+    if (timeout <= 0) break;
+    try {
+      const out = execFileSync(regExecutable, ["query", key, "/v", "Path"], {
+        windowsHide: true,
+        encoding: "utf-8",
+        timeout,
+        env: discovery.env
+      });
+      const value = windowsPathFromRegQuery(out, discovery.env);
+      if (value) parts.push(value);
+    } catch {
+    }
+  }
+  return parts.length > 0 ? parts.join(path4.delimiter) : null;
+}
+function environmentValue(env, key, platform) {
+  if (platform !== "win32") return env[key];
+  const wanted = key.toUpperCase();
+  return Object.entries(env).find(([name]) => name.toUpperCase() === wanted)?.[1];
+}
+function withSearchPath(env, pathValue, platform = process.platform) {
+  const next2 = { ...env };
+  if (platform !== "win32") {
+    next2.PATH = pathValue;
+    return next2;
+  }
+  let key = null;
+  for (const name of Object.keys(next2)) {
+    if (name.toUpperCase() !== "PATH") continue;
+    if (key === null) key = name;
+    else delete next2[name];
+  }
+  next2[key ?? "PATH"] = pathValue;
+  return next2;
+}
+function covenAdapterDirsEnvValue(existing, covenHome2) {
+  const home = covenHome2?.trim() || path4.join(
+    /* turbopackIgnore: true */
+    HOME,
+    ".coven"
+  );
+  const adaptersDir = path4.join(
+    /* turbopackIgnore: true */
+    home,
+    "adapters"
+  );
+  const dirs = (existing ?? "").split(path4.delimiter).filter(Boolean);
+  if (dirs.includes(adaptersDir)) return dirs.join(path4.delimiter);
+  return [...dirs, adaptersDir].join(path4.delimiter);
+}
+async function augmentedSpawnPathAsync(preferLaunchPath, discovery) {
+  const [fromSystem, candidates] = await Promise.all([
+    process.platform === "win32" ? Promise.resolve(windowsRegistryPath(discovery)) : loginShellPathAsync(discovery),
+    candidateDirsAsync(discovery)
+  ]);
+  return composeSpawnPath(fromSystem, candidates, preferLaunchPath, discovery);
+}
+function composeSpawnPath(fromSystem, candidates, preferLaunchPath, discovery) {
+  const launchPathValue = discovery.env.PATH ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "PATH"
+  )?.[1];
+  const launchPath = launchPathValue ? launchPathValue.split(path4.delimiter) : [];
+  const systemPath = fromSystem ? fromSystem.split(path4.delimiter) : [];
+  const parts = preferLaunchPath ? [...launchPath, ...systemPath, ...candidates] : [...candidates, ...systemPath, ...launchPath];
+  const seen = /* @__PURE__ */ new Set();
+  return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path4.delimiter);
+}
+var COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV = "COVEN_WINDOWS_HIDE_NATIVE_WINDOW";
+function withCovenWrapperWindowPolicy(env, platform = process.platform, appOwnedCovenLaunch = true) {
+  const next2 = { ...env };
+  for (const key of Object.keys(next2)) {
+    if ((platform === "win32" ? key.toUpperCase() : key) === COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV) {
+      delete next2[key];
+    }
+  }
+  if (appOwnedCovenLaunch && platform === "win32") {
+    next2[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV] = "1";
+  }
+  return next2;
+}
+function spawnEnv(pathValue, includeManagedNode = true) {
+  let env = withSearchPath(process.env, pathValue);
+  if (includeManagedNode) {
+    const managed = managedNodeSpawnEnv(env);
+    if (managed) {
+      env = withSearchPath({ ...env, ...managed }, managed.PATH ?? pathValue);
+    }
+  }
+  env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
+    process.env.COVEN_HARNESS_ADAPTER_DIRS,
+    covenHomePath(process.env, HOME, process.platform)
+  );
+  if (env.NPM_CONFIG_LOGLEVEL === void 0 && env.npm_config_loglevel === void 0) {
+    env.NPM_CONFIG_LOGLEVEL = "error";
+  }
+  return withCovenWrapperWindowPolicy(
+    scrubSidecarInternalEnv(env),
+    process.platform,
+    false
+  );
+}
+async function covenSpawnEnvAsync(options = {}) {
+  if (pathState.cachedPath !== null) return spawnEnv(pathState.cachedPath);
+  const shareable = options.discoveryEnv === void 0 && options.discoveryDeadline === void 0 && options.now === void 0;
+  let pending = shareable ? pathState.pendingPathDiscovery : null;
+  if (pending === null) {
+    const discovery = discoveryOptions(options);
+    const generation = pathState.discoveryGeneration;
+    const started = augmentedSpawnPathAsync(false, discovery).then((pathValue) => {
+      const fresh = discovery.deadline === void 0 || discovery.now() < discovery.deadline;
+      if (fresh && generation === pathState.discoveryGeneration && pathState.cachedPath === null) {
+        pathState.cachedPath = pathValue;
+      }
+      return pathValue;
+    }).finally(() => {
+      if (pathState.pendingPathDiscovery === started) pathState.pendingPathDiscovery = null;
+    });
+    if (shareable) pathState.pendingPathDiscovery = started;
+    pending = started;
+  }
+  return spawnEnv(await pending);
+}
 
 // src/lib/mobile-token-refresh.ts
 var MOBILE_APP_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1e3;
@@ -9100,8 +9627,8 @@ var REDACTION_CONTEXT_BYTES = 4 * 1024;
 var MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1e3;
 var TAILSCALE_APP_DIR = "/Applications/Tailscale.app/Contents/MacOS";
 var DEFAULT_TAILSCALE_PATHS = [
-  path4.join(TAILSCALE_APP_DIR, "tailscale"),
-  path4.join(TAILSCALE_APP_DIR, "Tailscale"),
+  path5.join(TAILSCALE_APP_DIR, "tailscale"),
+  path5.join(TAILSCALE_APP_DIR, "Tailscale"),
   "/opt/homebrew/bin/tailscale",
   "/usr/local/bin/tailscale",
   "/usr/bin/tailscale",
@@ -9111,7 +9638,7 @@ var cachedTailscaleBin = null;
 var cachedTailscalePath = null;
 function executableExists(candidate) {
   try {
-    const st = statSync(candidate);
+    const st = statSync2(candidate);
     return st.isFile() || st.isSymbolicLink();
   } catch {
     return false;
@@ -9122,7 +9649,7 @@ function loginShellPath() {
   const env = process.env;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
-    const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+    const out = execFileSync2(shell, ["-ilc", "echo $PATH"], {
       windowsHide: true,
       encoding: "utf-8",
       timeout: 4e3
@@ -9135,7 +9662,7 @@ function loginShellPath() {
 }
 function pathCandidates(pathEnv) {
   if (!pathEnv) return [];
-  return pathEnv.split(path4.delimiter).filter(Boolean).map((dir) => path4.join(dir, "tailscale"));
+  return pathEnv.split(path5.delimiter).filter(Boolean).map((dir) => path5.join(dir, "tailscale"));
 }
 function resolveTailscaleBin({
   envBin = process.env.TAILSCALE_BIN,
@@ -9155,23 +9682,23 @@ function tailscaleBin() {
 }
 function tailscaleSpawnEnv() {
   if (cachedTailscalePath === null) {
-    const delimiter = path4.delimiter;
+    const delimiter2 = path5.delimiter;
     const fromShell = loginShellPath();
     const parts = [
       TAILSCALE_APP_DIR,
       "/opt/homebrew/bin",
       "/usr/local/bin",
-      ...fromShell ? fromShell.split(delimiter) : [],
-      ...process.env.PATH ? process.env.PATH.split(delimiter) : []
+      ...fromShell ? fromShell.split(delimiter2) : [],
+      ...process.env.PATH ? process.env.PATH.split(delimiter2) : []
     ];
     const seen = /* @__PURE__ */ new Set();
     const dedup = [];
     for (const p of parts) {
-      if (!p || seen.has(p) || !existsSync(p)) continue;
+      if (!p || seen.has(p) || !existsSync3(p)) continue;
       seen.add(p);
       dedup.push(p);
     }
-    const joined = dedup.join(delimiter);
+    const joined = dedup.join(delimiter2);
     cachedTailscalePath = joined || process.env.PATH || "";
   }
   const term = process.env.TERM?.trim() ? process.env.TERM : "dumb";
@@ -9179,7 +9706,7 @@ function tailscaleSpawnEnv() {
 }
 
 // src/lib/server/device-access/peers.ts
-var exec = promisify3(execFile3);
+var exec = promisify3(execFile4);
 var DEVICE_PEER_REFRESH_MS = 1e4;
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
@@ -9658,14 +10185,44 @@ function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
   return { store, settled, failure: () => failed };
 }
 
+// src/lib/github-token-env.ts
+var GITHUB_TOKEN_ENV_KEYS = [
+  "GITHUB_TOKEN",
+  "COVEN_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_PERSONAL_ACCESS_TOKEN"
+];
+var GITHUB_HARNESS_TOKEN_ENV_KEYS = [
+  "GITHUB_PAT",
+  ...GITHUB_TOKEN_ENV_KEYS
+];
+
+// src/lib/harness-spawn-env.ts
+var WARM_UP_STATE = /* @__PURE__ */ Symbol.for("opencoven.cave.spawnPathWarmUp");
+var warmUpState = globalThis[WARM_UP_STATE] ??= { inFlight: null };
+function warmHarnessSpawnPath(dependencies = {}) {
+  warmUpState.inFlight ??= (async () => {
+    try {
+      const map = (dependencies.loadMap ?? (() => loadVaultMap(true)))();
+      await (dependencies.spawnEnvAsync ?? covenSpawnEnvAsync)({
+        discoveryEnv: vaultFreeDiscoveryEnv(dependencies.sourceEnv ?? process.env, map)
+      });
+    } catch {
+    }
+  })().finally(() => {
+    warmUpState.inFlight = null;
+  });
+  return warmUpState.inFlight;
+}
+
 // server.ts
 var require2 = createRequire(import.meta.url);
 var pty = require2("node-pty");
-var execFileAsync3 = promisify4(execFile4);
+var execFileAsync3 = promisify4(execFile5);
 if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
   try {
     const requiredServerFiles = JSON.parse(
-      readFileSync(new URL(".next/required-server-files.json", import.meta.url), "utf8")
+      readFileSync3(new URL(".next/required-server-files.json", import.meta.url), "utf8")
     );
     if (requiredServerFiles.config) {
       process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredServerFiles.config);
@@ -9687,12 +10244,12 @@ function cavePort() {
 }
 function persistedMobileAccessSecretFile() {
   const port2 = String(cavePort());
-  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join3(
-    process.env.XDG_STATE_HOME?.trim() || join3(homedir3(), ".local", "state"),
+  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join4(
+    process.env.XDG_STATE_HOME?.trim() || join4(homedir4(), ".local", "state"),
     "coven-cave"
   );
-  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join3(stateRoot, `mobile-tailscale-${port2}`);
-  return join3(stateDir, "access-token");
+  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join4(stateRoot, `mobile-tailscale-${port2}`);
+  return join4(stateDir, "access-token");
 }
 if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
   try {
@@ -9707,7 +10264,7 @@ if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" 
         "[cave] boot re-arm reads the persisted mobile access secret without an ownership check on " + process.platform + "; the pairing route re-verifies it with the async guard (cave-8pd39)."
       );
     }
-    const persisted = readFileSync(file, "utf8").trim();
+    const persisted = readFileSync3(file, "utf8").trim();
     if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
   } catch {
   }
@@ -9789,11 +10346,11 @@ var CLIENT_V1_DISCOVERY_NONCE = CLIENT_V1_AUTHORITY_BOOTSTRAP && !("unavailable"
 var clientV1DiscoveryPublished = false;
 var clientV1DiscoveryEndpoint = "";
 function standaloneCaveHome() {
-  const covenHome2 = process.env.COVEN_HOME || join3(homedir3(), ".coven");
-  return resolve2(process.env.COVEN_CAVE_HOME || join3(covenHome2, "cave"));
+  const covenHome2 = process.env.COVEN_HOME || join4(homedir4(), ".coven");
+  return resolve2(process.env.COVEN_CAVE_HOME || join4(covenHome2, "cave"));
 }
 function clientV1DiscoveryFile() {
-  return join3(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
+  return join4(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
 }
 var WINDOWS_SYSTEM_SID2 = "S-1-5-18";
 var WINDOWS_ADMINISTRATORS_SID2 = "S-1-5-32-544";
@@ -9829,14 +10386,14 @@ function resolveUnverifiedOwnershipWaiver2(env) {
   }
   return { granted: true, reason };
 }
-function unverifiableOwnershipRefusal2(subject, path5, cause, note) {
-  return `${subject} ownership could not be verified on Windows: ${cause.message}. Refusing ${path5}; inspect it with: icacls "${path5}". ${note}`;
+function unverifiableOwnershipRefusal2(subject, path6, cause, note) {
+  return `${subject} ownership could not be verified on Windows: ${cause.message}. Refusing ${path6}; inspect it with: icacls "${path6}". ${note}`;
 }
-function unverifiedOwnershipDisclosure2(subject, path5, cause, reason) {
-  return `SECURITY WAIVER \u2014 ${subject} is being used UNVERIFIED. Its DACL could not be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV2} is set, so ${path5} is trusted on the operator's word alone: reason given \u2014 ${reason}. Any principal that can write ${path5} can mint credentials or point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV2} to restore the check.`;
+function unverifiedOwnershipDisclosure2(subject, path6, cause, reason) {
+  return `SECURITY WAIVER \u2014 ${subject} is being used UNVERIFIED. Its DACL could not be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV2} is set, so ${path6} is trusted on the operator's word alone: reason given \u2014 ${reason}. Any principal that can write ${path6} can mint credentials or point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV2} to restore the check.`;
 }
-function sharedOwnershipRefusal2(subject, path5, findings, waiver) {
-  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. Refusing ${path5}; inspect it with: icacls "${path5}"` + (waiver.granted ? `. ${UNVERIFIED_OWNERSHIP_ENV2} does not cover a DACL that was read: this one was, and it is shared. Repair it with: icacls "${path5}" /reset` : "");
+function sharedOwnershipRefusal2(subject, path6, findings, waiver) {
+  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. Refusing ${path6}; inspect it with: icacls "${path6}"` + (waiver.granted ? `. ${UNVERIFIED_OWNERSHIP_ENV2} does not cover a DACL that was read: this one was, and it is shared. Repair it with: icacls "${path6}" /reset` : "");
 }
 var WINDOWS_ACL_SCRIPT2 = `
 $ErrorActionPreference = 'Stop'
@@ -10030,23 +10587,23 @@ function sanitizedWindowsAclProbeTimeout2(error) {
   windowsAclProbeTimeoutStages2.set(sanitized, stage);
   return sanitized;
 }
-function assertStandaloneWindowsExclusive(path5, label, deadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
-  if (standaloneVerifiedWindowsPaths.has(path5)) return;
-  if (standaloneWaivedWindowsPaths.has(path5)) return;
+function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
+  if (standaloneVerifiedWindowsPaths.has(path6)) return;
+  if (standaloneWaivedWindowsPaths.has(path6)) return;
   const subject = `Client v1 discovery ${label}`;
   const probeStartedAt = performance2.now();
   const waiver = resolveUnverifiedOwnershipWaiver2(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   const probeEnv = {
-    COVEN_CAVE_CLIENT_V1_ACL_PATH: path5,
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path6,
     // Next augments ProcessEnv to require this. It carries no secret.
     NODE_ENV: process.env.NODE_ENV,
     SystemRoot: systemRoot,
     windir: systemRoot,
-    PATH: join3(systemRoot, "System32"),
+    PATH: join4(systemRoot, "System32"),
     PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
-    TEMP: process.env.TEMP || process.env.TMP || join3(systemRoot, "Temp"),
-    TMP: process.env.TMP || process.env.TEMP || join3(systemRoot, "Temp")
+    TEMP: process.env.TEMP || process.env.TMP || join4(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join4(systemRoot, "Temp")
   };
   let report;
   try {
@@ -10059,8 +10616,8 @@ function assertStandaloneWindowsExclusive(path5, label, deadline = performance2.
             code: "ETIMEDOUT"
           });
         }
-        rawReport = execFileSync2(
-          join3(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        rawReport = execFileSync3(
+          join4(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
           [
             "-NoProfile",
             "-NonInteractive",
@@ -10101,13 +10658,13 @@ function assertStandaloneWindowsExclusive(path5, label, deadline = performance2.
   } catch (cause) {
     if (!waiver.granted) {
       throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
-        unverifiableOwnershipRefusal2(subject, path5, cause, waiver.note),
+        unverifiableOwnershipRefusal2(subject, path6, cause, waiver.note),
         { cause }
       ));
     }
-    standaloneWaivedWindowsPaths.add(path5);
+    standaloneWaivedWindowsPaths.add(path6);
     console.warn(
-      unverifiedOwnershipDisclosure2(subject, path5, cause, waiver.reason)
+      unverifiedOwnershipDisclosure2(subject, path6, cause, waiver.reason)
     );
     return;
   }
@@ -10136,17 +10693,17 @@ function assertStandaloneWindowsExclusive(path5, label, deadline = performance2.
     })}`);
     throw discoveryPublicationFailure(
       `${label}-owner-shared`,
-      new Error(sharedOwnershipRefusal2(subject, path5, findings, waiver))
+      new Error(sharedOwnershipRefusal2(subject, path6, findings, waiver))
     );
   }
   if (report.repaired) {
     console.warn(
-      `${subject} had no enforced access control on Windows; restricted ${path5} to the current user and revoked ${report.removed.length > 0 ? report.removed.join(", ") : "inherited entries"}.`
+      `${subject} had no enforced access control on Windows; restricted ${path6} to the current user and revoked ${report.removed.length > 0 ? report.removed.join(", ") : "inherited entries"}.`
     );
   }
-  standaloneVerifiedWindowsPaths.add(path5);
+  standaloneVerifiedWindowsPaths.add(path6);
 }
-function requireStandaloneOwner(path5, metadata, label, windowsAclProbeDeadline) {
+function requireStandaloneOwner(path6, metadata, label, windowsAclProbeDeadline) {
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
       throw discoveryPublicationFailure(
@@ -10158,21 +10715,21 @@ function requireStandaloneOwner(path5, metadata, label, windowsAclProbeDeadline)
   }
   if (process.platform !== "win32") {
     throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
-      `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path5} is refused.`
+      `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path6} is refused.`
     ));
   }
-  assertStandaloneWindowsExclusive(path5, label, windowsAclProbeDeadline);
+  assertStandaloneWindowsExclusive(path6, label, windowsAclProbeDeadline);
 }
-function assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline) {
+function assertStandaloneDiscoveryTarget(path6, windowsAclProbeDeadline) {
   try {
-    const metadata = lstatSync(path5);
+    const metadata = lstatSync(path6);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
       throw discoveryPublicationFailure(
         "target-not-file",
-        new Error(`Client v1 discovery target must be a regular file: ${path5}.`)
+        new Error(`Client v1 discovery target must be a regular file: ${path6}.`)
       );
     }
-    requireStandaloneOwner(path5, metadata, "target", windowsAclProbeDeadline);
+    requireStandaloneOwner(path6, metadata, "target", windowsAclProbeDeadline);
   } catch (error) {
     if (error.code === "ENOENT") return;
     throw error;
@@ -10181,8 +10738,8 @@ function assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline) {
 function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   clientV1DiscoveryEndpoint = endpoint;
   const windowsAclProbeDeadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
-  const root = join3(clientV1DiscoveryFile(), "..");
-  mkdirSync(root, { recursive: true, mode: 448 });
+  const root = join4(clientV1DiscoveryFile(), "..");
+  mkdirSync2(root, { recursive: true, mode: 448 });
   const rootMetadata = lstatSync(root);
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
     throw discoveryPublicationFailure(
@@ -10191,7 +10748,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
     );
   }
   requireStandaloneOwner(root, rootMetadata, "root", windowsAclProbeDeadline);
-  const physicalRoot = realpathSync(root);
+  const physicalRoot = realpathSync2(root);
   if (physicalRoot !== root) {
     throw discoveryPublicationFailure(
       "root-symlink",
@@ -10215,14 +10772,14 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
       new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.")
     );
   }
-  const path5 = clientV1DiscoveryFile();
-  assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline);
-  const occupant = readLiveForeignDiscoveryOccupant(path5);
+  const path6 = clientV1DiscoveryFile();
+  assertStandaloneDiscoveryTarget(path6, windowsAclProbeDeadline);
+  const occupant = readLiveForeignDiscoveryOccupant(path6);
   if (occupant) {
     throw discoveryPublicationFailure(
       "target-owned-by-live-instance",
       new Error(
-        `Another Cave process (pid ${occupant.pid}) already owns ${path5} and points paired clients at ${occupant.endpoint}; this server (${endpoint}) will not replace a live instance's record. Stop that instance and restart this one, or give each instance its own COVEN_CAVE_HOME.`
+        `Another Cave process (pid ${occupant.pid}) already owns ${path6} and points paired clients at ${occupant.endpoint}; this server (${endpoint}) will not replace a live instance's record. Stop that instance and restart this one, or give each instance its own COVEN_CAVE_HOME.`
       )
     );
   }
@@ -10264,21 +10821,21 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
       }
     };
   }
-  const temporaryPath = `${path5}.${process.pid}.${randomUUID3()}.tmp`;
+  const temporaryPath = `${path6}.${process.pid}.${randomUUID3()}.tmp`;
   let fd = null;
   let ownsTemporaryPath = false;
   try {
     fd = openSync(temporaryPath, "wx", 384);
     ownsTemporaryPath = true;
-    writeFileSync(fd, `${JSON.stringify(record2, null, 2)}
+    writeFileSync2(fd, `${JSON.stringify(record2, null, 2)}
 `, "utf8");
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    assertStandaloneDiscoveryTarget(path5, windowsAclProbeDeadline);
-    renameSync(temporaryPath, path5);
+    assertStandaloneDiscoveryTarget(path6, windowsAclProbeDeadline);
+    renameSync2(temporaryPath, path6);
     ownsTemporaryPath = false;
-    chmodSync(path5, 384);
+    chmodSync(path6, 384);
     clientV1DiscoveryPublished = true;
     registerClientV1DiscoveryPublication(endpoint, null);
   } catch (error) {
@@ -10295,10 +10852,10 @@ function processIsLive(pid) {
     return error.code === "EPERM";
   }
 }
-function readLiveForeignDiscoveryOccupant(path5) {
+function readLiveForeignDiscoveryOccupant(path6) {
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(path5, "utf8"));
+    parsed = JSON.parse(readFileSync3(path6, "utf8"));
   } catch {
     return null;
   }
@@ -10357,14 +10914,14 @@ function republishStandaloneClientV1DiscoveryRecord(endpoint) {
   }
 }
 function removeStandaloneClientV1DiscoveryRecord(nonce) {
-  const path5 = clientV1DiscoveryFile();
+  const path6 = clientV1DiscoveryFile();
   let before;
   let parsed;
   try {
-    before = lstatSync(path5);
+    before = lstatSync(path6);
     if (!before.isFile() || before.isSymbolicLink()) return false;
-    requireStandaloneOwner(path5, before, "target");
-    parsed = JSON.parse(readFileSync(path5, "utf8"));
+    requireStandaloneOwner(path6, before, "target");
+    parsed = JSON.parse(readFileSync3(path6, "utf8"));
   } catch (error) {
     if (error.code === "ENOENT") return false;
     if (error instanceof SyntaxError) return false;
@@ -10373,11 +10930,11 @@ function removeStandaloneClientV1DiscoveryRecord(nonce) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.nonce !== nonce) {
     return false;
   }
-  const current = lstatSync(path5);
+  const current = lstatSync(path6);
   if (!current.isFile() || current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino) {
     return false;
   }
-  unlinkSync(path5);
+  unlinkSync2(path6);
   clientV1DiscoveryPublished = false;
   return true;
 }
@@ -10793,7 +11350,7 @@ function augmentedPath() {
 }
 function validateCwd(raw) {
   if (!raw) return void 0;
-  const stat = statSync2(raw);
+  const stat = statSync3(raw);
   if (!stat.isDirectory()) {
     throw new Error("projectRoot must be a directory");
   }
@@ -11233,6 +11790,7 @@ server.listen(port, hostname, () => {
   }
   logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
+  void warmHarnessSpawnPath();
 });
 var httpShutdownStarted = false;
 function shutdownHttpServer() {
@@ -11273,20 +11831,20 @@ var HEAP_SNAPSHOT_RATIO = 0.95;
 var HEAP_SNAPSHOT_KEEP = 2;
 var heapSnapshotSeq = 0;
 function heapDiagnosticsDir() {
-  const covenHome2 = process.env.COVEN_HOME || join3(homedir3(), ".coven");
-  const caveHome2 = process.env.COVEN_CAVE_HOME || join3(covenHome2, "cave");
-  return join3(caveHome2, "diagnostics");
+  const covenHome2 = process.env.COVEN_HOME || join4(homedir4(), ".coven");
+  const caveHome2 = process.env.COVEN_CAVE_HOME || join4(covenHome2, "cave");
+  return join4(caveHome2, "diagnostics");
 }
 var mb = (bytes) => `${Math.round(bytes / (1024 * 1024))}MB`;
 function logStartupHeapCeiling() {
   console.log(`[heap-ceiling] heapLimit=${mb(getHeapStatistics().heap_size_limit)}`);
 }
 function pruneHeapSnapshots(dir) {
-  const snapshots = readdirSync(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
+  const snapshots = readdirSync2(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
   while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
     const oldest = snapshots.shift();
     try {
-      unlinkSync(join3(dir, oldest));
+      unlinkSync2(join4(dir, oldest));
     } catch {
     }
   }
@@ -11308,10 +11866,10 @@ function startHeapMonitor() {
     if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
     try {
       const dir = heapDiagnosticsDir();
-      mkdirSync(dir, { recursive: true });
+      mkdirSync2(dir, { recursive: true });
       const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
       const seq = String(heapSnapshotSeq += 1).padStart(3, "0");
-      const file = join3(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
+      const file = join4(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
       writeHeapSnapshot(file);
       snapshotWritten = true;
       pruneHeapSnapshots(dir);

@@ -40,8 +40,29 @@ export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 export { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
 
 let cachedBin: string | null = null;
-let cachedPath: string | null = null;
-let cachedToolPath: string | null = null;
+// The spawn-PATH caches are process-wide on purpose (#5448). The custom server
+// (server.mjs) and Next's route handlers each bundle their own copy of this
+// module, so module-level caches would be per copy: the server's startup
+// warm-up would fill one while the routes still ran the login shell on their
+// first call. One globalThis slot lets every copy share discovery.
+type SpawnPathState = {
+  cachedPath: string | null;
+  cachedToolPath: string | null;
+  // One in-flight default-options discovery shared by concurrent async
+  // callers. The onboarding preflight fans out several probes at once on a
+  // fresh profile; without this each one would spawn its own login shell.
+  pendingPathDiscovery: Promise<string> | null;
+  // Every cache invalidation advances the generation. An async discovery
+  // publishes its PATH only if no invalidation happened while it ran, so a
+  // discovery started before a post-install refresh can never overwrite the
+  // refreshed result. The sync API is unaffected: it computes and publishes
+  // within one call.
+  discoveryGeneration: number;
+};
+const SPAWN_PATH_STATE = Symbol.for("opencoven.cave.spawnPathState");
+const pathState: SpawnPathState = ((globalThis as { [SPAWN_PATH_STATE]?: SpawnPathState })[
+  SPAWN_PATH_STATE
+] ??= { cachedPath: null, cachedToolPath: null, pendingPathDiscovery: null, discoveryGeneration: 0 });
 
 export type CovenLaunchCommand = {
   command: string;
@@ -957,32 +978,21 @@ function spawnEnv(
 }
 
 export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.ProcessEnv {
-  if (cachedPath !== null) return spawnEnv(cachedPath);
+  if (pathState.cachedPath !== null) return spawnEnv(pathState.cachedPath);
   const discovery = discoveryOptions(options);
   const pathValue = augmentedSpawnPath(false, discovery);
   if (discovery.deadline === undefined || discovery.now() < discovery.deadline) {
-    cachedPath = pathValue;
+    pathState.cachedPath = pathValue;
   }
   return spawnEnv(pathValue);
 }
 
-// One in-flight default-options discovery shared by concurrent async callers.
-// The onboarding preflight fans out several probes at once on a fresh profile;
-// without this each one would spawn its own login shell.
-let pendingPathDiscovery: Promise<string> | null = null;
-
-// Every cache invalidation advances the generation. An async discovery
-// publishes its PATH only if no invalidation happened while it ran, so a
-// discovery started before a post-install refresh can never overwrite the
-// refreshed result. The sync API is unaffected: it computes and publishes
-// within one call.
-let discoveryGeneration = 0;
 
 function invalidatePathCaches(): void {
-  cachedPath = null;
-  cachedToolPath = null;
-  pendingPathDiscovery = null;
-  discoveryGeneration += 1;
+  pathState.cachedPath = null;
+  pathState.cachedToolPath = null;
+  pathState.pendingPathDiscovery = null;
+  pathState.discoveryGeneration += 1;
 }
 
 /**
@@ -994,27 +1004,27 @@ function invalidatePathCaches(): void {
 export async function covenSpawnEnvAsync(
   options: CovenSpawnEnvOptions = {},
 ): Promise<NodeJS.ProcessEnv> {
-  if (cachedPath !== null) return spawnEnv(cachedPath);
+  if (pathState.cachedPath !== null) return spawnEnv(pathState.cachedPath);
   const shareable =
     options.discoveryEnv === undefined &&
     options.discoveryDeadline === undefined &&
     options.now === undefined;
-  let pending = shareable ? pendingPathDiscovery : null;
+  let pending = shareable ? pathState.pendingPathDiscovery : null;
   if (pending === null) {
     const discovery = discoveryOptions(options);
-    const generation = discoveryGeneration;
+    const generation = pathState.discoveryGeneration;
     const started: Promise<string> = augmentedSpawnPathAsync(false, discovery)
       .then((pathValue) => {
         const fresh = discovery.deadline === undefined || discovery.now() < discovery.deadline;
-        if (fresh && generation === discoveryGeneration && cachedPath === null) {
-          cachedPath = pathValue;
+        if (fresh && generation === pathState.discoveryGeneration && pathState.cachedPath === null) {
+          pathState.cachedPath = pathValue;
         }
         return pathValue;
       })
       .finally(() => {
-        if (pendingPathDiscovery === started) pendingPathDiscovery = null;
+        if (pathState.pendingPathDiscovery === started) pathState.pendingPathDiscovery = null;
       });
-    if (shareable) pendingPathDiscovery = started;
+    if (shareable) pathState.pendingPathDiscovery = started;
     pending = started;
   }
   return spawnEnv(await pending);
@@ -1050,8 +1060,8 @@ export function covenWrapperSpawnEnv(
  * binary-discovery priority.
  */
 export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
-  cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
-  return spawnEnv(cachedToolPath, false);
+  pathState.cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
+  return spawnEnv(pathState.cachedToolPath, false);
 }
 
 export function refreshCovenSpawnEnv(

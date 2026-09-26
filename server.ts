@@ -35,6 +35,7 @@ import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/st
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
+import { warmHarnessSpawnPath } from "./src/lib/harness-spawn-env.ts";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
@@ -2431,6 +2432,13 @@ server.listen(port, hostname, () => {
   }
   logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
+  // Discover the spawn PATH (the user's login shell) off the event loop now,
+  // not on whichever request first needs it (#5448). Synchronous callers
+  // (harness routes, onboarding install, SSH checks, model discovery) then read
+  // the shared cache instead of blocking every request for the shell's
+  // startup. Not awaited: startup is unchanged, and a request that arrives
+  // first joins this same in-flight warm-up.
+  void warmHarnessSpawnPath();
 });
 
 let httpShutdownStarted = false;
