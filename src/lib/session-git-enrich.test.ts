@@ -28,6 +28,7 @@ import {
   parseShortstat,
   MAX_DIFF_CALLS,
   ROOT_CONCURRENCY,
+  createRootEnrichmentCache,
 } from "./session-git-enrich.ts";
 
 // Real directories: the lib stat-gates roots before probing git.
@@ -449,6 +450,101 @@ const REPO_SCRIPT = {
     );
     assert.equal(rows[0].pullRequest, undefined);
     assert.equal(urlCache.lookups.length, 0);
+  }
+}
+
+// ── 13. per-root cache between computes (#5448) ─────────────────────────────
+{
+  const noPrs = { get: () => null };
+  const noUrls = { get: () => null };
+  const scripted = (root, fingerprint, now) => {
+    const { runner, calls } = fakeGit(REPO_SCRIPT);
+    const cache = createRootEnrichmentCache({
+      now: () => now.value,
+      fingerprint: () => fingerprint.value,
+    });
+    const run = () => enrichSessionsWithGitContext([session("s", root)], runner, noPrs, noUrls, cache);
+    return { run, calls, cache };
+  };
+
+  // 13a. An unchanged root is served from cache with no git process.
+  {
+    const root = makeRoot("cache-hit");
+    const fingerprint = { value: "f1" };
+    const now = { value: 0 };
+    const { run, calls } = scripted(root, fingerprint, now);
+    const first = await run();
+    const spawned = calls.length;
+    assert.ok(spawned > 0);
+    const second = await run();
+    assert.equal(calls.length, spawned, "a cache hit must not spawn git");
+    assert.deepEqual(second[0].git, first[0].git);
+    assert.deepEqual(second[0].diff, first[0].diff);
+  }
+
+  // 13b. A changed fingerprint (branch switch, commit, fetch) re-reads.
+  {
+    const root = makeRoot("cache-fingerprint");
+    const fingerprint = { value: "f1" };
+    const now = { value: 0 };
+    const { run, calls } = scripted(root, fingerprint, now);
+    await run();
+    const spawned = calls.length;
+    fingerprint.value = "f2";
+    await run();
+    assert.ok(calls.length > spawned, "a changed fingerprint must re-read git");
+  }
+
+  // 13c. The TTL bounds an entry even when the fingerprint is unchanged.
+  {
+    const root = makeRoot("cache-ttl");
+    const fingerprint = { value: "f1" };
+    const now = { value: 0 };
+    const { run, calls, cache } = scripted(root, fingerprint, now);
+    await run();
+    const spawned = calls.length;
+    now.value = cache.ttlMs;
+    await run();
+    assert.ok(calls.length > spawned, "an expired entry must re-read git");
+  }
+
+  // 13d. A diff skipped for budget is not cached, so a later compute fills it.
+  {
+    const roots = Array.from({ length: MAX_DIFF_CALLS + 1 }, (_, index) => makeRoot(`cache-budget-${index}`));
+    const { runner } = fakeGit(REPO_SCRIPT);
+    const cache = createRootEnrichmentCache({ fingerprint: () => "stable" });
+    const rows = roots.map((root, index) => session(`b${index}`, root));
+    const first = await enrichSessionsWithGitContext(rows, runner, noPrs, noUrls, cache);
+    const skipped = first.filter((row) => !row.diff).map((row) => row.project_root);
+    assert.equal(skipped.length, 1, "exactly one root exceeds the diff budget");
+    const second = await enrichSessionsWithGitContext(rows, runner, noPrs, noUrls, cache);
+    assert.ok(
+      second.find((row) => row.project_root === skipped[0]).diff,
+      "the budget-skipped root is re-read and gets its diff on the next compute",
+    );
+  }
+
+  // 13e. A change during the read is served but not cached.
+  {
+    const root = makeRoot("cache-race");
+    let reads = 0;
+    const { runner, calls } = fakeGit(REPO_SCRIPT);
+    const cache = createRootEnrichmentCache({ fingerprint: () => `f${reads++}` });
+    await enrichSessionsWithGitContext([session("r", root)], runner, noPrs, noUrls, cache);
+    assert.equal(cache.get(root), undefined, "a fingerprint that moved during the read must not be cached");
+    const spawned = calls.length;
+    await enrichSessionsWithGitContext([session("r", root)], runner, noPrs, noUrls, cache);
+    assert.ok(calls.length > spawned);
+  }
+
+  // 13f. An injected runner gets no implicit shared cache.
+  {
+    const root = makeRoot("cache-injected");
+    const { runner, calls } = fakeGit(REPO_SCRIPT);
+    await enrichSessionsWithGitContext([session("i", root)], runner);
+    const spawned = calls.length;
+    await enrichSessionsWithGitContext([session("i", root)], runner);
+    assert.equal(calls.length, spawned * 2, "without a cache every compute re-reads");
   }
 }
 
