@@ -605,7 +605,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(topTabs.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
     await expect(topTabs.getByRole("tab", { name: "Work" })).toBeVisible();
     await expect(topTabs.getByRole("tab", { name: "GitHub" })).toBeVisible();
-    await expect(topTabs.getByRole("tab", { name: "Sessions", exact: true })).toHaveCount(0);
+    await expect(topTabs.getByRole("tab", { name: "Chats", exact: true })).toHaveCount(0);
     await expect(topTabs.getByRole("tab", { name: "Activity", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tablist", { name: "GitHub filter" })).toHaveCount(0);
 

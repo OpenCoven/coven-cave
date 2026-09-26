@@ -126,7 +126,7 @@ type Props = {
 
 /** The chat section tabs, shared by the strip and the phone chat-list sheet. */
 const CHAT_SECTION_ITEMS: Array<{ id: FamiliarsScope; label: string }> = [
-  { id: "conversation", label: "Sessions" },
+  { id: "conversation", label: "Chats" },
   { id: "projects", label: "Projects" },
   { id: "familiar", label: "Familiar" },
 ];
