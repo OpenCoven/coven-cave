@@ -4,8 +4,7 @@
 // fails ENOENT there and both Skills directory routes were dead. Windows .cmd
 // shims cannot be executed directly and must not be routed through cmd.exe —
 // the args include user-supplied skill names, and a shell would re-parse them
-// (cave-4arof). Resolve the shim's JavaScript target and invoke Node directly,
-// the same contract bd-bin.ts uses for `bd`.
+// (cave-4arof). Resolve the shim's JavaScript target and invoke Node directly.
 
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";

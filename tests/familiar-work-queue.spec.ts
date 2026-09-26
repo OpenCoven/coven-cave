@@ -1,16 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Familiar Work Queue (cave-hlv.4) — the beads + PR control tower surface.
-// Drives the mode entirely off mocked /api/beads (ready beads) and
-// /api/beads/prs (the bridge's classified open + merged PRs). The surface owns
+// Familiar Work Queue (cave-hlv.4) — the issues + PR control tower surface.
+// Drives the mode entirely off mocked /api/queue/issues (ready issues) and
+// /api/queue/prs (the bridge's classified open + merged PRs). The surface owns
 // no PR truth of its own, so mocking those two endpoints fully determines the
 // lanes. Daemon-less (COVEN_CAVE_E2E=1); navigation is via the cave:navigate-mode
 // event since Work Queue is a quiet, shortcut-less destination.
 
-const READY_BEADS = [
+const READY_ISSUES = [
   { id: "cave-aa1", title: "Harden the sync path", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty", "surface:github"], updated_at: null, comment_count: 0 },
   { id: "cave-bb2", title: "iOS profile avatar", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:nova", "surface:ios"], updated_at: null, comment_count: 0 },
-  // cave-open is the post-merge-cleanup bead (merged PR #90). comment_count: 0
+  // cave-open is the post-merge-cleanup issue (merged PR #90). comment_count: 0
   // means no recorded verification yet → Close is gated until a handoff note.
   { id: "cave-open", title: "Merged but unclosed", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:kitty"], updated_at: null, comment_count: 0 },
   { id: "cave-epic", title: "An epic container", priority: 1, status: "open", issue_type: "epic", labels: ["familiar:nova"], updated_at: null, comment_count: 0 },
@@ -21,17 +21,17 @@ const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOStri
 
 // These are already-classified bridge summaries (the endpoint runs the classifier).
 const OPEN_PRS = [
-  { number: 101, title: "Fix the flaky sync", url: "https://gh/pull/101", lane: "checks-failing", beadIds: ["cave-aa1"], checkStatus: "failing", reviewDecision: "UNKNOWN", mergeStateStatus: "BLOCKED", headRefName: "fix/cave-aa1", updatedAt: iso(40) },
-  { number: 102, title: "Ship the widget", url: "https://gh/pull/102", lane: "ready-to-merge", beadIds: ["cave-cc9"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-cc9", updatedAt: iso(2) },
-  { number: 103, title: "Unlinked spike", url: "https://gh/pull/103", lane: "needs-review", beadIds: [], checkStatus: "passing", reviewDecision: "UNKNOWN", mergeStateStatus: "CLEAN", headRefName: "spike/x", updatedAt: iso(3) },
+  { number: 101, title: "Fix the flaky sync", url: "https://gh/pull/101", lane: "checks-failing", issueIds: ["cave-aa1"], checkStatus: "failing", reviewDecision: "UNKNOWN", mergeStateStatus: "BLOCKED", headRefName: "fix/cave-aa1", updatedAt: iso(40) },
+  { number: 102, title: "Ship the widget", url: "https://gh/pull/102", lane: "ready-to-merge", issueIds: ["cave-cc9"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-cc9", updatedAt: iso(2) },
+  { number: 103, title: "Unlinked spike", url: "https://gh/pull/103", lane: "needs-review", issueIds: [], checkStatus: "passing", reviewDecision: "UNKNOWN", mergeStateStatus: "CLEAN", headRefName: "spike/x", updatedAt: iso(3) },
 ];
 
 const MERGED_PRS = [
-  { number: 90, title: "Landed change", url: "https://gh/pull/90", beadIds: ["cave-open"], mergedAt: iso(1) },
+  { number: 90, title: "Landed change", url: "https://gh/pull/90", issueIds: ["cave-open"], mergedAt: iso(1) },
 ];
 const QUEUE_PROJECT = { id: "queue-test-project", name: "Queue test project", root: "/tmp/coven-cave-queue-test-project" };
 const QUEUE_PROJECT_B = { id: "queue-test-project-b", name: "Queue test project B", root: "/tmp/coven-cave-queue-test-project-b" };
-const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", canGenerate: false, project: QUEUE_PROJECT };
+const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", project: QUEUE_PROJECT };
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/queue/readiness", (route) =>
@@ -59,18 +59,18 @@ async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@pla
     }),
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
-  // Regex matchers (not globs): glob `?` matches any char, so `/api/beads?…`
-  // would also catch `/api/beads/prs`. These are unambiguous — /prs vs the
+  // Regex matchers (not globs): glob `?` matches any char, so `/api/queue/issues?…`
+  // would also catch `/api/queue/prs`. These are unambiguous — /prs vs the
   // ?-queried ready list.
-  await page.route(/\/api\/beads\/prs/, (route) => {
+  await page.route(/\/api\/queue\/prs/, (route) => {
     onQueueRequest?.(route.request());
     return route.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
   });
-  await page.route(/\/api\/beads\?/, (route) => {
+  await page.route(/\/api\/queue\/issues\?/, (route) => {
     const request = route.request();
     onQueueRequest?.(request);
     if (new URL(request.url()).searchParams.get("mode") !== "ready") return route.fallback();
-    return route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    return route.fulfill({ json: { ok: true, data: READY_ISSUES } });
   });
 
   await page.goto("/");
@@ -87,7 +87,7 @@ async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@pla
 }
 
 test.describe("familiar work queue (PR control tower)", () => {
-  test("renders lanes from the beads + PR bridge and exposes cleanup/claim actions", async ({ page }) => {
+  test("renders lanes from the issues + PR bridge and exposes cleanup/claim actions", async ({ page }) => {
     await gotoWorkQueue(page);
     const fwq = page.locator(".fwq");
 
@@ -96,14 +96,14 @@ test.describe("familiar work queue (PR control tower)", () => {
     // Freshness readout is truthful from the first load.
     await expect(fwq.getByText(/updated just now/)).toBeVisible();
 
-    // Every acceptance lane the mock populates renders, in fix→land→review→bead order.
+    // Every acceptance lane the mock populates renders, in fix→land→review→issue order.
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Needs review" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Ready to merge" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
 
-    // PR + bead identity surfaces truthfully. Scope #101 to its lane: a stale PR
+    // PR + issue identity surfaces truthfully. Scope #101 to its lane: a stale PR
     // also appears in the "Needs attention" strip, so a bare getByText matches
     // two elements and trips Playwright's strict mode.
     await expect(
@@ -121,9 +121,9 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(kittyChip).toBeVisible();
     await expect(fwq.getByRole("button", { name: /Nova/ })).toBeVisible();
 
-    // Cleanup lane offers "Close bead"; no-open-PR lane offers "Claim".
+    // Cleanup lane offers "Close issue"; no-open-PR lane offers "Claim".
     const cleanup = fwq.getByRole("region", { name: "Post-merge cleanup" });
-    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeVisible();
+    await expect(cleanup.getByRole("button", { name: "Close issue" })).toBeVisible();
     const noPr = fwq.getByRole("region", { name: "No open PR" });
     await expect(noPr.getByRole("button", { name: "Claim", exact: true })).toBeVisible();
 
@@ -133,16 +133,16 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible(); // cave-bb2 is Nova's
   });
 
-  test("claiming a no-open-PR bead posts to the beads adapter", async ({ page }) => {
+  test("claiming a no-open-PR issue posts to the issues adapter", async ({ page }) => {
     let claimBody: unknown = null;
-    await page.route("**/api/beads", async (route) => {
+    await page.route("**/api/queue/issues", async (route) => {
       // POST claim/close land here (the GET ready list uses the ?-suffixed matcher).
       if (route.request().method() === "POST") {
         claimBody = route.request().postDataJSON();
         await route.fulfill({ json: { ok: true, data: { id: "cave-bb2", status: "in_progress" } } });
         return;
       }
-      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+      await route.fulfill({ json: { ok: true, data: READY_ISSUES } });
     });
     await gotoWorkQueue(page);
 
@@ -155,8 +155,8 @@ test.describe("familiar work queue (PR control tower)", () => {
     const readUrls: string[] = [];
     await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
 
-    await expect.poll(() => readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs")).length).toBeGreaterThanOrEqual(2);
-    for (const url of readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs"))) {
+    await expect.poll(() => readUrls.filter((url) => url.includes("/api/queue/issues") || url.includes("/api/queue/prs")).length).toBeGreaterThanOrEqual(2);
+    for (const url of readUrls.filter((url) => url.includes("/api/queue/issues") || url.includes("/api/queue/prs"))) {
       expect(new URL(url).searchParams.get("projectRoot")).toBe(QUEUE_PROJECT.root);
     }
 
@@ -176,7 +176,7 @@ test.describe("familiar work queue (PR control tower)", () => {
       if (failNextReadiness) return route.fulfill({ status: 503, json: { ok: false, error: "Queue readiness temporarily unavailable" } });
       return route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } });
     });
-    await page.route("**/api/beads", (route) => {
+    await page.route("**/api/queue/issues", (route) => {
       if (route.request().method() === "POST" && route.request().postDataJSON()?.projectRoot === QUEUE_PROJECT.root) aRootMutation = true;
       return route.fallback();
     });
@@ -218,41 +218,28 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect.poll(() => page.evaluate(() => document.activeElement?.className)).toContain("fwq");
   });
 
-  test("a Generate conflict adopts the other window's selected project before retrying", async ({ page }) => {
-    let selectedProject = QUEUE_PROJECT;
-    const generateBodies: Array<{ projectId?: string }> = [];
-    const needsBeads = (project: typeof QUEUE_PROJECT) => ({
-      ok: false,
-      code: "needs-beads",
-      message: `Generate Queue for ${project.name}.`,
-      canGenerate: true,
-      project,
-    });
+  test("a project GitHub cannot read says so and offers Retry, not a workspace to generate", async ({ page }) => {
     await page.route("**/api/queue/readiness", async (route) => {
-      if (route.request().method() === "GET") {
-        return route.fulfill({ json: { ok: true, readiness: needsBeads(selectedProject) } });
-      }
-      const body = route.request().postDataJSON();
-      if (body.action !== "generate") return route.fallback();
-      generateBodies.push(body);
-      if (generateBodies.length === 1) {
-        selectedProject = QUEUE_PROJECT_B;
-        return route.fulfill({
-          status: 409,
-          json: { ok: false, error: "Queue project changed in another Cave window.", readiness: needsBeads(QUEUE_PROJECT_B) },
-        });
-      }
-      return route.fulfill({ json: { ok: true, readiness: { ...needsBeads(QUEUE_PROJECT_B), ok: true, code: "ready", canGenerate: false } } });
+      if (route.request().method() !== "GET") return route.fallback();
+      return route.fulfill({
+        json: {
+          ok: true,
+          readiness: {
+            ok: false,
+            code: "github-unavailable",
+            message: "The GitHub CLI is required to use the Queue. Install gh, run gh auth login, then retry.",
+            project: QUEUE_PROJECT,
+          },
+        },
+      });
     });
     await gotoWorkQueue(page);
 
     const fwq = page.locator(".fwq");
-    await fwq.getByRole("button", { name: "Generate" }).click();
-    await expect.poll(() => generateBodies).toHaveLength(1);
-    await expect(fwq).toContainText(QUEUE_PROJECT_B.name);
-    await fwq.getByRole("button", { name: "Generate" }).click();
-    await expect.poll(() => generateBodies).toHaveLength(2);
-    expect(generateBodies.map((body) => body.projectId)).toEqual([QUEUE_PROJECT.id, QUEUE_PROJECT_B.id]);
+    await expect(fwq.getByText("Queue needs GitHub")).toBeVisible();
+    await expect(fwq.getByText(/run gh auth login/)).toBeVisible();
+    await expect(fwq.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(fwq.getByRole("button", { name: "Generate" })).toHaveCount(0);
   });
 
   test("a Queue project selection broadcasts to another mounted Cave window", async ({ browser }) => {
@@ -277,7 +264,7 @@ test.describe("familiar work queue (PR control tower)", () => {
       // routes before navigation to keep the initial A load deterministic.
       await gotoWorkQueue(pageA);
       await gotoWorkQueue(pageB);
-      await pageB.route(/\/api\/beads\?/, (route) => {
+      await pageB.route(/\/api\/queue\/issues\?/, (route) => {
         if (new URL(route.request().url()).searchParams.get("projectRoot") !== QUEUE_PROJECT_B.root) return route.fallback();
         return route.fulfill({
           json: {
@@ -313,7 +300,6 @@ test.describe("familiar work queue (PR control tower)", () => {
       ok: true,
       code: "ready",
       message: "Queue project is ready.",
-      canGenerate: false,
       project,
     });
     await page.route("**/api/projects", (route) => {
@@ -332,7 +318,7 @@ test.describe("familiar work queue (PR control tower)", () => {
         return route.fulfill({
           json: {
             ok: true,
-            readiness: { ok: false, code: "no-project", message: "Choose a Queue project to load work.", canGenerate: false, project: null },
+            readiness: { ok: false, code: "no-project", message: "Choose a Queue project to load work.", project: null },
           },
         });
       }
@@ -360,13 +346,13 @@ test.describe("familiar work queue (PR control tower)", () => {
 
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {
     let claimBody: unknown = null;
-    await page.route("**/api/beads", async (route) => {
+    await page.route("**/api/queue/issues", async (route) => {
       if (route.request().method() === "POST") {
         claimBody = route.request().postDataJSON();
         await route.fulfill({ json: { ok: true, data: { id: "cave-bb2", status: "in_progress" } } });
         return;
       }
-      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+      await route.fulfill({ json: { ok: true, data: READY_ISSUES } });
     });
     await gotoWorkQueue(page);
 
@@ -378,19 +364,19 @@ test.describe("familiar work queue (PR control tower)", () => {
 
   test("cleanup Close is gated on a handoff note; adding one posts a comment and unlocks it", async ({ page }) => {
     let commentBody: unknown = null;
-    await page.route("**/api/beads", async (route) => {
+    await page.route("**/api/queue/issues", async (route) => {
       if (route.request().method() === "POST") {
         commentBody = route.request().postDataJSON();
         await route.fulfill({ json: { ok: true, data: { id: "cave-open" } } });
         return;
       }
-      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+      await route.fulfill({ json: { ok: true, data: READY_ISSUES } });
     });
     await gotoWorkQueue(page);
 
     const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
     // No evidence yet → Close is disabled and the reason is spelled out.
-    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+    await expect(cleanup.getByRole("button", { name: "Close issue" })).toBeDisabled();
     await expect(cleanup.getByText(/Add a handoff note to record verification/)).toBeVisible();
 
     // Record a handoff note through the inline composer. Focus lands in the
@@ -408,7 +394,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     await cleanup.getByRole("button", { name: "Save note" }).click();
     await expect(noteToggle).toBeFocused();
 
-    // The note posts as a comment on the bead…
+    // The note posts as a comment on the issue…
     await expect.poll(() => commentBody).toEqual({
       action: "comment",
       id: "cave-open",
@@ -416,10 +402,10 @@ test.describe("familiar work queue (PR control tower)", () => {
       projectRoot: QUEUE_PROJECT.root,
     });
     // …and Close unlocks (optimistic, without waiting for a re-read).
-    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
+    await expect(cleanup.getByRole("button", { name: "Close issue" })).toBeEnabled();
   });
 
-  test("a delayed A handoff cannot unlock an equal bead id after switching to B", async ({ page }) => {
+  test("a delayed A handoff cannot unlock an equal issue id after switching to B", async ({ page }) => {
     let selectedProject = QUEUE_PROJECT;
     let releaseComment!: () => void;
     const commentReleased = new Promise<void>((resolve) => { releaseComment = resolve; });
@@ -429,7 +415,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     await page.route("**/api/queue/readiness", (route) =>
       route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } }),
     );
-    await page.route("**/api/beads", async (route) => {
+    await page.route("**/api/queue/issues", async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       const body = route.request().postDataJSON();
       if (body.action === "comment") {
@@ -450,13 +436,13 @@ test.describe("familiar work queue (PR control tower)", () => {
     selectedProject = QUEUE_PROJECT_B;
     await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
     await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("projectRoot") === QUEUE_PROJECT_B.root)).toBe(true);
-    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+    await expect(cleanup.getByRole("button", { name: "Close issue" })).toBeDisabled();
 
     releaseComment();
-    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+    await expect(cleanup.getByRole("button", { name: "Close issue" })).toBeDisabled();
   });
 
-  test("PR and Asana bead creation use B after a Queue project switch", async ({ page }) => {
+  test("PR and Asana issue creation use B after a Queue project switch", async ({ page }) => {
     let selectedProject = QUEUE_PROJECT;
     const createBodies: Array<{ projectRoot?: string; labels?: string[] }> = [];
     const readUrls: string[] = [];
@@ -473,7 +459,7 @@ test.describe("familiar work queue (PR control tower)", () => {
         },
       }),
     );
-    await page.route("**/api/beads", async (route) => {
+    await page.route("**/api/queue/issues", async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       const body = route.request().postDataJSON();
       if (body.action === "create") {
@@ -490,11 +476,11 @@ test.describe("familiar work queue (PR control tower)", () => {
 
     const fwq = page.locator(".fwq");
     const attention = fwq.getByRole("region", { name: "PRs needing attention" });
-    await attention.locator(".fwq-attention-item", { hasText: "#103" }).getByRole("button", { name: "File bead" }).click();
+    await attention.locator(".fwq-attention-item", { hasText: "#103" }).getByRole("button", { name: "File issue" }).click();
     await expect.poll(() => createBodies.length).toBe(1);
     const asana = fwq.getByRole("region", { name: "Asana tasks assigned to you" });
     await expect(asana).toBeVisible();
-    await asana.getByRole("button", { name: "File bead" }).click();
+    await asana.getByRole("button", { name: "File issue" }).click();
     await expect.poll(() => createBodies.length).toBe(2);
     expect(createBodies.map((body) => body.projectRoot)).toEqual([QUEUE_PROJECT_B.root, QUEUE_PROJECT_B.root]);
     expect(createBodies.map((body) => body.labels)).toEqual([["from-pr"], ["asana"]]);
@@ -505,11 +491,11 @@ test.describe("familiar work queue (PR control tower)", () => {
     const strip = page.locator(".fwq").getByRole("region", { name: "PRs needing attention" });
     await expect(strip).toBeVisible();
 
-    // #101 is 40h old (stale, linked); #103 has no bead (unlinked, fresh).
+    // #101 is 40h old (stale, linked); #103 has no issue (unlinked, fresh).
     const stale = strip.locator(".fwq-attention-item", { hasText: "#101" });
     await expect(stale.getByText("stale", { exact: true })).toBeVisible();
     const unlinked = strip.locator(".fwq-attention-item", { hasText: "#103" });
-    await expect(unlinked.getByText("no bead", { exact: true })).toBeVisible();
+    await expect(unlinked.getByText("no issue", { exact: true })).toBeVisible();
 
     // A clean, linked, fresh PR (#102) is NOT flagged.
     await expect(strip.locator(".fwq-attention-item", { hasText: "#102" })).toHaveCount(0);
@@ -517,7 +503,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(stale.getByRole("button", { name: "Open PR" })).toBeVisible();
   });
 
-  test("beads adapter failure degrades to PRs-only with a visible notice", async ({ page }) => {
+  test("issues adapter failure degrades to PRs-only with a visible notice", async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
       window.localStorage.setItem("cave:active-familiar", "kitty");
@@ -526,9 +512,9 @@ test.describe("familiar work queue (PR control tower)", () => {
       r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
     );
     await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } }));
-    // The beads adapter is down (bd missing / not a beads workspace).
-    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "bd unavailable" } }));
+    await page.route(/\/api\/queue\/prs/, (r) => r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } }));
+    // The issues adapter is down (gh missing or signed out).
+    await page.route(/\/api\/queue\/issues\?/, (r) => r.fulfill({ status: 503, json: { ok: false, error: "gh unavailable" } }));
 
     await page.goto("/");
     await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
@@ -541,11 +527,11 @@ test.describe("familiar work queue (PR control tower)", () => {
 
     const fwq = page.locator(".fwq");
     // The degradation is SAID, not silent.
-    await expect(fwq.getByText(/Beads adapter unavailable/)).toBeVisible();
+    await expect(fwq.getByText(/GitHub issues unavailable/)).toBeVisible();
     // PR lanes still render from the bridge…
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Needs review" })).toBeVisible();
-    // …but the bead-driven lanes are gone (no ready set to derive them from).
+    // …but the issue-driven lanes are gone (no ready set to derive them from).
     await expect(fwq.getByRole("region", { name: "No open PR" })).toHaveCount(0);
     await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toHaveCount(0);
   });
@@ -562,11 +548,11 @@ test.describe("familiar work queue (PR control tower)", () => {
       r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
     );
     await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-    await page.route(/\/api\/beads\/prs/, (r) => {
+    await page.route(/\/api\/queue\/prs/, (r) => {
       if (failPrs) return r.fulfill({ status: 502, json: { ok: false, error: "gh exploded" } });
       return r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
     });
-    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+    await page.route(/\/api\/queue\/issues\?/, (r) => r.fulfill({ json: { ok: true, data: READY_ISSUES } }));
 
     await page.goto("/");
     await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
@@ -590,9 +576,9 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
   });
 
-  test("PR bridge down at first load degrades to beads-only instead of a dead surface", async ({ page }) => {
+  test("PR bridge down at first load degrades to issues-only instead of a dead surface", async ({ page }) => {
     // gh missing/unauthenticated on a fresh open: the queue must still load
-    // from the beads adapter (user-reported "ensure it loads").
+    // from the issues adapter (user-reported "ensure it loads").
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
       window.localStorage.setItem("cave:active-familiar", "kitty");
@@ -601,8 +587,8 @@ test.describe("familiar work queue (PR control tower)", () => {
       r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
     );
     await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "gh unavailable" } }));
-    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+    await page.route(/\/api\/queue\/prs/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "gh unavailable" } }));
+    await page.route(/\/api\/queue\/issues\?/, (r) => r.fulfill({ json: { ok: true, data: READY_ISSUES } }));
 
     await page.goto("/");
     await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
@@ -617,7 +603,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     // The degradation is SAID, not silent — and it is not the dead retry state.
     await expect(fwq.getByText(/GitHub PR bridge unavailable/)).toBeVisible();
     await expect(fwq.getByText("Couldn't load the queue")).toHaveCount(0);
-    // Bead-driven lane renders from the ready set alone.
+    // Issue-driven lane renders from the ready set alone.
     await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
     // PR-truth lanes are honestly absent.
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
@@ -633,9 +619,9 @@ test.describe("familiar work queue (PR control tower)", () => {
       r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
     );
     await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-    const freshPr = { number: 201, title: "All good", url: "https://gh/pull/201", lane: "ready-to-merge", beadIds: ["cave-aa1"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-aa1", updatedAt: new Date().toISOString() };
-    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: [freshPr], merged: [] } }));
-    await page.route(/\/api\/beads\?/, (r) =>
+    const freshPr = { number: 201, title: "All good", url: "https://gh/pull/201", lane: "ready-to-merge", issueIds: ["cave-aa1"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-aa1", updatedAt: new Date().toISOString() };
+    await page.route(/\/api\/queue\/prs/, (r) => r.fulfill({ json: { ok: true, open: [freshPr], merged: [] } }));
+    await page.route(/\/api\/queue\/issues\?/, (r) =>
       r.fulfill({ json: { ok: true, data: [{ id: "cave-aa1", title: "T", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty"] }] } }),
     );
     await page.goto("/");

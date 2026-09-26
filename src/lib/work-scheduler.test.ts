@@ -10,7 +10,7 @@
 //     and is not a placeholder;
 //   - a lane reports no state at all when the roster was not read;
 //   - a gate card names a real unresolved dependency and states why one of
-//     them is primary, because beads do not designate one;
+//     them is primary, because issues do not designate one;
 //   - an undo that is offered actually reverses the action when fired.
 
 import assert from "node:assert/strict";
@@ -23,7 +23,7 @@ import {
   SCHEDULER_STALE_FACTOR,
   UNASSIGNED_LANE_KEY,
   appendSchedulerLog,
-  beadOwnerKey,
+  issueOwnerKey,
   buildGateCards,
   buildSchedulerLanes,
   buildSchedulerQueue,
@@ -35,8 +35,8 @@ import {
   reassignLogEntry,
   schedulerLogEntryIsCoherent,
   undoRequestBody,
-  type BlockedBead,
-  type SchedulerBead,
+  type BlockedIssue,
+  type SchedulerIssue,
   type SchedulerLogEntry,
 } from "@/lib/work-scheduler.ts";
 import type { Familiar, SessionRow } from "@/lib/types.ts";
@@ -50,7 +50,7 @@ const NOVA = familiar("nova");
 const ORION = familiar("orion");
 const FAMILIARS = [NOVA, ORION];
 
-const bead = (over: Partial<SchedulerBead> & { id: string }): SchedulerBead => ({
+const issue = (over: Partial<SchedulerIssue> & { id: string }): SchedulerIssue => ({
   title: `Task ${over.id}`,
   priority: 2,
   status: "open",
@@ -74,58 +74,58 @@ const session = (over: Partial<SessionRow> & { id: string }): SessionRow =>
 
 // ── the queue order is a pure function of the tracker ────────────────────────
 
-test("queue order is derived from the beads alone, so identical input always renders identically", () => {
-  const beads = [
-    bead({ id: "cave-c", priority: 2, updated_at: "2026-08-03T00:00:00.000Z" }),
-    bead({ id: "cave-a", priority: 0 }),
-    bead({ id: "cave-b", priority: 2, updated_at: "2026-08-01T00:00:00.000Z" }),
+test("queue order is derived from the issues alone, so identical input always renders identically", () => {
+  const issues = [
+    issue({ id: "cave-c", priority: 2, updated_at: "2026-08-03T00:00:00.000Z" }),
+    issue({ id: "cave-a", priority: 0 }),
+    issue({ id: "cave-b", priority: 2, updated_at: "2026-08-01T00:00:00.000Z" }),
   ];
 
-  const first = buildSchedulerQueue(beads, { familiars: FAMILIARS });
+  const first = buildSchedulerQueue(issues, { familiars: FAMILIARS });
   // Reversing the INPUT array must not change the OUTPUT: nothing about the
   // caller's ordering, or about any earlier call, may leak into the result.
-  const second = buildSchedulerQueue([...beads].reverse(), { familiars: FAMILIARS });
+  const second = buildSchedulerQueue([...issues].reverse(), { familiars: FAMILIARS });
 
   assert.deepEqual(
-    first.map((row) => row.bead.id),
+    first.map((row) => row.issue.id),
     ["cave-a", "cave-b", "cave-c"],
     "priority band first, then oldest update",
   );
-  assert.deepEqual(first.map((r) => r.bead.id), second.map((r) => r.bead.id));
+  assert.deepEqual(first.map((r) => r.issue.id), second.map((r) => r.issue.id));
   assert.deepEqual(first.map((r) => r.position), [1, 2, 3]);
 });
 
 test("a reorder survives a reload: the ONLY way to move a row is a priority band the tracker stores", () => {
   // The user moves cave-c to the top. There is no reorder API to call — the
-  // surface writes `bd update --priority`, so the move is a change to the
-  // bead. Simulate the round trip: mutate the tracker, refetch, rebuild.
-  const before = [bead({ id: "cave-a", priority: 0 }), bead({ id: "cave-c", priority: 3 })];
+  // surface writes a `P<n>` label, so the move is a change to the
+  // issue. Simulate the round trip: mutate the tracker, refetch, rebuild.
+  const before = [issue({ id: "cave-a", priority: 0 }), issue({ id: "cave-c", priority: 3 })];
   assert.deepEqual(
-    buildSchedulerQueue(before, { familiars: FAMILIARS }).map((r) => r.bead.id),
+    buildSchedulerQueue(before, { familiars: FAMILIARS }).map((r) => r.issue.id),
     ["cave-a", "cave-c"],
   );
 
   const entry = priorityLogEntry({
     id: "log-1",
     at: 0,
-    beadId: "cave-c",
-    beadTitle: "Task cave-c",
+    issueId: "cave-c",
+    issueTitle: "Task cave-c",
     previousPriority: 3,
     priority: 0,
   });
   assert.equal(entry.undo?.priority, 3, "the entry records the value needed to reverse it");
 
   // What the tracker looks like on the next poll, after that write landed.
-  const afterReload = [bead({ id: "cave-a", priority: 0 }), bead({ id: "cave-c", priority: 0 })];
+  const afterReload = [issue({ id: "cave-a", priority: 0 }), issue({ id: "cave-c", priority: 0 })];
   assert.deepEqual(
-    buildSchedulerQueue(afterReload, { familiars: FAMILIARS }).map((r) => r.bead.id),
+    buildSchedulerQueue(afterReload, { familiars: FAMILIARS }).map((r) => r.issue.id),
     ["cave-a", "cave-c"],
     "same band, so the tie-break decides — and it is reproducible",
   );
 
-  const promoted = [bead({ id: "cave-a", priority: 1 }), bead({ id: "cave-c", priority: 0 })];
+  const promoted = [issue({ id: "cave-a", priority: 1 }), issue({ id: "cave-c", priority: 0 })];
   assert.deepEqual(
-    buildSchedulerQueue(promoted, { familiars: FAMILIARS }).map((r) => r.bead.id),
+    buildSchedulerQueue(promoted, { familiars: FAMILIARS }).map((r) => r.issue.id),
     ["cave-c", "cave-a"],
     "a stored band change reorders the queue on the very next read",
   );
@@ -139,23 +139,23 @@ test("priority bands are bd's five integer bands, not a four-band invention", ()
   assert.equal(priorityBand(null).label, "Unranked");
 });
 
-test("a bead assigned to a non-familiar keeps that name instead of reading as unowned", () => {
+test("an issue assigned to a non-familiar keeps that name instead of reading as unowned", () => {
   const rows = buildSchedulerQueue(
     [
-      bead({ id: "cave-1", assignee: "nova" }),
-      bead({ id: "cave-2", assignee: "Timothy Wayne Gregg" }),
-      bead({ id: "cave-3" }),
-      bead({ id: "cave-4", labels: ["familiar:orion"], assignee: "someone-else" }),
+      issue({ id: "cave-1", assignee: "nova" }),
+      issue({ id: "cave-2", assignee: "Timothy Wayne Gregg" }),
+      issue({ id: "cave-3" }),
+      issue({ id: "cave-4", labels: ["familiar:orion"], assignee: "someone-else" }),
     ],
     { familiars: FAMILIARS },
   );
-  const byId = new Map(rows.map((row) => [row.bead.id, row]));
+  const byId = new Map(rows.map((row) => [row.issue.id, row]));
   assert.equal(byId.get("cave-1")?.familiarId, "nova");
   assert.equal(byId.get("cave-2")?.familiarId, null);
   assert.equal(byId.get("cave-2")?.familiarLabel, "Timothy Wayne Gregg");
   assert.equal(byId.get("cave-3")?.familiarLabel, "Unassigned");
   assert.equal(byId.get("cave-4")?.familiarId, "orion", "an explicit familiar: label wins over the assignee");
-  assert.equal(beadOwnerKey(bead({ id: "x" })), null);
+  assert.equal(issueOwnerKey(issue({ id: "x" })), null);
 });
 
 // ── lane figures come from the same rows the table shows ─────────────────────
@@ -163,10 +163,10 @@ test("a bead assigned to a non-familiar keeps that name instead of reading as un
 test("every lane figure equals a value derived from the rendered rows", () => {
   const rows = buildSchedulerQueue(
     [
-      bead({ id: "cave-1", assignee: "nova" }),
-      bead({ id: "cave-2", assignee: "nova" }),
-      bead({ id: "cave-3", assignee: "orion" }),
-      bead({ id: "cave-4" }),
+      issue({ id: "cave-1", assignee: "nova" }),
+      issue({ id: "cave-2", assignee: "nova" }),
+      issue({ id: "cave-3", assignee: "orion" }),
+      issue({ id: "cave-4" }),
     ],
     { familiars: FAMILIARS },
   );
@@ -194,7 +194,7 @@ test("share-of-queue tracks the distribution rather than sitting at a placeholde
     sessions: [],
     sessionsKnown: true,
     rows: buildSchedulerQueue(
-      [bead({ id: "a", assignee: "nova" }), bead({ id: "b", assignee: "orion" })],
+      [issue({ id: "a", assignee: "nova" }), issue({ id: "b", assignee: "orion" })],
       { familiars: FAMILIARS },
     ),
   });
@@ -203,7 +203,7 @@ test("share-of-queue tracks the distribution rather than sitting at a placeholde
     sessions: [],
     sessionsKnown: true,
     rows: buildSchedulerQueue(
-      [bead({ id: "a", assignee: "nova" }), bead({ id: "b", assignee: "nova" }), bead({ id: "c", assignee: "nova" })],
+      [issue({ id: "a", assignee: "nova" }), issue({ id: "b", assignee: "nova" }), issue({ id: "c", assignee: "nova" })],
       { familiars: FAMILIARS },
     ),
   });
@@ -222,7 +222,7 @@ test("an empty queue produces zero shares, never NaN", () => {
 });
 
 test("a lane reports NO state when the session roster was not read", () => {
-  const rows = buildSchedulerQueue([bead({ id: "cave-1", assignee: "nova" })], { familiars: FAMILIARS });
+  const rows = buildSchedulerQueue([issue({ id: "cave-1", assignee: "nova" })], { familiars: FAMILIARS });
   const unknown = buildSchedulerLanes({ familiars: FAMILIARS, sessions: [], sessionsKnown: false, rows });
   for (const lane of unknown) {
     assert.equal(lane.presence, null, "an unread roster must not become 'idle'");
@@ -231,7 +231,7 @@ test("a lane reports NO state when the session roster was not read", () => {
 });
 
 test("a lane's state and note come from that familiar's own live session", () => {
-  const rows = buildSchedulerQueue([bead({ id: "cave-1", assignee: "nova" })], { familiars: FAMILIARS });
+  const rows = buildSchedulerQueue([issue({ id: "cave-1", assignee: "nova" })], { familiars: FAMILIARS });
   const lanes = buildSchedulerLanes({
     familiars: FAMILIARS,
     sessions: [
@@ -269,7 +269,7 @@ test("a lane whose familiar awaits a human reads as needing a reply, not as focu
 
 // ── gate cards ───────────────────────────────────────────────────────────────
 
-const blockedBead = (over: Partial<BlockedBead> & { id: string }): BlockedBead => ({
+const blockedIssue = (over: Partial<BlockedIssue> & { id: string }): BlockedIssue => ({
   title: `Blocked ${over.id}`,
   priority: 2,
   status: "blocked",
@@ -278,8 +278,8 @@ const blockedBead = (over: Partial<BlockedBead> & { id: string }): BlockedBead =
 
 test("a gate card names its unresolved dependencies from real blocker records", () => {
   const [card] = buildGateCards(
-    [blockedBead({ id: "cave-top", blocked_by: ["cave-dep"] })],
-    [bead({ id: "cave-dep", title: "Provision the signing key", status: "open", priority: 1 })],
+    [blockedIssue({ id: "cave-top", blocked_by: ["cave-dep"] })],
+    [issue({ id: "cave-dep", title: "Provision the signing key", status: "open", priority: 1 })],
   );
   assert.equal(card.blockers.length, 1);
   assert.equal(card.blockers[0].id, "cave-dep");
@@ -288,39 +288,39 @@ test("a gate card names its unresolved dependencies from real blocker records", 
   assert.equal(card.unnamed, 0);
   assert.equal(card.primary?.id, "cave-dep");
   assert.equal(card.primaryBasis, "sole-blocker");
-  assert.equal(card.route?.beadId, "cave-dep");
+  assert.equal(card.route?.issueId, "cave-dep");
   assert.match(card.route?.label ?? "", /^Open cave-dep$/, "the only action is to go to the blocker");
 });
 
 test("a blocker the join could not name is counted, not invented", () => {
-  const [card] = buildGateCards([blockedBead({ id: "cave-top", blocked_by: ["cave-ghost"] })], []);
+  const [card] = buildGateCards([blockedIssue({ id: "cave-top", blocked_by: ["cave-ghost"] })], []);
   assert.equal(card.blockers[0].title, null);
   assert.equal(card.unnamed, 1);
   assert.equal(card.primary?.id, "cave-ghost", "an unnamed blocker is still a real edge and still routable");
 });
 
-test("primary blocker is derived and says so, because beads do not designate one", () => {
+test("primary blocker is derived and says so, because issues do not designate one", () => {
   const [card] = buildGateCards(
-    [blockedBead({ id: "cave-top", blocked_by: ["cave-x", "cave-y"] })],
+    [blockedIssue({ id: "cave-top", blocked_by: ["cave-x", "cave-y"] })],
     [
-      bead({ id: "cave-x", title: "Low", priority: 3 }),
-      bead({ id: "cave-y", title: "Urgent", priority: 0 }),
+      issue({ id: "cave-x", title: "Low", priority: 3 }),
+      issue({ id: "cave-y", title: "Urgent", priority: 0 }),
     ],
   );
   assert.equal(card.primary?.id, "cave-y", "highest priority among the actionable blockers");
   assert.equal(card.primaryBasis, "highest-priority-actionable");
-  assert.match(gatePrimaryBasisText(card.primaryBasis!), /Beads record blockers, not a primary/);
+  assert.match(gatePrimaryBasisText(card.primaryBasis!), /Issues record blockers, not a primary/);
 });
 
 test("a blocker that is itself blocked yields to one that can actually be worked", () => {
   const cards = buildGateCards(
     [
-      blockedBead({ id: "cave-top", blocked_by: ["cave-x", "cave-y"] }),
-      blockedBead({ id: "cave-x", blocked_by: ["cave-deep"] }),
+      blockedIssue({ id: "cave-top", blocked_by: ["cave-x", "cave-y"] }),
+      blockedIssue({ id: "cave-x", blocked_by: ["cave-deep"] }),
     ],
-    [bead({ id: "cave-x", title: "Deeper", priority: 0 }), bead({ id: "cave-y", title: "Workable", priority: 3 })],
+    [issue({ id: "cave-x", title: "Deeper", priority: 0 }), issue({ id: "cave-y", title: "Workable", priority: 3 })],
   );
-  const top = cards.find((card) => card.bead.id === "cave-top")!;
+  const top = cards.find((card) => card.issue.id === "cave-top")!;
   assert.equal(top.primary?.id, "cave-y", "cave-x outranks on priority but is itself blocked");
   assert.equal(top.primaryBasis, "only-actionable");
   assert.equal(top.blockers.find((b) => b.id === "cave-x")?.itselfBlocked, true);
@@ -329,20 +329,20 @@ test("a blocker that is itself blocked yields to one that can actually be worked
 test("when every blocker is itself blocked the card says the chain runs deeper", () => {
   const cards = buildGateCards(
     [
-      blockedBead({ id: "cave-top", blocked_by: ["cave-x"] }),
-      blockedBead({ id: "cave-x", blocked_by: ["cave-deep"] }),
+      blockedIssue({ id: "cave-top", blocked_by: ["cave-x"] }),
+      blockedIssue({ id: "cave-x", blocked_by: ["cave-deep"] }),
     ],
-    [bead({ id: "cave-x", title: "Deeper" })],
+    [issue({ id: "cave-x", title: "Deeper" })],
   );
-  const top = cards.find((card) => card.bead.id === "cave-top")!;
+  const top = cards.find((card) => card.issue.id === "cave-top")!;
   assert.equal(top.primaryBasis, "none-actionable");
   assert.match(gatePrimaryBasisText("none-actionable"), /chain runs deeper/);
 });
 
 test("a gate card offers no approval — there is no approve backend to call", () => {
-  const [card] = buildGateCards([blockedBead({ id: "cave-top", blocked_by: ["cave-dep"] })], []);
-  assert.deepEqual(Object.keys(card).sort(), ["bead", "blockers", "primary", "primaryBasis", "route", "unnamed"]);
-  assert.equal(card.route?.beadId, "cave-dep");
+  const [card] = buildGateCards([blockedIssue({ id: "cave-top", blocked_by: ["cave-dep"] })], []);
+  assert.deepEqual(Object.keys(card).sort(), ["blockers", "issue", "primary", "primaryBasis", "route", "unnamed"]);
+  assert.equal(card.route?.issueId, "cave-dep");
 });
 
 // ── scheduler state is derived, never chosen ─────────────────────────────────
@@ -407,7 +407,7 @@ function fakeTracker(initial: Record<string, number>) {
       assert.equal(body.action, "priority", "the only mutation an undo may send");
       const id = body.id as string;
       const priority = body.priority as number;
-      assert.ok(Number.isInteger(priority) && priority >= 0 && priority <= 4, "priority must be a real bd band");
+      assert.ok(Number.isInteger(priority) && priority >= 0 && priority <= 4, "priority must be a real P0-P4 band");
       state[id] = priority;
     },
   };
@@ -423,8 +423,8 @@ test("an undo that is offered actually reverses the action when fired", () => {
   const entry = priorityLogEntry({
     id: "log-1",
     at: NOW,
-    beadId: "cave-1",
-    beadTitle: "Task",
+    issueId: "cave-1",
+    issueTitle: "Task",
     previousPriority: 3,
     priority: 0,
   });
@@ -436,10 +436,10 @@ test("an undo that is offered actually reverses the action when fired", () => {
 });
 
 test("reassign is recorded but never offers an undo, and says why", () => {
-  const entry = reassignLogEntry({ id: "log-2", at: NOW, beadId: "cave-1", beadTitle: "Task", toLabel: "Nova" });
+  const entry = reassignLogEntry({ id: "log-2", at: NOW, issueId: "cave-1", issueTitle: "Task", toLabel: "Nova" });
   assert.equal(entry.undo, null);
   assert.equal(entry.irreversible, REASSIGN_IRREVERSIBLE);
-  assert.match(entry.irreversible, /previous assignee and status/);
+  assert.match(entry.irreversible, /previous assignees and familiar label/);
   assert.ok(schedulerLogEntryIsCoherent(entry));
 });
 
@@ -447,9 +447,9 @@ test("a priority change with no observed previous band offers no undo, and says 
   const entry = priorityLogEntry({
     id: "log-3",
     at: NOW,
-    beadId: "cave-1",
-    beadTitle: "Task",
-    previousPriority: null,
+    issueId: "cave-1",
+    issueTitle: "Task",
+    previousPriority: undefined,
     priority: 1,
   });
   assert.equal(entry.undo, null);
@@ -457,16 +457,30 @@ test("a priority change with no observed previous band offers no undo, and says 
   assert.ok(schedulerLogEntryIsCoherent(entry));
 });
 
+test("a priority change from Unranked offers an undo that clears the band again", () => {
+  const entry = priorityLogEntry({
+    id: "log-4",
+    at: NOW,
+    issueId: "#12",
+    issueTitle: "Task",
+    previousPriority: null,
+    priority: 1,
+  });
+  assert.deepEqual(entry.undo, { action: "priority", id: "#12", priority: null });
+  assert.equal(entry.summary, "Priority Unranked → High");
+  assert.ok(schedulerLogEntryIsCoherent(entry));
+});
+
 test("every log entry the model can produce offers a firing undo or states why not", () => {
   const entries: SchedulerLogEntry[] = [
-    reassignLogEntry({ id: "a", at: NOW, beadId: "b", beadTitle: "t", toLabel: "Nova" }),
+    reassignLogEntry({ id: "a", at: NOW, issueId: "b", issueTitle: "t", toLabel: "Nova" }),
     ...PRIORITY_BANDS.flatMap((band) =>
-      [null, ...PRIORITY_BANDS.map((p) => p.value)].map((previous) =>
+      [undefined, null, ...PRIORITY_BANDS.map((p) => p.value)].map((previous) =>
         priorityLogEntry({
           id: `p-${band.value}-${previous}`,
           at: NOW,
-          beadId: "b",
-          beadTitle: "t",
+          issueId: "b",
+          issueTitle: "t",
           previousPriority: previous,
           priority: band.value,
         }),
@@ -476,8 +490,8 @@ test("every log entry the model can produce offers a firing undo or states why n
   for (const entry of entries) {
     assert.ok(schedulerLogEntryIsCoherent(entry), `${entry.id} must offer an undo XOR a reason`);
     if (entry.undo) {
-      assert.equal(entry.undo.id, entry.beadId);
-      assert.ok(Number.isInteger(entry.undo.priority));
+      assert.equal(entry.undo.id, entry.issueId);
+      assert.ok(entry.undo.priority === null || Number.isInteger(entry.undo.priority));
     }
   }
 });
@@ -486,8 +500,8 @@ test("an undone entry stops offering the undo it already fired", () => {
   const entry = priorityLogEntry({
     id: "log-1",
     at: NOW,
-    beadId: "cave-1",
-    beadTitle: "Task",
+    issueId: "cave-1",
+    issueTitle: "Task",
     previousPriority: 3,
     priority: 0,
   });
@@ -502,7 +516,7 @@ test("the history rail is newest-first and bounded", () => {
   for (let i = 0; i < SCHEDULER_LOG_LIMIT + 5; i += 1) {
     log = appendSchedulerLog(
       log,
-      reassignLogEntry({ id: `e-${i}`, at: NOW + i, beadId: "b", beadTitle: "t", toLabel: "Nova" }),
+      reassignLogEntry({ id: `e-${i}`, at: NOW + i, issueId: "b", issueTitle: "t", toLabel: "Nova" }),
     );
   }
   assert.equal(log.length, SCHEDULER_LOG_LIMIT);

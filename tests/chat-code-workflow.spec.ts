@@ -251,13 +251,12 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
         readiness: {
           ok: true,
           message: "Fixture project is ready.",
-          canGenerate: false,
           project: { id: "alpha", name: "alpha", root: PROJECT_ROOT },
         },
       },
     });
   });
-  await page.route(/\/api\/beads(?:\?.*)?$/, (route) => {
+  await page.route(/\/api\/queue\/issues(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
     const url = new URL(route.request().url());
     expect(url.searchParams.get("mode")).toBe("ready");

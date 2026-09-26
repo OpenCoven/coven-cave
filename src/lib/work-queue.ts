@@ -1,59 +1,39 @@
 // Familiar Work Queue model (cave-hlv.4) — the pure join that fuses ready
-// beads with the PR bridge's classified open PRs into a per-familiar,
+// GitHub issues with the PR bridge's classified open PRs into a per-familiar,
 // per-surface control tower. All PR truth comes from the bridge summaries
-// (src/lib/beads-pr-management.ts); this module only groups and labels — it
+// (src/lib/pr-management.ts); this module only groups and labels — it
 // never re-derives lane/check/review state itself.
-import { isStalePr } from "./beads-pr-patrol.ts";
+import { isStalePr } from "./pr-management.ts";
 import { resolveQueueLane } from "./stage-model.ts";
-import type { PullRequestSummary } from "./beads-pr-management.ts";
+import type { PullRequestSummary } from "./pr-management.ts";
 
-/** Subset of a `bd ready --json` row the queue reads. */
-export type ReadyBead = {
+/** Subset of a ready issue (`GET /api/queue/issues?mode=ready`) the queue reads. */
+export type ReadyIssue = {
   id: string;
   title: string;
-  priority: number;
+  /** 0 (Critical) … 4 (Backlog) from a `P<n>` label; null when unranked. */
+  priority: number | null;
   status: string;
   assignee?: string | null;
   issue_type?: string | null;
   labels?: string[] | null;
   updated_at?: string | null;
-  /** Number of comments on the bead (`bd ready --json` includes this). Used as
-   *  the verification-evidence signal: a recorded handoff/verification comment
-   *  must exist before the queue exposes Close (cave-hlv.2). */
+  /** Number of comments on the issue. Used as the verification-evidence
+   *  signal: a recorded handoff/verification comment must exist before the
+   *  queue exposes Close (cave-hlv.2). */
   comment_count?: number | null;
-  /** External ticket/PR ref (`gh-123`, `gh:owner/repo#123`, or a URL). NOT in
-   *  `bd ready --json` output today — populated only when the caller enriches
-   *  rows from `bd show`/`bd list`; the description fallback below covers the
-   *  ready-only path (cave-p63a). */
-  external_ref?: string | null;
-  /** Bead body. `bd ready --json` DOES include this — the File-bead flow writes
-   *  the source PR URL here, so the ref join works from ready output alone. */
+  /** Issue body. The File-issue flow writes the source PR URL here, so the
+   *  PR join works from the ready list alone. */
   description?: string | null;
 };
 
-/**
- * True when a bead's external ref points at PR `prNumber`. Accepts the shapes
- * beads carry in the wild: `gh-123`, `#123` (also as the `gh:owner/repo#123`
- * suffix), and a PR URL ending in `/pull/123` (cave-p63a).
- */
-export function beadRefMatchesPr(ref: string | null | undefined, prNumber: number): boolean {
-  const trimmed = ref?.trim();
-  if (!trimmed) return false;
-  const n = String(prNumber);
-  if (trimmed === `gh-${n}`) return true;
-  // `#123` alone or as the tail of `gh:owner/repo#123` — the `#` anchors the
-  // whole number, so `#4123` never matches PR 123.
-  if (trimmed.endsWith(`#${n}`)) return true;
-  return new RegExp(`/pull/${n}/?$`).test(trimmed);
-}
-
 // Description fallback for the ref join, anchored to what the queue's
-// File-bead flow actually writes: the PR's own URL (repo-qualified), or the
+// File-issue flow actually writes: the PR's own URL (repo-qualified), or the
 // `Filed from unlinked PR #<n>` signature. A casual mention — "Follow-up to
-// PR #88", a foreign repo's /pull/88 URL — must NOT consume the bead as PR
+// PR #88", a foreign repo's /pull/88 URL — must NOT consume the issue as PR
 // 88's link (cave-opld; review of #3426). Digit-boundary-guarded so PR 123
 // never matches PR 1234's URL or token.
-function beadDescriptionMatchesPr(
+function issueDescriptionMatchesPr(
   description: string | null | undefined,
   pr: Pick<PullRequestSummary, "number" | "url">,
 ): boolean {
@@ -65,14 +45,13 @@ function beadDescriptionMatchesPr(
   );
 }
 
-// Prefer the explicit external_ref when it names the PR; otherwise fall back
-// to the File-bead description signature (ready output carries no external_ref).
-function beadMatchesPr(bead: ReadyBead, pr: Pick<PullRequestSummary, "number" | "url">): boolean {
-  return beadRefMatchesPr(bead.external_ref, pr.number) || beadDescriptionMatchesPr(bead.description, pr);
+// An issue filed from a PR carries that PR in its description.
+function issueMatchesPr(issue: ReadyIssue, pr: Pick<PullRequestSummary, "number" | "url">): boolean {
+  return issueDescriptionMatchesPr(issue.description, pr);
 }
 
 /**
- * True when a bead carries recorded verification evidence — i.e. at least one
+ * True when an issue carries recorded verification evidence — i.e. at least one
  * comment (a handoff/verification note). Deliberately NOT satisfied by `notes`
  * (frequently auto-populated planning text) or by a merged PR alone (green CI
  * is not a substitute for a recorded verification per the familiar PR
@@ -80,8 +59,8 @@ function beadMatchesPr(bead: ReadyBead, pr: Pick<PullRequestSummary, "number" | 
  * composer writes as a comment. Gates the Close affordance on the
  * post-merge-cleanup lane.
  */
-export function hasVerificationEvidence(bead: ReadyBead | undefined | null): boolean {
-  return (bead?.comment_count ?? 0) > 0;
+export function hasVerificationEvidence(issue: ReadyIssue | undefined | null): boolean {
+  return (issue?.comment_count ?? 0) > 0;
 }
 
 /** A recently-merged PR, reduced to what the cleanup lane needs. */
@@ -89,10 +68,10 @@ export type MergedPrRef = {
   number: number;
   title: string;
   url: string;
-  beadIds: string[];
+  issueIds: string[];
   mergedAt: string | null;
   /** Head branch, when the bridge captured it — lets the chat stage header
-   *  resolve a session branch's merged PR without a bead link. */
+   *  resolve a session branch's merged PR without an issue link. */
   headRefName?: string | null;
 };
 
@@ -116,7 +95,7 @@ export type WorkQueueItem = {
   /** surface:<y> label, or null. */
   surface: string | null;
   pr?: PullRequestSummary;
-  bead?: ReadyBead;
+  issue?: ReadyIssue;
   merged?: MergedPrRef;
   /** PR-backed items only: no activity within the stale window. */
   stale?: boolean;
@@ -137,7 +116,7 @@ export type FamiliarRollup = {
 
 /**
  * An open PR that needs housekeeping attention regardless of lane — the two
- * gaps the CLI patrol flags: no linked bead (invisible to the queue) and/or no
+ * gaps the CLI patrol flags: no linked issue (invisible to the queue) and/or no
  * activity within the stale window. A PR can be both.
  */
 export type AttentionItem = {
@@ -152,7 +131,7 @@ export type WorkQueue = {
   total: number;
   actionable: number;
   stale: number;
-  /** Open PRs mentioning no bead — invisible to the queue join. */
+  /** Open PRs mentioning no issue — invisible to the queue join. */
   unlinked: number[];
   /** Open PRs that are unlinked and/or stale, with the PR summary for display. */
   attention: AttentionItem[];
@@ -168,7 +147,7 @@ const LANE_TITLES: Record<WorkQueueLaneKey, string> = {
   "post-merge-cleanup": "Post-merge cleanup",
 };
 
-// Render/scan order: fix first, then land, then review, then the bead-driven
+// Render/scan order: fix first, then land, then review, then the issue-driven
 // lanes, then waiting last.
 const LANE_ORDER: WorkQueueLaneKey[] = [
   "checks-failing",
@@ -197,99 +176,99 @@ function labelValue(labels: string[] | null | undefined, prefix: string): string
   return null;
 }
 
-function familiarOf(bead: ReadyBead | undefined): string {
-  if (!bead) return "unassigned";
-  return labelValue(bead.labels, "familiar:") ?? (bead.assignee?.toLowerCase() || "unassigned");
+function familiarOf(issue: ReadyIssue | undefined): string {
+  if (!issue) return "unassigned";
+  return labelValue(issue.labels, "familiar:") ?? (issue.assignee?.toLowerCase() || "unassigned");
 }
 
-function surfaceOf(bead: ReadyBead | undefined): string | null {
-  return labelValue(bead?.labels, "surface:");
+function surfaceOf(issue: ReadyIssue | undefined): string | null {
+  return labelValue(issue?.labels, "surface:");
 }
 
 export function buildWorkQueue(
-  readyBeads: ReadyBead[],
+  readyIssues: ReadyIssue[],
   openPrs: PullRequestSummary[],
   mergedPrs: MergedPrRef[],
   opts: { nowMs: number; staleAfterHours?: number },
 ): WorkQueue {
   const staleAfterHours = opts.staleAfterHours ?? 24;
-  const beadById = new Map<string, ReadyBead>();
-  for (const bead of readyBeads) beadById.set(bead.id.toLowerCase(), bead);
+  const issueById = new Map<string, ReadyIssue>();
+  for (const issue of readyIssues) issueById.set(issue.id.toLowerCase(), issue);
 
   const items: WorkQueueItem[] = [];
   let staleCount = 0;
   const unlinked: number[] = [];
   const attention: AttentionItem[] = [];
-  const beadIdsWithOpenPr = new Set<string>();
+  const issueIdsWithOpenPr = new Set<string>();
 
-  // 1. Open PRs → their lane, joined to a ready bead when one is referenced.
+  // 1. Open PRs → their lane, joined to a ready issue when one is referenced.
   for (const pr of openPrs) {
-    let bead = pr.beadIds.map((id) => beadById.get(id)).find(Boolean);
-    // A PR mentioning no bead may still be claimed by one: a bead filed FROM
-    // the PR carries `gh-<n>`/URL in its external_ref or description
-    // (cave-p63a). That ref-join links the PR — familiar/surface/bead chip and
+    let issue = pr.issueIds.map((id) => issueById.get(id)).find(Boolean);
+    // A PR mentioning no issue may still be claimed by one: an issue filed FROM
+    // the PR carries the PR URL in its description
+    // (cave-p63a). That ref-join links the PR — familiar/surface/issue chip and
     // all — instead of leaving it flagged unlinked.
-    if (pr.beadIds.length === 0 && !bead) {
-      bead = readyBeads.find((b) => beadMatchesPr(b, pr));
+    if (pr.issueIds.length === 0 && !issue) {
+      issue = readyIssues.find((b) => issueMatchesPr(b, pr));
     }
-    const isUnlinked = pr.beadIds.length === 0 && !bead;
+    const isUnlinked = pr.issueIds.length === 0 && !issue;
     if (isUnlinked) unlinked.push(pr.number);
-    for (const id of pr.beadIds) beadIdsWithOpenPr.add(id);
-    if (bead) beadIdsWithOpenPr.add(bead.id.toLowerCase());
+    for (const id of pr.issueIds) issueIdsWithOpenPr.add(id);
+    if (issue) issueIdsWithOpenPr.add(issue.id.toLowerCase());
     const stale = isStalePr(pr, opts.nowMs, staleAfterHours);
     if (stale) staleCount += 1;
     if (isUnlinked || stale) attention.push({ pr, unlinked: isUnlinked, stale });
     items.push({
       key: `pr:${pr.number}`,
       lane: prLaneToQueueLane(pr.lane),
-      familiar: familiarOf(bead),
-      surface: surfaceOf(bead),
+      familiar: familiarOf(issue),
+      surface: surfaceOf(issue),
       pr,
-      bead,
+      issue,
       stale,
     });
   }
 
-  // 2. Recently-merged PRs whose bead is still open (present in the ready set)
-  //    → the merge landed but the bead wasn't closed. Truthful with the data
-  //    on hand; a claimed-but-unclosed bead that dropped out of `ready` won't
+  // 2. Recently-merged PRs whose issue is still open (present in the ready set)
+  //    → the merge landed but the issue wasn't closed. Truthful with the data
+  //    on hand; a claimed-but-unclosed issue that dropped out of `ready` won't
   //    appear here (documented limitation — worktree/branch cleanup stays CLI).
-  //    Runs before the no-open-PR pass so a bead awaiting cleanup is not ALSO
+  //    Runs before the no-open-PR pass so an issue awaiting cleanup is not ALSO
   //    listed as "needs a PR".
-  const beadIdsInCleanup = new Set<string>();
+  const issueIdsInCleanup = new Set<string>();
   for (const merged of mergedPrs) {
-    const bead = merged.beadIds.map((id) => beadById.get(id)).find(Boolean);
-    if (!bead) continue;
-    const beadId = bead.id.toLowerCase();
-    // A bead whose follow-up PR is still open is not ready to close — it
+    const issue = merged.issueIds.map((id) => issueById.get(id)).find(Boolean);
+    if (!issue) continue;
+    const issueId = issue.id.toLowerCase();
+    // An issue whose follow-up PR is still open is not ready to close — it
     // already appears in that PR's lane, and prompting Close while work is in
-    // flight would be premature. Likewise a bead landed across several merged
+    // flight would be premature. Likewise an issue landed across several merged
     // PRs is ONE cleanup, not competing Close prompts (first ref wins — `gh`
     // lists most-recently-merged first, so the freshest PR names the close).
-    if (beadIdsWithOpenPr.has(beadId) || beadIdsInCleanup.has(beadId)) continue;
-    beadIdsInCleanup.add(beadId);
+    if (issueIdsWithOpenPr.has(issueId) || issueIdsInCleanup.has(issueId)) continue;
+    issueIdsInCleanup.add(issueId);
     items.push({
       key: `merged:${merged.number}`,
       lane: "post-merge-cleanup",
-      familiar: familiarOf(bead),
-      surface: surfaceOf(bead),
+      familiar: familiarOf(issue),
+      surface: surfaceOf(issue),
       merged,
-      bead,
+      issue,
     });
   }
 
-  // 3. Ready beads with no PR (open or awaiting cleanup) referencing them →
+  // 3. Ready issues with no PR (open or awaiting cleanup) referencing them →
   //    work still waiting to ship.
-  for (const bead of readyBeads) {
-    const id = bead.id.toLowerCase();
-    if (beadIdsWithOpenPr.has(id) || beadIdsInCleanup.has(id)) continue;
-    if (bead.issue_type === "epic") continue; // epics are containers, not queue work
+  for (const issue of readyIssues) {
+    const id = issue.id.toLowerCase();
+    if (issueIdsWithOpenPr.has(id) || issueIdsInCleanup.has(id)) continue;
+    if (issue.issue_type === "epic") continue; // epics are containers, not queue work
     items.push({
-      key: `bead:${bead.id}`,
+      key: `issue:${issue.id}`,
       lane: "no-open-PR",
-      familiar: familiarOf(bead),
-      surface: surfaceOf(bead),
-      bead,
+      familiar: familiarOf(issue),
+      surface: surfaceOf(issue),
+      issue,
     });
   }
 
@@ -314,16 +293,16 @@ export function buildWorkQueue(
   };
 }
 
-// Stable, deterministic ordering within a lane: PRs by number; beads by
+// Stable, deterministic ordering within a lane: PRs by number; issues by
 // priority, oldest update, then id. The timestamp comes from the item data,
 // not the wall clock, so identical inputs remain reproducible.
 function itemSortKey(item: WorkQueueItem): string {
   if (item.pr) return `0:${String(item.pr.number).padStart(8, "0")}`;
   if (item.merged) return `0:${String(item.merged.number).padStart(8, "0")}`;
-  // Beads triage priority-first, then OLDEST update first so long-waiting
-  // work surfaces above fresh arrivals (cave-19jy). An undated bead can't
+  // Issues triage priority-first, then OLDEST update first so long-waiting
+  // work surfaces above fresh arrivals (cave-19jy). An undated issue can't
   // prove its age, so it sorts after dated peers of the same priority.
-  if (item.bead) return `1:${item.bead.priority}:${item.bead.updated_at || "9999"}:${item.bead.id}`;
+  if (item.issue) return `1:${item.issue.priority ?? 9}:${item.issue.updated_at || "9999"}:${item.issue.id}`;
   return `2:${item.key}`;
 }
 

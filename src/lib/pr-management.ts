@@ -34,7 +34,7 @@ export type PullRequestSummary = {
   title: string;
   url: string;
   lane: PrLane;
-  beadIds: string[];
+  issueIds: string[];
   checkStatus: CheckSummary;
   reviewDecision: string;
   mergeStateStatus: string;
@@ -42,7 +42,13 @@ export type PullRequestSummary = {
   updatedAt: string;
 };
 
-const BEAD_ID_RE = /\bcave-[a-z0-9]+(?:\.\d+)?\b/gi;
+// "Fixes #12", "closes: #12, #13", "Refs #12 and #14" — GitHub's closing
+// keywords plus the reference forms this repository's PRs use. A bare "#12"
+// is not a link: PR bodies mention unrelated issues and PRs all the time.
+const ISSUE_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|references|part of|towards?)\b[:\s]+((?:#\d+(?:\s*(?:,|and)\s*)?)+)/gi;
+const ISSUE_NUMBER_RE = /#(\d+)/g;
+// `fix/issue-12-short-slug`, `issue-12`, `feat/issue_12`.
+const ISSUE_BRANCH_RE = /(?:^|[/_-])issue[-_](\d+)(?=$|[/_-])/i;
 const CLEAN_MERGE_STATES = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 const BLOCKED_MERGE_STATES = new Set(["BEHIND", "BLOCKED", "DIRTY", "UNKNOWN"]);
 
@@ -76,27 +82,32 @@ export function classifyPullRequest(pr: GitHubPullRequestInput): PrLane {
   return "needs-review";
 }
 
-/** Bead ids mentioned in any text (lowercased, deduped, sorted). The ONE
- *  bead-id pattern — branch parsing (stage-model) and PR parsing share it so
- *  they cannot drift. */
-export function beadIdsInText(text: string): string[] {
+/** Issues a PR body or title links with a closing or reference keyword, as
+ *  `#<n>` (deduped, ascending). Branch parsing (stage-model) and PR parsing
+ *  share these patterns so they cannot drift. */
+export function issueRefsInText(text: string): string[] {
   const ids = new Set<string>();
-  for (const match of text.matchAll(BEAD_ID_RE)) ids.add(match[0].toLowerCase());
-  return [...ids].sort();
+  for (const match of text.matchAll(ISSUE_KEYWORD_RE)) {
+    for (const number of match[1].matchAll(ISSUE_NUMBER_RE)) ids.add(`#${Number(number[1])}`);
+  }
+  return [...ids].sort(compareIssueRefs);
 }
 
-export function extractBeadIds(pr: GitHubPullRequestInput): string[] {
-  const chunks = [
-    pr.title,
-    pr.body ?? "",
-    pr.headRefName ?? "",
-    ...(pr.labels ?? []).map((label) => (typeof label === "string" ? label : label.name ?? "")),
-  ];
-  const ids = new Set<string>();
-  for (const chunk of chunks) {
-    for (const id of beadIdsInText(chunk)) ids.add(id);
-  }
-  return [...ids].sort();
+/** The issue a branch is named for (`fix/issue-12-slug` → `#12`), if any. */
+export function issueRefInBranch(branch: string | null | undefined): string | null {
+  const match = branch ? ISSUE_BRANCH_RE.exec(branch) : null;
+  return match ? `#${Number(match[1])}` : null;
+}
+
+function compareIssueRefs(a: string, b: string): number {
+  return Number(a.slice(1)) - Number(b.slice(1));
+}
+
+export function extractIssueRefs(pr: GitHubPullRequestInput): string[] {
+  const ids = new Set<string>([...issueRefsInText(pr.title), ...issueRefsInText(pr.body ?? "")]);
+  const branch = issueRefInBranch(pr.headRefName);
+  if (branch) ids.add(branch);
+  return [...ids].sort(compareIssueRefs);
 }
 
 export function summarizePullRequest(pr: GitHubPullRequestInput): PullRequestSummary {
@@ -105,7 +116,7 @@ export function summarizePullRequest(pr: GitHubPullRequestInput): PullRequestSum
     title: pr.title,
     url: pr.url,
     lane: classifyPullRequest(pr),
-    beadIds: extractBeadIds(pr),
+    issueIds: extractIssueRefs(pr),
     checkStatus: pullRequestCheckStatus(pr),
     reviewDecision: (pr.reviewDecision ?? "UNKNOWN").toUpperCase(),
     mergeStateStatus: (pr.mergeStateStatus ?? "UNKNOWN").toUpperCase(),
@@ -123,4 +134,15 @@ export function prStateNote(summary: PullRequestSummary): string {
     summary.url,
     `updated=${summary.updatedAt}`,
   ].join("; ");
+}
+
+/** A PR with no activity for longer than `staleAfterHours` (unknown activity reads as stale). */
+export function isStalePr(
+  summary: PullRequestSummary,
+  nowMs: number,
+  staleAfterHours: number,
+): boolean {
+  const updated = Date.parse(summary.updatedAt);
+  if (!Number.isFinite(updated)) return true;
+  return nowMs - updated > staleAfterHours * 3_600_000;
 }

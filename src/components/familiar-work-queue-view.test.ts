@@ -1,10 +1,10 @@
 // @ts-nocheck
 // Familiar Work Queue view — source pins for the triage-at-scale affordances
-// (collapsible lanes, the visible cap, bead-row age stamps) AND the "Tasks list
+// (collapsible lanes, the visible cap, issue-row age stamps) AND the "Tasks list
 // redesign refresh" handoff (Queue.dc.html): the meta row, the All/Unassigned
 // scope segment, the segmented triage toolbar, the accent-rail rows, the inline
 // markdown note composer, and the forward-to-familiar menu. The pure lane model
-// is behaviorally tested in src/lib/beads-work-queue.test.ts.
+// is behaviorally tested in src/lib/work-queue.test.ts.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -28,7 +28,7 @@ assert.match(view, /DEFAULT_COLLAPSED: readonly WorkQueueLaneKey\[\] = \["waitin
 assert.match(view, /setCollapsedLanes\(readCollapsedLanes\(\)\);\s*\}, \[\]\)/, "storage hydrates after mount");
 assert.match(view, /writeCollapsedLanes\(next\)/, "toggles persist");
 
-// Long lanes mount a capped card list until asked — the N-bead perf fix.
+// Long lanes mount a capped card list until asked — the N-issue perf fix.
 assert.match(view, /const LANE_VISIBLE_CAP = 8/);
 assert.match(view, /lane\.items\.slice\(0, LANE_VISIBLE_CAP\)/);
 assert.match(view, /`Show all \$\{lane\.items\.length\}`/, "cap toggle names the hidden count");
@@ -51,30 +51,30 @@ assert.match(view, /aria-label="Filter by scope"/, "the scope segment is a label
 assert.match(view, /const scopeCounts = useMemo/, "the segment shows the whole-queue split");
 assert.match(css, /\.fwq-seg-btn\.is-active \{[\s\S]*?background: var\(--bg-elevated\)/, "the active segment fills");
 
-// Bead-only rows carry a truthful age stamp (PR rows already had one).
+// Issue-only rows carry a truthful age stamp (PR rows already had one).
 assert.match(
   view,
-  /\{isBeadOnly && item\.bead\?\.updated_at \? \(\s*<>\s*<span className="fwq-dot-sep"[\s\S]*?<span className="fwq-updated"/,
-  "bead rows show updated-relative time",
+  /\{isIssueOnly && item\.issue\?\.updated_at \? \(\s*<>\s*<span className="fwq-dot-sep"[\s\S]*?<span className="fwq-updated"/,
+  "issue rows show updated-relative time",
 );
 
 // P0/P1 read at a glance in a mixed lane (now the row's priority readout).
-assert.match(view, /fwq-pri-text--p\$\{Math\.min\(item\.bead\.priority, 3\)\}/);
+assert.match(view, /fwq-pri-text--p\$\{Math\.min\(item\.issue\.priority, 3\)\}/);
 assert.match(css, /\.fwq-pri-text--p0 \{ color: var\(--color-danger\); \}/, "P0 reads danger");
 assert.match(css, /\.fwq-pri-text--p1 \{ color: var\(--color-warning\); \}/, "P1 reads warning");
 
 // The accent rail is a finite enum → a fwq-row--rail-* class (colour stays in
-// CSS, not an inline style): priority for bead rows, lane state for PR rows.
+// CSS, not an inline style): priority for issue rows, lane state for PR rows.
 assert.match(view, /function railClass\(item: WorkQueueItem\): string/);
 assert.match(view, /className=\{`fwq-row fwq-row--rail-\$\{railClass\(item\)\}/, "each row picks its rail class");
 assert.match(css, /box-shadow: inset 3px 0 0 var\(--fwq-rail, transparent\)/, "the rail renders as an inset bar");
 assert.match(css, /\.fwq-row--rail-danger \{ --fwq-rail: var\(--color-danger\); \}/, "rail tones live in CSS");
 
 // ── Triage tools (cave-u2p1) ─────────────────────────────────────────────────
-// Search matches title, bead id, and PR number — all client-side.
+// Search matches title, issue id, and PR number — all client-side.
 assert.match(view, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/);
 assert.match(view, /onValueChange=\{setSearch\}/, "search is controlled");
-assert.match(view, /item\.bead\?\.id\.toLowerCase\(\)\.includes\(q\)/, "bead ids are searchable");
+assert.match(view, /item\.issue\?\.id\.toLowerCase\(\)\.includes\(q\)/, "issue ids are searchable");
 assert.match(view, /`#\$\{prNumber\}`\.includes\(q\)/, "PR numbers are searchable");
 // Priority bands + sort toggle.
 assert.match(view, /useState<"all" \| "p0" \| "p1" \| "p2plus">\("all"\)/);
@@ -89,10 +89,10 @@ assert.match(
   /setFamiliarFilter\(null\);\s*setScope\("all"\);\s*setSearch\(""\);\s*setPriorityFilter\("all"\);/,
 );
 
-// ── Bead inspector (cave-u2p1) ───────────────────────────────────────────────
-// Bead titles open a focus-trapped dialog over the existing show contract.
+// ── Issue inspector (cave-u2p1) ───────────────────────────────────────────────
+// Issue titles open a focus-trapped dialog over the existing show contract.
 assert.match(view, /className="fwq-row-name fwq-row-name--link focus-ring-inset"/);
-assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}&projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "drawer reads the selected project's bead");
+assert.match(view, /\/api\/queue\/issues\?mode=show&id=\$\{encodeURIComponent\(id\)\}&projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "drawer reads the selected project's issue");
 assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses the focus-trapped house dialog");
 assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
 assert.match(view, /import\("@\/lib\/clipboard"\)/, "copy-id uses the shared clipboard helper");
@@ -109,7 +109,7 @@ assert.match(view, /function applyMarkdown\(/, "the toolbar edits the selection"
 assert.match(view, /function renderMarkdown\(/, "preview renders markdown to inert HTML");
 assert.match(view, /const esc = \(s: string\) => s\.replace\(\/&\/g, "&amp;"\)/, "every user string is HTML-escaped first");
 assert.match(view, /dangerouslySetInnerHTML=\{\{ __html: renderMarkdown\(draft\) \}\}/, "preview pane mounts the rendered HTML");
-assert.match(view, /aria-label=\{`Handoff note for \$\{beadId\}`\}/, "the composer keeps its AT name");
+assert.match(view, /aria-label=\{`Handoff note for \$\{issueId\}`\}/, "the composer keeps its AT name");
 assert.match(view, /Save note/, "the composer commits with Save note");
 assert.match(css, /\.fwq-note-tab\.is-active \{/, "the active note tab has real styles");
 assert.match(css, /\.fwq-note-tool \{/, "the toolbar buttons have real styles");
@@ -118,40 +118,33 @@ assert.match(css, /\.fwq-note-tool \{/, "the toolbar buttons have real styles");
 assert.match(view, /if \(e\.key === "Escape"\) \{[\s\S]*?closeComposer\(\);/, "Escape keeps the draft");
 assert.match(view, /onClick=\{\(\) => closeComposer\(\{ clearDraft: true \}\)\}/, "Cancel clears the draft");
 
-// ── cave-p63a: File bead on unlinked attention rows ──────────────────────────
-// The strip's unlinked rows expose a one-click File bead; the parent owns the
-// fetch + announce + reload and threads it down as onFileBead.
-assert.match(view, /onFileBead\?: \(pr: PullRequestSummary\) => Promise<boolean>/, "strip takes the optional handler");
+// ── cave-p63a: File issue on unlinked attention rows ──────────────────────────
+// The strip's unlinked rows expose a one-click File issue; the parent owns the
+// fetch + announce + reload and threads it down as onFileIssue.
+assert.match(view, /onFileIssue\?: \(pr: PullRequestSummary\) => Promise<boolean>/, "strip takes the optional handler");
 assert.match(
   view,
-  /<AttentionStrip items=\{q\.attention\} onOpenUrl=\{onOpenUrl\} onFileBead=\{runFileBead\} \/>/,
-  "parent threads onFileBead into the strip",
+  /<AttentionStrip items=\{q\.attention\} onOpenUrl=\{onOpenUrl\} onFileIssue=\{runFileIssue\} \/>/,
+  "parent threads onFileIssue into the strip",
 );
-assert.match(view, /\{unlinked \? \(\s*<Button[^]*?File bead/, "only unlinked rows offer File bead");
-assert.match(view, /leadingIcon="ph:plus-circle"/, "File bead carries the plus-circle icon");
+assert.match(view, /\{unlinked \? \(\s*<Button[^]*?File issue/, "only unlinked rows offer File issue");
+assert.match(view, /leadingIcon="ph:plus-circle"/, "File issue carries the plus-circle icon");
 assert.match(view, /loading=\{filingPr === pr\.number\}/, "busy state pins to the clicked row");
 assert.match(
   view,
-  /disabled=\{!onFileBead \|\| filingPr != null\}/,
-  "all File bead buttons are disabled while a request is in flight",
+  /disabled=\{!onFileIssue \|\| filingPr != null\}/,
+  "all File issue buttons are disabled while a request is in flight",
 );
-// The create payload links the bead back to the PR twice over: externalRef
-// gh-<n> for the visibility layer, and the PR URL in the description for the
-// ready-output ref join (external_ref is absent from `bd ready --json`).
-assert.match(
-  view,
-  /action: "create",\s*surface: "shared",\s*title: pr\.title/,
-  "PR filing sets shared platform ownership and titles the bead after the PR",
-);
+// The create payload links the issue back to the PR through the PR URL in
+// its description, which the queue's ref join reads.
+assert.match(view, /action: "create",\s*title: pr\.title/, "PR filing titles the issue after the PR");
 assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \$\{pr\.url\}`/);
-assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
-assert.match(view, /`Filed \$\{beadId\} for PR #\$\{pr\.number\}\.`/, "success announces the new bead id");
+assert.match(view, /`Filed \$\{issueId\} for PR #\$\{pr\.number\}\.`/, "success announces the new issue id");
 assert.match(view, /await load\(\)/, "queue mutations reload the explicitly selected project");
 
-// Queue readiness is explicit: load its selected root first, include it in
-// both bridge calls, and offer the requested Generate recovery if Beads is
-// absent. It must not warm anonymous Queue requests in the background.
+// Queue readiness is explicit: load its selected root first and include it in
+// both bridge calls. It must not warm anonymous Queue requests in the background.
 assert.match(view, /fetch\("\/api\/queue\/readiness"/, "Queue checks readiness before reading work");
 assert.match(view, /projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "both Queue sources receive the selected root");
 assert.match(view, /action, id, projectRoot/, "claim and close mutations receive the selected root");
@@ -162,11 +155,12 @@ assert.match(view, /const sourcesUnavailable = !readinessUnavailable && readines
 assert.match(view, /code\?: string/, "Queue preserves readiness remediation codes from the server");
 assert.match(view, /const selectionRemediable = readiness\?\.code === "no-project"/, "stale and invalid selections retain a Choose-project recovery");
 assert.match(view, /readiness\?\.code === "not-git-repository"/, "ordinary non-Git projects retain Choose-project recovery");
-assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress Generate");
+assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress the picker");
+assert.match(view, /const needsGitHub = readiness\?\.code === "github-unavailable" \|\| readiness\?\.code === "github-error"/, "a GitHub failure is named as one");
 assert.match(view, /Clear all prior-project controls synchronously/, "selection clears Queue state before the next readiness response");
-assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
-assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer the inline picker");
-assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
+assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : needsGitHub \? "Queue needs GitHub" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
+assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : \(/, "stale roots offer the inline picker");
+assert.doesNotMatch(view, /Generate|canGenerate/, "the Queue has nothing to generate: GitHub Issues need no local workspace");
 assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 
 // ── Queue project setup happens on the tab, not in onboarding ────────────────
@@ -217,20 +211,19 @@ assert.match(view, /className="fwq-act fwq-act--claim"/, "Claim is the redesigne
 assert.match(view, /\{familiars\.length > 0 \? \(\s*<ForwardMenu/, "the menu renders only with familiars present");
 assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "forward-to-familiar keeps the selected project root");
 
-// The /api/beads claim action honors the optional assignee: bare claim keeps
-// `--claim`; an assignee becomes explicit --assignee/--status flags (both
-// verified against `bd update -h`).
-const beadsRoute = readFileSync(new URL("../app/api/beads/route.ts", import.meta.url), "utf8");
+// The /api/queue/issues claim action honors the optional assignee: a bare
+// claim assigns the connected user; an assignee also names that familiar
+// through its familiar:<id> label.
+const issuesRoute = readFileSync(new URL("../app/api/queue/issues/route.ts", import.meta.url), "utf8");
 assert.match(
-  beadsRoute,
+  issuesRoute,
   /const assignee = readOptionalString\(parsed\.body\.assignee, "assignee"\);/,
-  "Beads claim reads the optional assignee through the validator",
+  "Issues claim reads the optional assignee through the validator",
 );
 assert.match(
-  beadsRoute,
-  /\["update", id\.value, "--assignee", assignee\.value, "--status", "in_progress", "--json"\]/,
-  "assignee claim builds explicit update flags",
+  issuesRoute,
+  /claimIssue\(root\.repoRoot, number, assignee\.value \|\| null, current\.item\.labels\)/,
+  "claim passes the familiar (or none) and the current labels it replaces",
 );
-assert.match(beadsRoute, /\["update", id\.value, "--claim", "--json"\]/, "bare claim is unchanged");
 
 console.log("familiar-work-queue-view.test.ts: ok");

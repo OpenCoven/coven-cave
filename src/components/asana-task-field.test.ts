@@ -14,7 +14,7 @@ const boardPatchApi = await source("app/api/board/[id]/route.ts");
 const boardInspector = await source("components/board-inspector.tsx");
 const asanaTasks = await source("lib/asana-tasks.ts");
 const taskAsana = await source("lib/task-asana.ts");
-const beadsApi = await source("app/api/beads/route.ts");
+const issuesApi = await source("app/api/queue/issues/route.ts");
 const asanaAssigned = await source("app/api/asana/assigned/route.ts");
 const asanaPat = await source("app/api/asana/pat/route.ts");
 const queueStrip = await source("components/asana-queue-strip.tsx");
@@ -60,23 +60,22 @@ assert.match(
   "Inspector Asana attach merges structured connections onto the card",
 );
 
-// ── Create-card / bead-from-Asana helpers ────────────────────────────────────
+// ── Create-card / issue-from-Asana helpers ────────────────────────────────────
 assert.match(
   asanaTasks,
   /asana: \[taskAsanaLinkFromAsanaItem\(item\)\]/,
   "createBoardCardFromAsanaItem seeds the card's asana field",
 );
-assert.match(asanaTasks, /action: "create"/, "fileAsanaItemAsBead routes through the beads create action");
-assert.match(asanaTasks, /surface: "shared"/, "fileAsanaItemAsBead marks shared platform ownership");
-assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsBead links the Asana permalink as external-ref");
+assert.match(asanaTasks, /action: "create"/, "fileAsanaItemAsIssue routes through the issues create action");
+assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsIssue links the Asana permalink");
 
 // task-asana helpers must stay isomorphic (importable from client + server), so
 // they can't pull in server-only modules.
 assert.doesNotMatch(taskAsana, /next\/server|node:fs|node:child_process/, "task-asana helpers stay isomorphic");
 
-// ── Beads bridge ─────────────────────────────────────────────────────────────
-assert.match(beadsApi, /if \(action\.value === "create"\)/, "Beads API handles a create action");
-assert.match(beadsApi, /"--external-ref"/, "Beads create passes --external-ref for the source ticket");
+// ── Issues bridge ─────────────────────────────────────────────────────────────
+assert.match(issuesApi, /if \(action\.value === "create"\)/, "Issues API handles a create action");
+assert.match(issuesApi, /Source: \$\{externalRef\.value\}/, "Issues create records the source ticket in the body when the description lacks it");
 
 // ── Live data routes gate on the connected PAT ───────────────────────────────
 assert.match(asanaAssigned, /configured: false/, "Assigned route reports unconfigured when no PAT is stored");

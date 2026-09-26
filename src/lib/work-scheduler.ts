@@ -7,21 +7,21 @@
  * than left to a component to remember:
  *
  *  - There is no `reorder()`. `buildSchedulerQueue` is a pure function of the
- *    beads it is handed, so the order on screen is reproducible from the
+ *    issues it is handed, so the order on screen is reproducible from the
  *    tracker alone and survives a reload by construction. The frame's drag
- *    would have written a rank `bd` does not store; the honest ordering write
- *    is a priority band (`bd update --priority`, 0-4), which this module
- *    exposes as `PRIORITY_BANDS` and nothing else.
+ *    would have written a rank GitHub does not store; the honest ordering
+ *    write is a priority band (a `P0`–`P4` label), which this module exposes
+ *    as `PRIORITY_BANDS` and nothing else.
  *  - `SchedulerLane.shareOfQueue` is share OF THE QUEUE, not load against a
  *    capacity. No familiar declares a capacity anywhere in the Cave, so a
  *    percentage-of-capacity would have no denominator.
  *  - `SchedulerLane.presence` is `null` — not "idle" — when the session roster
  *    could not be read. A lane cannot report a state it did not observe.
  *  - A `GateCard` names its blockers and marks WHY one of them is primary.
- *    Beads record `blocked_by` and nothing else: no designated primary blocker
+ *    Issues record `blocked_by` and nothing else: no designated primary blocker
  *    and no structured next step. (`docs/orchestration-ready-tasks.md` does
  *    specify that triple, but it governs Cave BOARD tasks — `cave-board-types.ts`
- *    / `task-orchestration.ts` / `/api/board` — not beads. See the PR body.)
+ *    / `task-orchestration.ts` / `/api/board` — not issues. See the PR body.)
  *  - A `SchedulerLogEntry` either offers an undo that fires or states why it
  *    cannot be reversed. `schedulerLogEntryIsCoherent` pins that as an
  *    invariant, and only priority changes qualify.
@@ -30,13 +30,14 @@
 import { computePresence, type Presence } from "@/lib/presence";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-// ── beads ────────────────────────────────────────────────────────────────────
+// ── issues ────────────────────────────────────────────────────────────────────
 
-/** The subset of a `bd ready --json` / `bd blocked --json` row this reads. */
-export type SchedulerBead = {
+/** The subset of a ready or blocked issue (`/api/queue/issues`) this reads. */
+export type SchedulerIssue = {
   id: string;
   title: string;
-  priority: number;
+  /** 0-4 from a `P<n>` label; null when the issue is unranked. */
+  priority: number | null;
   status: string;
   assignee?: string | null;
   labels?: string[] | null;
@@ -44,13 +45,13 @@ export type SchedulerBead = {
   issue_type?: string | null;
 };
 
-/** A `bd blocked --json` row: the same record plus its blocker ids. */
-export type BlockedBead = SchedulerBead & {
+/** A blocked issue: the same record plus the ids of its open blockers. */
+export type BlockedIssue = SchedulerIssue & {
   blocked_by?: string[] | null;
   blocked_by_count?: number | null;
 };
 
-/** `bd` priority is an integer 0-4 (`bd priority --help`), NOT P0-P3. */
+/** Priority is a band 0-4, stored as a `P<n>` label (P0 = Critical). */
 export type PriorityBand = { value: number; label: string };
 
 export const PRIORITY_BANDS: readonly PriorityBand[] = [
@@ -77,13 +78,13 @@ export type SchedulerQueueRow = {
    * stored: it renumbers when the tracker changes and cannot be dragged.
    */
   position: number;
-  bead: SchedulerBead;
-  /** The familiar this bead resolves to, or null when it resolves to none. */
+  issue: SchedulerIssue;
+  /** The familiar this issue resolves to, or null when it resolves to none. */
   familiarId: string | null;
   /**
-   * Who the row shows in its FAMILIAR column. A bead assigned to someone who
+   * Who the row shows in its FAMILIAR column. An issue assigned to someone who
    * is not a familiar keeps that name rather than being flattened into
-   * "Unassigned" — flattening would claim the bead is unowned when it is not.
+   * "Unassigned" — flattening would claim the issue is unowned when it is not.
    */
   familiarLabel: string;
   band: PriorityBand;
@@ -97,14 +98,14 @@ function labelValue(labels: string[] | null | undefined, prefix: string): string
 }
 
 /**
- * The raw ownership key a bead carries, matching the convention already used
- * by the Board's queue (`beads-work-queue.ts`): an explicit `familiar:<id>`
+ * The raw ownership key an issue carries, matching the convention already used
+ * by the Board's queue (`work-queue.ts`): an explicit `familiar:<id>`
  * label wins, otherwise the assignee.
  */
-export function beadOwnerKey(bead: SchedulerBead): string | null {
-  const label = labelValue(bead.labels, "familiar:")?.trim();
+export function issueOwnerKey(issue: SchedulerIssue): string | null {
+  const label = labelValue(issue.labels, "familiar:")?.trim();
   if (label) return label;
-  const assignee = bead.assignee?.trim();
+  const assignee = issue.assignee?.trim();
   return assignee ? assignee : null;
 }
 
@@ -124,27 +125,27 @@ function matchFamiliar(key: string | null, familiars: readonly Familiar[]): Fami
  * lets the surface promise that what you see survives a reload without storing
  * anything of its own.
  */
-function queueSortKey(bead: SchedulerBead): string {
-  const priority = Number.isInteger(bead.priority) ? bead.priority : 9;
-  return `${priority}:${bead.updated_at || "9999"}:${bead.id}`;
+function queueSortKey(issue: SchedulerIssue): string {
+  const priority = Number.isInteger(issue.priority) ? issue.priority : 9;
+  return `${priority}:${issue.updated_at || "9999"}:${issue.id}`;
 }
 
 export function buildSchedulerQueue(
-  beads: readonly SchedulerBead[],
+  issues: readonly SchedulerIssue[],
   options: { familiars: readonly Familiar[] },
 ): SchedulerQueueRow[] {
-  return [...beads]
-    .filter((bead) => bead.issue_type !== "epic")
+  return [...issues]
+    .filter((issue) => issue.issue_type !== "epic")
     .sort((a, b) => queueSortKey(a).localeCompare(queueSortKey(b)))
-    .map((bead, index) => {
-      const key = beadOwnerKey(bead);
+    .map((issue, index) => {
+      const key = issueOwnerKey(issue);
       const familiar = matchFamiliar(key, options.familiars);
       return {
         position: index + 1,
-        bead,
+        issue,
         familiarId: familiar?.id ?? null,
         familiarLabel: familiar?.display_name ?? key ?? "Unassigned",
-        band: priorityBand(bead.priority),
+        band: priorityBand(issue.priority),
       };
     });
 }
@@ -240,7 +241,7 @@ export type GateBlocker = {
 };
 
 /**
- * Why a blocker is shown as primary. Beads do NOT designate one, so the card
+ * Why a blocker is shown as primary. Issues do NOT designate one, so the card
  * always states its basis instead of implying the tracker chose it.
  */
 export type GatePrimaryBasis =
@@ -250,7 +251,7 @@ export type GatePrimaryBasis =
   | "none-actionable";
 
 export type GateCard = {
-  bead: BlockedBead;
+  issue: BlockedIssue;
   blockers: GateBlocker[];
   /** Blocker ids the join could not resolve to a record. */
   unnamed: number;
@@ -260,7 +261,7 @@ export type GateCard = {
    * The only action a gate card offers: go to the blocker. There is no
    * approval backend anywhere in the Cave, so there is no Approve button.
    */
-  route: { beadId: string; label: string } | null;
+  route: { issueId: string; label: string } | null;
 };
 
 function blockerSortKey(blocker: GateBlocker): string {
@@ -269,15 +270,15 @@ function blockerSortKey(blocker: GateBlocker): string {
 }
 
 export function buildGateCards(
-  blocked: readonly BlockedBead[],
-  blockerRecords: readonly SchedulerBead[],
+  blocked: readonly BlockedIssue[],
+  blockerRecords: readonly SchedulerIssue[],
 ): GateCard[] {
-  const byId = new Map<string, SchedulerBead>();
+  const byId = new Map<string, SchedulerIssue>();
   for (const record of blockerRecords) byId.set(record.id, record);
-  const blockedIds = new Set(blocked.map((bead) => bead.id));
+  const blockedIds = new Set(blocked.map((issue) => issue.id));
 
-  return blocked.map((bead) => {
-    const ids = (bead.blocked_by ?? []).filter((id): id is string => typeof id === "string" && !!id.trim());
+  return blocked.map((issue) => {
+    const ids = (issue.blocked_by ?? []).filter((id): id is string => typeof id === "string" && !!id.trim());
     const blockers: GateBlocker[] = ids.map((id) => {
       const record = byId.get(id);
       return {
@@ -305,12 +306,12 @@ export function buildGateCards(
     }
 
     return {
-      bead,
+      issue,
       blockers,
       unnamed: blockers.filter((blocker) => blocker.title === null).length,
       primary,
       primaryBasis,
-      route: primary ? { beadId: primary.id, label: `Open ${primary.id}` } : null,
+      route: primary ? { issueId: primary.id, label: `Open ${primary.id}` } : null,
     };
   });
 }
@@ -319,11 +320,11 @@ export function buildGateCards(
 export function gatePrimaryBasisText(basis: GatePrimaryBasis): string {
   switch (basis) {
     case "sole-blocker":
-      return "The only thing blocking this bead.";
+      return "The only thing blocking this issue.";
     case "only-actionable":
-      return "Derived: the only blocker not itself blocked. Beads record blockers, not a primary.";
+      return "Derived: the only blocker not itself blocked. Issues record blockers, not a primary.";
     case "highest-priority-actionable":
-      return "Derived: highest-priority blocker not itself blocked. Beads record blockers, not a primary.";
+      return "Derived: highest-priority blocker not itself blocked. Issues record blockers, not a primary.";
     case "none-actionable":
       return "Every blocker is itself blocked — the chain runs deeper than this card.";
   }
@@ -361,7 +362,7 @@ export function deriveSchedulerStatus(input: {
     return {
       kind: "no-project",
       label: "No project",
-      detail: "Pick the project whose beads this scheduler reads.",
+      detail: "Pick the project whose issues this scheduler reads.",
     };
   }
   if (input.lastLoadedAtMs === null) {
@@ -396,17 +397,18 @@ export function deriveSchedulerStatus(input: {
 // ── history and undo ─────────────────────────────────────────────────────────
 
 /**
- * The one reversible mutation. `POST /api/beads {action:"priority"}` writes a
- * stored band, so replaying the previous band is an exact reversal.
+ * The one reversible mutation. `POST /api/queue/issues {action:"priority"}` writes a
+ * stored band, so replaying the previous band (or clearing it back to
+ * Unranked) is an exact reversal.
  */
-export type SchedulerUndo = { action: "priority"; id: string; priority: number };
+export type SchedulerUndo = { action: "priority"; id: string; priority: number | null };
 
 export type SchedulerLogEntry = {
   id: string;
   at: number;
   kind: "reassign" | "priority";
-  beadId: string;
-  beadTitle: string;
+  issueId: string;
+  issueTitle: string;
   summary: string;
   /** The request that reverses this entry, or null. */
   undo: SchedulerUndo | null;
@@ -418,31 +420,31 @@ export type SchedulerLogEntry = {
 export const SCHEDULER_LOG_LIMIT = 50;
 
 /**
- * Reassign runs `bd update <id> --assignee <x> --status in_progress`, so
- * reversing it needs the previous assignee AND the previous status restored.
- * `/api/beads` has no action that can do that, and `bd update` has no flag
- * that clears an assignee — so an "Undo" here could not fire. It is not
- * offered, and the entry says why.
+ * Reassign assigns the connected GitHub user and replaces the issue's
+ * `familiar:<id>` label, so reversing it needs the previous assignees AND the
+ * previous familiar label restored. `/api/queue/issues` has no action that
+ * can do that, so an "Undo" here could not fire. It is not offered, and the
+ * entry says why.
  */
 export const REASSIGN_IRREVERSIBLE =
-  "Reassigning also set the bead in progress. Cave has no action that restores the previous assignee and status, so this cannot be undone here.";
+  "Reassigning also claimed the issue on GitHub. Cave has no action that restores the previous assignees and familiar label, so this cannot be undone here.";
 
 export const PRIORITY_UNKNOWN_PREVIOUS =
-  "Cave did not observe this bead's previous priority, so it has no value to restore.";
+  "Cave did not observe this issue's previous priority, so it has no value to restore.";
 
 export function reassignLogEntry(input: {
   id: string;
   at: number;
-  beadId: string;
-  beadTitle: string;
+  issueId: string;
+  issueTitle: string;
   toLabel: string;
 }): SchedulerLogEntry {
   return {
     id: input.id,
     at: input.at,
     kind: "reassign",
-    beadId: input.beadId,
-    beadTitle: input.beadTitle,
+    issueId: input.issueId,
+    issueTitle: input.issueTitle,
     summary: `Reassigned to ${input.toLabel}`,
     undo: null,
     irreversible: REASSIGN_IRREVERSIBLE,
@@ -453,23 +455,25 @@ export function reassignLogEntry(input: {
 export function priorityLogEntry(input: {
   id: string;
   at: number;
-  beadId: string;
-  beadTitle: string;
-  previousPriority: number | null;
+  issueId: string;
+  issueTitle: string;
+  /** The band before the change; null when it was Unranked; undefined when Cave never observed it. */
+  previousPriority: number | null | undefined;
   priority: number;
 }): SchedulerLogEntry {
-  const reversible = Number.isInteger(input.previousPriority);
+  const previous = input.previousPriority;
+  const reversible = previous === null || Number.isInteger(previous);
   return {
     id: input.id,
     at: input.at,
     kind: "priority",
-    beadId: input.beadId,
-    beadTitle: input.beadTitle,
+    issueId: input.issueId,
+    issueTitle: input.issueTitle,
     summary: reversible
       ? `Priority ${priorityBand(input.previousPriority).label} → ${priorityBand(input.priority).label}`
       : `Priority set to ${priorityBand(input.priority).label}`,
     undo: reversible
-      ? { action: "priority", id: input.beadId, priority: input.previousPriority as number }
+      ? { action: "priority", id: input.issueId, priority: previous ?? null }
       : null,
     irreversible: reversible ? null : PRIORITY_UNKNOWN_PREVIOUS,
     undone: false,

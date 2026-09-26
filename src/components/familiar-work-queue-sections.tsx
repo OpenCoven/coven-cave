@@ -8,16 +8,16 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import type { AttentionItem, WorkQueueItem } from "@/lib/beads-work-queue";
-import type { PullRequestSummary } from "@/lib/beads-pr-management";
+import type { AttentionItem, WorkQueueItem } from "@/lib/work-queue";
+import type { PullRequestSummary } from "@/lib/pr-management";
 
 /**
- * Bead inspector (cave-u2p1) — the queue row names the work; this shows the
- * work itself. Reads `bd show --json` through the existing (previously
- * unused) GET /api/beads?mode=show contract. Read-mostly: Claim + copy-id
+ * Issue inspector (cave-u2p1) — the queue row names the work; this shows the
+ * work itself. Reads the issue through GET /api/queue/issues?mode=show.
+ * Read-mostly: Claim + copy-id
  * ride along; notes stay on the card's composer.
  */
-export function BeadDetailModal({
+export function IssueDetailModal({
   id,
   projectRoot,
   onClose,
@@ -28,7 +28,7 @@ export function BeadDetailModal({
   onClose: () => void;
   onClaim: () => void;
 }) {
-  type BeadDetail = {
+  type IssueDetail = {
     id?: string;
     title?: string;
     description?: string | null;
@@ -42,7 +42,7 @@ export function BeadDetailModal({
     dependencies?: unknown[] | null;
     comment_count?: number | null;
   };
-  const [detail, setDetail] = useState<BeadDetail | null>(null);
+  const [detail, setDetail] = useState<IssueDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
@@ -51,19 +51,19 @@ export function BeadDetailModal({
     setDetail(null);
     setDetailError(null);
     fetch(
-      `/api/beads?mode=show&id=${encodeURIComponent(id)}&projectRoot=${encodeURIComponent(projectRoot)}`,
+      `/api/queue/issues?mode=show&id=${encodeURIComponent(id)}&projectRoot=${encodeURIComponent(projectRoot)}`,
       { cache: "no-store" },
     )
       .then((res) => res.json())
       .then((json) => {
         if (!alive) return;
-        if (!json.ok) throw new Error(json.error || "bead unavailable");
-        // bd show --json returns the bead object (or a one-element array).
+        if (!json.ok) throw new Error(json.error || "issue unavailable");
+        // A single issue object; tolerate a one-element array.
         const data = Array.isArray(json.data) ? json.data[0] : json.data;
-        setDetail((data ?? {}) as BeadDetail);
+        setDetail((data ?? {}) as IssueDetail);
       })
       .catch((err) => {
-        if (alive) setDetailError(err instanceof Error ? err.message : "bead unavailable");
+        if (alive) setDetailError(err instanceof Error ? err.message : "issue unavailable");
       });
     return () => {
       alive = false;
@@ -71,7 +71,7 @@ export function BeadDetailModal({
   }, [id, projectRoot]);
 
   return (
-    <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Bead ${id}`}>
+    <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Issue ${id}`}>
       <div className="fwq-detail">
         {detailError ? (
           <p className="fwq-detail-error" role="alert">{detailError}</p>
@@ -98,7 +98,7 @@ export function BeadDetailModal({
             {detail.description ? (
               <pre className="fwq-detail-desc">{detail.description}</pre>
             ) : (
-              <p className="fwq-detail-empty">No description on this bead.</p>
+              <p className="fwq-detail-empty">No description on this issue.</p>
             )}
             {Array.isArray(detail.dependencies) && detail.dependencies.length > 0 ? (
               <p className="fwq-detail-deps">
@@ -138,29 +138,29 @@ export function BeadDetailModal({
 
 /**
  * Repo-wide housekeeping callout for the two gaps the CLI patrol flags: open
- * PRs with no linked bead (invisible to the queue) and/or gone stale. Global —
+ * PRs with no linked issue (invisible to the queue) and/or gone stale. Global —
  * NOT filtered by the familiar chips, since an unlinked PR has no familiar and
  * this is repo hygiene, not one familiar's queue.
  */
 export function AttentionStrip({
   items,
   onOpenUrl,
-  onFileBead,
+  onFileIssue,
 }: {
   items: AttentionItem[];
   onOpenUrl?: (url: string) => void;
-  /** Files a bead for an unlinked PR; resolves once the queue reloaded (or the
+  /** Files an issue for an unlinked PR; resolves once the queue reloaded (or the
    *  attempt failed) so the row's button can drop its busy state. */
-  onFileBead?: (pr: PullRequestSummary) => Promise<boolean>;
+  onFileIssue?: (pr: PullRequestSummary) => Promise<boolean>;
 }) {
-  // Per-row busy: only the clicked File-bead button spins while the create +
+  // Per-row busy: only the clicked File-issue button spins while the create +
   // queue reload are in flight.
   const [filingPr, setFilingPr] = useState<number | null>(null);
-  const fileBead = async (pr: PullRequestSummary) => {
-    if (!onFileBead || filingPr != null) return;
+  const fileIssue = async (pr: PullRequestSummary) => {
+    if (!onFileIssue || filingPr != null) return;
     setFilingPr(pr.number);
     try {
-      await onFileBead(pr);
+      await onFileIssue(pr);
     } finally {
       setFilingPr(null);
     }
@@ -191,8 +191,8 @@ export function AttentionStrip({
             </div>
             <div className="fwq-attention-tags">
               {unlinked ? (
-                <span className="fwq-tag fwq-tag--unlinked" title="No linked bead — invisible to the queue">
-                  no bead
+                <span className="fwq-tag fwq-tag--unlinked" title="No linked issue — invisible to the queue">
+                  no issue
                 </span>
               ) : null}
               {stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
@@ -203,11 +203,11 @@ export function AttentionStrip({
                 size="xs"
                 leadingIcon="ph:plus-circle"
                 loading={filingPr === pr.number}
-                onClick={() => void fileBead(pr)}
-                disabled={!onFileBead || filingPr != null}
-                title="File a bead for this PR so it joins the queue"
+                onClick={() => void fileIssue(pr)}
+                disabled={!onFileIssue || filingPr != null}
+                title="File an issue for this PR so it joins the queue"
               >
-                File bead
+                File issue
               </Button>
             ) : null}
             <Button
@@ -227,13 +227,13 @@ export function AttentionStrip({
 }
 
 /** The row's left accent-rail tone (a finite enum → a `fwq-row--rail-*` class,
- *  so the colour stays in CSS rather than an inline style). Bead-only rows read
+ *  so the colour stays in CSS rather than an inline style). Issue-only rows read
  *  by priority (what to pick up first); PR-backed rows read by lane state (what
  *  is blocking the merge). */
 function railClass(item: WorkQueueItem): string {
-  if (!item.pr && !item.merged && item.bead) {
-    if (item.bead.priority === 0) return "danger";
-    if (item.bead.priority === 1) return "warning";
+  if (!item.pr && !item.merged && item.issue) {
+    if (item.issue.priority === 0) return "danger";
+    if (item.issue.priority === 1) return "warning";
     return "neutral";
   }
   switch (item.lane) {
@@ -363,7 +363,7 @@ function renderMarkdown(src: string): string {
 }
 
 /** Forward-to-familiar dropdown (queue redesign) — replaces the split
- *  StandardSelect. Claims the bead on a familiar's behalf (cave-p63a). Keeps
+ *  StandardSelect. Claims the issue on a familiar's behalf (cave-p63a). Keeps
  *  the "Claim for familiar…" trigger name and menuitemradio items so the a11y
  *  contract (and the e2e claim-for flow) is unchanged. */
 function ForwardMenu({
@@ -409,7 +409,7 @@ function ForwardMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Claim for familiar…"
-        title="Forward this bead to a familiar (claims it on their behalf)"
+        title="Forward this issue to a familiar (claims it on their behalf)"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
@@ -467,14 +467,14 @@ export function WorkQueueCard({
   onClaimFor: (familiar: ResolvedFamiliar) => void;
   onClose: () => void;
   onComment: (text: string) => Promise<boolean>;
-  /** Opens the bead inspector; absent on rows with no bead. */
+  /** Opens the issue inspector; absent on rows with no issue. */
   onInspect?: () => void;
 }) {
-  const beadId = item.bead?.id ?? null;
-  const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
+  const issueId = item.issue?.id ?? null;
+  const title = item.pr?.title ?? item.merged?.title ?? item.issue?.title ?? "Untitled";
   const prNumber = item.pr?.number ?? item.merged?.number ?? null;
   const url = item.pr?.url ?? item.merged?.url ?? null;
-  const isBeadOnly = !item.pr && !item.merged && !!item.bead;
+  const isIssueOnly = !item.pr && !item.merged && !!item.issue;
   const isUnassigned = item.familiar === "unassigned";
   const checkStatus = item.pr?.checkStatus ?? null;
   const [composing, setComposing] = useState(false);
@@ -529,7 +529,7 @@ export function WorkQueueCard({
             <button
               type="button"
               className="fwq-row-name fwq-row-name--link focus-ring-inset"
-              title={`Inspect ${beadId}`}
+              title={`Inspect ${issueId}`}
               onClick={onInspect}
             >
               {title}
@@ -543,7 +543,7 @@ export function WorkQueueCard({
             <span className={`fwq-sigil${isUnassigned ? "" : " fwq-sigil--filled"}`} aria-hidden />
             {familiarLabel}
           </span>
-          {beadId ? <span className="fwq-bead">{beadId}</span> : null}
+          {issueId ? <span className="fwq-issue">{issueId}</span> : null}
           {checkStatus ? (
             <span className={`fwq-checks fwq-checks--${checkStatus}`}>
               <span className="fwq-checks-dot" aria-hidden />
@@ -556,16 +556,16 @@ export function WorkQueueCard({
           {item.lane === "ready-to-merge" ? <span className="fwq-tag fwq-tag--ready">merge eligible</span> : null}
           {item.stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
           <span className="fwq-row-trailing">
-            {isBeadOnly && item.bead ? (
-              <span className={`fwq-pri-text fwq-pri-text--p${Math.min(item.bead.priority, 3)}`}>
-                P{item.bead.priority}
+            {isIssueOnly && item.issue && item.issue.priority !== null ? (
+              <span className={`fwq-pri-text fwq-pri-text--p${Math.min(item.issue.priority, 3)}`}>
+                P{item.issue.priority}
               </span>
             ) : null}
-            {isBeadOnly && item.bead?.updated_at ? (
+            {isIssueOnly && item.issue?.updated_at ? (
               <>
                 <span className="fwq-dot-sep" aria-hidden>·</span>
-                <span className="fwq-updated" title={new Date(item.bead.updated_at).toLocaleString()}>
-                  updated {relativeTime(item.bead.updated_at)}
+                <span className="fwq-updated" title={new Date(item.issue.updated_at).toLocaleString()}>
+                  updated {relativeTime(item.issue.updated_at)}
                 </span>
               </>
             ) : null}
@@ -594,27 +594,27 @@ export function WorkQueueCard({
             <Icon name="ph:arrow-square-out" width={13} aria-hidden />
           </button>
         ) : null}
-        {beadId ? (
+        {issueId ? (
           <button
             ref={noteButtonRef}
             type="button"
             className={`fwq-act${composing ? " is-active" : ""}`}
             onClick={() => setComposing((v) => !v)}
             aria-expanded={composing}
-            aria-label={`Add a handoff note to ${beadId}`}
+            aria-label={`Add a handoff note to ${issueId}`}
           >
             <Icon name="ph:note-pencil" width={13} aria-hidden />
             Note
           </button>
         ) : null}
-        {item.lane === "no-open-PR" && beadId ? (
+        {item.lane === "no-open-PR" && issueId ? (
           <>
             <button
               type="button"
               className="fwq-act fwq-act--claim"
               onClick={onClaim}
               disabled={busy}
-              title="Take this work item (bead) — marks it in progress under your name"
+              title="Take this work item (issue) — marks it in progress under your name"
             >
               <Icon name="ph:hand" width={13} aria-hidden />
               Claim
@@ -626,7 +626,7 @@ export function WorkQueueCard({
             ) : null}
           </>
         ) : null}
-        {isCleanup && beadId ? (
+        {isCleanup && issueId ? (
           <button
             type="button"
             className="fwq-act fwq-act--claim"
@@ -635,18 +635,18 @@ export function WorkQueueCard({
             title={
               closeBlocked
                 ? "Add a handoff note to record verification before closing"
-                : "Mark this work item (bead) complete — it leaves the queue"
+                : "Mark this work item (issue) complete — it leaves the queue"
             }
           >
             <Icon name="ph:check" width={13} aria-hidden />
-            Close bead
+            Close issue
           </button>
         ) : null}
       </div>
       {closeBlocked && !composing ? (
         <p className="fwq-row-hint">Add a handoff note to record verification before closing.</p>
       ) : null}
-      {composing && beadId ? (
+      {composing && issueId ? (
         <div className="fwq-note">
           <div className="fwq-note-head">
             <div className="fwq-note-tabs" role="group" aria-label="Note mode">
@@ -701,8 +701,8 @@ export function WorkQueueCard({
                 className="fwq-note-input"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={`Handoff note for ${beadId} — **bold**, *italic*, \`code\`, - lists, > quote, [links](url)…`}
-                aria-label={`Handoff note for ${beadId}`}
+                placeholder={`Handoff note for ${issueId} — **bold**, *italic*, \`code\`, - lists, > quote, [links](url)…`}
+                aria-label={`Handoff note for ${issueId}`}
                 disabled={busy}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

@@ -57,7 +57,7 @@ task my familiar actually works, so nothing lives only in scrollback.
 builds a card with a transcript excerpt + audit trail; the ⌘K palette has a
 `create-task` row → `POST /api/board`). The board (`board-view.tsx`) holds
 cards with `familiarId` assignment. And there the loop stops: the familiar
-work queue (`familiar-work-queue-view.tsx`) is PR/beads-centric, not
+work queue (`familiar-work-queue-view.tsx`) is PR/issue-centric, not
 board-task-centric — **no surface executes a board task, and finished
 familiar work never flips the card**.
 

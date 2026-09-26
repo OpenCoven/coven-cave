@@ -1,14 +1,14 @@
 // Stage model (cave-fpqx.10, design docs/chat-github-integration.md §4) — the
-// ONE bead ↔ PR ↔ branch stage resolution shared by the Familiar Work Queue
+// ONE issue ↔ PR ↔ branch stage resolution shared by the Familiar Work Queue
 // and the chat stage header, so "what stage is this work at" reads identically
 // everywhere. PR truth comes from the bridge's classified summaries
-// (beads-pr-management); bead truth from `bd ready --json` rows. This module
+// (pr-management); issue truth from the ready GitHub issues. This module
 // only joins and labels — it never re-derives check/review state.
-import type { PullRequestSummary } from "./beads-pr-management.ts";
-import { beadIdsInText } from "./beads-pr-management.ts";
-import type { MergedPrRef, ReadyBead, WorkQueueLaneKey } from "./beads-work-queue.ts";
+import type { PullRequestSummary } from "./pr-management.ts";
+import { issueRefInBranch } from "./pr-management.ts";
+import type { MergedPrRef, ReadyIssue, WorkQueueLaneKey } from "./work-queue.ts";
 
-/** PR-bridge lane → queue/stage lane. Extracted from beads-work-queue (which
+/** PR-bridge lane → queue/stage lane. Extracted from work-queue (which
  *  re-exports its behavior through resolveQueueLane) so the queue and the
  *  header cannot drift. */
 export function resolveQueueLane(prLane: PullRequestSummary["lane"]): WorkQueueLaneKey {
@@ -27,7 +27,7 @@ export function resolveQueueLane(prLane: PullRequestSummary["lane"]): WorkQueueL
   }
 }
 
-export type StageStepKey = "bead" | "pr" | "checks" | "review" | "merged";
+export type StageStepKey = "issue" | "pr" | "checks" | "review" | "merged";
 export type StageStepState = "done" | "active" | "failed" | "pending" | "none";
 
 export type StageStep = {
@@ -44,30 +44,31 @@ export type StageSnapshot = {
   branch: string;
   pr: PullRequestSummary | null;
   mergedRef: MergedPrRef | null;
-  bead: ReadyBead | null;
+  issue: ReadyIssue | null;
   /** Queue lane when an open PR exists; "merged" post-merge; null when only a
-   *  bead anchors the stage. */
+   *  issue anchors the stage. */
   lane: WorkQueueLaneKey | "merged" | null;
   steps: StageStep[];
 };
 
-/** Bead ids a branch name carries (e.g. feat/foo-cave-ab12). Shares the ONE
- *  bead-id pattern with PR parsing (beads-pr-management.beadIdsInText). */
-export function beadIdsInBranch(branch: string): string[] {
-  return beadIdsInText(branch);
+/** The issue a branch name carries (e.g. fix/issue-12-slug → #12). Shares the
+ *  branch pattern with PR parsing (pr-management.issueRefInBranch). */
+export function issueIdsInBranch(branch: string): string[] {
+  const ref = issueRefInBranch(branch);
+  return ref ? [ref] : [];
 }
 
 /**
  * Resolve the stage of ONE branch (a chat session's checkout) against the PR
- * bridge's classified summaries and the ready-bead list. Returns null when
- * nothing anchors a stage — no PR (open or recently merged) and no bead — so
+ * bridge's classified summaries and the ready-issue list. Returns null when
+ * nothing anchors a stage — no PR (open or recently merged) and no issue — so
  * plain chat stays clean.
  */
 export function resolveStageForBranch(args: {
   branch: string | null | undefined;
   open: PullRequestSummary[];
   merged: MergedPrRef[];
-  beads: ReadyBead[];
+  issues: ReadyIssue[];
 }): StageSnapshot | null {
   const branch = args.branch?.trim();
   if (!branch) return null;
@@ -78,32 +79,32 @@ export function resolveStageForBranch(args: {
   // pipeline reads "merged ✓" beside active checks/review (review finding,
   // cave-a3cl). Merged refs only matter for post-merge stages.
   const mergedByBranch = pr ? null : (args.merged.find((m) => m.headRefName === branch) ?? null);
-  const beadIds = new Set<string>(
-    [...(pr?.beadIds ?? []), ...beadIdsInBranch(branch), ...(mergedByBranch?.beadIds ?? [])].map((s) =>
+  const issueIds = new Set<string>(
+    [...(pr?.issueIds ?? []), ...issueIdsInBranch(branch), ...(mergedByBranch?.issueIds ?? [])].map((s) =>
       s.toLowerCase(),
     ),
   );
-  const bead = args.beads.find((b) => beadIds.has(b.id.toLowerCase())) ?? null;
+  const issue = args.issues.find((b) => issueIds.has(b.id.toLowerCase())) ?? null;
   const mergedRef =
     mergedByBranch ??
-    (!pr ? (args.merged.find((m) => m.beadIds.some((id) => beadIds.has(id.toLowerCase()))) ?? null) : null);
+    (!pr ? (args.merged.find((m) => m.issueIds.some((id) => issueIds.has(id.toLowerCase()))) ?? null) : null);
 
-  if (!pr && !mergedRef && !bead) return null;
+  if (!pr && !mergedRef && !issue) return null;
 
   const lane: StageSnapshot["lane"] = pr ? resolveQueueLane(pr.lane) : mergedRef ? "merged" : null;
 
   const steps: StageStep[] = [];
 
-  // bead
+  // issue
   steps.push(
-    bead
+    issue
       ? {
-          key: "bead",
-          state: bead.status === "in_progress" ? "active" : "done",
-          label: bead.id,
-          detail: `${bead.id} · ${bead.status}${bead.assignee ? ` · ${bead.assignee}` : ""}`,
+          key: "issue",
+          state: issue.status === "in_progress" ? "active" : "done",
+          label: issue.id,
+          detail: `${issue.id} · ${issue.status}${issue.assignee ? ` · ${issue.assignee}` : ""}`,
         }
-      : { key: "bead", state: "none", label: "no bead", detail: "No linked bead" },
+      : { key: "issue", state: "none", label: "no issue", detail: "No linked issue" },
   );
 
   // pr
@@ -199,5 +200,5 @@ export function resolveStageForBranch(args: {
     url: mergedRef?.url,
   });
 
-  return { branch, pr, mergedRef, bead, lane, steps };
+  return { branch, pr, mergedRef, issue, lane, steps };
 }

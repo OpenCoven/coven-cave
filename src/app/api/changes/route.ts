@@ -172,7 +172,7 @@ async function listBranches(repoRoot: string) {
   for (const raw of refsOut.split("\n")) {
     const name = raw.trim();
     if (!name) continue;
-    // Tool-internal refs (e.g. beads' __dolt_remote_info__) aren't human
+    // Tool-internal refs (e.g. the leftover Dolt __dolt_remote_info__) aren't human
     // switch targets — keep them out of the menu.
     if (/^__.*__$/.test(name)) continue;
     const worktreeDir = checkedOut.get(name) ?? null;
