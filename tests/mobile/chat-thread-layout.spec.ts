@@ -203,9 +203,9 @@ test("an open thread folds the phone chrome so the transcript gets the height", 
   );
   await openThread(page);
   const chat = page.locator(".chat-surface");
-  // The familiar row, the section tabs strip and the action strip are folded;
-  // the familiar picker stays in the top bar and the tabs in the chat-list sheet.
-  await expect(chat.locator(".chat-familiar-context")).toBeHidden();
+  // The section tabs strip and the action strip are folded; the familiar
+  // picker lives only in the top bar (#5565) and the tabs in the chat-list sheet.
+  await expect(chat.locator(".chat-familiar-context")).toHaveCount(0);
   await expect(chat.locator(".chat-scope-tabs")).toBeHidden();
   await expect(chat.locator(".cave-mobile-action-strip")).toBeHidden();
   await expect(page.getByRole("button", { name: "Show chat list" })).toBeVisible();

@@ -255,6 +255,25 @@ test.describe("chat threads rail", () => {
     expect(new URL(page.url()).hash).toBe("#chat-s9");
   });
 
+  test("the familiar is chosen only at the top of the page, never inside Chat (#5565)", async ({ page }) => {
+    await gotoChat(page);
+    const surface = page.locator(".chat-surface");
+    const visibleTrigger = (scope: Locator) =>
+      scope.locator(".familiar-switcher__trigger").filter({ visible: true });
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 900, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(surface).toBeVisible();
+      await expect(visibleTrigger(surface), `no in-chat picker at ${viewport.width}px`).toHaveCount(0);
+      await expect
+        .poll(() => visibleTrigger(page.locator("body")).count(), { message: `a top-of-page picker at ${viewport.width}px` })
+        .toBeGreaterThan(0);
+    }
+  });
+
   test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));

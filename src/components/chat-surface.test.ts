@@ -112,17 +112,18 @@ assert.match(
   /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
   "ChatSurface should render GroupChatView for the coven scope",
 );
-// The shell titlebar is the desktop selector authority. Chat retains its
-// context row only for mobile, where the desktop titlebar is hidden.
-assert.match(
+// The familiar is chosen only at the top of the page, beside the project
+// selector (workspace context switcher / top bar). Chat renders no picker of
+// its own on any width (#5565).
+assert.doesNotMatch(
   chatSurface,
-  /chat-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?familiars=\{resolvedFamiliars\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onFamiliarScopeChange\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?chat-scope-tabs chat-scope-tabs--minimal/,
-  "ChatSurface retains the mobile familiar selector above its section tabs",
+  /chat-familiar-context|<FamiliarQuickSwitch|<FamiliarSwitcher/,
+  "ChatSurface must not render its own familiar picker; the top-of-page switcher is the only one",
 );
-assert.match(
+assert.doesNotMatch(
   auxiliarySurfaces,
-  /@media \(min-width: 1024px\), \(max-width: 767px\) \{[\s\S]*?\.chat-familiar-context \{\s*display: none;\s*\}[\s\S]*?\}/,
-  "desktop Chat hides the duplicate in-surface familiar selector, and a phone folds it into the top bar's picker (#5529)",
+  /\.chat-familiar-context/,
+  "the removed in-chat familiar row leaves no stylesheet rules behind",
 );
 assert.match(
   chatSurface,
