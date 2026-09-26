@@ -58,7 +58,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /catch \{\s*\n\s*if \(isCurrent\(\)\) setSessionsError\(true\);[\s\S]*?finally \{\s*\n\s*if \(!baseSessionsApplied && isCurrent\(\)\) setSessionsLoaded\(true\);/,
+  /catch \{\s*\n\s*if \(isCurrent\(\)\) \{[\s\S]*?setSessionsError\(true\);[\s\S]*?finally \{\s*\n\s*if \(!baseSessionsApplied && isCurrent\(\)\) setSessionsLoaded\(true\);/,
   "request sequencing also guards stale failure and settlement writes",
 );
 assert.doesNotMatch(

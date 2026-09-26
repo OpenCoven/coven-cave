@@ -664,6 +664,7 @@ export const SUITES = {
     "src/components/chat-list-filter-defaults.test.ts",
     "src/lib/chat-list-model.test.ts",
     "src/lib/chat-list-grouping.test.ts",
+    "src/lib/chat-list-authority.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-list-render-optimization.test.ts",
     "src/components/chat-list-organization.test.ts",

@@ -192,6 +192,69 @@ test.describe("chat threads rail", () => {
     await expect(rail.getByText("No conversations yet.")).toHaveCount(0);
   });
 
+  test("a degraded refresh keeps daemon chats and says the list is local (#5563)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    // Daemon unreachable: the server answers ok with only the local rows.
+    await page.route("**/api/sessions/list**", (route) =>
+      route.fulfill({ json: { ok: true, degraded: true, error: "daemon http 503", sessions: [SESSIONS[0]] } }),
+    );
+    await expect(rail.getByRole("status")).toContainText("Coven isn't reachable", { timeout: 20_000 });
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
+  });
+
+  test("a failed refresh keeps the rows and offers Retry (#5563)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    let failing = true;
+    await page.route("**/api/sessions/list**", (route) =>
+      failing
+        ? route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } })
+        : route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
+    );
+    await expect(rail.getByRole("status")).toContainText("Couldn't refresh chats", { timeout: 20_000 });
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    failing = false;
+    await rail.getByRole("button", { name: "Retry loading chats" }).click();
+    await expect(rail.getByRole("status").filter({ hasText: "Couldn't refresh chats" })).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test("a #chat deep link survives a failed first list load (#5563)", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:active-familiar", "nova");
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    });
+    await page.route("**/api/familiars**", (route) =>
+      route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/projects**", (route) =>
+      route.fulfill({ json: { ok: true, projects: PROJECTS } }),
+    );
+    await page.route("**/api/sessions/list**", (route) =>
+      route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } }),
+    );
+    await page.route("**/api/chat/conversation/**", (route) => route.fulfill({
+      json: {
+        ok: true,
+        context: { task: null, github: [] },
+        conversation: {
+          familiarId: "nova",
+          activeLeafId: "t2",
+          turns: [
+            { id: "t1", parentId: null, role: "user", text: "Where did the deploy stall?", createdAt: iso(0) },
+            { id: "t2", parentId: "t1", role: "assistant", text: "The deploy stalled at the migration step.", createdAt: iso(0) },
+          ],
+        },
+      },
+    }));
+    await page.goto("/#chat-s9", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("The deploy stalled at the migration step.")).toBeVisible({ timeout: 45_000 });
+    expect(new URL(page.url()).hash).toBe("#chat-s9");
+  });
+
   test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));

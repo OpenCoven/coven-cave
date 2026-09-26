@@ -83,6 +83,11 @@ type Props = {
   sessionsLoaded?: boolean;
   /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
   sessionsError?: boolean;
+  /** Last load succeeded with local rows only — forwarded to ChatList (#5563). */
+  sessionsDegraded?: boolean;
+  /** The list is complete for its scope. Omitted = treat a settled list as
+   *  complete (callers that don't track authority keep the old behavior). */
+  sessionsAuthoritative?: boolean;
   familiarsLoaded?: boolean;
   /** Last roster-load failure. With an empty roster this swaps the "summon
    *  your first familiar" empty state for a can't-reach + Retry state — the
@@ -179,6 +184,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionRemoved,
     sessionsLoaded,
     sessionsError,
+    sessionsDegraded,
+    sessionsAuthoritative,
     familiarsLoaded,
     familiarsError,
     onRetryFamiliars,
@@ -449,11 +456,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [enableSplitPanes, split, splitSizes]);
   // Once the session list is authoritative, drop restored panes whose session
   // was deleted while we were away (render already hides them; this stops the
-  // dead ids from persisting forever).
+  // dead ids from persisting forever). A failed or degraded load also settles
+  // `sessionsLoaded`, and pruning against it wiped the saved layout (#5563).
+  const sessionsListComplete = sessionsAuthoritative ?? sessionsLoaded === true;
   useEffect(() => {
-    if (sessionsLoaded !== true) return;
+    if (!sessionsListComplete) return;
     setSplit((prev) => pruneChatSplitPanes(prev, (id) => sessions.some((entry) => entry.id === id)));
-  }, [sessionsLoaded, sessions]);
+  }, [sessionsListComplete, sessions]);
 
   // The pane that actually holds focus, after closes/promotions/deletes.
   const effectiveFocusedPane = resolveChatSplitFocus(split, focusedPane);
@@ -803,6 +812,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
+        sessionsDegraded={sessionsDegraded}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
         onSessionsDeleted={onSessionsDeleted}

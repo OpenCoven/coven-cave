@@ -18,7 +18,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /const baseSessions = applyChatAttentionProjections\([\s\S]*?filterDeletedSessions\(\(json\.sessions \?\? \[\]\) as SessionRow\[\], locallyDeletedSessionIdsRef\.current\)[\s\S]*?reqId/,
+  /const projectedSessions = applyChatAttentionProjections\([\s\S]*?filterDeletedSessions\(\(json\.sessions \?\? \[\]\) as SessionRow\[\], locallyDeletedSessionIdsRef\.current\)[\s\S]*?reqId/,
   "Workspace should filter every sessions/list response before projection reaches shared state",
 );
 
