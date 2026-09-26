@@ -445,7 +445,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const baseSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
+  /const projectedSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
   "loadSessions should reapply retained attention clears before assigning canonical and rendered rows",
 );
 // Task 5 spec-compliance: applyChatAttentionProjections (which can retire
@@ -458,7 +458,7 @@ const loadSessionsBlock = workspace.match(
 assert.ok(loadSessionsBlock, "workspace should define the loadSessions callback");
 assert.match(
   loadSessionsBlock,
-  /if \(!isCurrent\(\)\) return;[\s\S]*?if \(!json\.ok\) \{[\s\S]*?return;\s*\}[\s\S]*?const baseSessions = applyChatAttentionProjections\(/,
+  /if \(!isCurrent\(\)\) return;[\s\S]*?if \(!json\.ok\) \{[\s\S]*?return;\s*\}[\s\S]*?const projectedSessions = applyChatAttentionProjections\(/,
   "only an accepted (current + ok) /api/sessions/list response may apply and retire attention projections",
 );
 assert.match(

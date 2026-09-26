@@ -544,7 +544,7 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => loadSessions\(\), 4000, \{\s*serialize: true,\s*pauseWhileInputActive: true,?\s*\}\)/,
+  /usePausablePoll\(\(\) => loadSessions\(\), sessionsPollIntervalMs\(sessionsFailureStreak\), \{\s*serialize: true,\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace pauses the heavy sessions poll while a mobile text input is active",
 );
 assert.match(

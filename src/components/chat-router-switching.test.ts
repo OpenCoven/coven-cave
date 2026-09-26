@@ -164,7 +164,11 @@ assert.match(
 
 const restoreEffect =
   workspaceSource.match(
-    /useEffect\(\(\) => \{\s*if \(!sessionsLoaded\) return;[\s\S]*?\}, \[sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList\]\);/,
+    /useEffect\(\(\) => \{\s*if \(!sessionsLoaded\) return;[\s\S]*?\}, \[sessionsLoaded, openChatHashTarget\]\);/,
+  )?.[0] ?? "";
+const openChatHashTargetBlock =
+  workspaceSource.match(
+    /const openChatHashTarget = useCallback\([\s\S]*?\n  \}, \[openFamiliarSession, showFamiliarChatList\]\);/,
   )?.[0] ?? "";
 
 assert.ok(
@@ -178,14 +182,22 @@ assert.match(
   "Mount-time restore should consume the deep-link target captured at mount",
 );
 
+assert.ok(openChatHashTargetBlock.length > 0, "Workspace should resolve #chat- targets through openChatHashTarget");
+
 assert.match(
-  restoreEffect,
-  /openFamiliarSession\(sid, target\.familiarId\)/,
-  "A resolved deep link should open the session via openFamiliarSession (same lookup as /attach)",
+  openChatHashTargetBlock,
+  /openFamiliarSession\(sid, listed\.familiarId\)/,
+  "A listed deep link should open the session via openFamiliarSession (same lookup as /attach)",
 );
 
 assert.match(
-  restoreEffect,
+  openChatHashTargetBlock,
+  /resolveChatDeepLink\(sid, sessionsRef\.current, loadConversation\)/,
+  "A target missing from the scoped list must be resolved against the conversation endpoint, not dropped (#5563)",
+);
+
+assert.match(
+  openChatHashTargetBlock,
   /clearChatHash\(\);\s*showFamiliarChatList\(\)/,
   "Unknown/stale deep-link ids must fall back to the chat list with the hash cleared — no crash",
 );
@@ -214,6 +226,11 @@ assert.match(
   "resolving the deep link (found or stale) clears the takeover",
 );
 assert.match(
+  openChatHashTargetBlock,
+  /onSettled\?\.\(\); \/\/ even when superseded/,
+  "a superseded resolution still settles, so the Opening-chat takeover never sticks",
+);
+assert.match(
   workspaceSource,
   /\{chatDeepLinkPending && \([\s\S]{0,200}workspace-deeplink-pending[\s\S]{0,120}role="status"[\s\S]{0,200}Opening chat…/,
   "while pending, the shell renders an announced Opening-chat takeover",
@@ -230,7 +247,7 @@ assert.match(
 
 const popstateEffect =
   workspaceSource.match(
-    /useEffect\(\(\) => \{\s*const onPopState = \(\) => \{[\s\S]*?\};\s*window\.addEventListener\("popstate", onPopState\);[\s\S]*?\}, \[openFamiliarSession, showFamiliarChatList\]\);/,
+    /useEffect\(\(\) => \{\s*const onPopState = \(\) => \{[\s\S]*?\};\s*window\.addEventListener\("popstate", onPopState\);[\s\S]*?\}, \[openChatHashTarget, showFamiliarChatList\]\);/,
   )?.[0] ?? "";
 
 assert.match(
@@ -241,8 +258,8 @@ assert.match(
 
 assert.match(
   popstateEffect,
-  /if \(target\) \{\s*openFamiliarSession\(sid, target\.familiarId\);\s*return;\s*\}[\s\S]*clearChatHash\(\);\s*showFamiliarChatList\(\);/,
-  "Popstate should clear stale chat hashes and return to the list when the target session is missing",
+  /openChatHashTarget\(sid\);\s*return;/,
+  "Popstate should resolve chat hashes through openChatHashTarget, which opens another familiar's chat and clears only a missing one (#5563)",
 );
 
 // ── CHAT-D9-04 → cave-7gr08: in-transcript find ──────────────────────────────

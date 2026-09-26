@@ -10,6 +10,7 @@ import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
+import { chatListStaleNotice } from "@/lib/chat-list-authority";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
 import { truncateBranch } from "@/lib/truncate-middle";
 import { sessionPrStatus } from "@/lib/session-pr-status";
@@ -154,6 +155,8 @@ type Props = {
    *  for a new thread" empty state for a can't-load state — a failed list is
    *  not evidence there are no chats (cave-x6k5). */
   sessionsError?: boolean;
+  /** Last load had local rows only; the daemon was unreachable (#5563). */
+  sessionsDegraded?: boolean;
   /** When true, drops the toolbar (All/Active, group-by, count) so the list
    *  fits in a narrow companion panel (e.g. the Browser right-rail) — a
    *  companion panel has no width for it. */
@@ -207,7 +210,7 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, sessionsDegraded = false, compact = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
   // out of "Today" from sitting under the wrong header until the list reloads.
@@ -362,6 +365,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   }, [searched, statusFilter, kindFilter]);
 
   const hasAny = mine.length > 0;
+  const staleNotice = chatListStaleNotice({ sessionsError, sessionsDegraded, hasRows: hasAny });
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
@@ -1208,6 +1212,29 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
         </div>
 
       </header>
+
+      {/* ── Stale list (#5563): rows are shown but not current ── */}
+      {staleNotice ? (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-1.5 text-xs text-[var(--text-muted)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:plugs" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{staleNotice}</span>
+          </span>
+          {onSessionsChanged ? (
+            <button
+              type="button"
+              onClick={() => onSessionsChanged()}
+              aria-label="Retry loading chats"
+              className="focus-ring shrink-0 rounded px-1.5 hover:bg-[var(--bg-raised)]"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* ── Error banner (launch failures — transient, dismissable) ── */}
       {error && (

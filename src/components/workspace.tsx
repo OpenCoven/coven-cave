@@ -9,7 +9,12 @@ import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
-import { invalidateConversation } from "@/lib/conversation-cache";
+import { invalidateConversation, loadConversation } from "@/lib/conversation-cache";
+import {
+  mergeDegradedSessionList,
+  resolveChatDeepLink,
+  sessionsPollIntervalMs,
+} from "@/lib/chat-list-authority";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { ChatBrowseScope } from "@/lib/chat-browse-scope";
@@ -711,6 +716,15 @@ export function Workspace() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   // The last session-list load failed (cave-x6k5) — see loadSessions.
   const [sessionsError, setSessionsError] = useState(false);
+  // The last load succeeded but the daemon was unreachable, so the server sent
+  // only the rows it could read locally (#5563). Rows it omitted are retained.
+  const [sessionsDegraded, setSessionsDegraded] = useState(false);
+  // The list is the complete set for its scope: the last load succeeded and was
+  // not degraded. `sessionsLoaded` alone also turns true after a failure, so
+  // anything that deletes state for rows missing from the list gates on this.
+  const [sessionsAuthoritative, setSessionsAuthoritative] = useState(false);
+  // Consecutive failed loads; backs off the list poll (see sessionsPollIntervalMs).
+  const [sessionsFailureStreak, setSessionsFailureStreak] = useState(0);
   // Monotonic sequence guard for loadSessions (see its definition): the list is
   // scoped to the active familiar, and loadSessions re-fires on every scope
   // change, so a stale in-flight load must not paint the previous familiar's
@@ -1902,18 +1916,36 @@ export function Workspace() {
         if (!json.ok) {
           // A failed list is NOT "no chats" — flag it so the chat list can
           // render a truthful can't-load state instead of the first-run
-          // empty state (cave-x6k5). The 4s poll retries.
+          // empty state (cave-x6k5). The poll retries, backing off.
           setSessionsError(true);
+          setSessionsAuthoritative(false);
+          setSessionsFailureStreak((streak) => streak + 1);
           return;
         }
 
+        const degraded = json.degraded === true;
         setSessionsError(false);
-        const baseSessions = applyChatAttentionProjections(
+        setSessionsDegraded(degraded);
+        setSessionsAuthoritative(!degraded);
+        setSessionsFailureStreak(0);
+        const projectedSessions = applyChatAttentionProjections(
           chatAttentionProjectionRef.current,
           filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current),
           reqId,
           capturedScopeKey,
         );
+        // Degraded = local rows only. Keep this scope's previous rows the
+        // response omitted (already projected on an earlier load) so daemon
+        // chats don't vanish until it comes back.
+        const baseSessions = degraded
+          ? mergeDegradedSessionList(
+            filterDeletedSessions(
+              baseSessionsRef.current.filter((session) => baseSessionScopeKeyByIdRef.current.get(session.id) === capturedScopeKey),
+              locallyDeletedSessionIdsRef.current,
+            ),
+            projectedSessions,
+          )
+          : projectedSessions;
         baseSessionsRef.current = baseSessions;
         baseSessionScopeKeyByIdRef.current = new Map(
           baseSessions.map((session) => [
@@ -1932,7 +1964,12 @@ export function Workspace() {
         setSessionsLoaded(true);
         baseSessionsApplied = true;
       } catch {
-        if (isCurrent()) setSessionsError(true); // transient — poll retries
+        if (isCurrent()) {
+          // Transient — the poll retries, backing off.
+          setSessionsError(true);
+          setSessionsAuthoritative(false);
+          setSessionsFailureStreak((streak) => streak + 1);
+        }
       } finally {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
@@ -1981,7 +2018,7 @@ export function Workspace() {
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
-  usePausablePoll(() => loadSessions(), 4000, {
+  usePausablePoll(() => loadSessions(), sessionsPollIntervalMs(sessionsFailureStreak), {
     serialize: true,
     pauseWhileInputActive: true,
   });
@@ -3534,25 +3571,44 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Open a `#chat-<id>` target. The loaded list is scoped to the active
+  // familiar and may have failed or be degraded, so a miss asks the
+  // conversation endpoint before giving up; only a 404 clears the hash
+  // (#5563). A newer navigation supersedes a lookup still in flight.
+  const chatHashResolveSeqRef = useRef(0);
+  const openChatHashTarget = useCallback((sid: string, onSettled?: () => void) => {
+    const seq = ++chatHashResolveSeqRef.current;
+    const listed = sessionsRef.current.find((session) => session.id === sid);
+    if (listed) {
+      onSettled?.();
+      openFamiliarSession(sid, listed.familiarId);
+      return;
+    }
+    void resolveChatDeepLink(sid, sessionsRef.current, loadConversation).then((resolution) => {
+      onSettled?.(); // even when superseded, so a takeover never sticks
+      if (seq !== chatHashResolveSeqRef.current) return;
+      if (readChatHash() !== sid) return; // the user navigated elsewhere meanwhile
+      if (resolution.kind === "open") {
+        openFamiliarSession(sid, resolution.familiarId);
+        return;
+      }
+      clearChatHash();
+      showFamiliarChatList();
+    });
+  }, [openFamiliarSession, showFamiliarChatList]);
+
   // Mount-time deep-link restore: sessions load async (/api/sessions/list),
   // so hold the `#chat-<sessionId>` target until the first fetch settles,
-  // then open the session — same lookup as the `/attach` slash command.
-  // Unknown/stale ids fall back to the chat list with the hash cleared.
+  // then open it through openChatHashTarget. The "Opening chat…" takeover
+  // stays up until that resolves.
   useEffect(() => {
     if (!sessionsLoaded) return;
     const sid = pendingChatDeepLinkRef.current;
     if (!sid) return;
     pendingChatDeepLinkRef.current = null;
-    setChatDeepLinkPending(false);
     chatHashRestoredForCurrentModeRef.current = true;
-    const target = sessions.find((s) => s.id === sid);
-    if (target) {
-      openFamiliarSession(sid, target.familiarId);
-    } else {
-      clearChatHash();
-      showFamiliarChatList();
-    }
-  }, [sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList]);
+    openChatHashTarget(sid, () => setChatDeepLinkPending(false));
+  }, [sessionsLoaded, openChatHashTarget]);
 
   // ChatRouter is intentionally unmounted outside the Chat surface. When
   // workspace Back/Forward returns to Chat, restore its still-addressable hash
@@ -3568,15 +3624,9 @@ export function Workspace() {
       chatHashRestoredForCurrentModeRef.current = true;
       return;
     }
-    const target = sessions.find((session) => session.id === sid);
     chatHashRestoredForCurrentModeRef.current = true;
-    if (target) {
-      openFamiliarSession(sid, target.familiarId);
-      return;
-    }
-    clearChatHash();
-    showFamiliarChatList();
-  }, [mode, sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList]);
+    openChatHashTarget(sid);
+  }, [mode, sessionsLoaded, openChatHashTarget]);
 
   // Browser Back/Forward between list ↔ chat (and chat ↔ chat). Only acts on
   // chat hashes — board `#card-` keeps its own listener.
@@ -3591,20 +3641,16 @@ export function Workspace() {
       chatNavigationHistoryRef.current = restored;
       setChatNavigationHistory(restored);
       if (sid) {
-        const target = sessionsRef.current.find((s) => s.id === sid);
-        if (target) {
-          openFamiliarSession(sid, target.familiarId);
-          return;
-        }
-        if (!sessionsLoadedRef.current) {
+        if (!sessionsLoadedRef.current && !sessionsRef.current.some((s) => s.id === sid)) {
           pendingChatDeepLinkRef.current = sid;
           // Show the "Opening chat…" takeover while sessions settle, matching the
           // mount-restore path; the deep-link resolver clears it on found/stale.
           setChatDeepLinkPending(true);
           return;
         }
-        clearChatHash();
-        showFamiliarChatList();
+        // Back/Forward to another familiar's chat misses the scoped list;
+        // openChatHashTarget resolves it instead of dropping the entry.
+        openChatHashTarget(sid);
         return;
       }
       // Popped back out of a chat entry to the root (empty hash) → show the
@@ -3623,7 +3669,7 @@ export function Workspace() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [openFamiliarSession, showFamiliarChatList]);
+  }, [openChatHashTarget, showFamiliarChatList]);
 
   // Leaving the chat surface invalidates a chat hash — clear it in place
   // (replace, not push) so a reload restores the surface the user actually
@@ -4330,6 +4376,8 @@ export function Workspace() {
         // (cave-fh9so).
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
+        sessionsDegraded={sessionsDegraded}
+        sessionsAuthoritative={sessionsAuthoritative}
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
