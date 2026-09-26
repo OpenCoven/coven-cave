@@ -13,8 +13,9 @@ gh project view 9 --owner OpenCoven
 `pnpm work:issues` and `pnpm work:project` are read-only shortcuts for these
 entrypoints. A bounded list is a starting point, not proof that no work matches.
 
-Issue #5399 moved development tracking to GitHub on 2026-09-14, and #5566
-removed Beads from the repository entirely.
+Issue #5399 moved development tracking to GitHub on 2026-09-14. Issue #5566
+removes Beads from the repository in stages: its data, tooling, and guidance
+first, then the worktree lifecycle tooling and the product surfaces.
 
 ## Find and own the work
 

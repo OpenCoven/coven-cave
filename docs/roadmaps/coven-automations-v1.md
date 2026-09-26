@@ -36,7 +36,7 @@ That foundation is not yet a certified automation protocol. The remaining releas
 | Familiar Contract / continuity profile | familiar root, identity revision, same-familiar lineage, session embodiment binding | schedules, run state, runtime dispatch, or capability decisions |
 | Coven Threads / authority profile | protected-action classification, capabilities, approvals, permit/proposal/reject evidence | clock liveness, occurrence planning, familiar identity, or runtime lifecycle |
 | Psyche | adopted multi-step task/lane/lease orchestration and its evidence | canonical schedules, automation occurrence state, or a second identity ledger |
-| Coven | definitions/revisions, trigger planning, occurrences, runs/attempts, scheduler/claim leases, dispatch, recovery, delivery, receipts, changefeed | identity authorship, UI-local truth, or Beads execution planning |
+| Coven | definitions/revisions, trigger planning, occurrences, runs/attempts, scheduler/claim leases, dispatch, recovery, delivery, receipts, changefeed | identity authorship, UI-local truth, or implementation-queue planning |
 | `coven-runtimes` | accepted runtime descriptors, capabilities, and runtime conformance | schedules, approval policy, or product state |
 | SDK | constrained typed clients, subscriptions, verification, authority-aware requests | direct persistence, inferred permissions, or client-authored lifecycle state |
 | Cave | human oversight, safe creation/proposal flows, approvals, diagnostics, and recovery controls | scheduler policy, direct runtime launch, or a second run ledger |
@@ -51,7 +51,7 @@ That foundation is not yet a certified automation protocol. The remaining releas
 | --- | --- | --- | --- | --- |
 | P0 | Coven Automations v1 program and release rollup | `OpenCoven/coven#854` | `cave-hlv.9` | Open and dependency-blocked by remaining outcomes; canonical program/release-gate rollup (not catch-all implementation) |
 | P0 | Native durable-routine foundation | `OpenCoven/coven#816` | `cave-stsf7` | **Verified-foundation** (closed): landed via `OpenCoven/coven#896` ("fix: settle automation runs from terminal evidence"), merge `0d8c2004c3557019e39e5e4db70ae34c9d49a65a` on `OpenCoven/coven` main. Fully qualified on purpose: `OpenCoven/coven-cave#896` is an unrelated change. |
-| P0 | Beads/GitHub operational graph and drift control | `OpenCoven/coven#859` | `cave-hlv.10` | **Closed-verified** 2026-09-03; program-control acceptance complete |
+| P0 | Operational tracker graph and drift control (Beads era; now GitHub) | `OpenCoven/coven#859` | `cave-hlv.10` | **Closed-verified** 2026-09-03; program-control acceptance complete |
 
 ### P0 protocol and safety train
 
