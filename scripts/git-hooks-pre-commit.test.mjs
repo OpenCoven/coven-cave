@@ -160,35 +160,4 @@ for (const content of [
   assert.notEqual(result.status, 0, "an Anthropic-shaped key is blocked even when it says example");
 }
 
-// ── The hook exists twice on disk and must not drift ───────────────────────
-// .beads/hooks/pre-commit is the beads-managed install target that
-// core.hooksPath actually points at; it is this file plus an appended beads
-// integration block. Both are tracked, so a scanner change made in one copy
-// and not the other silently disables it for whichever hooks path is live.
-{
-  const canonical = readFileSync(hookSource, "utf8");
-  const installed = readFileSync(path.join(root, ".beads", "hooks", "pre-commit"), "utf8");
-
-  // beads does NOT append verbatim: it strips the canonical trailing `exit 0`
-  // so its own block is reachable, then re-exits at the end. Asserting a
-  // verbatim prefix is what produced the bug this assertion now prevents — the
-  // mirror kept `exit 0` and left the beads block as dead code, silently
-  // disabling `bd hooks run pre-commit` for the live hooks path.
-  const body = canonical.replace(/\nexit 0\n$/, "\n");
-  assert.notEqual(body, canonical, "the canonical hook still ends with `exit 0`");
-  assert.ok(
-    installed.startsWith(body),
-    ".beads/hooks/pre-commit must begin with scripts/git-hooks/pre-commit (minus its " +
-      "trailing `exit 0`) — re-apply the edit to both copies",
-  );
-
-  const beadsAt = installed.indexOf("# --- BEGIN BEADS INTEGRATION");
-  assert.ok(beadsAt > 0, "the installed copy keeps its beads integration block");
-  assert.doesNotMatch(
-    installed.slice(0, beadsAt),
-    /^exit 0$/m,
-    "nothing exits before the beads block — that would make it unreachable",
-  );
-}
-
 console.log("git-hooks-pre-commit.test.mjs: ok");

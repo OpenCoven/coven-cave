@@ -219,7 +219,7 @@ was unrecoverable *even in principle* because the sweep that flagged it logged
 only `dirty=3` — once the directory was gone there was no filename or content
 signature to match `git fsck` debris against. Any sweep or audit that touches
 a dirty worktree must capture the full `git status --porcelain` output (paths,
-not counts) in its notes or bead. Three lines of porcelain is the difference
+not counts) in its notes or issue. Three lines of porcelain is the difference
 between "recovery impossible" and a targeted `lost-found` search — and for
 UNSTAGED edits (which never enter the object store) it is the only record that
 the work existed at all.

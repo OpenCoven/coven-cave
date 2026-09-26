@@ -20,13 +20,10 @@ Skip broad discovery for ordinary independent one-turn answers.
 ## GitHub-first development
 
 [GitHub work tracking](docs/workflows/github-work-tracking.md) owns the issue,
-Project, worktree, and handoff procedure. Beads is retired from development
-tracking. Do not run `bd`, require a Beads claim, or sync Dolt.
-Preserve legacy data and citations without maintaining a second queue.
+Project, worktree, and handoff procedure. Do not maintain a second queue.
 
-Use `bash scripts/install-git-hooks.sh --retire-beads` to migrate recognized
-legacy Git hooks while retaining the secret and contributor guards.
-Repository session hooks must not inject Beads context.
+Use `bash scripts/install-git-hooks.sh` to point Git at the secret and
+contributor guards.
 
 ## Branch protection on `main`
 

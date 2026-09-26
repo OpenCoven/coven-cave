@@ -349,14 +349,14 @@ test("every skill named as an integration point actually exists in this repo", (
   }
 });
 
-test("skill retires Beads recipes without discarding legacy evidence", () => {
+test("skill carries no Beads recipes and keeps legacy-status boundaries", () => {
   assert.doesNotMatch(skill, /\bbd\s+(?:prime|ready|show|list|create|update|close|sync)\b/);
   assert.doesNotMatch(skill, /\bpnpm\s+beads:/);
   assert.doesNotMatch(skill, /\bdolt\s+(?:push|pull|fetch)\b/);
   assert.doesNotMatch(skill, /\| `beads` \|/);
-  assert.match(skill, /Preserve its historical records and refs/);
+  assert.doesNotMatch(skill, /\bBeads?\b/);
   assert.match(skill, /Missing evidence or a\s+legacy status does not authorize takeover/);
-  assert.match(skill, /Do not manufacture legacy lifecycle\s+metadata or create a Bead/);
+  assert.match(skill, /Do not manufacture lifecycle\s+metadata to satisfy a retired creator or patrol/);
   assert.match(skill, /Legacy `retire-after-gate` and `uncertain` classifications do not grant it/);
 });
 
@@ -366,7 +366,7 @@ test("skill preserves budgets and uncertainty without reviving the legacy creato
   assert.match(workflow, /preserve existing units and\s+obtain an attributed, scoped exception on the issue before creating another/);
   assert.match(skill, /Worktree budget reached \| Preserve existing units/);
   assert.match(skill, /Legacy patrol reports `uncertain` or missing maintenance planes/);
-  assert.match(skill, /do not fabricate metadata or run Beads to clear it/);
+  assert.match(skill, /do not fabricate metadata to clear it/);
   assert.doesNotMatch(skill, /--exception-(?:owner|reason|expires-at|path)/);
 });
 

@@ -370,8 +370,6 @@ Start with [GitHub work tracking](docs/workflows/github-work-tracking.md).
 Reuse matching work and record its owner, scope, branch, and worktree before
 editing. Follow that guide's ownership and budget review before creating an
 issue-owned worktree from current `origin/main` with `--no-track`.
-Beads is retired from development tracking; its remaining records are
-preserved as historical reference, not another queue.
 
 Make the branch PR-shaped before opening: a scoped diff, relevant local
 verification, and a clear summary of what changed. Follow

@@ -51,9 +51,8 @@ visibly fails removes the "forgot to run the last step" failure mode.
   repo — treat as an opaque command to shell out to, do not reimplement its
   parsing).
 - Existing repo precedent for lock-file-guarded atomic file ops:
-  `scripts/worktree-autolock.mjs` (advisory-lock pattern) and
-  `scripts/beads-jsonl-merge-driver.mjs` (JSONL append-and-merge pattern) —
-  worth reading before designing the append strategy, not copying wholesale.
+  `scripts/worktree-autolock.mjs` (advisory-lock pattern) — worth reading
+  before designing the append strategy, not copying wholesale.
 
 ## Contract this CLI must enforce
 
@@ -130,7 +129,7 @@ bin/coven-autoloop record \
 ## Testing
 
 Follow the repo's existing `.test.mjs`/`.test.ts` pairing convention (see
-`worktree-autolock.test.mjs`, `beads-jsonl-merge-driver.test.mjs`) rather than
+`worktree-autolock.test.mjs`) rather than
 introducing a new test framework. Minimum cases:
 
 - Happy path: valid `record` call appends exactly one TSV row with the

@@ -17,8 +17,8 @@ branch — that option does not exist here.
 ## Core rule
 
 Follow [GitHub work tracking](../../../docs/workflows/github-work-tracking.md)
-for issue ownership, Cave Project 9, worktrees, and completion. Do not run
-Beads or maintain a parallel queue. Preserve its historical records and refs.
+for issue ownership, Cave Project 9, worktrees, and completion. Do not
+maintain a parallel queue.
 
 With current authority, verify, push, reuse or open a PR, read checks and
 review, then squash-merge through `gh`. Record the local unit's disposition;
@@ -74,8 +74,8 @@ root=$(git rev-parse --show-toplevel) && \
   git worktree add --no-track -b <branch> .worktrees/<slug> origin/main
   ```
 
-  Record the starting OID on the issue. Do not manufacture legacy lifecycle
-  metadata or create a Bead to satisfy a retired creator or patrol.
+  Record the starting OID on the issue. Do not manufacture lifecycle
+  metadata to satisfy a retired creator or patrol.
 
 ## Phase 1: Verify before anything else
 
@@ -390,7 +390,7 @@ Never bypass `worktree-guard`; authorization does not replace its safety proof.
 | PR `BLOCKED`, every required check passes | Check whether `required_signatures` changed; it is currently off, so a missing signature is not the blocker. |
 | Worktree guard exits 2 | Preserve and record the refusal. Never bypass; use Branch Curator's separate guard-fix process. |
 | Worktree budget reached | Preserve existing units; obtain a scoped issue-recorded exception before creation. |
-| Legacy patrol reports `uncertain` or missing maintenance planes | Preserve and record owner + reason; do not fabricate metadata or run Beads to clear it. |
+| Legacy patrol reports `uncertain` or missing maintenance planes | Preserve and record owner + reason; do not fabricate metadata to clear it. |
 | Merge conflict | Resolve in the worktree, re-verify, force-push your own branch only. |
 
 ## Integration points

@@ -3,8 +3,7 @@
 Keep local checkout state small without weakening ownership, retention, PR,
 or maintenance-plane protections. Follow
 [GitHub work tracking](docs/workflows/github-work-tracking.md) for issue
-ownership, Cave Project 9, worktree creation, and completion. Do not run Beads
-for routine development or hygiene; preserve its historical data and refs.
+ownership, Cave Project 9, worktree creation, and completion.
 
 The central rule is **reduce checkout state before deleting identity**.
 A checkout can consume gigabytes while its branch costs little. Thin only

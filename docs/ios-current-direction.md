@@ -128,7 +128,7 @@ passing its device baselines, authorization exercises, or release gates.
 - Completed checklists stay completed; do not resume unchecked boxes from an
   old plan merely because they remain in the file.
 - A historical document becomes active again only when this page names it under
-  Current priorities and a current Bead defines the remaining work.
+  Current priorities and a current GitHub issue defines the remaining work.
 - Contradictory workspace expansion, terminal, bottom-tab, ambient-project,
   familiars-first default, unified-recents-without-project-binding, or tokenless-auth plans are
   explicitly superseded.

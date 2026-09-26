@@ -245,10 +245,6 @@ assert.deepEqual(
 
 const ROOT = new URL("../../", import.meta.url);
 const ROUTED_SCRIPTS = [
-  "scripts/beads-create.ts",
-  "scripts/beads-pr-shared.ts",
-  "scripts/beads-surface-audit.ts",
-  "scripts/beads-sync.ts",
   "scripts/worktree-lifecycle-create.ts",
   "scripts/worktree-lifecycle-inventory.ts",
   "scripts/worktree-lifecycle-metadata-repair.ts",
