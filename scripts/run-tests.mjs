@@ -1805,6 +1805,7 @@ export const SUITES = {
     "src/lib/swr-cache.test.ts",
     "src/lib/server/sessions-list-cache.test.ts",
     "src/lib/server/json-etag.test.ts",
+    "src/lib/server/remote-json-compression.test.ts",
     "src/lib/familiar-dashboard.test.ts",
     "src/lib/familiar-reminder-scope.test.ts",
     "src/lib/server/familiar-dashboard-data.test.ts",
