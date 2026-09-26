@@ -92,9 +92,16 @@ final class PerformanceBaselineUITests: XCTestCase {
         let search = app.textFields["Search chats…"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         waitForDestination(in: app)
-        let clear = app.buttons["Clear search"]
-        if clear.exists { clear.tap() }
+        // The field keeps the previous cycle's query, and its Clear control
+        // only appears once it is focused. Focus first, clear, and delete any
+        // text still left, or the new query is appended to the old one and
+        // matches nothing ("Fixture chat 999  Fixture ch…").
         search.tap()
+        let clear = app.buttons["Clear search"]
+        if clear.waitForExistence(timeout: 1) { clear.tap() }
+        if let leftover = search.value as? String, !leftover.isEmpty, leftover != search.placeholderValue {
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: leftover.count))
+        }
         search.typeText("Fixture chat 999")
         let result = app.descendants(matching: .any)[
             "Chat row local:performance-fixture-chat-0998"
@@ -137,8 +144,13 @@ final class PerformanceBaselineUITests: XCTestCase {
     @MainActor
     private func openDrawer(in app: XCUIApplication) {
         waitForDestination(in: app)
-        let open = app.buttons["Open navigation"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        // Chats, a conversation, Tasks and Settings each carry an "Open
+        // navigation" control, and more than one can be in the tree at once
+        // (a mounted but covered view). Tap the one the user can reach; the
+        // first match may be hidden, which leaves the drawer closed.
+        let candidates = app.buttons.matching(NSPredicate(format: "label == %@", "Open navigation"))
+        XCTAssertTrue(candidates.firstMatch.waitForExistence(timeout: 10))
+        let open = candidates.allElementsBoundByIndex.first(where: \.isHittable) ?? candidates.firstMatch
         open.tap()
         let settings = app.buttons["Profile and settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
