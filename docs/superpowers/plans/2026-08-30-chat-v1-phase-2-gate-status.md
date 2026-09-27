@@ -1,6 +1,15 @@
 # Chat v1 Phase 2 gate — canonical reads: re-verified working record (2026-08-30)
 
-> **Current refresh — 2026-09-04:** The Phase 2 gate remains blocked by the
+> **Superseded status: 2026-09-27.** Read the [canonical Phase 2 verdict](../../workflows/chat-v1-phase-2-canonical-reads-gate.md)
+> for the approved MVP scope and frozen candidate. Three-platform protocol
+> conformance passes. Val accepted the browser-storage exception and explicitly
+> superseded acceptance of the retired Cave-connected Chat shell. The dated
+> claims, blockers and proposed work below are historical, not a current work
+> assignment or release verdict. Legacy Beads identifiers are citations only.
+> Current standalone Chat acceptance remains under the release gates.
+
+
+> **Historical refresh — 2026-09-04:** The Phase 2 gate remains blocked by the
 > Chat shell and the missing accepted three-platform real-authority aggregate.
 > Canonical Beads `cave-ff3j6`, `cave-hjy2f`, and `cave-8ywi2` are blocked;
 > GitHub #4837, #4838, and #4839 remain open mirrors. Phase 1 is closed in

@@ -6,18 +6,19 @@ consolidated by the
 
 ## Current disposition: September 27, 2026
 
-**The gate remains open.** Three-platform conformance is verified, and Val approved
-the group-chat storage exception below. Closing the gate still requires retained
-rendered/native Chat-shell acceptance and a final verdict against the approved
-candidate. Missing acceptance receipts do not establish missing implementation.
+**PASS for the approved MVP scope and frozen candidate below.** Three-platform
+protocol conformance is verified. Val accepted the group-chat storage exception
+and explicitly superseded the retired Cave-connected Chat-shell requirement.
+This verdict closes the Phase 2 evidence need in #4838; it does not authorize a
+release or certify the current standalone Chat app.
 
 | Requirement | Current evidence and remaining work |
 | --- | --- |
 | Same-candidate conformance on macOS, Linux and Windows | [Chat run 36222464391, attempt 1](https://github.com/OpenCoven/chat/actions/runs/36222464391/attempts/1) passed on all three platforms. The SDK live verifier authenticated the workflow, jobs, protected-environment deployments, downloaded records and attestations, then reproduced the committed aggregate byte for byte. |
 | Accepted aggregate and index | The immutable [aggregate](https://github.com/OpenCoven/sdk/blob/969e712978bd0b6a35fb0cfea77df8bc7e0d19b6/docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json) and [index](https://github.com/OpenCoven/sdk/blob/969e712978bd0b6a35fb0cfea77df8bc7e0d19b6/docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.index.json) contain 590 passing assertions: 330 Cave, 138 SDK and 122 Chat, with no failures or skips. See the [live verification receipt](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853633593). This supersedes the earlier Windows failure for this frozen candidate. |
-| Full-final-page sequence regression | [#5497](https://github.com/OpenCoven/coven-cave/pull/5497) merged the missing regression tests at `74c6cb9cae8d6c2abe3e1a1c693a110dea95580d`. That commit postdates the frozen Cave authority below; the aggregate does not prove these added tests ran against that authority. Include their retained validation when reconciling the final candidate. |
+| Full-final-page sequence regression | [#5497](https://github.com/OpenCoven/coven-cave/pull/5497) merged the missing regression tests at `74c6cb9cae8d6c2abe3e1a1c693a110dea95580d`. That test-only commit postdates the frozen Cave authority below. Applying its regression tests to that unchanged authority passed all 21 pagination tests locally on macOS. Mutating the sequence paginator from `window.length > limit` to `>=` failed exactly the two full-final-page regressions (19 passed, 2 failed). The clean authority was restored afterward. This separate [mutation receipt](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853819150) supplements the aggregate; it is not a new three-platform run. |
 | Group-chat browser storage | Accepted as the documented MVP exception below. |
-| Rendered/native Chat shell, originally #4837 | Retain real-authority acceptance for canonical identities, selection and readback, pagination and freshness, and unauthorized, revoked and disconnected states. Reconcile its candidate revisions with the conformance evidence. The original issue is unavailable; preserve the requirements from the approved reconciliation rather than treating the missing issue as completion. |
+| Rendered/native Cave-connected Chat shell, originally #4837 | Superseded for MVP by Val’s [explicit decision](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853940985). Chat removed this UI and denied its commands to the shipped window. This is a scope decision, not a claim that the retired shell passed acceptance. Current standalone Chat acceptance remains under the release gates below. |
 
 ### Frozen conformance candidate
 
@@ -54,6 +55,32 @@ This decision resolves the group-storage disposition requirement. It does not
 change persistence behavior or waive the remaining acceptance and release gates.
 `BACKUP_KNOWN_GAPS` in `src/lib/server/backup-manifest.ts` names the excluded group
 state alongside the other browser-profile exclusions.
+
+### Approved shell requirement supersession
+
+On September 27, Val chose **"Supersede the retired shell requirement"** in the
+[recorded decision](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853940985).
+[Chat #332](https://github.com/OpenCoven/chat/pull/332), merged at
+`fed8950572732775c4fb53efff43a9d64a075fc6`, removed Cave, pairing and related
+command permissions from the shipped window. [Chat #333](https://github.com/OpenCoven/chat/pull/333),
+merged at `9fe3d3c16a0dac710b1863243ea782cf21e07f54`, removed the unmounted
+Cave-connected app. The shipped UI is the standalone Coven Chat app. The retained
+adapter and native commands support protocol conformance independently of that UI.
+
+The decision supersedes the old shell's rendered acceptance requirement for this
+MVP gate while retaining the verified protocol evidence. It does not backdate UI
+acceptance or change the frozen revisions in the successful run.
+
+### Release boundaries
+
+Current standalone Chat installation, signing and native acceptance remain under
+[Chat #356](https://github.com/OpenCoven/chat/issues/356) and the cross-repository
+release gate [#4781](https://github.com/OpenCoven/coven-cave/issues/4781).
+SDK publication remains under [SDK #41](https://github.com/OpenCoven/sdk/issues/41).
+The security release hold [#5339](https://github.com/OpenCoven/coven-cave/issues/5339)
+remains independently binding. Physical-device checks, release qualification,
+rollout observation and any other gate's explicit criteria still require their own
+candidate-bound evidence and disposition.
 
 ## Historical audit: August 23, 2026
 
