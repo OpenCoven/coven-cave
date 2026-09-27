@@ -21,6 +21,16 @@ import {
 
 export const RECOMMEND_FIRST_TOKEN_TIMEOUT_MS = 9000;
 
+/**
+ * How long a settled reply stays in view before its suggestion is asked for
+ * (#5625). The request is a streaming model run: started the moment a chat
+ * opened, it held one of the browser's six per-host connections exactly while
+ * that chat's own requests needed them (opens waited up to 2.5 s), and
+ * skimming six chats started four paid runs. A chat the user stays on still
+ * gets its suggestion; one they pass through starts none.
+ */
+export const RECOMMEND_SETTLE_DELAY_MS = 1500;
+
 export type ReplyRecommendationState =
   | { phase: "idle" }
   | { phase: "loading"; preview: string }
@@ -154,12 +164,15 @@ export function useReplyRecommendation({
 
   // Auto-trigger: one suggestion per settled reply, only while enabled and the
   // composer is empty. servedTurnRef guards against re-firing for the same turn
-  // (including after the state settles or the draft is cleared again).
+  // (including after the state settles or the draft is cleared again). It waits
+  // RECOMMEND_SETTLE_DELAY_MS first; a thread switch, typing, or going inactive
+  // in the meantime re-runs this effect and cancels the pending start.
   useEffect(() => {
     if (!enabled || !familiarId) return;
     if (draft.trim()) return;
     if (!anchorId || servedTurnRef.current === anchorId) return;
-    run(anchorId);
+    const timer = setTimeout(() => run(anchorId), RECOMMEND_SETTLE_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [enabled, familiarId, draft, anchorId, run]);
 
   // Typing over a live suggestion retires it — the user is writing their own
