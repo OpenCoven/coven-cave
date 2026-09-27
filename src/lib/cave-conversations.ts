@@ -291,16 +291,19 @@ export function clearConversationListMetadataCache(): void {
 // restart reads only the files that changed while Cave was down.
 //
 // A persisted summary is only as current as the code that derived it, so the
-// index is keyed by SUMMARY_INDEX_VERSION plus a hash of the derivation
-// functions' own source. A release that changes how a summary is derived gets
-// a different key and rebuilds the index instead of serving stale rows. Bump
-// the version for a change the hash cannot see (e.g. in a helper not listed).
+// index is keyed by SUMMARY_INDEX_VERSION, and a release that changes how a
+// summary is derived bumps it and rebuilds the index instead of serving stale
+// rows. The key is a constant on purpose (#5605): it used to hash the
+// derivation functions' runtime source, which differs between the dev server,
+// each production bundle and the installed app. Those share this one file, so
+// each rebuilt it from every transcript (6.7 s measured) and overwrote it under
+// its own key. The source check lives in the unit test instead, which pins
+// summaryDerivationSourceDigest() and fails until the version is bumped.
 
 const SUMMARY_INDEX_PATH = path.join(caveHome(), "conversation-summary-index.json");
-const SUMMARY_INDEX_VERSION = 1;
+export const SUMMARY_INDEX_VERSION = 2;
 const SUMMARY_INDEX_WRITE_DELAY_MS = 2_000;
 
-let summaryIndexKeyValue: string | null = null;
 let summaryIndexHydration: Promise<void> | null = null;
 let summaryIndexDirty = false;
 let summaryIndexTimer: ReturnType<typeof setTimeout> | null = null;
@@ -310,8 +313,17 @@ let summaryIndexWriting: Promise<void> | null = null;
 let summaryIndexGeneration = 0;
 
 function summaryIndexKey(): string {
-  if (summaryIndexKeyValue) return summaryIndexKeyValue;
-  const hash = createHash("sha256").update(`v${SUMMARY_INDEX_VERSION}`);
+  return `summary-index-v${SUMMARY_INDEX_VERSION}`;
+}
+
+/**
+ * Digest of every function a persisted summary depends on. Whitespace is
+ * dropped so the digest does not depend on how a runtime strips types. Only
+ * the unit test reads it: a change here without a SUMMARY_INDEX_VERSION bump
+ * fails the pin there rather than serving summaries derived by older code.
+ */
+export function summaryDerivationSourceDigest(): string {
+  const hash = createHash("sha256");
   for (const derivation of [
     readConversationSummary,
     fallbackConversationSummary,
@@ -333,10 +345,9 @@ function summaryIndexKey(): string {
     normalizeChatAttentionOperationId,
     normalizeChatAttentionOperationLineage,
   ]) {
-    hash.update("\0").update(String(derivation));
+    hash.update("\0").update(String(derivation).replace(/\s+/g, ""));
   }
-  summaryIndexKeyValue = hash.digest("hex");
-  return summaryIndexKeyValue;
+  return hash.digest("hex");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
