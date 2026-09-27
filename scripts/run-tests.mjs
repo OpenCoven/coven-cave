@@ -893,6 +893,8 @@ export const SUITES = {
     "src/lib/research-context-pack.test.ts",
     "src/lib/research-topic-discovery.test.ts",
     "src/lib/server/research-model-task-executor.test.ts",
+    "src/lib/server/coven-stream-text.test.ts",
+    "src/lib/enrich-tasks-summary.test.ts",
     "src/lib/server/research-topic-discovery-store.test.ts",
     "src/lib/server/research-topic-discovery-runner.test.ts",
     "src/lib/server/research-topic-discovery-authority.test.ts",
