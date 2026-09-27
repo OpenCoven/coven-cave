@@ -371,7 +371,9 @@ import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  advanceReviewCheckpoint,
   shouldAutoReviewThread,
+  type ReviewCheckpoint,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
@@ -2106,10 +2108,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, sessionId);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
-  const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
-    sessionId: null,
-    eligible: false,
-  });
+  const autoSelfReportEligibilityRef = useRef<ReviewCheckpoint>({ sessionId: null, eligible: null });
 
   // Publish live chat state for the session debug pane (modal) and the code
   // rail. Per-instance token: a second ChatView instance unmounting
@@ -2232,9 +2231,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       terminal,
       busy,
     });
-    const previous = autoSelfReportEligibilityRef.current;
-    const reachedReviewCheckpoint = previous.sessionId === sessionId && !previous.eligible && eligible;
-    autoSelfReportEligibilityRef.current = { sessionId, eligible };
+    // The first painted view of a thread is its baseline (#5637): opening a
+    // mature chat is not the thread reaching its checkpoint.
+    const { next, reached: reachedReviewCheckpoint } = advanceReviewCheckpoint(
+      autoSelfReportEligibilityRef.current,
+      {
+        sessionId,
+        eligible,
+        historyPainted: historyState === "loaded" || historyState === "revalidating" || historyState === "offline",
+      },
+    );
+    autoSelfReportEligibilityRef.current = next;
     if (!sessionId || !reachedReviewCheckpoint || !familiar.autoSelfReport) return;
     if (autoSelfReportSessionsRef.current.has(sessionId)) return;
     autoSelfReportSessionsRef.current.add(sessionId);
@@ -2243,6 +2250,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     autoReflectOnThread,
     busy,
     familiar.autoSelfReport,
+    historyState,
     session?.archived_at,
     session?.status,
     sessionId,

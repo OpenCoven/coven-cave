@@ -48,3 +48,36 @@ assert.match(
 );
 
 console.log("thread-self-report-timing.test.ts: ok");
+
+// #5637: opening a mature chat is not the thread reaching its checkpoint.
+{
+  const { advanceReviewCheckpoint } = await import("./thread-self-report.ts");
+  type Checkpoint = import("./thread-self-report.ts").ReviewCheckpoint;
+  const step = (previous: Checkpoint, sessionId: string | null, eligible: boolean, historyPainted = true) =>
+    advanceReviewCheckpoint(previous, { sessionId, eligible, historyPainted });
+  const start: Checkpoint = { sessionId: null, eligible: null };
+
+  // Open an eligible chat: the switch run sees the previous thread's values,
+  // then loading, then the painted history. Nothing is reached.
+  let r = step(start, "a", false, true);
+  assert.equal(r.reached, false, "the switch run never takes a baseline");
+  r = step(r.next, "a", false, false);
+  assert.equal(r.reached, false, "history still loading");
+  r = step(r.next, "a", true, true);
+  assert.equal(r.reached, false, "the first painted view is the baseline, even when eligible");
+  assert.deepEqual(r.next, { sessionId: "a", eligible: true });
+  r = step(r.next, "a", true, true);
+  assert.equal(r.reached, false);
+
+  // A live thread that crosses its checkpoint after the baseline is reviewed.
+  let live = step(start, "b", false, true);
+  live = step(live.next, "b", false, true);
+  assert.equal(live.reached, false, "baseline: not yet eligible");
+  live = step(live.next, "b", true, true);
+  assert.equal(live.reached, true, "the checkpoint reached while watching");
+
+  // Switching threads resets the baseline instead of comparing across them.
+  const switched = step({ sessionId: "b", eligible: false }, "c", true, true);
+  assert.equal(switched.reached, false);
+  assert.deepEqual(switched.next, { sessionId: "c", eligible: null });
+}
