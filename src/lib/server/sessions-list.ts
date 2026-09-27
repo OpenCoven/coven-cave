@@ -72,7 +72,7 @@ import {
   readFamiliarWorkspaces,
   readFamiliarWorkspacesStrict,
 } from "@/lib/coven-paths";
-import type { SessionsListResult } from "@/lib/server/sessions-list-cache";
+import { invalidateSessionsListCache, type SessionsListResult } from "@/lib/server/sessions-list-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
@@ -92,9 +92,24 @@ export type ComputeSessionsListOptions = {
   sweepArchives?: boolean;
   /** Attach git branch/diff/PR context. Spawns `git` subprocesses. */
   enrichGit?: boolean;
+  /**
+   * Longest the list waits for git enrichment (#5608); `null` waits for every
+   * root. See GIT_ENRICH_DEADLINE_MS.
+   */
+  gitEnrichDeadlineMs?: number | null;
   /** Attach trusted familiar-workspace metadata without changing membership. */
   classifyFamiliarWorkspace?: boolean;
 };
+
+/**
+ * A cold start probes every project root with git before the first list can
+ * respond: 154 spawns across 20 roots measured 1.2-3.8 s, against about 0.4 s
+ * for the rest of the compute (#5608). Past this deadline a root is served
+ * from its last cached enrichment (or without badges on a first start), and
+ * when the probes finish the list cache is invalidated so the next poll
+ * carries them. Warm roots resolve in well under a millisecond.
+ */
+const GIT_ENRICH_DEADLINE_MS = 300;
 
 const DEFAULT_OPTIONS = {
   sweepArchives: true,
@@ -311,8 +326,15 @@ export async function computeSessionsList(
   const enrichGit = options.enrichGit ?? DEFAULT_OPTIONS.enrichGit;
   const classifyFamiliarWorkspace =
     options.classifyFamiliarWorkspace ?? DEFAULT_OPTIONS.classifyFamiliarWorkspace;
+  const gitEnrichDeadlineMs =
+    options.gitEnrichDeadlineMs === undefined ? GIT_ENRICH_DEADLINE_MS : options.gitEnrichDeadlineMs;
   const withGitContext = async (rows: SessionRow[]): Promise<SessionRow[]> =>
-    enrichGit ? enrichSessionsWithGitContext(rows) : rows;
+    enrichGit
+      ? enrichSessionsWithGitContext(rows, undefined, undefined, undefined, undefined, {
+          deadlineMs: gitEnrichDeadlineMs ?? undefined,
+          onLateEnrichment: invalidateSessionsListCache,
+        })
+      : rows;
   const [res, state, projects, familiarWorkspaceRoots] = await Promise.all([
     // Conditional (#5588): an unchanged 1.4 MB list isn't re-sent or re-parsed.
     // The rows are shared with the cache and only ever read below.
