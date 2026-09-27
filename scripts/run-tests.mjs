@@ -1772,6 +1772,7 @@ export const SUITES = {
     "src/lib/runtime-model-surfaces.test.ts",
     "src/lib/context-meter.test.ts",
     "src/lib/chat-usage-plan.test.ts",
+    "src/lib/server/chat-usage-turns.test.ts",
     "src/lib/cave-conversations.test.ts",
     "src/lib/openclaw-conversation.test.ts",
     "src/lib/session-initiator.test.ts",
