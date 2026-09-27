@@ -16,6 +16,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
+import { fetchGitHubItem } from "@/lib/github-item-fetch";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/text-area";
@@ -206,17 +207,16 @@ function useGitHubItem(
         // pull=1 asks for the PR-only block (head/base ref, commit count, review
         // tally) the composer's merge and gate sections need. The server ignores
         // it for issues, and omitting it is what every other caller still does.
-        const res = await fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}&pull=1`, {
-          cache: "no-store",
-        });
+        // Shared with every other card for this item (#5615); a refresh
+        // (tick > 0) follows an action on it, so it asks for a fresh answer.
+        const res = await fetchGitHubItem(repo, number, { fresh: tick > 0 });
         if (cancelled) return;
         if (res.status === 401 || res.status === 403) {
           setState({ phase: "unauth" });
           return;
         }
-        const data = (await res.json().catch(() => null)) as ItemDetail | { ok: false } | null;
-        if (cancelled) return;
-        if (!res.ok || !data || data.ok !== true) {
+        const data = res.data as ItemDetail | { ok: false } | null;
+        if (res.status !== 200 || !data || data.ok !== true) {
           setState({ phase: "error" });
           return;
         }
