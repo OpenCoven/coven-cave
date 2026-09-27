@@ -89,27 +89,44 @@ export function parseSpanEvents(xml, startSeconds) {
 }
 
 /**
- * Pair begin/end per span name. A span of one name never overlaps itself
- * (the recorder uses an exclusive signpost id), so a later begin replaces an
- * unfinished one, and `cancel` discards the open begin.
+ * Pair begin/end per span name. The app emits every span with an exclusive
+ * signpost id, so a trace cannot say which end belongs to which begin when two
+ * intervals of the same name overlap (renderer spans run once per mounted
+ * bubble). A group runs from a begin until nothing of that name is open; a
+ * group that never overlapped pairs exactly, and a group that did is counted
+ * as `ambiguous` and contributes no samples rather than guessed ones.
  */
 export function pairSpans(events) {
-  const open = new Map();
+  const groups = new Map();
   const spans = [];
   const cancelled = [];
+  const ambiguous = [];
   for (const event of events) {
+    let group = groups.get(event.span);
     if (event.phase === "begin") {
-      open.set(event.span, event.at);
-    } else if (event.phase === "end" && open.has(event.span)) {
-      const begin = open.get(event.span);
-      open.delete(event.span);
-      spans.push({ span: event.span, begin, durationMs: (event.at - begin) * 1000 });
-    } else if (event.phase === "cancel" && open.has(event.span)) {
-      cancelled.push({ span: event.span, begin: open.get(event.span) });
-      open.delete(event.span);
+      if (!group) {
+        group = { open: [], outcomes: [], begins: [], overlapped: false };
+        groups.set(event.span, group);
+      }
+      if (group.open.length > 0) group.overlapped = true;
+      group.open.push(event.at);
+      group.begins.push(event.at);
+      continue;
     }
+    if (!group || group.open.length === 0 || (event.phase !== "end" && event.phase !== "cancel")) continue;
+    const begin = group.open.shift();
+    group.outcomes.push(event.phase === "end"
+      ? { kind: "span", value: { span: event.span, begin, durationMs: (event.at - begin) * 1000 } }
+      : { kind: "cancel", value: { span: event.span, begin } });
+    if (group.open.length > 0) continue;
+    if (group.overlapped) {
+      for (const at of group.begins) ambiguous.push({ span: event.span, begin: at });
+    } else {
+      for (const outcome of group.outcomes) (outcome.kind === "span" ? spans : cancelled).push(outcome.value);
+    }
+    groups.delete(event.span);
   }
-  return { spans, cancelled };
+  return { spans, cancelled, ambiguous };
 }
 
 /**
@@ -139,37 +156,46 @@ function median(values) {
  * Completed spans wholly inside a window, and cancellations that began in it.
  * A span that straddles either edge belongs to no single cycle, so it is left out.
  */
-export function spansInWindow({ spans, cancelled }, window) {
+export function spansInWindow({ spans, cancelled, ambiguous = [] }, window) {
   const inside = (at) => at >= window.start && at <= window.end;
   return {
     spans: spans.filter((s) => inside(s.begin) && inside(s.begin + s.durationMs / 1000)),
     cancelled: cancelled.filter((c) => inside(c.begin)),
+    ambiguous: ambiguous.filter((a) => inside(a.begin)),
   };
 }
 
-/** Per-span count, median, p95, and max over the spans of every round. */
+/**
+ * Per-span count, median, p95, and max over the spans of every round. A span
+ * with no completed sample still gets a row (null statistics) so a boundary
+ * that was only ever cancelled or ambiguous is reported, not silently dropped.
+ */
 export function summarize(rounds) {
   const durations = new Map();
+  const tally = (map, span) => map.set(span, (map.get(span) ?? 0) + 1);
   const cancelledCounts = new Map();
+  const ambiguousCounts = new Map();
   for (const round of rounds) {
     for (const span of round.spans) {
       if (!durations.has(span.span)) durations.set(span.span, []);
       durations.get(span.span).push(span.durationMs);
     }
-    for (const cancel of round.cancelled) {
-      cancelledCounts.set(cancel.span, (cancelledCounts.get(cancel.span) ?? 0) + 1);
-    }
+    for (const cancel of round.cancelled) tally(cancelledCounts, cancel.span);
+    for (const overlap of round.ambiguous ?? []) tally(ambiguousCounts, overlap.span);
   }
-  return [...durations.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([span, values]) => ({
+  const names = new Set([...durations.keys(), ...cancelledCounts.keys(), ...ambiguousCounts.keys()]);
+  return [...names].sort((a, b) => a.localeCompare(b)).map((span) => {
+    const values = durations.get(span) ?? [];
+    return {
       span,
       count: values.length,
-      medianMs: median(values),
-      p95Ms: percentile(values, 0.95),
-      maxMs: Math.max(...values),
+      medianMs: values.length ? median(values) : null,
+      p95Ms: values.length ? percentile(values, 0.95) : null,
+      maxMs: values.length ? Math.max(...values) : null,
       cancelled: cancelledCounts.get(span) ?? 0,
-    }));
+      ambiguous: ambiguousCounts.get(span) ?? 0,
+    };
+  });
 }
 
 /** The measured window from a driver's `performance-cycle-*.json` attachment. */
@@ -189,13 +215,17 @@ export function traceStartSeconds(tocXml) {
 }
 
 export function markdownTable(rows, cycles) {
-  const format = (ms) => ms.toFixed(1);
+  const format = (ms) => (ms === null ? "—" : ms.toFixed(1));
   const lines = [
     `| span (warm, ${cycles} cycles) | n | median ms | p95 ms | max ms |`,
     "|---|---:|---:|---:|---:|",
   ];
   for (const row of rows) {
-    const note = row.cancelled ? ` (${row.cancelled} cancelled, not counted)` : "";
+    const notes = [
+      row.cancelled ? `${row.cancelled} cancelled` : null,
+      row.ambiguous ? `${row.ambiguous} overlapping, unpaired` : null,
+    ].filter(Boolean);
+    const note = notes.length ? ` (${notes.join("; ")}, not counted)` : "";
     lines.push(`| \`${row.span}\`${note} | ${row.count} | ${format(row.medianMs)} | ${format(row.p95Ms)} | ${format(row.maxMs)} |`);
   }
   return lines.join("\n");

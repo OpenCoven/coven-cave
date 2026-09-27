@@ -79,6 +79,24 @@ test("pairing matches begins to ends per name and drops cancelled work", () => {
   assert.deepEqual(cancelled, [{ span: "search.query", begin: 10 }]);
 });
 
+test("overlapping intervals of one name are reported, never guessed", () => {
+  // Two bubbles each start a first-rich-render; an exclusive signpost id gives
+  // no way to tell which end closes which begin.
+  const { spans, ambiguous } = pairSpans([
+    { at: 1, span: "chat.first-rich-render", phase: "begin" },
+    { at: 1.1, span: "chat.first-rich-render", phase: "begin" },
+    { at: 1.2, span: "chat.first-rich-render", phase: "end" },
+    { at: 1.5, span: "chat.first-rich-render", phase: "end" },
+    { at: 2, span: "chat.first-rich-render", phase: "begin" },
+    { at: 2.25, span: "chat.first-rich-render", phase: "end" },
+  ]);
+  assert.deepEqual(ambiguous, [
+    { span: "chat.first-rich-render", begin: 1 },
+    { span: "chat.first-rich-render", begin: 1.1 },
+  ]);
+  assert.deepEqual(spans.map((s) => [s.begin, Math.round(s.durationMs)]), [[2, 250]], "a later lone interval still pairs");
+});
+
 test("only spans wholly inside the warm window count", () => {
   const paired = {
     spans: [
@@ -89,8 +107,10 @@ test("only spans wholly inside the warm window count", () => {
       { span: "a", begin: 10.1, durationMs: 4 },
     ],
     cancelled: [{ span: "a", begin: 6 }, { span: "a", begin: 11 }],
+    ambiguous: [{ span: "a", begin: 7 }, { span: "a", begin: 12 }],
   };
   const inside = spansInWindow(paired, { start: 5, end: 10 });
+  assert.deepEqual(inside.ambiguous.map((a) => a.begin), [7]);
   assert.deepEqual(inside.spans.map((s) => s.begin), [5, 9.9], "a span ending after the window belongs to no cycle");
   assert.deepEqual(inside.cancelled.map((c) => c.begin), [6]);
 });
@@ -112,11 +132,24 @@ test("percentiles use the nearest rank and summaries pool every round", () => {
     { spans: [{ span: "a", durationMs: 3 }, { span: "a", durationMs: 2 }], cancelled: [] },
   ]);
   assert.deepEqual(rows, [
-    { span: "a", count: 3, medianMs: 2, p95Ms: 3, maxMs: 3, cancelled: 1 },
-    { span: "b", count: 1, medianMs: 4, p95Ms: 4, maxMs: 4, cancelled: 0 },
+    { span: "a", count: 3, medianMs: 2, p95Ms: 3, maxMs: 3, cancelled: 1, ambiguous: 0 },
+    { span: "b", count: 1, medianMs: 4, p95Ms: 4, maxMs: 4, cancelled: 0, ambiguous: 0 },
   ]);
   assert.equal(summarize([{ spans: [{ span: "a", durationMs: 1 }, { span: "a", durationMs: 4 }], cancelled: [] }])[0].medianMs, 2.5);
   assert.match(markdownTable(rows, 2), /\| `a` \(1 cancelled, not counted\) \| 3 \| 2\.0 \| 3\.0 \| 3\.0 \|/);
+});
+
+test("a boundary with no completed sample is still reported", () => {
+  const rows = summarize([
+    { spans: [], cancelled: [{ span: "search.query" }, { span: "search.query" }], ambiguous: [{ span: "chat.first-rich-render" }] },
+  ]);
+  assert.deepEqual(rows, [
+    { span: "chat.first-rich-render", count: 0, medianMs: null, p95Ms: null, maxMs: null, cancelled: 0, ambiguous: 1 },
+    { span: "search.query", count: 0, medianMs: null, p95Ms: null, maxMs: null, cancelled: 2, ambiguous: 0 },
+  ]);
+  const table = markdownTable(rows, 1);
+  assert.match(table, /\| `search\.query` \(2 cancelled, not counted\) \| 0 \| — \| — \| — \|/);
+  assert.match(table, /`chat\.first-rich-render` \(1 overlapping, unpaired, not counted\)/);
 });
 
 test("cycle windows and trace start dates parse, and bad input is refused", () => {

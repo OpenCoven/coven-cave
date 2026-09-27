@@ -157,6 +157,19 @@ function launchFixture(device, dir) {
   return pid;
 }
 
+/** The PID of Cave's app process on the device, or null when it is not running. */
+function runningCavePid(device) {
+  const processes = devicectlJson(["device", "info", "processes", "--device", device])?.result?.runningProcesses ?? [];
+  const cave = processes.find((entry) => String(entry.executable ?? "").endsWith("CovenCave.app/CovenCave"));
+  return cave ? cave.processIdentifier : null;
+}
+
+/** The launched fixture must still be the running Cave process, or the trace is not its trace. */
+async function confirmFixturePid(device, pid) {
+  const confirmed = await waitFor(() => runningCavePid(device) === pid, 30_000);
+  if (!confirmed) throw new Error(`fixture process ${pid} is not the running Cave process`);
+}
+
 function logText(file) {
   return existsSync(file) ? readFileSync(file, "utf8") : "";
 }
@@ -237,7 +250,11 @@ function readRound(dir) {
     exportTable(trace, '/trace-toc/run[@number="1"]/data/table[@schema="os-signpost-arg"]'),
     start,
   );
-  return { window, events, lead: coverageLead(events, window) };
+  const lead = coverageLead(events, window);
+  const inside = spansInWindow(pairSpans(events), window);
+  // A positive lead only proves data began before the window; the round must
+  // also hold completed spans inside it, or it contributes nothing.
+  return { window, events, lead, inside, covered: lead > 0 && inside.spans.length > 0 };
 }
 
 async function captureRound({ device, udid, attach, dir }) {
@@ -249,20 +266,23 @@ async function captureRound({ device, udid, attach, dir }) {
     // unable to mount its renderer for the rest of the process (#5613).
     const pid = launchFixture(device, dir);
     await sleep(10_000);
+    await confirmFixturePid(device, pid);
     const recorder = await attachRecorder({ device, udid, pid, dir });
     const driver = spawnSync("xcodebuild", [
       "test-without-building", "-xctestrun", attach, "-destination", `id=${device}`,
       "-resultBundlePath", path.join(dir, "r.xcresult"),
     ], { cwd: path.dirname(attach), encoding: "utf8", timeout: DRIVER_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
     writeFileSync(path.join(dir, "test.log"), `${driver.stdout ?? ""}${driver.stderr ?? ""}`);
+    const samePid = runningCavePid(device) === pid;
     const saved = await stopRecorder(recorder, dir);
     const reason = driver.status !== 0 ? "driver failed"
-      : !saved ? "recording hung while saving"
-        : null;
+      : !samePid ? "the fixture process changed during the cycle"
+        : !saved ? "recording hung while saving"
+          : null;
     if (!reason) {
       const round = readRound(dir);
-      if (round && round.lead > 0) return { attempt };
-      console.log(`  try ${attempt}: recording starts after the warm window (${round ? round.lead.toFixed(1) : "no data"} s)`);
+      if (round?.covered) return { attempt };
+      console.log(`  try ${attempt}: the recording does not cover the warm window (${round ? `lead ${round.lead.toFixed(1)} s, ${round.inside.spans.length} spans inside` : "no data"})`);
     } else {
       console.log(`  try ${attempt}: ${reason}`);
     }
@@ -270,17 +290,24 @@ async function captureRound({ device, udid, attach, dir }) {
   throw new Error(`round ${path.basename(dir)} failed ${TRIES_PER_ROUND} times`);
 }
 
-function analyze(out, rounds) {
+/** Every `r<N>` round directory under `out`, in round order, whatever `--rounds` was. */
+function roundDirectories(out) {
+  return readdirSync(out, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^r\d+$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+}
+
+function analyze(out) {
   const usable = [];
   const skipped = [];
-  for (let index = 1; index <= rounds; index += 1) {
-    const dir = path.join(out, `r${index}`);
-    const round = readRound(dir);
-    if (!round || round.lead <= 0) {
-      skipped.push(`r${index}`);
+  for (const name of roundDirectories(out)) {
+    const round = readRound(path.join(out, name));
+    if (!round?.covered) {
+      skipped.push(name);
       continue;
     }
-    usable.push(spansInWindow(pairSpans(round.events), round.window));
+    usable.push(round.inside);
   }
   const rows = summarize(usable);
   const report = { cycles: usable.length, skipped, rows };
@@ -300,15 +327,14 @@ async function main() {
     for (let index = 1; index <= options.rounds; index += 1) {
       const dir = path.join(options.out, `r${index}`);
       if (options.resume) {
-        const existing = readRound(dir);
-        if (existing && existing.lead > 0) continue;
+        if (readRound(dir)?.covered) continue;
       }
       const started = Date.now();
       const { attempt } = await captureRound({ device: options.device, udid, attach, dir });
       console.log(`round ${index}/${options.rounds} captured on try ${attempt} (${Math.round((Date.now() - started) / 1000)} s)`);
     }
   }
-  analyze(options.out, options.rounds);
+  analyze(options.out);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

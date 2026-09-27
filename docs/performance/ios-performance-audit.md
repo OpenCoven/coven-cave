@@ -397,21 +397,32 @@ generated `.xctestrun` it writes an attach-mode copy for one warm cycle
 
 Each round (20 by default, `--rounds N`):
 
-1. It launches a fresh fixture process. A failed rich open can leave a process
-   unable to mount its renderer for the rest of its life (#5613).
+1. It launches a fresh fixture process and confirms that PID is the running Cave
+   process. A failed rich open can leave a process unable to mount its renderer
+   for the rest of its life (#5613).
 2. It attaches the Points of Interest instrument, retrying and waking the device
    tunnel through `devicectl` process listings.
 3. It runs the driver's priming cycle plus one warm cycle.
 4. It stops and saves the recording.
 
-A round is retried up to three times when the driver fails, the recording hangs
-while saving, or the retained spans start after the warm window. `--resume`
-keeps completed rounds, and `--analyze-only` re-merges an existing `--out`
-directory.
+A round is retried up to three times when any of these happens:
+
+- the driver fails;
+- the fixture process changes during the cycle;
+- the recording hangs while saving;
+- the retained data does not cover the warm window, meaning it starts after the
+  window or holds no completed span inside it.
+
+`--resume` keeps covered rounds, and `--analyze-only` re-merges every `r<N>`
+round directory in an existing `--out` directory.
 
 The merge keeps completed spans wholly inside each round's warm window,
 excludes the priming cycle and cancelled spans, and prints count, median,
-nearest-rank p95 and max per span. It writes the same data to `summary.json`
+nearest-rank p95 and max per span. Every span is emitted with an exclusive
+signpost ID, so when two intervals of one name overlap (renderer spans run per
+mounted bubble), the trace cannot pair them. That whole group is reported as
+overlapping and left out rather than guessed. A span with no completed sample
+still gets a row. It writes the same data to `summary.json`
 and names any round it skipped. The 2026-09-27 baseline on #5292 came from
 these rounds, and re-analysing that capture with this script reproduces it.
 Cold journeys still need separate external launches, as described above.
