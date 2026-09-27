@@ -34,6 +34,21 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// A tag is eligible for the parse/clone-free 304 path only after this process
+// observed a response with no pending inline images. Failed/partial migrations
+// must retry on conditional opens too. Keep only bounded, opaque tags, never
+// transcript payloads; eviction merely causes another load and inspection.
+const migratedResponseTags = new Set<string>();
+const MAX_MIGRATED_RESPONSE_TAGS = 256;
+
+function rememberMigratedResponseTag(etag: string): void {
+  migratedResponseTags.delete(etag);
+  migratedResponseTags.add(etag);
+  if (migratedResponseTags.size > MAX_MIGRATED_RESPONSE_TAGS) {
+    migratedResponseTags.delete(migratedResponseTags.values().next().value!);
+  }
+}
+
 type ConversationWriteBody = {
   sessionId?: string;
   familiarId?: string;
@@ -518,7 +533,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (revision) {
     const context = await linkedContextForSession(id);
     let etag = conversationEtag(revision.digest, recentToolOutputsOnly, context);
-    if (ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
+    if (migratedResponseTags.has(etag) && ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
       return new NextResponse(null, { status: 304, headers: { ETag: etag, "Cache-Control": "no-store" } });
     }
     let conv = await revision.load();
@@ -526,8 +541,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // open (#5611) instead of shipping as base64 on every one (11.4 MB of a
     // 14.7 MB payload measured). A failed or partial move serves what is there.
     if (conv && hasInlineImages(conv)) {
-      const moved = await migrateConversationInlineImages(id).catch(() => 0);
-      const migrated = moved > 0 ? await conversationFileRevision(id) : null;
+      await migrateConversationInlineImages(id).catch(() => 0);
+      // A concurrent opener may have moved the images while we waited for
+      // the lock, so refresh even when this call itself moved none.
+      const migrated = await conversationFileRevision(id);
       const migratedConv = migrated ? await migrated.load() : null;
       if (migrated && migratedConv) {
         etag = conversationEtag(migrated.digest, recentToolOutputsOnly, context);
@@ -536,6 +553,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
     const headers = { ETag: etag, "Cache-Control": "no-store" };
     if (conv) {
+      if (!hasInlineImages(conv)) {
+        rememberMigratedResponseTag(etag);
+      }
+      // A retry that still cannot move anything may reuse the unchanged
+      // payload too; its tag is not remembered, so the next open retries.
+      if (ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
+        return new NextResponse(null, { status: 304, headers });
+      }
       return NextResponse.json(
         {
           ok: true,

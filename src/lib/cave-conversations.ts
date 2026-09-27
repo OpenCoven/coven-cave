@@ -7,6 +7,7 @@ import { caveHome } from "./coven-paths.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { externalizeInlineImages } from "./server/externalize-inline-images.ts";
+import { removeChatImageAttachment } from "./server/chat-attachment-store.ts";
 import { inspectStoreFile, readCachedStore, type FileIdentity } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
@@ -873,7 +874,7 @@ export function hasInlineImages(conv: Pick<ConversationFile, "turns">): boolean 
   return conv.turns.some((turn) =>
     turn.attachments?.some((attachment) =>
       typeof attachment?.dataUrl === "string"
-      && attachment.dataUrl.startsWith("data:image/")
+      && attachment.dataUrl.slice(0, 11).toLowerCase() === "data:image/"
       && !attachment.storedId,
     ),
   );
@@ -898,11 +899,19 @@ export async function migrateConversationInlineImages(sessionId: string): Promis
       return 0;
     }
     if (!Array.isArray(conv?.turns) || !hasInlineImages(conv)) return 0;
-    const moved = await externalizeInlineImages(conv.turns);
-    if (moved === 0) return 0;
-    await writeJsonAtomic(file, conv);
-    conversationSummaryCache.delete(file);
-    return moved;
+    const createdIds: string[] = [];
+    try {
+      const moved = await externalizeInlineImages(conv.turns, createdIds);
+      if (moved === 0) return 0;
+      await writeJsonAtomic(file, conv);
+      conversationSummaryCache.delete(file);
+      return moved;
+    } catch (error) {
+      // The raw file is still authoritative. Never delete pre-existing ids,
+      // and do not accumulate a fresh orphan on every conditional retry.
+      await Promise.allSettled(createdIds.map(removeChatImageAttachment));
+      throw error;
+    }
   });
 }
 
