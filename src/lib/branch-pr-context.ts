@@ -161,6 +161,12 @@ export type BranchPrCache = {
   /** Cached PR for (root, branch) — null = known no-PR, undefined = not yet
    *  resolved. Schedules a background refresh when missing or stale. */
   get(root: string, branch: string): SessionPullRequestContext | null | undefined;
+  /**
+   * The same answer for a caller that must have one (#5619): a cached value
+   * at once — refreshing a stale one in the background — or, on a miss, the
+   * result of the one shared lookup for this (root, branch).
+   */
+  resolve(root: string, branch: string): Promise<SessionPullRequestContext | null>;
 };
 
 export function createBranchPrCache(options?: {
@@ -178,17 +184,17 @@ export function createBranchPrCache(options?: {
   const now = options?.now ?? Date.now;
 
   const entries = new Map<string, CacheEntry>();
-  const inFlight = new Set<string>();
+  const inFlight = new Map<string, Promise<void>>();
 
   function ttlFor(entry: CacheEntry): number {
     const state = entry.value?.state;
     return state === "merged" || state === "closed" ? settledTtlMs : ttlMs;
   }
 
-  function refresh(key: string, root: string, branch: string): void {
-    if (inFlight.has(key) || inFlight.size >= maxConcurrent) return;
-    inFlight.add(key);
-    void runner(root, branch)
+  function lookup(key: string, root: string, branch: string): Promise<void> {
+    const pending = inFlight.get(key);
+    if (pending) return pending;
+    const request = runner(root, branch)
       .then((stdout) => {
         entries.set(key, { value: parseBranchPr(stdout, branch), fetchedAt: now() });
       })
@@ -199,6 +205,14 @@ export function createBranchPrCache(options?: {
       .finally(() => {
         inFlight.delete(key);
       });
+    inFlight.set(key, request);
+    return request;
+  }
+
+  // Background refreshes stay capped so the list poll cannot fan out gh.
+  function refresh(key: string, root: string, branch: string): void {
+    if (inFlight.has(key) || inFlight.size >= maxConcurrent) return;
+    void lookup(key, root, branch);
   }
 
   return {
@@ -207,6 +221,16 @@ export function createBranchPrCache(options?: {
       const entry = entries.get(key);
       if (!entry || now() - entry.fetchedAt >= ttlFor(entry)) refresh(key, root, branch);
       return entry?.value;
+    },
+    async resolve(root, branch) {
+      const key = `${root}\u0000${branch}`;
+      const entry = entries.get(key);
+      if (entry) {
+        if (now() - entry.fetchedAt >= ttlFor(entry)) refresh(key, root, branch);
+        return entry.value;
+      }
+      await lookup(key, root, branch);
+      return entries.get(key)?.value ?? null;
     },
   };
 }

@@ -10,6 +10,7 @@ import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/sess
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { branchPrCache } from "@/lib/branch-pr-context";
 import {
   canvasCommitRequiresDefaultBranch,
   exactBranchPushRef,
@@ -379,11 +380,15 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
   return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
 }
 
-/** PR context for the current branch (composer git chip): the open/merged pull
- *  request heading this branch, via `gh pr view` — null when there is no PR,
- *  no branch (detached/unborn HEAD), or `gh` is unavailable/unauthenticated.
- *  Read-only and network-bound, so it's a separate `?pr=1` query the client
- *  fetches once per branch instead of riding the 5s status poll. */
+/** PR context for the current branch (composer git chip): the pull request
+ *  heading this branch — null when there is no PR, no branch (detached/unborn
+ *  HEAD), or `gh` is unavailable/unauthenticated. Read-only and network-bound,
+ *  so it's a separate `?pr=1` query rather than part of the 5s status poll.
+ *
+ *  Answered through the chat list's branch→PR cache (#5619): the chip
+ *  remounts on every chat open, and running `gh pr view` each time cost
+ *  ~0.5 s per open and spent the shared GraphQL quota. The cache uses REST
+ *  and is shared with the sessions list, so an open usually costs nothing. */
 async function branchPr(repoRoot: string): Promise<NextResponse> {
   let branch: string | null = null;
   try {
@@ -392,27 +397,19 @@ async function branchPr(repoRoot: string): Promise<NextResponse> {
     /* no HEAD yet */
   }
   if (!branch || branch === "HEAD") return NextResponse.json({ ok: true, branch, pr: null });
-  try {
-    const { stdout } = await ghCli(repoRoot, [
-      "pr", "view", branch, "--json", "number,url,state,isDraft",
-    ]);
-    const parsed = JSON.parse(stdout) as {
-      number?: number; url?: string; state?: string; isDraft?: boolean;
-    };
-    if (typeof parsed.number === "number" && typeof parsed.url === "string" && PR_URL_RE.test(parsed.url)) {
-      return NextResponse.json({
-        ok: true,
-        branch,
-        pr: {
-          number: parsed.number,
-          url: parsed.url,
-          state: typeof parsed.state === "string" ? parsed.state : "OPEN",
-          isDraft: parsed.isDraft === true,
-        },
-      });
-    }
-  } catch {
-    /* no PR for this branch, or gh missing/unauthenticated — a clean null */
+  const pr = await branchPrCache.resolve(repoRoot, branch).catch(() => null);
+  if (pr?.url && PR_URL_RE.test(pr.url)) {
+    return NextResponse.json({
+      ok: true,
+      branch,
+      pr: {
+        number: pr.number,
+        url: pr.url,
+        // The chip's shape predates the cache: GraphQL's uppercase state.
+        state: (pr.state ?? "open").toUpperCase(),
+        isDraft: pr.draft === true,
+      },
+    });
   }
   return NextResponse.json({ ok: true, branch, pr: null });
 }

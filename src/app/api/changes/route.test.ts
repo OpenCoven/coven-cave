@@ -70,16 +70,19 @@ assert.match(
   "worktreeName resolves worktree-ness from git itself",
 );
 
-// PR context (?pr=1) goes through ghCli (execFile, no shell) and the branch
-// PR's URL must match the pinned github.com PR shape before it is returned.
+// PR context (?pr=1) comes from the chat list's REST branch->PR cache
+// (#5619; its runner is execFile, no shell), never a per-request GraphQL
+// `gh pr view`, and the PR's URL must match the pinned github.com PR shape
+// before it is returned.
 assert.match(
   source,
-  /ghCli\(repoRoot, \[\s*"pr", "view", branch, "--json", "number,url,state,isDraft",\s*\]\)/,
-  "branchPr reads the branch PR via the gh CLI helper",
+  /branchPrCache\.resolve\(repoRoot, branch\)/,
+  "branchPr reads the branch PR through the shared branch->PR cache",
 );
+assert.doesNotMatch(source, /"pr", "view"/, "branchPr never spends GraphQL quota per chat open");
 assert.match(
   source,
-  /PR_URL_RE\.test\(parsed\.url\)/,
+  /PR_URL_RE\.test\(pr\.url\)/,
   "branchPr validates the PR URL shape before returning it",
 );
 
