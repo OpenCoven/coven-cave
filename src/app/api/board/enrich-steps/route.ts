@@ -861,8 +861,10 @@ export async function POST(req: Request) {
             if (req.signal.aborted) return;
             try {
               await reviewCard(card, familiarId);
-            } catch {
-              push({ kind: "skip", cardId: card.id, reason: "error" });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error(`[enrich-steps] ${familiarId} failed on ${card.id}:`, error);
+              push({ kind: "skip", cardId: card.id, reason: "error", message: message.slice(0, 240) });
             }
           }
         }

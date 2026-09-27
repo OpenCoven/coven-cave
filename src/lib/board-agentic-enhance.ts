@@ -67,7 +67,10 @@ function isRecord(value: unknown): value is RawRecord {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-function boundedContextText(value: string): string {
+function boundedContextText(value: string | undefined): string {
+  // Legacy cards can predate a field (no `notes` at all); an absent value is
+  // empty context, not a crash that leaves the task unreviewed (#5629).
+  if (typeof value !== "string") return "";
   if (containsSecretText(value)) return "[redacted]";
   return value.slice(0, MAX_CONTEXT_TEXT_CHARS);
 }

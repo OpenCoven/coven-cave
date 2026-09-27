@@ -119,7 +119,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const \[familiarId, lane\] = next;[\s\S]*await reviewCard\(card, familiarId\);\s*\} catch \{\s*push\(\{ kind: "skip", cardId: card\.id, reason: "error" \}\);/,
+  /const \[familiarId, lane\] = next;[\s\S]*await reviewCard\(card, familiarId\);\s*\} catch \(error\) \{[\s\S]*push\(\{ kind: "skip", cardId: card\.id, reason: "error", message:/,
   "Each task runs as its own assigned familiar, and a failing task is reported without stopping its lane",
 );
 assert.match(
