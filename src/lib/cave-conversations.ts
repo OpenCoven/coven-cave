@@ -873,7 +873,7 @@ export function hasInlineImages(conv: Pick<ConversationFile, "turns">): boolean 
   return conv.turns.some((turn) =>
     turn.attachments?.some((attachment) =>
       typeof attachment?.dataUrl === "string"
-      && attachment.dataUrl.startsWith("data:image/")
+      && attachment.dataUrl.slice(0, 11).toLowerCase() === "data:image/"
       && !attachment.storedId,
     ),
   );
