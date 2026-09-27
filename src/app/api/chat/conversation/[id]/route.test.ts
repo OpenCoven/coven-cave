@@ -841,3 +841,51 @@ test("GET with toolOutputs=recent omits older large outputs; the default GET kee
   const badId = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/x/tool-output?toolId=a"), paramsFor("../escape"));
   assert.equal(badId.status, 400);
 });
+
+// #5607: reopening an unchanged chat is a bodiless 304.
+test("GET is conditional: an unchanged transcript answers 304, any change a new tag", async () => {
+  const id = "sess-etag";
+  const url = `http://test/api/chat/conversation/${id}?toolOutputs=recent`;
+  const get = (headers = {}, target = url) => GET(new Request(target, { headers }), paramsFor(id));
+  writeConversation(id, [
+    { id: "t1", parentId: null, role: "user", text: "hello", createdAt: "2026-06-01T00:00:01Z" },
+  ]);
+  const first = await get();
+  assert.equal(first.status, 200);
+  const tag = first.headers.get("etag");
+  assert.match(tag, /^"c-[A-Za-z0-9_-]{32}"$/);
+  assert.equal((await first.json()).conversation.turns.length, 1);
+
+  const unchanged = await get({ "if-none-match": tag });
+  assert.equal(unchanged.status, 304);
+  assert.equal(unchanged.headers.get("etag"), tag);
+  assert.equal(await unchanged.text(), "", "a 304 carries no transcript");
+
+  const full = await get({ "if-none-match": tag }, `http://test/api/chat/conversation/${id}`);
+  assert.equal(full.status, 200, "the full flavor never matches the recent flavor's tag");
+  assert.notEqual(full.headers.get("etag"), tag);
+
+  writeConversation(id, [
+    { id: "t1", parentId: null, role: "user", text: "hello", createdAt: "2026-06-01T00:00:01Z" },
+    { id: "t2", parentId: "t1", role: "assistant", text: "hi", createdAt: "2026-06-01T00:00:02Z" },
+  ]);
+  const changed = await get({ "if-none-match": tag });
+  assert.equal(changed.status, 200, "a changed transcript is a full response");
+  const changedTag = changed.headers.get("etag");
+  assert.notEqual(changedTag, tag);
+  assert.equal((await changed.json()).conversation.turns.length, 2);
+
+  // Linked context comes from the board, not the transcript file.
+  writeFileSync(BOARD_PATH, JSON.stringify({
+    version: 1,
+    cards: [{
+      id: "card-etag", title: "Etag task", notes: "", status: "running", lifecycle: "running",
+      priority: "medium", familiarId: "milo", sessionId: id, cwd: null, projectId: null,
+      links: [], github: [], asana: [], labels: [], steps: [], needsHuman: false,
+      createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z",
+    }],
+  }));
+  const linked = await get({ "if-none-match": changedTag });
+  assert.equal(linked.status, 200, "a new board link invalidates the tag");
+  assert.equal((await linked.json()).context?.task?.id, "card-etag");
+});

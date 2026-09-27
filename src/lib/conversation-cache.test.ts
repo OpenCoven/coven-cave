@@ -76,8 +76,55 @@ test("entries expire after the TTL", () => {
   storeConversation("s1", payload("hello"), t0);
   assert.ok(readCachedConversation("s1", t0 + 44_000));
   assert.equal(readCachedConversation("s1", t0 + 46_000), null);
-  // Expired read also evicts.
-  assert.equal(readCachedConversation("s1", t0), null);
+});
+
+// #5607: an expired entry never paints, but its tag revalidates it.
+test("an expired entry revalidates with If-None-Match and a 304 reuses it", async () => {
+  const kept = payload("kept");
+  storeConversation("s1", kept, Date.now() - 60_000, '"c-v1"');
+  assert.equal(readCachedConversation("s1"), null, "past the paint TTL it does not paint");
+  const calls = stubFetch(async () => ({ ok: false, status: 304, json: async () => null }));
+  const loaded = await loadConversation("s1");
+  assert.equal(calls[0][1].headers["If-None-Match"], '"c-v1"');
+  assert.equal(loaded, kept, "the same payload object, so the view sees no change");
+  assert.equal(readCachedConversation("s1"), kept, "a 304 refreshes the paint window");
+});
+
+test("a changed revision replaces the kept payload and its tag", async () => {
+  storeConversation("s1", payload("old"), Date.now() - 60_000, '"c-v1"');
+  stubFetch(async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ ETag: '"c-v2"' }),
+    json: async () => payload("new"),
+  }));
+  const loaded = await loadConversation("s1");
+  assert.equal(loaded.conversation.turns[0].text, "new");
+  const calls = stubFetch(async () => ({ ok: false, status: 304, json: async () => null }));
+  assert.equal(await loadConversation("s1"), loaded);
+  assert.equal(calls[0][1].headers["If-None-Match"], '"c-v2"');
+});
+
+test("a load with nothing kept sends no If-None-Match", async () => {
+  const calls = stubFetch(async () => ({ ok: true, json: async () => payload("fresh") }));
+  await loadConversation("s1");
+  assert.equal(calls[0][1].headers, undefined);
+});
+
+test("the offline copy is rewritten only for a new revision", async () => {
+  const { offlineConversationWriteNeeded, recordOfflineConversationWrite } = await import("./conversation-cache.ts");
+  const first = payload("a");
+  storeConversation("s1", first, Date.now(), '"c-v1"');
+  assert.equal(offlineConversationWriteNeeded("s1", first), true);
+  recordOfflineConversationWrite("s1", first);
+  assert.equal(offlineConversationWriteNeeded("s1", first), false, "an unchanged revision is not rewritten");
+  const second = payload("b");
+  storeConversation("s1", second, Date.now(), '"c-v2"');
+  assert.equal(offlineConversationWriteNeeded("s1", second), true, "a new revision is");
+  assert.equal(offlineConversationWriteNeeded("s1", payload("untagged")), true, "untagged payloads are always written");
+  recordOfflineConversationWrite("s1", second);
+  invalidateConversation("s1");
+  assert.equal(offlineConversationWriteNeeded("s1", second), true, "a deleted chat's copy is never assumed present");
 });
 
 test("invalidateConversation drops a single entry", () => {

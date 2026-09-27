@@ -7,7 +7,7 @@ import { caveHome } from "./coven-paths.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { externalizeInlineImages } from "./server/externalize-inline-images.ts";
-import { readCachedStore } from "./server/store-read-cache.ts";
+import { inspectStoreFile, readCachedStore, type FileIdentity } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
@@ -761,6 +761,15 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
 const CONVERSATION_READ_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 
 /**
+ * How long a transcript may be served from the read cache (#5607). Every hit
+ * is already verified against a SHA-256 of the file's bytes, so this is only
+ * a backstop; the store cache's 1 s default meant any reopen more than a
+ * second later re-parsed the file (46 ms for a 21 MB transcript). The byte
+ * bound above, not this, is what limits memory.
+ */
+const CONVERSATION_READ_CACHE_TTL_MS = 10 * 60_000;
+
+/**
  * {@link loadConversation} with the transcript held across requests.
  *
  * `GET /api/chat/conversation/[id]` is not a once-per-open path: `chat-list.tsx`
@@ -792,7 +801,45 @@ export async function loadConversationCached(sessionId: string): Promise<Convers
   }
   return readCachedStore(filePath, () => loadConversation(sessionId), {
     maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
+    ttlMs: CONVERSATION_READ_CACHE_TTL_MS,
   });
+}
+
+export type ConversationFileRevision = {
+  /** SHA-256 of the transcript file's bytes. */
+  digest: string;
+  /** Loads the transcript through the read cache without re-hashing the file. */
+  load(): Promise<ConversationFile | null>;
+};
+
+/**
+ * The transcript's content digest, taken before anything is parsed, so a
+ * conditional GET can answer 304 without loading, cloning or serializing the
+ * transcript (#5607). `load` reuses the same identity: if the file is replaced
+ * between the two, the value is filed under the older identity and the next
+ * read misses, and the caller's tag is the older one, so the client's next
+ * revalidation gets the newer transcript rather than a false 304.
+ */
+export async function conversationFileRevision(
+  sessionId: string,
+): Promise<ConversationFileRevision | null> {
+  let filePath: string;
+  let identity: FileIdentity;
+  try {
+    filePath = pathFor(sessionId);
+    identity = await inspectStoreFile(filePath);
+  } catch {
+    return null;
+  }
+  return {
+    digest: identity.digest,
+    load: () =>
+      readCachedStore(filePath, () => loadConversation(sessionId), {
+        maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
+        ttlMs: CONVERSATION_READ_CACHE_TTL_MS,
+        identity,
+      }),
+  };
 }
 
 /** Serialize read-modify-write operations for one conversation. Atomic file

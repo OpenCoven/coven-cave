@@ -45,7 +45,8 @@ assert.match(
 
 assert.match(
   conversationRoute,
-  /NextResponse\.json\(\{\s*ok: true,\s*conversation: presentConversation\(sanitizeConversationMetadata\(conv\)\),\s*context,\s*\}\)/,
+  // The saved-conversation response also carries its ETag headers (#5607).
+  /NextResponse\.json\(\s*\{\s*ok: true,\s*conversation: presentConversation\(sanitizeConversationMetadata\(conv\)\),\s*context,\s*\}\s*(?:,\s*\{\s*headers\s*\}\s*,?\s*)?\)/,
   "Conversation API should return context alongside sanitized saved Cave conversations",
 );
 

@@ -76,7 +76,9 @@ import {
   ConversationLoadError,
   invalidateConversation,
   loadConversation,
+  offlineConversationWriteNeeded,
   readCachedConversation,
+  recordOfflineConversationWrite,
 } from "@/lib/conversation-cache";
 import { fetchToolOutput } from "@/lib/tool-output-fetch";
 import { sameConversationRevision } from "@/lib/conversation-revision";
@@ -4421,12 +4423,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
-          void writeOfflineCache(
-            "conversation",
-            sessionId,
-            json,
-            json.conversation.activeLeafId ?? "conversation",
-          );
+          // Skipped for an unchanged revision (#5607): the write re-encrypts
+          // the whole transcript, and a reopen almost always revalidates to
+          // exactly what was written last time.
+          if (offlineConversationWriteNeeded(sessionId, json)) {
+            void writeOfflineCache(
+              "conversation",
+              sessionId,
+              json,
+              json.conversation.activeLeafId ?? "conversation",
+            ).then((written) => {
+              if (written) recordOfflineConversationWrite(sessionId, json);
+            });
+          }
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
