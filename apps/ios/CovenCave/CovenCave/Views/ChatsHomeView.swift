@@ -33,9 +33,12 @@ struct ChatsHomeView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showNewChat = false
     @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
+    @State private var searchMeasurementRevision: UInt64 = 0
+    @State private var searchMeasurement: CavePerformanceSpan?
     @State private var listSnapshotCache = ChatListSnapshotCache()
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
@@ -108,6 +111,13 @@ struct ChatsHomeView: View {
         .sheet(item: $exportArchive) { archive in
             ActivityView(items: [archive.url])
         }
+        .onDisappear { cancelSearchMeasurement() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { cancelSearchMeasurement() }
+        }
+        .onChange(of: app.selectedTab) { _, tab in
+            if tab == .settings { cancelSearchMeasurement() }
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
@@ -118,17 +128,38 @@ struct ChatsHomeView: View {
         }
     }
 
+    private func cancelSearchMeasurement() {
+        app.performanceRecorder.cancel(searchMeasurement)
+        searchMeasurement = nil
+    }
+
+    private func publishSearchQuery(_ value: String) {
+        guard value != query else { return }
+        if app.performanceRecorder.isEnabled {
+            cancelSearchMeasurement()
+            if scenePhase == .active, app.selectedTab != .settings {
+                searchMeasurement = app.performanceRecorder.begin(CavePerformanceSpanName.searchQuery.rawValue)
+                searchMeasurementRevision &+= 1
+            }
+        }
+        query = value
+    }
+
     private var splitView: some View {
         // Both server lists go in; the snapshot owns the archived filter, so
         // the "Show archived" count includes server-only rows (#5429).
-        let snapshot = listSnapshotCache.resolve(
-            threads: app.chatThreads,
-            sessions: app.chatServerSessions + app.chatArchivedServerSessions,
-            familiars: app.familiars,
-            query: query,
-            includeArchived: showArchived,
-            familiarId: familiarFilter
-        )
+        let snapshot = app.performanceRecorder.measureSynchronous(
+            CavePerformanceSpanName.chatListProjection.rawValue
+        ) {
+            listSnapshotCache.resolve(
+                threads: app.chatThreads,
+                sessions: app.chatServerSessions + app.chatArchivedServerSessions,
+                familiars: app.familiars,
+                query: query,
+                includeArchived: showArchived,
+                familiarId: familiarFilter
+            )
+        }
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
                 if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
@@ -144,6 +175,18 @@ struct ChatsHomeView: View {
                     familiarFilterEmptyState(familiarId, snapshot: snapshot)
                 } else {
                     homeList(snapshot)
+                }
+            }
+            .background {
+                if app.performanceRecorder.isEnabled {
+                    let revision = searchMeasurementRevision
+                    let measurement = searchMeasurement
+                    CavePerformanceStableFrame(token: "chat-search-\(revision)") {
+                        guard revision == searchMeasurementRevision else { return }
+                        app.performanceRecorder.end(measurement)
+                    }
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -484,13 +527,13 @@ struct ChatsHomeView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 18))
                     .foregroundStyle(searchFocused ? chrome.accent : chrome.textSecondary)
-                TextField("Search chats…", text: $query)
+                TextField("Search chats…", text: Binding(get: { query }, set: publishSearchQuery))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($searchFocused)
                 if !query.isEmpty {
                     Button {
-                        query = ""
+                        publishSearchQuery("")
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18))

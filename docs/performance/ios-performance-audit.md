@@ -105,7 +105,7 @@ SIMCTL_CHILD_CAVE_PERFORMANCE_INSTRUMENTATION=1 \
   "$SIMULATOR_ID" ai.opencoven.cave
 ```
 
-Capture the `ai.opencoven.cave` / `performance` signposts with Instruments'
+Capture the `ai.opencoven.cave` / Points of Interest signposts with Instruments'
 Points of Interest template.
 
 ## Budget status
@@ -236,3 +236,133 @@ supported iPhone:
   and avatar paths rather than a file named `CachedImageView.swift`.
 
 These are implementation-shape differences, not relaxed performance bounds.
+
+
+## Current-shell baseline fixture (#5292, in progress)
+
+The explicit `--performance-fixture` launch argument installs deterministic,
+non-sensitive data: 20 projects, 1,000 local chats, 1,000 server sessions,
+1,000 tasks, 12 familiars, and an unassigned conversation. It uses a separate
+preferences suite and thread store. Pairing and live connection configuration
+are disabled in this mode. Enable `--performance-instrumentation` separately
+to record spans in a Release build.
+
+The first conversation, **Rich streaming fixture**, contains Markdown and a
+synthetic text update every 50 ms while the scene is active. Updates use the
+existing in-place transcript mutation path. The response repeats every 200
+updates, bounding message size instead of growing throughout a capture. Each
+foreground interval starts the sequence again; backgrounding cancels the loop.
+This exercises rendering and publication, not network ingestion or server work.
+
+The current shell has Chats and Settings, with inline chat search.
+`drawer.open` starts at the drawer-state change and waits for SwiftUI's
+animation-removal completion, layout, and two display ticks. Closing cancels
+an unfinished open sample. `destination.stable-frame` starts at a change of
+selected destination and waits for its transaction to complete, the drawer to
+close and finish animating, and two display ticks. Delayed callbacks match their
+original span so they cannot complete a newer visit. These measurements include
+the existing animation duration; no fixed sleep substitutes for completion. Retired
+Tasks/project-switcher journeys must not be restored to satisfy the older
+baseline wording. `chat.list-projection` measures construction of the current
+chat list snapshot, including source filtering. `search.query` starts when a
+new query is published and ends after layout and two display ticks. Superseded
+queries, backgrounding, and navigation to Settings cancel unfinished samples.
+These boundaries do not establish that every asynchronous renderer is idle.
+
+`chat.first-rich-render` covers an assistant Markdown bubble's renderer creation
+through its first successful JavaScript render, height publication, and two
+display ticks after attachment to a window. It includes cold WebKit acquisition.
+Each renderer instance records at most one sample; scrolling a bubble out and
+back into a newly created renderer is a separate mount, not a second sample on
+the same renderer. Failure, teardown, or app deactivation cancels an unfinished
+sample. Image loading and later streaming updates are outside this boundary.
+
+Physical Release measurements, cold/warm distributions, trace-based bottleneck
+ranking, and measured budgets remain outstanding. No simulator, parser, or
+unit-test result in this work constitutes that acceptance.
+
+### Release capture driver
+
+Generate the Xcode project with `pnpm mobile:ios:xcodegen`. The
+`CovenCavePerformance` scheme builds the app and UI runner in Release, selecting
+only `PerformanceBaselineUITests`; it does not enable testability or import the
+production app into the native unit-test target. The ordinary Debug scheme skips
+this capture class; routine PR CI compiles the UI bundle and runs native unit
+tests. Qualify the capture journey separately with the Release scheme.
+
+```bash
+xcodebuild build-for-testing \
+  -project apps/ios/CovenCave/CovenCave.xcodeproj \
+  -scheme CovenCavePerformance \
+  -destination 'id=<physical-core-device-uuid>' \
+  -derivedDataPath /tmp/cave-performance-release
+```
+
+Use portrait orientation for this driver: its drawer tap-placement guard follows
+the current portrait panel width and footer inset. It waits for the control to
+reach its on-screen position; this is not an animation measurement. Landscape
+safe-area geometry needs a separate driver qualification.
+
+The driver opens the rich streaming fixture, visits Settings and Chats, searches
+for `Fixture chat 999`, and selects its exact local chat row. Leaving the rich
+thread makes the next cycle mount a renderer again. Warm journeys perform one
+explicit priming cycle followed by the requested measured cycles. Cold journeys
+launch a new app process for each cycle; this does **not** establish a clean
+install or cold OS/WebKit caches. App startup precedes the cycle window and
+must be analyzed separately if launch latency is being reported.
+
+Configure the UI runner through its generated `.xctestrun` file, not an assumed
+forwarding of shell environment variables. Copy that file within its generated
+`Build/Products` directory to preserve `__TESTROOT__` paths. Set the UI target's
+`EnvironmentVariables.CAVE_PERFORMANCE_REPETITIONS` to the desired count
+(1–100; default 1). For externally launched warm Instruments captures, also set
+`EnvironmentVariables.CAVE_PERFORMANCE_ATTACH_RUNNING` to `1`, and set
+`OnlyTestIdentifiers` to
+`["PerformanceBaselineUITests/testCurrentShellWarmJourneys"]`. Run the copied
+file using `xcodebuild test-without-building -xctestrun <copy> -destination
+'id=<physical-core-device-uuid>'`.
+
+For attach captures, first install the exact signed `CovenCave.app` and
+`CovenCaveUITests-Runner.app` from `Build/Products/Release-iphoneos` with
+`xcrun devicectl device install app --device <physical-core-device-uuid> <app>`.
+Do this **before** Instruments launches the fixture. In the copied UI target
+configuration, set `UseDestinationArtifacts` to `true` so the test run cannot
+reinstall the running capture app. Xcode restricts this option to physical iOS
+devices; a Simulator run cannot qualify that installation policy. As specified
+by `man xcodebuild.xctestrun`:
+
+- Preserve `TestHostBundleIdentifier` from the generated configuration.
+- Set `UITargetAppBundleIdentifier` to `ai.opencoven.cave`.
+- Move the generated `TestBundlePath` value to
+  `TestBundleDestinationRelativePath` (it uses the `__TESTHOST__` placeholder).
+- Remove `TestBundlePath`, `TestHostPath`, and `UITargetAppPath`.
+
+Verify the captured app process identity survives the driver; matching bundle
+identifiers alone do not prove Instruments remained attached to the same process.
+
+In attach mode Instruments must first launch `ai.opencoven.cave` with **both**
+`--performance-instrumentation --performance-fixture`. Activating an existing
+app does not apply launch arguments; the runner's process-state check cannot
+verify them. Retain the external launch command as fixture evidence. The warm
+driver leaves that process running so Instruments controls capture completion.
+For cold attach captures, select only
+`PerformanceBaselineUITests/testCurrentShellColdJourneys`, set repetitions to
+`1`, and retain a fresh external launch/PID receipt for that cycle. The driver
+cannot establish process freshness from its running-state check. It performs
+one cold cycle and leaves that process running; attached cold repetitions above
+one fail before activation. Repeat cold captures through separate external
+launches and traces. Do not run the default full suite with attach enabled:
+method ordering cannot establish cold-process freshness, and an attached trace
+must not be assumed to follow later launches.
+Instruments uses the hardware UDID, which can differ from the CoreDevice UUID
+accepted by `devicectl` and `xcodebuild`.
+
+Each successful cycle retains a JSON XCTest attachment containing its phase,
+index, and start/end Unix timestamps from the UI runner. Export these from the
+`.xcresult`, correlate them with the trace's clock, and include only completed
+app spans wholly inside the selected cycle windows. Exclude `priming-exclude`
+and cancelled spans. Keep cold and warm distributions separate. A cycle's
+wall-clock duration includes UI automation and is **not** an interaction sample;
+calculate count, median, p95, and maximum from the named app spans only. Verify
+clock alignment and trace coverage before calculating statistics. These driver
+instructions alone do not supply physical measurements or ratify budgets.

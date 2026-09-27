@@ -153,7 +153,7 @@ assert.match(
 );
 assert.match(
   appModel,
-  /navigationDrawerOpen: Bool = \{[\s\S]*?--ui-open-drawer/,
+  /navigationDrawerOpenValue: Bool = \{[\s\S]*?--ui-open-drawer/,
   "the layered drawer has a deterministic native screenshot fixture",
 );
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");

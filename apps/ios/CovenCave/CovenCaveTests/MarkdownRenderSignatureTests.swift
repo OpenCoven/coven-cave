@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import CovenCave
 
 final class MarkdownRenderSignatureTests: XCTestCase {
@@ -30,6 +31,65 @@ final class MarkdownRenderSignatureTests: XCTestCase {
             MarkdownRenderSignature(markdown: "Hello", streaming: false, reader: true),
             MarkdownRenderSignature(markdown: "Hello", streaming: false, reader: false)
         )
+    }
+
+    @MainActor
+    func testFirstRichRenderWaitsForAWindowFrame() async throws {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let coordinator = MarkdownWebView.Coordinator(
+            performanceRecorder: recorder, measureFirstRichRender: true
+        )
+        defer { coordinator.invalidate() }
+        coordinator.webView.frame = CGRect(x: 0, y: 0, width: 320, height: 200)
+        coordinator.apply(markdown: "# First rich reply\n\n**Measured content**",
+                          streaming: false, fontScale: 1, theme: .dark,
+                          accentHex: nil, reader: false)
+        let clock = ContinuousClock()
+        let renderedDeadline = clock.now.advanced(by: .seconds(30))
+        while recorder.snapshot()["markdown.render.settled"] == nil, clock.now < renderedDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotNil(recorder.snapshot()["markdown.render.settled"])
+        let name = CavePerformanceSpanName.chatFirstRichRender.rawValue
+        XCTAssertNil(recorder.snapshot()[name], "An off-window render is not a presented frame")
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        window.rootViewController = UIViewController()
+        window.rootViewController!.view.addSubview(coordinator.webView)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let frameDeadline = clock.now.advanced(by: .seconds(3))
+        while recorder.snapshot()[name] == nil, clock.now < frameDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(recorder.snapshot()[name]?.count, 1)
+        coordinator.invalidate()
+        XCTAssertEqual(recorder.snapshot()[name]?.count, 1)
+    }
+
+    @MainActor
+    func testHiddenPresentationCancelsPendingFirstRichRender() async throws {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let coordinator = MarkdownWebView.Coordinator(
+            performanceRecorder: recorder, measureFirstRichRender: true
+        )
+        defer { coordinator.invalidate() }
+        coordinator.webView.frame = CGRect(x: 0, y: 0, width: 320, height: 200)
+        coordinator.setPresentationActive(false)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        window.rootViewController = UIViewController()
+        window.rootViewController!.view.addSubview(coordinator.webView)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        coordinator.apply(markdown: "**Hidden reply**", streaming: false,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(30))
+        while recorder.snapshot()["markdown.render.settled"] == nil, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotNil(recorder.snapshot()["markdown.render.settled"])
+        XCTAssertNil(recorder.snapshot()[CavePerformanceSpanName.chatFirstRichRender.rawValue])
     }
 
     @MainActor

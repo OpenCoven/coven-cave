@@ -24,8 +24,8 @@ assert.match(
 
 assert.match(
   chatView,
-  /private func scheduleDraftPersistence\(_ value: String\)[\s\S]*draftPersistenceTask\?\.cancel\(\)[\s\S]*Task \{ \[draftKey\] in[\s\S]*try\? await Task\.sleep\(nanoseconds: draftPersistenceDelay\)/,
-  "draft edits should schedule one delayed persistence task, replacing older edits",
+  /private func scheduleDraftPersistence\(_ value: String\)[\s\S]*draftPersistenceTask\?\.cancel\(\)[\s\S]*Task \{ \[threadId = thread\.id\] in[\s\S]*try\? await Task\.sleep\(nanoseconds: draftPersistenceDelay\)/,
+  "draft edits should capture their thread and schedule one delayed persistence task, replacing older edits",
 );
 
 assert.match(
@@ -50,6 +50,12 @@ assert.match(
   runner,
   /"scripts\/ios-chat-draft-lag\.test\.mjs"/,
   "mobile test suite should run the iOS chat draft lag regression",
+);
+
+assert.match(
+  chatView,
+  /guard !Task\.isCancelled else \{ return \}[\s\S]*writeDraftPersistence\(value, threadId: threadId\)/,
+  "a delayed draft must persist against the captured thread after cancellation is checked",
 );
 
 console.log("ios-chat-draft-lag.test.mjs: ok");
