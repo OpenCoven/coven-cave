@@ -22,6 +22,11 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import {
+  githubItemCacheKey,
+  readGitHubItemThroughCache,
+  type CachedGitHubItem,
+} from "@/lib/server/github-item-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -193,17 +198,39 @@ export async function GET(req: Request) {
   }
 
   const token = resolveGitHubToken();
+  // Cached briefly (#5615): every PR card in a transcript asks, and each ask
+  // is three live GitHub calls. `fresh=1` is a card refreshing after an action.
+  const result = await readGitHubItemThroughCache(
+    githubItemCacheKey(token, repo, number, wantPull),
+    () => loadItem(repo, number, wantPull, token),
+    { fresh: url.searchParams.get("fresh") === "1" },
+  );
+  return new NextResponse(result.body, {
+    status: result.status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
+function jsonResult(value: unknown, status = 200): CachedGitHubItem {
+  return { status, body: JSON.stringify(value) };
+}
+
+async function loadItem(
+  repo: string,
+  number: number,
+  wantPull: boolean,
+  token: string | null,
+): Promise<CachedGitHubItem> {
   try {
     // repo passed REPO_RE and number is a positive integer — both safe to interpolate.
     const { res, data } = await ghFetch(`/repos/${repo}/issues/${number}`, token);
     if (res.status === 404) {
-      return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
+      return jsonResult({ ok: false, error: "not_found" }, 404);
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
+      return jsonResult(
         { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
+        res.status === 403 ? 403 : 502,
       );
     }
 
@@ -241,13 +268,13 @@ export async function GET(req: Request) {
 
     // Absent `pull=1` the payload stays byte-identical to what every existing
     // caller already parses — the key is not even present.
-    if (!wantPull) return NextResponse.json(detail);
+    if (!wantPull) return jsonResult(detail);
     const pullSummary = detail.isPull ? await fetchPullSummary(repo, number, token).catch(() => null) : null;
-    return NextResponse.json({ ...detail, pull: pullSummary });
+    return jsonResult({ ...detail, pull: pullSummary });
   } catch (e) {
-    return NextResponse.json(
+    return jsonResult(
       { ok: false, error: e instanceof Error ? e.message : "failed to load item" },
-      { status: 502 },
+      502,
     );
   }
 }

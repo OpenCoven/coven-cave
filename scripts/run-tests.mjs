@@ -317,6 +317,8 @@ export const SUITES = {
     "src/lib/server/project-icon-rate-limit.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/github-checks.test.ts",
+    "src/lib/github-item-fetch.test.ts",
+    "src/lib/server/github-item-cache.test.ts",
     "src/lib/github-activity.test.ts",
     "src/lib/stage-model.test.ts",
     "src/lib/skill-blocks.test.ts",

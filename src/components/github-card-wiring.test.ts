@@ -55,7 +55,13 @@ assert.match(
 );
 
 // github-card: hydration + degradation contracts.
-assert.match(card, /\/api\/github\/item\?repo=/, "card hydrates from /api/github/item");
+// Hydration goes through the fetcher every card shares (#5615).
+assert.match(card, /fetchGitHubItem\(repo, number, \{ fresh: tick > 0 \}\)/, "card hydrates through the shared item fetcher, fresh on refresh");
+assert.match(
+  readFileSync(new URL("../lib/github-item-fetch.ts", import.meta.url), "utf8"),
+  /\/api\/github\/item\?repo=/,
+  "the shared fetcher hydrates from /api/github/item",
+);
 assert.match(card, /cancelled/, "hydration effect guards against post-unmount setState");
 assert.match(card, /connect GitHub to hydrate/, "unauth state degrades with a connect hint");
 assert.match(card, /descriptorUrl\(descriptor\)/, "card links out via the canonical descriptor URL");
