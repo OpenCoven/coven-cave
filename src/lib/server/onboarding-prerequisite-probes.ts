@@ -159,7 +159,7 @@ async function probeDefinition(definition: PrerequisiteDefinition): Promise<Prer
     return { ...base, state: coven?.installed ? "fail" : "fail", detail: coven?.installed ? "Coven is installed but its package, executable, or version could not be verified." : "Coven CLI is not installed." };
   }
   if (definition.probe === "npm-package" || definition.probe === "command") {
-    const binary = npmDefinitionBinary(definition.id) ?? ({ git: "git", beads: "bd", ripgrep: "rg", "github-cli": "gh", openssh: "ssh" } as Partial<Record<PrerequisiteId, string>>)[definition.id];
+    const binary = npmDefinitionBinary(definition.id) ?? ({ git: "git", ripgrep: "rg", "github-cli": "gh", openssh: "ssh" } as Partial<Record<PrerequisiteId, string>>)[definition.id];
     const found = binary ? await commandPath(binary) : null;
     return { ...base, state: found ? "pass" : "fail", detail: found ? `${binary} is available to Cave at ${found}.` : `${definition.label} is not available to Cave.` };
   }

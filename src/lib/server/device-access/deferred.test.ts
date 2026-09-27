@@ -240,7 +240,8 @@ for (const discoveryFails of [false, true]) {
     const listening = /server\.listen\(port, hostname, \(\) => \{([\s\S]*?)\n\}\);/u.exec(source)?.[1];
     assert.ok(initialization && listening, "exercise the production startup wiring");
     const events: string[] = [];
-    const run = new Function("deferDeviceAccessStore", "createDeviceAccessStore", "publishStandaloneClientV1DiscoveryRecord", "reportClientV1DiscoveryUnavailable", "loopbackHttpEndpoint", "logStartupHeapCeiling", "console", `
+    let spawnPathWarmUps = 0;
+    const run = new Function("deferDeviceAccessStore", "createDeviceAccessStore", "publishStandaloneClientV1DiscoveryRecord", "reportClientV1DiscoveryUnavailable", "loopbackHttpEndpoint", "logStartupHeapCeiling", "console", "warmHarnessSpawnPath", `
       const hostname = "localhost", port = 3000;
       ${initialization.replace("Promise.withResolvers<void>()", "Promise.withResolvers()")}
       return { deferred: deferredDeviceAccess, listen: () => { ${listening} } };
@@ -250,11 +251,14 @@ for (const discoveryFails of [false, true]) {
     }, () => {
       events.push("parent");
       if (discoveryFails) throw new Error("discovery refused");
-    }, () => events.push("refused"), () => "localhost", () => {}, { log: () => {} });
+    }, () => events.push("refused"), () => "localhost", () => {}, { log: () => {} }, async () => {
+      spawnPathWarmUps += 1;
+    });
     await setImmediate();
     assert.deepEqual(events, [], "child hardening must not start before listen");
     const pending = run.deferred.store.policy();
     run.listen();
+    assert.equal(spawnPathWarmUps, 1, "listening starts the spawn-PATH warm-up once (#5448)");
     assert.deepEqual(events, discoveryFails ? ["parent", "refused"] : ["parent"]);
     assert.deepEqual(await pending, { enabled: true, allowedTailnets: ["tail"] });
     assert.deepEqual(events, discoveryFails ? ["parent", "refused", "child"] : ["parent", "child"]);

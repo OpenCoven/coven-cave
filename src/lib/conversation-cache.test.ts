@@ -98,7 +98,7 @@ test("prefetch fetches, caches, and dedupes concurrent requests", async () => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const calls = stubFetch(async (url) => {
-    assert.equal(url, "/api/chat/conversation/s1");
+    assert.equal(url, "/api/chat/conversation/s1?toolOutputs=recent");
     await gate;
     return { ok: true, json: async () => payload("prefetched") };
   });
@@ -233,7 +233,7 @@ test("hovering another row re-arms the singleton timer onto the new session", as
   hoverPrefetchConversation("s2");
   await sleep(150);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], "/api/chat/conversation/s2");
+  assert.equal(calls[0][0], "/api/chat/conversation/s2?toolOutputs=recent");
 });
 
 // ── Wiring pins ─────────────────────────────────────────────────────────────
@@ -265,4 +265,22 @@ test("chat-view paints cached payloads and shares revalidation with prefetch", (
   // Confirmed deletion invalidation is centralized so list, project, header,
   // sidebar, and split-pane deletes cannot drift apart.
   assert.match(workspace, /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\)/);
+});
+
+test("the transcript fetch is bounded and a timed-out load doesn't pin Retry (#5583)", async () => {
+  clearConversationCache();
+  let attempt = 0;
+  const calls = stubFetch((_url, init) => {
+    attempt += 1;
+    assert.ok(init?.signal instanceof AbortSignal, "every transcript request carries an abort signal");
+    if (attempt === 1) {
+      // A stalled route: reject the way the timeout signal would.
+      return Promise.reject(new DOMException("The operation timed out.", "TimeoutError"));
+    }
+    return Promise.resolve(new Response(JSON.stringify(payload("after retry")), { status: 200 }));
+  });
+  await assert.rejects(loadConversation("timeout-1"), (error) => error?.name === "TimeoutError");
+  const retried = await loadConversation("timeout-1");
+  assert.equal(retried.conversation.turns[0].text, "after retry", "Retry starts a fresh request");
+  assert.equal(calls.length, 2);
 });

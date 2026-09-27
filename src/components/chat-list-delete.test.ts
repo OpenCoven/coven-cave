@@ -172,7 +172,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!showArchived\) \{\s*setArchivedRows\(\[\]\);/,
+  /if \(!showArchived\) \{\s*setArchived\(\{ familiarId: null, rows: \[\] \}\);/,
   "Archived rows should be dropped whenever the Show archived toggle is off",
 );
 assert.match(
@@ -403,3 +403,12 @@ assert.match(source, /const allVisibleSelected = visibleIds\.length > 0 && visib
 assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
 
 console.log("chat-list-delete.test.ts: ok");
+
+// #5594: archived rows belong to the familiar they were fetched for, so a
+// familiar switch never shows the previous familiar's archive.
+assert.match(
+  source,
+  /const archivedRows = archived\.familiarId === \(familiar\?\.id \?\? null\) \? archived\.rows : NO_ARCHIVED_ROWS;/,
+  "archived rows render only for the familiar they were fetched for",
+);
+

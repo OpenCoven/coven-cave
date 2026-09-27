@@ -9,7 +9,6 @@ import { publishQueueProjectSelection } from "@/lib/queue-project-selection";
 type QueueReadinessView = {
   ok: boolean;
   message: string;
-  canGenerate: boolean;
   project: { id: string; name: string; root: string } | null;
 };
 

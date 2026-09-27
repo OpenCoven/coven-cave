@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Back and Forward step in-surface navigation one level at a time.
 //
-// Chat's scope strip (Sessions / Projects / Familiar) used to be plain
+// Chat's scope strip (Chats / Projects / Familiar) used to be plain
 // component state, so Back from Familiar left the whole surface instead of
 // returning to Projects. These specs pin the traversal, the button enabled
 // states — the shell renders both controls as `disabled={!canGo*}`, which is how
@@ -44,7 +44,7 @@ async function expectTab(page: Page, name: string) {
 test.describe("scope strip history", () => {
   test("Back steps up one tab at a time, and Forward retraces", async ({ page }) => {
     await gotoChat(page);
-    await expectTab(page, "Sessions");
+    await expectTab(page, "Chats");
 
     await scopeTab(page, "Projects").click();
     await expectTab(page, "Projects");
@@ -54,7 +54,7 @@ test.describe("scope strip history", () => {
     await backButton(page).click();
     await expectTab(page, "Projects");
     await backButton(page).click();
-    await expectTab(page, "Sessions");
+    await expectTab(page, "Chats");
 
     await forwardButton(page).click();
     await expectTab(page, "Projects");
@@ -72,7 +72,7 @@ test.describe("scope strip history", () => {
     await expect(backButton(page)).toBeEnabled();
 
     await backButton(page).click();
-    await expectTab(page, "Sessions");
+    await expectTab(page, "Chats");
     await expect(forwardButton(page)).toBeEnabled();
   });
 
@@ -83,8 +83,8 @@ test.describe("scope strip history", () => {
     await backButton(page).click();
     await expectTab(page, "Projects");
 
-    await scopeTab(page, "Sessions").click();
-    await expectTab(page, "Sessions");
+    await scopeTab(page, "Chats").click();
+    await expectTab(page, "Chats");
     await expect(forwardButton(page)).toBeDisabled();
 
     await backButton(page).click();

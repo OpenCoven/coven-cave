@@ -69,14 +69,20 @@ try {
     assert.equal(out.text, "just text, no markers");
   }
 
-  // --- image attachment → bounded data URL ---
+  // --- image attachment → durable store copy + storedId, no data URL (#5587) ---
   {
+    const { readChatImageAttachment } = await import("./chat-attachment-store.ts");
+    const { readFile } = await import("node:fs/promises");
     const text = `Here is the image.\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: imgPath, name: "diagram.png" })}\n\`\`\``;
     const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
     assert.equal(out.attachments.length, 1, "image attachment parsed");
     assert.equal(out.attachments[0].name, "diagram.png");
     assert.equal(out.attachments[0].mimeType, "image/png");
-    assert.ok(out.attachments[0].dataUrl?.startsWith("data:image/png;base64,"), "image carries data URL");
+    assert.equal(out.attachments[0].dataUrl, undefined, "an agent image is not inlined into the transcript");
+    assert.ok(out.attachments[0].storedId?.endsWith(".png"), "an agent image carries a durable stored id");
+    const read = await readChatImageAttachment(out.attachments[0].storedId);
+    assert.equal(read.mimeType, "image/png");
+    assert.deepEqual(read.data, await readFile(imgPath), "the stored copy holds the exact bytes");
     assert.ok(!out.text.includes("coven:attachment"), "marker stripped from cleaned text");
     assert.ok(out.text.includes("Here is the image."), "prose preserved");
   }
@@ -144,6 +150,23 @@ try {
     const out = parseAgentAttachments(text);
     assert.equal(out.attachments.length, 0, "default parser does not read local files");
     assert.equal(out.text, "nope");
+  }
+
+  // --- image with the store unavailable → still shown, inline (#5587) ---
+  {
+    const { writeFile: writePlain } = await import("node:fs/promises");
+    const notADirectory = path.join(outside, "store-is-a-file");
+    await writePlain(notADirectory, "x");
+    const previousStore = process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
+    process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = notADirectory;
+    try {
+      const text = `\`\`\`coven:attachment\n${JSON.stringify({ path: imgPath })}\n\`\`\``;
+      const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+      assert.equal(out.attachments[0].storedId, undefined);
+      assert.ok(out.attachments[0].dataUrl?.startsWith("data:image/png;base64,"), "falls back to inline so the image still shows");
+    } finally {
+      process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = previousStore;
+    }
   }
 
   // --- media attachment → durable store copy + storedId, no data URL ---

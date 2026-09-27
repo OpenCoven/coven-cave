@@ -8,7 +8,7 @@ import {
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import { saveChatMediaAttachmentFromFileSync } from "@/lib/server/chat-attachment-store";
+import { saveChatImageAttachmentSync, saveChatMediaAttachmentFromFileSync } from "@/lib/server/chat-attachment-store";
 
 /**
  * Server-side parser for agent-produced inline attachments.
@@ -166,6 +166,11 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
       const dataUrl = `data:${imageMime};base64,${fs.readFileSync(/* turbopackIgnore: true */ resolved).toString("base64")}`;
       const image = cleanImageDataUrl(dataUrl);
       if (image) {
+        // Stored and referenced by id like media (#5587): an inlined base64
+        // image is persisted into the transcript and shipped on every open.
+        // Inline stays only as the fallback when the store is unavailable.
+        const storedId = saveChatImageAttachmentSync(image.dataUrl, image.mimeType);
+        if (storedId) return { name, size, type: imageMime, mimeType: image.mimeType, storedId };
         return { name, size, type: imageMime, mimeType: image.mimeType, dataUrl: image.dataUrl };
       }
     } catch {

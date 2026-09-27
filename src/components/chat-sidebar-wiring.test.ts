@@ -445,7 +445,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const baseSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
+  /const projectedSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
   "loadSessions should reapply retained attention clears before assigning canonical and rendered rows",
 );
 // Task 5 spec-compliance: applyChatAttentionProjections (which can retire
@@ -458,7 +458,7 @@ const loadSessionsBlock = workspace.match(
 assert.ok(loadSessionsBlock, "workspace should define the loadSessions callback");
 assert.match(
   loadSessionsBlock,
-  /if \(!isCurrent\(\)\) return;[\s\S]*?if \(!json\.ok\) \{[\s\S]*?return;\s*\}[\s\S]*?const baseSessions = applyChatAttentionProjections\(/,
+  /if \(!isCurrent\(\)\) return;[\s\S]*?if \(!json\.ok\) \{[\s\S]*?return;\s*\}[\s\S]*?const projectedSessions = applyChatAttentionProjections\(/,
   "only an accepted (current + ok) /api/sessions/list response may apply and retire attention projections",
 );
 assert.match(
@@ -473,8 +473,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*void loadSessions\(\);\s*\}, \[activeId, loadSessions\]\);/,
+  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\}, \[activeId, loadSessions\]\);/,
   "scope changes should explicitly launch a current-scope session-list request",
+);
+assert.match(
+  workspace,
+  /familiarSwitchSpanRef\.current = \{\s*scopeKey: chatAttentionProjectionScopeKey\(activeId\),\s*end: startSpan\("chat:familiar-switch"\),/,
+  "a familiar switch is timed until its scope's list is applied (#5448)",
 );
 
 // ── One recency-oriented list; project scope lives in the global selector. ───

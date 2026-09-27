@@ -10,6 +10,7 @@ import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
+import { chatListStaleNotice } from "@/lib/chat-list-authority";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
 import { truncateBranch } from "@/lib/truncate-middle";
 import { sessionPrStatus } from "@/lib/session-pr-status";
@@ -154,6 +155,8 @@ type Props = {
    *  for a new thread" empty state for a can't-load state — a failed list is
    *  not evidence there are no chats (cave-x6k5). */
   sessionsError?: boolean;
+  /** Last load had local rows only; the daemon was unreachable (#5563). */
+  sessionsDegraded?: boolean;
   /** When true, drops the toolbar (All/Active, group-by, count) so the list
    *  fits in a narrow companion panel (e.g. the Browser right-rail) — a
    *  companion panel has no width for it. */
@@ -207,7 +210,9 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+const NO_ARCHIVED_ROWS: SessionRow[] = [];
+
+export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, sessionsDegraded = false, compact = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
   // out of "Today" from sitting under the wrong header until the list reloads.
@@ -254,7 +259,10 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   // opts into them with its own includeArchived fetch (the workspace's list
   // poll stays archive-free).
   const [showArchived, setShowArchived] = useState(false);
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  // Tagged with the familiar they were fetched for (#5594), so a switch never
+  // shows the previous familiar's archive while the new one loads.
+  const [archived, setArchived] = useState<{ familiarId: string | null; rows: SessionRow[] }>({ familiarId: null, rows: [] });
+  const archivedRows = archived.familiarId === (familiar?.id ?? null) ? archived.rows : NO_ARCHIVED_ROWS;
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
   // Bulk-select: pick several chats and delete/archive them in one pass. Resets
@@ -362,6 +370,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   }, [searched, statusFilter, kindFilter]);
 
   const hasAny = mine.length > 0;
+  const staleNotice = chatListStaleNotice({ sessionsError, sessionsDegraded, hasRows: hasAny });
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
@@ -446,7 +455,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
   // bumps archiveNonce so the opt-in list refetches after each change.
   useEffect(() => {
     if (!showArchived) {
-      setArchivedRows([]);
+      setArchived({ familiarId: null, rows: [] });
       return;
     }
     let cancelled = false;
@@ -455,10 +464,10 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
         // Scope archived rows to the active familiar's projects, same as the
         // live list — keeps forbidden-project sessions out of the archive view.
         const scope = familiar?.id ? `&familiarId=${encodeURIComponent(familiar.id)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
+        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const json = await res.json().catch(() => ({ ok: false }));
         if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+        setArchived({ familiarId: familiar?.id ?? null, rows: (json.sessions as SessionRow[]).filter((s) => s.archived_at) });
       } catch {
         // keep whatever archived rows we already have
       }
@@ -612,7 +621,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
     if (effectiveSelection !== "all" || groupBy !== "none" || collapsedSections.size === 0) return displayIds;
     return displayIds.filter((id) => {
       const key = pinnedIdSet.has(id) ? "pinned" : "sessions";
-      // Mirrors the per-row `rowCollapsed`: banded lists have no "Sessions"
+      // Mirrors the per-row `rowCollapsed`: banded lists have no "Chats"
       // header, so its collapsed flag can never hide anything.
       if (key === "sessions" && bandsByIndex) return true;
       return !collapsedSections.has(key);
@@ -912,7 +921,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
             row is the surface's heading, not the familiar's. */}
         {!compact && (
         <div className="flex items-center gap-3 px-4 pb-0 pt-3">
-          <h1 className="chat-sessions-title min-w-0 truncate">Sessions</h1>
+          <h1 className="chat-sessions-title min-w-0 truncate">Chats</h1>
           <span className="chat-sessions-count shrink-0">
             {mine.length} {mine.length === 1 ? "session" : "sessions"}
           </span>
@@ -1209,6 +1218,29 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
 
       </header>
 
+      {/* ── Stale list (#5563): rows are shown but not current ── */}
+      {staleNotice ? (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-1.5 text-xs text-[var(--text-muted)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:plugs" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{staleNotice}</span>
+          </span>
+          {onSessionsChanged ? (
+            <button
+              type="button"
+              onClick={() => onSessionsChanged()}
+              aria-label="Retry loading chats"
+              className="focus-ring shrink-0 rounded px-1.5 hover:bg-[var(--bg-raised)]"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* ── Error banner (launch failures — transient, dismissable) ── */}
       {error && (
         <div
@@ -1232,7 +1264,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
 
       {/* ── List ── */}
       <div className="chat-list-scroll min-h-0 flex-1 overflow-y-auto">
-        {!sessionsLoaded && !hasAny ? (
+        {(!sessionsLoaded || (browseScope && !browseScope.ready && browseScope.loading)) && !hasAny ? (
           <div aria-hidden className="space-y-px px-4 py-3">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="flex gap-3 px-0 py-3.5">
@@ -1256,6 +1288,19 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
               icon="ph:plugs"
               headline="Can't load chats right now"
               subtitle="Your chats are safe — the list didn't load. Retrying automatically; check the daemon banner if this persists."
+            />
+          </div>
+        ) : !hasAny && browseScope && (!browseScope.ready || browseScope.selection !== "all") ? (
+          /* Project-scoped and empty (#5585): an unavailable scope or an empty
+             project is not a first run, so it never reads "Ready for a new
+             thread". Loading is handled by the skeleton above. */
+          <div className="flex h-full flex-col justify-between px-4 py-4">
+            <EmptyState
+              compact
+              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon={browseScope.ready ? "ph:folder-open" : "ph:warning-circle"}
+              headline={browseScope.ready ? "No chats in this project" : "Project context is unavailable"}
+              subtitle={browseScope.ready ? "Start a chat here, or choose another project." : "Choose another project or retry."}
             />
           </div>
         ) : !hasAny ? (
@@ -1431,7 +1476,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                     // Pinned/Sessions sections only split the flat ungrouped
                     // list; project/date grouping owns its own headers.
                     const sectioned = projectRoot === null && groupBy === "none";
-                    // With activity bands there is no "Sessions" header left to
+                    // With activity bands there is no "Chats" header left to
                     // toggle, so a stale collapsed flag must not hide rows.
                     const rowCollapsed =
                       sectioned
@@ -1472,7 +1517,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                         />
                       ) : null}
                       {/* Activity band (cave-n3jg2) — replaces the flat
-                          "Sessions" section header, which said the same thing
+                          "Chats" section header, which said the same thing
                           about every row below it. Bands say WHEN. */}
                       {band ? (
                         <li className="chat-activity-header" data-bucket={band.bucket}>
@@ -1484,7 +1529,7 @@ export function ChatList({ familiar, familiars = [], sessions, browseScope, sele
                       ) : null}
                       {sectioned && !bandsByIndex && idx === firstRestIdx ? (
                         <ChatListSection
-                          label="Sessions"
+                          label="Chats"
                           count={restCount}
                           collapsed={collapsedSections.has("sessions")}
                           onToggle={() => toggleSection("sessions")}

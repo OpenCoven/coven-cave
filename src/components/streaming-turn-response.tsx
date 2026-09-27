@@ -81,6 +81,12 @@ function TurnActivityDisclosure({
   onOpenChange: (open: boolean) => void;
   onUserToggle: () => void;
 }) {
+  // The turn's activity (tool groups, their cards and highlighted payloads)
+  // mounts on the disclosure's first open, not with the transcript (#5572):
+  // every finished turn starts closed, and a long thread would otherwise build
+  // all of it up front. Once opened it stays mounted, so closing is free.
+  const [detailsMounted, setDetailsMounted] = useState(activityOpen);
+  if (activityOpen && !detailsMounted) setDetailsMounted(true);
   return (
     <details
       className="streaming-turn-activity"
@@ -92,7 +98,7 @@ function TurnActivityDisclosure({
         <Icon name={activityOpen ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
         {`${activityCount} activity ${activityCount === 1 ? "update" : "updates"}`}
       </summary>
-      {activityDetails}
+      {detailsMounted ? activityDetails : null}
     </details>
   );
 }

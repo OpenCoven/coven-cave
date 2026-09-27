@@ -174,7 +174,7 @@ export function countXCTestMethodsInDirectory(dir, { readDir = readdirSync, read
  *      landed, delete the entry". Suppression cannot outlive what it
  *      suppresses, and a leftover entry can therefore never mask the NEXT
  *      failure of that test.
- *   3. Every entry names a bead and a hard expiry. Past that date the gate
+ *   3. Every entry names a tracking issue and a hard expiry. Past that date the gate
  *      fails whether or not the test still fails, so a deferral cannot become
  *      permanent by inattention.
  *   4. A key that does not resolve to exactly one XCTest method in the source
@@ -384,10 +384,10 @@ export function validateQuarantine({ quarantine, declarationsByName, failureName
     const where = `quarantine entry "${name}"`;
 
     if (!entry || typeof entry !== "object") {
-      problems.push(`${where} is not an object — every entry needs { bead, reason, expires }`);
+      problems.push(`${where} is not an object — every entry needs { issue, reason, expires }`);
       continue;
     }
-    for (const field of ["bead", "reason", "expires"]) {
+    for (const field of ["issue", "reason", "expires"]) {
       if (typeof entry[field] !== "string" || entry[field].trim() === "") {
         problems.push(`${where} is missing a non-empty "${field}" — a deferral must name what tracks and ends it`);
       }
@@ -399,7 +399,7 @@ export function validateQuarantine({ quarantine, declarationsByName, failureName
     } else if (expiresAt <= now.getTime()) {
       problems.push(
         `${where} EXPIRED on ${entry.expires}. A deferral that outlives its deadline is a deleted test with extra ` +
-          `steps — fix ${entry.bead ?? "the bead"}, or renew the entry deliberately with a new date.`,
+          `steps — fix ${entry.issue ?? "the tracking issue"}, or renew the entry deliberately with a new date.`,
       );
     }
 
@@ -534,7 +534,7 @@ function main() {
     console.log("");
     console.log("Deferred failures (QUARANTINED_FAILURES — these still RAN and still FAILED):");
     for (const { name, entry, record } of deferred) {
-      console.log(`  … ${name}  [${entry.bead}, expires ${entry.expires}]`);
+      console.log(`  … ${name}  [${entry.issue}, expires ${entry.expires}]`);
       console.log(`      ${entry.reason}`);
       // Print any qualifying field the bundle happens to carry, so whoever
       // wants to upgrade this registry to a class-qualified key has evidence

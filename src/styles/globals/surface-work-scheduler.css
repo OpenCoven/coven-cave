@@ -250,7 +250,7 @@
 .wsch-cell-familiar { white-space: nowrap; }
 .wsch-cell-actions { width: var(--space-8); }
 
-.wsch-bead-link {
+.wsch-issue-link {
   background: none;
   border: 0;
   padding: 0;
@@ -260,7 +260,7 @@
   font-family: inherit;
 }
 
-.wsch-bead-link:hover { text-decoration: underline; }
+.wsch-issue-link:hover { text-decoration: underline; }
 
 .wsch-band {
   display: inline-block;
@@ -404,7 +404,7 @@
 
 .wsch-gate-route,
 .wsch-history-undo,
-.wsch-bead-session {
+.wsch-issue-session {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
@@ -421,7 +421,7 @@
 
 .wsch-gate-route:hover,
 .wsch-history-undo:hover,
-.wsch-bead-session:hover {
+.wsch-issue-session:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -438,7 +438,7 @@
   color: var(--text-primary);
 }
 
-.wsch-history-bead,
+.wsch-history-issue,
 .wsch-history-when {
   margin: 0;
   font-size: var(--text-2xs);
@@ -454,27 +454,27 @@
   color: var(--text-muted);
 }
 
-/* ── bead detail ────────────────────────────────────────────────────────── */
+/* ── issue detail ────────────────────────────────────────────────────────── */
 
-.wsch-bead {
+.wsch-issue {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.wsch-bead-id {
+.wsch-issue-id {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--accent-presence);
 }
 
-.wsch-bead-title {
+.wsch-issue-title {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
-.wsch-bead-fields {
+.wsch-issue-fields {
   margin: 0;
   display: grid;
   grid-template-columns: auto 1fr;
@@ -482,10 +482,10 @@
   font-size: var(--text-2xs);
 }
 
-.wsch-bead-fields dt { color: var(--text-muted); }
-.wsch-bead-fields dd { margin: 0; color: var(--text-secondary); }
+.wsch-issue-fields dt { color: var(--text-muted); }
+.wsch-issue-fields dd { margin: 0; color: var(--text-secondary); }
 
-.wsch-bead-label {
+.wsch-issue-label {
   margin: 0;
   font-size: var(--text-2xs);
   letter-spacing: var(--tracking-wide);
@@ -493,7 +493,7 @@
   color: var(--text-muted);
 }
 
-.wsch-bead-body {
+.wsch-issue-body {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -501,7 +501,7 @@
   line-height: var(--leading-normal);
 }
 
-.wsch-bead-note {
+.wsch-issue-note {
   margin: 0;
   font-size: var(--text-2xs);
   color: var(--text-muted);

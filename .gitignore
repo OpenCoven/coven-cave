@@ -112,7 +112,7 @@ package-lock.json
 /.playwright-cli
 /graphify-out
 /artifacts
-# NOT ignored: /docs/superpowers. Beads cite specs and plans there as the
+# NOT ignored: /docs/superpowers. Issues and PRs cite specs and plans there as the
 # authoritative approved design, so ignoring it meant `git add` silently
 # dropped them and the design died with the authoring machine — four approved
 # designs were lost that way before anyone noticed (cave-8zjr5). The directory
@@ -124,8 +124,8 @@ package-lock.json
 /docs/audits
 test-results/
 # Agent skill installs are machine-local by default. Skills that every familiar
-# must load are the exception and ARE tracked (`.agents/skills/beads`,
-# `branch-curator`, `branch-to-merge`, …) — because this rule ignores the whole
+# must load are the exception and ARE tracked (`branch-curator`,
+# `branch-to-merge`, `work-continuity`, …) — because this rule ignores the whole
 # directory, adding one needs an explicit `git add -f .agents/skills/<name>/`.
 # Without the `-f` the file is silently dropped and the skill reaches nobody
 # else, which is exactly how a "shared" skill ends up existing on one machine.
@@ -148,4 +148,6 @@ __verify-chat-detail.mjs
 /.xcode-source-packages
 /.demo
 /apps/ios/CovenCave/build-*
-/OpenCoven/chat/.beads
+# Beads was removed (#5566). Clones that ran it keep local Dolt state under
+# .beads/; keep it out of commits wherever it appears.
+.beads/

@@ -123,14 +123,13 @@ async function mount(page: Page): Promise<Posted[]> {
           ok: true,
           code: "ready",
           message: "",
-          canGenerate: false,
           project: { id: "alpha", name: "Alpha", root: "/repo/alpha" },
         },
       },
     }),
   );
 
-  await page.route("**/api/beads?**", (route) => {
+  await page.route("**/api/queue/issues?**", (route) => {
     const request: Request = route.request();
     if (request.method() === "POST") {
       posted.push(JSON.parse(request.postData() ?? "{}") as Posted);
@@ -148,8 +147,8 @@ async function mount(page: Page): Promise<Posted[]> {
     }
     route.fulfill({ json: { ok: true, mode: "ready", data: READY } });
   });
-  // POST /api/beads carries no query string, so it needs its own pattern.
-  await page.route("**/api/beads", (route) => {
+  // POST /api/queue/issues carries no query string, so it needs its own pattern.
+  await page.route("**/api/queue/issues", (route) => {
     const request: Request = route.request();
     if (request.method() === "POST") {
       posted.push(JSON.parse(request.postData() ?? "{}") as Posted);
@@ -200,7 +199,7 @@ test.describe("work scheduler", () => {
     expect(ids.map((text) => text.trim())).toEqual(["cave-aaa", "cave-ccc", "cave-bbb"]);
 
     // Nothing in the table can be dragged: the frame's drag would have written
-    // a rank bd does not store, so it is not offered at all.
+    // a rank GitHub does not store, so it is not offered at all.
     await expect(table.locator("[draggable]")).toHaveCount(0);
     // Scoped to the table: the app shell has its own drag handles, and this is
     // an assertion about the QUEUE, not about the window chrome around it.
@@ -223,7 +222,7 @@ test.describe("work scheduler", () => {
     // cave-deep is itself blocked, so it is marked and cannot be the primary.
     await expect(gate).toContainText("also blocked");
     await expect(gate).toContainText("the only blocker not itself blocked");
-    await expect(gate).toContainText("Beads record blockers, not a primary");
+    await expect(gate).toContainText("Issues record blockers, not a primary");
 
     // The one action is to go to the blocker.
     await expect(gate.getByRole("button", { name: "Open cave-blk" })).toBeVisible();

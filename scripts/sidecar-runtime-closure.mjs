@@ -80,6 +80,10 @@ export const SIDECAR_NEXT_RUNTIME_FILES = Object.freeze([
   "dist/compiled/webpack/webpack-lib.js",
   "dist/compiled/webpack/webpack.js",
   "dist/compiled/webpack/bundle5.js",
+  // server.ts requires Next's bundled compression middleware directly for
+  // remote API JSON (#5576); list it so the sidecar can't silently drop it.
+  "dist/compiled/compression/package.json",
+  "dist/compiled/compression/index.js",
 ]);
 
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({

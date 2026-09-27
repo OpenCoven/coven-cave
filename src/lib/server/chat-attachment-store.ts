@@ -196,6 +196,32 @@ export async function saveChatImageAttachment(
 }
 
 /**
+ * Sync twin of {@link saveChatImageAttachment} for the agent-attachment path,
+ * which is synchronous (#5587). Same mime check, size cap, exclusive-create
+ * write and 0600 mode. Before this, agent images were inlined into the
+ * transcript as base64 and re-shipped on every open of the thread.
+ */
+export function saveChatImageAttachmentSync(dataUrl: string, mimeType: string): string | null {
+  if (!mimeType.startsWith("image/")) return null;
+  const comma = dataUrl.indexOf(",");
+  if (comma === -1) return null;
+  const payload = Buffer.from(dataUrl.slice(comma + 1), "base64");
+  if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) return null;
+  try {
+    const root = resolvedRootSync();
+    const storedId = `${randomUUID()}.${extensionFor(mimeType)}`;
+    if (!SAFE_STORED_ID.test(storedId)) return null;
+    const target = path.join(/* turbopackIgnore: true */ root, storedId);
+    if (!isContained(root, target)) return null;
+    // `wx` refuses to follow an existing symlink planted at the target.
+    fs.writeFileSync(/* turbopackIgnore: true */ target, payload, { mode: 0o600, flag: "wx" });
+    return storedId;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Persist one validated audio/video payload from a data URL (the user-send
  * path). Returns the stored id, or null when the payload is unusable —
  * callers fall back to metadata-only rather than failing the send.

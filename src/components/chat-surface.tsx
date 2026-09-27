@@ -34,13 +34,12 @@ import {
 import "@/styles/chat-inner-rail.css";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
 import { CodeRailReopen } from "@/components/code-rail-reopen";
-import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
+import { effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useProjects } from "@/lib/use-projects";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 
@@ -90,6 +89,10 @@ type Props = {
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
   sessionsError?: boolean;
+  /** Last load succeeded with local rows only; the daemon was unreachable (#5563). */
+  sessionsDegraded?: boolean;
+  /** The list is complete for its scope; gates anything that prunes by it (#5563). */
+  sessionsAuthoritative?: boolean;
   familiarsLoaded?: boolean;
   /** Roster-load failure + retry, forwarded to ChatRouter's empty state (cave-atzv). */
   familiarsError?: string | null;
@@ -126,7 +129,7 @@ type Props = {
 
 /** The chat section tabs, shared by the strip and the phone chat-list sheet. */
 const CHAT_SECTION_ITEMS: Array<{ id: FamiliarsScope; label: string }> = [
-  { id: "conversation", label: "Sessions" },
+  { id: "conversation", label: "Chats" },
   { id: "projects", label: "Projects" },
   { id: "familiar", label: "Familiar" },
 ];
@@ -143,6 +146,8 @@ export function ChatSurface({
   routerRef,
   sessionsLoaded,
   sessionsError,
+  sessionsDegraded,
+  sessionsAuthoritative,
   familiarsLoaded,
   familiarsError,
   onRetryFamiliars,
@@ -172,17 +177,20 @@ export function ChatSurface({
   const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
     useProjects({ familiarId: activeFamiliarId });
   const projectOverrides = useProjectOverrides();
-  const effectiveBrowseScope = useMemo(() => browseScope ? ({
-    ...browseScope,
-    ready: browseScope.ready && (
-      browseScope.selection === "all"
-      || (projectsLoaded && !projectsLoading && projectsError === null)
-    ),
-  }) : undefined, [browseScope, projectsLoaded, projectsLoading, projectsError]);
+  const effectiveBrowseScope = useMemo(
+    () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
+    [browseScope, projectsLoaded, projectsLoading, projectsError],
+  );
   const browseSessions = useMemo(
     () => scopeChatBrowseSessions(sessions, projects, projectOverrides, effectiveBrowseScope),
     [sessions, projects, projectOverrides, effectiveBrowseScope],
   );
+  // The open chat, when the project filter hides it from the rail (#5585).
+  const outOfScopeActiveSession = useMemo(() => {
+    if (!railActiveSessionId || !effectiveBrowseScope?.ready) return null;
+    if (browseSessions.some((session) => session.id === railActiveSessionId)) return null;
+    return sessions.find((session) => session.id === railActiveSessionId) ?? null;
+  }, [railActiveSessionId, effectiveBrowseScope, browseSessions, sessions]);
 
   // Rail collapse. Open is the SSR/first-paint default and the stored
   // preference is applied after mount, so server and client markup match —
@@ -372,11 +380,18 @@ export function ChatSurface({
       if (!d?.sessionId) return;
       if (d.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.openSession(d.sessionId!), 0);
+      window.setTimeout(() => routerRef.current?.openSession(d.sessionId!, undefined, undefined, d.familiarId ?? null), 0);
     };
     const onFamiliarSelect = (e: Event) => {
       const d = (e as CustomEvent<{ familiarId?: string | null }>).detail;
       if (!d?.familiarId) return;
+      // The same gated path as "New chat" (#5584): the workspace checks the
+      // familiar is eligible for the current project before starting.
+      if (onRequestNewChat) {
+        setScope("conversation");
+        onRequestNewChat({ familiarId: d.familiarId });
+        return;
+      }
       onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
       window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, d.familiarId), 0);
@@ -448,7 +463,8 @@ export function ChatSurface({
       setScope("conversation");
       const findQuery = pendingChatAction.findQuery;
       const autoVoice = pendingChatAction.autoVoice;
-      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice), 0);
+      const familiarHint = pendingChatAction.familiarId ?? null;
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery, autoVoice, familiarHint), 0);
       onPendingChatActionHandled();
       return;
     }
@@ -559,7 +575,7 @@ export function ChatSurface({
           onClick={() => requestChatRailToggle()}
         >
           <Icon name="ph:sidebar-simple" width={15} className="chat-inner-rail__spine-icon" aria-hidden />
-          <span className="chat-inner-rail__spine-label" aria-hidden>Sessions</span>
+          <span className="chat-inner-rail__spine-label" aria-hidden>Chats</span>
         </button>
       ) : null}
       {railAvailable && railOpen ? (
@@ -567,7 +583,9 @@ export function ChatSurface({
           <SidebarChatsSection
             sessions={browseSessions}
             sessionsError={sessionsError}
+            sessionsDegraded={sessionsDegraded}
             browseScope={effectiveBrowseScope}
+            outOfScopeActiveSession={outOfScopeActiveSession}
             activeFamiliarId={activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
@@ -581,21 +599,9 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. The shared
-            familiar selector row (cave-3pnnq) sits directly above the section
-            tabs so a familiar is established before a scope is chosen. */}
-        <div className="chat-familiar-context">
-          <FamiliarQuickSwitch
-            familiars={resolvedFamiliars}
-            activeFamiliarId={activeFamiliarId}
-            sessions={sessions}
-            onSelectFamiliar={(id) => {
-              if (id) onFamiliarScopeChange(id);
-            }}
-            labeled
-            singleRequired
-          />
-        </div>
+            Chat keeps Projects discoverable as a first-class tab. The familiar
+            is chosen only at the top of the page, beside the project selector
+            (workspace context switcher / top bar), never inside Chat (#5565). */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           {/* Mobile route to the thread list. Rendered on every viewport and
               hidden by CSS above 1024px, where the docked rail and its spine
@@ -722,6 +728,8 @@ export function ChatSurface({
                   activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
                   sessionsError={sessionsError}
+                  sessionsDegraded={sessionsDegraded}
+                  sessionsAuthoritative={sessionsAuthoritative}
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
@@ -798,6 +806,9 @@ export function ChatSurface({
         onClose={() => setThreadsSheetOpen(false)}
         sessions={browseSessions}
         sessionsError={sessionsError}
+        sessionsDegraded={sessionsDegraded}
+        browseScope={effectiveBrowseScope}
+        outOfScopeActiveSession={outOfScopeActiveSession}
         activeFamiliarId={activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}

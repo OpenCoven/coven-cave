@@ -41,7 +41,10 @@ try {
     invalidateQueueProjectReadinessCache,
     queueProjectReadiness,
     selectQueueProject,
+    takeQueueIssueSnapshot,
   } = await import("./queue-project-readiness.ts");
+  const snapshot = { repository: "OpenCoven/example", ready: [], blocked: [], blockers: [] };
+  const readyProbe = async () => ({ ok: true, snapshot });
 
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
@@ -59,86 +62,49 @@ try {
   await selectQueueProject("non-git-project");
   const nonGit = await queueProjectReadiness();
   assert.equal(nonGit.code, "not-git-repository", "ordinary non-Git directories offer project reselection rather than a Git execution warning");
-  assert.equal(nonGit.canGenerate, false);
   await selectQueueProject("queue-project");
 
-  const unavailableWithoutWorkspace = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: false, status: 503, error: "bd unavailable", stdout: "", stderr: "" }),
+  const noGh = await queueProjectReadiness({
+    issueProbe: async () => ({ ok: false, status: 503, error: "gh unavailable", stdout: "", stderr: "" }),
   });
-  assert.equal(unavailableWithoutWorkspace.code, "beads-unavailable", "missing .beads does not promise Generate when bd is unavailable");
-  assert.equal(unavailableWithoutWorkspace.canGenerate, false);
+  assert.equal(noGh.code, "github-unavailable", "a missing GitHub CLI is named as the remediation");
+  assert.match(noGh.message, /gh auth login/);
+  assert.equal(noGh.project?.root, projectRoot, "the selected repository stays in view while GitHub is unavailable");
 
-  const needsBeads = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: true, stdout: "bd 0.1.0", stderr: "" }),
+  const noRemote = await queueProjectReadiness({
+    issueProbe: async () => ({ ok: false, status: 502, error: "no git remotes found", stdout: "", stderr: "" }),
   });
-  assert.equal(needsBeads.code, "needs-beads");
-  assert.equal(needsBeads.canGenerate, true, "only a selected Git repository can offer Generate");
-  assert.equal(needsBeads.project?.root, projectRoot, "the selected repository remains the command root");
+  assert.equal(noRemote.code, "github-error", "a repository GitHub cannot read is an error, not a ready queue");
+  assert.match(noRemote.message, /no git remotes found/);
+  assert.match(noRemote.message, /GitHub remote/);
 
-  await mkdir(path.join(projectRoot, ".beads"));
-  const unavailable = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: false, status: 503, error: "bd unavailable", stdout: "", stderr: "" }),
-  });
-  assert.equal(unavailable.code, "beads-unavailable", "an unavailable bd CLI is not presented as a generatable workspace");
-  assert.equal(unavailable.canGenerate, false);
-  assert.match(unavailable.message, /Install or repair the bd CLI/);
-
-  const partial = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: false, status: 502, error: "workspace incomplete", stdout: "", stderr: "" }),
-  });
-  assert.equal(partial.code, "needs-beads", "a partial workspace remains repairable through Generate");
-  assert.equal(partial.canGenerate, true);
-  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
-  await mkdir(path.join(projectRoot, ".beads"));
-  const ready = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }),
-  });
+  const ready = await queueProjectReadiness({ issueProbe: readyProbe });
   assert.equal(ready.code, "ready");
   assert.equal(ready.ok, true);
-
-  // Readiness shares resolveSafeBeadsWorkspace with /api/beads: a swapped
-  // .beads symlink — even one contained inside the repository — must read as
-  // an error here exactly like the mutation adapter's 422, never as ready.
-  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
-  await mkdir(path.join(projectRoot, "beads-elsewhere"));
-  // Windows directory symlinks require Developer Mode/elevation. A junction
-  // is the equivalent reparse-point attack shape for this containment guard
-  // and is creatable by an ordinary Windows user, so retain this security
-  // regression test on every supported host.
-  await symlink(
-    path.join(projectRoot, "beads-elsewhere"),
-    path.join(projectRoot, ".beads"),
-    process.platform === "win32" ? "junction" : "dir",
-  );
-  const swapped = await queueProjectReadiness({
-    beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }),
-  });
-  assert.equal(swapped.code, "beads-error", "an in-repo .beads symlink is unsafe for readiness exactly as it is for /api/beads");
-  assert.equal(swapped.canGenerate, false);
-  assert.match(swapped.message, /Repair it before loading Queue work/);
-  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
-  await mkdir(path.join(projectRoot, ".beads"));
+  assert.equal("canGenerate" in ready, false, "GitHub Issues need no local workspace to generate");
+  assert.deepEqual(takeQueueIssueSnapshot(projectRoot), snapshot, "the first list read reuses the issues readiness just read");
+  assert.equal(takeQueueIssueSnapshot(projectRoot), null, "the reused snapshot is consumed once");
 
   let probeCalls = 0;
   const cachedProbe = async () => {
     probeCalls += 1;
-    return { ok: true, stdout: "[]", stderr: "" };
+    return { ok: true, snapshot };
   };
   invalidateQueueProjectReadinessCache();
   await Promise.all([
-    cachedQueueProjectReadiness({ beadsProbe: cachedProbe }),
-    cachedQueueProjectReadiness({ beadsProbe: cachedProbe }),
+    cachedQueueProjectReadiness({ issueProbe: cachedProbe }),
+    cachedQueueProjectReadiness({ issueProbe: cachedProbe }),
   ]);
-  await cachedQueueProjectReadiness({ beadsProbe: cachedProbe });
+  await cachedQueueProjectReadiness({ issueProbe: cachedProbe });
   assert.equal(probeCalls, 1, "concurrent onboarding heartbeats share one readiness probe inside the cache window");
   invalidateQueueProjectReadinessCache();
-  await cachedQueueProjectReadiness({ beadsProbe: cachedProbe });
-  assert.equal(probeCalls, 2, "selection or Generate invalidation refreshes readiness immediately");
+  await cachedQueueProjectReadiness({ issueProbe: cachedProbe });
+  assert.equal(probeCalls, 2, "selection invalidation refreshes readiness immediately");
 
-  let releaseOldProbe!: (result: { ok: true; stdout: string; stderr: string }) => void;
-  const oldProbe = new Promise<{ ok: true; stdout: string; stderr: string }>((resolve) => { releaseOldProbe = resolve; });
+  let releaseOldProbe!: (result: unknown) => void;
+  const oldProbe = new Promise((resolve) => { releaseOldProbe = resolve; });
   invalidateQueueProjectReadinessCache();
-  const staleA = cachedQueueProjectReadiness({ beadsProbe: async () => oldProbe });
+  const staleA = cachedQueueProjectReadiness({ issueProbe: async () => oldProbe });
   await writeFile(
     projectsPath,
     JSON.stringify({
@@ -150,10 +116,10 @@ try {
     }),
   );
   await selectQueueProject("invalid-project");
-  releaseOldProbe({ ok: true, stdout: "[]", stderr: "" });
+  releaseOldProbe({ ok: true, snapshot });
   await staleA;
   assert.equal(
-    (await cachedQueueProjectReadiness({ beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }) })).code,
+    (await cachedQueueProjectReadiness({ issueProbe: readyProbe })).code,
     "project-missing",
     "a superseded readiness probe cannot repopulate the cache for a new selection",
   );
@@ -209,10 +175,9 @@ try {
     new URL("../app/api/queue/readiness/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(route, /rejectNonLocalRequest/, "selection and generation are loopback-only");
-  assert.match(route, /projectId is required/, "Generate is bound to an explicit project identity");
-  assert.match(route, /withGenerationLock/, "Generate serializes initialization per repository");
-  assert.match(route, /current\.ok && identityMatches/, "a matching concurrent Generate succeeds idempotently");
+  assert.match(route, /rejectNonLocalRequest/, "selection is loopback-only");
+  assert.match(route, /projectId is required/, "selection is bound to an explicit project identity");
+  assert.doesNotMatch(route, /generate/i, "there is no Generate action to run");
 
   const readinessSource = await (await import("node:fs/promises")).readFile(
     new URL("./queue-project-readiness.ts", import.meta.url),
@@ -221,7 +186,7 @@ try {
   assert.match(readinessSource, /env: caveToolSpawnEnv\(\)/, "Queue readiness finds Git through Cave's launch PATH");
 
   const prBridgeRoute = await (await import("node:fs/promises")).readFile(
-    new URL("../app/api/beads/prs/route.ts", import.meta.url),
+    new URL("../app/api/queue/prs/route.ts", import.meta.url),
     "utf8",
   );
   assert.match(prBridgeRoute, /projectRoot is required/, "the PR bridge rejects anonymous Queue requests");

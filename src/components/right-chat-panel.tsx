@@ -170,14 +170,30 @@ export function RightChatPanel(props: Props) {
     familiarId: string | null; sessions: SessionRow[]; loaded: boolean; error: boolean;
   }>({ familiarId: null, sessions: [], loaded: false, error: false });
   const requestGeneration = useRef(0);
+  // Last accepted payload per familiar, replayed on a 304 (#5594), the same
+  // conditional read the workspace poll uses (#5579).
+  const lastListRef = useRef<{ familiarId: string; etag: string; json: { ok?: boolean; sessions?: unknown } } | null>(null);
   const refresh = useCallback(async () => {
     if (!familiarId) return;
     const generation = ++requestGeneration.current;
     try {
       const params = new URLSearchParams({ familiarId, classifyFamiliarWorkspace: "1" });
-      const response = await fetch(`/api/sessions/list?${params}`, { cache: "no-store" });
-      const json = await response.json();
-      if (!response.ok || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
+      const cached = lastListRef.current?.familiarId === familiarId ? lastListRef.current : null;
+      const response = await fetch(`/api/sessions/list?${params}`, {
+        cache: "no-store",
+        // Bounded, so a stalled request can't hold the serialized poll.
+        signal: AbortSignal.timeout(15_000),
+        ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}),
+      });
+      let json;
+      if (response.status === 304 && cached) {
+        json = cached.json;
+      } else {
+        json = await response.json();
+        const etag = response.headers?.get?.("ETag");
+        if (response.ok && json?.ok && etag) lastListRef.current = { familiarId, etag, json };
+      }
+      if (!(response.ok || response.status === 304) || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
       if (generation !== requestGeneration.current) return;
       setRoster({ familiarId, sessions: json.sessions, loaded: true, error: false });
     } catch {
@@ -197,7 +213,8 @@ export function RightChatPanel(props: Props) {
       requestGeneration.current += 1;
     };
   }, [familiarId, props.open, refresh]);
-  usePausablePoll(refresh, 4_000, { enabled: Boolean(familiarId && props.open) });
+  // Serialized (#5594): a slow response no longer lets polls pile up behind it.
+  usePausablePoll(refresh, 4_000, { enabled: Boolean(familiarId && props.open), serialize: true });
 
   // A fix's actor is independent of the main surface's familiar filter. In
   // particular ChatRouter.newChat calls onSetActiveFamiliar synchronously;

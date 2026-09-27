@@ -622,6 +622,27 @@ try {
       },
       "a row archived by the sweep drops any pre-sweep attention in the same response",
     );
+
+    // #5571: an unchanged list answers a matching If-None-Match with a
+    // bodiless 304; a stale tag gets the full list and the current tag.
+    sessionsListCache.clear();
+    const tagged = await route.GET(request());
+    assert.equal(tagged.status, 200);
+    const etag = tagged.headers.get("etag");
+    assert.ok(etag, "a successful list carries an ETag");
+    const taggedBody = await tagged.json();
+    const conditional = (ifNoneMatch: string) =>
+      route.GET(new Request("http://127.0.0.1/api/sessions/list", {
+        headers: { host: "127.0.0.1", "if-none-match": ifNoneMatch },
+      }));
+    const notModified = await conditional(etag);
+    assert.equal(notModified.status, 304);
+    assert.equal(await notModified.text(), "", "a 304 carries no body");
+    assert.equal(notModified.headers.get("etag"), etag);
+    const stale = await conditional('"stale-tag"');
+    assert.equal(stale.status, 200);
+    assert.equal(stale.headers.get("etag"), etag);
+    assert.deepEqual(await stale.json(), taggedBody);
   } finally {
     Date.now = realNow;
   }

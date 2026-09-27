@@ -10,7 +10,7 @@
  * ready to merge — and it answers "what is in flight and what does it need?".
  * This one is scheduling: its lanes are FAMILIARS, and it answers "who is
  * working, what is next for them, and what is stuck?". It is also the only
- * surface in the Cave that can see BLOCKED beads at all — `/api/beads` had no
+ * surface in the Cave that can see BLOCKED issues at all — `/api/queue/issues` had no
  * mode for them before this change, so the blocked half of the tracker was
  * invisible to every UI. Neither surface should grow into the other; if one
  * day they should merge, that is an owner call, not drift.
@@ -18,15 +18,15 @@
  * FIVE THINGS THE FRAME DRAWS THAT ARE DELIBERATELY NOT HERE. Each was cut
  * because rendering it would have asserted something the Cave cannot back:
  *
- *  1. DRAG REORDER. `bd` stores a priority band, not a rank, so a dragged
+ *  1. DRAG REORDER. GitHub stores a priority band, not a rank, so a dragged
  *     position could not survive a reload. The row's Priority menu writes a
- *     real band instead (`POST /api/beads {action:"priority"}`), and the table
+ *     real band instead (`POST /api/queue/issues {action:"priority"}`), and the table
  *     order is a pure function of the tracker (`buildSchedulerQueue`).
  *  2. GATE APPROVAL. There is no approval backend anywhere in the Cave. A gate
  *     card routes to its blocker instead of offering an Approve button.
  *  3. LANE LOAD %. No familiar declares a capacity, so a load percentage has
  *     no denominator. The tile shows share OF THE QUEUE, labelled as such.
- *  4. UNDO ON REASSIGN. Reassign also sets the bead in progress, and no action
+ *  4. UNDO ON REASSIGN. Reassign also sets the issue in progress, and no action
  *     restores the previous assignee and status — so the entry is recorded
  *     with the reason it cannot be reversed. Only priority offers an undo.
  *  5. PSYCHE. The frame reserves a slot marked "not connected · nothing is
@@ -65,21 +65,21 @@ import {
   priorityLogEntry,
   reassignLogEntry,
   undoRequestBody,
-  type BlockedBead,
-  type SchedulerBead,
+  type BlockedIssue,
+  type SchedulerIssue,
   type SchedulerLogEntry,
   type SchedulerQueueRow,
 } from "@/lib/work-scheduler";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 const POLL_MS = 8000;
-const RAIL_TABS = ["gates", "history", "bead"] as const;
+const RAIL_TABS = ["gates", "history", "issue"] as const;
 type RailTab = (typeof RAIL_TABS)[number];
 
 const RAIL_TAB_LABEL: Record<RailTab, string> = {
   gates: "Gates",
   history: "History",
-  bead: "Bead",
+  issue: "Issue",
 };
 
 /** Ten cells so a share reads at a glance without implying sub-percent precision. */
@@ -88,9 +88,9 @@ const METER_CELLS = 10;
 type QueueProject = { id: string; name: string; root: string } | null;
 
 type LoadState = {
-  ready: SchedulerBead[];
-  blocked: BlockedBead[];
-  blockerRecords: SchedulerBead[];
+  ready: SchedulerIssue[];
+  blocked: BlockedIssue[];
+  blockerRecords: SchedulerIssue[];
   familiars: Familiar[];
   sessions: SessionRow[];
   sources: { queue: boolean; roster: boolean; gates: boolean };
@@ -133,8 +133,8 @@ export function CodeWorkScheduler({
   const [state, setState] = useState<LoadState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [railTab, setRailTab] = useState<RailTab>("gates");
-  const [selectedBeadId, setSelectedBeadId] = useState<string | null>(null);
-  const [beadDetail, setBeadDetail] = useState<{ id: string; body: unknown } | null>(null);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [issueDetail, setIssueDetail] = useState<{ id: string; body: unknown } | null>(null);
   const [log, setLog] = useState<SchedulerLogEntry[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const seqRef = useRef(0);
@@ -170,8 +170,8 @@ export function CodeWorkScheduler({
 
       const query = `projectRoot=${encodeURIComponent(project.root)}`;
       const [queueResult, gatesResult, rosterResult, sessionsResult] = await Promise.allSettled([
-        readJson(`/api/beads?mode=ready&${query}`, signal),
-        readJson(`/api/beads?mode=blocked&${query}`, signal),
+        readJson(`/api/queue/issues?mode=ready&${query}`, signal),
+        readJson(`/api/queue/issues?mode=blocked&${query}`, signal),
         readJson("/api/familiars", signal),
         readJson(
           "/api/sessions/list?collapseFamiliarWorkspace=1&classifyFamiliarWorkspace=1",
@@ -188,13 +188,13 @@ export function CodeWorkScheduler({
 
       setState((prev) => ({
         ready: queueOk
-          ? asArray<SchedulerBead>((queueResult.value as { data?: unknown }).data)
+          ? asArray<SchedulerIssue>((queueResult.value as { data?: unknown }).data)
           : prev.ready,
         blocked: gatesOk
-          ? asArray<BlockedBead>((gatesResult.value as { data?: unknown }).data)
+          ? asArray<BlockedIssue>((gatesResult.value as { data?: unknown }).data)
           : prev.blocked,
         blockerRecords: gatesOk
-          ? asArray<SchedulerBead>((gatesResult.value as { blockers?: unknown }).blockers)
+          ? asArray<SchedulerIssue>((gatesResult.value as { blockers?: unknown }).blockers)
           : prev.blockerRecords,
         familiars: rosterOk
           ? asArray<Familiar>((rosterResult.value as { familiars?: unknown }).familiars)
@@ -252,29 +252,29 @@ export function CodeWorkScheduler({
     [state.project, state.sources, state.lastLoadedAtMs],
   );
 
-  const selectedRow = rows.find((row) => row.bead.id === selectedBeadId) ?? null;
+  const selectedRow = rows.find((row) => row.issue.id === selectedIssueId) ?? null;
 
-  // Bead detail is the tracker's own record, fetched on selection.
+  // Issue detail is the tracker's own record, fetched on selection.
   useEffect(() => {
-    if (!selectedBeadId || !state.project) return;
+    if (!selectedIssueId || !state.project) return;
     const controller = new AbortController();
     void (async () => {
       try {
         const json = (await readJson(
-          `/api/beads?mode=show&id=${encodeURIComponent(selectedBeadId)}&projectRoot=${encodeURIComponent(state.project!.root)}`,
+          `/api/queue/issues?mode=show&id=${encodeURIComponent(selectedIssueId)}&projectRoot=${encodeURIComponent(state.project!.root)}`,
           controller.signal,
         )) as { data?: unknown };
-        setBeadDetail({ id: selectedBeadId, body: json.data });
+        setIssueDetail({ id: selectedIssueId, body: json.data });
       } catch {
-        setBeadDetail(null);
+        setIssueDetail(null);
       }
     })();
     return () => controller.abort();
-  }, [selectedBeadId, state.project]);
+  }, [selectedIssueId, state.project]);
 
   const post = useCallback(
     async (body: Record<string, unknown>) => {
-      const response = await fetch("/api/beads", {
+      const response = await fetch("/api/queue/issues", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -288,24 +288,24 @@ export function CodeWorkScheduler({
   const setPriority = useCallback(
     async (row: SchedulerQueueRow, priority: number) => {
       if (!state.project) return;
-      setBusyId(row.bead.id);
+      setBusyId(row.issue.id);
       try {
-        await post({ action: "priority", id: row.bead.id, priority, projectRoot: state.project.root });
+        await post({ action: "priority", id: row.issue.id, priority, projectRoot: state.project.root });
         setLog((current) =>
           appendSchedulerLog(
             current,
             priorityLogEntry({
-              id: `${row.bead.id}:${Date.now()}`,
+              id: `${row.issue.id}:${Date.now()}`,
               at: Date.now(),
-              beadId: row.bead.id,
-              beadTitle: row.bead.title,
+              issueId: row.issue.id,
+              issueTitle: row.issue.title,
               // The band we are moving FROM is the one the last read showed.
-              previousPriority: Number.isInteger(row.bead.priority) ? row.bead.priority : null,
+              previousPriority: row.issue.priority,
               priority,
             }),
           ),
         );
-        announce(`${row.bead.id} set to ${priorityBand(priority).label}.`);
+        announce(`${row.issue.id} set to ${priorityBand(priority).label}.`);
         await load();
       } catch (error) {
         announce(error instanceof Error ? error.message : "Could not set the priority.", "assertive");
@@ -319,25 +319,25 @@ export function CodeWorkScheduler({
   const reassign = useCallback(
     async (row: SchedulerQueueRow, familiar: Familiar) => {
       if (!state.project) return;
-      setBusyId(row.bead.id);
+      setBusyId(row.issue.id);
       try {
-        await post({ action: "claim", id: row.bead.id, assignee: familiar.id, projectRoot: state.project.root });
+        await post({ action: "claim", id: row.issue.id, assignee: familiar.id, projectRoot: state.project.root });
         setLog((current) =>
           appendSchedulerLog(
             current,
             reassignLogEntry({
-              id: `${row.bead.id}:${Date.now()}`,
+              id: `${row.issue.id}:${Date.now()}`,
               at: Date.now(),
-              beadId: row.bead.id,
-              beadTitle: row.bead.title,
+              issueId: row.issue.id,
+              issueTitle: row.issue.title,
               toLabel: familiar.display_name || familiar.id,
             }),
           ),
         );
-        announce(`${row.bead.id} reassigned to ${familiar.display_name || familiar.id}.`);
+        announce(`${row.issue.id} reassigned to ${familiar.display_name || familiar.id}.`);
         await load();
       } catch (error) {
-        announce(error instanceof Error ? error.message : "Could not reassign the bead.", "assertive");
+        announce(error instanceof Error ? error.message : "Could not reassign the issue.", "assertive");
       } finally {
         setBusyId(null);
       }
@@ -348,7 +348,7 @@ export function CodeWorkScheduler({
   const undo = useCallback(
     async (entry: SchedulerLogEntry) => {
       if (!entry.undo || !state.project) return;
-      setBusyId(entry.beadId);
+      setBusyId(entry.issueId);
       try {
         await post(undoRequestBody(entry.undo, state.project.root));
         setLog((current) => markSchedulerLogUndone(current, entry.id));
@@ -363,9 +363,9 @@ export function CodeWorkScheduler({
     [announce, load, post, state.project],
   );
 
-  const openBead = useCallback((id: string) => {
-    setSelectedBeadId(id);
-    setRailTab("bead");
+  const openIssue = useCallback((id: string) => {
+    setSelectedIssueId(id);
+    setRailTab("issue");
   }, []);
 
   if (loading && state.lastLoadedAtMs === null && state.projectMessage === null) {
@@ -402,7 +402,7 @@ export function CodeWorkScheduler({
               familiars={state.familiars}
               busyId={busyId}
               queueOk={state.sources.queue}
-              onOpenBead={openBead}
+              onOpenIssue={openIssue}
               onSetPriority={setPriority}
               onReassign={reassign}
             />
@@ -426,16 +426,16 @@ export function CodeWorkScheduler({
               </div>
               <div className="wsch-rail-body">
                 {railTab === "gates" ? (
-                  <GatesRail cards={gates} gatesOk={state.sources.gates} onOpenBead={openBead} />
+                  <GatesRail cards={gates} gatesOk={state.sources.gates} onOpenIssue={openIssue} />
                 ) : null}
                 {railTab === "history" ? (
                   <HistoryRail log={log} busyId={busyId} onUndo={undo} />
                 ) : null}
-                {railTab === "bead" ? (
-                  <BeadRail
+                {railTab === "issue" ? (
+                  <IssueRail
                     row={selectedRow}
-                    id={selectedBeadId}
-                    detail={beadDetail?.id === selectedBeadId ? beadDetail.body : null}
+                    id={selectedIssueId}
+                    detail={issueDetail?.id === selectedIssueId ? issueDetail.body : null}
                     sessions={state.sessions}
                     onJumpToSession={onJumpToSession}
                   />
@@ -520,7 +520,7 @@ function QueueTable({
   familiars,
   busyId,
   queueOk,
-  onOpenBead,
+  onOpenIssue,
   onSetPriority,
   onReassign,
 }: {
@@ -528,7 +528,7 @@ function QueueTable({
   familiars: Familiar[];
   busyId: string | null;
   queueOk: boolean;
-  onOpenBead: (id: string) => void;
+  onOpenIssue: (id: string) => void;
   onSetPriority: (row: SchedulerQueueRow, priority: number) => void;
   onReassign: (row: SchedulerQueueRow, familiar: Familiar) => void;
 }) {
@@ -544,19 +544,19 @@ function QueueTable({
           headline={queueOk ? "Nothing ready" : "Queue unavailable"}
           subtitle={
             queueOk
-              ? "Every ready bead has been picked up, or the tracker has none."
+              ? "Every ready issue has been picked up, or the tracker has none."
               : "The last read of the ready queue failed. Nothing is shown rather than a stale guess."
           }
         />
       ) : (
         <table className="wsch-table">
-          <caption className="wsch-sr">Ready beads, ordered by priority band then oldest update</caption>
+          <caption className="wsch-sr">Ready issues, ordered by priority band then oldest update</caption>
           <thead>
             <tr>
               <th scope="col" title="Position under the sort above. Derived on read; nothing stores it.">
                 #
               </th>
-              <th scope="col">Bead</th>
+              <th scope="col">Issue</th>
               <th scope="col">Task</th>
               <th scope="col">Familiar</th>
               <th scope="col">Priority</th>
@@ -567,26 +567,26 @@ function QueueTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.bead.id} className={busyId === row.bead.id ? "is-busy" : undefined}>
+              <tr key={row.issue.id} className={busyId === row.issue.id ? "is-busy" : undefined}>
                 <td className="wsch-cell-pos">{row.position}</td>
                 <td>
                   <button
                     type="button"
-                    className="focus-ring wsch-bead-link"
-                    onClick={() => onOpenBead(row.bead.id)}
+                    className="focus-ring wsch-issue-link"
+                    onClick={() => onOpenIssue(row.issue.id)}
                   >
-                    {row.bead.id}
+                    {row.issue.id}
                   </button>
                 </td>
-                <td className="wsch-cell-task">{row.bead.title}</td>
+                <td className="wsch-cell-task">{row.issue.title}</td>
                 <td className="wsch-cell-familiar">{row.familiarLabel}</td>
                 <td>
                   <span className={`wsch-band wsch-band--${row.band.value}`}>{row.band.label}</span>
                 </td>
                 <td className="wsch-cell-actions">
-                  <OverflowMenu ariaLabel={`Actions for ${row.bead.id}`} disabled={busyId === row.bead.id}>
-                    <PopoverItem icon="ph:arrow-square-out" onSelect={() => onOpenBead(row.bead.id)}>
-                      Open bead
+                  <OverflowMenu ariaLabel={`Actions for ${row.issue.id}`} disabled={busyId === row.issue.id}>
+                    <PopoverItem icon="ph:arrow-square-out" onSelect={() => onOpenIssue(row.issue.id)}>
+                      Open issue
                     </PopoverItem>
                     <PopoverSeparator />
                     {/*
@@ -597,11 +597,11 @@ function QueueTable({
                       instead of opening. Filed as cave-y2oxb; this
                       surface does not work around it by hand.
                     */}
-                    <PopoverLabel>Priority · stored on the bead</PopoverLabel>
+                    <PopoverLabel>Priority · stored on the issue</PopoverLabel>
                     {PRIORITY_BANDS.map((band) => (
                       <PopoverItem
                         key={band.value}
-                        checked={row.bead.priority === band.value}
+                        checked={row.issue.priority === band.value}
                         onSelect={() => onSetPriority(row, band.value)}
                       >
                         {band.label}
@@ -637,37 +637,37 @@ function QueueTable({
 function GatesRail({
   cards,
   gatesOk,
-  onOpenBead,
+  onOpenIssue,
 }: {
   cards: ReturnType<typeof buildGateCards>;
   gatesOk: boolean;
-  onOpenBead: (id: string) => void;
+  onOpenIssue: (id: string) => void;
 }) {
   if (!gatesOk) {
     return (
       <EmptyState
         icon="ph:warning-circle"
         headline="Gates unavailable"
-        subtitle="The blocked-bead read failed on the last pass. No gate cards are shown rather than stale ones."
+        subtitle="The blocked-issue read failed on the last pass. No gate cards are shown rather than stale ones."
       />
     );
   }
   if (cards.length === 0) {
-    return <EmptyState icon="ph:list-checks" headline="Nothing blocked" subtitle="No bead is waiting on another." />;
+    return <EmptyState icon="ph:list-checks" headline="Nothing blocked" subtitle="No issue is waiting on another." />;
   }
   return (
     <ul className="wsch-gates">
       {cards.map((card) => (
-        <li key={card.bead.id} className="wsch-gate">
+        <li key={card.issue.id} className="wsch-gate">
           <div className="wsch-gate-head">
-            <button type="button" className="focus-ring wsch-bead-link" onClick={() => onOpenBead(card.bead.id)}>
-              {card.bead.id}
+            <button type="button" className="focus-ring wsch-issue-link" onClick={() => onOpenIssue(card.issue.id)}>
+              {card.issue.id}
             </button>
-            <span className={`wsch-band wsch-band--${priorityBand(card.bead.priority).value}`}>
-              {priorityBand(card.bead.priority).label}
+            <span className={`wsch-band wsch-band--${priorityBand(card.issue.priority).value}`}>
+              {priorityBand(card.issue.priority).label}
             </span>
           </div>
-          <p className="wsch-gate-title">{card.bead.title}</p>
+          <p className="wsch-gate-title">{card.issue.title}</p>
           <p className="wsch-gate-label">
             Blocked by {card.blockers.length}
             {card.unnamed > 0 ? ` · ${card.unnamed} could not be named` : ""}
@@ -675,7 +675,7 @@ function GatesRail({
           <ul className="wsch-gate-blockers">
             {card.blockers.map((blocker) => (
               <li key={blocker.id} className={blocker.id === card.primary?.id ? "is-primary" : undefined}>
-                <button type="button" className="focus-ring wsch-bead-link" onClick={() => onOpenBead(blocker.id)}>
+                <button type="button" className="focus-ring wsch-issue-link" onClick={() => onOpenIssue(blocker.id)}>
                   {blocker.id}
                 </button>{" "}
                 {blocker.title ?? <span className="wsch-gate-unnamed">name unavailable</span>}
@@ -687,13 +687,13 @@ function GatesRail({
           {/*
             The frame draws an Approve button here. There is no approval backend
             in the Cave, so the honest action is the one that exists: go to the
-            thing that is actually holding this bead.
+            thing that is actually holding this issue.
           */}
           {card.route ? (
             <button
               type="button"
               className="focus-ring wsch-gate-route"
-              onClick={() => onOpenBead(card.route!.beadId)}
+              onClick={() => onOpenIssue(card.route!.issueId)}
             >
               <Icon name="ph:caret-right" width={12} height={12} aria-hidden />
               {card.route.label}
@@ -730,8 +730,8 @@ function HistoryRail({
       {log.map((entry) => (
         <li key={entry.id} className={`wsch-history-row${entry.undone ? " is-undone" : ""}`}>
           <p className="wsch-history-summary">{entry.summary}</p>
-          <p className="wsch-history-bead">
-            {entry.beadId} · {entry.beadTitle}
+          <p className="wsch-history-issue">
+            {entry.issueId} · {entry.issueTitle}
           </p>
           <p className="wsch-history-when">{relativeTime(new Date(entry.at).toISOString())}</p>
           {/*
@@ -743,7 +743,7 @@ function HistoryRail({
             <button
               type="button"
               className="focus-ring wsch-history-undo"
-              disabled={busyId === entry.beadId}
+              disabled={busyId === entry.issueId}
               onClick={() => onUndo(entry)}
             >
               <Icon name="ph:arrow-counter-clockwise" width={12} height={12} aria-hidden />
@@ -761,9 +761,9 @@ function HistoryRail({
   );
 }
 
-// ── bead rail ────────────────────────────────────────────────────────────────
+// ── issue rail ────────────────────────────────────────────────────────────────
 
-function beadRecord(detail: unknown): Record<string, unknown> | null {
+function issueRecord(detail: unknown): Record<string, unknown> | null {
   if (Array.isArray(detail)) return (detail[0] as Record<string, unknown>) ?? null;
   if (detail && typeof detail === "object") return detail as Record<string, unknown>;
   return null;
@@ -774,7 +774,7 @@ function textField(record: Record<string, unknown> | null, key: string): string 
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function BeadRail({
+function IssueRail({
   row,
   id,
   detail,
@@ -791,15 +791,15 @@ function BeadRail({
     return (
       <EmptyState
         icon="ph:circle-dashed"
-        headline="No bead selected"
-        subtitle="Pick a bead id from the queue or a gate card to read its record."
+        headline="No issue selected"
+        subtitle="Pick an issue id from the queue or a gate card to read its record."
       />
     );
   }
-  const record = beadRecord(detail);
-  const title = textField(record, "title") ?? row?.bead.title ?? null;
-  const assignee = textField(record, "assignee") ?? row?.bead.assignee ?? null;
-  const status = textField(record, "status") ?? row?.bead.status ?? null;
+  const record = issueRecord(detail);
+  const title = textField(record, "title") ?? row?.issue.title ?? null;
+  const assignee = textField(record, "assignee") ?? row?.issue.assignee ?? null;
+  const status = textField(record, "status") ?? row?.issue.status ?? null;
   const running = assignee
     ? sessions.find(
         (session) =>
@@ -810,10 +810,10 @@ function BeadRail({
     : undefined;
 
   return (
-    <div className="wsch-bead">
-      <p className="wsch-bead-id">{id}</p>
-      {title ? <p className="wsch-bead-title">{title}</p> : null}
-      <dl className="wsch-bead-fields">
+    <div className="wsch-issue">
+      <p className="wsch-issue-id">{id}</p>
+      {title ? <p className="wsch-issue-title">{title}</p> : null}
+      <dl className="wsch-issue-fields">
         {status ? (
           <>
             <dt>Status</dt>
@@ -834,21 +834,15 @@ function BeadRail({
         ) : null}
       </dl>
       {textField(record, "description") ? (
-        <p className="wsch-bead-body">{textField(record, "description")}</p>
-      ) : null}
-      {textField(record, "design") ? (
-        <>
-          <p className="wsch-bead-label">Design</p>
-          <p className="wsch-bead-body">{textField(record, "design")}</p>
-        </>
+        <p className="wsch-issue-body">{textField(record, "description")}</p>
       ) : null}
       {record === null ? (
-        <p className="wsch-bead-note">The tracker record for this bead has not loaded.</p>
+        <p className="wsch-issue-note">The tracker record for this issue has not loaded.</p>
       ) : null}
       {running && onJumpToSession ? (
         <button
           type="button"
-          className="focus-ring wsch-bead-session"
+          className="focus-ring wsch-issue-session"
           onClick={() => onJumpToSession(running.id, running.familiarId)}
         >
           <Icon name="ph:caret-right" width={12} height={12} aria-hidden />

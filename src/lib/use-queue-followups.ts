@@ -10,13 +10,13 @@
 //
 // Fetch discipline matches the rest of the starting page: a one-shot,
 // abort-guarded snapshot refreshed on window focus, never an interval. The
-// page is replaced by the first turn, so polling it would burn a `bd` CLI
-// invocation for a view that is about to disappear.
+// page is replaced by the first turn, so polling it would spend GitHub API
+// calls on a view that is about to disappear.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { parkedFollowUps, type QueueFollowUp } from "./chat-queue-followups.ts";
-import type { ReadyBead } from "./beads-work-queue.ts";
+import type { ReadyIssue } from "./work-queue.ts";
 import { useRefreshOnFocus } from "./use-refresh-on-focus.ts";
 
 type ReadinessResponse = {
@@ -27,7 +27,7 @@ type ReadinessResponse = {
   };
 };
 
-type BeadsResponse = { ok?: boolean; data?: ReadyBead[] };
+type IssuesResponse = { ok?: boolean; data?: ReadyIssue[] };
 
 export type QueueFollowUpsSnapshot = {
   /** Parked follow-ups this familiar may start, most urgent first. */
@@ -37,15 +37,15 @@ export type QueueFollowUpsSnapshot = {
   loading: boolean;
 };
 
-/** Reads the Queue project, then its ready beads. Any failure — no project
- *  selected, beads adapter down, malformed payload — resolves to an empty
+/** Reads the Queue project, then its ready issues. Any failure — no project
+ *  selected, issues adapter down, malformed payload — resolves to an empty
  *  snapshot: the group is absent rather than an error the user can't act on
  *  from a brand-new chat. */
 export function useQueueFollowUps(
   familiarId: string | null | undefined,
   enabled = true,
 ): QueueFollowUpsSnapshot {
-  const [beads, setBeads] = useState<ReadyBead[]>([]);
+  const [issues, setIssues] = useState<ReadyIssue[]>([]);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [loading, setLoading] = useState(enabled);
   const abortRef = useRef<AbortController | null>(null);
@@ -64,23 +64,23 @@ export function useQueueFollowUps(
       const project = readinessJson.readiness?.ok ? readinessJson.readiness.project ?? null : null;
       if (controller.signal.aborted) return;
       if (!project?.root) {
-        setBeads([]);
+        setIssues([]);
         setProjectName(null);
         return;
       }
-      const beadsRes = await fetch(
-        `/api/beads?mode=ready&projectRoot=${encodeURIComponent(project.root)}`,
+      const issuesRes = await fetch(
+        `/api/queue/issues?mode=ready&projectRoot=${encodeURIComponent(project.root)}`,
         { cache: "no-store", signal: controller.signal },
       );
-      const beadsJson = (await beadsRes.json()) as BeadsResponse;
+      const issuesJson = (await issuesRes.json()) as IssuesResponse;
       if (controller.signal.aborted) return;
-      setBeads(beadsJson.ok && Array.isArray(beadsJson.data) ? beadsJson.data : []);
+      setIssues(issuesJson.ok && Array.isArray(issuesJson.data) ? issuesJson.data : []);
       setProjectName(project.name ?? null);
     } catch {
       // A brand-new chat can't act on a queue-adapter failure, and the group
       // is additive — swallow to an empty snapshot instead of shouting.
       if (!controller.signal.aborted) {
-        setBeads([]);
+        setIssues([]);
         setProjectName(null);
       }
     } finally {
@@ -92,7 +92,7 @@ export function useQueueFollowUps(
     if (!enabled) {
       abortRef.current?.abort();
       abortRef.current = null;
-      setBeads([]);
+      setIssues([]);
       setLoading(false);
       return;
     }
@@ -102,7 +102,7 @@ export function useQueueFollowUps(
   useRefreshOnFocus(load, { enabled });
 
   return {
-    rows: parkedFollowUps(beads, { familiarId }),
+    rows: parkedFollowUps(issues, { familiarId }),
     projectName,
     loading,
   };

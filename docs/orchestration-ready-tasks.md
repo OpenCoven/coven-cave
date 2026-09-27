@@ -162,9 +162,9 @@ Every familiar reads the same task record. Practical consequences:
   the next one rather than hand-editing the primary.
 - **Any orchestrator dispatching work** — route on the next step's actor,
   capability, and target. Honor `requiresApproval` absolutely.
-- **Beads** — unchanged as the durable issue tracker. Cave tasks are the
-  execution surface; a bead may reference a task and a task may reference a bead,
-  but neither replaces the other.
+- **GitHub Issues** — the durable issue tracker. Cave tasks are the execution
+  surface; an issue may reference a task and a task may reference an issue, but
+  neither replaces the other.
 
 ## Quick reference
 

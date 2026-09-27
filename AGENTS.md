@@ -20,11 +20,6 @@ Use **GitHub Issues** as the development queue and the existing
 [GitHub work tracking](docs/workflows/github-work-tracking.md) is the canonical
 guide for ownership, status, worktrees, handoff, and completion.
 
-Beads is retired from this workflow by issue #5399. Do not run `bd`, create
-or claim Beads, or sync Dolt to work on this repository. Preserve legacy data,
-IDs, owners, and citations as historical notes. Do not bulk-import old rows
-into GitHub or treat the passive `.beads/issues.jsonl` export as current work.
-
 Keep one issue per outcome. Record the acting familiar, scope, branch/worktree,
 evidence, blocker, and imperative next step on that issue. GitHub assignment
 and comments are not execution leases. Preserve human-authored dependencies
@@ -40,8 +35,8 @@ marked active.
 - Treat `main` as canonical. Fetch current `origin/main` before branching.
 - Use a short-lived, issue-owned worktree under `.worktrees/`. Follow the
   [creation and budget contract](docs/workflows/github-work-tracking.md#worktrees).
-  Use `git worktree add --no-track`; do not create a Bead or forge legacy
-  lifecycle metadata to obtain a worktree.
+  Use `git worktree add --no-track`; do not forge lifecycle metadata to
+  obtain a worktree.
 - Keep durable decisions in issues, approved specs/plans, and PRs, not branches
   or session memory. Approved documents must resolve on `main` through a PR.
 - Keep the shared checkout and other sessions' edits untouched. Run
@@ -62,9 +57,9 @@ marked active.
   directory deletion, and neither is justified by missing ownership evidence.
 - Before release or TestFlight work, reconcile and verify from clean `main`.
 
-Use the existing Git-only secret and attribution hooks. The guarded migration
-command is `bash scripts/install-git-hooks.sh --retire-beads`; never replace
-safety hooks with an empty path.
+Use the existing Git-only secret and attribution hooks, installed with
+`bash scripts/install-git-hooks.sh`; never replace safety hooks with an empty
+path.
 
 ## Pull-request Review Standard
 

@@ -240,8 +240,8 @@ flowchart TD
 
 ## Checkpoint map
 
-Each checkpoint is one PR from a `.worktrees/<branch>` branch; beads track
-them (CP1 = `cave-lepz`).
+Each checkpoint is one PR from a `.worktrees/<branch>` branch; issues track
+them (CP1 was Bead `cave-lepz`).
 
 **CP2 — Unified progressive flow (basic path).** Restructure the drawer into
 the stepper (Intent → Preview → Save): describe default + last-used memory

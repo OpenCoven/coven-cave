@@ -1,16 +1,13 @@
 // cave-7g7py: the hook installer must not disable hooks it does not own.
 //
-// The failure it guards against: core.hooksPath is a SINGLE directory, so
-// pointing it somewhere new silently disables every hook in the old place.
-// Clones point it at .beads/hooks, which holds strictly more than
-// scripts/git-hooks — beads' lifecycle hooks plus the duplicate-id guard from
-// #4231. The installer overwrote it unconditionally, so the script documented
-// as the way to activate the duplicate-prevention merge driver removed the
-// duplicate-detection hook at the same time.
+// core.hooksPath is a SINGLE directory, so pointing it somewhere new silently
+// disables every hook in the old place. The installer keeps an existing
+// directory and only warns about guards missing from it, but replaces a
+// configured directory that no longer exists (the removed .beads/hooks).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +24,6 @@ function scaffold() {
   const dir = mkdtempSync(join(tmpdir(), "hook-install-"));
   git(dir, "init", "-q", "-b", "main");
   mkdirSync(join(dir, "scripts", "git-hooks"), { recursive: true });
-  mkdirSync(join(dir, ".beads", "hooks"), { recursive: true });
   cpSync(installer, join(dir, "scripts", "install-git-hooks.sh"));
   for (const hook of ["pre-commit", "commit-msg"]) {
     writeFileSync(join(dir, "scripts", "git-hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
@@ -43,193 +39,30 @@ function runInstaller(dir, ...args) {
   });
 }
 
-function commitFixture(dir, message) {
-  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "-c", "commit.gpgsign=false",
-    "-c", "user.name=Hook Fixture", "-c", "user.email=fixture@example.invalid",
-    "commit", "-qm", message);
-}
-
-function trackLegacyHooks(dir) {
-  for (const hook of ["pre-commit", "commit-msg", "post-checkout", "post-merge", "pre-push", "prepare-commit-msg"]) {
-    cpSync(join(repoRoot, ".beads", "hooks", hook), join(dir, ".beads", "hooks", hook));
-  }
-  git(dir, "add", "scripts", ".beads/hooks");
-  commitFixture(dir, "Fixture hooks");
-}
-
-function addLinkedWorktree(dir) {
-  const linked = join(dir, ".worktrees", "linked");
-  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "worktree", "add", "--no-track", "-b", "linked", linked);
-  return linked;
-}
-
-test("explicit retirement switches recognized relative or absolute legacy hooks without deleting them", () => {
-  for (const absolute of [false, true]) {
-    const dir = scaffold();
-    try {
-      trackLegacyHooks(dir);
-      const legacy = absolute ? join(dir, ".beads", "hooks") : ".beads/hooks";
-      git(dir, "config", "core.hooksPath", legacy);
-      const before = readFileSync(join(dir, ".beads", "hooks", "post-checkout"), "utf8");
-      assert.match(runInstaller(dir, "--retire-beads"), /RETIRE recognized Beads hooks/);
-      assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-      assert.equal(readFileSync(join(dir, ".beads", "hooks", "post-checkout"), "utf8"), before);
-      assert.match(runInstaller(dir, "--retire-beads"), /OK core\.hooksPath/);
-      assert.match(git(dir, "config", "--get", "merge.beads-jsonl.driver"), /beads-jsonl-merge-driver/);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
-
-test("a linked worktree can retire the primary checkout's absolute Beads hook path", () => {
-  const dir = scaffold();
-  try {
-    trackLegacyHooks(dir);
-    const linked = addLinkedWorktree(dir);
-    git(dir, "config", "core.hooksPath", join(dir, ".beads", "hooks"));
-    assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
-    assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-    assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-for (const variant of ["different", "missing"]) {
-  test(`divergent HEADs: unchanged primary hooks migrate with a ${variant} linked hook blob`, () => {
-    const dir = scaffold();
-    try {
-      trackLegacyHooks(dir);
-      const linked = addLinkedWorktree(dir);
-      const linkedHook = join(linked, ".beads", "hooks", "pre-commit");
-      if (variant === "different") {
-        writeFileSync(linkedHook, "#!/usr/bin/env bash\n# Linked checkout hook\nexit 0\n");
-      } else {
-        rmSync(linkedHook);
-      }
-      git(linked, "add", ".beads/hooks");
-      commitFixture(linked, `${variant} linked hook`);
-
-      const legacy = join(dir, ".beads", "hooks");
-      const before = readFileSync(join(legacy, "pre-commit"), "utf8");
-      git(dir, "config", "core.hooksPath", legacy);
-      assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
-      assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-      assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-      assert.equal(readFileSync(join(legacy, "pre-commit"), "utf8"), before);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+/** stdout and stderr together, for warnings the installer prints on success. */
+function runInstallerCombined(dir) {
+  return execFileSync("bash", ["-c", `bash "${dir}/scripts/install-git-hooks.sh" 2>&1`], {
+    cwd: dir, encoding: "utf8",
   });
 }
 
-test("divergent HEADs: modified primary hooks refuse even when they match the linked commit", () => {
-  const dir = scaffold();
-  try {
-    trackLegacyHooks(dir);
-    const linked = addLinkedWorktree(dir);
-    const modified = "#!/usr/bin/env bash\n# Linked checkout hook\nexit 0\n";
-    writeFileSync(join(linked, ".beads", "hooks", "pre-commit"), modified);
-    git(linked, "add", ".beads/hooks");
-    commitFixture(linked, "Different linked hook");
-
-    const legacy = join(dir, ".beads", "hooks");
-    writeFileSync(join(legacy, "pre-commit"), modified);
-    git(dir, "config", "core.hooksPath", legacy);
-    const config = readFileSync(join(dir, ".git", "config"), "utf8");
-    const guard = join(linked, "scripts", "git-hooks", "pre-commit");
-    chmodSync(guard, 0o644);
-    const mode = statSync(guard).mode;
-
-    assert.throws(
-      () => runInstaller(linked, "--retire-beads"),
-      (error) => error.status === 2 && /ERROR: modified legacy hook would be disabled:/.test(error.stderr),
-    );
-    assert.equal(readFileSync(join(dir, ".git", "config"), "utf8"), config);
-    assert.equal(statSync(guard).mode, mode, "refusal must precede chmod of the canonical guards");
-    assert.equal(readFileSync(join(legacy, "pre-commit"), "utf8"), modified);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+function customHooks(dir, name, hooks, mode = 0o755) {
+  mkdirSync(join(dir, name), { recursive: true });
+  for (const hook of hooks) {
+    writeFileSync(join(dir, name, hook), "#!/usr/bin/env bash\nexit 0\n", { mode });
   }
-});
-
-for (const absolute of [false, true]) {
-  test(`divergent HEADs: current linked hooks use their own commit with a selected ${absolute ? "absolute" : "relative"} path`, () => {
-    const dir = scaffold();
-    try {
-      trackLegacyHooks(dir);
-      const linked = addLinkedWorktree(dir);
-      writeFileSync(join(dir, ".beads", "hooks", "pre-commit"), "#!/usr/bin/env bash\n# Primary checkout hook\nexit 0\n");
-      git(dir, "add", ".beads/hooks");
-      commitFixture(dir, "Different primary hook");
-
-      const legacy = absolute ? join(linked, ".beads", "hooks") : ".beads/hooks";
-      const hook = join(linked, ".beads", "hooks", "pre-commit");
-      const before = readFileSync(hook, "utf8");
-      git(linked, "config", "core.hooksPath", legacy);
-      assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
-      assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
-      assert.equal(readFileSync(hook, "utf8"), before);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 }
-
-test("retirement refuses extra or modified legacy hooks before changing config", () => {
-  for (const hook of ["post-rewrite", "pre-commit"]) {
-    const dir = scaffold();
-    try {
-      trackLegacyHooks(dir);
-      git(dir, "config", "core.hooksPath", ".beads/hooks");
-      writeFileSync(join(dir, ".beads", "hooks", hook), "#!/usr/bin/env bash\necho custom-guard\n", { mode: 0o755 });
-      assert.throws(() => runInstaller(dir, "--retire-beads"), /hook.*would be disabled/);
-      assert.equal(git(dir, "config", "--get", "core.hooksPath"), ".beads/hooks");
-      assert.throws(() => git(dir, "config", "--get", "merge.beads-jsonl.driver"));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
-
-test("retirement refuses custom directories, symlink hooks, and unknown arguments", () => {
-  for (const variant of ["custom-directory", "symlink-hook", "unknown-argument"]) {
-    const dir = scaffold();
-    try {
-      trackLegacyHooks(dir);
-      let preset = ".beads/hooks";
-      if (variant === "custom-directory") {
-        mkdirSync(join(dir, "custom-hooks"));
-        preset = "custom-hooks";
-      } else if (variant === "symlink-hook") {
-        rmSync(join(dir, ".beads", "hooks", "pre-commit"));
-        symlinkSync(join(dir, "scripts", "git-hooks", "pre-commit"), join(dir, ".beads", "hooks", "pre-commit"));
-      }
-      git(dir, "config", "core.hooksPath", preset);
-      const arg = variant === "unknown-argument" ? "--retire-everything" : "--retire-beads";
-      assert.throws(() => runInstaller(dir, arg), /ERROR:/);
-      assert.equal(git(dir, "config", "--get", "core.hooksPath"), preset);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
 
 test("an existing hooksPath is PRESERVED, not overwritten", () => {
   const dir = scaffold();
   try {
-    // Mirror the real clone: bd points hooksPath at .beads/hooks and puts its
-    // own hooks there, including ones scripts/git-hooks has no copy of.
-    for (const hook of ["pre-commit", "commit-msg", "post-merge", "pre-push"]) {
-      writeFileSync(join(dir, ".beads", "hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-    }
-    git(dir, "config", "core.hooksPath", ".beads/hooks");
+    customHooks(dir, "custom-hooks", ["pre-commit", "commit-msg", "post-merge", "pre-push"]);
+    git(dir, "config", "core.hooksPath", "custom-hooks");
 
     const out = runInstaller(dir);
     assert.equal(
       git(dir, "config", "--get", "core.hooksPath"),
-      ".beads/hooks",
+      "custom-hooks",
       "the installer must not hijack a hooksPath that already points somewhere",
     );
     assert.match(out, /KEEP core\.hooksPath/);
@@ -238,23 +71,15 @@ test("an existing hooksPath is PRESERVED, not overwritten", () => {
   }
 });
 
-test("bd's ABSOLUTE hooksPath is recognised, not clobbered", () => {
-  // The real clone stores an absolute path. A naive string compare against
-  // ".beads/hooks" would miss it and overwrite the very thing being protected.
+test("an ABSOLUTE hooksPath is recognised, not clobbered", () => {
   const dir = scaffold();
   try {
-    for (const hook of ["pre-commit", "commit-msg"]) {
-      writeFileSync(join(dir, ".beads", "hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-    }
-    const absolute = join(dir, ".beads", "hooks");
+    customHooks(dir, "custom-hooks", ["pre-commit", "commit-msg"]);
+    const absolute = join(dir, "custom-hooks");
     git(dir, "config", "core.hooksPath", absolute);
 
     runInstaller(dir);
-    assert.equal(
-      git(dir, "config", "--get", "core.hooksPath"),
-      absolute,
-      "an absolute hooksPath must be preserved too",
-    );
+    assert.equal(git(dir, "config", "--get", "core.hooksPath"), absolute);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -271,198 +96,74 @@ test("an unset hooksPath is still installed", () => {
   }
 });
 
-test("a preserved hook directory missing a guard WARNS rather than passing silently", () => {
-  // The live gap this bead found: .beads/hooks had no commit-msg, so the
-  // contributor-attribution guard was not running and nothing said so.
-  const dir = scaffold();
-  try {
-    writeFileSync(join(dir, ".beads", "hooks", "pre-commit"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-    git(dir, "config", "core.hooksPath", ".beads/hooks");
-    const proc = execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh")], {
-      cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    });
-    // stderr is merged into the thrown output only on failure; capture both by
-    // re-running with 2>&1 semantics via the shell.
-    const combined = execFileSync("bash", ["-c", `bash "${dir}/scripts/install-git-hooks.sh" 2>&1`], {
-      cwd: dir, encoding: "utf8",
-    });
-    assert.match(combined, /WARNING missing hook\(s\): commit-msg/, "a missing guard must be reported");
-    assert.ok(proc.length >= 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("a PRESENT but NON-EXECUTABLE hook warns — git will not run it", () => {
-  // git only runs a hook that is executable, so an `-e` existence check would
-  // call this fine while the guard stays dead — the same silent no-op this
-  // script exists to surface.
-  //
-  // Uses a THIRD directory on purpose. The installer chmod +x's both
-  // scripts/git-hooks and .beads/hooks, so neither of those can reach the
-  // check non-executable; the gap only exists for a hooksPath the installer
-  // does not own, which is exactly where it must not guess and must warn.
-  const dir = scaffold();
-  try {
-    mkdirSync(join(dir, "custom-hooks"), { recursive: true });
-    for (const hook of ["pre-commit", "commit-msg"]) {
-      writeFileSync(join(dir, "custom-hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o644 });
-    }
-    git(dir, "config", "core.hooksPath", "custom-hooks");
-    const combined = execFileSync("bash", ["-c", `bash "${dir}/scripts/install-git-hooks.sh" 2>&1`], {
-      cwd: dir, encoding: "utf8",
-    });
-    assert.match(combined, /WARNING non-executable hook\(s\):/, "a non-executable hook must be reported");
-    assert.doesNotMatch(combined, /WARNING missing hook/, "it is present — not missing");
-    assert.equal(git(dir, "config", "--get", "core.hooksPath"), "custom-hooks", "and still preserved");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("the merge driver is registered regardless of the hook decision", () => {
-  // The driver must never be collateral damage of the hooks branch — that
-  // coupling is what made the original script unsafe to run at all.
-  for (const preset of ["unset", "preserved"]) {
+test("a configured hook directory that no longer exists is replaced", () => {
+  // Clones configured by Beads point at .beads/hooks, which left the tree.
+  // A missing directory runs no hooks, so there is nothing to preserve.
+  for (const configured of [".beads/hooks", "ABSOLUTE"]) {
     const dir = scaffold();
     try {
-      if (preset === "preserved") {
-        for (const hook of ["pre-commit", "commit-msg"]) {
-          writeFileSync(join(dir, ".beads", "hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-        }
-        git(dir, "config", "core.hooksPath", ".beads/hooks");
-      }
-      runInstaller(dir);
-      assert.match(
-        git(dir, "config", "--get", "merge.beads-jsonl.driver"),
-        /^"[^"]+node[^"]*" scripts\/beads-jsonl-merge-driver\.mjs "%O" "%A" "%B"$/,
-        `driver must be registered when hooksPath is ${preset}`,
-      );
+      const value = configured === "ABSOLUTE" ? join(dir, ".beads", "hooks") : configured;
+      git(dir, "config", "core.hooksPath", value);
+      assert.match(runInstaller(dir), /OK core\.hooksPath -> scripts\/git-hooks/);
+      assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   }
 });
 
-test("cave-f13bp: the driver resolves to an ABSOLUTE node path, not a bare 'node'", () => {
-  // GitHub Desktop invokes git with a PATH that cannot resolve nvm/homebrew/
-  // asdf installs of node, so a bare "node" left a GUI-driven merge
-  // conflicted with "node: command not found". The installer must bake in
-  // this machine's resolved node path instead of trusting the invoker's PATH.
+test("a stale Beads merge-driver section is removed, and nothing else", () => {
   const dir = scaffold();
   try {
-    runInstaller(dir);
-    const driver = git(dir, "config", "--get", "merge.beads-jsonl.driver");
-    const match = /^"([^"]+)" scripts\/beads-jsonl-merge-driver\.mjs "%O" "%A" "%B"$/.exec(driver);
-    assert.ok(match, `driver config must quote an absolute node path, got: ${driver}`);
-    const [, nodePath] = match;
-    assert.notEqual(nodePath, "node", "must not fall back to the bare, PATH-dependent 'node'");
-    assert.ok(
-      nodePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(nodePath),
-      `resolved node path must be absolute, got: ${nodePath}`,
-    );
+    git(dir, "config", "merge.beads-jsonl.name", "union .beads/interactions.jsonl by record id");
+    git(dir, "config", "merge.beads-jsonl.driver", "node scripts/beads-jsonl-merge-driver.mjs %O %A %B");
+    git(dir, "config", "merge.other.driver", "true");
 
-    // The config must actually run: invoke it exactly as git would, with an
-    // empty PATH, to prove the fix (a bare "node" fails here with ENOENT).
-    const [nodeBinary, scriptRelPath] = driver
-      .match(/^"([^"]+)" (\S+) "%O" "%A" "%B"$/)
-      ?.slice(1) ?? [];
-    assert.ok(nodeBinary && scriptRelPath, "driver config must be parseable");
-    mkdirSync(join(dir, "scripts"), { recursive: true });
-    cpSync(
-      join(repoRoot, "scripts", "beads-jsonl-merge-driver.mjs"),
-      join(dir, "scripts", "beads-jsonl-merge-driver.mjs"),
-    );
-    writeFileSync(join(dir, "a.jsonl"), "");
-    writeFileSync(join(dir, "b.jsonl"), "");
-    writeFileSync(join(dir, "o.jsonl"), "");
-    execFileSync(nodeBinary, [scriptRelPath, "o.jsonl", "a.jsonl", "b.jsonl"], {
-      cwd: dir,
-      env: { PATH: "" },
-      encoding: "utf8",
-    });
+    assert.match(runInstaller(dir), /REMOVED stale merge\.beads-jsonl/);
+    assert.throws(() => git(dir, "config", "--get-regexp", "^merge\\.beads-jsonl\\."));
+    assert.equal(git(dir, "config", "--get", "merge.other.driver"), "true");
+    assert.doesNotMatch(runInstaller(dir), /REMOVED/, "a second run has nothing to remove");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("cave-f13bp: a shell FUNCTION named 'node' does not count as a resolved node — install still fails", () => {
-  // `command -v` can report a shell function or alias instead of a real
-  // executable. Neither means anything once baked into a git config that a
-  // different process (git, from a GUI client) will later run directly — so
-  // the installer must require an executable regular file, not just any
-  // non-empty `command -v` output.
+test("arguments are refused before any config change", () => {
   const dir = scaffold();
   try {
-    const wrapper = join(dir, "run-with-fake-node-function.sh");
-    writeFileSync(
-      wrapper,
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "node() { echo fake; }",
-        "export -f node",
-        `exec bash "${join(dir, "scripts", "install-git-hooks.sh")}"`,
-        "",
-      ].join("\n"),
-      { mode: 0o755 },
-    );
-
-    assert.throws(
-      () => execFileSync("bash", [wrapper], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
-      /node/i,
-      "installer must fail when the only 'node' on PATH is a shell function",
-    );
-
-    assert.throws(
-      () => git(dir, "config", "--get", "merge.beads-jsonl.driver"),
-      "no driver config must be written when node resolves to a non-file",
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("cave-f13bp: install FAILS LOUDLY when node cannot be resolved, rather than writing a config we already know will break later", () => {
-  // A silent fallback to the bare "node" would just relocate the failure to
-  // whatever GUI merge eventually runs the driver — exactly the bug being
-  // fixed. Whitelist the installer's tools rather than their host directories:
-  // Homebrew and other package managers can install git alongside node.
-  const dir = scaffold();
-  try {
-    const bashPath = execFileSync("which", ["bash"], { encoding: "utf8" }).trim();
-    const restrictedPath = join(dir, "tools");
-    mkdirSync(restrictedPath);
-    for (const tool of ["git", "chmod", "ls", "xargs"]) {
-      const toolPath = execFileSync("which", [tool], { encoding: "utf8" }).trim();
-      symlinkSync(toolPath, join(restrictedPath, tool));
+    for (const arg of ["--retire-beads", "--anything"]) {
+      assert.throws(() => runInstaller(dir, arg), /usage/);
     }
-
-    assert.throws(
-      () =>
-        execFileSync(bashPath, [join(dir, "scripts", "install-git-hooks.sh")], {
-          cwd: dir,
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { PATH: restrictedPath },
-        }),
-      (error) => error.status === 1 && /^ERROR: node not found/m.test(error.stderr),
-      "installer must reach the missing-Node error, not fail on another missing tool",
-    );
-
-    assert.throws(
-      () => git(dir, "config", "--get", "merge.beads-jsonl.driver"),
-      "no driver config must be written on a failed install",
-    );
+    assert.throws(() => git(dir, "config", "--get", "core.hooksPath"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test(".beads/hooks carries a commit-msg shim so the attribution guard runs", () => {
-  // core.hooksPath is one directory: without this file, scripts/git-hooks/
-  // commit-msg never executes on a clone using the beads hook path.
-  const shim = readFileSync(join(repoRoot, ".beads", "hooks", "commit-msg"), "utf8");
-  assert.match(shim, /scripts\/git-hooks\/commit-msg/, "the shim must delegate rather than duplicate");
-  assert.match(shim, /exit 1/, "a missing implementation must fail, not pass silently");
+test("a preserved hook directory missing a guard WARNS rather than passing silently", () => {
+  const dir = scaffold();
+  try {
+    customHooks(dir, "custom-hooks", ["pre-commit"]);
+    git(dir, "config", "core.hooksPath", "custom-hooks");
+    assert.match(runInstallerCombined(dir), /WARNING missing hook\(s\): commit-msg/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a PRESENT but NON-EXECUTABLE hook warns — git will not run it", () => {
+  // git only runs an executable hook, so an existence check alone would call
+  // this fine while the guard stays dead. The installer does not own this
+  // directory, so it must warn rather than chmod it.
+  const dir = scaffold();
+  try {
+    customHooks(dir, "custom-hooks", ["pre-commit", "commit-msg"], 0o644);
+    git(dir, "config", "core.hooksPath", "custom-hooks");
+    const combined = runInstallerCombined(dir);
+    assert.match(combined, /WARNING non-executable hook\(s\):/);
+    assert.doesNotMatch(combined, /WARNING missing hook/, "it is present — not missing");
+    assert.equal(git(dir, "config", "--get", "core.hooksPath"), "custom-hooks", "and still preserved");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

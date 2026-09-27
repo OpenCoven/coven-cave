@@ -17,8 +17,9 @@ session cookies work outside Cave's embedded Browser.
 
 Timothy contributed the Queue project readiness contract: a persisted
 Queue-specific project selection validated before every Queue load, onboarding
-and launch-time reselection for stale paths, and a Generate action that
-initializes Beads only inside the selected Git repository. His original pull
+and launch-time reselection for stale paths, and a Generate action (since
+retired) that initialized the Queue workspace only inside the selected Git
+repository. His original pull
 request was re-landed through an internal branch after his fork branch became
 unreachable, so this file records the credit his work is due.
 (proposed in [#3743](https://github.com/OpenCoven/coven-cave/pull/3743))

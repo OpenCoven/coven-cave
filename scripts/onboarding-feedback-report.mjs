@@ -3,7 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const ENUMS = {
-  source: ["github", "beads", "office_hours", "discord", "usability_test"],
+  source: ["github", "office_hours", "discord", "usability_test"],
   stage: [
     "download",
     "install",

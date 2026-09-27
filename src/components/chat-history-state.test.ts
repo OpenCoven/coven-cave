@@ -72,3 +72,17 @@ test("chat history recovery uses direct verbs and shared buttons", () => {
     "history states no longer carry a parallel button vocabulary",
   );
 });
+
+// #5583: a 404 for a chat that is no longer listed is a deleted chat. Cleanup
+// runs once per chat: drop the cached transcript and its encrypted offline
+// copy, and refresh the list so the row goes.
+{
+  const { readFileSync: readSource } = await import("node:fs");
+  const view = readSource(new URL("./chat-view.tsx", import.meta.url), "utf8");
+  const cleanup = view.match(/const chatListed = [\s\S]*?\}, \[chatGone, sessionId, onSessionsChanged\]\);/)?.[0] ?? "";
+  if (!/historyState === "missing" && Boolean\(sessionId\) && !chatListed && !flowBackedSession/.test(cleanup)) throw new Error("chatGone must require a 404 for an unlisted, non-flow chat");
+  if (!/goneChatHandledRef\.current === sessionId\) return;/.test(cleanup)) throw new Error("gone-chat cleanup must run once per chat");
+  for (const call of ["invalidateConversation(sessionId)", "deleteOfflineCacheEntry(\"conversation\", sessionId)", "onSessionsChanged?.()"]) {
+    if (!cleanup.includes(call)) throw new Error(`gone-chat cleanup must call ${call}`);
+  }
+}

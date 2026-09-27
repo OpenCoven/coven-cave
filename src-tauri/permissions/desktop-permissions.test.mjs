@@ -84,6 +84,7 @@ const requiredPermissionIds = [
   "allow-offline-cache-read",
   "allow-offline-cache-write",
   "allow-offline-cache-clear",
+  "allow-offline-cache-delete",
   "allow-offline-cache-status",
 ];
 
@@ -114,6 +115,7 @@ const requiredCommands = [
   "offline_cache_read",
   "offline_cache_write",
   "offline_cache_clear",
+  "offline_cache_delete",
   "offline_cache_status",
 ];
 
@@ -285,6 +287,7 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-offline-cache-read",
     "allow-offline-cache-write",
     "allow-offline-cache-clear",
+    "allow-offline-cache-delete",
     "allow-offline-cache-status",
   ]) {
     assert.ok(
@@ -857,6 +860,7 @@ test("the offline read cache is registered, instance-scoped, and served read-onl
     "offline_cache_read",
     "offline_cache_write",
     "offline_cache_clear",
+    "offline_cache_delete",
     "offline_cache_status",
   ]) {
     assert.match(
@@ -896,7 +900,7 @@ test("the offline read cache is registered, instance-scoped, and served read-onl
   const invoked = [...offlineCacheTs.matchAll(/invoke\("([a-z_]+)"/g)].map(([, name]) => name);
   assert.deepEqual(
     [...new Set(invoked)].sort(),
-    ["offline_cache_clear", "offline_cache_read", "offline_cache_status", "offline_cache_write"],
+    ["offline_cache_clear", "offline_cache_delete", "offline_cache_read", "offline_cache_status", "offline_cache_write"],
     "the offline cache client must invoke only its own permitted commands",
   );
 });

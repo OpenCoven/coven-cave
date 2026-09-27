@@ -83,9 +83,10 @@ export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
  */
 export async function taskCardForSession(sessionId?: string | null): Promise<Card | null> {
   if (!sessionId) return null;
-  const { loadBoard } = await import("@/lib/cave-board");
-  const board = await loadBoard();
-  return board.cards.find((candidate) => candidate.sessionId === sessionId) ?? null;
+  const { boardCardsForSession } = await import("@/lib/board-session-index");
+  const card = (await boardCardsForSession(sessionId))[0];
+  // A copy: the index shares its cards between readers (#5595).
+  return card ? structuredClone(card) : null;
 }
 
 export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {

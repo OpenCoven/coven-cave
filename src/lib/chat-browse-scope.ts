@@ -8,7 +8,44 @@ import type { SessionRow } from "./types.ts";
 export type ChatBrowseScope = {
   selection: ProjectSelection;
   ready: boolean;
+  /** Not ready only because context is still arriving (hydration, a project
+   *  fetch), as opposed to a failure. Loading is never shown as an error. */
+  loading?: boolean;
 };
+
+export type ProjectsLoadState = {
+  loaded: boolean;
+  loading: boolean;
+  error: string | null;
+};
+
+/**
+ * The scope a surface can actually filter by: the workspace's scope, further
+ * gated on that surface's own familiar-scoped project fetch (#5585). One helper
+ * for ChatSurface and the rail so the two can't disagree about readiness.
+ */
+export function effectiveChatBrowseScope(
+  scope: ChatBrowseScope | undefined,
+  projects: ProjectsLoadState,
+): ChatBrowseScope | undefined {
+  if (!scope) return undefined;
+  const projectsReady = scope.selection === "all" || (projects.loaded && !projects.loading && projects.error === null);
+  const ready = scope.ready && projectsReady;
+  const loading = !ready && (scope.ready ? projects.error === null : Boolean(scope.loading));
+  return { ...scope, ready, loading };
+}
+
+/** Copy for a scoped chat list with no rows to show. */
+export function chatBrowseEmptyMessage(scope: ChatBrowseScope | undefined, hasSearch = false): string {
+  if (hasSearch) return "No threads match your search.";
+  if (scope && !scope.ready) {
+    return scope.loading
+      ? "Loading this project's chats…"
+      : "Project context is unavailable. Choose another project or retry.";
+  }
+  if (scope && scope.selection !== "all") return "No chats in this project. Start a chat or choose another project.";
+  return "No conversations yet.";
+}
 
 export function blankChatProjectRoot(
   openerRoot: string | undefined,

@@ -153,7 +153,7 @@ for (const clearFirst of [false, true]) {
     await setup(page);
     let release!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/api/chat/conversation/context-a", async (route) => {
+    await page.route((url) => url.pathname === "/api/chat/conversation/context-a", async (route) => {
       await pending;
       await route.fallback();
     });
@@ -169,7 +169,7 @@ for (const clearFirst of [false, true]) {
       await composer.fill("/help");
       await composer.press("Enter");
       await expect(main.locator("[data-turn-id]")).toHaveCount(1);
-      const response = page.waitForResponse((response) => response.url().endsWith("/api/chat/conversation/context-a"));
+      const response = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/chat/conversation/context-a");
       release();
       await response;
       if (clearFirst) {
@@ -228,9 +228,13 @@ test("project browsing filters the rail without rebinding the open conversation 
   await expect(composer).toHaveValue("Draft only for B");
 
   await switchProject(page, "alpha");
-  const filteredTitles = page.locator(".chat-inner-rail .cnav__thread-title");
+  // The project filter lists only Alpha's thread; the still-open Beta thread
+  // stays reachable in its own "Outside this project" section (#5585).
+  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside this project"]');
+  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside this project"]) .cnav__thread-title');
   await expect(filteredTitles).toHaveCount(1);
   await expect(filteredTitles).toHaveAttribute("title", "Context thread A");
+  await expect(outside.locator(".cnav__thread-title")).toHaveAttribute("title", "Context thread B");
   await expect(composer).toHaveValue("Draft only for B");
   await expect(page.getByTestId("chat-main").locator('[data-turn-id="context-b-999"]')).toBeAttached();
   await page.screenshot({ path: test.info().outputPath("project-browse.png") });
@@ -480,3 +484,30 @@ for (const departure of ["project", "new-chat"] as const) {
     }
   });
 }
+
+test("a slow transcript for the previous thread never paints into the thread you switched to", async ({ page }) => {
+  await setup(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route((url) => url.pathname === "/api/chat/conversation/context-a", async (route) => {
+    await pending;
+    await route.fallback();
+  });
+  try {
+    // Open A while its transcript is held, then switch to B before it lands.
+    await page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first().click();
+    await openThread(page, "B");
+    const main = page.getByTestId("chat-main");
+
+    const lateA = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/chat/conversation/context-a");
+    release();
+    await lateA;
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+    // B keeps its transcript and A's late response never paints into it.
+    await expect(main.locator('[data-turn-id="context-b-999"]')).toBeAttached();
+    await expect(main.locator('[data-turn-id^="context-a-"]')).toHaveCount(0);
+  } finally {
+    release();
+  }
+});

@@ -19,8 +19,83 @@ private let caveISOPlain: ISO8601DateFormatter = {
 /// Parse an ISO-8601 timestamp (with or without fractional seconds).
 func caveParseISO(_ iso: String?) -> Date? {
     guard let iso, !iso.isEmpty else { return nil }
+    if let d = caveParseCanonicalISO(iso) { return d }
     if let d = caveISOWithFractional.date(from: iso) { return d }
     return caveISOPlain.date(from: iso)
+}
+
+/// Arithmetic fast path for the canonical shape servers send:
+/// `YYYY-MM-DDTHH:MM:SS`, an optional three-digit fraction, then `Z` or
+/// `±HH:MM`, from 1900 on. A formatter parse costs tens of microseconds and a
+/// list rebuild parses every row, so a thousand-row Chats list spent most of
+/// its rebuild here (#5600). Anything else — other fraction lengths, leap seconds, missing
+/// zones — returns nil and falls back to the formatters, so the two paths
+/// never disagree about a value both accept.
+func caveParseCanonicalISO(_ iso: String) -> Date? {
+    let bytes = Array(iso.utf8)
+    func digits(_ start: Int, _ count: Int) -> Int? {
+        guard start + count <= bytes.count else { return nil }
+        var value = 0
+        for index in start..<(start + count) {
+            let byte = bytes[index]
+            guard byte >= 48, byte <= 57 else { return nil }
+            value = value * 10 + Int(byte - 48)
+        }
+        return value
+    }
+    func byte(_ index: Int, _ expected: UInt8) -> Bool {
+        index < bytes.count && bytes[index] == expected
+    }
+    guard bytes.count >= 20,
+          let year = digits(0, 4), byte(4, 45),
+          let month = digits(5, 2), byte(7, 45),
+          let day = digits(8, 2), byte(10, 84),
+          let hour = digits(11, 2), byte(13, 58),
+          let minute = digits(14, 2), byte(16, 58),
+          let second = digits(17, 2)
+    else { return nil }
+    // Foundation's Gregorian calendar switches to Julian dates before the 1582
+    // reform; no real timestamp is that old, so leave early years to it.
+    guard year >= 1900 else { return nil }
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+    let monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    guard (1...12).contains(month), day >= 1, day <= monthDays[month - 1],
+          hour < 24, minute < 60, second < 60
+    else { return nil }
+
+    var index = 19
+    var milliseconds = 0
+    if byte(index, 46) {
+        guard let fraction = digits(index + 1, 3) else { return nil }
+        milliseconds = fraction
+        index += 4
+    }
+    var offsetSeconds = 0
+    if byte(index, 90) {
+        index += 1
+    } else if byte(index, 43) || byte(index, 45) {
+        guard let offsetHours = digits(index + 1, 2), byte(index + 3, 58),
+              let offsetMinutes = digits(index + 4, 2),
+              offsetHours < 24, offsetMinutes < 60
+        else { return nil }
+        let sign = bytes[index] == 43 ? 1 : -1
+        offsetSeconds = sign * (offsetHours * 3_600 + offsetMinutes * 60)
+        index += 6
+    } else {
+        return nil
+    }
+    guard index == bytes.count else { return nil }
+
+    // Days since 1970-01-01 for a proleptic Gregorian date (Hinnant's
+    // days_from_civil), so no Calendar or DateComponents allocation is needed.
+    let shiftedYear = month <= 2 ? year - 1 : year
+    let era = (shiftedYear >= 0 ? shiftedYear : shiftedYear - 399) / 400
+    let yearOfEra = shiftedYear - era * 400
+    let dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+    let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+    let days = era * 146_097 + dayOfEra - 719_468
+    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second - offsetSeconds
+    return Date(timeIntervalSince1970: Double(seconds) + Double(milliseconds) / 1_000)
 }
 
 struct TasksView: View {

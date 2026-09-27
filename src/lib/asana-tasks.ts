@@ -1,10 +1,10 @@
-// ── Asana item context (for attaching to board / beads / Queue) ──────────────
+// ── Asana item context (for attaching to board / issues / Queue) ──────────────
 //
 // Mirrors github-tasks.ts. The app doesn't speak MCP directly (the Asana MCP is
 // wired to the familiars); live data here comes from the Asana REST API via a
 // PAT (see /api/asana/*). An AsanaItem is the normalized, UI-facing shape of an
 // assigned task; the helpers turn one into a board card, a card connection, or
-// a bead.
+// an issue.
 
 import type { CardAsanaKind, CardAsanaLink } from "@/lib/cave-board-types";
 import { publishBoardChanged } from "@/lib/board-cache-events";
@@ -136,21 +136,20 @@ export async function attachAsanaItemToCard(
 }
 
 /**
- * File an Asana task as a bead so it enters the ready queue — the beads protocol
+ * File an Asana task as an issue so it enters the ready queue — the issues protocol
  * links external tickets via --external-ref (Linear/Asana URL). Routes through
- * /api/beads' `create` action.
+ * /api/queue/issues' `create` action.
  */
-export async function fileAsanaItemAsBead(
+export async function fileAsanaItemAsIssue(
   item: AsanaItem,
   projectRoot?: string | null,
-): Promise<{ ok: boolean; beadId?: string; error?: string }> {
+): Promise<{ ok: boolean; issueId?: string; error?: string }> {
   try {
-    const res = await fetch("/api/beads", {
+    const res = await fetch("/api/queue/issues", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "create",
-        surface: "shared",
         title: item.title,
         description: [item.projectName ? `Asana project: ${item.projectName}` : null, `Asana task: ${item.url}`]
           .filter(Boolean)
@@ -165,7 +164,7 @@ export async function fileAsanaItemAsBead(
       return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
     }
     const created = data.data as { id?: string } | null;
-    return { ok: true, beadId: created?.id };
+    return { ok: true, issueId: created?.id };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
   }

@@ -1,4 +1,4 @@
-/* Familiar Work Queue (cave-hlv.4) — the beads + PR control tower surface.
+/* Familiar Work Queue (cave-hlv.4) — the issues + PR control tower surface.
    Redesigned to the "Tasks list redesign refresh" handoff (Queue.dc.html):
    a meta row, an All/Unassigned scope segment, a segmented triage toolbar, and
    full-width grouped rows with a priority/lane accent rail, an inline markdown
@@ -197,7 +197,7 @@
   outline-offset: 2px;
 }
 
-/* Bead titles that open the inspector read as links, not decorations. */
+/* Issue titles that open the inspector read as links, not decorations. */
 .fwq-row-name--link {
   min-width: 0;
   padding: 0;
@@ -220,7 +220,7 @@
   text-decoration: underline;
 }
 
-/* Bead inspector body (rides the shared Modal chrome). */
+/* Issue inspector body (rides the shared Modal chrome). */
 .fwq-detail { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .fwq-detail-title { margin: 0; font-size: var(--text-lg); line-height: 1.3; }
 .fwq-detail-desc {
@@ -425,7 +425,7 @@
   flex-shrink: 0;
 }
 
-/* Unlinked (no bead) reads as informational, distinct from the warning stale. */
+/* Unlinked (no issue) reads as informational, distinct from the warning stale. */
 .fwq-tag--unlinked {
   color: var(--text-secondary);
   border-color: var(--border-strong, var(--border-hairline));
@@ -437,7 +437,7 @@
   }
 }
 
-/* ── Truthful-degradation banners (refresh failed / beads adapter down) ──── */
+/* ── Truthful-degradation banners (refresh failed / issues adapter down) ──── */
 .fwq-banner {
   display: flex;
   align-items: center;
@@ -575,7 +575,7 @@
   box-shadow: inset 3px 0 0 var(--fwq-rail, transparent);
   transition: background 0.12s, box-shadow 0.12s;
 }
-/* Rail tone (set by railClass()): priority for bead rows, lane for PR rows. */
+/* Rail tone (set by railClass()): priority for issue rows, lane for PR rows. */
 .fwq-row--rail-danger { --fwq-rail: var(--color-danger); }
 .fwq-row--rail-warning { --fwq-rail: var(--color-warning); }
 .fwq-row--rail-success { --fwq-rail: var(--color-success); }
@@ -627,7 +627,7 @@
 }
 
 /* Assignment pill + sigil. Unassigned reads in presence tint (act on it);
-   an owned bead reads in success (already taken). */
+   an owned issue reads in success (already taken). */
 .fwq-assign {
   display: inline-flex;
   align-items: center;
@@ -660,7 +660,7 @@
   background: currentColor;
 }
 
-.fwq-bead {
+.fwq-issue {
   display: inline-flex;
   align-items: center;
   height: 20px;
@@ -736,7 +736,7 @@
 
 /* Tag recipe (§ design language): 6–18% fill, 30–45% border, solid text.
    Kept for the row's review-decision / merge-eligible / stale pills and the
-   bead inspector's status chips. */
+   issue inspector's status chips. */
 .fwq-tag {
   font-size: var(--text-xs);
   line-height: 1.5;
@@ -773,7 +773,7 @@
   background: color-mix(in oklch, var(--color-warning) 10%, transparent);
 }
 
-/* The bead inspector reuses these meta/time classes. */
+/* The issue inspector reuses these meta/time classes. */
 .fwq-card-meta {
   display: flex;
   flex-wrap: wrap;

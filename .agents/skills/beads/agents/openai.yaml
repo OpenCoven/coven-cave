@@ -1,4 +1,0 @@
-interface:
-  display_name: "Legacy Beads references"
-  short_description: "Read historical IDs; track active work in GitHub"
-  default_prompt: "Use $beads only to interpret historical references. Do not run bd or restore Beads tracking. Use GitHub Issues and the Cave Project for active work; preserve legacy data without bulk migration."

@@ -16,9 +16,6 @@ A Cave Board task remains an execution record governed by
 [Orchestration-Ready Tasks](../orchestration-ready-tasks.md). Link exact IDs
 when both exist rather than making a second task for another conversation.
 
-Do not run Beads for continuity. Preserve legacy references as historical
-notes, not current ownership or liveness.
-
 Before retrieving any title or snippet, establish access for the current
 familiar and request. Filesystem readability, a shared repository, or a
 display name does not authorize reading another familiar's private workspace

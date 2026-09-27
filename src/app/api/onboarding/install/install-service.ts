@@ -1,3 +1,4 @@
+import { warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { NextResponse } from "next/server";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -1210,6 +1211,9 @@ export async function startOnboardingInstall(
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
+  // The PATH discovery behind covenSpawnEnv() is synchronous; join the
+  // server's warm-up (or run it) off the event loop first (#5448).
+  await warmHarnessSpawnPath();
 
   const target = new URL(req.url).searchParams.get("target");
   // Client surfaces poll this lightweight lane view so a job started from a
@@ -1256,6 +1260,9 @@ export async function DELETE(req: Request) {
 export async function POST(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
+  // The PATH discovery behind covenSpawnEnv() is synchronous; join the
+  // server's warm-up (or run it) off the event loop first (#5448).
+  await warmHarnessSpawnPath();
 
   let body: { target?: unknown; confirmInstall?: unknown };
   try {

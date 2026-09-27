@@ -1,3 +1,4 @@
+import { warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { hostname } from "node:os";
@@ -320,6 +321,9 @@ async function countOpenClawAgents(): Promise<number> {
 }
 
 export async function GET() {
+  // The PATH discovery behind covenSpawnEnv() is synchronous; join the
+  // server's warm-up (or run it) off the event loop first (#5448).
+  await warmHarnessSpawnPath();
   const copilotRuntime = await adapterAvailability("copilot");
   const openclawAgentCount = await countOpenClawAgents();
   const reports: HarnessReport[] = await Promise.all(

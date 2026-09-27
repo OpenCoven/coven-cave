@@ -12,8 +12,7 @@ not transcripts. This is an operational procedure, not runtime enforcement.
 
 Read `docs/workflows/work-continuity.md` from this checkout and use
 `docs/workflows/github-work-tracking.md` for the development queue.
-GitHub Issues and the existing Cave Project replace Beads. Do not run `bd`,
-create a Bead, or sync Dolt as part of this preflight.
+GitHub Issues and the existing Cave Project are the development queue.
 
 Run it before implementation planning, ownership changes, or delegation.
 It does not expand authority. Skip broad discovery for unrelated one-turn work.

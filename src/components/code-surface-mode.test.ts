@@ -612,7 +612,7 @@ assert.match(
 );
 assert.match(
   prPanel,
-  /resolveStageForBranch\(\{ branch, open: state\.open, merged: state\.merged, beads: state\.beads \}\)/,
+  /resolveStageForBranch\(\{ branch, open: state\.open, merged: state\.merged, issues: state\.issues \}\)/,
   "the stage strip uses the SAME resolveStageForBranch as the work queue + chat header",
 );
 assert.match(

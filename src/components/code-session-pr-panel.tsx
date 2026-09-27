@@ -2,7 +2,7 @@
 
 /**
  * CodeSessionPrPanel — the Code workbench's PR tab (cave-k0ua): the session's
- * pull request pipeline in one pane — stage strip (bead → PR → checks →
+ * pull request pipeline in one pane — stage strip (issue → PR → checks →
  * review → merged via the SAME resolveStageForBranch the work queue and chat
  * stage header use), live check runs, review threads with resolve, and
  * review/merge actions.
@@ -10,7 +10,7 @@
  * Identity: the PR comes from the session's own attribution
  * (row.pullRequest — SessionPullRequestContext, cave-9q24) and the stage
  * branch from codeSessionBranch — never the shared checkout's current branch.
- * API surface reused whole: /api/beads/prs, /api/beads?mode=ready,
+ * API surface reused whole: /api/queue/prs, /api/queue/issues?mode=ready,
  * /api/github/{checks,comments,review,merge,resolve-thread}.
  */
 
@@ -22,8 +22,8 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, type CheckSummary } from "@/lib/github-checks";
 import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib/stage-model";
 import { codeSessionBranch, codeSessionWorkRoot } from "@/lib/code-surface";
-import type { PullRequestSummary } from "@/lib/beads-pr-management";
-import type { MergedPrRef, ReadyBead } from "@/lib/beads-work-queue";
+import type { PullRequestSummary } from "@/lib/pr-management";
+import type { MergedPrRef, ReadyIssue } from "@/lib/work-queue";
 import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 const STAGE_POLL_MS = 60_000;
@@ -40,11 +40,11 @@ function isTrustedPrAttribution(
 type BridgeState = {
   open: PullRequestSummary[];
   merged: MergedPrRef[];
-  beads: ReadyBead[];
+  issues: ReadyIssue[];
   loaded: boolean;
 };
 
-const EMPTY_BRIDGE: BridgeState = { open: [], merged: [], beads: [], loaded: false };
+const EMPTY_BRIDGE: BridgeState = { open: [], merged: [], issues: [], loaded: false };
 
 /** PR-bridge stage for an EXPLICIT branch (the session's attributed branch —
  *  unlike chat's header, which reads the checkout's current branch). */
@@ -60,19 +60,19 @@ function useStageSnapshot(projectRoot: string, branch: string | null): StageSnap
     let cancelled = false;
     (async () => {
       try {
-        const [prsRes, beadsRes] = await Promise.all([
-          fetch(`/api/beads/prs?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" }),
-          fetch(`/api/beads?mode=ready&projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" }),
+        const [prsRes, issuesRes] = await Promise.all([
+          fetch(`/api/queue/prs?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" }),
+          fetch(`/api/queue/issues?mode=ready&projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" }),
         ]);
         const prs = (await prsRes.json().catch(() => null)) as
           | { ok?: boolean; open?: PullRequestSummary[]; merged?: MergedPrRef[] }
           | null;
-        const beads = (await beadsRes.json().catch(() => null)) as { ok?: boolean; data?: unknown } | null;
+        const issues = (await issuesRes.json().catch(() => null)) as { ok?: boolean; data?: unknown } | null;
         if (cancelled) return;
         setState({
           open: prs?.ok && Array.isArray(prs.open) ? prs.open : [],
           merged: prs?.ok && Array.isArray(prs.merged) ? prs.merged : [],
-          beads: beads?.ok && Array.isArray(beads.data) ? (beads.data as ReadyBead[]) : [],
+          issues: issues?.ok && Array.isArray(issues.data) ? (issues.data as ReadyIssue[]) : [],
           loaded: true,
         });
       } catch {
@@ -86,7 +86,7 @@ function useStageSnapshot(projectRoot: string, branch: string | null): StageSnap
 
   const snapshot =
     state.loaded && branch
-      ? resolveStageForBranch({ branch, open: state.open, merged: state.merged, beads: state.beads })
+      ? resolveStageForBranch({ branch, open: state.open, merged: state.merged, issues: state.issues })
       : null;
   usePausablePoll(() => setTick((t) => t + 1), STAGE_POLL_MS, {
     enabled: Boolean(branch && snapshot?.pr),

@@ -94,13 +94,13 @@ const navigateMode = (mode: string) => {
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
 };
 
-/** Starting a parked follow-up briefs a fresh chat with the bead — the same
+/** Starting a parked follow-up briefs a fresh chat with the issue — the same
  *  new-chat bridge the rest of the shell uses, so the work opens in place
  *  instead of sending the user to the Queue surface to copy an id. */
-const startFollowUp = (familiarId: string | null, beadId: string, title: string) => {
+const startFollowUp = (familiarId: string | null, issueId: string, title: string) => {
   window.dispatchEvent(
     new CustomEvent("cave:agents-new-chat", {
-      detail: { familiarId: familiarId ?? undefined, initialPrompt: `Pick up ${beadId}: ${title}` },
+      detail: { familiarId: familiarId ?? undefined, initialPrompt: `Pick up ${issueId}: ${title}` },
     }),
   );
 };

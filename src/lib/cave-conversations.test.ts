@@ -584,6 +584,142 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   await rm(unreadablePath, { recursive: true });
 }
 
+// Issue #5569: the summary cache persists across restarts, so a restart reads
+// only the transcripts that changed while Cave was down.
+{
+  const {
+    clearConversationListMetadataCache,
+    CONV_DIR,
+    CONVERSATION_SUMMARY_INDEX_PATH,
+    flushConversationSummaryIndex,
+    getConversationListMetrics,
+    simulateConversationSummaryRestart,
+  } = await import("./cave-conversations.ts");
+  const { mkdir, readFile, writeFile, utimes } = await import("node:fs/promises");
+  const { existsSync, readFileSync } = await import("node:fs");
+  await mkdir(CONV_DIR, { recursive: true });
+  const ids = Array.from({ length: 6 }, (_, index) => `index-restart-${index}`);
+  const body = "y".repeat(64 * 1024);
+  for (const [index, sessionId] of ids.entries()) {
+    await writeFile(
+      path.join(CONV_DIR, `${sessionId}.json`),
+      JSON.stringify({
+        sessionId,
+        familiarId: "charm",
+        harness: "codex",
+        title: `Indexed ${index}`,
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: `2026-06-12T01:00:${String(index).padStart(2, "0")}.000Z`,
+        turns: [{ id: `${sessionId}-a`, role: "assistant", text: body, createdAt: "2026-06-12T00:00:00.000Z" }],
+      }),
+      "utf8",
+    );
+  }
+
+  clearConversationListMetadataCache();
+  assert.equal(existsSync(CONVERSATION_SUMMARY_INDEX_PATH), false, "clear removes the persisted index");
+  const coldRows = await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, ids.length);
+  await flushConversationSummaryIndex();
+  assert.equal(existsSync(CONVERSATION_SUMMARY_INDEX_PATH), true, "a scan with misses persists the index");
+
+  // Restart: memory gone, index kept → no transcript is read.
+  simulateConversationSummaryRestart();
+  const restartRows = await listConversations();
+  const restart = getConversationListMetrics();
+  assert.deepEqual(restartRows, coldRows, "hydrated rows equal a full read");
+  assert.equal(restart.cacheMisses, 0);
+  assert.equal(restart.bytesRead, 0, "a restart reads no unchanged transcript");
+
+  // A transcript changed while Cave was down is the only one re-read.
+  const changedFile = path.join(CONV_DIR, `${ids[0]}.json`);
+  const changed = JSON.parse(await readFile(changedFile, "utf8"));
+  changed.title = "Changed while Cave was down";
+  await writeFile(changedFile, JSON.stringify(changed), "utf8");
+  const future = new Date(Date.now() + 120_000);
+  await utimes(changedFile, future, future);
+  simulateConversationSummaryRestart();
+  const afterChange = await listConversations();
+  assert.equal(afterChange.find((row) => row.sessionId === ids[0])?.title, "Changed while Cave was down");
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "only the changed transcript is re-read");
+
+  // A torn index is ignored and rebuilt.
+  await flushConversationSummaryIndex();
+  await writeFile(CONVERSATION_SUMMARY_INDEX_PATH, "{ torn", "utf8");
+  simulateConversationSummaryRestart();
+  await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, ids.length, "a torn index falls back to a full read");
+  await flushConversationSummaryIndex();
+  assert.doesNotThrow(() => JSON.parse(readFileSync(CONVERSATION_SUMMARY_INDEX_PATH, "utf8")));
+
+  // An index written by different derivation code is not trusted.
+  const persisted = JSON.parse(await readFile(CONVERSATION_SUMMARY_INDEX_PATH, "utf8"));
+  persisted.key = "derived-by-an-older-release";
+  await writeFile(CONVERSATION_SUMMARY_INDEX_PATH, JSON.stringify(persisted), "utf8");
+  simulateConversationSummaryRestart();
+  await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, ids.length, "a stale derivation key forces a full read");
+  await flushConversationSummaryIndex();
+  assert.notEqual(
+    JSON.parse(await readFile(CONVERSATION_SUMMARY_INDEX_PATH, "utf8")).key,
+    "derived-by-an-older-release",
+    "the stale index is rewritten under the current key",
+  );
+
+  // A deleted transcript leaves the index.
+  for (const sessionId of ids) assert.equal(await deleteConversation(sessionId), true);
+  await listConversations();
+  await flushConversationSummaryIndex();
+  const remaining = Object.keys(JSON.parse(await readFile(CONVERSATION_SUMMARY_INDEX_PATH, "utf8")).entries);
+  assert.equal(remaining.some((name) => name.startsWith("index-restart-")), false, "deleted transcripts are pruned from the index");
+  clearConversationListMetadataCache();
+}
+
+// Issue #5587: inline base64 images move to the attachment store on save.
+{
+  const { CONV_DIR } = await import("./cave-conversations.ts");
+  const { readChatImageAttachment } = await import("./server/chat-attachment-store.ts");
+  const { readFile: readRaw } = await import("node:fs/promises");
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  await saveConversation({
+    sessionId: "inline-images-5587",
+    familiarId: "charm",
+    harness: "codex",
+    createdAt: "2026-09-26T00:00:00.000Z",
+    updatedAt: "2026-09-26T00:00:00.000Z",
+    turns: [
+      { id: "u1", role: "user", text: "draw it", createdAt: "2026-09-26T00:00:00.000Z" },
+      {
+        id: "a1",
+        parentId: "u1",
+        role: "assistant",
+        text: "here",
+        createdAt: "2026-09-26T00:00:01.000Z",
+        attachments: [
+          { name: "pic.png", type: "image/png", mimeType: "image/png", size: 70, dataUrl: PNG },
+          { name: "broken.png", type: "image/png", dataUrl: "data:image/png;base64," },
+        ],
+      },
+    ],
+  });
+  const onDisk = JSON.parse(await readRaw(path.join(CONV_DIR, "inline-images-5587.json"), "utf8"));
+  const [moved, broken] = onDisk.turns[1].attachments;
+  assert.equal(moved.dataUrl, undefined, "the inline image left the transcript");
+  assert.ok(moved.storedId?.endsWith(".png"), "it is referenced by a stored id");
+  assert.equal(moved.name, "pic.png");
+  const stored = await readChatImageAttachment(moved.storedId);
+  assert.equal(stored.mimeType, "image/png");
+  assert.equal(broken.dataUrl, "data:image/png;base64,", "what the store refuses stays inline");
+  assert.equal(broken.storedId, undefined);
+
+  // A later save keeps the same stored id: each image moves once.
+  const reloaded = await loadConversation("inline-images-5587");
+  await saveConversation(reloaded);
+  const again = JSON.parse(await readRaw(path.join(CONV_DIR, "inline-images-5587.json"), "utf8"));
+  assert.equal(again.turns[1].attachments[0].storedId, moved.storedId);
+  assert.equal(await deleteConversation("inline-images-5587"), true);
+}
+
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
 // directly into CONV_DIR (still pointing at the temp HOME from above).

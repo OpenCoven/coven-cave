@@ -38,7 +38,7 @@
   }
 }
 
-/* Header: the rail's title row — "Sessions" plus the collapse affordance, and
+/* Header: the rail's title row — "Chats" plus the collapse affordance, and
    nothing else. It replaced a search row that also carried an Organize menu.
  *
  * The row IS the button (the icon inside is decoration), so the click target

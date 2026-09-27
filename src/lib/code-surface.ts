@@ -123,7 +123,7 @@ export function codeWorkbenchFitsSplit(
  *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
  *  deep links normalize onto Activity. */
 // `work` is the frame's Work scheduler (cave-7c329) — familiar lanes, the ready
-// queue, and the blocked-bead gates rail. It is deliberately NOT a GitHub tab.
+// queue, and the blocked-issue gates rail. It is deliberately NOT a GitHub tab.
 export const CODE_TOP_TABS = ["sessions", "work", "activity", "prs", "issues", "reviews"] as const;
 export type CodeTopTab = (typeof CODE_TOP_TABS)[number];
 

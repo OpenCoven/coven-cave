@@ -17,6 +17,8 @@ const {
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
+  callDaemonTargetConditional,
+  clearDaemonConditionalReads,
   normalizeHubUrl,
 } = await import("./coven-daemon.ts");
 
@@ -1337,3 +1339,54 @@ const {
 }
 
 console.log("coven-daemon.test.ts: ok");
+
+// #5588: conditional reads reuse the parsed body on 304 and stay inert for a
+// daemon that sends no ETag.
+{
+  let body = JSON.stringify([{ id: "s1" }]);
+  let tag = '"v1"';
+  let withTags = true;
+  const seen = [];
+  const server = createServer((req, res) => {
+    const sent = req.headers["if-none-match"] ?? null;
+    seen.push(sent);
+    if (withTags && sent === tag) {
+      res.writeHead(304, { etag: tag });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json", ...(withTags ? { etag: tag } : {}) });
+    res.end(body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const target = { mode: "hub", label: "Test daemon", url: `http://127.0.0.1:${address.port}` };
+  clearDaemonConditionalReads();
+  try {
+    const first = await callDaemonTargetConditional(target, { path: "/api/v1/sessions" });
+    assert.deepEqual(first.data, [{ id: "s1" }]);
+    assert.equal(seen.at(-1), null, "no tag is sent before one was seen");
+
+    const second = await callDaemonTargetConditional(target, { path: "/api/v1/sessions" });
+    assert.equal(seen.at(-1), '"v1"', "the last tag is sent back");
+    assert.equal(second.ok, true);
+    assert.equal(second.status, 200, "a 304 surfaces as the cached 200");
+    assert.equal(second.data, first.data, "the parsed body is reused, not re-parsed");
+
+    body = JSON.stringify([{ id: "s1" }, { id: "s2" }]);
+    tag = '"v2"';
+    const changed = await callDaemonTargetConditional(target, { path: "/api/v1/sessions" });
+    assert.deepEqual(changed.data, [{ id: "s1" }, { id: "s2" }], "a changed list arrives in full");
+
+    // A daemon without ETags is never sent If-None-Match.
+    clearDaemonConditionalReads();
+    withTags = false;
+    await callDaemonTargetConditional(target, { path: "/api/v1/sessions" });
+    await callDaemonTargetConditional(target, { path: "/api/v1/sessions" });
+    assert.deepEqual(seen.slice(-2), [null, null]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+

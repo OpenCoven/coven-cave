@@ -119,24 +119,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  // A card linked to a Bead is a durable reference target. Routine cleanup gets
-  // a 409 and has to unlink first; `?unlink=1` is the explicit stronger action
-  // for a caller that means it. The guard lives here, not in the client, because
-  // the store is the retention boundary (cave-xddxs).
-  const allowLinked = new URL(req.url).searchParams.get("unlink") === "1";
-  const outcome = await deleteCard(id, { allowLinked });
+  const outcome = await deleteCard(id);
   if (outcome === "not-found") {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  }
-  if (outcome === "linked") {
-    return NextResponse.json(
-      { ok: false, error: "linked_bead_requires_unlink" },
-      { status: 409 },
-    );
   }
   return NextResponse.json({ ok: true });
 }

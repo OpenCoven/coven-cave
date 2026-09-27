@@ -8,7 +8,9 @@ const surface = read("./chat-surface.tsx");
 const router = read("./chat-router.tsx");
 const sidebar = read("./workspace-sidebar.tsx");
 assert.match(workspace, /selection: selectedWorkspaceProjectId \?\? "all"/);
-assert.match(workspace, /ready: workspaceContextHydrated &&/);
+assert.match(workspace, /const ready = workspaceContextHydrated &&/);
+assert.match(workspace, /loading: !ready && projectsError === null && \(!workspaceContextHydrated \|\| projectsLoading \|\| !projectsLoadedSuccessfully\)/,
+  "the workspace scope reports hydration and project loading apart from failure (#5585)");
 assert.match(workspace, /<ChatSurface[\s\S]*?browseScope=\{chatBrowseScope\}/);
 assert.match(workspace, /composeProjectRoot=\{selectedWorkspaceProject\?\.root \?\? null\}/);
 assert.match(surface, /<SidebarChatsSection[\s\S]*?sessions=\{browseSessions\}/);
@@ -34,8 +36,8 @@ const paletteSwitch = workspace.slice(workspace.indexOf('if (intent.kind === "sw
 assert.match(paletteSwitch, /selectFamiliarScope\(intent\.familiarId\)/);
 assert.doesNotMatch(paletteSwitch, /showFamiliarChatList|goToList/);
 assert.match(workspace, /!opts\?\.multi && !opts\?\.preserveSurface[\s\S]*?routerRef\.current\?\.newChat\(undefined, undefined, id\)/);
-assert.match(surface, /onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onFamiliarScopeChange\(id\)/,
-  "header and command palette use the same explicit-switch path");
+assert.doesNotMatch(surface, /onSelectFamiliar=/,
+  "Chat has no familiar picker of its own; the top-of-page switcher and the command palette share selectFamiliarScope (#5565)");
 assert.match(surface, /const onFamiliarSelect =[\s\S]*?routerRef\.current\?\.newChat\(undefined, undefined, d\.familiarId\)/,
   "inline familiar Switch also opens a blank compose, not the list");
 assert.match(sidebar, /if \(selectMode\) return;\s*cancelHoverPrefetch\(\);\s*void prefetchConversation\(sessionId\)/);
@@ -47,4 +49,12 @@ assert.equal((sidebar.match(/\{\.\.\.prefetchHandlers\}/g) ?? []).length, 2,
   "both actual thread buttons, including pinned rows, receive prefetch handlers");
 assert.match(sidebar, /if \(selectMode\) return;\s*if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\)/,
   "keyboard split navigation remains unchanged outside select mode");
+// #5584: the inline card's Switch takes the same eligibility-gated path as
+// "New chat", and its thread links carry the card's own familiar.
+assert.match(surface, /const onFamiliarSelect =[\s\S]*?if \(onRequestNewChat\) \{[\s\S]*?onRequestNewChat\(\{ familiarId: d\.familiarId \}\);\s*return;/,
+  "cave:familiar-select goes through the workspace's gated new-chat path");
+assert.match(surface, /routerRef\.current\?\.openSession\(d\.sessionId!, undefined, undefined, d\.familiarId \?\? null\)/,
+  "cave:agents-open-session forwards the thread's familiar to the router");
+assert.match(read("./familiar-inline-card.tsx"), /"cave:agents-open-session", \{ detail: \{ sessionId, familiarId: familiar\.id \} \}/,
+  "the familiar card names the familiar whose thread it opens");
 console.log("chat-context-navigation.test.ts: ok");

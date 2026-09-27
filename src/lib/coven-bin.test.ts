@@ -378,10 +378,10 @@ for (const rel of [
 
 // Queue subprocesses must use the same login-shell PATH as onboarding. A
 // packaged Finder/Spotlight launch otherwise finds Git during setup but loses
-// git/bd/gh when Queue performs its own repository work.
+// git/gh when Queue performs its own repository work.
 for (const rel of [
-  "../app/api/beads/prs/route.ts",
-  "./server/beads-cli.ts",
+  "../app/api/queue/prs/route.ts",
+  "./server/github-issue-queue.ts",
   "./server/issue-worktree-provision.ts",
   "./queue-project-readiness.ts",
 ]) {

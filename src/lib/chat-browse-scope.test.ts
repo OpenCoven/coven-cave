@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { blankChatProjectRoot, retainOpenChatSession, scopeChatBrowseSessions } from "./chat-browse-scope.ts";
+import { blankChatProjectRoot, chatBrowseEmptyMessage, effectiveChatBrowseScope, retainOpenChatSession, scopeChatBrowseSessions } from "./chat-browse-scope.ts";
 import { selectionKey } from "./chat-project-selection.ts";
 
 const projects = [
@@ -60,3 +60,32 @@ assert.equal(blankChatProjectRoot("/work/alpha", "alpha", "all", null), undefine
 assert.equal(blankChatProjectRoot("/work/task", undefined, undefined, "/ignored"), "/work/task",
   "companion routers without workspace scope retain their opener root");
 console.log("chat-browse-scope.test.ts: ok");
+
+// #5585: loading is not an error, and every surface shares one readiness rule.
+{
+  const loaded = { loaded: true, loading: false, error: null };
+  const fetching = { loaded: false, loading: true, error: null };
+  const failed = { loaded: false, loading: false, error: "boom" };
+  const alphaScope = { selection: "alpha", ready: true };
+
+  assert.deepEqual(effectiveChatBrowseScope(alphaScope, loaded), { ...alphaScope, ready: true, loading: false });
+  assert.deepEqual(effectiveChatBrowseScope(alphaScope, fetching), { ...alphaScope, ready: false, loading: true },
+    "a familiar switch refetching projects is loading, not unavailable");
+  assert.deepEqual(effectiveChatBrowseScope(alphaScope, failed), { ...alphaScope, ready: false, loading: false },
+    "a failed project fetch is unavailable");
+  assert.deepEqual(effectiveChatBrowseScope({ selection: "all", ready: true }, fetching), { selection: "all", ready: true, loading: false },
+    "All needs no project fetch");
+  assert.equal(effectiveChatBrowseScope({ selection: "alpha", ready: false, loading: true }, loaded).loading, true,
+    "a workspace still hydrating stays loading");
+  assert.equal(effectiveChatBrowseScope({ selection: "alpha", ready: false }, loaded).loading, false,
+    "a workspace that is not ready for another reason is unavailable");
+  assert.equal(effectiveChatBrowseScope(undefined, loaded), undefined);
+
+  assert.equal(chatBrowseEmptyMessage({ selection: "alpha", ready: false, loading: true }), "Loading this project's chats…");
+  assert.equal(chatBrowseEmptyMessage({ selection: "alpha", ready: false, loading: false }), "Project context is unavailable. Choose another project or retry.");
+  assert.equal(chatBrowseEmptyMessage({ selection: "alpha", ready: true }), "No chats in this project. Start a chat or choose another project.");
+  assert.equal(chatBrowseEmptyMessage({ selection: "all", ready: true }), "No conversations yet.");
+  assert.equal(chatBrowseEmptyMessage(undefined), "No conversations yet.");
+  assert.equal(chatBrowseEmptyMessage({ selection: "alpha", ready: false }, true), "No threads match your search.");
+}
+

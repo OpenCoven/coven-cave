@@ -10,8 +10,9 @@ speak); this doc is about how journeys *flow*.
 **Ground rules for every plan:** no new architecture, no surface rewrites, no
 breaking API changes. Phases land independently behind the existing test-pin
 conventions, and each path names its "done means" so a session picking up the
-bead can verify completion. One bead per path, referenced inline — this doc is
-the map; the beads are the work.
+issue can verify completion. One tracked unit per path, referenced inline —
+this doc is the map; the issues are the work. The `cave-*` IDs below are the
+original Beads IDs, kept as history.
 
 ---
 
@@ -56,7 +57,7 @@ task my familiar actually works, so nothing lives only in scrollback.
 builds a card with a transcript excerpt + audit trail; the ⌘K palette has a
 `create-task` row → `POST /api/board`). The board (`board-view.tsx`) holds
 cards with `familiarId` assignment. And there the loop stops: the familiar
-work queue (`familiar-work-queue-view.tsx`) is PR/beads-centric, not
+work queue (`familiar-work-queue-view.tsx`) is PR/issue-centric, not
 board-task-centric — **no surface executes a board task, and finished
 familiar work never flips the card**.
 

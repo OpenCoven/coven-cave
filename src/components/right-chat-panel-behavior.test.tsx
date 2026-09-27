@@ -175,7 +175,7 @@ describe("authorized fix-thread handoffs", () => {
   test("pins the authorized actor without changing the main familiar and primes once through refresh/reopen", async () => {
     const props = launchProps();
     const renderer = await renderPanel(props);
-    expect(fetch).toHaveBeenCalledWith("/api/sessions/list?familiarId=sage&classifyFamiliarWorkspace=1", { cache: "no-store" });
+    expect(fetch).toHaveBeenCalledWith("/api/sessions/list?familiarId=sage&classifyFamiliarWorkspace=1", expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
     expect(router.latestProps.familiar.id).toBe("sage");
     expect(router.latestProps.sessions).toEqual([]);
     expect(router.calls.openSession).toEqual([]);
@@ -202,6 +202,25 @@ describe("authorized fix-thread handoffs", () => {
     expect(router.latestProps.familiar.id).toBe("cody");
     expect(router.calls.newChat).toHaveLength(1);
     expect(renderer.root.findAllByProps({ "aria-label": "Follow main chat" })).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  test("replays its last list on a 304 instead of re-downloading it (#5594)", async () => {
+    const rows = [sessionRow("sage-thread", { familiarId: "sage", updated_at: "2026-09-10T00:00:00Z", created_at: "2026-09-10T00:00:00Z" })];
+    const sent: Array<string | undefined> = [];
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      const tag = (init as { headers?: Record<string, string> } | undefined)?.headers?.["If-None-Match"];
+      sent.push(tag);
+      if (tag === '"t1"') return { ok: false, status: 304, headers: new Headers({ ETag: '"t1"' }), json: async () => { throw new Error("a 304 has no body"); } } as never;
+      return { ok: true, status: 200, headers: new Headers({ ETag: '"t1"' }), json: async () => ({ ok: true, sessions: rows }) } as never;
+    });
+    const props = launchProps();
+    const renderer = await renderPanel(props);
+    expect(router.latestProps.sessions).toEqual(rows);
+    await update(renderer, { ...props, open: false });
+    await update(renderer, props);
+    expect(sent).toEqual([undefined, '"t1"']);
+    expect(router.latestProps.sessions).toEqual(rows);
     await act(async () => renderer.unmount());
   });
 

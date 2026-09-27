@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { cancelHoverPrefetch, hoverPrefetchConversation, prefetchConversation } from "@/lib/conversation-cache";
-import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
+import { chatBrowseEmptyMessage, effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -42,6 +42,7 @@ import {
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
 import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
+import { chatListStaleNotice } from "@/lib/chat-list-authority";
 import { ChatRowTitle } from "@/components/chat-row-title";
 
 type Props = {
@@ -49,7 +50,12 @@ type Props = {
   /** The sessions list request failed. With no rows to show, say so rather
    *  than presenting the failure as an empty history (#5527). */
   sessionsError?: boolean;
+  /** Last load had local rows only; the daemon was unreachable (#5563). */
+  sessionsDegraded?: boolean;
   browseScope?: ChatBrowseScope;
+  /** The open chat when the project filter hides it (#5585): kept reachable at
+   *  the top of the rail instead of silently leaving it. */
+  outOfScopeActiveSession?: SessionRow | null;
   /** Selected familiar (null = "All familiars"). Scopes the project list and
    *  the per-project session rows. */
   activeFamiliarId?: string | null;
@@ -529,7 +535,9 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin,
 export function SidebarChatsSection({
   sessions,
   sessionsError = false,
+  sessionsDegraded = false,
   browseScope,
+  outOfScopeActiveSession = null,
   activeFamiliarId = null,
   activeSessionId,
   onOpenSession,
@@ -580,20 +588,20 @@ export function SidebarChatsSection({
   // gets the plain visible set — but it can no longer drift from the list by
   // composing its own answer, which is how the two surfaces came to disagree
   // about how many chats a workspace had.
+  // The same readiness rule as ChatSurface (#5585): gated on this rail's own
+  // familiar-scoped project fetch, with loading kept apart from failure.
+  const railBrowseScope = useMemo(
+    () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
+    [browseScope, projectsLoaded, projectsLoading, projectsError],
+  );
   const visibleSessions = useMemo(
     () => scopeChatBrowseSessions(
       visibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
       projects,
       overrides,
-      browseScope ? {
-        ...browseScope,
-        ready: browseScope.ready && (
-          browseScope.selection === "all"
-          || (projectsLoaded && !projectsLoading && projectsError === null)
-        ),
-      } : undefined,
+      railBrowseScope,
     ),
-    [normalizedSessions, activeFamiliarId, projects, overrides, browseScope, projectsLoaded, projectsLoading, projectsError],
+    [normalizedSessions, activeFamiliarId, projects, overrides, railBrowseScope],
   );
 
   const groups = useMemo(
@@ -651,6 +659,13 @@ export function SidebarChatsSection({
     () => deriveChatRecencyBuckets(recentSessions, now),
     [recentSessions, now],
   );
+  // Mirrors the empty-list failure state below: when that full state shows,
+  // the non-blocking stale line doesn't (#5563).
+  const staleNotice = chatListStaleNotice({
+    sessionsError,
+    sessionsDegraded,
+    hasRows: recentBuckets.length > 0 || attentionSessions.length > 0,
+  });
 
   // ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────
   //
@@ -745,7 +760,7 @@ export function SidebarChatsSection({
     // which every e2e run depends on — so dropping these class names would
     // break the suite far outside this component (cave-fh9so).
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
-        {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
+        {/* Title row: "Chats" plus the rail's collapse toggle, and nothing
             else. It replaces the old search row, which also carried the
             Organize menu. Search and the archived-visibility toggle went with
             it — the list below is already grouped by attention and recency,
@@ -761,7 +776,7 @@ export function SidebarChatsSection({
           title={collapseLabel}
           onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
         >
-          <span className="cnav__title">Sessions</span>
+          <span className="cnav__title">Chats</span>
           <span className="cnav__title-toggle" aria-hidden>
             <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
           </span>
@@ -808,6 +823,17 @@ export function SidebarChatsSection({
             </button>
           </div>
         ) : null}
+        {staleNotice ? (
+          <div role="status" className="cnav__error">
+            <Icon name="ph:plugs" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{staleNotice}</span>
+            {onSessionsChanged ? (
+              <button type="button" onClick={() => onSessionsChanged()} aria-label="Retry loading chats" className="shrink-0">
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {archiveError ? (
           <div role="alert" className="cnav__error">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
@@ -823,6 +849,44 @@ export function SidebarChatsSection({
           className="cnav__scroll focus-ring-inset"
         >
           <nav aria-label="Chat threads">
+          {!hasSearch && outOfScopeActiveSession ? (
+            <section aria-label="Open chat outside this project">
+              <div className="cnav__label">
+                <span className="cnav__label-text">Outside this project</span>
+                <span className="cnav__label-rule" aria-hidden />
+              </div>
+              <ul>
+                <li>
+                  <ThreadRow
+                    session={outOfScopeActiveSession}
+                    active
+                    pinned={isSessionPinned(pinnedIds, outOfScopeActiveSession.id)}
+                    confirming={confirmingSessionId === outOfScopeActiveSession.id}
+                    deleting={deletingSessionId === outOfScopeActiveSession.id}
+                    indent="flat"
+                    project={null}
+                    glyph={threadLeadingIcon(sessionRailTitle(outOfScopeActiveSession))}
+                    onOpenUrl={onOpenUrl}
+                    onOpen={() => onOpenSession(outOfScopeActiveSession)}
+                    onOpenInSplit={
+                      onOpenSessionInSplit ? () => onOpenSessionInSplit(outOfScopeActiveSession) : undefined
+                    }
+                    selectMode={false}
+                    selected={false}
+                    onToggleSelect={() => undefined}
+                    broadcast={null}
+                    onTogglePin={() => togglePin(outOfScopeActiveSession.id)}
+                    onToggleArchive={() => void setSessionArchived(outOfScopeActiveSession, !outOfScopeActiveSession.archived_at)}
+                    archiving={archivingId !== null}
+                    onRequestDelete={() => setConfirmingSessionId(outOfScopeActiveSession.id)}
+                    onCancelDelete={() => setConfirmingSessionId(null)}
+                    onConfirmDelete={() => void handleDeleteSession(outOfScopeActiveSession)}
+                    now={now}
+                  />
+                </li>
+              </ul>
+            </section>
+          ) : null}
           {!hasSearch && pinnedSessions.length > 0 ? (
             <section aria-label="Pinned threads">
               <div className="cnav__label">
@@ -913,11 +977,7 @@ export function SidebarChatsSection({
               </div>
               ) : (
               <p className="cnav__empty">
-                {hasSearch ? "No threads match your search." : browseScope && !browseScope.ready
-                  ? "Project context is unavailable. Choose another project or retry."
-                  : browseScope && browseScope.selection !== "all"
-                    ? "No chats in this project. Start a chat or choose another project."
-                    : "No conversations yet."}
+                {chatBrowseEmptyMessage(railBrowseScope, hasSearch)}
               </p>
               )
             ) : (

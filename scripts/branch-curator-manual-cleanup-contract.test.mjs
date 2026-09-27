@@ -181,7 +181,7 @@ test("curation shell fragments retain Bash syntax", () => {
   }
 });
 
-test("GitHub ownership replaces routine Beads recipes, not safety evidence", () => {
+test("GitHub ownership carries no Beads recipes and keeps safety evidence", () => {
   for (const [name, source] of [["skill", skill], ["proof", proof], ["hygiene", hygiene]]) {
     assert.ok(source.includes("docs/workflows/github-work-tracking.md"),
       `${name} must reference the canonical guide`);
@@ -192,7 +192,8 @@ test("GitHub ownership replaces routine Beads recipes, not safety evidence", () 
   }
   assert.match(skill, /__dolt_remote_info__/);
   assert.match(skill, /refs\/dolt\/data/);
-  assert.match(skill, /Preserve legacy records and original owners without querying or\s+refreshing Beads/);
+  assert.match(skill, /Preserve legacy records and original owners/);
+  assert.doesNotMatch(skill, /\bBeads-managed|\bBeads patrol/);
   assert.match(skill, /Never reassign or close\s+candidate-owning issues to ease cleanup/);
   assert.match(skill, /Commits, pushes, PR creation, and deletion need\s+current authority/);
   assert.match(skill, /Stay inside granted filesystem and evidence-access\s+boundaries; preserve inaccessible paths/);
@@ -211,7 +212,7 @@ test("GitHub ownership replaces routine Beads recipes, not safety evidence", () 
 
 test("hygiene distinguishes local reports from retired lifecycle mutations", () => {
   assert.match(hygiene, /Current weekly mode adds the read-only remote-hygiene audit, not a lifecycle\s+patrol/);
-  assert.match(hygiene, /Older checkouts or scheduled copies may still invoke Beads-backed probes/);
+  assert.match(hygiene, /lifecycle creator, inventory, and patrol were removed with Beads/);
   assert.match(hygiene, /current CLI refuses both `park --apply`\s+and `unpark --apply` before any Git query or tracker operation/);
   assert.match(hygiene, /`scripts\/worktree-sweep\.sh` is a no-side-effect exit-2 tombstone/);
   const recipes = [...hygiene.matchAll(/```bash\n([\s\S]*?)\n```/g)]
@@ -332,7 +333,7 @@ test("operator entrypoints use the canonical GitHub creation and budget contract
   assert.match(skill, /Exceeding the budget never authorizes deletion/);
   assert.match(skill, /owner, reason, exact path, and expiry on the issue before creation/);
   assert.match(skill, /Raw Git does not enforce that budget/);
-  assert.match(skill, /Do not run the retired Beads-managed creator or manufacture lifecycle metadata/);
+  assert.match(skill, /Do not manufacture lifecycle metadata/);
 });
 
 test("normative proof scopes remote deletion and uses exact expected OIDs", () => {
@@ -615,8 +616,8 @@ test("operator docs preserve automatic gating, manual proof, and protected main"
   assert.match(workflow, /evidence that no live owner needs the\s+unit/);
   assert.match(workflow, /missing legacy maintenance planes are not made safe by changing trackers/);
   assert.match(workflow, /No GitHub issue comment replaces a runtime exclusion lock/);
-  assert.match(skill, /Legacy `retire-after-gate` is a classification, not authorization/);
-  assert.match(skill, /missing metadata or a retired probe means uncertainty, not an unowned unit/);
+  assert.match(skill, /legacy `retire-after-gate` note is a\s+classification, not authorization/);
+  assert.match(skill, /missing metadata means uncertainty, not an\s+unowned unit/);
   assert.match(hygiene, /current bounded authorization, the local maintenance lease/);
   assert.match(hygiene, /unattended retirement still\s+requires the full maintenance gate/);
   assert.ok(
@@ -676,7 +677,7 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(byId.get(44).expected_output, /cleanup-ready patrol unit/i);
   assert.match(byId.get(44).expected_output, /reports any remote ref as a proposal rather than deleting it/i);
   assert.match(byId.get(45).expected_output, /gate-incomplete/i);
-  assert.match(byId.get(45).expected_output, /missing Coven, Beads, and GitHub enforcement planes/i);
+  assert.match(byId.get(45).expected_output, /missing Coven and GitHub enforcement planes/i);
   assert.match(byId.get(46).expected_output, /direct full local ref even without a worktree/i);
   assert.match(byId.get(46).expected_output, /complete maintenance transaction/i);
   assert.match(byId.get(47).expected_output, /keeps the recovery lane/i);
@@ -730,7 +731,6 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(byId.get(59).expected_output, /destination or OID drift/i);
   assert.match(byId.get(59).expected_output, /status 2/i);
   assert.match(byId.get(60).expected_output, /ownership unknown/i);
-  assert.match(byId.get(60).expected_output, /without running Beads/i);
   assert.match(byId.get(60).expected_output, /does not prove an idle owner or authorize takeover/i);
   assert.match(byId.get(61).expected_output, /not atomic execution leases/i);
   assert.match(byId.get(61).expected_output, /local maintenance lease/i);

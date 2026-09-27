@@ -51,8 +51,9 @@ Release work should start only after branch consolidation:
 
 1. Confirm no open PRs are intended for the release.
 2. Confirm `origin/main` is current and contains every commit intended for the release.
-3. Create the release stamp branch through the managed Beads worktree command,
-   using the exact name `release/stamp-vX.Y.Z`.
+3. Create the release stamp branch in an issue-owned worktree from current
+   `origin/main` with `git worktree add --no-track`, using the exact name
+   `release/stamp-vX.Y.Z`.
 4. Preview the complete stamp with `pnpm release:preview --version X.Y.Z`,
    then run `pnpm release:prepare --version X.Y.Z` from that clean managed
    worktree. The preparation command updates `package.json`, the Tauri config,

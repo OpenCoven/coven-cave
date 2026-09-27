@@ -16,6 +16,15 @@
  *
  * Security posture matches /api/changes: every invocation is execFile with an
  * argument array (no shell), a timeout, and stdout capped by maxBuffer.
+ *
+ * Per-root results are cached between list computes (#5448). Measured on a
+ * real profile (95 rows, 11 roots) every compute spawned 81 git processes and
+ * took ~1s, and the list's 2s server cache under a 4s client poll meant nearly
+ * every poll paid it again. A cached root is revalidated by stat()ing the git
+ * files every relevant change writes — HEAD (branch switch), logs/HEAD
+ * (commit, checkout, reset, rebase), FETCH_HEAD and packed-refs (base ref
+ * moves) — so a hit costs a few stats and no process. ROOT_CACHE_TTL_MS bounds
+ * anything those files miss (e.g. an origin URL edit).
  */
 
 import { execFile } from "node:child_process";
@@ -77,11 +86,19 @@ function resolveGitPath(projectRoot: string, value: string | null): string | nul
   return path.resolve(path.isAbsolute(value) ? value : path.join(projectRoot, value));
 }
 
-async function readGitContext(git: GitRunner, projectRoot: string): Promise<SessionGitContext | null> {
+type GitContextRead = {
+  context: SessionGitContext | null;
+  gitDir: string | null;
+  commonDir: string | null;
+};
+
+const NO_GIT_CONTEXT: GitContextRead = { context: null, gitDir: null, commonDir: null };
+
+async function readGitContext(git: GitRunner, projectRoot: string): Promise<GitContextRead> {
   const trimmed = projectRoot.trim();
-  if (!isTrueProjectCwd(trimmed)) return null;
+  if (!isTrueProjectCwd(trimmed)) return NO_GIT_CONTEXT;
   // Cheap gate first: skip non-worktree roots before the slower probes.
-  if ((await git(trimmed, ["rev-parse", "--is-inside-work-tree"])) !== "true") return null;
+  if ((await git(trimmed, ["rev-parse", "--is-inside-work-tree"])) !== "true") return NO_GIT_CONTEXT;
 
   // Independent probes — run together instead of serially.
   const [currentBranch, worktreeRoot, gitDirRaw, commonDirRaw, originRemote] = await Promise.all([
@@ -101,13 +118,17 @@ async function readGitContext(git: GitRunner, projectRoot: string): Promise<Sess
       : null;
   const repositoryUrl = normalizeGitHubRepoUrl(originRemote);
 
-  if (!branch && !worktreeRoot && !isWorktree) return null;
+  if (!branch && !worktreeRoot && !isWorktree) return { context: null, gitDir, commonDir };
   return {
-    branch,
-    worktreeRoot,
-    isWorktree,
-    ...(repositoryRoot ? { repositoryRoot } : {}),
-    ...(repositoryUrl ? { repositoryUrl } : {}),
+    context: {
+      branch,
+      worktreeRoot,
+      isWorktree,
+      ...(repositoryRoot ? { repositoryRoot } : {}),
+      ...(repositoryUrl ? { repositoryUrl } : {}),
+    },
+    gitDir,
+    commonDir,
   };
 }
 
@@ -159,6 +180,69 @@ type RootEnrichment = {
   diffByBranch: Map<string, DiffStat | null>;
 };
 
+/** Hard bound on a cached root, for changes the fingerprint files miss. */
+export const ROOT_CACHE_TTL_MS = 60_000;
+
+type CachedRoot = {
+  enrichment: RootEnrichment;
+  gitDir: string | null;
+  commonDir: string | null;
+  fingerprint: string;
+  cachedAt: number;
+};
+
+export type RootEnrichmentCache = {
+  get(root: string): CachedRoot | undefined;
+  set(root: string, entry: CachedRoot): void;
+  delete(root: string): void;
+  readonly ttlMs: number;
+  now(): number;
+  fingerprint(root: string, gitDir: string | null, commonDir: string | null): string;
+};
+
+function statToken(file: string): string {
+  try {
+    const stat = fs.statSync(file, { bigint: true });
+    return `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
+  } catch {
+    return "-";
+  }
+}
+
+/** Stat identities of the files a branch switch, commit or fetch rewrites. */
+export function gitRootFingerprint(root: string, gitDir: string | null, commonDir: string | null): string {
+  if (!gitDir || !commonDir) return `nogit:${statToken(path.join(root, ".git"))}`;
+  return [
+    statToken(path.join(gitDir, "HEAD")),
+    statToken(path.join(gitDir, "logs", "HEAD")),
+    statToken(path.join(commonDir, "FETCH_HEAD")),
+    statToken(path.join(commonDir, "packed-refs")),
+  ].join("|");
+}
+
+export function createRootEnrichmentCache(options: {
+  ttlMs?: number;
+  now?: () => number;
+  fingerprint?: RootEnrichmentCache["fingerprint"];
+} = {}): RootEnrichmentCache {
+  const entries = new Map<string, CachedRoot>();
+  return {
+    get: (root) => entries.get(root),
+    set: (root, entry) => void entries.set(root, entry),
+    delete: (root) => void entries.delete(root),
+    ttlMs: options.ttlMs ?? ROOT_CACHE_TTL_MS,
+    now: options.now ?? Date.now,
+    fingerprint: options.fingerprint ?? gitRootFingerprint,
+  };
+}
+
+// Only the real runner shares the process-wide cache; an injected runner
+// (tests, alternate git) gets none unless it passes its own.
+const defaultRootEnrichmentCache = createRootEnrichmentCache();
+// Concurrent computes (several familiar scopes revalidating at once) share
+// one in-flight read per root instead of each spawning the full probe set.
+const inflightRoots = new WeakMap<RootEnrichmentCache, Map<string, Promise<CachedRoot | null>>>();
+
 /**
  * Enrich session rows with git context (branch/worktree), a committed-diff
  * stat vs the repo base ref, and cached PR context. All git work is async and
@@ -171,6 +255,7 @@ export async function enrichSessionsWithGitContext(
   git: GitRunner = defaultGitRunner,
   prCache: BranchPrCache = branchPrCache,
   urlPrCache: PrUrlCache = prUrlCache,
+  rootCache: RootEnrichmentCache | null = git === defaultGitRunner ? defaultRootEnrichmentCache : null,
 ): Promise<SessionRow[]> {
   // Collect unique roots and, per root, the branches sessions sit on — the
   // per-root git work happens once regardless of how many sessions share it.
@@ -189,26 +274,92 @@ export async function enrichSessionsWithGitContext(
   let diffCalls = 0;
   const enrichmentByRoot = new Map<string, RootEnrichment>();
 
-  await mapWithConcurrency(roots, ROOT_CONCURRENCY, async (root) => {
+  // Returns the root's enrichment and whether it is complete (safe to
+  // cache): a diff skipped for budget must be retried on a later compute.
+  const readRoot = async (
+    root: string,
+    onContext?: (read: GitContextRead) => void,
+  ): Promise<{ entry: RootEnrichment; complete: boolean; read: GitContextRead }> => {
     const entry: RootEnrichment = { gitContext: null, base: null, diffByBranch: new Map() };
-    enrichmentByRoot.set(root, entry);
-    entry.gitContext = await readGitContext(git, root);
+    const read = await readGitContext(git, root);
+    onContext?.(read);
+    entry.gitContext = read.context;
     const branch = entry.gitContext?.branch;
-    if (!branch) return;
-    if (diffCalls >= MAX_DIFF_CALLS) return;
+    if (!branch) return { entry, complete: true, read };
+    if (diffCalls >= MAX_DIFF_CALLS) return { entry, complete: false, read };
     entry.base = await defaultBaseRef(git, root);
     if (!entry.base) {
       entry.diffByBranch.set(branch, null);
-      return;
+      return { entry, complete: true, read };
     }
     // Re-check and reserve synchronously (no await between check and
     // increment) so the cap stays exact under concurrent root workers.
-    if (diffCalls >= MAX_DIFF_CALLS) return;
+    if (diffCalls >= MAX_DIFF_CALLS) return { entry, complete: false, read };
     diffCalls += 1;
     const diff = parseShortstat(
       await git(root, ["diff", `${entry.base}...${branch}`, "--shortstat"]),
     ) ?? { additions: 0, deletions: 0 };
     entry.diffByBranch.set(branch, diff);
+    return { entry, complete: true, read };
+  };
+
+  await mapWithConcurrency(roots, ROOT_CONCURRENCY, async (root) => {
+    if (!rootCache) {
+      enrichmentByRoot.set(root, (await readRoot(root)).entry);
+      return;
+    }
+    const cached = rootCache.get(root);
+    if (
+      cached
+      && rootCache.now() - cached.cachedAt < rootCache.ttlMs
+      && rootCache.fingerprint(root, cached.gitDir, cached.commonDir) === cached.fingerprint
+    ) {
+      enrichmentByRoot.set(root, cached.enrichment);
+      return;
+    }
+    let pending = inflightRoots.get(rootCache);
+    if (!pending) {
+      pending = new Map();
+      inflightRoots.set(rootCache, pending);
+    }
+    const shared = pending.get(root);
+    if (shared) {
+      const result = await shared;
+      if (result) {
+        enrichmentByRoot.set(root, result.enrichment);
+        return;
+      }
+    }
+    const inflight = (async (): Promise<CachedRoot | null> => {
+      // Fingerprint as soon as the git dirs are known and again after the
+      // base/diff probes; a change between the two must not be filed under
+      // the newer identity, so a mismatch is served but not cached.
+      let before: string | null = null;
+      const { entry, complete, read } = await readRoot(root, (context) => {
+        before = rootCache.fingerprint(root, context.gitDir, context.commonDir);
+      });
+      enrichmentByRoot.set(root, entry);
+      const after = rootCache.fingerprint(root, read.gitDir, read.commonDir);
+      if (!complete || before !== after) {
+        rootCache.delete(root);
+        return null;
+      }
+      const stored: CachedRoot = {
+        enrichment: entry,
+        gitDir: read.gitDir,
+        commonDir: read.commonDir,
+        fingerprint: after,
+        cachedAt: rootCache.now(),
+      };
+      rootCache.set(root, stored);
+      return stored;
+    })();
+    pending.set(root, inflight);
+    try {
+      await inflight;
+    } finally {
+      if (pending.get(root) === inflight) pending.delete(root);
+    }
   });
 
   return sessions.map((session) => {

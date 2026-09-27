@@ -1,32 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Client half of the Board mirror-retention contract (cave-xddxs). The STORE is
-// the retention boundary — see src/lib/cave-board-retention.test.ts, which
-// exercises the real guard. These assertions pin the experience around it: both
-// removal paths preserve linked mirrors and say so, and undo goes through the
-// restore endpoint instead of re-creating cards.
+// Client half of the Board undo contract (cave-xddxs): undo goes through the
+// restore endpoint instead of re-creating cards. Board cards no longer carry a
+// Beads link (#5566), so both removal paths delete what was asked.
 
 const view = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/route.ts", import.meta.url), "utf8");
 const restore = await readFile(new URL("../app/api/board/restore/route.ts", import.meta.url), "utf8");
 
-// ── Both removal paths preserve linked mirrors ──────────────────────────────
-// Clear done and bulk delete are separate code paths; a fix to one is not a fix
-// to the other, so each is pinned.
-assert.match(
-  view,
-  /const preserved = doneCards\.filter\(\(c\) => c\.beadRef\);\s*\n\s*const snapshot = doneCards\.filter\(\(c\) => !c\.beadRef\);/,
-  "Clear done splits linked mirrors out of the delete set",
-);
-assert.match(
-  view,
-  /const preserved = requested\.filter\(\(c\) => c\.beadRef\);\s*\n\s*const toRemove = requested\.filter\(\(c\) => !c\.beadRef\);/,
-  "bulk delete splits linked mirrors out of the delete set",
-);
-// Silently keeping them would be its own bug: the operator asked for a deletion
-// and must be told which ones did not happen.
-assert.match(view, /Kept \$\{preserved\.length\} linked/, "the preserved count is announced");
+// ── Both removal paths delete what was asked ────────────────────────────────
+assert.doesNotMatch(view, /beadRef|Unlink to delete|linked task/, "no card is held back by a Beads link");
+assert.match(view, /const snapshot = doneCards;/, "Clear done removes every done card");
+assert.match(view, /const toRemove = requested;/, "bulk delete removes every requested card");
 
 // ── Undo restores rather than re-creates ────────────────────────────────────
 assert.match(
@@ -42,18 +28,9 @@ assert.doesNotMatch(
   "undo no longer re-creates cleared cards through the create route",
 );
 
-// ── The server is the boundary ──────────────────────────────────────────────
-assert.match(
-  route,
-  /linked_bead_requires_unlink/,
-  "DELETE refuses a linked card with a named error",
-);
-assert.match(route, /\{ status: 409 \}/, "and refuses it with 409, not a generic failure");
-assert.match(
-  route,
-  /searchParams\.get\("unlink"\) === "1"/,
-  "an explicit unlink flag is the only way past the guard",
-);
+// ── The server deletes without a link guard ─────────────────────────────────
+assert.match(route, /const outcome = await deleteCard\(id\);/, "DELETE removes the card");
+assert.doesNotMatch(route, /linked_bead_requires_unlink|unlink/, "there is no unlink step");
 
 // ── Restore never clobbers ──────────────────────────────────────────────────
 assert.match(restore, /restoreCards/, "the restore route delegates to the store");

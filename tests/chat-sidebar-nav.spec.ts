@@ -192,6 +192,117 @@ test.describe("chat threads rail", () => {
     await expect(rail.getByText("No conversations yet.")).toHaveCount(0);
   });
 
+  test("a degraded refresh keeps daemon chats and says the list is local (#5563)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    // Daemon unreachable: the server answers ok with only the local rows.
+    await page.route("**/api/sessions/list**", (route) =>
+      route.fulfill({ json: { ok: true, degraded: true, error: "daemon http 503", sessions: [SESSIONS[0]] } }),
+    );
+    await expect(rail.getByRole("status")).toContainText("Coven isn't reachable", { timeout: 20_000 });
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
+  });
+
+  test("a failed refresh keeps the rows and offers Retry (#5563)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    let failing = true;
+    await page.route("**/api/sessions/list**", (route) =>
+      failing
+        ? route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } })
+        : route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
+    );
+    await expect(rail.getByRole("status")).toContainText("Couldn't refresh chats", { timeout: 20_000 });
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    failing = false;
+    await rail.getByRole("button", { name: "Retry loading chats" }).click();
+    await expect(rail.getByRole("status").filter({ hasText: "Couldn't refresh chats" })).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test("a #chat deep link survives a failed first list load (#5563)", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:active-familiar", "nova");
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    });
+    await page.route("**/api/familiars**", (route) =>
+      route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/projects**", (route) =>
+      route.fulfill({ json: { ok: true, projects: PROJECTS } }),
+    );
+    await page.route("**/api/sessions/list**", (route) =>
+      route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } }),
+    );
+    await page.route("**/api/chat/conversation/**", (route) => route.fulfill({
+      json: {
+        ok: true,
+        context: { task: null, github: [] },
+        conversation: {
+          familiarId: "nova",
+          activeLeafId: "t2",
+          turns: [
+            { id: "t1", parentId: null, role: "user", text: "Where did the deploy stall?", createdAt: iso(0) },
+            { id: "t2", parentId: "t1", role: "assistant", text: "The deploy stalled at the migration step.", createdAt: iso(0) },
+          ],
+        },
+      },
+    }));
+    await page.goto("/#chat-s9", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("The deploy stalled at the migration step.")).toBeVisible({ timeout: 45_000 });
+    expect(new URL(page.url()).hash).toBe("#chat-s9");
+  });
+
+  test("the familiar is chosen only at the top of the page, never inside Chat (#5565)", async ({ page }) => {
+    await gotoChat(page);
+    const surface = page.locator(".chat-surface");
+    const visibleTrigger = (scope: Locator) =>
+      scope.locator(".familiar-switcher__trigger").filter({ visible: true });
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 900, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(surface).toBeVisible();
+      await expect(visibleTrigger(surface), `no in-chat picker at ${viewport.width}px`).toHaveCount(0);
+      await expect
+        .poll(() => visibleTrigger(page.locator("body")).count(), { message: `a top-of-page picker at ${viewport.width}px` })
+        .toBeGreaterThan(0);
+    }
+  });
+
+  test("an unchanged list poll is answered with 304 and keeps the rows (#5571)", async ({ page }) => {
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    let tag = '"list-v1"';
+    let rows = SESSIONS;
+    const conditional: Array<string | null> = [];
+    let notModified = 0;
+    await page.route("**/api/sessions/list**", (route) => {
+      const sent = route.request().headers()["if-none-match"] ?? null;
+      conditional.push(sent);
+      if (sent === tag) {
+        notModified += 1;
+        return route.fulfill({ status: 304, headers: { ETag: tag } });
+      }
+      return route.fulfill({ json: { ok: true, sessions: rows }, headers: { ETag: tag } });
+    });
+    // The next poll picks up the tag, the ones after it send it back.
+    await expect.poll(() => notModified, { timeout: 30_000 }).toBeGreaterThan(1);
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
+    expect(conditional.some((sent) => sent === '"list-v1"')).toBe(true);
+
+    // A changed list gets a new tag and a full body, and the rail shows it.
+    rows = SESSIONS.map((session) => (session.id === "s4" ? { ...session, title: "Wire the release pipeline" } : session));
+    tag = '"list-v2"';
+    await expect(rail.getByText("Wire the release pipeline")).toBeVisible({ timeout: 30_000 });
+  });
+
   test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));
@@ -289,7 +400,7 @@ test.describe("chat threads rail", () => {
       await assertTailVisible(page.locator(RAIL), pinnedTitle);
     }
     await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Projects", exact: true }).click();
-    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Chats", exact: true }).click();
     const list = page.getByTestId("chat-main").locator(".chat-list-surface");
     await assertTailVisible(list, title);
     await assertTailVisible(list, pinnedTitle);
@@ -311,7 +422,7 @@ test.describe("chat threads rail", () => {
   test("desktop session-list actions have 32px targets and keyboard focus rings", async ({ page }, testInfo) => {
     await gotoChat(page);
     await page.getByRole("tab", { name: "Projects", exact: true }).click();
-    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    await page.getByRole("tab", { name: "Chats", exact: true }).click();
     const row = page.locator(".chat-list-row").filter({ hasText: "Refactor auth flow" });
     await row.hover();
     const actions = row.locator(".chat-list-row-actions button");

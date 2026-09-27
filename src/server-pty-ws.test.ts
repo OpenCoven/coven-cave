@@ -101,7 +101,7 @@ assert.match(
 );
 assert.match(
   src,
-  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*delete req\.headers\[TAILNET_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
+  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*delete req\.headers\[TAILNET_PEER_HEADER\];\s*const directLoopback = isDirectLoopbackRequest\(req\);\s*if \(directLoopback\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
   "client-supplied local-peer and tailnet-peer headers are both stripped before the server stamps its own",
 );
 assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");

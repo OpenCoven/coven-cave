@@ -8,7 +8,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
   createBoardCardFromAsanaItem,
-  fileAsanaItemAsBead,
+  fileAsanaItemAsIssue,
   type AsanaAssignedResponse,
   type AsanaItem,
 } from "@/lib/asana-tasks";
@@ -23,25 +23,25 @@ function sameItems(a: AsanaItem[], b: AsanaItem[]): boolean {
 
 type Props = {
   onOpenUrl?: (url: string) => void;
-  /** Nudge the parent Queue to reload after a task is filed as a bead so it
+  /** Nudge the parent Queue to reload after a task is filed as an issue so it
    *  appears in the ready lanes without waiting for the next poll. */
-  onFiledBead?: () => void;
+  onFiledIssue?: () => void;
   /** Scope the strip to one agent: shows only the Asana tasks that familiar is
    *  assigned to work with, and hides entirely when the agent is opted out. */
   familiarId?: string | null;
-  /** The Queue's explicitly selected repository for filing Beads. */
+  /** The Queue's explicitly selected repository for filing Issues. */
   projectRoot?: string;
 };
 
 /**
  * The Queue's Asana source: incomplete tasks assigned to the connected user,
  * pulled from /api/asana/assigned. Renders NOTHING when Asana isn't connected
- * or there are no tasks — the Queue's other sources (beads + PRs) stand alone,
+ * or there are no tasks — the Queue's other sources (issues + PRs) stand alone,
  * so an absent Asana connection must not add a banner or empty state here. Each
- * task can be opened in Asana, added to the board, or filed as a bead (entering
+ * task can be opened in Asana, added to the board, or filed as an issue (entering
  * the ready queue via --external-ref).
  */
-export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoot }: Props) {
+export function AsanaQueueStrip({ onOpenUrl, onFiledIssue, familiarId, projectRoot }: Props) {
   const { announce } = useAnnouncer();
   const [items, setItems] = useState<AsanaItem[]>([]);
   const [configured, setConfigured] = useState(false);
@@ -70,7 +70,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoo
       if (ctrl.signal.aborted) return;
       // A failed fetch, unconfigured Asana, or an agent opted out (assigned ===
       // false) leaves the strip hidden — never an error banner; the Queue's
-      // beads/PR sources carry the surface on their own. The one exception is a
+      // issues/PR sources carry the surface on their own. The one exception is a
       // REJECTED token (patInvalid): that's permanent-until-fixed, and hiding it
       // made the strip vanish with no cue or way back (cave-d6zq).
       if (data.ok && data.configured && data.assigned !== false) {
@@ -96,7 +96,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoo
     return () => abortRef.current?.abort();
   }, [load]);
 
-  // Refresh on the same 30s cadence as the Queue's beads/PR lanes so a task
+  // Refresh on the same 30s cadence as the Queue's issues/PR lanes so a task
   // completed or reassigned in Asana doesn't linger here until remount. Paused
   // while an input is focused and while the tab is hidden (usePausablePoll);
   // kept at 30s — not tighter — to respect Asana's REST rate limits.
@@ -115,23 +115,23 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoo
     [announce],
   );
 
-  const fileBead = useCallback(
+  const fileIssue = useCallback(
     async (item: AsanaItem) => {
       setBusyGid(item.gid);
       try {
-        const res = await fileAsanaItemAsBead(item, projectRoot);
+        const res = await fileAsanaItemAsIssue(item, projectRoot);
         if (res.ok) {
           setFiled((prev) => new Set(prev).add(item.gid));
-          announce(res.beadId ? `Filed ${res.beadId} from "${item.title}".` : `Filed a bead from "${item.title}".`);
-          onFiledBead?.();
+          announce(res.issueId ? `Filed ${res.issueId} from "${item.title}".` : `Filed an issue from "${item.title}".`);
+          onFiledIssue?.();
         } else {
-          announce(`Couldn't file a bead: ${res.error}`, "assertive");
+          announce(`Couldn't file an issue: ${res.error}`, "assertive");
         }
       } finally {
         setBusyGid(null);
       }
     },
-    [announce, onFiledBead, projectRoot],
+    [announce, onFiledIssue, projectRoot],
   );
 
   if (patInvalid) {
@@ -211,10 +211,10 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoo
                 leadingIcon="ph:git-branch"
                 loading={busy}
                 disabled={filed.has(item.gid)}
-                onClick={() => void fileBead(item)}
-                title="File this task as a bead (enters the ready queue)"
+                onClick={() => void fileIssue(item)}
+                title="File this task as an issue (enters the ready queue)"
               >
-                {filed.has(item.gid) ? "Filed" : "File bead"}
+                {filed.has(item.gid) ? "Filed" : "File issue"}
               </Button>
             </li>
           );

@@ -78,8 +78,9 @@ import {
   loadConversation,
   readCachedConversation,
 } from "@/lib/conversation-cache";
+import { fetchToolOutput } from "@/lib/tool-output-fetch";
 import { sameConversationRevision } from "@/lib/conversation-revision";
-import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { deleteOfflineCacheEntry, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -385,6 +386,7 @@ import {
   shouldReplacementRefreshOnDone,
 } from "@/lib/chat-creation-refresh";
 import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
@@ -542,7 +544,13 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
+// "revalidating": the desktop's encrypted offline copy painted first while the
+// network load is still in flight (#5583). The thread is live and sendable;
+// only a network failure turns it into the read-only "offline" state.
+/** Perf span: opening a thread until its transcript first paints (#5448). */
+const THREAD_OPEN_SPAN = "chat:thread-open";
+
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline" | "revalidating";
 
 async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
   const params = new URLSearchParams({ sessionId });
@@ -4339,12 +4347,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // instead of blanking to the history skeleton. The fetch below still runs
     // as revalidation, so a stale cache entry is corrected as soon as the
     // network answers — the cache is never the source of truth.
+    // Open-to-first-paint for this thread (#5448), recorded once and only when
+    // a transcript actually paints: a cache hit, the durable copy, or the
+    // network payload. An abandoned or failed open records nothing.
+    const endThreadOpenSpan = startSpan(THREAD_OPEN_SPAN);
     const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
     if (cachedConversation) {
       setLinkedContext(cachedConversation.context ?? null);
       applyConversationPayload(cachedConversation);
+      endThreadOpenSpan();
     } else if (isThreadSwitch) {
       // Thread switch: blank the PREVIOUS thread's transcript synchronously so
       // the history skeleton renders while this thread's history loads —
@@ -4374,6 +4387,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (additions === null || hasNewerGeneration()) return;
         localSystemTurns = [...localSystemTurns, ...additions];
         applyConversationPayload(payload, localSystemTurns);
+        endThreadOpenSpan();
         paintedTurns = turnsRef.current;
       };
       const paintDurable = (payload: ConversationHistoryPayload) => {
@@ -4382,7 +4396,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         paintedConversation = payload;
         setLinkedContext(durableConversation.context ?? null);
         paintHistory(durableConversation);
-        setHistoryState("offline");
+        // The network is still in flight: a slow request is not an outage.
+        setHistoryState("revalidating");
       };
       const historyLoad = startChatTranscriptLoad<ConversationHistoryPayload>({
         loadNetwork: () => loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>,
@@ -4509,6 +4524,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [sessionId, historyRetryKey, flowBackedSession]);
+
+  // A 404 for a chat that is no longer in the list is a deleted (or moved)
+  // chat, not a transcript still to be written (#5583): say so, refresh the
+  // list so its row goes, and drop the transcript's encrypted offline copy.
+  // The open chat's `session` row is deliberately retained by the router after
+  // it leaves the list, so absence is read from the list itself.
+  const chatListed = Boolean(sessionId) && (sessions ?? []).some((entry) => entry.id === sessionId);
+  const chatGone = historyState === "missing" && Boolean(sessionId) && !chatListed && !flowBackedSession;
+  const goneChatHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Once per chat: onSessionsChanged need not be a stable identity, and a
+    // list refresh must not re-trigger this cleanup.
+    if (!chatGone || !sessionId || goneChatHandledRef.current === sessionId) return;
+    goneChatHandledRef.current = sessionId;
+    invalidateConversation(sessionId);
+    void deleteOfflineCacheEntry("conversation", sessionId);
+    onSessionsChanged?.();
+  }, [chatGone, sessionId, onSessionsChanged]);
 
   // Pin: while following, snap the scroller to the bottom INSTANTLY
   // (scrollTop assignment inside a rAF, coalescing multiple triggers per
@@ -7527,6 +7560,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ref={composerDockRef}
       className="cave-composer-dock"
     >
+      {historyState === "revalidating" && sessionId ? (
+        <div role="status" className="px-1 pb-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          Showing the saved copy · updating…
+        </div>
+      ) : null}
       {historyState === "offline" && sessionId ? (
         <div
           role="status"
@@ -8371,6 +8409,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
+      <ToolOutputSessionContext.Provider value={sessionId}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
@@ -8445,6 +8484,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
+              />
+            ) : historyState === "missing" && chatGone ? (
+              <ChatHistoryNotice
+                variant="empty"
+                title="This chat was deleted or moved"
+                body="It is no longer in your chat list, and Coven Cave has no saved transcript for it."
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
@@ -8633,6 +8679,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
+      </ToolOutputSessionContext.Provider>
       </ToolProjectRootContext.Provider>
 
       {reflectError ? (
@@ -10204,6 +10251,9 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // the native <details> disclosure state for AT that doesn't map summary
   // semantics.
   const [open, setOpen] = useState(false);
+  // The per-tool rows mount on the group's first open (#5572): a collapsed
+  // group otherwise builds every tool card of the turn up front.
+  const [runsMounted, setRunsMounted] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
   // The turn's own compact activity summary — count + distinct categories,
@@ -10248,7 +10298,14 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
       <details
         className="cave-tool-group cave-work-line mt-3"
         data-default-collapsed="true"
-        onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+        onToggle={(e) => {
+          // Nested tool cards' own toggle events bubble here; only this
+          // group's disclosure counts.
+          if (e.target !== e.currentTarget) return;
+          const next = e.currentTarget.open;
+          setOpen(next);
+          if (next) setRunsMounted(true);
+        }}
       >
         <summary
           className="cave-tool-summary focus-ring"
@@ -10262,9 +10319,11 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
         </summary>
-        <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
-          <ToolRuns tools={tools} />
-        </div>
+        {runsMounted ? (
+          <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+            <ToolRuns tools={tools} />
+          </div>
+        ) : null}
       </details>
     </>
   );
@@ -10358,6 +10417,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // `/api/changes` revert endpoint requires — without prop-threading through the
 // five ToolBlock/ToolGroup render sites.
 const ToolProjectRootContext = createContext<string | null>(null);
+// The session a tool card fetches an omitted output from (#5581).
+const ToolOutputSessionContext = createContext<string | null>(null);
 
 // Review + Undo actions for the Codex-style inline edit card. Review adapts to
 // where the edit can actually be reviewed: a file under the session's project
@@ -10507,6 +10568,48 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     );
   };
   const visual = toolVisual(tool.name);
+  // A card's body (highlighted input, output and diff) mounts on first open,
+  // not with the transcript (#5572): every SyntaxBlock detects a language and
+  // highlights on mount, and a long thread holds thousands of collapsed tool
+  // cards. The native toggle event also fires for programmatic opens, and the
+  // body stays mounted once opened so a re-open doesn't highlight again.
+  const [bodyMounted, setBodyMounted] = useState(false);
+  const mountBodyOnOpen = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (event.currentTarget.open) setBodyMounted(true);
+  };
+  // An output the transcript was loaded without (#5581) is fetched on the
+  // card's first open, with its own loading and failure states.
+  const outputSessionId = useContext(ToolOutputSessionContext);
+  const outputOmitted = tool.output === undefined && (tool.outputChars ?? 0) > 0;
+  const [fetchedOutput, setFetchedOutput] = useState<{ status: "idle" | "loading" | "ready" | "error"; text?: string }>({ status: "idle" });
+  const loadOmittedOutput = useCallback(() => {
+    if (!outputSessionId) {
+      setFetchedOutput({ status: "error" });
+      return;
+    }
+    setFetchedOutput({ status: "loading" });
+    fetchToolOutput(outputSessionId, tool.id).then(
+      (text) => setFetchedOutput({ status: "ready", text }),
+      () => setFetchedOutput({ status: "error" }),
+    );
+  }, [outputSessionId, tool.id]);
+  useEffect(() => {
+    if (bodyMounted && outputOmitted && fetchedOutput.status === "idle") loadOmittedOutput();
+  }, [bodyMounted, outputOmitted, fetchedOutput.status, loadOmittedOutput]);
+  const output = tool.output ?? (fetchedOutput.status === "ready" ? fetchedOutput.text : undefined);
+  const omittedOutputState = !output && outputOmitted ? (
+    <div className="cave-tool-io mt-2">
+      <div className="cave-tool-io-label">Output</div>
+      {fetchedOutput.status === "error" ? (
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          Couldn&apos;t load this output.{" "}
+          <button type="button" onClick={loadOmittedOutput} className="focus-ring underline">Retry</button>
+        </p>
+      ) : (
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading output…</p>
+      )}
+    </div>
+  ) : null;
   // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
   // NotebookEdit, i.e. `isEditTool`) stays visible in the transcript as a
   // compact details summary, and expands to the structured code diff. Review
@@ -10516,7 +10619,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     const displayPath = targetPath ?? (argSummary || tool.name);
     const base = displayPath.split("/").pop() || displayPath;
     return (
-      <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
+      <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
         <summary className="cave-edit-card__summary focus-ring">
           <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
           <span className="cave-edit-card__body">
@@ -10539,21 +10642,25 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           <DurationText durationMs={tool.durationMs} />
           <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
         </summary>
-        <div className="cave-tool-io mt-2">
-          <div className="cave-tool-io-label">Code changes</div>
-          <SyntaxBlock text={inputDiff} lang="diff" />
-        </div>
-        {tool.output ? (
-          <div className="cave-tool-io mt-2">
-            <div className="cave-tool-io-label">Output</div>
-            <SyntaxBlock text={prettyToolOutput(tool.output)} />
-          </div>
+        {bodyMounted ? (
+          <>
+            <div className="cave-tool-io mt-2">
+              <div className="cave-tool-io-label">Code changes</div>
+              <SyntaxBlock text={inputDiff} lang="diff" />
+            </div>
+            {output ? (
+              <div className="cave-tool-io mt-2">
+                <div className="cave-tool-io-label">Output</div>
+                <SyntaxBlock text={prettyToolOutput(output)} />
+              </div>
+            ) : omittedOutputState}
+          </>
         ) : null}
       </details>
     );
   }
   return (
-    <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
+    <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
@@ -10584,7 +10691,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         </span>
         <DurationText durationMs={tool.durationMs} />
       </summary>
-      {tool.input ? (
+      {bodyMounted && tool.input ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Input</div>
           {inputDiff ? (
@@ -10594,12 +10701,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           )}
         </div>
       ) : null}
-      {tool.output ? (
+      {bodyMounted && output ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Output</div>
-          <SyntaxBlock text={prettyToolOutput(tool.output)} />
+          <SyntaxBlock text={prettyToolOutput(output)} />
         </div>
-      ) : null}
+      ) : bodyMounted ? omittedOutputState : null}
     </details>
   );
 }

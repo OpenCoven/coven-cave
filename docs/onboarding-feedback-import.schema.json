@@ -18,7 +18,6 @@
       "source": {
         "enum": [
           "github",
-          "beads",
           "office_hours",
           "discord",
           "usability_test"

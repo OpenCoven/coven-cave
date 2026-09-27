@@ -626,26 +626,12 @@ export function BoardView({
   // once (via the `filtered` exclusion), and the actual DELETEs fire only when
   // the undo window lapses; Undo just drops the timer and the cards reappear.
   const deleteCards = useCallback((requested: Card[]) => {
-    // Same retention rule as Clear done: a Bead-linked mirror is preserved and
-    // reported, not deleted. Without this the server's 409 would land as a
-    // generic "couldn't delete N tasks" failure, which reads as a bug rather
-    // than the deliberate protection it is (cave-xddxs).
-    const preserved = requested.filter((c) => c.beadRef);
-    const toRemove = requested.filter((c) => !c.beadRef);
-    if (toRemove.length === 0) {
-      if (preserved.length > 0) {
-        const noun = preserved.length === 1 ? "task" : "tasks";
-        announce(`Kept ${preserved.length} linked ${noun}. Unlink to delete.`);
-      }
-      return;
-    }
+    const toRemove = requested;
+    if (toRemove.length === 0) return;
     const idSet = new Set(toRemove.map((c) => c.id));
     if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
     setClearedBanner(null); // one bottom undo affordance at a time
-    const kept = preserved.length > 0
-      ? ` Kept ${preserved.length} linked task${preserved.length === 1 ? "" : "s"}.`
-      : "";
-    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}.${kept} Undo available.`);
+    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}. Undo available.`);
     scheduleCardDelete(
       toRemove,
       `${toRemove.length} task${toRemove.length === 1 ? "" : "s"}`,
@@ -758,21 +744,9 @@ export function BoardView({
   };
 
   const handleClearDone = async () => {
-    // Cards linked to a Bead are durable reference targets, so routine cleanup
-    // preserves them and says so rather than deleting them silently. The server
-    // refuses them too (409 linked_bead_requires_unlink) — this filter is the
-    // experience, not the boundary (cave-xddxs).
-    const preserved = doneCards.filter((c) => c.beadRef);
-    const snapshot = doneCards.filter((c) => !c.beadRef);
+    const snapshot = doneCards;
     setClearConfirm(false);
-    if (snapshot.length === 0) {
-      if (preserved.length > 0) {
-        const noun = preserved.length === 1 ? "task" : "tasks";
-        setActionError(null);
-        announce(`Kept ${preserved.length} linked ${noun}. Unlink to delete.`);
-      }
-      return;
-    }
+    if (snapshot.length === 0) return;
     const ids = new Set(snapshot.map((c) => c.id));
     invalidateSurfaceResources("board:cards");
     // Optimistic remove + drop selection if it pointed at a cleared card.
@@ -804,10 +778,7 @@ export function BoardView({
     }
     if (cleared.length > 0) {
       setClearedBanner({ snapshot: cleared });
-      const kept = preserved.length > 0
-        ? ` Kept ${preserved.length} linked task${preserved.length === 1 ? "" : "s"}.`
-        : "";
-      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}.${kept} Undo available.`);
+      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}. Undo available.`);
     }
   };
 
@@ -819,7 +790,7 @@ export function BoardView({
     try {
       // Restore the STORED cards, not a re-creation of them. Undo used to POST
       // /api/board per card, which minted a new id and carried ~16 of the ~30
-      // fields — breaking every Bead/GitHub reference to the old id and losing
+      // fields — breaking every GitHub reference to the old id and losing
       // step state, Asana links, dependencies and lifecycle history (cave-xddxs).
       const res = await fetch("/api/board/restore", {
         method: "POST",

@@ -4,7 +4,7 @@
 // work already lives in the Cave: open board cards (Tasks), resumable threads
 // (Chats), parked follow-ups (Queue), and pull requests waiting on you
 // (Reviews). Tasks and Chats fill from data the page already holds; Queue
-// reads the beads work queue for the Queue's own selected project (cave-3lonn)
+// reads the issues work queue for the Queue's own selected project (cave-3lonn)
 // and Reviews reads GitHub (cave-umgkh), so each renders only when its source
 // has something to offer.
 

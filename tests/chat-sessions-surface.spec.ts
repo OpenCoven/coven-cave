@@ -79,12 +79,12 @@ async function openSessionsList(page: Page, seededSessions = sessions) {
     undefined,
     { timeout: 30_000 },
   );
-  // The surface lands on the new-chat launcher with Sessions already selected,
+  // The surface lands on the new-chat launcher with Chats already selected,
   // so clicking that tab fires no onChange. Bounce off Projects to make the
   // router hand back the list.
   const tab = (re: RegExp) => page.locator('.chat-scope-tabs [role="tab"]', { hasText: re }).first();
   await tab(/projects/i).click();
-  await tab(/sessions/i).click();
+  await tab(/chats/i).click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
 }
 
@@ -242,7 +242,7 @@ test.describe("sessions list", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await page.route("**/api/chat/conversation/s-run", async (route) => {
+    await page.route((url) => url.pathname === "/api/chat/conversation/s-run", async (route) => {
       requestCount += 1;
       await gate;
       await route.fulfill({

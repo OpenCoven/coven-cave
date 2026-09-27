@@ -8,14 +8,13 @@ They are not scheduled for migration and should not be moved.
 
 ## Why frozen rather than migrated
 
-Beads cite these files **by path**, and one of those citations is on live work:
-`cave-ltl38.6` ("Connect conversation checkpoints to exact code evidence")
-carries a structured `Spec:` field pointing at
-[`2026-07-03-unified-chat-code-workspace-design.md`](2026-07-03-unified-chat-code-workspace-design.md).
-It is open, sits under the `cave-ltl38` epic, and blocks two further units.
-Moving that file breaks the field.
+Older work records cite these files **by path**. `cave-ltl38.6` ("Connect
+conversation checkpoints to exact code evidence") carried a structured `Spec:`
+field pointing at
+[`2026-07-03-unified-chat-code-workspace-design.md`](2026-07-03-unified-chat-code-workspace-design.md),
+and resuming that work cites the same path.
 
-Fifteen more of these files are cited by closed beads, where the path is the
+Fifteen more of these files are cited by completed work, where the path is the
 provenance trail for work that already shipped. Moving them severs that trail
 for no benefit: the two stores hold **disjoint** content — not one slug appears
 in both — so there is nothing here to deduplicate. A migration would buy

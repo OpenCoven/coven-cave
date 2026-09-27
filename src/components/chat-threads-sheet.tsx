@@ -16,6 +16,7 @@
 import { useRef, type ReactNode } from "react";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import type { ChatBrowseScope } from "@/lib/chat-browse-scope";
 import type { SessionRow } from "@/lib/types";
 
 export function ChatThreadsSheet({
@@ -23,6 +24,9 @@ export function ChatThreadsSheet({
   onClose,
   sessions,
   sessionsError = false,
+  sessionsDegraded = false,
+  browseScope,
+  outOfScopeActiveSession = null,
   activeFamiliarId,
   activeSessionId,
   onOpenSession,
@@ -35,6 +39,10 @@ export function ChatThreadsSheet({
   onClose: () => void;
   sessions: SessionRow[];
   sessionsError?: boolean;
+  sessionsDegraded?: boolean;
+  /** The project scope, so an empty or loading sheet says so (#5585). */
+  browseScope?: ChatBrowseScope;
+  outOfScopeActiveSession?: SessionRow | null;
   activeFamiliarId: string | null;
   activeSessionId: string | null;
   onOpenSession: (session: SessionRow) => void;
@@ -68,6 +76,9 @@ export function ChatThreadsSheet({
         <SidebarChatsSection
           sessions={sessions}
           sessionsError={sessionsError}
+          sessionsDegraded={sessionsDegraded}
+          browseScope={browseScope}
+          outOfScopeActiveSession={outOfScopeActiveSession}
           activeFamiliarId={activeFamiliarId}
           activeSessionId={activeSessionId}
           onOpenSession={(session) => {

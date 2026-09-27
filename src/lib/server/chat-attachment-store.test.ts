@@ -194,4 +194,19 @@ test("the sweep drops only entries past the retention window", async () => {
   assert.ok(!names.includes(drop), "the stale entry is gone");
 });
 
+test("the sync image save matches the async one's guards (#5587)", async () => {
+  const { saveChatImageAttachmentSync } = await import("./chat-attachment-store.ts");
+  const { stat } = await import("node:fs/promises");
+  const storedId = saveChatImageAttachmentSync(PIXEL_DATA_URL, "image/png");
+  assert.ok(storedId, "a valid image is stored");
+  assert.ok(storedId.endsWith(".png"));
+  const info = await stat(path.join(root, storedId));
+  assert.equal(info.mode & 0o777, 0o600, "stored privately");
+  const read = await readChatImageAttachment(storedId);
+  assert.equal(read.mimeType, "image/png");
+  assert.equal(saveChatImageAttachmentSync(PIXEL_DATA_URL, "text/html"), null, "non-image mime is refused");
+  assert.equal(saveChatImageAttachmentSync("data:image/png;base64,", "image/png"), null, "an empty payload is refused");
+  assert.equal(saveChatImageAttachmentSync("no-comma", "image/png"), null, "a malformed data URL is refused");
+});
+
 console.log("chat-attachment-store.test.ts: ok");

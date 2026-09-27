@@ -164,8 +164,13 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<ToolInputView input=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{prettyToolOutput\(tool\.output\)\}/,
+  /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<ToolInputView input=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{prettyToolOutput\(output\)\}/,
   "ToolBlock keeps payloads collapsed, renders readable input fields, and pretty-prints output",
+);
+assert.match(
+  source,
+  /const output = tool\.output \?\? \(fetchedOutput\.status === "ready" \? fetchedOutput\.text : undefined\);/,
+  "ToolBlock renders a fetched output when the transcript omitted it (#5581)",
 );
 
 // JSON tool input is converted to a human-readable labelled field list, with
