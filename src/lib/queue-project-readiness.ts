@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { caveHome } from "@/lib/coven-paths";
-import { caveToolSpawnEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnvAsync } from "@/lib/coven-bin";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { readIssueQueue, type GhResult, type IssueQueueSnapshot } from "@/lib/server/github-issue-queue";
 
@@ -128,7 +128,7 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
       windowsHide: true,
       cwd: /* turbopackIgnore: true */ root,
-      env: caveToolSpawnEnv(),
+      env: await caveToolSpawnEnvAsync(),
       timeout: GIT_TIMEOUT_MS,
     });
     const top = stdout.trim();

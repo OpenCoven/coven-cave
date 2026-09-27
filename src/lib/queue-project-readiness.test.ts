@@ -183,7 +183,7 @@ try {
     new URL("./queue-project-readiness.ts", import.meta.url),
     "utf8",
   );
-  assert.match(readinessSource, /env: caveToolSpawnEnv\(\)/, "Queue readiness finds Git through Cave's launch PATH");
+  assert.match(readinessSource, /env: (?:await )?caveToolSpawnEnv(?:Async)?\(\)/, "Queue readiness finds Git through Cave's launch PATH");
 
   const prBridgeRoute = await (await import("node:fs/promises")).readFile(
     new URL("../app/api/queue/prs/route.ts", import.meta.url),
@@ -191,7 +191,7 @@ try {
   );
   assert.match(prBridgeRoute, /projectRoot is required/, "the PR bridge rejects anonymous Queue requests");
   assert.doesNotMatch(prBridgeRoute, /projectRoot\) \|\| process\.cwd\(\)/, "the PR bridge cannot use the app cwd as a project fallback");
-  assert.match(prBridgeRoute, /caveToolSpawnEnv\(\)/, "Queue PR reads use Cave's launch PATH for gh");
+  assert.match(prBridgeRoute, /caveToolSpawnEnv(?:Async)?\(\)/, "Queue PR reads use Cave's launch PATH for gh");
 } finally {
   if (previousProjectsPath === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPath;
