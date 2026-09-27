@@ -889,3 +889,43 @@ test("GET is conditional: an unchanged transcript answers 304, any change a new 
   assert.equal(linked.status, 200, "a new board link invalidates the tag");
   assert.equal((await linked.json()).context?.task?.id, "card-etag");
 });
+
+// #5611: pasted images from before #5587 move to the attachment store on the
+// first open instead of shipping inline on every one.
+test("GET migrates inline images to the attachment store without touching updatedAt", async () => {
+  const id = "sess-inline-images";
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  writeConversation(id, [
+    {
+      id: "t1", parentId: null, role: "user", text: "look", createdAt: "2026-06-01T00:00:01Z",
+      attachments: [
+        { name: "shot.png", type: "image/png", mimeType: "image/png", size: 68, dataUrl: png },
+        { name: "notes.txt", type: "text/plain", size: 5, text: "hello" },
+      ],
+    },
+    { id: "t2", parentId: "t1", role: "assistant", text: "seen", createdAt: "2026-06-01T00:00:02Z" },
+  ]);
+  const res = await GET(new Request(`http://test/api/chat/conversation/${id}?toolOutputs=recent`), paramsFor(id));
+  assert.equal(res.status, 200);
+  const served = (await res.json()).conversation.turns[0].attachments;
+  assert.equal(served[0].dataUrl, undefined, "the image is no longer shipped inline");
+  assert.match(served[0].storedId, /^[0-9a-f-]{36}\.png$/);
+  assert.equal(served[1].text, "hello", "non-image attachments are untouched");
+
+  const stored = storedConversation(id);
+  assert.equal(stored.updatedAt, "2026-06-01T00:00:00Z", "a migration is not activity: the chat keeps its place");
+  assert.equal(stored.turns[0].attachments[0].storedId, served[0].storedId, "the file itself was migrated");
+  assert.equal(stored.turns[0].attachments[0].dataUrl, undefined);
+  assert.equal(stored.turns.length, 2);
+
+  const { readChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+  const image = await readChatImageAttachment(served[0].storedId);
+  assert.equal(`data:image/png;base64,${image.data.toString("base64")}`, png, "the stored bytes are the pasted image");
+
+  const tag = res.headers.get("etag");
+  const again = await GET(
+    new Request(`http://test/api/chat/conversation/${id}?toolOutputs=recent`, { headers: { "if-none-match": tag } }),
+    paramsFor(id),
+  );
+  assert.equal(again.status, 304, "the tag describes the migrated transcript that was served");
+});

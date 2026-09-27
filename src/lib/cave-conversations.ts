@@ -868,6 +868,44 @@ export async function withConversationLock<T>(
   }
 }
 
+/** Whether any turn still carries a pasted image inline (#5611). */
+export function hasInlineImages(conv: Pick<ConversationFile, "turns">): boolean {
+  return conv.turns.some((turn) =>
+    turn.attachments?.some((attachment) =>
+      typeof attachment?.dataUrl === "string"
+      && attachment.dataUrl.startsWith("data:image/")
+      && !attachment.storedId,
+    ),
+  );
+}
+
+/**
+ * Move a transcript's inline images to the attachment store now, rather than
+ * on a next write that an old chat may never get (#5611). Unlike
+ * saveConversation this keeps `updatedAt` — nothing the user did changed the
+ * chat, so it must not jump in the list — and it rewrites the file exactly as
+ * read apart from the moved bytes: the raw JSON is used, not loadConversation's
+ * in-memory legacy migration. An image the store refuses stays inline.
+ * Returns how many images moved; 0 leaves the file untouched.
+ */
+export async function migrateConversationInlineImages(sessionId: string): Promise<number> {
+  return withConversationLock(sessionId, async () => {
+    const file = pathFor(sessionId);
+    let conv: ConversationFile;
+    try {
+      conv = JSON.parse(await readFile(file, "utf8")) as ConversationFile;
+    } catch {
+      return 0;
+    }
+    if (!Array.isArray(conv?.turns) || !hasInlineImages(conv)) return 0;
+    const moved = await externalizeInlineImages(conv.turns);
+    if (moved === 0) return 0;
+    await writeJsonAtomic(file, conv);
+    conversationSummaryCache.delete(file);
+    return moved;
+  });
+}
+
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
   // Inline base64 images leave the transcript for the attachment store on the
