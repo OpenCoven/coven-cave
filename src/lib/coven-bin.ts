@@ -24,7 +24,7 @@
 // for the env option.
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -32,6 +32,7 @@ import {
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
 import { covenHomePath } from "./coven-home.ts";
+import { caveHome } from "./coven-paths.ts";
 import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
 import { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
@@ -66,6 +67,13 @@ type SpawnPathState = {
    * (2.5-3 s measured). Keyed by the env inputs that shape the answer.
    */
   loginShell?: { key: string; value: string | null };
+  /**
+   * Whether a persisted answer may stand in for the probe (#5643). True for a
+   * fresh process; a refresh turns it off so an install is always probed live.
+   */
+  persistedAllowed?: boolean;
+  /** Keys whose persisted answer is being re-checked in the background. */
+  revalidating?: Set<string>;
   /** Healthy NVM/FNM bin dirs per candidate list (#5621): each check runs
    *  `node` and `npm` synchronously (~0.5 s measured per list). */
   toolchains?: Map<string, string[]>;
@@ -462,6 +470,77 @@ function cachedLoginShell(key: string): string | null | undefined {
   return pathState.loginShell?.key === key ? pathState.loginShell.value : undefined;
 }
 
+// ── Persisted login-shell answer (#5643) ────────────────────────────────────
+//
+// The probe costs 2.5-3 s with a real rc, and a fresh process pays it before
+// any route that builds a spawn environment can answer: every app launch. The
+// answer rarely changes between launches, so the last one is kept on disk
+// under the same key. A fresh process uses it at once and re-checks it with
+// one background probe; if the shell now answers differently, the composed
+// paths are dropped so the next caller composes from the new answer.
+
+type PersistedLoginShell = { key: string; value: string | null };
+
+function persistedLoginShellFile(): string {
+  return path.join(/* turbopackIgnore: true */ caveHome(), "spawn-login-path.json");
+}
+
+function readPersistedLoginShell(key: string): string | null | undefined {
+  if (pathState.persistedAllowed === false) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(/* turbopackIgnore: true */ persistedLoginShellFile(), "utf8")) as PersistedLoginShell;
+    if (parsed?.key !== key) return undefined;
+    return typeof parsed.value === "string" ? parsed.value : null;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePersistedLoginShell(key: string, value: string | null): void {
+  try {
+    const file = persistedLoginShellFile();
+    const current = readPersistedLoginShellRaw(file);
+    if (current?.key === key && current.value === value) return;
+    mkdirSync(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
+    const temp = `${file}.${process.pid}.tmp`;
+    writeFileSync(/* turbopackIgnore: true */ temp, JSON.stringify({ key, value } satisfies PersistedLoginShell));
+    renameSync(/* turbopackIgnore: true */ temp, file);
+  } catch {
+    // Best effort: the next launch simply probes.
+  }
+}
+
+function readPersistedLoginShellRaw(file: string): PersistedLoginShell | null {
+  try {
+    return JSON.parse(readFileSync(/* turbopackIgnore: true */ file, "utf8")) as PersistedLoginShell;
+  } catch {
+    return null;
+  }
+}
+
+/** The persisted answer for `key`, adopted for this process with one
+ *  background re-check; undefined when there is none to use. */
+function adoptPersistedLoginShell(discovery: DiscoveryOptions, key: string): string | null | undefined {
+  const persisted = readPersistedLoginShell(key);
+  if (persisted === undefined) return undefined;
+  pathState.loginShell = { key, value: persisted };
+  const revalidating = (pathState.revalidating ??= new Set());
+  if (!revalidating.has(key)) {
+    revalidating.add(key);
+    const generation = pathState.discoveryGeneration;
+    void probeLoginShellAsync({ ...discovery, deadline: undefined }).then(({ value, timedOut: expired }) => {
+      revalidating.delete(key);
+      if (expired || generation !== pathState.discoveryGeneration) return;
+      writePersistedLoginShell(key, value);
+      if (pathState.loginShell?.key !== key || pathState.loginShell.value === value) return;
+      pathState.loginShell = { key, value };
+      pathState.cachedPath = null;
+      pathState.cachedToolPath = null;
+    }, () => revalidating.delete(key));
+  }
+  return persisted;
+}
+
 /** A probe that ran out of time says nothing about the shell; never keep it. */
 function timedOut(error: unknown): boolean {
   const failure = error as { code?: unknown; signal?: unknown } | null;
@@ -475,6 +554,8 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
   const key = loginShellKey(discovery);
   const cached = cachedLoginShell(key);
   if (cached !== undefined) return cached;
+  const persisted = adoptPersistedLoginShell(discovery, key);
+  if (persisted !== undefined) return persisted;
   // Read SHELL through a deliberately opaque accessor so Turbopack's static
   // analysis can't union the value with a string literal like "/bin/zsh"
   // and treat it as a file pattern that matches the whole project tree.
@@ -492,7 +573,10 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
       env: discovery.env,
     }).trim();
     const value = out || null;
-    if (generation === pathState.discoveryGeneration) pathState.loginShell = { key, value };
+    if (generation === pathState.discoveryGeneration) {
+      pathState.loginShell = { key, value };
+      writePersistedLoginShell(key, value);
+    }
     return value;
   } catch (error) {
     if (!timedOut(error) && generation === pathState.discoveryGeneration) {
@@ -514,11 +598,16 @@ function loginShellPathAsync(discovery: DiscoveryOptions): Promise<string | null
   const key = loginShellKey(discovery);
   const cached = cachedLoginShell(key);
   if (cached !== undefined) return Promise.resolve(cached);
+  const persisted = adoptPersistedLoginShell(discovery, key);
+  if (persisted !== undefined) return Promise.resolve(persisted);
   const pending = pathState.pendingLoginShell;
   if (pending && pending.key === key) return pending.promise;
   const generation = pathState.discoveryGeneration;
   const promise = probeLoginShellAsync(discovery).then(({ value, timedOut: expired }) => {
-    if (!expired && generation === pathState.discoveryGeneration) pathState.loginShell = { key, value };
+    if (!expired && generation === pathState.discoveryGeneration) {
+      pathState.loginShell = { key, value };
+      writePersistedLoginShell(key, value);
+    }
     return value;
   }).finally(() => {
     if (pathState.pendingLoginShell?.promise === promise) pathState.pendingLoginShell = null;
@@ -1057,6 +1146,8 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
 
 
 function invalidatePathCaches(): void {
+  // A refresh follows an install: probe the shell live from now on.
+  pathState.persistedAllowed = false;
   pathState.cachedPath = null;
   pathState.cachedToolPath = null;
   pathState.loginShell = undefined;
