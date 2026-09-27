@@ -17,7 +17,7 @@
 // COVEN_HOME is pointed at an empty temp dir too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import fsPromises from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -993,7 +993,14 @@ test("a conditional reopen retries migration after the attachment store recovers
 test("a failed transcript replacement preserves inline data and retries on conditional reopen", async (t) => {
   const id = "sess-replace-recovery";
   writeLegacyImage(id);
+  const { chatAttachmentRoot, saveChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+  const existingId = await saveChatImageAttachment(LEGACY_PNG, "image/png");
+  const original = storedConversation(id);
+  original.turns[0].attachments.push({ name: "existing.png", storedId: existingId });
+  original.turns[0].attachments.push({ name: "legacy.ico", dataUrl: LEGACY_PNG.replace("image/png", "image/x-icon") });
+  writeFileSync(conversationPath(id), JSON.stringify(original));
   const before = readFileSync(conversationPath(id), "utf8");
+  const filesBefore = readdirSync(chatAttachmentRoot()).sort();
   const rename = fsPromises.rename;
   const mocked = t.mock.method(fsPromises, "rename", async (source, target) => {
     if (target === conversationPath(id)) throw Object.assign(new Error("injected I/O failure"), { code: "EIO" });
@@ -1005,7 +1012,11 @@ test("a failed transcript replacement preserves inline data and retries on condi
   assert.equal(failed.status, 200);
   assert.equal((await failed.json()).conversation.turns[0].attachments[0].dataUrl, LEGACY_PNG);
   assert.equal(readFileSync(conversationPath(id), "utf8"), before);
+  assert.deepEqual(readdirSync(chatAttachmentRoot()).sort(), filesBefore, "failed replacement removes only images created by this attempt");
   assert.ok(mocked.mock.calls.some(({ arguments: args }) => args[1] === conversationPath(id)), "the atomic replacement failure was exercised");
+  const failedAgain = await getConversation(id, failed.headers.get("etag"));
+  assert.equal(failedAgain.status, 304);
+  assert.deepEqual(readdirSync(chatAttachmentRoot()).sort(), filesBefore, "repeated failures do not accumulate orphaned copies");
   mocked.mock.restore();
   syncBuiltinESMExports();
   const recovered = await getConversation(id, failed.headers.get("etag"));
