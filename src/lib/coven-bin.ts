@@ -481,14 +481,20 @@ function cachedLoginShell(key: string): string | null | undefined {
 
 type PersistedLoginShell = { key: string; value: string | null };
 
-function persistedLoginShellFile(): string {
-  return path.join(/* turbopackIgnore: true */ caveHome(), "spawn-login-path.json");
+/** Null unless the Cave home is absolute: a relative home (an env var left as
+ *  the string "undefined") must never direct a write into the cwd (#5645). */
+function persistedLoginShellFile(): string | null {
+  const home = caveHome();
+  if (!path.isAbsolute(home)) return null;
+  return path.join(/* turbopackIgnore: true */ home, "spawn-login-path.json");
 }
 
 function readPersistedLoginShell(key: string): string | null | undefined {
   if (pathState.persistedAllowed === false) return undefined;
+  const file = persistedLoginShellFile();
+  if (!file) return undefined;
   try {
-    const parsed = JSON.parse(readFileSync(/* turbopackIgnore: true */ persistedLoginShellFile(), "utf8")) as PersistedLoginShell;
+    const parsed = JSON.parse(readFileSync(/* turbopackIgnore: true */ file, "utf8")) as PersistedLoginShell;
     if (parsed?.key !== key) return undefined;
     return typeof parsed.value === "string" ? parsed.value : null;
   } catch {
@@ -497,8 +503,9 @@ function readPersistedLoginShell(key: string): string | null | undefined {
 }
 
 function writePersistedLoginShell(key: string, value: string | null): void {
+  const file = persistedLoginShellFile();
+  if (!file) return;
   try {
-    const file = persistedLoginShellFile();
     const current = readPersistedLoginShellRaw(file);
     if (current?.key === key && current.value === value) return;
     mkdirSync(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });

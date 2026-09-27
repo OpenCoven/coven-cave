@@ -9437,18 +9437,22 @@ function cachedLoginShell(key) {
   return pathState.loginShell?.key === key ? pathState.loginShell.value : void 0;
 }
 function persistedLoginShellFile() {
+  const home = caveHome();
+  if (!path4.isAbsolute(home)) return null;
   return path4.join(
     /* turbopackIgnore: true */
-    caveHome(),
+    home,
     "spawn-login-path.json"
   );
 }
 function readPersistedLoginShell(key) {
   if (pathState.persistedAllowed === false) return void 0;
+  const file = persistedLoginShellFile();
+  if (!file) return void 0;
   try {
     const parsed = JSON.parse(readFileSync2(
       /* turbopackIgnore: true */
-      persistedLoginShellFile(),
+      file,
       "utf8"
     ));
     if (parsed?.key !== key) return void 0;
@@ -9458,8 +9462,9 @@ function readPersistedLoginShell(key) {
   }
 }
 function writePersistedLoginShell(key, value) {
+  const file = persistedLoginShellFile();
+  if (!file) return;
   try {
-    const file = persistedLoginShellFile();
     const current = readPersistedLoginShellRaw(file);
     if (current?.key === key && current.value === value) return;
     mkdirSync2(
