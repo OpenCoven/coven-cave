@@ -277,3 +277,17 @@ assert.match(
   /Live board tasks you may reference as task dependencies/,
   "Enrich prompt should hand the familiar the live board task ids it may ground against",
 );
+
+// The familiar's answer is read from assistant text only (#5629). Transport
+// frames used to be appended ahead of it, so the system-init object parsed as
+// an empty enrichment and every card was written back unchanged as "done".
+assert.match(
+  source,
+  /return assistantTextFromStream\(stripAnsi\(raw\)\);/,
+  "Enrich route should read the answer through the shared stream reader",
+);
+assert.match(
+  source,
+  /TASK_ENRICHMENT_KEYS\.some\(\(key\) => Object\.prototype\.hasOwnProperty\.call\(parsed, key\)\)/,
+  "An object with no task keys is not treated as a review",
+);

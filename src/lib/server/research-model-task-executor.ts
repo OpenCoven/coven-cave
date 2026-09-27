@@ -16,6 +16,7 @@ import {
   type ResearchModelReceiptV1,
 } from "../research-protocol/topic-discovery.ts";
 import { TOPIC_DISCOVERY_BUDGET } from "../research-topic-discovery.ts";
+import { assistantTextFromStream } from "./coven-stream-text.ts";
 
 // Type-only alias for runCovenOneShot's signature; the real function is
 // lazily imported so the executor module (and its injected-fake tests) load
@@ -65,40 +66,10 @@ export class ResearchModelTaskError extends Error {
 
 const SAFE_ID = /^[a-z0-9_-]+$/i;
 
-// Reassemble the assistant's text from a `coven run --stream-json` stream, or
-// fall back to the raw text for harnesses that emit plain text. Mirrors the
-// board enrich-steps route's assistantTextFromOutput.
-function assistantTextFromOutput(raw: string): string {
-  let assistantText = "";
-  const lines = raw.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        const event = JSON.parse(trimmed) as {
-          type?: string;
-          message?: { content?: Array<{ type?: string; text?: string }> };
-        };
-        if (event.type === "assistant" && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === "text" && typeof block.text === "string") assistantText += block.text;
-          }
-          continue;
-        }
-      } catch {
-        /* fall through to plain-text fallback */
-      }
-    }
-    assistantText += `${trimmed}\n`;
-  }
-  return assistantText.trim() ? assistantText : raw;
-}
-
 // Extract the first balanced JSON object from a haystack, tolerating stream
 // chatter around it. Returns null when no object parses.
 function extractJsonObject(raw: string): Record<string, unknown> | null {
-  const text = assistantTextFromOutput(raw);
+  const text = assistantTextFromStream(raw);
   const start = text.indexOf("{");
   if (start < 0) return null;
   let depth = 0;

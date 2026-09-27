@@ -21,6 +21,7 @@ import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-oneshot";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { stripAnsi } from "@/lib/ansi";
+import { assistantTextFromStream } from "@/lib/server/coven-stream-text";
 import { resolveGitHubToken } from "@/lib/github-token";
 import {
   appendEnrichmentProposal,
@@ -288,35 +289,7 @@ async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string
 
 
 function assistantTextFromOutput(raw: string): string {
-  const clean = stripAnsi(raw);
-  let assistantText = "";
-  for (const line of clean.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        const ev = JSON.parse(trimmed) as {
-          type?: string;
-          message?: { content?: Array<{ type?: string; text?: string }> };
-        };
-        if (ev.type === "assistant" && ev.message?.content) {
-          for (const block of ev.message.content) {
-            if (block.type === "text" && typeof block.text === "string") {
-              assistantText += block.text;
-            }
-          }
-          continue;
-        }
-      } catch {
-        /* fall through */
-      }
-    }
-
-    // Fallback for harnesses that emit plain text even with --stream-json.
-    assistantText += trimmed + "\n";
-  }
-  return assistantText.trim() ? assistantText : clean;
+  return assistantTextFromStream(stripAnsi(raw));
 }
 
 function parseJsonObject(haystack: string): unknown {
@@ -357,11 +330,22 @@ function parseJsonArray(haystack: string): unknown {
   return JSON.parse(match[0]);
 }
 
+const TASK_ENRICHMENT_KEYS = [
+  "notes", "description", "steps", "status", "lifecycle", "priority", "startDate", "endDate",
+  "links", "github", "sessionId", "needsHuman", "lifecycleReason", "dependencies",
+  "primaryBlockerId", "nextStep",
+];
+
 function parseTaskEnrichment(raw: string): TaskEnrichment | null {
   const haystack = assistantTextFromOutput(raw);
   try {
     const parsed = parseJsonObject(haystack);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    // An object with none of the task keys is not an answer; treating it as one
+    // records a review that never happened.
+    if (
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && TASK_ENRICHMENT_KEYS.some((key) => Object.prototype.hasOwnProperty.call(parsed, key))
+    ) {
       const candidate = parsed as Record<string, unknown>;
       const startDate = cleanBoardDate(candidate.startDate);
       const endDate = cleanBoardDate(candidate.endDate);
