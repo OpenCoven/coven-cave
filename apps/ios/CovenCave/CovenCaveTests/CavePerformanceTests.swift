@@ -510,6 +510,25 @@ final class CavePerformanceTests: XCTestCase {
         XCTAssertEqual(fixture.threads[1].messages[0].text, otherText)
     }
 
+    func testFixtureInstallDoesNotPlayTheConnectedOverlay() {
+        let suite = "CavePerformanceTests.overlay.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fixtureApp = AppModel(defaults: defaults, restoreLocalState: false,
+                                  loadPersistedConnection: false, isPerformanceFixture: true,
+                                  widgetSnapshotDefaults: defaults)
+        CavePerformanceFixture.install(in: fixtureApp)
+        XCTAssertEqual(fixtureApp.connectionState, .connected)
+        // RootView plays its "Connected" overlay for a fresh connectedAt; the
+        // measured cold launch must not include that animation.
+        XCTAssertNil(fixtureApp.connectedAt)
+
+        let liveApp = AppModel(defaults: defaults, restoreLocalState: false,
+                               loadPersistedConnection: false, widgetSnapshotDefaults: defaults)
+        liveApp.connectionState = .connected
+        XCTAssertNotNil(liveApp.connectedAt, "a real connection still gets its confirmation")
+    }
+
     func testFixtureRefusesLiveConnectionAndPairingChanges() async {
         let suite = "CavePerformanceTests.connection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -411,7 +411,10 @@ final class AppModel {
                 lastConnectedAt = Date()
             }
             if oldValue != .connected, connectionState == .connected {
-                connectedAt = Date()
+                // The fixture installs `.connected` directly; its "Connected"
+                // overlay would put 1.4 s of unrelated animation into every
+                // measured cold launch.
+                if !isPerformanceFixture { connectedAt = Date() }
                 if lastConnectedAt != nil, hasLoadedSurfaces {
                     showToast(
                         "Reconnected to Cave",
