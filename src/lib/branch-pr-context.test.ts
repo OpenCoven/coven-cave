@@ -182,6 +182,75 @@ test("concurrent refreshes are capped", async () => {
   await tick();
 });
 
+// #5619: the composer chip must have an answer, so resolve() awaits a miss.
+test("resolve awaits one shared lookup on a miss, then answers from memory", async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const cache = createBranchPrCache({
+    runner: async () => {
+      calls += 1;
+      await gate;
+      return ghJson({ state: "OPEN" });
+    },
+  });
+  const first = cache.resolve("/repo", "feat/x");
+  const second = cache.resolve("/repo", "feat/x");
+  assert.equal(cache.get("/repo", "feat/x"), undefined, "the list poll joins the same lookup");
+  release();
+  assert.equal((await first)?.state, "open");
+  assert.equal((await second)?.state, "open");
+  assert.equal((await cache.resolve("/repo", "feat/x"))?.number, 42);
+  assert.equal(calls, 1);
+});
+
+test("resolve serves a stale entry at once and refreshes it behind", async () => {
+  let now = 0;
+  let calls = 0;
+  const cache = createBranchPrCache({
+    ttlMs: 1000,
+    now: () => now,
+    runner: async () => {
+      calls += 1;
+      return ghJson({ state: calls === 1 ? "OPEN" : "MERGED" });
+    },
+  });
+  assert.equal((await cache.resolve("/repo", "feat/x"))?.state, "open");
+  now = 2000;
+  assert.equal((await cache.resolve("/repo", "feat/x"))?.state, "open", "stale answer, no wait");
+  await tick();
+  assert.equal((await cache.resolve("/repo", "feat/x"))?.state, "merged");
+});
+
+test("resolve negative-caches a failed lookup as null", async () => {
+  let calls = 0;
+  const cache = createBranchPrCache({
+    runner: async () => {
+      calls += 1;
+      throw new Error("gh missing");
+    },
+  });
+  assert.equal(await cache.resolve("/repo", "main"), null);
+  assert.equal(await cache.resolve("/repo", "main"), null);
+  assert.equal(calls, 1);
+});
+
+test("resolve is not refused by the background cap", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const cache = createBranchPrCache({
+    maxConcurrent: 1,
+    runner: async (_root, branch) => {
+      if (branch === "busy") await gate;
+      return ghJson();
+    },
+  });
+  cache.get("/a", "busy");
+  assert.equal((await cache.resolve("/a", "wanted"))?.number, 42, "a user-facing ask still gets its answer");
+  release();
+  await tick();
+});
+
 // ── URL-keyed cache (transcript-derived attribution, cave-u9wl) ──
 
 test("parseBranchPr without a branch omits the field", () => {
