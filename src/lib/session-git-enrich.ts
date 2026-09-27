@@ -96,8 +96,8 @@ type GitContextRead = {
 const NO_GIT_CONTEXT: GitContextRead = { context: null, gitDir: null, commonDir: null };
 
 /**
- * Per-compute memo for facts every worktree of one repository shares (its
- * origin URL and default base ref), keyed by the common git dir (#5608).
+ * Per-compute memo for the default base ref shared by a repository's
+ * worktrees, keyed by the common git dir (#5608).
  * Each `git` spawn blocks the event loop while the process is forked (4-8 ms
  * measured under load), so a profile of worktrees of a few repositories paid
  * for the same answers many times over.
@@ -114,7 +114,7 @@ function perRepo(memo: RepoMemo | undefined, key: string, read: () => Promise<st
   return pending;
 }
 
-async function readGitContext(git: GitRunner, projectRoot: string, memo?: RepoMemo): Promise<GitContextRead> {
+async function readGitContext(git: GitRunner, projectRoot: string): Promise<GitContextRead> {
   const trimmed = projectRoot.trim();
   if (!isTrueProjectCwd(trimmed)) return NO_GIT_CONTEXT;
   // One rev-parse answers all four location probes, one line per flag in
@@ -136,7 +136,9 @@ async function readGitContext(git: GitRunner, projectRoot: string, memo?: RepoMe
     headBranch !== undefined ? headBranch : git(trimmed, ["branch", "--show-current"]),
     originFromFiles !== undefined
       ? originFromFiles
-      : perRepo(memo, `origin:${commonDir ?? trimmed}`, () => git(trimmed, ["config", "--get", "remote.origin.url"])),
+      // Includes and config.worktree can give siblings different origins.
+      // Roots are already deduplicated by the caller; do not share this result.
+      : git(trimmed, ["config", "--get", "remote.origin.url"]),
   ]);
   const branch = currentBranch ?? (await git(trimmed, ["rev-parse", "--short", "HEAD"]));
   const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
@@ -323,7 +325,7 @@ export async function enrichSessionsWithGitContext(
     onContext?: (read: GitContextRead) => void,
   ): Promise<{ entry: RootEnrichment; complete: boolean; read: GitContextRead }> => {
     const entry: RootEnrichment = { gitContext: null, base: null, diffByBranch: new Map() };
-    const read = await readGitContext(git, root, repoMemo);
+    const read = await readGitContext(git, root);
     onContext?.(read);
     entry.gitContext = read.context;
     const branch = entry.gitContext?.branch;
