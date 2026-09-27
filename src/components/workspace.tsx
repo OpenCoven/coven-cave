@@ -194,6 +194,7 @@ import {
 } from "@/lib/daily-summary-refresh";
 import {
   NARRATIVE_RETRY_MS,
+  NARRATIVE_STARTUP_DELAY_MS,
   generateDailyNarrative,
   shouldRegenerateNarrative,
 } from "@/lib/daily-narrative";
@@ -2301,10 +2302,19 @@ export function Workspace() {
     enabled: sessionsLoaded,
   });
 
+  // One-shot startup gate for the narrative (#5639): a flag rather than a timer
+  // inside the effect below, whose inputs change too often to let one finish.
+  const [narrativeStartupElapsed, setNarrativeStartupElapsed] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setNarrativeStartupElapsed(true), NARRATIVE_STARTUP_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   // Layer a familiar-written narrative on today's report once its facts
   // exist. One-shot generation through the chat bridge; every failure path is
   // silent — the deterministic count-line body simply remains the summary.
   useEffect(() => {
+    if (!narrativeStartupElapsed) return;
     if (!sessionsLoaded || daemonOffline || narrativeInFlightRef.current) return;
     const now = new Date();
     const item = inboxItems.find((it) => it.auto === dailySummaryAutoKey(now));
@@ -2355,7 +2365,7 @@ export function Workspace() {
         narrativeInFlightRef.current = false;
       }
     })();
-  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
+  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId, narrativeStartupElapsed]);
 
   const openOnboarding = useCallback(() => {
     setOnboardingOpen(true);

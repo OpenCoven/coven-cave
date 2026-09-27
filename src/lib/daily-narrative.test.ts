@@ -93,4 +93,24 @@ const now = new Date("2026-06-18T21:15:00.000Z");
   );
 }
 
+// #5639: the narrative's model run waits out app load, so the first chat
+// opens are not queued behind its stream.
+{
+  const { NARRATIVE_STARTUP_DELAY_MS } = await import("./daily-narrative.ts");
+  assert.ok(NARRATIVE_STARTUP_DELAY_MS >= 10_000, "the narrative waits for the workspace to settle");
+  const { readFileSync } = await import("node:fs");
+  const workspace = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+  assert.match(
+    workspace,
+    /setTimeout\(\(\) => setNarrativeStartupElapsed\(true\), NARRATIVE_STARTUP_DELAY_MS\)[\s\S]*?\}, \[\]\);/,
+    "a one-shot mount timer opens the startup gate, independent of the effect's changing inputs",
+  );
+  assert.match(
+    workspace,
+    /if \(!narrativeStartupElapsed\) return;\s*if \(!sessionsLoaded \|\| daemonOffline \|\| narrativeInFlightRef\.current\) return;/,
+    "the narrative effect does nothing until the gate opens",
+  );
+  assert.match(workspace, /activeId, narrativeStartupElapsed\]\);/, "the gate re-runs the effect when it opens");
+}
+
 console.log("daily-narrative.test.ts: ok");
