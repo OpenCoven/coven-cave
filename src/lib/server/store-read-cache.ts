@@ -103,17 +103,23 @@ type Entry = {
   value: unknown;
 };
 
-type FileIdentity = Pick<Entry, "dev" | "ino" | "mtimeNs" | "ctimeNs" | "size" | "digest">;
+export type FileIdentity = Pick<Entry, "dev" | "ino" | "mtimeNs" | "ctimeNs" | "size" | "digest">;
 
 type StoreReadCacheOptions = {
   ttlMs?: number;
   now?: () => number;
   maxBytes?: number;
+  /**
+   * An identity the caller already took with {@link inspectStoreFile}, so a
+   * caller that needed the digest first (a conditional response) does not
+   * read and hash the file a second time.
+   */
+  identity?: FileIdentity;
   /** Test seam for deterministic metadata-collision coverage. */
   inspectFile?: (filePath: string) => Promise<FileIdentity>;
 };
 
-async function inspectStoreFile(filePath: string): Promise<FileIdentity> {
+export async function inspectStoreFile(filePath: string): Promise<FileIdentity> {
   // Read through one descriptor so the metadata and bytes identify the same
   // inode even when an atomic replacement races this probe. WSL filesystems
   // can report identical timestamp nanoseconds for two writes in one host
@@ -241,7 +247,7 @@ export async function readCachedStore<T>(
     // store would inherit whole-project tracing — and in this checkout
     // `.worktrees` alone matches ~237k files. Same convention as
     // `server/agent-attachments.ts` and `server/assist-runner.ts`.
-    identity = await (options.inspectFile ?? inspectStoreFile)(filePath);
+    identity = options.identity ?? await (options.inspectFile ?? inspectStoreFile)(filePath);
   } catch {
     // ENOENT is the ordinary cold-start shape: the loader returns defaults.
     // A store with no file has no identity to key on, so it is never cached — the

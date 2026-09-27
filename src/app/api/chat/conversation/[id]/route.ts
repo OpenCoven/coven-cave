@@ -4,16 +4,18 @@ import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
+  conversationFileRevision,
   isSafeConversationSessionId,
   deleteConversation,
   loadConversation,
-  loadConversationCached,
   saveConversation,
   withConversationLock,
   type ChatTurn,
   type ConversationFile,
 } from "@/lib/cave-conversations";
 import { linkedContextForSession } from "@/lib/chat-linked-context";
+import { conversationEtag } from "@/lib/server/conversation-etag";
+import { ifNoneMatchIncludes } from "@/lib/server/json-etag";
 import { slimConversationToolOutputs } from "@/lib/conversation-tool-output";
 import { unlinkSessionFromCards } from "@/lib/cave-board";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
@@ -506,14 +508,29 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // `context` stays uncached on purpose — it is board-derived and changes
   // independently of the transcript, so it must not inherit the transcript's
   // cache key. See loadConversationCached.
-  const conv = await loadConversationCached(id);
-  if (conv) {
+  //
+  // Conditional (#5607): the tag covers the transcript's content digest, the
+  // response flavor and the linked context, so reopening an unchanged chat is a
+  // bodiless 304 that never parses, clones or serializes the transcript.
+  const revision = await conversationFileRevision(id);
+  if (revision) {
     const context = await linkedContextForSession(id);
-    return NextResponse.json({
-      ok: true,
-      conversation: presentConversation(sanitizeConversationMetadata(conv)),
-      context,
-    });
+    const etag = conversationEtag(revision.digest, recentToolOutputsOnly, context);
+    const headers = { ETag: etag, "Cache-Control": "no-store" };
+    if (ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
+      return new NextResponse(null, { status: 304, headers });
+    }
+    const conv = await revision.load();
+    if (conv) {
+      return NextResponse.json(
+        {
+          ok: true,
+          conversation: presentConversation(sanitizeConversationMetadata(conv)),
+          context,
+        },
+        { headers },
+      );
+    }
   }
 
   // Fallback: read the openclaw .jsonl transcript for sessions that were started

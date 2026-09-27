@@ -7,9 +7,14 @@
 // revalidates in the background and joins a prefetch already in flight, so the
 // cache only removes the blank gap — it is never the source of truth.
 //
-// Invalidation: entries expire after a short TTL, are evicted LRU beyond a
-// small cap, and are explicitly dropped when a send starts or a conversation
-// is deleted (see invalidateConversation call sites).
+// Invalidation: entries stop painting after a short TTL, are evicted LRU
+// beyond a small cap, and are explicitly dropped when a send starts or a
+// conversation is deleted (see invalidateConversation call sites).
+//
+// Conditional revalidation (#5607): an entry past its paint TTL is kept, with
+// the server's ETag, only to revalidate. The next load sends If-None-Match and
+// a 304 reuses the kept payload, so reopening an unchanged chat transfers and
+// parses nothing. An expired entry never paints.
 
 import { startSpan } from "./perf/marks.ts";
 
@@ -34,7 +39,12 @@ const MAX_ENTRIES = 24;
 /** Hover-intent delay so sweeping the pointer across a list doesn't fetch every row. */
 const HOVER_DELAY_MS = 90;
 
-const cache = new Map<string, { payload: CachedConversationPayload; at: number }>();
+type CacheEntry = { payload: CachedConversationPayload; at: number; etag: string | null };
+
+const cache = new Map<string, CacheEntry>();
+// Which revision of each payload the server tagged, so callers holding only
+// the payload (chat-view's offline-copy write) can tell an unchanged one.
+const payloadEtags = new WeakMap<object, string>();
 type RequestEpoch = { clear: number; session: number };
 type InflightConversation = {
   epoch: RequestEpoch;
@@ -74,10 +84,8 @@ export function readCachedConversation(
 ): CachedConversationPayload | null {
   const entry = cache.get(sessionId);
   if (!entry) return null;
-  if (now - entry.at > TTL_MS) {
-    cache.delete(sessionId);
-    return null;
-  }
+  // Past the paint TTL the entry stays for revalidation only (#5607).
+  if (now - entry.at > TTL_MS) return null;
   // Refresh recency so LRU eviction tracks reads, not just writes.
   cache.delete(sessionId);
   cache.set(sessionId, entry);
@@ -89,10 +97,12 @@ export function storeConversation(
   sessionId: string,
   payload: CachedConversationPayload,
   now: number = Date.now(),
+  etag: string | null = null,
 ): void {
   if (!sessionId || !payload || payload.ok !== true || !payload.conversation) return;
   cache.delete(sessionId);
-  cache.set(sessionId, { payload, at: now });
+  cache.set(sessionId, { payload, at: now, etag });
+  if (etag) payloadEtags.set(payload, etag);
   while (cache.size > MAX_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
@@ -100,13 +110,42 @@ export function storeConversation(
   }
 }
 
+/** The server's tag for a payload this module loaded, if it sent one. */
+export function conversationPayloadEtag(payload: object | null | undefined): string | null {
+  return payload ? payloadEtags.get(payload) ?? null : null;
+}
+
+// Tag of the revision last written to the desktop's offline copy, per session.
+const offlineWrittenEtags = new Map<string, string>();
+
+/**
+ * Whether a loaded payload still needs writing to the offline copy (#5607).
+ * The write sanitizes, stringifies, IPC-sends and encrypts the whole
+ * transcript, so an unchanged revision — which is what a revalidation almost
+ * always returns — is skipped. Untagged payloads are always written.
+ */
+export function offlineConversationWriteNeeded(sessionId: string, payload: object): boolean {
+  const etag = conversationPayloadEtag(payload);
+  return !etag || offlineWrittenEtags.get(sessionId) !== etag;
+}
+
+/** Records a successful offline-copy write of this payload's revision. */
+export function recordOfflineConversationWrite(sessionId: string, payload: object): void {
+  const etag = conversationPayloadEtag(payload);
+  if (etag) offlineWrittenEtags.set(sessionId, etag);
+  else offlineWrittenEtags.delete(sessionId);
+}
+
 export function invalidateConversation(sessionId: string): void {
   cache.delete(sessionId);
+  // A deleted chat's offline copy is evicted too; never skip rewriting it.
+  offlineWrittenEtags.delete(sessionId);
   sessionGenerations.set(sessionId, (sessionGenerations.get(sessionId) ?? 0) + 1);
 }
 
 export function clearConversationCache(): void {
   cache.clear();
+  offlineWrittenEtags.clear();
   inflight.clear();
   sessionGenerations.clear();
   clearGeneration += 1;
@@ -138,10 +177,18 @@ export function loadConversation(
       // Bounded (#5583): a stalled route otherwise holds the skeleton forever,
       // and Retry would re-join the same in-flight promise. The entry clears
       // when this settles, so Retry after a timeout starts a fresh request.
+      const kept = cache.get(sessionId);
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
         cache: "no-store",
         signal: AbortSignal.timeout(CONVERSATION_FETCH_TIMEOUT_MS),
+        headers: kept?.etag ? { "If-None-Match": kept.etag } : undefined,
       });
+      if (res.status === 304 && kept) {
+        // Unchanged (#5607): the same payload object, so a view that painted
+        // it sees an identical revision and does not rebuild the transcript.
+        if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, kept.payload, Date.now(), kept.etag);
+        return kept.payload;
+      }
       const json = (await res.json().catch(() => null)) as CachedConversationPayload & {
         error?: string;
       } | null;
@@ -157,7 +204,9 @@ export function loadConversation(
           res.status,
         );
       }
-      if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
+      if (requestEpochIsCurrent(sessionId, epoch)) {
+        storeConversation(sessionId, json, Date.now(), res.headers?.get("ETag") ?? null);
+      }
       return json;
     } finally {
       endSpan();
