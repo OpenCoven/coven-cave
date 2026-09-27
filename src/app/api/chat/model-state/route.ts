@@ -12,7 +12,7 @@ import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { harnessSpawnEnv, warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
@@ -110,6 +110,10 @@ async function currentState(
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  // Model inventory builds spawn environments synchronously; join the server's
+  // PATH warm-up off the event loop first, or a chat open that lands before it
+  // finishes runs the login shell on the loop (3.1 s measured, #5621).
+  await warmHarnessSpawnPath();
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
   const rawPreviewModel = url.searchParams.get("model");

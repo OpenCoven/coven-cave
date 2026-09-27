@@ -19,7 +19,7 @@ import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
-import { caveToolSpawnEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnvAsync } from "@/lib/coven-bin";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import {
   branchWorktreeDir,
@@ -34,8 +34,8 @@ const GIT_TIMEOUT_MS = 30_000;
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_GIT_BUFFER = 16 * 1024 * 1024;
 
-function git(cwd: string, args: string[], timeout: number = GIT_TIMEOUT_MS) {
-  return execFileAsync("git", args, { windowsHide: true, cwd, env: caveToolSpawnEnv(), timeout, maxBuffer: MAX_GIT_BUFFER });
+async function git(cwd: string, args: string[], timeout: number = GIT_TIMEOUT_MS) {
+  return execFileAsync("git", args, { windowsHide: true, cwd, env: await caveToolSpawnEnvAsync(), timeout, maxBuffer: MAX_GIT_BUFFER });
 }
 
 export type RepoRootResolution =

@@ -7768,9 +7768,9 @@ function createClientV1WindowsAclProbe(execute = execFileAsync) {
           }
         ));
       } catch (error) {
-        const timedOut = windowsAclProbeTimedOut(error);
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
-          if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
+        const timedOut2 = windowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut2) {
+          if (timedOut2) throw sanitizedWindowsAclProbeTimeout(error);
           throw sanitizedWindowsAclProbeFailure(error);
         }
         continue;
@@ -9325,23 +9325,32 @@ var FNM_ROOT = path4.join(
   ".fnm",
   "node-versions"
 );
-function nodeNvmBinDirsAsync(discovery) {
-  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
+function toolchainKey(directories, discovery) {
+  if (discovery.deadline !== void 0) return null;
+  return `${directories.join("\0")}${discovery.env.PATH ?? ""}`;
+}
+function rememberToolchains(key, dirs) {
+  if (key !== null) (pathState.toolchains ??= /* @__PURE__ */ new Map()).set(key, dirs);
+  return dirs;
+}
+async function healthyToolchainDirsAsync(directories, discovery) {
+  if (directories.length === 0) return [];
+  const key = toolchainKey(directories, discovery);
+  const known = key === null ? void 0 : pathState.toolchains?.get(key);
+  if (known) return known;
+  const generation = pathState.discoveryGeneration;
+  const dirs = await runnableNodeToolchainDirsAsync(directories, {
     env: discovery.env,
     deadline: discovery.deadline,
     now: discovery.now
   });
+  return generation === pathState.discoveryGeneration ? rememberToolchains(key, dirs) : dirs;
+}
+function nodeNvmBinDirsAsync(discovery) {
+  return healthyToolchainDirsAsync(versionManagerBinDirs(NVM_ROOT, ["bin"]), discovery);
 }
 function fnmBinDirsAsync(discovery) {
-  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
-    env: discovery.env,
-    deadline: discovery.deadline,
-    now: discovery.now
-  });
+  return healthyToolchainDirsAsync(versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]), discovery);
 }
 function windowsNpmBinDirs(discovery) {
   if (process.platform === "win32") {
@@ -9420,12 +9429,39 @@ function assembleCandidateDirs(nvmDirs, fnmDirs, discovery) {
     d
   ));
 }
+function loginShellKey(discovery) {
+  const env = discovery.env;
+  return [env["SHELL"], env["HOME"], env["ZDOTDIR"], env["PATH"]].map((value) => value ?? "").join("\0");
+}
+function cachedLoginShell(key) {
+  return pathState.loginShell?.key === key ? pathState.loginShell.value : void 0;
+}
+function timedOut(error) {
+  const failure = error;
+  return failure?.code === "ETIMEDOUT" || failure?.signal === "SIGTERM";
+}
 function loginShellPathAsync(discovery) {
   if (process.platform === "win32") return Promise.resolve(null);
+  const key = loginShellKey(discovery);
+  const cached = cachedLoginShell(key);
+  if (cached !== void 0) return Promise.resolve(cached);
+  const pending = pathState.pendingLoginShell;
+  if (pending && pending.key === key) return pending.promise;
+  const generation = pathState.discoveryGeneration;
+  const promise = probeLoginShellAsync(discovery).then(({ value, timedOut: expired }) => {
+    if (!expired && generation === pathState.discoveryGeneration) pathState.loginShell = { key, value };
+    return value;
+  }).finally(() => {
+    if (pathState.pendingLoginShell?.promise === promise) pathState.pendingLoginShell = null;
+  });
+  pathState.pendingLoginShell = { key, promise };
+  return promise;
+}
+function probeLoginShellAsync(discovery) {
   const env = discovery.env;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   const timeout = remainingDiscoveryTimeout(4e3, discovery.deadline, discovery.now);
-  if (timeout <= 0) return Promise.resolve(null);
+  if (timeout <= 0) return Promise.resolve({ value: null, timedOut: true });
   return new Promise((resolve3) => {
     execFile3(
       /* turbopackIgnore: true */
@@ -9434,11 +9470,11 @@ function loginShellPathAsync(discovery) {
       { windowsHide: true, encoding: "utf-8", timeout, env: discovery.env },
       (error, stdout) => {
         if (error) {
-          resolve3(null);
+          resolve3({ value: null, timedOut: timedOut(error) });
           return;
         }
         const out = String(stdout).trim();
-        resolve3(out || null);
+        resolve3({ value: out || null, timedOut: false });
       }
     );
   });
@@ -10648,9 +10684,9 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
         );
         break;
       } catch (error) {
-        const timedOut = standaloneWindowsAclProbeTimedOut(error);
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !timedOut) {
-          if (timedOut) throw sanitizedWindowsAclProbeTimeout2(error);
+        const timedOut2 = standaloneWindowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !timedOut2) {
+          if (timedOut2) throw sanitizedWindowsAclProbeTimeout2(error);
           throw error;
         }
       }

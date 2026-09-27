@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
@@ -22,6 +23,10 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ runtime: string }> },
 ) {
+  // Model inventory builds spawn environments synchronously; join the server's
+  // PATH warm-up off the event loop first, or a chat open that lands before it
+  // finishes runs the login shell on the loop (3.1 s measured, #5621).
+  await warmHarnessSpawnPath();
   const rawRuntime = (await params).runtime;
   const runtime = canonicalHarnessId(rawRuntime);
   const catalog = catalogForRuntime(runtime);

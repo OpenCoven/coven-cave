@@ -58,6 +58,18 @@ type SpawnPathState = {
   // refreshed result. The sync API is unaffected: it computes and publishes
   // within one call.
   discoveryGeneration: number;
+  /**
+   * The login shell's own PATH, which every composed path above starts from
+   * (#5621). Each consumer used to run the probe itself — the warmed coven
+   * path, the never-warmed tool path, deadline-bounded discovery, and any sync
+   * caller racing the warm-up — and each run blocks for the shell's rc startup
+   * (2.5-3 s measured). Keyed by the env inputs that shape the answer.
+   */
+  loginShell?: { key: string; value: string | null };
+  /** Healthy NVM/FNM bin dirs per candidate list (#5621): each check runs
+   *  `node` and `npm` synchronously (~0.5 s measured per list). */
+  toolchains?: Map<string, string[]>;
+  pendingLoginShell?: { key: string; promise: Promise<string | null> } | null;
 };
 const SPAWN_PATH_STATE = Symbol.for("opencoven.cave.spawnPathState");
 const pathState: SpawnPathState = ((globalThis as { [SPAWN_PATH_STATE]?: SpawnPathState })[
@@ -310,44 +322,59 @@ function versionManagerBinDirs(root: string, segments: string[]): string[] {
 const NVM_ROOT = path.join(/* turbopackIgnore: true */ HOME, ".nvm", "versions", "node");
 const FNM_ROOT = path.join(/* turbopackIgnore: true */ HOME, ".fnm", "node-versions");
 
-function nodeNvmBinDirs(discovery: DiscoveryOptions): string[] {
-  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
+function toolchainKey(directories: readonly string[], discovery: DiscoveryOptions): string | null {
+  // A deadline can cut the health checks short; only an unbounded answer is kept.
+  if (discovery.deadline !== undefined) return null;
+  return `${directories.join("\0")}\u0001${discovery.env.PATH ?? ""}`;
+}
+
+function rememberToolchains(key: string | null, dirs: string[]): string[] {
+  if (key !== null) (pathState.toolchains ??= new Map()).set(key, dirs);
+  return dirs;
+}
+
+function healthyToolchainDirs(directories: string[], discovery: DiscoveryOptions): string[] {
   if (directories.length === 0) return [];
-  return runnableNodeToolchainDirs(directories, {
+  const key = toolchainKey(directories, discovery);
+  const known = key === null ? undefined : pathState.toolchains?.get(key);
+  if (known) return known;
+  const generation = pathState.discoveryGeneration;
+  const dirs = runnableNodeToolchainDirs(directories, {
     env: discovery.env,
     deadline: discovery.deadline,
     now: discovery.now,
   });
+  return generation === pathState.discoveryGeneration ? rememberToolchains(key, dirs) : dirs;
+}
+
+async function healthyToolchainDirsAsync(directories: string[], discovery: DiscoveryOptions): Promise<string[]> {
+  if (directories.length === 0) return [];
+  const key = toolchainKey(directories, discovery);
+  const known = key === null ? undefined : pathState.toolchains?.get(key);
+  if (known) return known;
+  const generation = pathState.discoveryGeneration;
+  const dirs = await runnableNodeToolchainDirsAsync(directories, {
+    env: discovery.env,
+    deadline: discovery.deadline,
+    now: discovery.now,
+  });
+  return generation === pathState.discoveryGeneration ? rememberToolchains(key, dirs) : dirs;
+}
+
+function nodeNvmBinDirs(discovery: DiscoveryOptions): string[] {
+  return healthyToolchainDirs(versionManagerBinDirs(NVM_ROOT, ["bin"]), discovery);
 }
 
 function fnmBinDirs(discovery: DiscoveryOptions): string[] {
-  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
-  if (directories.length === 0) return [];
-  return runnableNodeToolchainDirs(directories, {
-    env: discovery.env,
-    deadline: discovery.deadline,
-    now: discovery.now,
-  });
+  return healthyToolchainDirs(versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]), discovery);
 }
 
 function nodeNvmBinDirsAsync(discovery: DiscoveryOptions): Promise<string[]> {
-  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
-    env: discovery.env,
-    deadline: discovery.deadline,
-    now: discovery.now,
-  });
+  return healthyToolchainDirsAsync(versionManagerBinDirs(NVM_ROOT, ["bin"]), discovery);
 }
 
 function fnmBinDirsAsync(discovery: DiscoveryOptions): Promise<string[]> {
-  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
-    env: discovery.env,
-    deadline: discovery.deadline,
-    now: discovery.now,
-  });
+  return healthyToolchainDirsAsync(versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]), discovery);
 }
 
 function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
@@ -426,10 +453,28 @@ export function pickWindowsLauncher(lines: string[]): string | null {
   );
 }
 
+function loginShellKey(discovery: DiscoveryOptions): string {
+  const env = discovery.env as Record<string, string | undefined>;
+  return [env["SHELL"], env["HOME"], env["ZDOTDIR"], env["PATH"]].map((value) => value ?? "").join("\0");
+}
+
+function cachedLoginShell(key: string): string | null | undefined {
+  return pathState.loginShell?.key === key ? pathState.loginShell.value : undefined;
+}
+
+/** A probe that ran out of time says nothing about the shell; never keep it. */
+function timedOut(error: unknown): boolean {
+  const failure = error as { code?: unknown; signal?: unknown } | null;
+  return failure?.code === "ETIMEDOUT" || failure?.signal === "SIGTERM";
+}
+
 function loginShellPath(discovery: DiscoveryOptions): string | null {
   // Windows has no POSIX login shell to source — the `-ilc` probe below would
   // always fail. Skip it (callers fall back to the registry/system PATH).
   if (process.platform === "win32") return null;
+  const key = loginShellKey(discovery);
+  const cached = cachedLoginShell(key);
+  if (cached !== undefined) return cached;
   // Read SHELL through a deliberately opaque accessor so Turbopack's static
   // analysis can't union the value with a string literal like "/bin/zsh"
   // and treat it as a file pattern that matches the whole project tree.
@@ -438,6 +483,7 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   const timeout = remainingDiscoveryTimeout(4000, discovery.deadline, discovery.now);
   if (timeout <= 0) return null;
+  const generation = pathState.discoveryGeneration;
   try {
     const out = execFileSync(/* turbopackIgnore: true */ shell, ["-ilc", "echo $PATH"], {
       windowsHide: true,
@@ -445,8 +491,13 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
       timeout,
       env: discovery.env,
     }).trim();
-    return out || null;
-  } catch {
+    const value = out || null;
+    if (generation === pathState.discoveryGeneration) pathState.loginShell = { key, value };
+    return value;
+  } catch (error) {
+    if (!timedOut(error) && generation === pathState.discoveryGeneration) {
+      pathState.loginShell = { key, value: null };
+    }
     return null;
   }
 }
@@ -460,10 +511,27 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
  */
 function loginShellPathAsync(discovery: DiscoveryOptions): Promise<string | null> {
   if (process.platform === "win32") return Promise.resolve(null);
+  const key = loginShellKey(discovery);
+  const cached = cachedLoginShell(key);
+  if (cached !== undefined) return Promise.resolve(cached);
+  const pending = pathState.pendingLoginShell;
+  if (pending && pending.key === key) return pending.promise;
+  const generation = pathState.discoveryGeneration;
+  const promise = probeLoginShellAsync(discovery).then(({ value, timedOut: expired }) => {
+    if (!expired && generation === pathState.discoveryGeneration) pathState.loginShell = { key, value };
+    return value;
+  }).finally(() => {
+    if (pathState.pendingLoginShell?.promise === promise) pathState.pendingLoginShell = null;
+  });
+  pathState.pendingLoginShell = { key, promise };
+  return promise;
+}
+
+function probeLoginShellAsync(discovery: DiscoveryOptions): Promise<{ value: string | null; timedOut: boolean }> {
   const env = discovery.env as Record<string, string | undefined>;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   const timeout = remainingDiscoveryTimeout(4000, discovery.deadline, discovery.now);
-  if (timeout <= 0) return Promise.resolve(null);
+  if (timeout <= 0) return Promise.resolve({ value: null, timedOut: true });
   return new Promise((resolve) => {
     execFile(
       /* turbopackIgnore: true */ shell,
@@ -471,11 +539,11 @@ function loginShellPathAsync(discovery: DiscoveryOptions): Promise<string | null
       { windowsHide: true, encoding: "utf-8", timeout, env: discovery.env },
       (error, stdout) => {
         if (error) {
-          resolve(null);
+          resolve({ value: null, timedOut: timedOut(error) });
           return;
         }
         const out = String(stdout).trim();
-        resolve(out || null);
+        resolve({ value: out || null, timedOut: false });
       },
     );
   });
@@ -991,6 +1059,9 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
 function invalidatePathCaches(): void {
   pathState.cachedPath = null;
   pathState.cachedToolPath = null;
+  pathState.loginShell = undefined;
+  pathState.toolchains = undefined;
+  pathState.pendingLoginShell = null;
   pathState.pendingPathDiscovery = null;
   pathState.discoveryGeneration += 1;
 }
@@ -1061,6 +1132,22 @@ export function covenWrapperSpawnEnv(
  */
 export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
   pathState.cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
+  return spawnEnv(pathState.cachedToolPath, false);
+}
+
+/**
+ * caveToolSpawnEnv() for async callers (#5621): the same composition, with the
+ * login-shell probe off the event loop and joined to the server's warm-up when
+ * that is still running. The git/gh queue pollers start at page load, before
+ * the warm-up finishes, and the sync variant ran the shell (3 s) on the loop.
+ */
+export async function caveToolSpawnEnvAsync(): Promise<NodeJS.ProcessEnv> {
+  if (pathState.cachedToolPath === null) {
+    const generation = pathState.discoveryGeneration;
+    const composed = await augmentedSpawnPathAsync(true, discoveryOptions());
+    if (generation === pathState.discoveryGeneration) pathState.cachedToolPath ??= composed;
+    if (pathState.cachedToolPath === null) return spawnEnv(composed, false);
+  }
   return spawnEnv(pathState.cachedToolPath, false);
 }
 
