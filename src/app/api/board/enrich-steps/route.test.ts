@@ -47,7 +47,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(req\.signal\.aborted\) break;/,
+  /for \(const card of lane\) \{\s*if \(req\.signal\.aborted\) return;/,
   "Enrich route should stop iterating cards after abort",
 );
 
@@ -96,7 +96,56 @@ assert.match(
 assert.match(
   source,
   /const candidates = board\.cards\.filter\([\s\S]*c\.familiarId === familiarId[\s\S]*!SKIP_LIFECYCLE\.has\(c\.lifecycle\)[\s\S]*\);/,
-  "Enrich route should revisit active assigned tasks only for the selected familiar",
+  "Enrich route should revisit every open task, or only one familiar's when scoped",
+);
+
+// Every open task is considered (#5629): `scope: "all"` sweeps the whole Board,
+// each task runs through its own assigned familiar, and a task with no
+// familiar is reported rather than dropped.
+assert.match(
+  source,
+  /if \(body\.scope === "all"\) return \{ familiarId: null \};/,
+  "Enrich route should accept an all-tasks scope",
+);
+assert.match(
+  source,
+  /\(familiarId === null \|\| c\.familiarId === familiarId\)/,
+  "An all-tasks run must not filter candidates by familiar",
+);
+assert.match(
+  source,
+  /const owner = card\.familiarId;\s*if \(!owner \|\| !SAFE_FAMILIAR_ID\.test\(owner\)\) \{\s*push\(\{ kind: "skip", cardId: card\.id, reason: "unassigned" \}\);/,
+  "Unassigned tasks are reported, not dropped",
+);
+assert.match(
+  source,
+  /const \[familiarId, lane\] = next;[\s\S]*await reviewCard\(card, familiarId\);\s*\} catch \{\s*push\(\{ kind: "skip", cardId: card\.id, reason: "error" \}\);/,
+  "Each task runs as its own assigned familiar, and a failing task is reported without stopping its lane",
+);
+assert.match(
+  source,
+  /Array\.from\(\{ length: Math\.min\(MAX_PARALLEL_FAMILIARS, queue\.length\) \}, runLane\)/,
+  "Familiars work their own lanes side by side, bounded",
+);
+assert.match(
+  source,
+  /If the outcome is delivered[\s\S]*close it: status "done", lifecycle "completed"[\s\S]*obsolete, a duplicate, or no longer wanted, close it: lifecycle "cancelled"/,
+  "The prompt should tell the familiar when to close a task",
+);
+assert.match(
+  source,
+  /`Task id: \$\{card\.id\}`/,
+  "The prompt should name the task id so the familiar can reason about its own dependencies",
+);
+assert.match(
+  source,
+  /for \(let attempt = 0; attempt < 2 && !enrichment; attempt \+= 1\)/,
+  "Unparsable familiar output should be retried once before the task is skipped",
+);
+assert.match(
+  source,
+  /closed: CLOSED_LIFECYCLES\.has\(normalized\.lifecycle\)/,
+  "Done events should say whether the task was closed",
 );
 
 assert.doesNotMatch(

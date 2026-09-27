@@ -8,20 +8,17 @@ const source = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8")
 // The top-bar sparkle ran a whole enrichment pass and then said nothing —
 // success, no-op, and failure all looked identical ("loading, then back to the
 // start"). Every outcome now lands a toast.
+// The wording lives in enrich-tasks-summary.ts (tested there, #5629); the
+// workspace folds every streamed event into the tally and toasts its summary.
 assert.match(
   source,
-  /pushToast\(\s*total === 0\s*\? "No open tasks to enhance right now\."/,
-  "a run that found no tasks says so",
+  /tally = tallyEnrichTasksEvent\(tally, msg\);/,
+  "every streamed task event is counted",
 );
 assert.match(
   source,
-  /Open tasks already have steps — nothing to enhance\./,
-  "a run that skipped everything says so",
-);
-assert.match(
-  source,
-  /Enhanced \$\{enhanced\} task\$\{enhanced === 1 \? "" : "s"\} — open Tasks to review\./,
-  "a successful run states the count and where to look",
+  /pushToast\(enrichTasksSummary\(tally\)\);/,
+  "the run ends with a toast that accounts for every task",
 );
 assert.match(
   source,

@@ -5,9 +5,6 @@ import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
-  /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
-   *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
-  activeFamiliarId: string | null;
   /** Running-processes control (waveform trigger + popover), rendered by the
    *  workspace (it owns the sessions state and chat navigation) so this bar
    *  stays markup-thin. Hidden at zero by the control itself. */
@@ -28,7 +25,7 @@ type Props = {
 };
 
 const ENRICH_TASKS_TITLE =
-  "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+  "Enhance every open task: each assigned familiar reviews its tasks, then updates or closes them";
 const SEARCH_LABEL = "Search Cave";
 
 /**
@@ -49,7 +46,6 @@ const SEARCH_LABEL = "Search Cave";
  * selection lives in the chat sidebar's header switcher, not here.
  */
 export function FamiliarMenuBar({
-  activeFamiliarId,
   runningStatus,
   bell,
   onOpenSearch,
@@ -108,9 +104,9 @@ export function FamiliarMenuBar({
             type="button"
             className="menu-bar__task focus-ring"
             onClick={onEnrichTasks}
-            disabled={enrichingTasks || !activeFamiliarId}
-            aria-label={enrichingTasks ? `Enhancing tasks ${enrichLabel}` : activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
-            title={activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
+            disabled={enrichingTasks}
+            aria-label={enrichingTasks ? `Enhancing tasks ${enrichLabel}` : ENRICH_TASKS_TITLE}
+            title={ENRICH_TASKS_TITLE}
           >
             <Icon name="ph:sparkle" width={22} height={22} aria-hidden />
             {/* Live progress is information, not chrome — it stays visible

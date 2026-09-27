@@ -15,8 +15,8 @@ assert.doesNotMatch(
 
 assert.match(
   workspace,
-  /const handleEnrichTasks = useCallback\(async \(\) => \{[\s\S]*if \(!activeId \|\| enrichingTasks\) return;[\s\S]*fetch\("\/api\/board\/enrich-steps", \{[\s\S]*body: JSON\.stringify\(\{ intent: "board-enrich-steps", familiarId: activeId \}\)/,
-  "Workspace should own the long-running enrich request and scope it to the selected familiar",
+  /const handleEnrichTasks = useCallback\(async \(\) => \{[\s\S]*if \(enrichingTasks\) return;[\s\S]*fetch\("\/api\/board\/enrich-steps", \{[\s\S]*body: JSON\.stringify\(\{ intent: "board-enrich-steps", scope: "all" \}\)/,
+  "Workspace should own the long-running enrich request and sweep every open task (#5629)",
 );
 
 assert.match(
@@ -37,20 +37,19 @@ assert.match(
   "Desktop menu bar should accept the enrich action and progress state",
 );
 
-// The trailing "…next to Tasks" clause is gone with the Tasks button itself
-// (cave-l9slw). What this assertion was actually protecting — Enhance is
-// conditional, wired to onEnrichTasks, and DISABLED without a selected familiar
-// — is unchanged and is what remains pinned here.
+// Enhance is conditional, wired to onEnrichTasks, and disabled only while a run
+// is in flight. It no longer needs a selected familiar: every open task is
+// reviewed by its own assigned familiar (#5629).
 assert.match(
   menuBar,
-  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}/,
-  "Desktop menu bar should render Enhance and disable it without a selected familiar",
+  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}/,
+  "Desktop menu bar should render Enhance and disable it only while running",
 );
 
 assert.match(
   menuBar,
-  /Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats/,
-  "Desktop enrich affordance should explain that the assigned familiar performs full task enhancement",
+  /Enhance every open task: each assigned familiar reviews its tasks, then updates or closes them/,
+  "Desktop enrich affordance should explain that each assigned familiar reviews, updates, or closes its tasks",
 );
 
 assert.match(
@@ -61,13 +60,13 @@ assert.match(
 
 assert.match(
   topBar,
-  /onEnrichTasks \? \(\s*<PopoverItem\s*icon="ph:sparkle"\s*disabled=\{enrichingTasks \|\| !activeFamiliar\}\s*onSelect=\{onEnrichTasks\}/,
-  "Mobile top bar should surface Enrich as the first overflow-menu action, disabled while running or unscoped",
+  /onEnrichTasks \? \(\s*<PopoverItem\s*icon="ph:sparkle"\s*disabled=\{enrichingTasks\}\s*onSelect=\{onEnrichTasks\}/,
+  "Mobile top bar should surface Enrich as the first overflow-menu action, disabled while running",
 );
 
 assert.match(
   topBar,
-  /Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats/,
+  /Enhance every open task: each assigned familiar reviews its tasks, then updates or closes them/,
   "Mobile enrich affordance should expose the same full task enhancement tooltip",
 );
 

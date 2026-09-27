@@ -69,7 +69,14 @@ type TaskEnrichment = {
 type EnrichRequestBody = {
   intent?: unknown;
   familiarId?: unknown;
+  /** `"all"` sweeps every open task on the Board, each through its own
+   *  assigned familiar. Without it the run covers one familiar's tasks. */
+  scope?: unknown;
 };
+
+const SAFE_FAMILIAR_ID = /^[a-z0-9_-]+$/i;
+const CLOSED_LIFECYCLES = new Set<CardLifecycle>(["completed", "cancelled"]);
+const MAX_PARALLEL_FAMILIARS = 3;
 
 function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus): CardStatus {
   if (lifecycle === "dispatched" || lifecycle === "running") return "running";
@@ -204,7 +211,7 @@ function reachableGitHubContext(card: Card): string {
   ].join("\n");
 }
 
-function enrichPrompt(card: Card, board: Card[]): string {
+function enrichPrompt(card: Card, board: Card[], today: string, retry = false): string {
   const labels = card.labels?.length
     ? `\nLabels: ${card.labels.join(", ")}`
     : "";
@@ -225,6 +232,8 @@ function enrichPrompt(card: Card, board: Card[]): string {
     : "";
   return [
     `You are the assigned familiar refreshing your board task so it reflects the current best plan, ownership, links, schedule, and state.`,
+    `Today: ${today}`,
+    `Task id: ${card.id}`,
     `Task: ${card.title.trim()}${labels}${notes}`,
     `Current status: ${card.status}`,
     `Current lifecycle: ${card.lifecycle}`,
@@ -241,11 +250,14 @@ function enrichPrompt(card: Card, board: Card[]): string {
     `Simplify the description into concise task notes without losing constraints.`,
     `Create or update subtasks for the assigned task; include 3-8 short action steps.`,
     `Set startDate and endDate when the task has clear timing or sequence; use null only to clear a wrong date.`,
-    `Update status, lifecycle, priority, needsHuman, and lifecycleReason to match the current reality.`,
+    `Decide whether this task is still open. Check the linked GitHub items, chats, and workspace when they can confirm its state; do not do the task's work in this run.`,
+    `If the outcome is delivered (the linked PR merged, the issue closed, or the work otherwise finished), close it: status "done", lifecycle "completed".`,
+    `If it is obsolete, a duplicate, or no longer wanted, close it: lifecycle "cancelled".`,
+    `Otherwise keep it open and set status, lifecycle, priority, and needsHuman to where the work actually stands.`,
+    `Always state the reason for the status you chose in lifecycleReason.`,
     `Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats that belong on this task.`,
     `Preserve useful existing links and GitHub/chat assignments unless they are clearly wrong.`,
     `Each subtask must be a short, actionable sentence under 80 characters.`,
-    `Use status, lifecycle, priority, needsHuman, and lifecycleReason to reflect the task's current reality.`,
     `Dependencies: propose only what actually blocks this task. A task dependency must name a live board task id from the list above; a github dependency must use a repo#number from the reachable items; a service dependency must use a known svc: reference. Never invent task ids, issue numbers, or services.`,
     `primaryBlockerId must be the id of one of your proposed dependencies or the task's existing dependencies, or null.`,
     `primaryBlockerPinned: true only to freeze the operator's chosen primary blocker.`,
@@ -253,18 +265,21 @@ function enrichPrompt(card: Card, board: Card[]): string {
     `confidence: your self-reported 0..1 confidence. It only ranks suggestions; it never authorizes a write.`,
     `Never propose replacing a human-authored dependency or next step; propose a reviewable change instead.`,
     `Return no explanation, no markdown, and no extra text.`,
+    ...(retry ? [`Your previous response could not be parsed. Return only the JSON object now.`] : []),
   ].join("\n");
 }
 
-async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string } | null> {
+/** `familiarId: null` means every open task, whoever it is assigned to. */
+async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string | null } | null> {
   if (req.headers.get("x-coven-cave-intent") !== "board-enrich-steps")
     return null;
   try {
     const body = (await req.json()) as EnrichRequestBody;
-    if (body.intent !== ENRICH_INTENT || typeof body.familiarId !== "string")
-      return null;
+    if (body.intent !== ENRICH_INTENT) return null;
+    if (body.scope === "all") return { familiarId: null };
+    if (typeof body.familiarId !== "string") return null;
     const familiarId = body.familiarId.trim();
-    return /^[a-z0-9_-]+$/i.test(familiarId) ? { familiarId } : null;
+    return SAFE_FAMILIAR_ID.test(familiarId) ? { familiarId } : null;
   } catch {
     return null;
   }
@@ -535,14 +550,17 @@ export async function POST(req: Request) {
   const [board, config] = await Promise.all([loadBoard(), loadConfig()]);
   const { familiarId } = body;
 
-  // Only enrich active tasks assigned to the selected familiar. Existing steps
-  // are included so the familiar can refresh stale plans and task metadata.
-  const SKIP_LIFECYCLE = new Set(["completed", "cancelled"]);
+  // Every open task is considered, and each is reviewed by its own assigned
+  // familiar. Existing steps are included so the familiar can refresh stale
+  // plans and task metadata. Unassigned tasks have no one to review them; they
+  // are still counted and reported so the run never silently drops a task.
+  const SKIP_LIFECYCLE = CLOSED_LIFECYCLES;
   const candidates = board.cards.filter(
     (c) =>
-      c.familiarId === familiarId &&
+      (familiarId === null || c.familiarId === familiarId) &&
       !SKIP_LIFECYCLE.has(c.lifecycle),
   );
+  const today = new Date().toISOString().slice(0, 10);
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -559,9 +577,22 @@ export async function POST(req: Request) {
 
       push({ kind: "start", total: candidates.length });
 
+      // Every open task is accounted for. Unassigned tasks have no familiar to
+      // review them and are reported up front; the rest are grouped into one
+      // lane per assigned familiar.
+      const lanes = new Map<string, Card[]>();
       for (const card of candidates) {
-        if (req.signal.aborted) break;
-        const familiarId = card.familiarId!;
+        const owner = card.familiarId;
+        if (!owner || !SAFE_FAMILIAR_ID.test(owner)) {
+          push({ kind: "skip", cardId: card.id, reason: "unassigned" });
+          continue;
+        }
+        const lane = lanes.get(owner);
+        if (lane) lane.push(card);
+        else lanes.set(owner, [card]);
+      }
+
+      const reviewCard = async (card: Card, familiarId: string): Promise<void> => {
         const binding = bindingFor(config, familiarId);
 
         // Only bundled, reviewed Coven harnesses may run headlessly through
@@ -573,7 +604,7 @@ export async function POST(req: Request) {
             cardId: card.id,
             reason: `harness:${binding.harness}`,
           });
-          continue;
+          return;
         }
 
         push({ kind: "progress", cardId: card.id, title: card.title });
@@ -583,24 +614,30 @@ export async function POST(req: Request) {
           : card;
 
         const title = `Refresh task: ${card.title.trim().slice(0, 80) || card.id}`;
-        const args: string[] = [
-          "run",
-          binding.harness,
-          "--stream-json",
-          "--archive",
-          "--title",
-          title,
-          "--labels",
-          "board,enrich-steps",
-        ];
-        if (/^[a-z0-9_-]+$/i.test(familiarId))
-          args.push("--familiar", familiarId);
-        args.push("--", enrichPrompt(cardForPrompt, board.cards));
-
         const workspace = await resolveFamiliarWorkspace(familiarId);
-        const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
-        if (req.signal.aborted) break;
-        const enrichment = parseTaskEnrichment(raw);
+        // One retry for unparsable output: a task the familiar never managed to
+        // report on is a task that was not reviewed.
+        let enrichment: TaskEnrichment | null = null;
+        for (let attempt = 0; attempt < 2 && !enrichment; attempt += 1) {
+          if (req.signal.aborted) break;
+          const args: string[] = [
+            "run",
+            binding.harness,
+            "--stream-json",
+            "--archive",
+            "--title",
+            title,
+            "--labels",
+            "board,enrich-steps",
+            "--familiar",
+            familiarId,
+            "--",
+            enrichPrompt(cardForPrompt, board.cards, today, attempt === 1),
+          ];
+          const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
+          enrichment = parseTaskEnrichment(raw);
+        }
+        if (req.signal.aborted) return;
         const now = new Date().toISOString();
 
         if (!enrichment) {
@@ -611,7 +648,7 @@ export async function POST(req: Request) {
             normalized.lifecycle === card.lifecycle
           ) {
             push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
-            continue;
+            return;
           }
           let updated;
           try {
@@ -638,16 +675,21 @@ export async function POST(req: Request) {
                 reason: "orchestration_invalid",
                 errors: error.errors,
               });
-              continue;
+              return;
             }
             throw error;
           }
           if (!updated) {
             push({ kind: "skip", cardId: card.id, reason: "card_missing" });
-            continue;
+            return;
           }
-          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
-          continue;
+          push({
+            kind: "done",
+            cardId: card.id,
+            count: normalized.steps.length,
+            closed: CLOSED_LIFECYCLES.has(normalized.lifecycle),
+          });
+          return;
         }
 
         const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
@@ -734,13 +776,13 @@ export async function POST(req: Request) {
                 errors: error.errors,
               });
             }
-            continue;
+            return;
           }
           throw error;
         }
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
-          continue;
+          return;
         }
         if (hasOrchestration && gates && proposalRecord) {
           push({
@@ -752,9 +794,36 @@ export async function POST(req: Request) {
             proposalId: proposalRecord.id,
           });
         }
-        push({ kind: "done", cardId: card.id, count: normalized.steps.length });
+        push({
+          kind: "done",
+          cardId: card.id,
+          count: normalized.steps.length,
+          closed: CLOSED_LIFECYCLES.has(normalized.lifecycle),
+        });
+      };
 
-      }
+      // Each familiar works through its own tasks in order, and up to
+      // MAX_PARALLEL_FAMILIARS familiars run side by side, so a large Board
+      // doesn't take one familiar's turn per task end to end. Board writes are
+      // serialized by withBoardLock. A failure on one task is reported and the
+      // lane moves on, so it never hides the tasks after it.
+      const queue = [...lanes.entries()];
+      const runLane = async () => {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          const [familiarId, lane] = next;
+          for (const card of lane) {
+            if (req.signal.aborted) return;
+            try {
+              await reviewCard(card, familiarId);
+            } catch {
+              push({ kind: "skip", cardId: card.id, reason: "error" });
+            }
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(MAX_PARALLEL_FAMILIARS, queue.length) }, runLane),
+      );
 
       push({ kind: "complete" });
       try {

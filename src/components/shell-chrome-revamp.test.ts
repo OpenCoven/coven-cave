@@ -100,10 +100,13 @@ assert.doesNotMatch(
 // lines is explanatory and will grow, and a `[\s\S]{0,N}` gap that has to be
 // widened every time someone adds a comment is a test that fails for the wrong
 // reason.
-assert.match(
+// The menu bar no longer takes the active familiar: Enhance sweeps every open
+// task through each task's own assigned familiar (#5629), so nothing there is
+// scoped to the selection.
+assert.doesNotMatch(
   workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}/,
-  "the menu bar receives the active familiar id",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=/,
+  "the menu bar is not scoped to the active familiar",
 );
 assert.match(
   workspace,
