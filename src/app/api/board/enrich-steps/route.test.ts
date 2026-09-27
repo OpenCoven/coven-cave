@@ -325,16 +325,29 @@ assert.match(
 // and both write paths route it through the Board's cancel transition.
 assert.match(
   source,
-  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed"\),/,
-  "Only a merged PR or a closed issue completes a task",
+  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed" && !notPlanned\(item\)\),/,
+  "Only a merged PR or an issue closed as done completes a task",
 );
 assert.match(
   source,
-  /const abandoned = tracked\.find\(\(item\) => item\.kind === "pr" && item\.state === "closed"\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*GitHub PR closed without merging/,
+  /const abandoned = tracked\.find\(\s*\(item\) => \(item\.kind === "pr" && item\.state === "closed"\) \|\| notPlanned\(item\),\s*\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*PR closed without merging" : "issue closed as not planned"/,
   "A PR closed without merging cancels the task when nothing linked is still open",
 );
 assert.equal(
   (source.match(/finishLifecycleTransition\(card, transitionTo, normalized\.lifecycleReason, /g) ?? []).length,
   2,
   "Both the parsed and unparsed write paths finish through the cancel transition",
+);
+
+// The issue close reason is read from GitHub and kept on the link, so an issue
+// closed as not planned can be told apart from one closed as done (#5635).
+assert.match(
+  source,
+  /typeof data\.state_reason === "string" \? \{ stateReason: data\.state_reason \} : \{\}/,
+  "The refresh records GitHub's issue close reason",
+);
+assert.match(
+  source,
+  /item\.kind === "issue" && item\.state === "closed" && item\.stateReason === "not_planned"/,
+  "An issue closed as not planned is abandoned, not landed",
 );

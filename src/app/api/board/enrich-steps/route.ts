@@ -479,6 +479,7 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
         kind: pull ? "pr" : item.kind,
         title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : item.title,
         state: state || item.state,
+        ...(typeof data.state_reason === "string" ? { stateReason: data.state_reason } : {}),
         labels: labelsFromGitHub(data.labels),
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : item.updatedAt,
         url: typeof data.html_url === "string" ? data.html_url : item.url,
@@ -497,10 +498,11 @@ function githubTarget(item: CardGitHubLink): string {
 /**
  * The task's end state implied by its linked GitHub items, or null.
  *
- * A merged PR or a closed issue means the work landed: the task completes.
- * A PR closed without merging means it did not (#5635): the task is cancelled,
- * but only when nothing linked landed and no linked issue or PR is still open,
- * since an open one is usually the replacement.
+ * A merged PR or an issue closed as done means the work landed: the task
+ * completes. A PR closed without merging, or an issue closed as not planned,
+ * means it did not (#5635): the task is cancelled, but only when nothing linked
+ * landed and no linked issue or PR is still open, since an open one is usually
+ * the replacement. An issue closed with no recorded reason counts as done.
  */
 function terminalPatchFromGitHub(
   card: Card,
@@ -508,8 +510,10 @@ function terminalPatchFromGitHub(
   now: string,
 ): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
   const tracked = github.filter((item) => item.kind === "issue" || item.kind === "pr");
+  const notPlanned = (item: CardGitHubLink) =>
+    item.kind === "issue" && item.state === "closed" && item.stateReason === "not_planned";
   const landed = tracked.find(
-    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed"),
+    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed" && !notPlanned(item)),
   );
   if (landed) {
     const kind = landed.kind === "pr" ? "PR merged" : "issue closed";
@@ -521,7 +525,9 @@ function terminalPatchFromGitHub(
       lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
     };
   }
-  const abandoned = tracked.find((item) => item.kind === "pr" && item.state === "closed");
+  const abandoned = tracked.find(
+    (item) => (item.kind === "pr" && item.state === "closed") || notPlanned(item),
+  );
   if (!abandoned || tracked.some((item) => item.state === "open")) return null;
   // Cancelled is reached through transitionCard, which records the blocker
   // the Board requires (see lifecycleTransitionTarget).
@@ -529,7 +535,7 @@ function terminalPatchFromGitHub(
     status: "blocked",
     lifecycle: "cancelled",
     needsHuman: false,
-    lifecycleReason: `GitHub PR closed without merging: ${githubTarget(abandoned)}`.slice(0, 240),
+    lifecycleReason: `GitHub ${abandoned.kind === "pr" ? "PR closed without merging" : "issue closed as not planned"}: ${githubTarget(abandoned)}`.slice(0, 240),
     lifecycleAt: card.lifecycle === "cancelled" ? card.lifecycleAt : now,
   };
 }
@@ -576,8 +582,8 @@ function applyGitHubState(
 }
 
 function githubStateChanged(previous: CardGitHubLink[], next: CardGitHubLink[]): boolean {
-  return JSON.stringify(previous.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt }))) !==
-    JSON.stringify(next.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt })));
+  return JSON.stringify(previous.map(({ url, state, stateReason, title, labels, updatedAt }) => ({ url, state, stateReason, title, labels, updatedAt }))) !==
+    JSON.stringify(next.map(({ url, state, stateReason, title, labels, updatedAt }) => ({ url, state, stateReason, title, labels, updatedAt })));
 }
 
 export async function POST(req: Request) {
