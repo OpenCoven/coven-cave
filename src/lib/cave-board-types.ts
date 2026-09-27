@@ -141,6 +141,8 @@ export type CardGitHubLink = {
   title: string;
   url: string;
   state?: string;
+  /** GitHub's close reason for an issue ("completed", "not_planned", …). */
+  stateReason?: string;
   labels: string[];
   source?: "assigned" | "manual" | "legacy-link";
   savedAt?: string;
