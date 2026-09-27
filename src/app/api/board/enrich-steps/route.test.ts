@@ -104,7 +104,7 @@ assert.match(
 // familiar is reported rather than dropped.
 assert.match(
   source,
-  /if \(body\.scope === "all"\) return \{ familiarId: null \};/,
+  /if \(body\.scope === "all"\) return \{ familiarId: null, cardIds \};/,
   "Enrich route should accept an all-tasks scope",
 );
 assert.match(
@@ -144,8 +144,8 @@ assert.match(
 );
 assert.match(
   source,
-  /closed: CLOSED_LIFECYCLES\.has\(normalized\.lifecycle\)/,
-  "Done events should say whether the task was closed",
+  /closed: CLOSED_LIFECYCLES\.has\(final\.lifecycle\)/,
+  "Done events should say whether the task actually ended closed",
 );
 
 assert.doesNotMatch(
@@ -290,4 +290,32 @@ assert.match(
   source,
   /TASK_ENRICHMENT_KEYS\.some\(\(key\) => Object\.prototype\.hasOwnProperty\.call\(parsed, key\)\)/,
   "An object with no task keys is not treated as a review",
+);
+
+// A structurally rejected dependency/next-step suggestion is recorded as a
+// blocked proposal, but the rest of the familiar's review still lands and the
+// task is reported as done, never left unaccounted (#5629).
+assert.match(
+  source,
+  /recorded = await updateCard\(card\.id, \{ \.\.\.taskPatch, agenticEnhance \}, \{ automated: true \}\);[\s\S]*status: card\.status,\s*lifecycle: card\.lifecycle,[\s\S]*needsHuman: true,/,
+  "A blocked orchestration suggestion must not discard the task review; a status that needed it is held and flagged",
+);
+assert.match(
+  source,
+  /proposalId: blocked\.id,\s*\}\);\s*push\(\{\s*kind: "done",/,
+  "A task whose suggestion was blocked is still reported as done",
+);
+assert.match(
+  source,
+  /\(cardIds === null \|\| cardIds\.has\(c\.id\)\)/,
+  "A run can be narrowed to named tasks",
+);
+
+// Cancel/fail decisions go through the Board's lifecycle transition, which
+// records the execution blocker a "blocked" status needs; an illegal move is
+// held and flagged for a human instead of written as a bare status (#5629).
+assert.match(
+  source,
+  /return await transitionCard\(card\.id, \{ to: transitionTo, reason: normalized\.lifecycleReason \}\) \?\? written;\s*\} catch \{[\s\S]*updateCard\(card\.id, \{ needsHuman: true \}/,
+  "A familiar's cancel goes through transitionCard, falling back to a human flag",
 );

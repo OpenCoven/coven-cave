@@ -1,6 +1,7 @@
 import {
   loadBoard,
   OrchestrationValidationError,
+  transitionCard,
   updateCard,
 } from "@/lib/cave-board";
 import {
@@ -73,6 +74,8 @@ type EnrichRequestBody = {
   /** `"all"` sweeps every open task on the Board, each through its own
    *  assigned familiar. Without it the run covers one familiar's tasks. */
   scope?: unknown;
+  /** Optional: only these task ids, still each through its own familiar. */
+  cardIds?: unknown;
 };
 
 const SAFE_FAMILIAR_ID = /^[a-z0-9_-]+$/i;
@@ -270,17 +273,28 @@ function enrichPrompt(card: Card, board: Card[], today: string, retry = false): 
   ].join("\n");
 }
 
+type EnrichScope = { familiarId: string | null; cardIds: Set<string> | null };
+
+function cardIdsFrom(value: unknown): Set<string> | null | undefined {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 256) return undefined;
+  if (!value.every((id) => typeof id === "string" && id.length > 0 && id.length <= 160)) return undefined;
+  return new Set(value as string[]);
+}
+
 /** `familiarId: null` means every open task, whoever it is assigned to. */
-async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string | null } | null> {
+async function readEnrichRequestBody(req: Request): Promise<EnrichScope | null> {
   if (req.headers.get("x-coven-cave-intent") !== "board-enrich-steps")
     return null;
   try {
     const body = (await req.json()) as EnrichRequestBody;
     if (body.intent !== ENRICH_INTENT) return null;
-    if (body.scope === "all") return { familiarId: null };
+    const cardIds = cardIdsFrom(body.cardIds);
+    if (cardIds === undefined) return null;
+    if (body.scope === "all") return { familiarId: null, cardIds };
     if (typeof body.familiarId !== "string") return null;
     const familiarId = body.familiarId.trim();
-    return SAFE_FAMILIAR_ID.test(familiarId) ? { familiarId } : null;
+    return SAFE_FAMILIAR_ID.test(familiarId) ? { familiarId, cardIds } : null;
   } catch {
     return null;
   }
@@ -532,7 +546,7 @@ export async function POST(req: Request) {
   }
 
   const [board, config] = await Promise.all([loadBoard(), loadConfig()]);
-  const { familiarId } = body;
+  const { familiarId, cardIds } = body;
 
   // Every open task is considered, and each is reviewed by its own assigned
   // familiar. Existing steps are included so the familiar can refresh stale
@@ -542,6 +556,7 @@ export async function POST(req: Request) {
   const candidates = board.cards.filter(
     (c) =>
       (familiarId === null || c.familiarId === familiarId) &&
+      (cardIds === null || cardIds.has(c.id)) &&
       !SKIP_LIFECYCLE.has(c.lifecycle),
   );
   const today = new Date().toISOString().slice(0, 10);
@@ -694,22 +709,43 @@ export async function POST(req: Request) {
           gates = assessEnrichmentGates(card, board.cards, orchestration, candidate);
           proposalRecord = buildEnrichmentProposalRecord(card, board.cards, orchestration, gates, now);
         }
+        // Cancelling or failing a task goes through the Board's own lifecycle
+        // transition, which records the execution blocker a "blocked" status
+        // requires. A plain patch to "cancelled" is rejected by the
+        // orchestration validator, so a familiar could never retire a task.
+        const transitionTo = (normalized.lifecycle === "cancelled" || normalized.lifecycle === "failed")
+          && normalized.lifecycle !== card.lifecycle
+          ? normalized.lifecycle
+          : null;
+        const taskPatch = {
+          notes: normalized.notes,
+          steps: normalized.steps,
+          status: transitionTo ? card.status : normalized.status,
+          lifecycle: transitionTo ? card.lifecycle : normalized.lifecycle,
+          priority: normalized.priority,
+          startDate: normalized.startDate,
+          endDate: normalized.endDate,
+          links: normalized.links,
+          github: normalized.github,
+          sessionId: normalized.sessionId,
+          needsHuman: transitionTo ? card.needsHuman : normalized.needsHuman,
+          lifecycleReason: normalized.lifecycleReason,
+          lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
+        };
+        const finishTransition = async (written: Card): Promise<Card> => {
+          if (!transitionTo) return written;
+          try {
+            return await transitionCard(card.id, { to: transitionTo, reason: normalized.lifecycleReason }) ?? written;
+          } catch {
+            // Not a legal move from the current lifecycle (review → cancelled,
+            // say). Leave the task where it is and ask a human to decide.
+            return await updateCard(card.id, { needsHuman: true }, { automated: true }) ?? written;
+          }
+        };
         let updated;
         try {
           updated = await updateCard(card.id, {
-            notes: normalized.notes,
-            steps: normalized.steps,
-            status: normalized.status,
-            lifecycle: normalized.lifecycle,
-            priority: normalized.priority,
-            startDate: normalized.startDate,
-            endDate: normalized.endDate,
-            links: normalized.links,
-            github: normalized.github,
-            sessionId: normalized.sessionId,
-            needsHuman: normalized.needsHuman,
-            lifecycleReason: normalized.lifecycleReason,
-            lifecycleAt: normalized.lifecycleAt,
+            ...taskPatch,
             // Only a suggestion that passed every gate is folded into the write;
             // the review queue still records what was proposed and why.
             ...(gates && gates.gatesFailed.length === 0 ? enrichmentPatch(orchestration) : {}),
@@ -731,13 +767,32 @@ export async function POST(req: Request) {
               // Defense in depth: the mutator re-ran the same validator and
               // rejected the write (acceptance test 3 parity). Persist the
               // suggestion as a gate-blocked review proposal so the operator
-              // sees exactly why it could not auto-apply.
+              // sees exactly why it could not auto-apply. The rest of the
+              // familiar's review (status, notes, steps, dates) still lands:
+              // a bad dependency suggestion must not discard it (#5629).
               const blocked = blockedRecordFromWriteErrors(card, board.cards, orchestration, error.errors, now);
+              const agenticEnhance = appendEnrichmentProposal(card.agenticEnhance, blocked, "blocked", "enhance", now);
               try {
-                const recorded = await updateCard(card.id, {
-                  agenticEnhance: appendEnrichmentProposal(card.agenticEnhance, blocked, "blocked", "enhance", now),
-                }, { automated: true });
+                let recorded;
+                try {
+                  recorded = await updateCard(card.id, { ...taskPatch, agenticEnhance }, { automated: true });
+                } catch (retryError) {
+                  if (!(retryError instanceof OrchestrationValidationError)) throw retryError;
+                  // The status itself depended on the rejected suggestion (a
+                  // "blocked" task must name its blocker). Keep the review but
+                  // hold the task where it was, flagged for a human, with the
+                  // familiar's reason.
+                  recorded = await updateCard(card.id, {
+                    ...taskPatch,
+                    status: card.status,
+                    lifecycle: card.lifecycle,
+                    lifecycleAt: card.lifecycleAt,
+                    needsHuman: true,
+                    agenticEnhance,
+                  }, { automated: true });
+                }
                 if (recorded) {
+                  const final = await finishTransition(recorded);
                   push({
                     kind: "orchestration",
                     cardId: card.id,
@@ -745,6 +800,12 @@ export async function POST(req: Request) {
                     gatesPassed: [],
                     gatesFailed: ["structural"],
                     proposalId: blocked.id,
+                  });
+                  push({
+                    kind: "done",
+                    cardId: card.id,
+                    count: normalized.steps.length,
+                    closed: CLOSED_LIFECYCLES.has(final.lifecycle),
                   });
                 } else {
                   push({ kind: "skip", cardId: card.id, reason: "card_missing" });
@@ -768,6 +829,7 @@ export async function POST(req: Request) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           return;
         }
+        const final = await finishTransition(updated);
         if (hasOrchestration && gates && proposalRecord) {
           push({
             kind: "orchestration",
@@ -782,7 +844,7 @@ export async function POST(req: Request) {
           kind: "done",
           cardId: card.id,
           count: normalized.steps.length,
-          closed: CLOSED_LIFECYCLES.has(normalized.lifecycle),
+          closed: CLOSED_LIFECYCLES.has(final.lifecycle),
         });
       };
 
