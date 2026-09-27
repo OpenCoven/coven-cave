@@ -5,7 +5,9 @@ import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   conversationFileRevision,
+  hasInlineImages,
   isSafeConversationSessionId,
+  migrateConversationInlineImages,
   deleteConversation,
   loadConversation,
   saveConversation,
@@ -515,12 +517,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const revision = await conversationFileRevision(id);
   if (revision) {
     const context = await linkedContextForSession(id);
-    const etag = conversationEtag(revision.digest, recentToolOutputsOnly, context);
-    const headers = { ETag: etag, "Cache-Control": "no-store" };
+    let etag = conversationEtag(revision.digest, recentToolOutputsOnly, context);
     if (ifNoneMatchIncludes(req.headers.get("if-none-match"), etag)) {
-      return new NextResponse(null, { status: 304, headers });
+      return new NextResponse(null, { status: 304, headers: { ETag: etag, "Cache-Control": "no-store" } });
     }
-    const conv = await revision.load();
+    let conv = await revision.load();
+    // Pasted images from before #5587 move to the attachment store on first
+    // open (#5611) instead of shipping as base64 on every one (11.4 MB of a
+    // 14.7 MB payload measured). A failed or partial move serves what is there.
+    if (conv && hasInlineImages(conv)) {
+      const moved = await migrateConversationInlineImages(id).catch(() => 0);
+      const migrated = moved > 0 ? await conversationFileRevision(id) : null;
+      const migratedConv = migrated ? await migrated.load() : null;
+      if (migrated && migratedConv) {
+        etag = conversationEtag(migrated.digest, recentToolOutputsOnly, context);
+        conv = migratedConv;
+      }
+    }
+    const headers = { ETag: etag, "Cache-Control": "no-store" };
     if (conv) {
       return NextResponse.json(
         {
