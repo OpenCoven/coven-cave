@@ -106,7 +106,11 @@ SIMCTL_CHILD_CAVE_PERFORMANCE_INSTRUMENTATION=1 \
 ```
 
 Capture the `ai.opencoven.cave` / Points of Interest signposts with Instruments'
-Points of Interest template.
+Points of Interest template. On a physical device, set the template's recording
+mode to **deferred**. In immediate mode the device's log buffer outruns the
+transfer, because every subsystem's Points of Interest traffic shares it, so a
+multi-minute capture keeps only its last minute or so. A 20-cycle warm capture
+kept app spans from only its final 48 seconds this way.
 
 ## Budget status
 
@@ -249,9 +253,13 @@ to record spans in a Release build.
 
 The first conversation, **Rich streaming fixture**, contains Markdown and a
 synthetic text update every 50 ms while the scene is active. Updates use the
-existing in-place transcript mutation path. The response repeats every 200
-updates, bounding message size instead of growing throughout a capture. Each
-foreground interval starts the sequence again; backgrounding cancels the loop.
+existing in-place transcript mutation path. The response grows for 200 updates
+(about ten seconds), then holds that length while its final character keeps
+alternating, so rendering continues at the same cadence and message size stays
+bounded. It never snaps back to the opening text: no live reply shrinks, and a
+multi-thousand-point shrink leaves the transcript blank when it is not following
+the latest message (#5613). Each foreground interval starts the sequence again;
+backgrounding cancels the loop.
 This exercises rendering and publication, not network ingestion or server work.
 
 The current shell has Chats and Settings, with inline chat search.

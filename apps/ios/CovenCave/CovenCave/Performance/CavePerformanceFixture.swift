@@ -214,7 +214,8 @@ enum CavePerformanceFixture {
         app.connectionState = .connected
     }
 
-    /// Repeat a ten-second synthetic response at the coalesced UI cadence.
+    /// Stream a ten-second synthetic response at the coalesced UI cadence, then
+    /// keep revising its final token in place so rendering never goes idle.
     /// This measures transcript/render work; it does not simulate network cost.
     static func runStreaming(in app: AppModel) async {
         guard app.isPerformanceFixture,
@@ -226,16 +227,25 @@ enum CavePerformanceFixture {
             catch { return }
             guard !Task.isCancelled else { return }
             applyStreamingFrame(frame, to: thread)
-            frame = (frame + 1) % streamingFrameCount
+            // Past full length, alternate between the two same-length revisions.
+            frame = frame < streamingFrameCount ? frame + 1 : streamingFrameCount + (frame + 1 - streamingFrameCount) % 2
         }
     }
 
     static func applyStreamingFrame(_ frame: Int, to thread: ChatThread) {
         guard thread.id == identifier("chat", 0) else { return }
-        let count = ((max(0, frame) % streamingFrameCount) + 1) * streamingToken.count
+        let grown = min(max(0, frame), streamingFrameCount - 1) + 1
+        var text = richMarkdown + "\n\n" + streamingResponse.prefix(grown * streamingToken.count)
+        if frame >= streamingFrameCount {
+            // A live reply only grows. Snapping back to the opening text is a
+            // multi-thousand-point shrink that left the transcript blank when it
+            // was not following the latest message (#5613), so full length is
+            // held and only the final character alternates.
+            text += frame.isMultiple(of: 2) ? "·" : "•"
+        }
         // Live replies append without touching `updatedAt`; `updateText`
         // would re-sort and rebuild the whole Chats list on every frame.
-        thread.replaceStreamingText(identifier("message", 0), richMarkdown + "\n\n" + streamingResponse.prefix(count))
+        thread.replaceStreamingText(identifier("message", 0), text)
     }
 
     private static func identifier(_ kind: String, _ index: Int) -> String {

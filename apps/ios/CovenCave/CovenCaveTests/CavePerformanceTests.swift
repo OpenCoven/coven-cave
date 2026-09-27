@@ -504,8 +504,22 @@ final class CavePerformanceTests: XCTestCase {
             return XCTFail("Streaming fixture must update the rendered transcript")
         }
         XCTAssertEqual(rendered.text, thread.messages[0].text)
+        let full = thread.messages[0].text
+        // Past full length the reply keeps changing without ever shrinking:
+        // a snap back to the opening text left the transcript blank (#5613).
+        var previous = initial.count
+        for frame in 0...205 {
+            CavePerformanceFixture.applyStreamingFrame(frame, to: thread)
+            XCTAssertGreaterThanOrEqual(thread.messages[0].text.count, previous, "frame \(frame) shrank the reply")
+            previous = thread.messages[0].text.count
+        }
         CavePerformanceFixture.applyStreamingFrame(200, to: thread)
-        XCTAssertEqual(thread.messages[0].text, initial)
+        let even = thread.messages[0].text
+        CavePerformanceFixture.applyStreamingFrame(201, to: thread)
+        let odd = thread.messages[0].text
+        XCTAssertNotEqual(even, odd, "held frames still change, so rendering continues")
+        XCTAssertEqual(even.count, odd.count)
+        XCTAssertTrue(even.hasPrefix(full))
         CavePerformanceFixture.applyStreamingFrame(10, to: fixture.threads[1])
         XCTAssertEqual(fixture.threads[1].messages[0].text, otherText)
     }
