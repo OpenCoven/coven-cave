@@ -1886,6 +1886,7 @@ export const SUITES = {
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
+    "src/app/api/github/assigned/route-cache.test.ts",
     "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
     "src/app/api/github/diff/route.test.ts",
@@ -2121,6 +2122,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports the route (@/ aliases) with a stubbed GitHub fetch (#5641)
+  "src/app/api/github/assigned/route-cache.test.ts",
   "src/app/api/wikis/route.test.ts",
   // x-comms-model.ts imports "@/lib/x-publish-composer" as a runtime value —
   // deliberately, so the two X rooms share one definition of the 280 limit.
