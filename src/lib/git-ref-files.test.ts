@@ -53,7 +53,10 @@ function fixture(name, files) {
   assert.equal(readOriginUrl(dir, dir), "git@github.com:acme/repo.git");
 
   const none = fixture("config-none", { config: "[core]\n\tbare = false\n" });
-  assert.equal(readOriginUrl(none, none), null, "no origin is a definite none");
+  assert.equal(readOriginUrl(none, none), undefined, "a missing local origin may be inherited from global or system config");
+
+  const empty = fixture("config-empty", { config: '[remote "origin"]\n\turl =\n' });
+  assert.equal(readOriginUrl(empty, empty), null, "an explicitly empty local origin overrides inherited config");
 
   const multi = fixture("config-multi", {
     config: '[remote "origin"]\n\turl = https://a.example/one\n\turl = https://a.example/two\n',

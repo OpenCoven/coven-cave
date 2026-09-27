@@ -58,7 +58,9 @@ export function readOriginUrl(gitDir: string | null, commonDir: string | null): 
   const config = readText(path.join(commonDir, "config"));
   if (config == null) return undefined;
   let inOrigin = false;
-  let url: string | null = null;
+  // Absence here cannot exclude an origin inherited from global/system config.
+  // Keep an explicitly empty local value distinct: it overrides those scopes.
+  let url: string | null | undefined;
   for (const line of config.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (trimmed.startsWith("[")) {

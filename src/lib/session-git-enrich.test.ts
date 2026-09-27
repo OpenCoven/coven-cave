@@ -20,9 +20,11 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   enrichSessionsWithGitContext,
   parseShortstat,
@@ -32,7 +34,7 @@ import {
 } from "./session-git-enrich.ts";
 
 // Real directories: the lib stat-gates roots before probing git.
-const scratch = mkdtempSync(path.join(tmpdir(), "session-git-enrich-"));
+const scratch = realpathSync(mkdtempSync(path.join(tmpdir(), "session-git-enrich-")));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 function makeRoot(name) {
   const dir = path.join(scratch, name);
@@ -564,9 +566,10 @@ const REPO_SCRIPT = {
   }
 }
 
-// ── 15. worktrees of one repository share its origin and base probes (#5608)
+// ── 15. a plain shared origin needs no spawn; base probes are shared (#5608)
 {
   const common = makeRoot("shared-repo-common");
+  writeFileSync(path.join(common, "config"), '[remote "origin"]\n\turl = git@github.com:acme/repo-a.git\n');
   const roots = [makeRoot("shared-wt-a"), makeRoot("shared-wt-b"), makeRoot("shared-wt-c")];
   const { runner, calls } = fakeGit({
     ...REPO_SCRIPT,
@@ -580,10 +583,61 @@ const REPO_SCRIPT = {
     assert.deepEqual(row.diff, { additions: 10, deletions: 2 });
   }
   const count = (prefix) => calls.filter((c) => c.args.join(" ").startsWith(prefix)).length;
-  assert.equal(count("config --get remote.origin.url"), 1, "one origin probe per repository");
+  assert.equal(count("config --get remote.origin.url"), 0, "the plain shared origin is read without spawning git");
   assert.equal(count("symbolic-ref"), 1, "one base-ref probe per repository");
   assert.equal(count("diff"), 3, "diffs stay per worktree");
   assert.equal(count("rev-parse --is-inside-work-tree"), 3, "one location probe per root");
+}
+
+// Real Git resolves inherited config and worktree-dependent fallbacks. Keep
+// the fixture independent of the user's global/system Git configuration.
+{
+  const exec = promisify(execFile);
+  const globalConfig = path.join(scratch, "global.gitconfig");
+  writeFileSync(globalConfig, '[remote "origin"]\n\turl = git@github.com:acme/inherited.git\n');
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: "1" };
+  const run = async (root, ...args) => (await exec("git", args, { cwd: root, env })).stdout.trim();
+  const runner = async (root, args) => {
+    try { return (await run(root, ...args)) || null; } catch { return null; }
+  };
+  const root = makeRoot("config-real");
+  await run(root, "init", "-q", "-b", "main");
+  await run(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "fixture");
+  const sibling = path.join(scratch, "config-sibling");
+  await run(root, "worktree", "add", "-q", "-b", "sibling", sibling);
+  await run(root, "config", "extensions.worktreeConfig", "true");
+  await run(root, "config", "--worktree", "remote.origin.url", "git@github.com:acme/primary.git");
+  await run(sibling, "config", "--worktree", "remote.origin.url", "git@github.com:acme/sibling.git");
+  const noPrs = { get: () => null };
+  const noUrls = { get: () => null };
+  const enrich = (roots) => enrichSessionsWithGitContext(roots.map((dir, i) => session(`real-${i}`, dir)), runner, noPrs, noUrls);
+  for (const roots of [[root, sibling], [sibling, root]]) {
+    const rows = await enrich(roots);
+    for (const [i, dir] of roots.entries()) {
+      assert.equal(rows[i].git.repositoryUrl, dir === root ? "https://github.com/acme/primary" : "https://github.com/acme/sibling", "each worktree uses its own Git config regardless of row order");
+    }
+  }
+
+  // A conditional include can differ by worktree even without config.worktree.
+  await run(root, "config", "--worktree", "--unset", "remote.origin.url");
+  await run(sibling, "config", "--worktree", "--unset", "remote.origin.url");
+  await run(root, "config", "--unset", "extensions.worktreeConfig");
+  rmSync(path.join(root, ".git", "config.worktree"));
+  const siblingGitDir = path.resolve(sibling, await run(sibling, "rev-parse", "--git-dir"));
+  rmSync(path.join(siblingGitDir, "config.worktree"));
+  const include = path.join(scratch, "sibling.gitconfig");
+  writeFileSync(include, '[remote "origin"]\n\turl = git@github.com:acme/conditional.git\n');
+  await run(root, "config", `includeIf.gitdir:${siblingGitDir}.path`, include);
+  assert.equal(await run(sibling, "config", "--get", "remote.origin.url"), "git@github.com:acme/conditional.git");
+  const rows = await enrich([root, sibling]);
+  assert.equal(rows[0].git.repositoryUrl, "https://github.com/acme/inherited", "a missing local origin inherits the global value");
+  assert.equal(rows[1].git.repositoryUrl, "https://github.com/acme/conditional", "the sibling's includeIf overrides the inherited origin");
+
+  await run(root, "config", "--remove-section", `includeIf.gitdir:${siblingGitDir}`);
+  assert.equal((await enrich([root]))[0].git.repositoryUrl, "https://github.com/acme/inherited", "plain local config without an origin still asks Git");
+  await run(root, "config", "remote.origin.url", "");
+  assert.equal(await run(root, "config", "--get", "remote.origin.url"), "");
+  assert.equal((await enrich([root]))[0].git.repositoryUrl, undefined, "explicitly empty local config suppresses the inherited origin");
 }
 
 // ── 14. deadline: a slow root never holds the list (#5608) ─────────────────
