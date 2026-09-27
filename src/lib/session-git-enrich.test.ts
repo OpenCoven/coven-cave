@@ -50,8 +50,7 @@ function session(id, root) {
  */
 function fakeGit(script) {
   const calls = [];
-  const runner = async (root, args) => {
-    calls.push({ root, args });
+  const answer = async (root, args) => {
     const key = args.join(" ");
     for (const [prefix, value] of Object.entries(script)) {
       if (key.startsWith(prefix)) {
@@ -59,6 +58,21 @@ function fakeGit(script) {
       }
     }
     return null;
+  };
+  const runner = async (root, args) => {
+    calls.push({ root, args });
+    // Like real git, a multi-flag rev-parse prints one line per flag and fails
+    // as a whole when any flag fails (#5608), so scripts stay per-flag.
+    if (args[0] === "rev-parse" && args.length > 2 && args.slice(1).every((arg) => arg.startsWith("--"))) {
+      const lines = [];
+      for (const flag of args.slice(1)) {
+        const line = await answer(root, ["rev-parse", flag]);
+        if (line == null) return null;
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+    return answer(root, args);
   };
   return { runner, calls };
 }
@@ -144,7 +158,7 @@ const REPO_SCRIPT = {
   }
   const diffCalls = calls.filter((c) => c.args[0] === "diff");
   assert.equal(diffCalls.length, 1, "one diff per root, not per session");
-  const gateCalls = calls.filter((c) => c.args.join(" ") === "rev-parse --is-inside-work-tree");
+  const gateCalls = calls.filter((c) => c.args[0] === "rev-parse" && c.args.includes("--is-inside-work-tree"));
   assert.equal(gateCalls.length, 1, "one context probe set per root");
   const originCalls = calls.filter((c) => c.args.join(" ") === "config --get remote.origin.url");
   assert.equal(originCalls.length, 1, "one origin probe per root, not per session");
@@ -263,7 +277,9 @@ const REPO_SCRIPT = {
     }
     await new Promise((r) => setTimeout(r, 2));
     const key = args.join(" ");
-    if (key === "rev-parse --is-inside-work-tree") return "true";
+    if (key === "rev-parse --is-inside-work-tree --show-toplevel --git-dir --git-common-dir") {
+      return `true\n${root}\n.git\n.git`;
+    }
     if (key === "branch --show-current") return "main";
     if (key === "rev-parse --show-toplevel") return root;
     if (key.startsWith("diff")) {
@@ -545,6 +561,105 @@ const REPO_SCRIPT = {
     const spawned = calls.length;
     await enrichSessionsWithGitContext([session("i", root)], runner);
     assert.equal(calls.length, spawned * 2, "without a cache every compute re-reads");
+  }
+}
+
+// ── 15. worktrees of one repository share its origin and base probes (#5608)
+{
+  const common = makeRoot("shared-repo-common");
+  const roots = [makeRoot("shared-wt-a"), makeRoot("shared-wt-b"), makeRoot("shared-wt-c")];
+  const { runner, calls } = fakeGit({
+    ...REPO_SCRIPT,
+    "rev-parse --git-dir": (root) => path.join(common, "worktrees", path.basename(root)),
+    "rev-parse --git-common-dir": common,
+  });
+  const rows = await enrichSessionsWithGitContext(roots.map((root, i) => session(`w${i}`, root)), runner);
+  for (const row of rows) {
+    assert.equal(row.git.isWorktree, true);
+    assert.equal(row.git.repositoryUrl, "https://github.com/acme/repo-a");
+    assert.deepEqual(row.diff, { additions: 10, deletions: 2 });
+  }
+  const count = (prefix) => calls.filter((c) => c.args.join(" ").startsWith(prefix)).length;
+  assert.equal(count("config --get remote.origin.url"), 1, "one origin probe per repository");
+  assert.equal(count("symbolic-ref"), 1, "one base-ref probe per repository");
+  assert.equal(count("diff"), 3, "diffs stay per worktree");
+  assert.equal(count("rev-parse --is-inside-work-tree"), 3, "one location probe per root");
+}
+
+// ── 14. deadline: a slow root never holds the list (#5608) ─────────────────
+{
+  const noPrs = { get: () => null };
+  const noUrls = { get: () => null };
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let slow = true;
+  const { runner } = fakeGit({
+    ...REPO_SCRIPT,
+    "rev-parse --is-inside-work-tree": async () => {
+      if (slow) await gate;
+      return "true";
+    },
+  });
+
+  // 14a. First start: nothing cached, so the row is served without git context
+  // at the deadline and the late probe is reported when it lands.
+  {
+    const root = makeRoot("deadline-cold");
+    const cache = createRootEnrichmentCache({ fingerprint: () => "stable" });
+    let late = 0;
+    const lateLanded = new Promise((resolve) => {
+      const started = Date.now();
+      const rowsPromise = enrichSessionsWithGitContext([session("d", root)], runner, noPrs, noUrls, cache, {
+        deadlineMs: 20,
+        onLateEnrichment: () => {
+          late += 1;
+          resolve(undefined);
+        },
+      });
+      rowsPromise.then((rows) => {
+        assert.ok(Date.now() - started < 1_000, "the deadline, not the probe, decides when rows return");
+        assert.equal(rows[0].git, undefined, "no cached context yet: served without badges");
+        assert.equal(late, 0, "the probe is still running");
+        release();
+      });
+    });
+    await lateLanded;
+    assert.equal(late, 1);
+    assert.equal(cache.get(root)?.enrichment.gitContext?.branch, "feat/thing", "the late probe filled the cache");
+    const warm = await enrichSessionsWithGitContext([session("d", root)], runner, noPrs, noUrls, cache, { deadlineMs: 20 });
+    assert.equal(warm[0].git?.branch, "feat/thing", "the next compute carries the badges");
+  }
+
+  // 14b. A root that already showed badges keeps them while it is re-probed.
+  {
+    slow = false;
+    const root = makeRoot("deadline-stale");
+    const fingerprint = { value: "f1" };
+    const cache = createRootEnrichmentCache({ fingerprint: () => fingerprint.value });
+    await enrichSessionsWithGitContext([session("s", root)], runner, noPrs, noUrls, cache);
+    fingerprint.value = "f2";
+    let releaseAgain;
+    const gateAgain = new Promise((resolve) => { releaseAgain = resolve; });
+    const { runner: slowRunner } = fakeGit({
+      ...REPO_SCRIPT,
+      "rev-parse --is-inside-work-tree": async () => {
+        await gateAgain;
+        return "true";
+      },
+    });
+    const rows = await enrichSessionsWithGitContext([session("s", root)], slowRunner, noPrs, noUrls, cache, {
+      deadlineMs: 20,
+    });
+    assert.equal(rows[0].git?.branch, "feat/thing", "the stale cached context is served, never erased");
+    assert.deepEqual(rows[0].diff, { additions: 10, deletions: 2 });
+    releaseAgain();
+  }
+
+  // 14c. Without a deadline every root is awaited, as before.
+  {
+    const root = makeRoot("deadline-none");
+    const rows = await enrichSessionsWithGitContext([session("n", root)], runner, noPrs, noUrls, null);
+    assert.equal(rows[0].git?.branch, "feat/thing");
   }
 }
 

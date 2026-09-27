@@ -1788,6 +1788,7 @@ export const SUITES = {
     "src/lib/session-list-merge.test.ts",
     "src/lib/session-pin-persistence.test.ts",
     "src/lib/session-git-enrich.test.ts",
+    "src/lib/git-ref-files.test.ts",
     "src/lib/server/chat-work-branch.test.ts",
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
