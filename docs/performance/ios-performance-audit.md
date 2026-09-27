@@ -374,3 +374,44 @@ wall-clock duration includes UI automation and is **not** an interaction sample;
 calculate count, median, p95, and maximum from the named app spans only. Verify
 clock alignment and trace coverage before calculating statistics. These driver
 instructions alone do not supply physical measurements or ratify budgets.
+
+### Automated warm capture on a device
+
+A device keeps only about the last 48 seconds of signposts per Instruments
+recording. That held in immediate and deferred mode, with the all-subsystem
+template and with the Points of Interest instrument alone. One long recording
+therefore cannot hold a warm distribution. `pnpm ios:performance:capture` runs
+one recording per measured cycle instead, then merges them:
+
+```bash
+pnpm ios:performance:capture --device <core-device-uuid> \
+  --products /tmp/cave-performance-release/Build/Products --out /tmp/cave-capture
+```
+
+Build with `build-for-testing` as above and install both apps first. Keep the
+phone unlocked, in portrait, with Auto-Lock off; the script refuses a locked
+device. It reads the hardware UDID for Instruments from `devicectl`. From the
+generated `.xctestrun` it writes an attach-mode copy for one warm cycle
+(`CAVE_PERFORMANCE_REPETITIONS=1`, `CAVE_PERFORMANCE_ATTACH_RUNNING=1`,
+`UseDestinationArtifacts`, retained attachments).
+
+Each round (20 by default, `--rounds N`):
+
+1. It launches a fresh fixture process. A failed rich open can leave a process
+   unable to mount its renderer for the rest of its life (#5613).
+2. It attaches the Points of Interest instrument, retrying and waking the device
+   tunnel through `devicectl` process listings.
+3. It runs the driver's priming cycle plus one warm cycle.
+4. It stops and saves the recording.
+
+A round is retried up to three times when the driver fails, the recording hangs
+while saving, or the retained spans start after the warm window. `--resume`
+keeps completed rounds, and `--analyze-only` re-merges an existing `--out`
+directory.
+
+The merge keeps completed spans wholly inside each round's warm window,
+excludes the priming cycle and cancelled spans, and prints count, median,
+nearest-rank p95 and max per span. It writes the same data to `summary.json`
+and names any round it skipped. The 2026-09-27 baseline on #5292 came from
+these rounds, and re-analysing that capture with this script reproduces it.
+Cold journeys still need separate external launches, as described above.

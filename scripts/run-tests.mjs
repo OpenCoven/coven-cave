@@ -271,6 +271,7 @@ export const SUITES = {
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
     "scripts/cave-performance-report.test.mjs",
+    "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/enforce-branch-cap.test.mjs",
     "scripts/branch-cap-workflow.test.mjs",
