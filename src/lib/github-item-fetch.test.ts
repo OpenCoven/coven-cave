@@ -62,3 +62,25 @@ test("an answer expires after the window", async () => {
   await fetchGitHubItem("acme/repo", 33, { now: () => now });
   assert.equal(again.calls.length, 1);
 });
+
+// #5627: checks and review threads share the same way, with a per-call window.
+test("shared card lookups join, reuse within their window, and refresh live", async () => {
+  const { fetchSharedGitHubJson } = await import("./github-item-fetch.ts");
+  const url = "/api/github/checks?repo=acme%2Frepo&number=7";
+  let now = 0;
+  const first = stubFetch(200, { ok: true, n: 1 });
+  const a = fetchSharedGitHubJson(url, { freshMs: 15_000, now: () => now });
+  const b = fetchSharedGitHubJson(url, { freshMs: 15_000, now: () => now });
+  first.release();
+  assert.equal(await a, await b);
+  assert.equal(first.calls.length, 1, "concurrent cards share one request");
+  now = 14_999;
+  assert.equal((await fetchSharedGitHubJson(url, { freshMs: 15_000, now: () => now })).data.n, 1);
+  const refreshed = stubFetch(200, { ok: true, n: 2 });
+  refreshed.release();
+  assert.equal((await fetchSharedGitHubJson(url, { freshMs: 15_000, fresh: true, now: () => now })).data.n, 2);
+  now = 30_000;
+  const expired = stubFetch(200, { ok: true, n: 3 });
+  expired.release();
+  assert.equal((await fetchSharedGitHubJson(url, { freshMs: 15_000, now: () => now })).data.n, 3, "past the window it asks again");
+});
