@@ -316,6 +316,25 @@ assert.match(
 // held and flagged for a human instead of written as a bare status (#5629).
 assert.match(
   source,
-  /return await transitionCard\(card\.id, \{ to: transitionTo, reason: normalized\.lifecycleReason \}\) \?\? written;\s*\} catch \{[\s\S]*updateCard\(card\.id, \{ needsHuman: true \}/,
+  /return await transitionCard\(card\.id, \{ to, reason \}\) \?\? written;\s*\} catch \{\s*return await updateCard\(card\.id, \{ needsHuman: true \}/,
   "A familiar's cancel goes through transitionCard, falling back to a human flag",
+);
+
+// A PR closed without merging cancels the task; only a merged PR or a closed
+// issue completes it (#5635). Cancel waits until nothing linked is still open,
+// and both write paths route it through the Board's cancel transition.
+assert.match(
+  source,
+  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed"\),/,
+  "Only a merged PR or a closed issue completes a task",
+);
+assert.match(
+  source,
+  /const abandoned = tracked\.find\(\(item\) => item\.kind === "pr" && item\.state === "closed"\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*GitHub PR closed without merging/,
+  "A PR closed without merging cancels the task when nothing linked is still open",
+);
+assert.equal(
+  (source.match(/finishLifecycleTransition\(card, transitionTo, normalized\.lifecycleReason, /g) ?? []).length,
+  2,
+  "Both the parsed and unparsed write paths finish through the cancel transition",
 );

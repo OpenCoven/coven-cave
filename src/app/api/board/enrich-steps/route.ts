@@ -490,28 +490,75 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
   return normalizeTaskGitHubLinks(refreshed);
 }
 
+function githubTarget(item: CardGitHubLink): string {
+  return `${item.repo}${item.number ? ` #${item.number}` : ""}`;
+}
+
+/**
+ * The task's end state implied by its linked GitHub items, or null.
+ *
+ * A merged PR or a closed issue means the work landed: the task completes.
+ * A PR closed without merging means it did not (#5635): the task is cancelled,
+ * but only when nothing linked landed and no linked issue or PR is still open,
+ * since an open one is usually the replacement.
+ */
 function terminalPatchFromGitHub(
   card: Card,
   github: CardGitHubLink[],
   now: string,
 ): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
-  const terminal = github.find(
-    (item) =>
-      (item.kind === "issue" || item.kind === "pr") &&
-      (item.state === "closed" || item.state === "merged"),
+  const tracked = github.filter((item) => item.kind === "issue" || item.kind === "pr");
+  const landed = tracked.find(
+    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed"),
   );
-  if (!terminal) return null;
-  const kind = terminal.kind === "pr"
-    ? (terminal.state === "merged" ? "PR merged" : "PR closed")
-    : "issue closed";
-  const target = `${terminal.repo}${terminal.number ? ` #${terminal.number}` : ""}`;
+  if (landed) {
+    const kind = landed.kind === "pr" ? "PR merged" : "issue closed";
+    return {
+      status: "done",
+      lifecycle: "completed",
+      needsHuman: false,
+      lifecycleReason: `GitHub ${kind}: ${githubTarget(landed)}`.slice(0, 240),
+      lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
+    };
+  }
+  const abandoned = tracked.find((item) => item.kind === "pr" && item.state === "closed");
+  if (!abandoned || tracked.some((item) => item.state === "open")) return null;
+  // Cancelled is reached through transitionCard, which records the blocker
+  // the Board requires (see lifecycleTransitionTarget).
   return {
-    status: "done",
-    lifecycle: "completed",
+    status: "blocked",
+    lifecycle: "cancelled",
     needsHuman: false,
-    lifecycleReason: `GitHub ${kind}: ${target}`.slice(0, 240),
-    lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
+    lifecycleReason: `GitHub PR closed without merging: ${githubTarget(abandoned)}`.slice(0, 240),
+    lifecycleAt: card.lifecycle === "cancelled" ? card.lifecycleAt : now,
   };
+}
+
+/**
+ * Cancelling or failing a task goes through the Board's own lifecycle
+ * transition, which records the execution blocker a "blocked" status requires.
+ * A plain patch to "cancelled" is rejected by the orchestration validator.
+ */
+function lifecycleTransitionTarget(card: Card, lifecycle: CardLifecycle): "cancelled" | "failed" | null {
+  return (lifecycle === "cancelled" || lifecycle === "failed") && lifecycle !== card.lifecycle
+    ? lifecycle
+    : null;
+}
+
+/** Run a held transition after the review is written. An illegal move (review
+ *  to cancelled, say) leaves the task where it is and asks a human. */
+async function finishLifecycleTransition(
+  card: Card,
+  to: "cancelled" | "failed" | null,
+  reason: string | undefined,
+  written: Card,
+): Promise<Card> {
+  if (!to) return written;
+  try {
+    return await transitionCard(card.id, { to, reason }) ?? written;
+  } catch {
+    return await updateCard(card.id, { needsHuman: true }, { automated: true }) ?? written;
+  }
 }
 
 function applyGitHubState(
@@ -649,22 +696,23 @@ export async function POST(req: Request) {
             push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
             return;
           }
+          const transitionTo = lifecycleTransitionTarget(card, normalized.lifecycle);
           let updated;
           try {
             updated = await updateCard(card.id, {
               notes: normalized.notes,
               steps: normalized.steps,
-              status: normalized.status,
-              lifecycle: normalized.lifecycle,
+              status: transitionTo ? card.status : normalized.status,
+              lifecycle: transitionTo ? card.lifecycle : normalized.lifecycle,
               priority: normalized.priority,
               startDate: normalized.startDate,
               endDate: normalized.endDate,
               links: normalized.links,
               github: normalized.github,
               sessionId: normalized.sessionId,
-              needsHuman: normalized.needsHuman,
+              needsHuman: transitionTo ? card.needsHuman : normalized.needsHuman,
               lifecycleReason: normalized.lifecycleReason,
-              lifecycleAt: normalized.lifecycleAt,
+              lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
             }, { automated: true });
           } catch (error) {
             if (error instanceof OrchestrationValidationError) {
@@ -682,11 +730,12 @@ export async function POST(req: Request) {
             push({ kind: "skip", cardId: card.id, reason: "card_missing" });
             return;
           }
+          const final = await finishLifecycleTransition(card, transitionTo, normalized.lifecycleReason, updated);
           push({
             kind: "done",
             cardId: card.id,
             count: normalized.steps.length,
-            closed: CLOSED_LIFECYCLES.has(normalized.lifecycle),
+            closed: CLOSED_LIFECYCLES.has(final.lifecycle),
           });
           return;
         }
@@ -709,14 +758,7 @@ export async function POST(req: Request) {
           gates = assessEnrichmentGates(card, board.cards, orchestration, candidate);
           proposalRecord = buildEnrichmentProposalRecord(card, board.cards, orchestration, gates, now);
         }
-        // Cancelling or failing a task goes through the Board's own lifecycle
-        // transition, which records the execution blocker a "blocked" status
-        // requires. A plain patch to "cancelled" is rejected by the
-        // orchestration validator, so a familiar could never retire a task.
-        const transitionTo = (normalized.lifecycle === "cancelled" || normalized.lifecycle === "failed")
-          && normalized.lifecycle !== card.lifecycle
-          ? normalized.lifecycle
-          : null;
+        const transitionTo = lifecycleTransitionTarget(card, normalized.lifecycle);
         const taskPatch = {
           notes: normalized.notes,
           steps: normalized.steps,
@@ -732,16 +774,8 @@ export async function POST(req: Request) {
           lifecycleReason: normalized.lifecycleReason,
           lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
         };
-        const finishTransition = async (written: Card): Promise<Card> => {
-          if (!transitionTo) return written;
-          try {
-            return await transitionCard(card.id, { to: transitionTo, reason: normalized.lifecycleReason }) ?? written;
-          } catch {
-            // Not a legal move from the current lifecycle (review → cancelled,
-            // say). Leave the task where it is and ask a human to decide.
-            return await updateCard(card.id, { needsHuman: true }, { automated: true }) ?? written;
-          }
-        };
+        const finishTransition = (written: Card) =>
+          finishLifecycleTransition(card, transitionTo, normalized.lifecycleReason, written);
         let updated;
         try {
           updated = await updateCard(card.id, {
