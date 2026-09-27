@@ -141,7 +141,7 @@ const EXCLUDED_NAMES = new Set([
 const EXCLUDED_SUFFIXES = [".sock", ".lock", ".log", ".tmp", ".bak"];
 
 export const BACKUP_KNOWN_GAPS = [
-  "Browser-profile state (avatar/backdrop IndexedDB images and localStorage preferences) is not on disk and is not included in P1 backups.",
+  "Browser-profile state (avatar/backdrop IndexedDB images, localStorage preferences, group-chat definitions and assembled group history) is outside Cave's on-disk stores and is not included in P1 backups. Individual group replies remain in on-disk per-familiar conversations.",
 ];
 
 export function backupRoots(): Record<BackupRoot, string> {

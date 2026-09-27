@@ -1,4 +1,65 @@
-# Chat v1 Phase 2 gate — canonical reads verified
+# Chat v1 Phase 2 canonical-read gate
+
+Current gate: [#4838](https://github.com/OpenCoven/coven-cave/issues/4838),
+consolidated by the
+[approved September 14 reconciliation](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5674497148).
+
+## Current disposition: September 27, 2026
+
+**The gate remains open.** Three-platform conformance is verified, and Val approved
+the group-chat storage exception below. Closing the gate still requires retained
+rendered/native Chat-shell acceptance and a final verdict against the approved
+candidate. Missing acceptance receipts do not establish missing implementation.
+
+| Requirement | Current evidence and remaining work |
+| --- | --- |
+| Same-candidate conformance on macOS, Linux and Windows | [Chat run 36222464391, attempt 1](https://github.com/OpenCoven/chat/actions/runs/36222464391/attempts/1) passed on all three platforms. The SDK live verifier authenticated the workflow, jobs, protected-environment deployments, downloaded records and attestations, then reproduced the committed aggregate byte for byte. |
+| Accepted aggregate and index | The immutable [aggregate](https://github.com/OpenCoven/sdk/blob/969e712978bd0b6a35fb0cfea77df8bc7e0d19b6/docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json) and [index](https://github.com/OpenCoven/sdk/blob/969e712978bd0b6a35fb0cfea77df8bc7e0d19b6/docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.index.json) contain 590 passing assertions: 330 Cave, 138 SDK and 122 Chat, with no failures or skips. See the [live verification receipt](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853633593). This supersedes the earlier Windows failure for this frozen candidate. |
+| Full-final-page sequence regression | [#5497](https://github.com/OpenCoven/coven-cave/pull/5497) merged the missing regression tests at `74c6cb9cae8d6c2abe3e1a1c693a110dea95580d`. That commit postdates the frozen Cave authority below; the aggregate does not prove these added tests ran against that authority. Include their retained validation when reconciling the final candidate. |
+| Group-chat browser storage | Accepted as the documented MVP exception below. |
+| Rendered/native Chat shell, originally #4837 | Retain real-authority acceptance for canonical identities, selection and readback, pagination and freshness, and unauthorized, revoked and disconnected states. Reconcile its candidate revisions with the conformance evidence. The original issue is unavailable; preserve the requirements from the approved reconciliation rather than treating the missing issue as completion. |
+
+### Frozen conformance candidate
+
+The successful run used these revisions, not current repository heads:
+
+| Component | Revision |
+| --- | --- |
+| Cave authority | `ecdcdcf8a75b62bb912ec48215ae20ab0809a181` |
+| Coven | `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8` |
+| SDK candidate | `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` |
+| Chat consumer | `dabcdd47e7509880f26e9895ffb63d42d9070ca8` |
+| Chat evidence producer | `399e1f199417e74db6a1b9096500d0e953fdfa6b` |
+| SDK validator | `67fd5d8af73283348782de185efe77f24af6e391` |
+
+The accepted aggregate is 132,293 bytes, with SHA-256
+`2b53b53856a7c1bf1eddb8ac14e537c80ad3dd1664bd2be38252b5600b13979d`.
+These records prove the covered protocol journeys. They do not replace rendered
+or native-shell acceptance, physical-device checks, or release authorization.
+
+### Approved MVP storage exception
+
+On September 27, Val chose **"Retain a documented MVP exception"** for group-chat
+browser storage. The [recorded decision](https://github.com/OpenCoven/coven-cave/issues/4838#issuecomment-5853654041)
+accepts this boundary for the gate:
+
+- Individual replies persist in canonical on-disk per-familiar conversations.
+- Group membership, ordering, group-to-conversation links and assembled group
+  history remain in browser storage, outside current backups.
+- Clearing browser storage can lose the group assembly without deleting the
+  individual conversation replies. Restoring a Cave backup does not restore
+  that assembly.
+
+This decision resolves the group-storage disposition requirement. It does not
+change persistence behavior or waive the remaining acceptance and release gates.
+`BACKUP_KNOWN_GAPS` in `src/lib/server/backup-manifest.ts` names the excluded group
+state alongside the other browser-profile exclusions.
+
+## Historical audit: August 23, 2026
+
+The original audit below is retained as historical evidence. Its issue states,
+line references, blocker list and verdict describe that snapshot; the current
+disposition above supersedes them. Legacy Beads identifiers are citations only.
 
 Gate issue: [#4839](https://github.com/OpenCoven/coven-cave/issues/4839) · bead `cave-8ywi2`
 (mirrored as [#4906](https://github.com/OpenCoven/coven-cave/issues/4906)) · executed as
