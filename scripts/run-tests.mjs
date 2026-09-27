@@ -860,6 +860,7 @@ export const SUITES = {
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
+    "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",
     "src/lib/pausable-poll-discipline.test.ts",
     "src/lib/use-autogrow-textarea.test.ts",
@@ -2508,6 +2509,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/lib/use-surface-warmup.behavior.test.tsx",
   "src/lib/use-pausable-poll.behavior.test.tsx",
+  "src/lib/use-reply-recommendation.behavior.test.tsx",
   "src/app/wikis/wiki-page.test.tsx",
   "src/components/covenwiki-reader.test.tsx",
   // Renders the whole X Comms room through react-test-renderer (JSX).
