@@ -319,6 +319,7 @@ export const SUITES = {
     "src/lib/github-checks.test.ts",
     "src/lib/github-item-fetch.test.ts",
     "src/lib/server/github-item-cache.test.ts",
+    "src/lib/server/join-inflight-response.test.ts",
     "src/lib/github-activity.test.ts",
     "src/lib/stage-model.test.ts",
     "src/lib/skill-blocks.test.ts",

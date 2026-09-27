@@ -15,6 +15,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { githubTokenIdentity } from "@/lib/server/github-item-cache";
+import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +62,13 @@ async function ghFetch(path: string, token: string | null) {
   return { res, data };
 }
 
+/** Identical concurrent asks share one set of GitHub calls (#5627). */
 export async function GET(req: Request) {
+  const url = new URL(req.url);
+  return joinInFlightResponse(`checks:${githubTokenIdentity(resolveGitHubToken())}:${url.searchParams.get("repo") ?? ""}#${url.searchParams.get("number") ?? ""}`, () => load(req));
+}
+
+async function load(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const repo = (url.searchParams.get("repo") ?? "").trim();
   const numberRaw = (url.searchParams.get("number") ?? "").trim();

@@ -59,4 +59,48 @@ export function fetchGitHubItem(
 export function clearGitHubItemFetchCache(): void {
   answers.clear();
   inflight.clear();
+  sharedAnswers.clear();
+  sharedInflight.clear();
+}
+
+const sharedAnswers = new Map<string, { at: number; value: GitHubItemResponse }>();
+const sharedInflight = new Map<string, Promise<GitHubItemResponse>>();
+
+/**
+ * The same sharing for the other card lookups (#5627): checks and review
+ * threads. Identical requests in flight are joined and a successful answer is
+ * reused for `freshMs`; `fresh` (a card refreshing after an action) skips the
+ * reuse. The routes behind these keep no answers of their own.
+ */
+export function fetchSharedGitHubJson(
+  url: string,
+  options: { freshMs: number; fresh?: boolean; now?: () => number },
+): Promise<GitHubItemResponse> {
+  const now = options.now ?? Date.now;
+  if (!options.fresh) {
+    const hit = sharedAnswers.get(url);
+    if (hit && now() - hit.at < options.freshMs) return Promise.resolve(hit.value);
+    const pending = sharedInflight.get(url);
+    if (pending) return pending;
+  }
+  const request = (async (): Promise<GitHubItemResponse> => {
+    const res = await fetch(url, { cache: "no-store" });
+    const value = { status: res.status, data: await res.json().catch(() => null) };
+    if (res.ok) {
+      sharedAnswers.delete(url);
+      sharedAnswers.set(url, { at: now(), value });
+      while (sharedAnswers.size > MAX_ENTRIES) {
+        const oldest = sharedAnswers.keys().next().value;
+        if (oldest === undefined) break;
+        sharedAnswers.delete(oldest);
+      }
+    }
+    return value;
+  })();
+  sharedInflight.set(url, request);
+  const clear = () => {
+    if (sharedInflight.get(url) === request) sharedInflight.delete(url);
+  };
+  request.then(clear, clear);
+  return request;
 }

@@ -24,9 +24,13 @@ type Entry = { at: number; value: CachedGitHubItem };
 const entries = new Map<string, Entry>();
 const inflight = new Map<string, Promise<CachedGitHubItem>>();
 
+/** A token's identity for cache keys: a digest prefix, never the token. */
+export function githubTokenIdentity(token: string | null): string {
+  return token ? createHash("sha256").update(token).digest("base64url").slice(0, 16) : "anon";
+}
+
 export function githubItemCacheKey(token: string | null, repo: string, number: number, pull: boolean): string {
-  const identity = token ? createHash("sha256").update(token).digest("base64url").slice(0, 16) : "anon";
-  return `${identity}:${repo.toLowerCase()}#${number}:${pull ? "pull" : "item"}`;
+  return `${githubTokenIdentity(token)}:${repo.toLowerCase()}#${number}:${pull ? "pull" : "item"}`;
 }
 
 /** Only answers that describe the item itself are worth keeping. */
