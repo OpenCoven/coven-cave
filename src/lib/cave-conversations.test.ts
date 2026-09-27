@@ -594,8 +594,19 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
     flushConversationSummaryIndex,
     getConversationListMetrics,
     simulateConversationSummaryRestart,
+    SUMMARY_INDEX_VERSION,
+    summaryDerivationSourceDigest,
   } = await import("./cave-conversations.ts");
   const { mkdir, readFile, writeFile, utimes } = await import("node:fs/promises");
+
+  // Changing how a summary is derived must bump SUMMARY_INDEX_VERSION, or
+  // every Cave keeps serving summaries the older code produced. When this
+  // fails: bump the version in cave-conversations.ts, then update both pins.
+  assert.deepEqual(
+    { version: SUMMARY_INDEX_VERSION, digest: summaryDerivationSourceDigest() },
+    { version: 2, digest: "829ef6ae3fc3e7753b91297acc680cfc6e8213166923dab05c8f0a9997438edc" },
+    "summary derivation changed: bump SUMMARY_INDEX_VERSION and update this pin",
+  );
   const { existsSync, readFileSync } = await import("node:fs");
   await mkdir(CONV_DIR, { recursive: true });
   const ids = Array.from({ length: 6 }, (_, index) => `index-restart-${index}`);
@@ -664,6 +675,15 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
     JSON.parse(await readFile(CONVERSATION_SUMMARY_INDEX_PATH, "utf8")).key,
     "derived-by-an-older-release",
     "the stale index is rewritten under the current key",
+  );
+
+  // #5605: the key is a constant, not a hash of runtime source text, so the
+  // dev server, a production bundle and the installed app (which share this
+  // file) all trust one another's index instead of rebuilding it in turn.
+  assert.equal(
+    JSON.parse(await readFile(CONVERSATION_SUMMARY_INDEX_PATH, "utf8")).key,
+    `summary-index-v${SUMMARY_INDEX_VERSION}`,
+    "the index key is identical in every build of this version",
   );
 
   // A deleted transcript leaves the index.
