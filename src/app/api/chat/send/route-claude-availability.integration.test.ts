@@ -226,11 +226,17 @@ try {
 
   console.log("route-claude-availability.integration.test.ts OK");
 } finally {
-  process.env.COVEN_HOME = previousHome;
-  process.env.COVEN_CAVE_HOME = previousCaveHome;
-  process.env.HOME = previousOsHome;
-  process.env.SHELL = previousShell;
-  process.env.COVEN_TEST_LOG = previousCovenTestLog;
+  // An unset variable must be deleted, not assigned: `process.env.X = undefined`
+  // stores the string "undefined", which later code reads as a relative path (#5645).
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
+  restore("COVEN_HOME", previousHome);
+  restore("COVEN_CAVE_HOME", previousCaveHome);
+  restore("HOME", previousOsHome);
+  restore("SHELL", previousShell);
+  restore("COVEN_TEST_LOG", previousCovenTestLog);
   if (previousCovenBin === undefined) delete process.env.COVEN_BIN;
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousCovenTestMode === undefined) delete process.env.COVEN_TEST_MODE;

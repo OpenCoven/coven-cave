@@ -82,4 +82,19 @@ const third = launch(`
 assert.ok(third.ms >= 900, "a refresh waits for the live probe");
 assert.equal(firstDir(third.path), "/opt/second/bin");
 
+// #5645: a relative Cave home (an env var left as the string "undefined")
+// never directs the persisted answer into the working directory.
+const cwd = mkdtempSync(path.join(tmpdir(), "login-shell-relative-"));
+const relative = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+  const bin = await import(${JSON.stringify(moduleUrl)});
+  bin.refreshCovenSpawnEnv();
+  console.log("{}");
+`], {
+  cwd,
+  env: { ...process.env, SHELL: shell, HOME: dir, COVEN_HOME: "undefined", COVEN_CAVE_HOME: "undefined" },
+  encoding: "utf8",
+});
+assert.equal(relative.status, 0, relative.stderr);
+assert.equal(existsSync(path.join(cwd, "undefined")), false, "nothing is written under a relative Cave home");
+
 console.log("login-shell-persisted.test.ts: ok");
