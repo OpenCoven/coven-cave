@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { createSwrCache } from "@/lib/swr-cache";
+import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import {
   failedSource,
   isPartial,
@@ -69,12 +71,47 @@ async function fetchSource<T>(
   }
 }
 
+type CachedAssigned = { status: number; body: string; servable: boolean };
+
+/**
+ * Three live GitHub calls (two on the 30/min search API) took 2.9 s on every
+ * request, and the new-chat launcher asks on mount and on every window focus
+ * (#5641). Answers are fresh for a minute and served stale for 15 while one
+ * background refresh runs; concurrent asks share one computation. A failure or
+ * unauthorized answer stands for its fresh minute — a backoff for the 30/min
+ * search API — and is never served stale after it.
+ */
+const assignedCache = createSwrCache<CachedAssigned>({
+  ttlMs: 60_000,
+  staleServeMs: 15 * 60_000,
+  canServeStale: (value) => value.servable,
+});
+
 export async function GET() {
   const token = resolveGitHubToken();
 
   if (!token) {
     return NextResponse.json({ ok: true, items: [], configured: false });
   }
+
+  const result = await assignedCache.get(githubTokenIdentity(token), async () => {
+    const response = await loadAssigned(token);
+    const body = await response.text();
+    let servable = false;
+    try {
+      servable = response.status === 200 && (JSON.parse(body) as { ok?: unknown }).ok === true;
+    } catch {
+      servable = false;
+    }
+    return { status: response.status, body, servable };
+  });
+  return new NextResponse(result.body, {
+    status: result.status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function loadAssigned(token: string): Promise<Response> {
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
