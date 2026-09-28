@@ -420,10 +420,16 @@ struct ChatsHomeView: View {
                         )
                     }
                 } label: {
-                    Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(familiarFilter == nil ? chrome.textPrimary : chrome.accent)
-                        .frame(width: 44, height: 44)
+                    // The same round glass well as the navigation button, so
+                    // the header's two controls read as a matched pair.
+                    Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
+                        .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
+                        .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
+                        .scaledControlFrame(ChatChrome.control)
+                        .glass(.control, in: Circle())
+                        .accentGlow(active: familiarFilter != nil)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
                 .accessibilityIdentifier("Chat list options")
