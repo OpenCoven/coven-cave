@@ -151,7 +151,14 @@ struct MainShellView: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 shellContent
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Extend the destination to the whole screen before the
+                    // stage clips it, so the clip covers the status bar too and
+                    // headers reach the top. A clip sized to the safe-area frame
+                    // cut them off below the status bar; a view mask reaching
+                    // past it rendered offscreen through every drawer animation.
+                    // The keyboard safe area still applies.
+                    .ignoresSafeArea(.container)
                     .modifier(
                         DrawerDestinationStage(
                             isOpen: app.navigationDrawerOpen,
@@ -272,16 +279,12 @@ private struct DrawerDestinationStage: ViewModifier {
     func body(content: Content) -> some View {
         let destinationOffset = min(availableWidth * 0.64, 286)
         content
-            // The mask extends into the safe area: clipping to the content's
-            // frame cut every bar background off at the status bar, leaving a
-            // black strip above each header.
-            .mask {
+            .clipShape(
                 RoundedRectangle(
                     cornerRadius: isOpen ? 30 : 0,
                     style: .continuous
                 )
-                .ignoresSafeArea()
-            }
+            )
             .overlay {
                 if isOpen {
                     RoundedRectangle(cornerRadius: 30, style: .continuous)
