@@ -188,16 +188,23 @@ assert.match(
   "GitHub issue-state refresh should use the shared configured GitHub token when present and the REST issue endpoint",
 );
 
-assert.match(
+// GitHub state is evidence for the familiar, never a verdict that overrides it
+// (#5667): "any linked PR merged means done" completed tasks on PRs linked only
+// for context, including one that removed the feature the task asked for.
+assert.doesNotMatch(
   source,
-  /function terminalPatchFromGitHub\([\s\S]*state === "closed"[\s\S]*status: "done"[\s\S]*lifecycle: "completed"/,
-  "Closed GitHub issues should deterministically complete the linked board task",
+  /terminalPatchFromGitHub/,
+  "No automatic GitHub rule overrides the familiar's status",
 );
-
 assert.match(
   source,
-  /const githubState = await fetchGitHubIssueStates\(card\.github\)[\s\S]*const normalized = applyGitHubState\(card, normalizeTaskEnrichment/,
-  "Live GitHub state should be applied after model enrichment so it can override stale model status",
+  /function applyGitHubState\(\s*normalized: NormalizedTaskEnrichment,\s*github: CardGitHubLink\[\],\s*\): NormalizedTaskEnrichment \{\s*return \{ \.\.\.normalized, github \};\s*\}/,
+  "Refreshed GitHub links are recorded without changing the familiar's status",
+);
+assert.match(
+  source,
+  /const githubState = await fetchGitHubIssueStates\(card\.github\)[\s\S]*const normalized = applyGitHubState\(normalizeTaskEnrichment/,
+  "Live GitHub state is refreshed before the review is written",
 );
 
 assert.match(
@@ -320,18 +327,22 @@ assert.match(
   "A familiar's cancel goes through transitionCard, falling back to a human flag",
 );
 
-// A PR closed without merging cancels the task; only a merged PR or a closed
-// issue completes it (#5635). Cancel waits until nothing linked is still open,
-// and both write paths route it through the Board's cancel transition.
+// The familiar sees each linked item's refreshed state and close reason, and is
+// told a merged PR completes the task only if it delivered this task (#5667).
 assert.match(
   source,
-  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed" && !closedWithoutLanding\(item\)\),/,
-  "Only a merged PR or an issue closed as done completes a task",
+  /`- \$\{link\.repo\}#\$\{link\.number\} \[\$\{link\.kind\}, \$\{githubStateLabel\(link\)\}\]/,
+  "The prompt lists each linked item with its state",
 );
 assert.match(
   source,
-  /const abandoned = tracked\.find\(\s*\(item\) => \(item\.kind === "pr" && item\.state === "closed"\) \|\| closedWithoutLanding\(item\),\s*\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*"PR closed without merging"[\s\S]*"issue closed as duplicate" : "issue closed as not planned"/,
-  "A PR closed without merging cancels the task when nothing linked is still open",
+  /if \(link\.state === "closed" && link\.stateReason\) return `closed as \$\{link\.stateReason\.replace\(\/_\/g, " "\)\}`;/,
+  "A closed item's close reason (not planned, duplicate) reaches the prompt",
+);
+assert.match(
+  source,
+  /Linked GitHub states above are evidence, not a verdict\. A merged PR or closed issue completes this task only if it delivered THIS task's outcome/,
+  "The prompt tells the familiar a linked merge is not proof of delivery",
 );
 assert.equal(
   (source.match(/finishLifecycleTransition\(card, transitionTo, normalized\.lifecycleReason, /g) ?? []).length,
@@ -346,8 +357,4 @@ assert.match(
   /typeof data\.state_reason === "string" \? \{ stateReason: data\.state_reason \} : \{\}/,
   "The refresh records GitHub's issue close reason",
 );
-assert.match(
-  source,
-  /item\.kind === "issue" && item\.state === "closed"\s*&& \(item\.stateReason === "not_planned" \|\| item\.stateReason === "duplicate"\)/,
-  "An issue closed as not planned or as a duplicate is abandoned, not landed",
-);
+
