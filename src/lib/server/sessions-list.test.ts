@@ -572,10 +572,26 @@ workspace = "${relocatedProjectRoot}
   );
   assert.equal(scopedClassifiedById.get("familiar-relocated")?.familiarWorkspace, true);
   assert.equal(scopedClassifiedById.get("rootless")?.familiarWorkspace, false);
+
   assert.ok(
     (await archivedIds()).includes("stale-chat"),
     "the explicit scoped classified compute still preserves the default idle sweep",
   );
+  // #5661: a familiar's view is the unscoped result filtered by its grants —
+  // identical rows, without recomputing the list per familiar.
+  {
+    const { scopeSessionsListResult } = await import("./sessions-list.ts");
+    await reset();
+    await writeConfig(daemonUrl);
+    const base = await computeSessionsList(false, null, false, { classifyFamiliarWorkspace: true, sweepArchives: false });
+    const direct = await computeSessionsList(false, "nova", false, { classifyFamiliarWorkspace: true, sweepArchives: false });
+    const derived = await scopeSessionsListResult(base, "nova");
+    assert.deepEqual(derived.payload, direct.payload, "the derived familiar view equals computing it with the familiarId");
+    assert.equal(await scopeSessionsListResult(base, "nova"), derived, "one view object per base, so its ETag is stable");
+    assert.notEqual(await scopeSessionsListResult(base, "charm"), derived);
+    const failed = { payload: { ok: false as const, error: "daemon down", sessions: [] as [] }, init: { status: 503 } };
+    assert.equal(await scopeSessionsListResult(failed, "nova"), failed, "a failed list passes through unscoped");
+  }
 
   // The positive control above is what makes the negative one meaningful: if
   // the fixture were simply never due for archiving, the read-only assertion

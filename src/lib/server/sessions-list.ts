@@ -316,6 +316,44 @@ function applyFamiliarWorkspacePresentation(
     : visible;
 }
 
+/**
+ * A familiar's view of an unscoped list result (#5661): the same rows the
+ * computation would give with that familiarId, since project-grant scoping is
+ * a per-row filter and everything after it (workspace collapse/classify, git
+ * context, merged-PR archive) is per-row too. Switching familiars then filters
+ * one shared result instead of re-running the daemon read, the transcript scan,
+ * the merge and git enrichment per familiar (260-880 ms each on a real
+ * profile). Memoized per base result, so a familiar's view is one object —
+ * with one ETag — for as long as the base is.
+ */
+const scopedByBase = new WeakMap<SessionsListResult, Map<string, Promise<SessionsListResult>>>();
+
+export function scopeSessionsListResult(
+  base: SessionsListResult,
+  familiarId: string,
+): Promise<SessionsListResult> {
+  let byFamiliar = scopedByBase.get(base);
+  if (!byFamiliar) {
+    byFamiliar = new Map();
+    scopedByBase.set(base, byFamiliar);
+  }
+  let scoped = byFamiliar.get(familiarId);
+  if (!scoped) {
+    const cache = byFamiliar;
+    scoped = (async (): Promise<SessionsListResult> => {
+      if (!base.payload.ok) return base;
+      const projects = await loadProjects();
+      const sessions = await scopeForFamiliar(base.payload.sessions, projects, familiarId);
+      return { ...base, payload: { ...base.payload, sessions } };
+    })();
+    cache.set(familiarId, scoped);
+    scoped.catch(() => {
+      if (cache.get(familiarId) === scoped) cache.delete(familiarId);
+    });
+  }
+  return scoped;
+}
+
 export async function computeSessionsList(
   includeArchived: boolean,
   familiarId: string | null,
