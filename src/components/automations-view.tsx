@@ -263,20 +263,20 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     }
   }, []);
 
+  // One request for every row's newest run (#5687). A per-automation fan-out
+  // queued behind the surface's other requests on the browser's six
+  // connections per host.
   const refreshLastRuns = useCallback(async () => {
     try {
-      const entries = await Promise.all(
-        codexAutos.map((a) =>
-          fetch(`/api/codex-automations/${encodeURIComponent(a.id)}/runs`)
-            .then((r) => r.json())
-            .then((j) => [a.id, j?.runs?.[0]] as const)
-            .catch(() => [a.id, undefined] as const),
-        ),
-      );
-      if (!mountedRef.current) return;
+      const query = new URLSearchParams();
+      for (const a of codexAutos) query.append("id", a.id);
+      const res = await fetch(`/api/codex-automation-last-runs?${query}`);
+      const json = await res.json().catch(() => null);
+      if (!mountedRef.current || !json?.ok || !json.runs) return;
       const map = new Map<string, AutomationRunRecord>();
-      for (const [id, run] of entries) {
-        if (run) map.set(id, run);
+      for (const a of codexAutos) {
+        const run = json.runs[a.id] as AutomationRunRecord | null | undefined;
+        if (run) map.set(a.id, run);
       }
       setLastRunById(map);
     } catch {
