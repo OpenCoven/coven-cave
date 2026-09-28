@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { redactSecretsDeep } from "@/lib/secret-redaction";
-import { findSelfReport, SELF_REPORT_SESSION_ID_RE } from "@/lib/server/familiar-self-reports";
+import { findSelfReport, redactSelfReport, SELF_REPORT_SESSION_ID_RE } from "@/lib/server/familiar-self-reports";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
@@ -20,5 +19,5 @@ export async function GET(
 
   const report = await findSelfReport(id, sessionId);
   if (!report) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  return NextResponse.json({ ok: true, report: redactSecretsDeep(report) });
+  return NextResponse.json({ ok: true, report: redactSelfReport(report) });
 }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { redactSecretsDeep } from "@/lib/secret-redaction";
-import { listSelfReports } from "@/lib/server/familiar-self-reports";
+import { listSelfReports, redactSelfReport } from "@/lib/server/familiar-self-reports";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +26,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // that string into characters and crashed on `b.id.localeCompare` inside
   // aggregateThreadSignals (cave-p9dsb). Per-report redaction keeps the array
   // an array: an oversized report degrades on its own and its siblings survive.
-  const reports = result.reports.map((report) => redactSecretsDeep(report));
+  // redactSelfReport also keeps each report's sessionId, which the generic
+  // redactor treats as a session secret.
+  const reports = result.reports.map(redactSelfReport);
   return NextResponse.json({ ok: true, reports, total: result.total });
 }

@@ -14,6 +14,7 @@ import {
   deriveThreadScore,
   metricTone,
   selfReportRequiresHumanAction,
+  selfReportSourceSessionId,
   type ThreadSelfReport,
 } from "./thread-self-report.ts";
 
@@ -762,5 +763,17 @@ describe("selfReportRequiresHumanAction (auto-archive CTA gate)", () => {
       ...quiet,
       skillsNeedingAccess: [{ skillId: "deploy", reason: "needs credential" }],
     }), true);
+  });
+});
+
+describe("selfReportSourceSessionId", () => {
+  it("returns a real thread id", () => {
+    assert.equal(selfReportSourceSessionId({ sessionId: "31f28910-d951-4ae7-af6b-8b4847a5489a" }), "31f28910-d951-4ae7-af6b-8b4847a5489a");
+  });
+
+  it("rejects the redaction placeholder and other unlinkable values", () => {
+    for (const sessionId of ["[redacted]", "", "  ", "../etc", "a b"]) {
+      assert.equal(selfReportSourceSessionId({ sessionId }), null, JSON.stringify(sessionId));
+    }
   });
 });
