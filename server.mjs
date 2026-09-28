@@ -11762,6 +11762,21 @@ var hostname = loopbackHostname();
 var port = cavePort();
 var app = next({ dev, hostname, port });
 var handle = app.getRequestHandler();
+var DEFERRED_ENTRY_PRELOAD_MS = 15e3;
+function scheduleDeferredEntryPreload() {
+  if (dev) return;
+  const timer = setTimeout(() => {
+    void (async () => {
+      try {
+        const wrapper = app.server;
+        const nextServer = await wrapper?.getServer?.();
+        await nextServer?.unstable_preloadEntries?.();
+      } catch {
+      }
+    })();
+  }, DEFERRED_ENTRY_PRELOAD_MS);
+  timer.unref?.();
+}
 var wss = new WebSocketServer({ noServer: true });
 var remotePtyClients = /* @__PURE__ */ new Set();
 var deviceAccessSecret = randomUUID3();
@@ -11929,6 +11944,7 @@ server.listen(port, hostname, () => {
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
   void warmHarnessSpawnPath();
 });
+scheduleDeferredEntryPreload();
 var httpShutdownStarted = false;
 function shutdownHttpServer() {
   if (httpShutdownStarted) return;

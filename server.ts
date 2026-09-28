@@ -2196,6 +2196,38 @@ const port = cavePort();
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
+/** When the deferred Next entry preload runs, after listening (#5658). */
+const DEFERRED_ENTRY_PRELOAD_MS = 15_000;
+
+/**
+ * Next's entry preload, deferred past app launch (#5658). Next would load all
+ * 355 route entries as the server starts (~1.9 s of main-thread work on the
+ * first page load); some route modules start background work when imported
+ * (inbox/reminder scheduler, GitHub subscription watcher, research media job
+ * recovery), so every entry still loads, just once the launch has settled.
+ * Both calls are Next internals; if a release drops them, routes simply load
+ * on first use.
+ */
+function scheduleDeferredEntryPreload(): void {
+  if (dev) return;
+  const timer = setTimeout(() => {
+    void (async () => {
+      try {
+        // The custom-server wrapper's `server` is Next's NextServer, whose
+        // getServer() resolves the node server that owns the preload.
+        const wrapper = (app as unknown as {
+          server?: { getServer?: () => Promise<{ unstable_preloadEntries?: () => Promise<void> } | undefined> };
+        }).server;
+        const nextServer = await wrapper?.getServer?.();
+        await nextServer?.unstable_preloadEntries?.();
+      } catch {
+        // Best effort: an entry that fails to preload loads on first use.
+      }
+    })();
+  }, DEFERRED_ENTRY_PRELOAD_MS);
+  timer.unref?.();
+}
+
 const wss = new WebSocketServer({ noServer: true });
 const remotePtyClients = new Set<WebSocket>();
 const deviceAccessSecret = randomUUID();
@@ -2453,6 +2485,7 @@ server.listen(port, hostname, () => {
   // first joins this same in-flight warm-up.
   void warmHarnessSpawnPath();
 });
+scheduleDeferredEntryPreload();
 
 let httpShutdownStarted = false;
 function shutdownHttpServer(): void {
