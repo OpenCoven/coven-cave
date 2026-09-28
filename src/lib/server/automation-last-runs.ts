@@ -15,13 +15,29 @@ import { CovenAutomationsUnavailableError, type RoutineRun } from "@/lib/coven-a
 /** Bounds a hostile query string; the Schedules list is a handful of ids. */
 export const MAX_LAST_RUN_IDS = 64;
 
-export function parseLastRunIds(params: URLSearchParams): string[] | null {
-  const ids = [...new Set(params.getAll("id").map((value) => value.trim()).filter(Boolean))];
-  if (ids.length > MAX_LAST_RUN_IDS) return null;
-  // Ids are passed to the daemon as data, never joined into a path; this only
-  // rejects obvious garbage.
-  if (ids.some((id) => id.length > 200 || /[\u0000-\u001f]/.test(id))) return null;
-  return ids;
+const MAX_ID_LENGTH = 200;
+const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+
+/** The accepted ids, or the reason the query was rejected. Raw values are
+ *  checked before trimming: `trim()` strips tabs and newlines, so trimming
+ *  first would quietly turn `a\n` into a different, valid id. */
+export function parseLastRunIds(
+  params: URLSearchParams,
+): { ok: true; ids: string[] } | { ok: false; error: string } {
+  const raw = params.getAll("id");
+  // Ids are passed to the daemon as data, never joined into a path; these
+  // checks only reject obvious garbage and bound the fan-out.
+  if (raw.some((value) => CONTROL_CHAR_RE.test(value))) {
+    return { ok: false, error: "automation ids must not contain control characters" };
+  }
+  const ids = [...new Set(raw.map((value) => value.trim()).filter(Boolean))];
+  if (ids.some((id) => id.length > MAX_ID_LENGTH)) {
+    return { ok: false, error: `automation ids must be at most ${MAX_ID_LENGTH} characters` };
+  }
+  if (ids.length > MAX_LAST_RUN_IDS) {
+    return { ok: false, error: `expected at most ${MAX_LAST_RUN_IDS} automation ids` };
+  }
+  return { ok: true, ids };
 }
 
 export type LastRunsResult =

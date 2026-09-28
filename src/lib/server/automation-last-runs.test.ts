@@ -17,10 +17,20 @@ const run = (automationId, id) => ({
 });
 
 test("ids are de-duplicated, trimmed and bounded", () => {
-  assert.deepEqual(parseLastRunIds(new URLSearchParams("id=a&id=%20b%20&id=a&id=")), ["a", "b"]);
+  assert.deepEqual(parseLastRunIds(new URLSearchParams("id=a&id=%20b%20&id=a&id=")), { ok: true, ids: ["a", "b"] });
   const many = new URLSearchParams(Array.from({ length: MAX_LAST_RUN_IDS + 1 }, (_, i) => ["id", `a${i}`]));
-  assert.equal(parseLastRunIds(many), null);
-  assert.equal(parseLastRunIds(new URLSearchParams("id=a%0Ab")), null, "control characters are rejected");
+  assert.deepEqual(parseLastRunIds(many), { ok: false, error: `expected at most ${MAX_LAST_RUN_IDS} automation ids` });
+  const long = parseLastRunIds(new URLSearchParams({ id: "x".repeat(201) }));
+  assert.equal(long.ok, false);
+  assert.match(long.error, /at most 200 characters/);
+});
+
+test("control characters are rejected before trimming could hide them", () => {
+  for (const query of ["id=a%0Ab", "id=a%0A", "id=%09a", "id=a%7F"]) {
+    const parsed = parseLastRunIds(new URLSearchParams(query));
+    assert.equal(parsed.ok, false, query);
+    assert.match(parsed.error, /control characters/, query);
+  }
 });
 
 test("each automation gets its newest run, asked for with limit 1", async () => {

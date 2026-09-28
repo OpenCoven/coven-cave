@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { listRoutineRuns } from "@/lib/server/coven-automations-client";
-import {
-  MAX_LAST_RUN_IDS,
-  parseLastRunIds,
-  readLastRuns,
-} from "@/lib/server/automation-last-runs";
+import { parseLastRunIds, readLastRuns } from "@/lib/server/automation-last-runs";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +12,10 @@ export const dynamic = "force-dynamic";
  * whose id matches it under the [id] routes.
  */
 export async function GET(req: Request) {
-  const ids = parseLastRunIds(new URL(req.url).searchParams);
-  if (!ids) {
-    return NextResponse.json(
-      { ok: false, error: `expected at most ${MAX_LAST_RUN_IDS} automation ids` },
-      { status: 400 },
-    );
+  const parsed = parseLastRunIds(new URL(req.url).searchParams);
+  if (!parsed.ok) {
+    return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
   }
-  const result = await readLastRuns(ids, (id, limit) => listRoutineRuns(id, limit));
+  const result = await readLastRuns(parsed.ids, (id, limit) => listRoutineRuns(id, limit));
   return NextResponse.json(result, { status: result.ok ? 200 : 503 });
 }
