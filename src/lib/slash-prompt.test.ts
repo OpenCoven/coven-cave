@@ -89,7 +89,7 @@ assert.match(
 assert.match(menusHook, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "menuOpen includes the prompt picker");
 assert.match(chatView, /command === "\/prompt" \|\| command === "\/prompts"/, "chat-view dispatches /prompt and /prompts");
 assert.match(chatView, /role="listbox" aria-label="Prompts"/, "chat-view renders a Prompts listbox");
-assert.match(menusHook, /fetch\("\/api\/prompts"/, "the shared hook sources templates from /api/prompts");
+assert.match(menusHook, /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/prompts"/, "the shared hook sources templates from /api/prompts");
 assert.match(menusHook, /useState<PromptOption\[\]>\(BUILTIN_PROMPTS\)/, "picker is seeded with the built-ins so it works offline");
 assert.match(chatView, /onInsertPrompt: \(p\) => insertPrompt\(p\)/, "the hook's prompt picks route through chat-view's insert helper");
 // The core contract: picking a prompt INSERTS into the composer — never sends.
@@ -144,7 +144,7 @@ assert.match(homeComposer, /recordPromptRecent\(p\.id\);/, "home records an inse
 assert.match(chatView, /recordPromptRecent\(p\.id\);/, "chat records an insert as a recent");
 assert.match(
   menusHook,
-  /window\.addEventListener\("cave:prompts-refresh", load\)/,
+  /window\.addEventListener\("cave:prompts-refresh", (?:load|refresh)\)/,
   "the picker hook re-scans on cave:prompts-refresh (save/delete broadcast)",
 );
 assert.match(

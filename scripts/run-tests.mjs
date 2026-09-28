@@ -862,6 +862,7 @@ export const SUITES = {
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
     "src/lib/startup-gate.test.ts",
+    "src/lib/shared-json-fetch.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
     "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",

@@ -102,7 +102,7 @@ assert.match(
 
 // ── Shared listbox id + fetches ──────────────────────────────────────────────
 assert.match(src, /const slashListboxId = useId\(\);/, "the listbox id is per-mount — home and chat composers can be mounted simultaneously");
-assert.match(src, /fetch\("\/api\/skills\/local", \{ cache: "no-store" \}\)/, "skills come from the local skill scan");
-assert.match(src, /fetch\("\/api\/prompts", \{ cache: "no-store" \}\)/, "prompts come from /api/prompts, seeded with the built-ins");
+assert.match(src, /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/skills\/local"\)/, "skills come from the local skill scan");
+assert.match(src, /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/prompts", \{ force \}\)/, "prompts come from /api/prompts, seeded with the built-ins");
 
 console.log("use-inline-slash-menus.test.ts: ok");
