@@ -42,9 +42,17 @@ assert.match(
 
 assert.match(
   source,
-  /computeSessionsList\(\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\s*\)/,
-  "the collapse and classification flags are threaded into computeSessionsList",
+  /computeSessionsList\(\s*includeArchived,\s*null,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\s*\)/,
+  "the collapse and classification flags are threaded into the one unscoped computeSessionsList",
 );
+// #5661: a familiar's view filters that shared result by its project grants
+// rather than recomputing the whole list per familiar.
+assert.match(
+  source,
+  /const result = familiarId \? await scopeSessionsListResult\(base, familiarId\) : base;/,
+  "familiar views are scoped from the shared result",
+);
+assert.match(source, /cacheKey = `\$\{includeArchived \? "archived" : "active"\}:all:/, "the cache holds unscoped results only");
 
 // The route now passes only the classification option. Sweeps and git
 // enrichment still rely on computeSessionsList's defaults — the dashboard read

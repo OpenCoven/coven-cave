@@ -72,10 +72,22 @@ test("the sessions/list route scopes by familiar grants", () => {
     "the compute actually applies the familiar scope to the merged rows",
   );
   assert.match(route, /searchParams\.get\("familiarId"\)/, "reads the familiarId param");
+  // #5661: the route computes one unscoped list and scopes it per familiar with
+  // the same scopeForFamiliar the compute uses.
   assert.match(
     route,
-    /computeSessionsList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\)/,
-    "threads the parsed familiar id and classification flag into the scoped compute",
+    /computeSessionsList\(includeArchived,\s*null,\s*collapseFamiliarWorkspace,\s*\{\s*classifyFamiliarWorkspace\s*\}\)/,
+    "threads the classification flag into the shared unscoped compute",
+  );
+  assert.match(
+    route,
+    /familiarId \? await scopeSessionsListResult\(base, familiarId\) : base/,
+    "threads the parsed familiar id into the scoping of that result",
+  );
+  assert.match(
+    compute,
+    /export function scopeSessionsListResult[\s\S]*?await scopeForFamiliar\(base\.payload\.sessions, projects, familiarId\)/,
+    "the route's scoping uses the same familiar scope as the compute",
   );
 });
 
