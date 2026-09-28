@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parkedFollowUps, type QueueFollowUp } from "./chat-queue-followups.ts";
 import type { ReadyIssue } from "./work-queue.ts";
 import { useRefreshOnFocus } from "./use-refresh-on-focus.ts";
+import { whenStartupSettled } from "./startup-gate.ts";
 
 type ReadinessResponse = {
   ok?: boolean;
@@ -56,6 +57,9 @@ export function useQueueFollowUps(
     abortRef.current = controller;
     setLoading(true);
     try {
+      // Not needed until it is on screen: wait out app load (#5649).
+      await whenStartupSettled();
+      if (controller.signal.aborted) return;
       const readinessRes = await fetch("/api/queue/readiness", {
         cache: "no-store",
         signal: controller.signal,

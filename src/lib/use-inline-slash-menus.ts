@@ -14,6 +14,7 @@ import { skillCommandMatches, skillSlashOptions, type SkillOption } from "@/lib/
 import { promptSlashOptions, type PromptOption } from "@/lib/slash-prompt";
 import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prompt-prefs";
+import { whenStartupSettled } from "@/lib/startup-gate";
 
 /**
  * The composer's inline slash menus: the `/command` listbox (with its Skills
@@ -106,7 +107,9 @@ export function useInlineSlashMenus(opts: {
   const [skills, setSkills] = useState<SkillOption[]>([]);
   useEffect(() => {
     let alive = true;
-    fetch("/api/skills/local", { cache: "no-store" })
+    // Not needed until it is on screen: wait out app load (#5649).
+    whenStartupSettled()
+      .then(() => (alive ? fetch("/api/skills/local", { cache: "no-store" }) : Promise.reject(new Error("unmounted"))))
       .then((r) => r.json())
       .then((j) => {
         if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
@@ -134,7 +137,10 @@ export function useInlineSlashMenus(opts: {
           /* offline → built-in templates only */
         });
     };
-    load();
+    // Not needed until it is on screen: wait out app load (#5649).
+    void whenStartupSettled().then(() => {
+      if (alive) load();
+    });
     // Saving/deleting a user template broadcasts this event so every mounted
     // picker re-scans without a reload.
     window.addEventListener("cave:prompts-refresh", load);
