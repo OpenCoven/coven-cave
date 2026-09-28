@@ -145,6 +145,7 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
   { route: "/client/v1/projects", methods: ["GET"], kind: "json" },
+  { route: "/codex-automation-last-runs", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },

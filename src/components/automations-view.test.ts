@@ -336,6 +336,10 @@ assert.match(source, /const hasRunningRun = automationRuns\.some\(\(r\) => r\.st
 assert.match(source, /\}, \[selectedCodex\?\.id, hasRunningRun, refreshRuns\]\);/, "the poll effect does not depend on the runs array identity");
 assert.match(source, /setAutomationRuns\(\(prev\) => \(arrayContentEqual\(prev, runs\) \? prev : runs\)\)/, "unchanged run polls keep the array identity");
 assert.doesNotMatch(source, /void refreshRuns\(id\);\s*\n\s*void refreshLastRuns\(\);/, "the hot poll loop no longer fans out per-automation requests");
+// #5687: last-run badges come from one batched request, not one runs request
+// per automation queued on the browser's six connections per host.
+assert.match(source, /fetch\(`\/api\/codex-automation-last-runs\?\$\{query\}`\)/, "last-run badges use the batched endpoint");
+assert.doesNotMatch(source, /codexAutos\.map\(\(a\) =>\s*\n?\s*fetch\(/, "last-run badges no longer fan out one request per automation");
 
 // ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
 // Overview search must never dead-end: the input renders whenever search is

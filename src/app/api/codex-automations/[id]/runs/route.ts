@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listRoutineRuns } from "@/lib/server/coven-automations-client";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
+import { toAutomationRunRecord } from "@/lib/coven-automations-facade";
 
 export const dynamic = "force-dynamic";
 
@@ -10,19 +11,7 @@ export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
   try {
     const runs = await listRoutineRuns(id);
-    // The compatibility shape the UI reads: AutomationRunRecord minus the
-    // filesystem logPath (logs now live in the Coven run ledger).
-    const mapped = runs.map((run) => ({
-      id: run.id,
-      automationId: run.automationId,
-      automationName: id,
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      status: run.status,
-      exitCode: run.exitCode,
-      summary: run.logJson ?? undefined,
-    }));
-    return NextResponse.json({ ok: true, runs: mapped });
+    return NextResponse.json({ ok: true, runs: runs.map((run) => toAutomationRunRecord(run, id)) });
   } catch (err) {
     if (err instanceof CovenAutomationsUnavailableError && err.degraded) {
       return NextResponse.json(
