@@ -188,15 +188,9 @@ struct MainShellView: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
                 }
-                if !app.navigationDrawerOpen, app.drawerPresentationReady,
-                   app.destinationPresentationReady,
-                   let span = app.performanceSpans.span(for: .destinationStableFrame) {
-                    CavePerformanceStableFrame(token: String(describing: ObjectIdentifier(span))) {
-                        app.performanceSpans.finish(.destinationStableFrame, matching: span)
-                    }
-                    .frame(width: 0, height: 0)
-                    .accessibilityHidden(true)
-                }
+                // `destination.stable-frame` is confirmed by AppModel itself:
+                // one display tick after its transaction and the drawer close
+                // have both completed.
             }
         }
         .onAppear {

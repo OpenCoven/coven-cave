@@ -58,6 +58,16 @@ private enum RecorderTestError: Error, Equatable {
     case expected
 }
 
+private struct PerformanceDestinationProbe: View {
+    let app: AppModel
+    var body: some View {
+        Color.blue.frame(width: 20, height: 20)
+            .offset(x: app.navigationDrawerOpen ? 100 : 0)
+            .opacity(app.selectedTab == .settings ? 0.5 : 1)
+            .animation(.linear(duration: 0.2), value: app.navigationDrawerOpen)
+    }
+}
+
 private struct PerformanceDrawerAnimationProbe: View {
     let app: AppModel
     var body: some View {
@@ -588,6 +598,73 @@ final class CavePerformanceTests: XCTestCase {
         XCTAssertTrue(app.performanceSpans.isActive(.drawerOpen), "Animation completion still needs a presented frame")
         app.navigationDrawerOpen = false
         XCTAssertFalse(app.performanceSpans.isActive(.drawerOpen))
+    }
+
+    private func mountDestinationProbe(_ app: AppModel) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        window.rootViewController = UIHostingController(rootView: PerformanceDestinationProbe(app: app))
+        window.isHidden = false
+        window.layoutIfNeeded()
+        return window
+    }
+
+    private func waitUntil(_ condition: () -> Bool, seconds: Double = 3) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(seconds))
+        while !condition(), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func testDestinationFrameIsConfirmedWithoutAReporterView() async throws {
+        let suite = "CavePerformanceTests.destination.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, isPerformanceFixture: true,
+                           performanceRecorder: recorder, widgetSnapshotDefaults: defaults)
+        let window = mountDestinationProbe(app)
+        defer { window.isHidden = true; app.performanceSpans.cancelAll() }
+        try await Task.sleep(for: .milliseconds(50))
+
+        app.selectedTab = .settings
+        XCTAssertTrue(app.performanceSpans.isActive(.destinationStableFrame))
+        try await waitUntil { !app.performanceSpans.isActive(.destinationStableFrame) }
+        XCTAssertFalse(app.performanceSpans.isActive(.destinationStableFrame),
+                       "The committed destination confirms its own frame")
+        XCTAssertEqual(recorder.snapshot()[CavePerformanceSpanName.destinationStableFrame.rawValue]?.count, 1)
+    }
+
+    func testDestinationFrameWaitsForTheDrawerToFinishClosing() async throws {
+        let suite = "CavePerformanceTests.destinationDrawer.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, isPerformanceFixture: true,
+                           performanceRecorder: recorder, widgetSnapshotDefaults: defaults)
+        let window = mountDestinationProbe(app)
+        defer { window.isHidden = true; app.performanceSpans.cancelAll() }
+        try await Task.sleep(for: .milliseconds(50))
+        app.navigationDrawerOpen = true
+        try await waitUntil { app.drawerPresentationReady }
+
+        // A switch while the drawer stays open never confirms.
+        app.selectedTab = .settings
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(app.performanceSpans.isActive(.destinationStableFrame))
+
+        // The drawer's own close order: close, then select.
+        app.navigationDrawerOpen = false
+        app.selectedTab = .chats
+        let clock = ContinuousClock()
+        let start = clock.now
+        try await waitUntil { !app.performanceSpans.isActive(.destinationStableFrame) }
+        XCTAssertFalse(app.performanceSpans.isActive(.destinationStableFrame))
+        XCTAssertGreaterThanOrEqual(start.duration(to: clock.now), .milliseconds(150),
+                                    "The close animation must finish before the frame is confirmed")
+        XCTAssertEqual(recorder.snapshot()[CavePerformanceSpanName.destinationStableFrame.rawValue]?.count, 1)
     }
 
     func testFixtureConnectionRecoveryPreservesSyntheticConnectedState() async {
