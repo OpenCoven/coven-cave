@@ -73,8 +73,8 @@ export function sanitizeMessageFeedback(input: MessageFeedbackInput, at: string)
     fb.runtime = input.runtime.trim().slice(0, 60);
   }
   if (typeof input.sessionId === "string") {
-    const sessionId = input.sessionId.trim().slice(0, 200);
-    if (FEEDBACK_SESSION_ID_RE.test(sessionId)) fb.sessionId = sessionId;
+    const sessionId = input.sessionId.trim();
+    if (sessionId.length <= 200 && FEEDBACK_SESSION_ID_RE.test(sessionId)) fb.sessionId = sessionId;
   }
   // A reason only explains a thumbs-down; anything off the fixed list is dropped.
   if (fb.vote === "down" && !fb.cleared && isFeedbackReason(input.reason)) fb.reason = input.reason;
@@ -92,16 +92,22 @@ export async function loadMessageFeedback(): Promise<MessageFeedback[]> {
 }
 
 let feedbackTmpCounter = 0;
+let feedbackWriteQueue: Promise<void> = Promise.resolve();
 
 /** Append one sanitized feedback entry. Returns the stored entry, or null if invalid. */
 export async function recordMessageFeedback(input: MessageFeedbackInput): Promise<MessageFeedback | null> {
   const entry = sanitizeMessageFeedback(input, new Date().toISOString());
   if (!entry) return null;
-  await mkdir(path.dirname(MESSAGE_FEEDBACK_PATH), { recursive: true });
-  const entries = await loadMessageFeedback();
-  entries.push(entry);
-  const tmp = `${MESSAGE_FEEDBACK_PATH}.${process.pid}.${feedbackTmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify({ entries }, null, 2), "utf8");
-  await rename(tmp, MESSAGE_FEEDBACK_PATH);
-  return entry;
+  const write = feedbackWriteQueue.then(async () => {
+    await mkdir(path.dirname(MESSAGE_FEEDBACK_PATH), { recursive: true });
+    const entries = await loadMessageFeedback();
+    entries.push(entry);
+    const tmp = `${MESSAGE_FEEDBACK_PATH}.${process.pid}.${feedbackTmpCounter++}.tmp`;
+    await writeFile(tmp, JSON.stringify({ entries }, null, 2), "utf8");
+    await rename(tmp, MESSAGE_FEEDBACK_PATH);
+    return entry;
+  });
+  // Keep later votes writable even if this request fails.
+  feedbackWriteQueue = write.then(() => {}, () => {});
+  return write;
 }
