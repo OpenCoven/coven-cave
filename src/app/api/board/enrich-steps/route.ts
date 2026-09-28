@@ -203,11 +203,18 @@ function boardTaskContext(board: Card[]): string {
   ].join("\n");
 }
 
+/** "merged", "closed as not planned", "open", …: the link's refreshed state. */
+function githubStateLabel(link: CardGitHubLink): string {
+  if (!link.state) return "state unknown";
+  if (link.state === "closed" && link.stateReason) return `closed as ${link.stateReason.replace(/_/g, " ")}`;
+  return link.state;
+}
+
 function reachableGitHubContext(card: Card): string {
   const items = card.github
     .filter((link) => link.repo && typeof link.number === "number")
     .slice(0, 16)
-    .map((link) => `- ${link.repo}#${link.number}${link.title ? ` (${link.title.trim().slice(0, 80)})` : ""}`);
+    .map((link) => `- ${link.repo}#${link.number} [${link.kind}, ${githubStateLabel(link)}]${link.title ? ` (${link.title.trim().slice(0, 80)})` : ""}`);
   return [
     ``,
     `GitHub items attached to this task (reachable references):`,
@@ -255,8 +262,9 @@ function enrichPrompt(card: Card, board: Card[], today: string, retry = false): 
     `Create or update subtasks for the assigned task; include 3-8 short action steps.`,
     `Set startDate and endDate when the task has clear timing or sequence; use null only to clear a wrong date.`,
     `Decide whether this task is still open. Check the linked GitHub items, chats, and workspace when they can confirm its state; do not do the task's work in this run.`,
-    `If the outcome is delivered (the linked PR merged, the issue closed, or the work otherwise finished), close it: status "done", lifecycle "completed".`,
+    `If the outcome is delivered, close it: status "done", lifecycle "completed", and name the PR, issue, or commit that delivered it in lifecycleReason.`,
     `If it is obsolete, a duplicate, or no longer wanted, close it: lifecycle "cancelled".`,
+    `Linked GitHub states above are evidence, not a verdict. A merged PR or closed issue completes this task only if it delivered THIS task's outcome; a PR linked for context, a removal, or a related but different scope does not. A PR closed without merging, or an issue closed as not planned or duplicate, means cancel only if nothing else carries the work forward.`,
     `Otherwise keep it open and set status, lifecycle, priority, and needsHuman to where the work actually stands.`,
     `Always state the reason for the status you chose in lifecycleReason.`,
     `Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats that belong on this task.`,
@@ -491,61 +499,6 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
   return normalizeTaskGitHubLinks(refreshed);
 }
 
-function githubTarget(item: CardGitHubLink): string {
-  return `${item.repo}${item.number ? ` #${item.number}` : ""}`;
-}
-
-/**
- * The task's end state implied by its linked GitHub items, or null.
- *
- * A merged PR or an issue closed as done means the work landed: the task
- * completes. A PR closed without merging, or an issue closed as not planned or
- * as a duplicate, means it did not (#5635, #5647): the task is cancelled, but
- * only when nothing linked landed and no linked issue or PR is still open,
- * since an open one is usually the replacement. An issue closed with no
- * recorded reason counts as done.
- */
-function terminalPatchFromGitHub(
-  card: Card,
-  github: CardGitHubLink[],
-  now: string,
-): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
-  const tracked = github.filter((item) => item.kind === "issue" || item.kind === "pr");
-  const closedWithoutLanding = (item: CardGitHubLink) =>
-    item.kind === "issue" && item.state === "closed"
-    && (item.stateReason === "not_planned" || item.stateReason === "duplicate");
-  const landed = tracked.find(
-    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed" && !closedWithoutLanding(item)),
-  );
-  if (landed) {
-    const kind = landed.kind === "pr" ? "PR merged" : "issue closed";
-    return {
-      status: "done",
-      lifecycle: "completed",
-      needsHuman: false,
-      lifecycleReason: `GitHub ${kind}: ${githubTarget(landed)}`.slice(0, 240),
-      lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
-    };
-  }
-  const abandoned = tracked.find(
-    (item) => (item.kind === "pr" && item.state === "closed") || closedWithoutLanding(item),
-  );
-  if (!abandoned || tracked.some((item) => item.state === "open")) return null;
-  // Cancelled is reached through transitionCard, which records the blocker
-  // the Board requires (see lifecycleTransitionTarget).
-  return {
-    status: "blocked",
-    lifecycle: "cancelled",
-    needsHuman: false,
-    lifecycleReason: `GitHub ${
-      abandoned.kind === "pr"
-        ? "PR closed without merging"
-        : abandoned.stateReason === "duplicate" ? "issue closed as duplicate" : "issue closed as not planned"
-    }: ${githubTarget(abandoned)}`.slice(0, 240),
-    lifecycleAt: card.lifecycle === "cancelled" ? card.lifecycleAt : now,
-  };
-}
-
 /**
  * Cancelling or failing a task goes through the Board's own lifecycle
  * transition, which records the execution blocker a "blocked" status requires.
@@ -573,18 +526,18 @@ async function finishLifecycleTransition(
   }
 }
 
+/**
+ * Fold the refreshed GitHub links into the review. Their states are evidence
+ * for the familiar, not a verdict (#5667): an automatic "any linked PR merged
+ * means done" rule completed tasks on PRs linked only for context, including
+ * one that removed the feature the task asked for. The familiar's own status
+ * and lifecycle decide completion and cancellation.
+ */
 function applyGitHubState(
-  card: Card,
   normalized: NormalizedTaskEnrichment,
   github: CardGitHubLink[],
-  now: string,
 ): NormalizedTaskEnrichment {
-  const terminal = terminalPatchFromGitHub(card, github, now);
-  return {
-    ...normalized,
-    github,
-    ...(terminal ?? {}),
-  };
+  return { ...normalized, github };
 }
 
 function githubStateChanged(previous: CardGitHubLink[], next: CardGitHubLink[]): boolean {
@@ -699,7 +652,7 @@ export async function POST(req: Request) {
         const now = new Date().toISOString();
 
         if (!enrichment) {
-          const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, {}, now), githubState, now);
+          const normalized = applyGitHubState(normalizeTaskEnrichment(card, {}, now), githubState);
           if (
             !githubStateChanged(card.github, normalized.github) &&
             normalized.status === card.status &&
@@ -752,7 +705,7 @@ export async function POST(req: Request) {
           return;
         }
 
-        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
+        const normalized = applyGitHubState(normalizeTaskEnrichment(card, enrichment, now), githubState);
         // Dependency and next-step suggestions ride the same model run. They are
         // gated before any write: auto-application requires grounding, structural
         // validity, and non-conflict (cave-bmcoe); anything failing a gate lands
