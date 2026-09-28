@@ -1366,10 +1366,22 @@ type LockedBoardUpdate = {
   card: Card;
 };
 
+type UpdateCardOptions = {
+  automated?: boolean;
+  actor?: string;
+  /**
+   * The patch's lifecycleReason is a fresh review of where the task stands
+   * (Enhance, #5684). Record it even when the lifecycle is unchanged. Every
+   * other write keeps the rule that the reason explains the latest lifecycle
+   * change.
+   */
+  reviewReason?: boolean;
+};
+
 async function updateCardLocked(
   id: string,
   patchWithOps: CardPatch,
-  options: { automated?: boolean; actor?: string } = {},
+  options: UpdateCardOptions = {},
   existingBoard?: BoardFile,
 ): Promise<LockedBoardUpdate | null> {
   const board = existingBoard ?? await loadBoard();
@@ -1416,7 +1428,9 @@ async function updateCardLocked(
     lifecycleAt: lifecycleChanged ? now : current.lifecycleAt,
     lifecycleReason: lifecycleChanged
       ? ("lifecycleReason" in patch ? patch.lifecycleReason : undefined)
-      : current.lifecycleReason,
+      : options.reviewReason && typeof patch.lifecycleReason === "string" && patch.lifecycleReason.trim()
+        ? patch.lifecycleReason
+        : current.lifecycleReason,
     updatedAt: now,
     labels: patch.labels
       ? normalizeList(patch.labels)
@@ -1501,7 +1515,7 @@ async function updateCardLocked(
 export async function updateCard(
   id: string,
   patchWithOps: CardPatch,
-  options: { automated?: boolean; actor?: string } = {},
+  options: UpdateCardOptions = {},
 ): Promise<Card | null> {
   return withBoardLock(async () => {
     const updated = await updateCardLocked(id, patchWithOps, options);

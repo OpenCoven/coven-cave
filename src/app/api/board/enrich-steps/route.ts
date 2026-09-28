@@ -678,7 +678,7 @@ export async function POST(req: Request) {
               needsHuman: transitionTo ? card.needsHuman : normalized.needsHuman,
               lifecycleReason: normalized.lifecycleReason,
               lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
-            }, { automated: true });
+            }, { automated: true, reviewReason: true });
           } catch (error) {
             if (error instanceof OrchestrationValidationError) {
               push({
@@ -759,7 +759,7 @@ export async function POST(req: Request) {
                 ),
               }
               : {}),
-          }, { automated: true });
+          }, { automated: true, reviewReason: true });
         } catch (error) {
           if (error instanceof OrchestrationValidationError) {
             if (hasOrchestration && proposalRecord) {
@@ -774,7 +774,7 @@ export async function POST(req: Request) {
               try {
                 let recorded;
                 try {
-                  recorded = await updateCard(card.id, { ...taskPatch, agenticEnhance }, { automated: true });
+                  recorded = await updateCard(card.id, { ...taskPatch, agenticEnhance }, { automated: true, reviewReason: true });
                 } catch (retryError) {
                   if (!(retryError instanceof OrchestrationValidationError)) throw retryError;
                   // The status itself depended on the rejected suggestion (a
@@ -788,7 +788,7 @@ export async function POST(req: Request) {
                     lifecycleAt: card.lifecycleAt,
                     needsHuman: true,
                     agenticEnhance,
-                  }, { automated: true });
+                  }, { automated: true, reviewReason: true });
                 }
                 if (recorded) {
                   const final = await finishTransition(recorded);

@@ -304,7 +304,7 @@ assert.match(
 // task is reported as done, never left unaccounted (#5629).
 assert.match(
   source,
-  /recorded = await updateCard\(card\.id, \{ \.\.\.taskPatch, agenticEnhance \}, \{ automated: true \}\);[\s\S]*status: card\.status,\s*lifecycle: card\.lifecycle,[\s\S]*needsHuman: true,/,
+  /recorded = await updateCard\(card\.id, \{ \.\.\.taskPatch, agenticEnhance \}, \{ automated: true, reviewReason: true \}\);[\s\S]*status: card\.status,\s*lifecycle: card\.lifecycle,[\s\S]*needsHuman: true,/,
   "A blocked orchestration suggestion must not discard the task review; a status that needed it is held and flagged",
 );
 assert.match(
@@ -358,3 +358,11 @@ assert.match(
   "The refresh records GitHub's issue close reason",
 );
 
+
+// Every Enhance review write records the familiar's reason even when the task
+// stays where it is (#5684); the needs-human fallback write does not.
+assert.equal(
+  (source.match(/\{ automated: true, reviewReason: true \}/g) ?? []).length,
+  4,
+  "Enhance's four review writes keep the familiar's review reason",
+);
