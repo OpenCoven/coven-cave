@@ -3,6 +3,7 @@ import { loadBoard } from "@/lib/cave-board";
 import { summarizeFamiliarOutcomes, type FamiliarOutcome } from "@/lib/familiar-outcomes";
 import { redactSecretText } from "@/lib/secret-redaction";
 import { listSelfReports } from "@/lib/server/familiar-self-reports";
+import { loadMessageFeedback } from "@/lib/server/message-feedback-store";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export const runtime = "nodejs";
 function redactOutcome(outcome: FamiliarOutcome): FamiliarOutcome {
   return {
     ...outcome,
-    cardTitle: redactSecretText(outcome.cardTitle),
+    ...(outcome.cardTitle ? { cardTitle: redactSecretText(outcome.cardTitle) } : {}),
     ...(outcome.detail ? { detail: redactSecretText(outcome.detail) } : {}),
   };
 }
@@ -23,7 +24,7 @@ function redactOutcome(outcome: FamiliarOutcome): FamiliarOutcome {
  * GET /api/familiars/[id]/outcomes
  *
  * What actually happened to this familiar's work (accepted or rejected, from
- * Board lifecycle and GitHub PR state), and how well its self-reported
+ * Board lifecycle, GitHub PR state, and thumbs votes in chat), and how well its self-reported
  * confidence predicted that. See src/lib/familiar-outcomes.ts for the rules.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -31,11 +32,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!isValidFamiliarId(id)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
-  const [board, reports] = await Promise.all([
+  const [board, reports, feedback] = await Promise.all([
     loadBoard(),
     listSelfReports(id, { limit: "all" }),
+    loadMessageFeedback(),
   ]);
-  const summary = summarizeFamiliarOutcomes(id, board.cards, reports.reports);
+  const summary = summarizeFamiliarOutcomes(id, board.cards, reports.reports, feedback);
   return NextResponse.json({
     ok: true,
     ...summary,

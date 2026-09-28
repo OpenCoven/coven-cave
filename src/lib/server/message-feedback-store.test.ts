@@ -43,6 +43,22 @@ assert.ok(
     "drops non-whitelisted keys (no content/secret leakage)",
   );
 }
+// sessionId: the voted message's thread, kept only when it is a well-formed id.
+{
+  const kept = fb.sanitizeMessageFeedback({ messageId: "m", vote: "down", sessionId: " 31f28910-d951-4ae7-af6b-8b4847a5489a " }, "t");
+  assert.equal(kept.sessionId, "31f28910-d951-4ae7-af6b-8b4847a5489a", "thread id survives (outcome calibration)");
+  for (const bad of ["[redacted]", "../etc", "a b", "", 42]) {
+    const dropped = fb.sanitizeMessageFeedback({ messageId: "m", vote: "down", sessionId: bad }, "t");
+    assert.equal(dropped.sessionId, undefined, `malformed thread id dropped: ${JSON.stringify(bad)}`);
+  }
+}
+// reason: a fixed one-tap category, kept only on an active thumbs-down.
+{
+  assert.equal(fb.sanitizeMessageFeedback({ messageId: "m", vote: "down", reason: "misunderstood" }, "t").reason, "misunderstood");
+  assert.equal(fb.sanitizeMessageFeedback({ messageId: "m", vote: "down", reason: "the model was rude" }, "t").reason, undefined, "free text dropped");
+  assert.equal(fb.sanitizeMessageFeedback({ messageId: "m", vote: "up", reason: "incorrect" }, "t").reason, undefined, "no reason on a thumbs-up");
+  assert.equal(fb.sanitizeMessageFeedback({ messageId: "m", vote: "down", cleared: true, reason: "incorrect" }, "t").reason, undefined, "no reason on a cleared vote");
+}
 assert.equal(fb.sanitizeMessageFeedback({ messageId: "x" }, "t"), null, "no vote → rejected");
 assert.equal(fb.sanitizeMessageFeedback({ vote: "up" }, "t"), null, "no messageId → rejected");
 assert.equal(fb.sanitizeMessageFeedback({ messageId: "x", vote: "sideways" }, "t"), null, "bad vote → rejected");
@@ -56,6 +72,7 @@ assert.equal(b.cleared, true, "toggle-off is recorded");
 assert.equal(b.familiarId, undefined, "no familiarId unless supplied");
 assert.equal(b.model, undefined, "no model unless supplied");
 assert.equal(b.runtime, undefined, "no runtime unless supplied");
+assert.equal(b.sessionId, undefined, "no thread id unless supplied");
 
 const all = await fb.loadMessageFeedback();
 assert.equal(all.length, 2, "both entries persisted");

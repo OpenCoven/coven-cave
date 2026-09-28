@@ -6,6 +6,7 @@
 // chrome (.cave-bubble-*) lives in cave-chat.css, imported by the chat
 // surfaces that render <MessageBubble> itself (chat-view, group-chat-view).
 import "@/styles/cave-md.css";
+import "@/styles/cave-feedback-reason.css";
 
 /**
  * MessageBubble — full Markdown/HTML rendering for Cave chat turns.
@@ -58,7 +59,17 @@ import {
   canCompare,
   type ReadingBlock,
 } from "@/lib/code-reading";
-import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
+import {
+  FEEDBACK_REASONS,
+  getFeedback,
+  setFeedback,
+  recordFeedbackAnalytics,
+  type Feedback,
+  type FeedbackContext,
+  type FeedbackReason,
+} from "@/lib/message-feedback";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SpeakBubble, type SpeakBubbleController } from "@/components/speak-bubble";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
@@ -1173,13 +1184,27 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   const speechRef = useRef<SpeakBubbleController | null>(null);
   const responseBodyId = useId();
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
+  // After a fresh thumbs-down, ask once what missed. Skipping is fine: the
+  // vote is already recorded; the reason is an optional follow-up entry.
+  const [reasonStep, setReasonStep] = useState<"idle" | "asking" | "thanks">("idle");
   const applyVote = (v: Feedback) => {
     if (!messageId) return;
     setFeedback(messageId, v);
     const next = getFeedback(messageId);
     setVote(next);
     recordFeedbackAnalytics(messageId, v, next === null, feedbackContext);
+    setReasonStep(next === "down" ? "asking" : "idle");
   };
+  const chooseReason = (reason: FeedbackReason) => {
+    if (!messageId) return;
+    recordFeedbackAnalytics(messageId, "down", false, feedbackContext, reason);
+    setReasonStep("thanks");
+  };
+  useEffect(() => {
+    if (reasonStep !== "thanks") return;
+    const timer = setTimeout(() => setReasonStep("idle"), 2500);
+    return () => clearTimeout(timer);
+  }, [reasonStep]);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -1462,6 +1487,22 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             controllerRef={speechRef}
             onStateChange={setSpeakState}
           />
+        </div>
+      ) : null}
+      {reasonStep === "asking" && vote === "down" ? (
+        <div className="cave-feedback-reason" role="group" aria-label="What did this response miss?">
+          <span className="cave-feedback-reason__prompt">What missed?</span>
+          {FEEDBACK_REASONS.map((reason) => (
+            <Button key={reason.id} size="xs" variant="ghost" onClick={() => chooseReason(reason.id)}>
+              {reason.label}
+            </Button>
+          ))}
+          <IconButton icon="ph:x" size="xs" aria-label="Skip reason" onClick={() => setReasonStep("idle")} />
+        </div>
+      ) : null}
+      {reasonStep === "thanks" ? (
+        <div className="cave-feedback-reason cave-feedback-reason--thanks" role="status">
+          Noted. Thanks.
         </div>
       ) : null}
       {readerOpen ? (

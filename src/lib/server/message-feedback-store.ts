@@ -10,6 +10,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
+import { isFeedbackReason, type FeedbackReason } from "@/lib/message-feedback";
 
 export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
 
@@ -24,6 +25,11 @@ export type MessageFeedback = {
   model?: string;
   /** Runtime/harness id at vote time — seeds per-runtime quality analytics. */
   runtime?: string;
+  /** The chat thread the voted message belongs to. An id, not content. Votes
+   *  recorded before this field existed have none. */
+  sessionId?: string;
+  /** One-tap category chosen after a thumbs-down (fixed list, never free text). */
+  reason?: FeedbackReason;
   at: string;
 };
 
@@ -35,7 +41,12 @@ export type MessageFeedbackInput = {
   familiarId?: string;
   model?: string;
   runtime?: string;
+  sessionId?: string;
+  reason?: string;
 };
+
+/** Same shape the self-report store accepts for thread ids. */
+const FEEDBACK_SESSION_ID_RE = /^[a-z0-9_-]+$/i;
 
 type FeedbackFile = { entries: MessageFeedback[] };
 
@@ -61,6 +72,12 @@ export function sanitizeMessageFeedback(input: MessageFeedbackInput, at: string)
   if (typeof input.runtime === "string" && input.runtime.trim()) {
     fb.runtime = input.runtime.trim().slice(0, 60);
   }
+  if (typeof input.sessionId === "string") {
+    const sessionId = input.sessionId.trim().slice(0, 200);
+    if (FEEDBACK_SESSION_ID_RE.test(sessionId)) fb.sessionId = sessionId;
+  }
+  // A reason only explains a thumbs-down; anything off the fixed list is dropped.
+  if (fb.vote === "down" && !fb.cleared && isFeedbackReason(input.reason)) fb.reason = input.reason;
   return fb;
 }
 
