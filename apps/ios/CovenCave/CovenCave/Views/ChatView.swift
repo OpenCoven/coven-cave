@@ -64,7 +64,6 @@ struct ChatView: View {
     @Namespace private var pickerZoomNamespace
     @State private var scrollState = ChatScrollState()
     @State private var viewportRecovery = ChatViewportRecovery()
-    @State private var transcriptPosition = ScrollPosition(edge: .bottom)
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -239,7 +238,6 @@ struct ChatView: View {
         streamScroll.cancel()
         scrollState = ChatScrollState()
         viewportRecovery = ChatViewportRecovery()
-        transcriptPosition = ScrollPosition(edge: .bottom)
         unreadDividerId = nil
         unreadComputed = false
         daysAboveTop.removeAll()
@@ -838,14 +836,20 @@ struct ChatView: View {
         }
     }
 
-    private func recoverTranscriptViewportIfNeeded() {
-        guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
-        streamScroll.cancel()
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            // Edge-based scrolling does not need to resolve an unmounted row ID.
-            transcriptPosition.scrollTo(edge: .bottom)
+    private func recoverTranscriptViewportIfNeeded(_ proxy: ScrollViewProxy) {
+        guard viewportRecovery.hasPendingRecovery, !scrollState.isUserScrolling else { return }
+        // Re-check after one runloop turn: a settling layout frame that brings
+        // the offset back in range cancels the correction instead of racing it.
+        DispatchQueue.main.async {
+            guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
+            streamScroll.cancel()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                // Clamp to the valid extent. The sentinel sits outside the
+                // lazy stack, so it always resolves.
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
         }
     }
 
@@ -865,7 +869,6 @@ struct ChatView: View {
                             .id(row.id)
                         }
                     }
-                    .scrollTargetLayout()
                     if let row = thread.transcriptRows.last {
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
@@ -877,8 +880,15 @@ struct ChatView: View {
                                     contentHeight: geometry.size.height,
                                     visibleBottom: viewport.maxY
                                 )
-                            } action: { _, geometry in
+                            } action: { previous, geometry in
                                 guard let geometry else { return }
+                                if previous?.contentHeight != geometry.contentHeight {
+                                    // Only the latest reply's own shrink may arm
+                                    // offset recovery (#5613), never a lazy
+                                    // history row re-estimating its height.
+                                    viewportRecovery.noteLatestRow(id: row.id, height: geometry.contentHeight)
+                                    recoverTranscriptViewportIfNeeded(proxy)
+                                }
                                 if scrollState.isAtBottom != geometry.isAtBottom {
                                     scrollState.updateGeometry(atBottom: geometry.isAtBottom)
                                 }
@@ -895,7 +905,6 @@ struct ChatView: View {
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
-            .scrollPosition($transcriptPosition)
             .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
                 ChatViewportGeometry(
                     contentHeight: geometry.contentSize.height,
@@ -906,7 +915,7 @@ struct ChatView: View {
                 )
             } action: { _, geometry in
                 viewportRecovery.update(geometry)
-                recoverTranscriptViewportIfNeeded()
+                recoverTranscriptViewportIfNeeded(proxy)
             }
             .scrollDismissesKeyboard(.interactively)
             // Open at the latest message without the post-layout jump a
@@ -937,9 +946,7 @@ struct ChatView: View {
                     Button {
                         scrollState.followLatest()
                         streamScroll.cancel()
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-                            transcriptPosition.scrollTo(edge: .bottom)
-                        }
+                        scrollToLatest(proxy, animation: .easeOut(duration: 0.2))
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 15, weight: .semibold))
@@ -977,7 +984,7 @@ struct ChatView: View {
                     streamScroll.cancel()
                 case .idle:
                     scrollState.endUserScroll()
-                    recoverTranscriptViewportIfNeeded()
+                    recoverTranscriptViewportIfNeeded(proxy)
                 default: break
                 }
                 dayChipIdleTask?.cancel()

@@ -55,27 +55,67 @@ struct ChatViewportGeometry: Equatable {
     }
 }
 
-/// A shrinking lazy transcript can retain an offset beyond its new extent.
-/// This observer belongs to the viewport, not a row that can be unmounted.
-/// It never treats normal streaming growth or a valid history position as a
-/// request to follow the latest message, and never fights an active gesture.
+/// A shrinking latest reply can leave the scroll view holding an offset beyond
+/// its new extent (#5613). This observer belongs to the viewport, not a row
+/// that can be unmounted, and it only clamps that invalid offset back into
+/// range. Two independent signals must agree before it arms:
+///
+/// - the latest row itself got shorter (same row id, measured height), and
+/// - the viewport reports an offset beyond the valid content extent.
+///
+/// Lazy history rows re-estimating their heights while the reader scrolls
+/// up can shrink the total content height for a frame before UIKit settles
+/// the offset. That transient is not a shrink of the latest reply, so it never
+/// arms recovery and never pulls a reader of older content back to latest.
+/// Normal streaming growth, a valid history position, and an active gesture
+/// are likewise never treated as a request to follow the latest message.
 struct ChatViewportRecovery {
-    private var previousHeight: CGFloat?
+    private var geometry: ChatViewportGeometry?
+    private var latestRowId: String?
+    private var latestRowHeight: CGFloat?
+    private var latestRowShrank = false
     private var pending = false
+
+    /// The latest row's own measured height. A different row id (a new
+    /// message, another thread) is a fresh baseline, not a shrink.
+    mutating func noteLatestRow(id: String, height: CGFloat) {
+        guard height.isFinite, height > 0 else { return }
+        if latestRowId == id, let latestRowHeight, height < latestRowHeight - 1 {
+            latestRowShrank = true
+        }
+        latestRowId = id
+        latestRowHeight = height
+        // The viewport may not have reported the new extent yet; a stale
+        // in-range geometry must not discard this evidence.
+        evaluate(consumesEvidence: false)
+    }
 
     mutating func update(_ geometry: ChatViewportGeometry) {
         guard geometry.isValid else { return }
-        if let previousHeight, geometry.contentHeight < previousHeight - 1,
-           geometry.isBeyondEnd {
-            pending = true
-        }
-        previousHeight = geometry.contentHeight
-        if !geometry.isBeyondEnd { pending = false }
+        self.geometry = geometry
+        evaluate(consumesEvidence: true)
     }
 
+    /// Whether a correction is waiting; the caller re-checks with
+    /// `takeRecovery` after one runloop turn so a settling frame can cancel it.
+    var hasPendingRecovery: Bool { pending }
+
     mutating func takeRecovery(isUserScrolling: Bool) -> Bool {
-        guard pending, !isUserScrolling else { return false }
+        guard pending, !isUserScrolling, geometry?.isBeyondEnd == true else { return false }
         pending = false
+        latestRowShrank = false
         return true
+    }
+
+    private mutating func evaluate(consumesEvidence: Bool) {
+        guard let geometry else { return }
+        if geometry.isBeyondEnd {
+            if latestRowShrank { pending = true }
+        } else if consumesEvidence {
+            // A valid offset consumes any shrink evidence: UIKit (or the
+            // reader) already landed somewhere legitimate.
+            pending = false
+            latestRowShrank = false
+        }
     }
 }

@@ -102,11 +102,21 @@ final class ChatScrollingUITests: XCTestCase {
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
         for _ in 0..<2 {
             let top = app.staticTexts[topMarker].firstMatch
-            for _ in 0..<12 {
+            // SwiftUI's LazyVStack can re-estimate unmeasured history heights
+            // mid-deceleration and move the offset by itself (reproduced on
+            // main's ChatView too); slow CI simulators hit that more often.
+            // The budget absorbs those transients; the settled check below is
+            // what proves the app never re-anchors a reader of older content.
+            for _ in 0..<30 {
                 scrollView.swipeDown()
                 if top.exists && top.isHittable { break }
             }
-            XCTAssertTrue(top.isHittable, "the reader can reach older messages without being pulled back")
+            XCTAssertTrue(top.isHittable, "the reader can reach older messages")
+            let pulledBack = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hittable == false"), object: top
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [pulledBack], timeout: 3), .timedOut,
+                           "a settled reader of older messages is not pulled back to latest")
 
             let jump = app.buttons["Scroll to latest"].firstMatch
             XCTAssertTrue(jump.waitForExistence(timeout: 5), "jump control appears after an intentional scroll up")
