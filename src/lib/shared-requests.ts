@@ -12,8 +12,13 @@
  */
 
 type Kept<V> = { at: number; value: V };
+type Outcome<V> = { value: V } | { error: unknown };
 
 export type SharedRequestOptions = { force?: boolean; freshMs: number; now?: () => number };
+
+// One counter for every key: a key's bookkeeping can then be dropped once
+// nothing for it is in flight without a later request reusing a generation.
+let generationCounter = 0;
 
 export function createSharedRequests<V>(config: {
   /** Whether an answer may be reused (failures are asked again). */
@@ -22,12 +27,24 @@ export function createSharedRequests<V>(config: {
 }) {
   const answers = new Map<string, Kept<V>>();
   const inflight = new Map<string, Promise<V>>();
-  const generations = new Map<string, number>();
+  // Per key, only while a request for it is in flight: the latest generation,
+  // how many requests are pending, and the latest request's outcome (success or
+  // failure) for superseded requests that settle after it.
+  const latest = new Map<string, number>();
+  const pendingCount = new Map<string, number>();
+  const latestOutcome = new Map<string, Outcome<V>>();
 
-  function newest(key: string, own: Promise<V>): Promise<V> | V | undefined {
+  function newest(key: string, own: Promise<V>): Promise<V> | Outcome<V> | undefined {
     const pending = inflight.get(key);
     if (pending && pending !== own) return pending;
-    return answers.get(key)?.value;
+    return latestOutcome.get(key);
+  }
+
+  function settleSuperseded(key: string, own: Promise<V>, fallback: Outcome<V>): Promise<V> | V {
+    const answer = newest(key, own) ?? fallback;
+    if (answer instanceof Promise) return answer;
+    if ("error" in answer) throw answer.error;
+    return answer.value;
   }
 
   function run(key: string, load: () => Promise<V>, options: SharedRequestOptions): Promise<V> {
@@ -38,9 +55,10 @@ export function createSharedRequests<V>(config: {
       const pending = inflight.get(key);
       if (pending) return pending;
     }
-    const generation = (generations.get(key) ?? 0) + 1;
-    generations.set(key, generation);
-    const superseded = () => generations.get(key) !== generation;
+    const generation = ++generationCounter;
+    latest.set(key, generation);
+    pendingCount.set(key, (pendingCount.get(key) ?? 0) + 1);
+    const superseded = () => latest.get(key) !== generation;
     // Read only after an await, once the assignment below has happened.
     let request!: Promise<V>;
     request = (async () => {
@@ -48,16 +66,12 @@ export function createSharedRequests<V>(config: {
       try {
         value = await load();
       } catch (error) {
-        if (superseded()) {
-          const latest = newest(key, request);
-          if (latest !== undefined) return latest;
-        }
+        if (superseded()) return settleSuperseded(key, request, { error });
+        latestOutcome.set(key, { error });
         throw error;
       }
-      if (superseded()) {
-        const latest = newest(key, request);
-        return latest !== undefined ? latest : value;
-      }
+      if (superseded()) return settleSuperseded(key, request, { value });
+      latestOutcome.set(key, { value });
       if (config.keep(value)) {
         answers.delete(key);
         answers.set(key, { at: now(), value });
@@ -70,18 +84,33 @@ export function createSharedRequests<V>(config: {
       return value;
     })();
     inflight.set(key, request);
-    const clear = () => {
+    const settle = () => {
       if (inflight.get(key) === request) inflight.delete(key);
+      const remaining = (pendingCount.get(key) ?? 1) - 1;
+      if (remaining > 0) {
+        pendingCount.set(key, remaining);
+        return;
+      }
+      pendingCount.delete(key);
+      latest.delete(key);
+      latestOutcome.delete(key);
     };
-    request.then(clear, clear);
+    request.then(settle, settle);
     return request;
   }
 
   function clear(): void {
     answers.clear();
     inflight.clear();
-    generations.clear();
+    latest.clear();
+    pendingCount.clear();
+    latestOutcome.clear();
   }
 
-  return { run, clear };
+  /** Test seam: bookkeeping held for keys with nothing in flight should be none. */
+  function trackedKeys(): number {
+    return latest.size + pendingCount.size + latestOutcome.size;
+  }
+
+  return { run, clear, trackedKeys };
 }

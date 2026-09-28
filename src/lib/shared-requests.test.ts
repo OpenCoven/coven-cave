@@ -65,3 +65,37 @@ test("unchanged sharing: join, reuse while fresh, expire, never keep failures", 
   await requests.run("f", async () => { retried = true; return "ok"; }, opts());
   assert.equal(retried, true);
 });
+
+// Review on #5672: a newer failure still wins over an older success.
+test("the newest outcome wins even when it is a failure", async () => {
+  const requests = shared();
+  const older = deferred();
+  const olderCallers = requests.run("k", () => older.promise, opts());
+  const forced = requests.run("k", async () => "failed", opts({ force: true }));
+  assert.equal(await forced, "failed");
+  older.resolve("stale-success");
+  assert.equal(await olderCallers, "failed", "the superseded request reports the newest outcome");
+
+  const requests2 = shared();
+  const older2 = deferred();
+  const olderCallers2 = requests2.run("k", () => older2.promise, opts());
+  const forced2 = requests2.run("k", async () => { throw new Error("newest failed"); }, opts({ force: true }));
+  await assert.rejects(forced2, /newest failed/);
+  older2.resolve("stale-success");
+  await assert.rejects(olderCallers2, /newest failed/, "a newer rejection is what the older callers see");
+});
+
+test("per-key bookkeeping is dropped once nothing for the key is in flight", async () => {
+  const requests = shared();
+  const older = deferred();
+  const olderCallers = requests.run("k", () => older.promise, opts());
+  await requests.run("k", async () => "fresh", opts({ force: true }));
+  assert.ok(requests.trackedKeys() > 0, "kept while the older request is still pending");
+  older.resolve("stale");
+  await olderCallers;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.trackedKeys(), 0);
+  for (let i = 0; i < 50; i += 1) await requests.run(`url-${i}`, async () => `v${i}`, opts());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.trackedKeys(), 0, "distinct keys do not accumulate");
+});
