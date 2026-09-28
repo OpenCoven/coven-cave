@@ -37,7 +37,7 @@ type Place = { id: string; name: string; path: string; kind: "home" | "known" | 
 type PlaceGroup = { id: string; label: string; places: Place[] };
 type PlacesResponse = { ok: boolean; home?: string; groups?: PlaceGroup[] };
 
-/** Known-folder id → glyph, so the rail reads like Explorer's sidebar. */
+/** Known-folder id → glyph for the Favorites and Locations rail. */
 const PLACE_ICONS: Record<string, IconName> = {
   home: "ph:house",
   desktop: "ph:desktop",
@@ -896,7 +896,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               className="max-w-[260px] truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
               title={pendingPath ?? undefined}
             >
-              {pendingPath === home || (pendingPath && isVolumeRootPath(pendingPath)) ? "Select a subfolder to continue." : pendingPath ? collapseHome(pendingPath) : "Open a location to continue."}
+              {pendingPath && (pendingPath === home || isVolumeRootPath(pendingPath)) ? "Select a subfolder to continue." : pendingPath ? collapseHome(pendingPath) : "Open a location to continue."}
             </span>
           </div>
           <div className="flex flex-none items-center gap-2">

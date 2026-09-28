@@ -523,3 +523,11 @@ test("the picker never reports a folder as empty while it is withholding dot fol
     "the sub-line says how many are withheld, under the no-match copy too",
   );
 });
+
+// A null initial location is still loading, not the user's home directory.
+test("picker root guidance requires a resolved path and touch actions keep square targets", () => {
+  const src = read("./directory-picker-modal.tsx");
+  const css = read("../styles/directory-picker-modal.css");
+  assert.match(src, /pendingPath && \(pendingPath === home \|\| isVolumeRootPath\(pendingPath\)\)/);
+  assert.match(css, /@media \(pointer: coarse\)[\s\S]*?\.directory-picker button \{\s*min-width: var\(--touch-target\);\s*min-height: var\(--touch-target\);/);
+});

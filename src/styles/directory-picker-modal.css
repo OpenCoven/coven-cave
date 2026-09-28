@@ -86,7 +86,10 @@
 }
 @media (pointer: coarse) {
   .directory-picker input { font-size: var(--text-lg); }
-  .directory-picker button { min-height: var(--touch-target); }
+  .directory-picker button {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
   .directory-picker-address form,
   .directory-picker-search label { min-height: var(--touch-target); }
   .directory-picker-row > button:first-child {
