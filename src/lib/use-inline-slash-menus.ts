@@ -15,6 +15,7 @@ import { promptSlashOptions, type PromptOption } from "@/lib/slash-prompt";
 import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prompt-prefs";
 import { whenStartupSettled } from "@/lib/startup-gate";
+import { sharedJsonFetch } from "@/lib/shared-json-fetch";
 
 /**
  * The composer's inline slash menus: the `/command` listbox (with its Skills
@@ -109,9 +110,9 @@ export function useInlineSlashMenus(opts: {
     let alive = true;
     // Not needed until it is on screen: wait out app load (#5649).
     whenStartupSettled()
-      .then(() => (alive ? fetch("/api/skills/local", { cache: "no-store" }) : Promise.reject(new Error("unmounted"))))
-      .then((r) => r.json())
-      .then((j) => {
+      // Shared across remounts (a familiar switch remounts the composer) (#5663).
+      .then(() => (alive ? sharedJsonFetch<{ ok?: boolean; skills?: unknown }>("/api/skills/local") : Promise.reject(new Error("unmounted"))))
+      .then(({ data: j }) => {
         if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
       })
       .catch(() => {
@@ -127,10 +128,10 @@ export function useInlineSlashMenus(opts: {
   const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
   useEffect(() => {
     let alive = true;
-    const load = () => {
-      fetch("/api/prompts", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((j) => {
+    // A saved or deleted template refreshes live; a remount reuses (#5663).
+    const load = (force = false) => {
+      sharedJsonFetch<{ ok?: boolean; prompts?: unknown }>("/api/prompts", { force })
+        .then(({ data: j }) => {
           if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
         })
         .catch(() => {
@@ -143,10 +144,11 @@ export function useInlineSlashMenus(opts: {
     });
     // Saving/deleting a user template broadcasts this event so every mounted
     // picker re-scans without a reload.
-    window.addEventListener("cave:prompts-refresh", load);
+    const refresh = () => load(true);
+    window.addEventListener("cave:prompts-refresh", refresh);
     return () => {
       alive = false;
-      window.removeEventListener("cave:prompts-refresh", load);
+      window.removeEventListener("cave:prompts-refresh", refresh);
     };
   }, []);
 

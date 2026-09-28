@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import { computeSessionsList } from "@/lib/server/sessions-list";
+import { computeSessionsList, scopeSessionsListResult } from "@/lib/server/sessions-list";
 import { sessionsListCache } from "@/lib/server/sessions-list-cache";
 import { ifNoneMatchIncludes, serializeJsonWithEtag } from "@/lib/server/json-etag";
 
@@ -30,14 +30,17 @@ export async function GET(req: Request) {
   if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
   }
-  // Cache per (archived, familiar, collapse, classification) — these views
-  // differ both by membership and by whether trusted familiar metadata is present.
-  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
+  // Cache per (archived, collapse, classification) — these views differ both by
+  // membership and by whether trusted familiar metadata is present. A familiar's
+  // view is that unscoped result filtered by its project grants (#5661), so
+  // switching familiars never recomputes the list.
+  const cacheKey = `${includeArchived ? "archived" : "active"}:all:${
     collapseFamiliarWorkspace ? "collapse" : "full"
   }:${classifyFamiliarWorkspace ? "classified" : "unclassified"}`;
-  const result = await sessionsListCache.get(cacheKey, () =>
-    computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace, { classifyFamiliarWorkspace }),
+  const base = await sessionsListCache.get(cacheKey, () =>
+    computeSessionsList(includeArchived, null, collapseFamiliarWorkspace, { classifyFamiliarWorkspace }),
   );
+  const result = familiarId ? await scopeSessionsListResult(base, familiarId) : base;
   // Conditional responses (#5571): the workspace polls every 4s and the list
   // is usually unchanged, so a matching If-None-Match gets a bodiless 304
   // instead of the full list (hundreds of KB on a real profile). The body and

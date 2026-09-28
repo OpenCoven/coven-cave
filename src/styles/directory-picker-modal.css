@@ -1,0 +1,111 @@
+/* A compact file-browser surface. Only the folder list scrolls. */
+.directory-picker-scrim {
+  padding: var(--space-4);
+}
+.directory-picker {
+  container-type: inline-size;
+  height: min(600px, calc(100dvh - var(--space-8)));
+  max-height: calc(100dvh - var(--space-8));
+  background: var(--bg-raised);
+}
+.directory-picker-header,
+.directory-picker-footer {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-4);
+}
+.directory-picker-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.directory-picker-header > div {
+  gap: var(--space-1);
+}
+.directory-picker-places {
+  width: 168px;
+  padding: var(--space-3) var(--space-2);
+}
+.directory-picker-places button {
+  min-height: var(--space-8);
+  padding: var(--space-2);
+}
+.directory-picker-places button[aria-current="location"] {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+.directory-picker-toolbar {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  margin-bottom: var(--space-2);
+}
+.directory-picker-address,
+.directory-picker-search {
+  flex-shrink: 0;
+}
+.directory-picker-address form {
+  height: var(--space-8);
+  border-color: var(--border-hairline);
+}
+.directory-picker-address form:focus-within,
+.directory-picker-search label:focus-within {
+  border-color: var(--ring-focus);
+}
+.directory-picker-list {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.directory-picker-row > button:first-child {
+  min-height: var(--space-8);
+  padding-block: var(--space-2);
+  padding-inline-end: calc(var(--space-12) + var(--space-5));
+}
+.directory-picker-row > button[aria-pressed="true"]:first-child {
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
+  box-shadow: inset 2px 0 var(--accent-presence);
+}
+.directory-picker svg {
+  flex-shrink: 0;
+}
+.directory-picker-footer > div:first-child > span:first-child {
+  text-transform: none;
+  letter-spacing: normal;
+}
+@container (max-width: 560px) {
+  .directory-picker-places { width: 128px; }
+  .directory-picker-search { flex-wrap: wrap; }
+  .directory-picker-search label { flex-basis: 100%; }
+  .directory-picker-footer { gap: var(--space-2); }
+  .directory-picker-footer > div:first-child { flex: 1; }
+  .directory-picker-footer > div:first-child > span { max-width: 100%; }
+}
+@container (max-width: 400px) {
+  .directory-picker-places { width: 112px; }
+  .directory-picker-workspace-badge { display: none; }
+  .directory-picker-places button { gap: var(--space-1); }
+  .directory-picker-footer { align-items: stretch; flex-direction: column; }
+  .directory-picker-footer > div:last-child { justify-content: flex-end; }
+}
+@media (pointer: coarse) {
+  .directory-picker input { font-size: var(--text-lg); }
+  .directory-picker button {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+  .directory-picker-address form,
+  .directory-picker-search label { min-height: var(--touch-target); }
+  .directory-picker-row > button:first-child {
+    min-height: var(--touch-target);
+    padding-inline-end: calc(var(--touch-target) * 2 + var(--space-3));
+  }
+  .directory-picker-row > button:not(:first-child) { min-width: var(--touch-target); }
+  .directory-picker-row > button:last-child { right: var(--space-1); }
+  .directory-picker-row > button:nth-child(2):not(:last-child) {
+    right: calc(var(--touch-target) + var(--space-1));
+  }
+}
+@media (pointer: fine) {
+  .directory-picker-address input,
+  .directory-picker-search input { font-size: var(--text-sm); }
+}
+
+.directory-picker-address form,
+.directory-picker-search label { background: var(--bg-base); }
