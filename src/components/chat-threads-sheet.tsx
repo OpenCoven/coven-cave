@@ -23,6 +23,7 @@ export function ChatThreadsSheet({
   open,
   onClose,
   sessions,
+  reflectionSourceSessions,
   sessionsError = false,
   sessionsDegraded = false,
   browseScope,
@@ -38,6 +39,8 @@ export function ChatThreadsSheet({
   open: boolean;
   onClose: () => void;
   sessions: SessionRow[];
+  /** Unscoped rows for the rail's Reflections section. */
+  reflectionSourceSessions?: SessionRow[];
   sessionsError?: boolean;
   sessionsDegraded?: boolean;
   /** The project scope, so an empty or loading sheet says so (#5585). */
@@ -75,6 +78,7 @@ export function ChatThreadsSheet({
         {sections}
         <SidebarChatsSection
           sessions={sessions}
+          reflectionSourceSessions={reflectionSourceSessions}
           sessionsError={sessionsError}
           sessionsDegraded={sessionsDegraded}
           browseScope={browseScope}

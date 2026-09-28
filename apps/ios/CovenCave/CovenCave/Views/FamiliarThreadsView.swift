@@ -79,7 +79,12 @@ struct FamiliarThreadsView: View {
         let server = app.serverOnlySessions(for: familiar.id, in: projectContext)
             .filter { q.isEmpty || $0.title.lowercased().contains(q) }
             .map(Entry.server)
-        return (local + server).sorted { $0.date > $1.date }
+        // `date` parses a server row's timestamp; read it once per row, not
+        // twice per comparison — this list re-sorts on every render.
+        return (local + server)
+            .map { ($0, $0.date) }
+            .sorted { $0.1 > $1.1 }
+            .map(\.0)
     }
 
     /// A thread matches the search when its title, one of its members' names,

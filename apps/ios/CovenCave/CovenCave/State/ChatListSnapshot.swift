@@ -27,14 +27,22 @@ struct ChatListSnapshot {
     }
 
     let entries: [Entry]
+    /// "Thread you just completed…" review runs (`SessionRow.isThreadReflection`),
+    /// newest first. They stay out of `entries`, `archivedCount` and the
+    /// familiar roster like every other generated run; the home renders them
+    /// in their own collapsed Reflections section so they are reachable without
+    /// ever sitting between live chats. Active only, and narrowed by the
+    /// familiar filter and search like `entries`.
+    let reflections: [Entry]
     let archivedCount: Int
     /// Every familiar that participates in at least one conversation (active
     /// or archived), so the familiar filter offers only names that select
     /// something. Unaffected by filtering, like `archivedCount`.
     let familiarIds: Set<String>
 
-    private init(entries: [Entry], archivedCount: Int, familiarIds: Set<String>) {
+    private init(entries: [Entry], reflections: [Entry], archivedCount: Int, familiarIds: Set<String>) {
         self.entries = entries
+        self.reflections = reflections
         self.archivedCount = archivedCount
         self.familiarIds = familiarIds
     }
@@ -46,6 +54,8 @@ struct ChatListSnapshot {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return ChatListSnapshot(entries: entries.filter {
             Self.matches($0, search: search, includeArchived: includeArchived, familiarId: familiarId)
+        }, reflections: reflections.filter {
+            Self.matches($0, search: search, includeArchived: false, familiarId: familiarId)
         }, archivedCount: archivedCount, familiarIds: familiarIds)
     }
 
@@ -61,6 +71,7 @@ struct ChatListSnapshot {
         threads: [ChatThread],
         sessions: [SessionRow],
         familiars: [Familiar],
+        reflectionSessions: [SessionRow] = [],
         query: String = "",
         includeArchived: Bool = false,
         familiarId: String? = nil
@@ -85,10 +96,25 @@ struct ChatListSnapshot {
                 )
             }
         }
+        // Reflection runs may arrive in either list (the home passes them
+        // apart, since `chatServerSessions` drops every generated run). Keep
+        // archived ones too, but only to recognize their local threads below.
+        var reflectionRows: [SessionRow] = []
+        var reflectionIds = Set<String>()
+        for session in sessions + reflectionSessions
+        where session.isThreadReflection && reflectionIds.insert(session.id).inserted {
+            reflectionRows.append(session)
+        }
         var represented = Set<SessionIdentity>()
         var all: [Entry] = []
         all.reserveCapacity(threads.count + sessions.count)
         for thread in threads where !thread.isFlowRun {
+            // Opening a reflection hydrates a local thread bound only to that
+            // run; it belongs with its reflection, not among live chats.
+            if !reflectionIds.isEmpty, !thread.sessionIds.isEmpty,
+               thread.sessionIds.values.allSatisfy(reflectionIds.contains) {
+                continue
+            }
             var titles = [thread.title]
             var activity = thread.updatedAt
             for (familiarId, sessionId) in thread.sessionIds
@@ -130,6 +156,24 @@ struct ChatListSnapshot {
         archivedCount = all.lazy.filter(\.archived).count
         familiarIds = Set(all.flatMap(\.familiarIds))
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        reflections = reflectionRows.compactMap { session -> Entry? in
+            guard session.archivedAt == nil, session.status != "archived" else { return nil }
+            let entry = Entry(
+                id: "reflection:\(session.id)",
+                conversation: .server(session),
+                updatedAt: caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast,
+                pinned: false,
+                archived: false,
+                familiarIds: session.familiarId.map { [$0] } ?? [],
+                searchText: [session.title, session.familiarId.flatMap { names[$0] } ?? ""]
+                    .joined(separator: " ").lowercased()
+            )
+            return Self.matches(entry, search: search, includeArchived: false, familiarId: familiarId)
+                ? entry : nil
+        }.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.id < $1.id
+        }
         entries = all.filter {
             Self.matches($0, search: search, includeArchived: includeArchived, familiarId: familiarId)
         }.sorted {
@@ -161,21 +205,26 @@ final class ChatListSnapshotCache {
         let name: String
     }
 
-    private var threadKeys: [ThreadKey] = []
-    private var sessionKeys: [SessionRow] = []
-    private var familiarKeys: [FamiliarKey] = []
-    private var snapshot: ChatListSnapshot?
-    private struct FilterKey: Equatable {
+    private struct FilterKey: Hashable {
         let query: String
         let includeArchived: Bool
         let familiarId: String?
     }
-    /// The last filtered result and the filter that produced it. Filtering
-    /// copies every entry, so an unchanged snapshot and filter return it as is
-    /// rather than re-copying the whole list on each body pass (#5651).
-    private var filtered: (key: FilterKey, value: ChatListSnapshot)?
+
+    private var threadKeys: [ThreadKey] = []
+    private var sessionKeys: [SessionRow] = []
+    private var reflectionKeys: [SessionRow] = []
+    private var familiarKeys: [FamiliarKey] = []
+    private var snapshot: ChatListSnapshot?
+    /// Filtered projections of the current `snapshot` (#5651). Switching the familiar
+    /// filter back and forth, or any body pass that did not change the
+    /// filter, reuses the projection instead of re-filtering every row.
+    /// Dropped whenever the snapshot rebuilds; bounded because each search
+    /// keystroke is its own key.
+    private var filtered: [FilterKey: ChatListSnapshot] = [:]
 
     func resolve(threads: [ChatThread], sessions: [SessionRow], familiars: [Familiar],
+                 reflections: [SessionRow] = [],
                  query: String, includeArchived: Bool, familiarId: String? = nil) -> ChatListSnapshot {
         let nextThreads = threads.map {
             ThreadKey(identity: ObjectIdentifier($0), title: $0.title,
@@ -184,18 +233,22 @@ final class ChatListSnapshotCache {
                       archived: $0.archived, isFlowRun: $0.isFlowRun)
         }
         let nextFamiliars = familiars.map { FamiliarKey(id: $0.id, name: $0.displayName) }
-        if snapshot == nil || threadKeys != nextThreads || sessionKeys != sessions || familiarKeys != nextFamiliars {
+        if snapshot == nil || threadKeys != nextThreads || sessionKeys != sessions
+            || reflectionKeys != reflections || familiarKeys != nextFamiliars {
             snapshot = ChatListSnapshot(threads: threads, sessions: sessions,
-                                        familiars: familiars, includeArchived: true)
+                                        familiars: familiars, reflectionSessions: reflections,
+                                        includeArchived: true)
             threadKeys = nextThreads
             sessionKeys = sessions
+            reflectionKeys = reflections
             familiarKeys = nextFamiliars
-            filtered = nil
+            filtered.removeAll(keepingCapacity: true)
         }
         let key = FilterKey(query: query, includeArchived: includeArchived, familiarId: familiarId)
-        if let filtered, filtered.key == key { return filtered.value }
-        let value = snapshot!.filtered(query: query, includeArchived: includeArchived, familiarId: familiarId)
-        filtered = (key, value)
-        return value
+        if let cached = filtered[key] { return cached }
+        if filtered.count >= 16 { filtered.removeAll(keepingCapacity: true) }
+        let projection = snapshot!.filtered(query: query, includeArchived: includeArchived, familiarId: familiarId)
+        filtered[key] = projection
+        return projection
     }
 }

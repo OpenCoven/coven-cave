@@ -56,6 +56,9 @@ struct ChatsHomeView: View {
     /// Like search and the archive toggle, this is list organisation only —
     /// it never changes a chat's project binding or selection.
     @State private var familiarFilter: String?
+    /// The Reflections section starts collapsed so review runs never push
+    /// live chats down; opening it once is remembered across launches.
+    @AppStorage("cave.chats.reflectionsExpanded") private var reflectionsExpanded = false
     @State private var renamingThread: ChatThread?
     @State private var pendingDelete: ChatThread?
     /// Server-only rows have no ChatThread to hand the existing dialog, so
@@ -154,6 +157,7 @@ struct ChatsHomeView: View {
                 threads: app.chatThreads,
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
+                reflections: app.threadReflectionSessions,
                 query: query,
                 includeArchived: showArchived,
                 familiarId: familiarFilter
@@ -162,15 +166,16 @@ struct ChatsHomeView: View {
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
                 if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
-                    && snapshot.archivedCount == 0 {
+                    && snapshot.archivedCount == 0 && snapshot.reflections.isEmpty {
                     if let error = app.familiarsError ?? app.sessionsError {
                         loadFailure(error)
                     } else {
                         emptyState
                     }
-                } else if snapshot.entries.isEmpty && !query.isEmpty {
+                } else if snapshot.entries.isEmpty && !query.isEmpty && snapshot.reflections.isEmpty {
                     ContentUnavailableView.search(text: query)
-                } else if snapshot.entries.isEmpty, let familiarId = familiarFilter {
+                } else if snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
+                          let familiarId = familiarFilter {
                     familiarFilterEmptyState(familiarId, snapshot: snapshot)
                 } else {
                     homeList(snapshot)
@@ -661,9 +666,80 @@ struct ChatsHomeView: View {
                 Button("Show archived chats (\(snapshot.archivedCount))") { showArchived = true }
                     .frame(minHeight: 44)
             }
+            if !snapshot.reflections.isEmpty {
+                reflectionsSection(snapshot.reflections)
+            }
         }
         .listStyle(.plain)
         .themedListBackground()
+    }
+
+    /// Thread-reflection review runs, apart from live chats and collapsed by
+    /// default (the web rail's Reflections group). A row opens like any
+    /// server-only chat; pin is absent because a reflection never joins the
+    /// live list, so there is nothing for it to rise above.
+    @ViewBuilder
+    private func reflectionsSection(_ reflections: [ChatListSnapshot.Entry]) -> some View {
+        Section {
+            if reflectionsExpanded {
+                ForEach(reflections) { entry in
+                    if case .server(let session) = entry.conversation {
+                        Button {
+                            _ = app.requestOpenServerSession(session, fallbackFamiliarId: session.familiarId)
+                        } label: {
+                            ServerSessionRow(session: session)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { app.setServerSessionArchived(session, true) } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            Button(role: .destructive) { pendingServerDelete = session } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { pendingServerDelete = session } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button { app.setServerSessionArchived(session, true) } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(chrome.accent)
+                        }
+                        .accessibilityIdentifier("Chat row \(entry.id)")
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(sizeClass == .compact ? Color.clear : nil)
+                    }
+                }
+            }
+        } header: {
+            Button {
+                Haptics.tap()
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+                    reflectionsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: reflectionsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.bold))
+                    Text("Reflections")
+                    Spacer()
+                    Text("\(reflections.count)")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.14), in: Capsule())
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(chrome.textSecondary)
+            .accessibilityLabel("Reflections, \(reflections.count) review\(reflections.count == 1 ? "" : "s")")
+            .accessibilityValue(reflectionsExpanded ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier("Reflections section")
+        }
     }
 
     /// Archive, pin and delete for a conversation the desktop owns that this

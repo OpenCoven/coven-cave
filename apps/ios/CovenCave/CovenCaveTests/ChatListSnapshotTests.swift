@@ -169,8 +169,97 @@ final class ChatListSnapshotTests: XCTestCase {
         ))
         let chat = SessionRow(id: "chat", title: "Real chat", familiarId: "nyx")
         XCTAssertTrue(review.isGeneratedRun, "the one-shot utility lane is hidden, matching the web")
+        XCTAssertTrue(review.isThreadReflection)
         let snapshot = ChatListSnapshot(threads: [], sessions: [review, chat], familiars: [])
-        XCTAssertEqual(snapshot.entries.map(\.id), ["server:chat"])
+        XCTAssertEqual(snapshot.entries.map(\.id), ["server:chat"], "reviews never mix with live chats")
+        XCTAssertEqual(snapshot.reflections.map(\.id), ["reflection:review"], "…but stay reachable apart")
+        XCTAssertEqual(snapshot.archivedCount, 0)
+        XCTAssertEqual(snapshot.familiarIds, ["nyx"])
+    }
+
+    func testThreadReflectionMatchesOnlyTheEnhanceReviewOpener() {
+        func row(_ title: String, origin: String?) -> SessionRow {
+            var row = SessionRow(id: title, title: title, familiarId: "nyx")
+            row.origin = origin
+            return row
+        }
+        XCTAssertTrue(row("Thread you just completed (session 1)", origin: "enhance").isThreadReflection)
+        XCTAssertTrue(row("  thread you just completed…", origin: "enhance").isThreadReflection)
+        XCTAssertFalse(row("Improve this prompt", origin: "enhance").isThreadReflection,
+                       "other enhance runs stay hidden outright")
+        XCTAssertFalse(row("Thread you just completed", origin: nil).isThreadReflection,
+                       "a user chat that happens to share the words is a chat")
+        XCTAssertFalse(row("Thread you just completed", origin: "journal").isThreadReflection)
+    }
+
+    func testReflectionsHonorFamiliarFilterSearchAndArchive() {
+        func reflection(_ id: String, familiar: String, updatedAt: String, archived: Bool = false) -> SessionRow {
+            var row = SessionRow(id: id, title: "Thread you just completed \(id)", familiarId: familiar)
+            row.origin = "enhance"
+            row.updatedAt = updatedAt
+            row.archivedAt = archived ? updatedAt : nil
+            return row
+        }
+        let snapshot = ChatListSnapshot(
+            threads: [],
+            sessions: [SessionRow(id: "chat", title: "Real chat", familiarId: "nyx")],
+            familiars: [],
+            reflectionSessions: [
+                reflection("old", familiar: "nyx", updatedAt: "2026-09-01T00:00:00Z"),
+                reflection("new", familiar: "nyx", updatedAt: "2026-09-20T00:00:00Z"),
+                reflection("lyra", familiar: "lyra", updatedAt: "2026-09-10T00:00:00Z"),
+                reflection("gone", familiar: "nyx", updatedAt: "2026-09-25T00:00:00Z", archived: true),
+            ],
+            includeArchived: true
+        )
+
+        XCTAssertEqual(snapshot.reflections.map(\.id),
+                       ["reflection:new", "reflection:lyra", "reflection:old"],
+                       "newest first; archived reflections never show, even with archived chats")
+        XCTAssertEqual(snapshot.archivedCount, 0, "reflections never count toward Show archived")
+        XCTAssertEqual(snapshot.familiarIds, ["nyx"], "the familiar roster counts chats only")
+        XCTAssertEqual(
+            snapshot.filtered(query: "", includeArchived: false, familiarId: "lyra").reflections.map(\.id),
+            ["reflection:lyra"]
+        )
+        XCTAssertEqual(
+            snapshot.filtered(query: "old", includeArchived: false).reflections.map(\.id),
+            ["reflection:old"]
+        )
+    }
+
+    func testOpenedReflectionStaysOutOfTheLiveList() {
+        var review = SessionRow(id: "review", title: "Thread you just completed", familiarId: "nyx")
+        review.origin = "enhance"
+        // Tapping a reflection hydrates a local thread bound only to that run.
+        let hydrated = chat("hydrated", root: nil)
+        hydrated.sessionIds = ["nyx": "review"]
+        let live = chat("live", root: nil)
+        let snapshot = ChatListSnapshot(
+            threads: [hydrated, live], sessions: [], familiars: [], reflectionSessions: [review]
+        )
+
+        XCTAssertEqual(snapshot.entries.map(\.id), ["local:live"])
+        XCTAssertEqual(snapshot.reflections.map(\.id), ["reflection:review"])
+    }
+
+    func testCacheReusesFilteredProjectionUntilInputsChange() {
+        let cache = ChatListSnapshotCache()
+        let nyx = chat("nyx chat", root: nil, familiars: ["nyx"])
+        let lyra = chat("lyra chat", root: nil, familiars: ["lyra"])
+        func resolve(_ familiarId: String?) -> [String] {
+            cache.resolve(threads: [nyx, lyra], sessions: [], familiars: [],
+                          query: "", includeArchived: false, familiarId: familiarId).entries.map(\.id)
+        }
+
+        XCTAssertEqual(resolve("nyx"), ["local:nyx chat"])
+        XCTAssertEqual(resolve("lyra"), ["local:lyra chat"])
+        XCTAssertEqual(resolve("nyx"), ["local:nyx chat"], "switching back reuses the projection")
+        XCTAssertEqual(Set(resolve(nil)), ["local:nyx chat", "local:lyra chat"])
+
+        lyra.familiarIds = ["nyx"]
+        XCTAssertEqual(Set(resolve("nyx")), ["local:nyx chat", "local:lyra chat"],
+                       "a metadata change drops memoized projections")
     }
 
     func testCacheNeverServesAStaleFilteredList() {

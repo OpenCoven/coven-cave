@@ -131,6 +131,19 @@ struct SessionRow: Identifiable, Codable, Hashable {
         return title.hasPrefix("Write a short narrative of my day (")
             || title.hasPrefix("Write a short, first-person reflective journal entry")
     }
+
+    /// Mirrors the web's isThreadReflectionSession (chat-projects.ts): a
+    /// "Thread you just completed…" review run, the familiar's post-thread
+    /// self-report (buildThreadReflectPrompt in thread-self-report.ts). It is
+    /// still a generated run, so every list and count keeps excluding it; only
+    /// the chat list's collapsed Reflections section gathers these, so they
+    /// stay reachable without crowding live chats. Stored titles are cut from
+    /// the prompt, so this matches the opener, not the whole prompt.
+    var isThreadReflection: Bool {
+        guard origin == "enhance" else { return false }
+        if title.hasPrefix("Thread you just completed") { return true }
+        return title.drop(while: \.isWhitespace).lowercased().hasPrefix("thread you just completed")
+    }
 }
 
 struct SessionsResponse: Codable {

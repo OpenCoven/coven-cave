@@ -22,16 +22,39 @@ const projectsCache = createSwrCache<ProjectsPayload>({
   staleServeMs: CACHE_TTL_MS,
 });
 
+/**
+ * Last successful list per familiar scope, kept past the microcache TTL so a
+ * familiar switch can paint that familiar's own projects in the same frame
+ * while the refetch revalidates them (a switch used to blank the rail and
+ * wait on the round trip). Keyed by scope, never shared across familiars, so
+ * it cannot expose one familiar's grants under another.
+ */
+const lastGoodProjects = new Map<string, CaveProject[]>();
+
+function snapshotKey(familiarId: string | null): string {
+  return familiarId ?? "";
+}
+
+/** The scope's last successful list, or null when it has never loaded. */
+export function peekProjectsSnapshot(familiarId: string | null): CaveProject[] | null {
+  return lastGoodProjects.get(snapshotKey(familiarId)) ?? null;
+}
+
 async function requestProjects(familiarId: string | null): Promise<ProjectsPayload> {
   const url = familiarId
     ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
     : "/api/projects";
+  const generation = projectsGeneration;
   const res = await fetch(url);
   // Thrown (not returned) so HTTP failures are never cached — swr-cache only
   // stores resolutions — and every coalesced caller sees the same error.
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const payload = (await res.json()) as ProjectsPayload;
-  return normalizePayload(payload);
+  const payload = normalizePayload((await res.json()) as ProjectsPayload);
+  // A response that started before a mutation is not a snapshot of it.
+  if (payload.ok !== false && payload.projects && generation === projectsGeneration) {
+    lastGoodProjects.set(snapshotKey(familiarId), payload.projects);
+  }
+  return payload;
 }
 
 /**
@@ -88,6 +111,9 @@ function generationKey(familiarId: string | null): string {
 export function advanceProjectsCacheGeneration(): number {
   projectsGeneration += 1;
   projectsCache.clear();
+  // A mutation (delete, grant change) makes every snapshot suspect: a switch
+  // must not seed a removed project or revoked grant, so it waits instead.
+  lastGoodProjects.clear();
   return projectsGeneration;
 }
 
@@ -102,6 +128,7 @@ export function fetchProjectsFromCache(
 
 export function clearProjectsCache(): void {
   projectsCache.clear();
+  lastGoodProjects.clear();
 }
 
 /** Test-only: exercise the shared projects cache without mounting the hook. */
@@ -115,5 +142,6 @@ export function fetchProjectsForTests(
 /** Test-only: drop the module-level cache between cases. */
 export function resetProjectsCacheForTests(): void {
   projectsCache.clear();
+  lastGoodProjects.clear();
   projectsGeneration = 0;
 }

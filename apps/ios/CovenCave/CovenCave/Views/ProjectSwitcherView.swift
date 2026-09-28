@@ -119,10 +119,13 @@ extension AppModel {
             return .loading
         }
 
+        // One bound-session index for every row: rebuilding it per project
+        // made the switcher O(projects × threads) on each render.
+        let boundSessionIDs = boundServerSessionIDs
         let rows = availableProjectContexts.map { context in
             ProjectSwitcherRowModel(
                 context: context,
-                counts: projectContextCounts(for: context),
+                counts: projectContextCounts(for: context, boundSessionIDs: boundSessionIDs),
                 isSelected: projectContext == context,
                 recoveryText: context == .unassigned ? ProjectContextCopy.unassignedRecovery : nil
             )
@@ -161,8 +164,17 @@ extension AppModel {
 
     @MainActor
     func projectContextCounts(for context: ProjectContext) -> ProjectContextCounts {
+        projectContextCounts(for: context, boundSessionIDs: boundServerSessionIDs)
+    }
+
+    @MainActor
+    private func projectContextCounts(
+        for context: ProjectContext,
+        boundSessionIDs: Set<String>
+    ) -> ProjectContextCounts {
         ProjectContextCounts(
-            chatCount: visibleThreads(for: context).count + visibleServerOnlySessions(for: context).count,
+            chatCount: visibleThreads(for: context).count
+                + visibleServerOnlySessions(for: context, boundSessionIDs: boundSessionIDs).count,
             familiarCount: scopedFamiliars(for: context).count,
             taskCount: tasks.filter { context.matches(task: $0, registeredProjects: projects) }.count
         )
@@ -184,13 +196,20 @@ extension AppModel {
     }
 
     @MainActor
-    private func visibleServerOnlySessions(for context: ProjectContext) -> [SessionRow] {
-        let boundSessionIDs = Set(
+    private var boundServerSessionIDs: Set<String> {
+        Set(
             threads
                 .flatMap(\.sessionIds.values)
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         )
-        return serverSessions.filter { session in
+    }
+
+    @MainActor
+    private func visibleServerOnlySessions(
+        for context: ProjectContext,
+        boundSessionIDs: Set<String>
+    ) -> [SessionRow] {
+        serverSessions.filter { session in
             context.matches(session: session, registeredProjects: projects)
                 && session.archivedAt == nil
                 && !session.isGeneratedRun

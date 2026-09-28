@@ -217,9 +217,16 @@ test("workspace project browsing masks other roots, hosts, loading and revoked p
       .map((row) => String(row.props.title ?? ""));
   await act(async () => { renderer = create(createElement(SidebarChatsSection, props)); });
   expect(titles()).toEqual(["Alpha chat"]);
+  // Revalidating this scope's loaded list keeps its rows: a familiar switch
+  // paints at once instead of blanking for the round trip.
   mockProjects.state.loading = true;
   await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
+  expect(titles()).toEqual(["Alpha chat"]);
+  // With no list for this scope yet, loading still masks every row.
+  mockProjects.state.loadedSuccessfully = false;
+  await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
   expect(titles()).toEqual([]);
+  mockProjects.state.loadedSuccessfully = true;
   mockProjects.state.loading = false;
   mockProjects.state.projects = [];
   await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
@@ -229,6 +236,44 @@ test("workspace project browsing masks other roots, hosts, loading and revoked p
   expect(titles()).toEqual(["Alpha chat"]);
   await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props, browseScope: { selection: "missing", ready: true } })); });
   expect(titles()).toEqual([]);
+  await act(async () => renderer.unmount());
+});
+
+test("reflection runs sit in their own collapsed section, never among live chats", async () => {
+  const live = { ...makeSession(), id: "live-chat", title: "Live chat", familiarId: "nova" };
+  const reflection = {
+    ...makeSession(),
+    id: "reflection-run",
+    title: "Thread you just completed (session…",
+    origin: "enhance",
+    familiarId: "nova",
+    project_root: "/Users/me/.coven/workspaces/familiars/nova",
+  };
+  mockProjects.state.projects = [];
+  let renderer!: ReactTestRenderer;
+  const titles = () =>
+    renderer.root
+      .findAllByProps({ className: "cnav__thread-title" })
+      .map((row) => String(row.props.title ?? ""));
+  await act(async () => {
+    renderer = create(createElement(SidebarChatsSection, {
+      sessions: [live],
+      reflectionSourceSessions: [live, reflection],
+      activeFamiliarId: "nova",
+      onOpenSession: vi.fn(),
+      onDeleteSession: async () => undefined,
+    }));
+  });
+  const toggle = renderer.root.find((node) => node.type === "button" && node.props["aria-expanded"] !== undefined
+    && String(node.props.className ?? "").includes("cnav__label--toggle"));
+  expect(toggle.props["aria-expanded"]).toBe(false);
+  expect(titles()).toEqual(["Live chat"]);
+  await act(async () => { toggle.props.onClick(); });
+  expect(titles()).toEqual(["Live chat", "Thread you just completed (session…"]);
+  const pinLabels = renderer.root
+    .findAll((node) => node.type === "button" && String(node.props["aria-label"] ?? "").startsWith("Pin "))
+    .map((node) => String(node.props["aria-label"]));
+  expect(pinLabels).toEqual(["Pin Live chat"]);
   await act(async () => renderer.unmount());
 });
 
