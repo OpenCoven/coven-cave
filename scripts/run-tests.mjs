@@ -320,6 +320,7 @@ export const SUITES = {
     "src/lib/github-checks.test.ts",
     "src/lib/github-item-fetch.test.ts",
     "src/lib/server/github-item-cache.test.ts",
+    "src/lib/server/avatar-thumbnail-cache.test.ts",
     "src/lib/server/join-inflight-response.test.ts",
     "src/lib/github-activity.test.ts",
     "src/lib/stage-model.test.ts",
@@ -2130,6 +2131,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports caveHome through the @/ alias (#5679)
+  "src/lib/server/avatar-thumbnail-cache.test.ts",
   // imports the route (@/ aliases) with a stubbed GitHub fetch (#5641)
   "src/app/api/github/assigned/route-cache.test.ts",
   "src/app/api/wikis/route.test.ts",
