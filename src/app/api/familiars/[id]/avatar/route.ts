@@ -7,6 +7,11 @@ import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
+  avatarThumbKey,
+  readAvatarThumb,
+  writeAvatarThumb,
+} from "@/lib/server/avatar-thumbnail-cache";
+import {
   removeAvatarFiles,
   writeCanonicalAvatar,
 } from "@/lib/server/familiar-avatar-mutation";
@@ -82,6 +87,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   let bytes: Buffer;
+  let thumbKey: string;
   try {
     // O_NOFOLLOW: refuse to follow a symlink at the final path component, so a
     // symlinked avatar file can't redirect the read outside the avatars dir.
@@ -90,6 +96,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       const st = await file.stat();
       if (!st.isFile() || st.size > MAX_AVATAR_BYTES) {
         return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });
+      }
+      // A thumbnail rendered by an earlier server process skips the ~200 ms
+      // decode of a full-resolution source (#5679).
+      thumbKey = avatarThumbKey(
+        { absPath: avatar.absPath, size: st.size, mtimeMs: st.mtimeMs },
+        AVATAR_MAX_DIM,
+      );
+      const thumb = await readAvatarThumb(thumbKey);
+      if (thumb) {
+        const rendered: RenderedAvatar = { body: new Uint8Array(thumb), contentType: "image/png" };
+        cacheSet(cacheKey, rendered);
+        return imageResponse(rendered);
       }
       bytes = await file.readFile();
     } finally {
@@ -113,6 +131,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   cacheSet(cacheKey, rendered);
+  await writeAvatarThumb(thumbKey, rendered.body);
   return imageResponse(rendered);
 }
 
