@@ -8,7 +8,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
+import type { Card, CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { CardOps, CardPatch } from "@/lib/board-card-ops";
@@ -23,6 +23,20 @@ const PATCH_FIELDS = [
   "needsHuman", "steps", "attachments", "dependencies",
   "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
 ] as const satisfies readonly (keyof CardPatch)[];
+
+/** One card in full, including the Enhance proposal history the board list
+ *  leaves out (#5690). */
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const card = (await loadBoard()).cards.find((entry) => entry.id === id);
+  if (!card) {
+    return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, card });
+}
 
 export async function PATCH(
   req: Request,
@@ -123,9 +137,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const outcome = await deleteCard(id);
+  let deleted: Card | null = null;
+  const outcome = await deleteCard(id, { onDeleted: (card) => { deleted = card; } });
   if (outcome === "not-found") {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true });
+  // The removed card in full, Enhance history included, so an undo can
+  // restore exactly what was stored (#5690).
+  return NextResponse.json({ ok: true, card: deleted });
 }

@@ -752,20 +752,23 @@ export function BoardView({
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
-    // Fire deletes in parallel; collect the cards whose delete failed.
+    // Fire deletes in parallel; collect the cards whose delete failed. Each
+    // DELETE returns the stored card in full: the list card is lean (#5690),
+    // and undo must restore its Enhance history too.
     const results = await Promise.all(
-      snapshot.map(async (c) => {
+      snapshot.map(async (c): Promise<{ failed: Card } | { removed: Card }> => {
         try {
           const res = await fetch(`/api/board/${c.id}`, { method: "DELETE" });
           const json = await res.json();
-          return json.ok ? null : c;
+          if (!json.ok) return { failed: c };
+          return { removed: json.card?.id === c.id ? (json.card as Card) : c };
         } catch {
-          return c;
+          return { failed: c };
         }
       }),
     );
-    const failed = results.filter((c): c is Card => c !== null);
-    const cleared = snapshot.filter((c) => !failed.some((f) => f.id === c.id));
+    const failed = results.flatMap((r) => ("failed" in r ? [r.failed] : []));
+    const cleared = results.flatMap((r) => ("removed" in r ? [r.removed] : []));
     if (failed.length > 0) {
       // Resync from the server (failed cards reappear, cleared stay gone), then
       // surface the banner — mirrors the patchCard failure path.
