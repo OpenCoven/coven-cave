@@ -56,3 +56,74 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertTrue(ChatScrollGeometry(contentHeight: 1_000, visibleBottom: 980).isAtBottom)
     }
 }
+
+final class ChatViewportRecoveryTests: XCTestCase {
+    private func geometry(height: CGFloat, offset: CGFloat, viewport: CGFloat = 600,
+                          top: CGFloat = 0, bottom: CGFloat = 0) -> ChatViewportGeometry {
+        ChatViewportGeometry(contentHeight: height, viewportHeight: viewport,
+                             contentOffset: offset, topInset: top, bottomInset: bottom)
+    }
+
+    func testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+        recovery.update(geometry(height: 500, offset: 7_000))
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false), "one correction per shrink")
+    }
+
+    func testValidHistoryPositionIsNotMovedByShrink() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 10_000, offset: 1_000))
+        recovery.update(geometry(height: 5_000, offset: 1_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 5_000, offset: 1_000))
+        recovery.update(geometry(height: 6_000, offset: 1_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+        recovery.update(geometry(height: 6_000, offset: 5_500))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testCorrectionWaitsUntilGestureAndDecelerationEnd() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        recovery.update(geometry(height: 500, offset: 7_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: true))
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testUIKitSelfCorrectionCancelsPendingRecovery() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        recovery.update(geometry(height: 500, offset: 7_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: true))
+        recovery.update(geometry(height: 500, offset: 0))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals() {
+        XCTAssertFalse(geometry(height: 1_000, offset: 440, bottom: 40).isBeyondEnd)
+        XCTAssertFalse(geometry(height: 500, offset: -44, top: 44).isBeyondEnd)
+        XCTAssertFalse(geometry(height: 1_000, offset: 424).isBeyondEnd)
+        XCTAssertTrue(geometry(height: 1_000, offset: 425).isBeyondEnd)
+    }
+
+    func testInvalidTransientGeometryDoesNotErasePendingShrink() {
+        var recovery = ChatViewportRecovery()
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        recovery.update(geometry(height: 500, offset: 7_000))
+        recovery.update(geometry(height: 0, offset: 0, viewport: 0))
+        recovery.update(geometry(height: .infinity, offset: 0))
+        recovery.update(geometry(height: 500, offset: .nan))
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame() {
+        XCTAssertEqual(geometry(height: 10_000, offset: 100), geometry(height: 10_000, offset: 3_000))
+    }
+}
