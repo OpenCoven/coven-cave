@@ -272,12 +272,16 @@ private struct DrawerDestinationStage: ViewModifier {
     func body(content: Content) -> some View {
         let destinationOffset = min(availableWidth * 0.64, 286)
         content
-            .clipShape(
+            // The mask extends into the safe area: clipping to the content's
+            // frame cut every bar background off at the status bar, leaving a
+            // black strip above each header.
+            .mask {
                 RoundedRectangle(
                     cornerRadius: isOpen ? 30 : 0,
                     style: .continuous
                 )
-            )
+                .ignoresSafeArea()
+            }
             .overlay {
                 if isOpen {
                     RoundedRectangle(cornerRadius: 30, style: .continuous)

@@ -33,7 +33,9 @@ struct EditorialSurfaceTitle: View {
     var large = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: large ? 8 : 6) {
+        // Centred, not baseline-aligned: on the baseline the detail capsule
+        // hangs below the serif title's visual middle.
+        HStack(alignment: .center, spacing: large ? 8 : 6) {
             Text(title)
                 .font(.system(size: large ? 32 : 20, weight: .semibold, design: .serif))
                 .foregroundStyle(chrome.textPrimary)

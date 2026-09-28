@@ -323,6 +323,16 @@ extension UINavigationBarAppearance {
                 ? raised
                 : raised.blended(with: accent, amount: 0.06)
             appearance.backgroundEffect = nil
+        } else if #available(iOS 26, *), !increasedContrast {
+            // iOS 26 draws its bar controls as Liquid Glass and softens
+            // content scrolling under the bar on its own. A tinted band here
+            // stops at the status bar, sits off-centre around those controls,
+            // and lets the transcript ghost through behind the title.
+            appearance.configureWithTransparentBackground()
+            let title = UIColor(chrome.textPrimary)
+            appearance.titleTextAttributes = [.foregroundColor: title]
+            appearance.largeTitleTextAttributes = [.foregroundColor: title]
+            return appearance
         } else {
             appearance.configureWithDefaultBackground()
             let tint = increasedContrast ? raised : raised.blended(with: accent, amount: 0.12)
