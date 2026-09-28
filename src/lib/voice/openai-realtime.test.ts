@@ -284,18 +284,34 @@ test("a typed reply mid-answer cancels the response first, and never otherwise",
   session.sendText("stop");
   assert.deepEqual(
     lastDataChannel?.sent.map((ev: any) => ev.type),
-    ["response.cancel", "conversation.item.create", "response.create"],
+    ["response.cancel", "output_audio_buffer.clear", "conversation.item.create", "response.create"],
   );
 });
 
 const emitRealtime = (event: Record<string, unknown>) => lastDataChannel?.onmessage?.({ data: JSON.stringify(event) });
 
-test("interrupt cancels a response before its first transcript arrives", async () => {
+test("interrupt cancels and clears a response before its first playback notification arrives", async () => {
   nextResponse = new Response("v=0\r\n", { status: 201 });
   const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks);
   emitRealtime({ type: "response.created", response: { id: "r1" } });
   session.interrupt();
-  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), ["response.cancel"]);
+  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), ["response.cancel", "output_audio_buffer.clear"]);
+});
+
+test("a typed replacement clears old audio even when its started event is delayed", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const partials: string[] = [];
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks, onPartialTranscript: (_role, text) => partials.push(text),
+  });
+  emitRealtime({ type: "response.created", response: { id: "r1" } });
+  session.sendText("New question");
+  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), [
+    "response.cancel", "output_audio_buffer.clear", "conversation.item.create", "response.create",
+  ]);
+  emitRealtime({ type: "output_audio_buffer.started", response_id: "r1" });
+  emitRealtime({ type: "response.output_audio_transcript.delta", response_id: "r1", delta: "Old answer" });
+  assert.deepEqual(partials, []);
 });
 
 test("stop clears buffered audio after generation has finished", async () => {

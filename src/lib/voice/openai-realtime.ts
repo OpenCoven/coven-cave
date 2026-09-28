@@ -159,9 +159,10 @@ const clientAdapter: VoiceClientAdapter = {
      *  error event, which would surface to the user as a call failure. */
     const interrupt = () => {
       if (stream.isResponding()) send({ type: "response.cancel" });
-      // Generation commonly finishes before the speaker does. WebRTC owns
-      // the playback buffer and truncates unheard audio when it is cleared.
-      if (stream.isPlaying()) send({ type: "output_audio_buffer.clear" });
+      // Audio and control events travel separately: playback can start before
+      // its notification arrives, and can outlive generation. Clear either
+      // active phase so cancelling never leaves unheard WebRTC audio queued.
+      if (stream.isResponding() || stream.isPlaying()) send({ type: "output_audio_buffer.clear" });
       stream.interrupt();
     };
 

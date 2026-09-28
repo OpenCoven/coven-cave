@@ -63,6 +63,30 @@ test("catalog errors offer recovery and cannot be saved as an empty catalog", as
   expect(select("Familiar voice").props.options.length).toBe(2);
 });
 
+test.each(["familiar", "local"])("%s keeps system speech available during a local catalog outage", async provider => {
+  await mount();
+  fetch.mockResolvedValueOnce(Response.json({ ok: false }, { status: 503 }));
+  await act(async () => select("Voice provider").props.onChange(provider));
+  expect(select("Familiar voice").props.value).toBe("");
+  expect(button("Save and reconnect").props.disabled).toBe(false);
+  expect(button("Retry voices")).toBeDefined();
+  await act(async () => button("Save and reconnect").props.onClick());
+  expect(configRequests[0].familiars.f1).toEqual({ voiceProvider: provider, voiceModel: provider === "local" ? "llama3.2" : null, voiceName: null });
+});
+
+test("a catalog outage preserves an explicit local voice until the user chooses system speech", async () => {
+  fetch.mockResolvedValueOnce(Response.json({ ok: false }, { status: 503 }));
+  await mount({ ...familiar, voiceProvider: "familiar", voiceModel: undefined, voiceName: "piper-amy-medium-en-us" });
+  expect(select("Familiar voice").props.value).toBe("piper-amy-medium-en-us");
+  expect(button("Save and reconnect").props.disabled).toBe(true);
+  await act(async () => button("Save and reconnect").props.onClick());
+  expect(saved).not.toHaveBeenCalled();
+  await act(async () => select("Familiar voice").props.onChange(""));
+  expect(button("Save and reconnect").props.disabled).toBe(false);
+  await act(async () => button("Save and reconnect").props.onClick());
+  expect(configRequests[0].familiars.f1.voiceName).toBe(null);
+});
+
 test("unmount cancels an outstanding save and cannot reconnect later", async () => {
   await mount();
   let finish; let signal;

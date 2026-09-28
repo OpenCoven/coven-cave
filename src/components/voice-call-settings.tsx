@@ -10,6 +10,7 @@ import { getVoiceProviderDefinition, VOICE_PROVIDER_CATALOG, OPENAI_REALTIME_MOD
 import { OPENAI_REALTIME_VOICES, openAiVoiceDetail } from "@/lib/voice/openai-voices";
 import { elevenLabsModelDetail } from "@/lib/voice/elevenlabs-shared";
 import { loadElevenLabsCatalog, loadLocalVoiceCatalog } from "@/lib/voice/settings-client";
+import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
 
 export type FamiliarVoiceSelection = Pick<Familiar, "voiceProvider" | "voiceModel" | "voiceName">;
 type Catalog = { status: "loading" | "ready" | "error"; voices: StandardSelectOption<string>[]; models: StandardSelectOption<string>[]; error?: string };
@@ -52,7 +53,7 @@ export function VoiceCallSettings({ familiar, onClose, onSaved }: {
         const result = await loadLocalVoiceCatalog(fetch, signal);
         next = result.status === "ready" ? { status: "ready", models: [],
           voices: [{ value: "", label: "System default" }, ...result.voices.map(v => ({ value: v.id, label: v.name }))],
-        } : { status: "error", voices: [], models: [], error: result.message };
+        } : { status: "ready", voices: [{ value: "", label: "System default" }], models: [], error: result.message };
       }
       if (!controller.signal.aborted) setCatalog(next);
     })();
@@ -67,8 +68,9 @@ export function VoiceCallSettings({ familiar, onClose, onSaved }: {
     setError(null);
   }
 
+  const canSave = catalog.status === "ready" && !(catalog.error && isLocalTtsVoiceName(voice));
   async function save() {
-    if (savingRef.current) return;
+    if (savingRef.current || !canSave) return;
     savingRef.current = true;
     setSaving(true);
     setError(null);
@@ -102,7 +104,7 @@ export function VoiceCallSettings({ familiar, onClose, onSaved }: {
   const close = () => { if (!savingRef.current) onClose(); };
   return (
     <Modal open onClose={close} breadcrumb={["Call", "Familiar voice"]} dismissOnEscape={!saving} dismissOnBackdrop={!saving}
-      footerActions={<><Button onClick={close} disabled={saving}>Cancel</Button><Button variant="primary" onClick={() => void save()} loading={saving} disabled={catalog.status !== "ready"}>Save and reconnect</Button></>}>
+      footerActions={<><Button onClick={close} disabled={saving}>Cancel</Button><Button variant="primary" onClick={() => void save()} loading={saving} disabled={!canSave}>Save and reconnect</Button></>}>
       <div className="voice-call-settings">
         <p>Saves the voice for {familiar.display_name} and reconnects this call. Your conversation stays here.</p>
         <div className="voice-call-settings__field"><label htmlFor="call-voice-provider">Provider</label>
@@ -112,7 +114,7 @@ export function VoiceCallSettings({ familiar, onClose, onSaved }: {
         </div>
         <p className="voice-call-settings__hint">{provider === "elevenlabs" ? "ElevenLabs speaks with your familiar’s own runtime, memory, and tools." : provider === "openai" ? "OpenAI Realtime handles the live conversation using your familiar’s voice context." : provider === "local" ? "Speech stays on this device, with a local language model." : "Your familiar’s own runtime replies using a local or system voice."}</p>
         {catalog.status === "loading" && <p role="status">Loading voices…</p>}
-        {catalog.status === "error" && <div role="alert"><p>{catalog.error}</p><Button onClick={() => setAttempt(a => a + 1)}>Retry voices</Button></div>}
+        {catalog.error && <div role={catalog.status === "error" ? "alert" : "status"}><p>{catalog.error}</p>{catalog.status === "ready" && <p>System voices are still available. Choose System default to use one, or retry your local voices.</p>}<Button onClick={() => setAttempt(a => a + 1)}>Retry voices</Button></div>}
         {catalog.status === "ready" && <>
           {(provider === "openai" || provider === "elevenlabs") && <div className="voice-call-settings__field"><label htmlFor="call-voice-model">Delivery</label>
             <StandardSelect id="call-voice-model" label="Voice delivery" value={model} onChange={setModel} disabled={saving} className="voice-call-settings__select" popoverClassName="voice-call-settings__options" options={keepSaved(catalog.models, model)} />

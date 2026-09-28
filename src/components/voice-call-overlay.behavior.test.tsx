@@ -184,6 +184,24 @@ test("retrying a failed voice change keeps the conversation and muted microphone
   expect(sessions.at(-1).setMuted).toHaveBeenLastCalledWith(true);
 });
 
+test("a quoted reply draft survives a failed voice switch and reconnect", async () => {
+  await mount();
+  await act(async () => callbacks[0].onAssistantTranscriptFinal("Remember this answer", "a1"));
+  const reply = renderer.root.findAllByType("button").find(b => b.props.children === "Reply");
+  await act(async () => reply.props.onClick());
+  await act(async () => renderer.root.findByProps({ "aria-label": "Reply without speaking" }).props.onChange({ target: { value: "My unfinished reply" } }));
+  await act(async () => renderer.root.findByProps({ "aria-label": "Change familiar voice" }).props.onClick());
+  mocks.connect.mockRejectedValueOnce(new Error("network"));
+  const settings = renderer.root.find(node => typeof node.type === "function" && node.type.name === "VoiceCallSettings");
+  await act(async () => settings.props.onSaved({ voiceProvider: "elevenlabs" }));
+  await act(async () => renderer.root.findAllByType("button").find(b => b.props.children === "Try again").props.onClick());
+  expect(renderer.root.findByProps({ "aria-label": "Reply without speaking" }).props.value).toBe("My unfinished reply");
+  expect(renderer.root.findByProps({ className: "voice-call-overlay__reply-snippet" }).props.children).toBe("Remember this answer");
+  await act(async () => renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(sessions.at(-1).sendText).toHaveBeenCalledWith(expect.stringContaining("Remember this answer"));
+  expect(sessions.at(-1).sendText).toHaveBeenCalledWith(expect.stringContaining("My unfinished reply"));
+});
+
 test("long calls can reveal earlier turns without losing the latest captions", async () => {
   await mount();
   await act(async () => {
