@@ -1,6 +1,16 @@
 # Chat v1 Phase 2 — real-authority canonical read conformance: re-verified working record
 
-> **Current refresh — 2026-09-04:** The operative conclusion is unchanged.
+> **Current disposition: 2026-09-27.** The [canonical Phase 2 gate](../../workflows/chat-v1-phase-2-canonical-reads-gate.md)
+> passes for the approved MVP scope and its frozen candidate. Authenticated
+> three-platform conformance supersedes the old Windows failure. Val accepted
+> the group-chat browser-storage exception and superseded the retired
+> Cave-connected Chat-shell requirement. The dated records below are historical;
+> their open-gate and missing-aggregate statements are no longer current.
+> Legacy Beads identifiers are citations only. Standalone Chat and release
+> acceptance remain separate gates.
+
+
+> **Historical refresh — 2026-09-04:** The operative conclusion is unchanged.
 > GitHub #4838 remains open and canonical Bead `cave-hjy2f` is blocked. The SDK
 > results directory still states that no passing three-platform aggregate
 > exists, and the Chat canonical-read journey remains dependent on the blocked

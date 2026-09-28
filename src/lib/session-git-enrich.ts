@@ -34,6 +34,7 @@ import path from "node:path";
 import { branchPrCache, prUrlCache, type BranchPrCache, type PrUrlCache } from "./branch-pr-context.ts";
 import { normalizeGitHubRepoUrl } from "./github-repo-link.ts";
 import type { SessionGitContext, SessionRow } from "./types.ts";
+import { readDefaultBaseRef, readHeadBranch, readOriginUrl } from "./git-ref-files.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -94,23 +95,52 @@ type GitContextRead = {
 
 const NO_GIT_CONTEXT: GitContextRead = { context: null, gitDir: null, commonDir: null };
 
+/**
+ * Per-compute memo for the default base ref shared by a repository's
+ * worktrees, keyed by the common git dir (#5608).
+ * Each `git` spawn blocks the event loop while the process is forked (4-8 ms
+ * measured under load), so a profile of worktrees of a few repositories paid
+ * for the same answers many times over.
+ */
+type RepoMemo = Map<string, Promise<string | null>>;
+
+function perRepo(memo: RepoMemo | undefined, key: string, read: () => Promise<string | null>): Promise<string | null> {
+  if (!memo) return read();
+  let pending = memo.get(key);
+  if (!pending) {
+    pending = read();
+    memo.set(key, pending);
+  }
+  return pending;
+}
+
 async function readGitContext(git: GitRunner, projectRoot: string): Promise<GitContextRead> {
   const trimmed = projectRoot.trim();
   if (!isTrueProjectCwd(trimmed)) return NO_GIT_CONTEXT;
-  // Cheap gate first: skip non-worktree roots before the slower probes.
-  if ((await git(trimmed, ["rev-parse", "--is-inside-work-tree"])) !== "true") return NO_GIT_CONTEXT;
+  // One rev-parse answers all four location probes, one line per flag in
+  // argument order (#5608). Outside a work tree `--show-toplevel` fails the
+  // whole call, which is the same "no git context" the gate used to give.
+  const located = (
+    await git(trimmed, ["rev-parse", "--is-inside-work-tree", "--show-toplevel", "--git-dir", "--git-common-dir"])
+  )?.split("\n").map((line) => line.trim());
+  if (!located || located[0] !== "true") return NO_GIT_CONTEXT;
+  const [, worktreeRootRaw, gitDirRaw, commonDirRaw] = located;
+  const worktreeRoot = worktreeRootRaw || null;
+  const gitDir = resolveGitPath(trimmed, gitDirRaw || null);
+  const commonDir = resolveGitPath(trimmed, commonDirRaw || null);
 
-  // Independent probes — run together instead of serially.
-  const [currentBranch, worktreeRoot, gitDirRaw, commonDirRaw, originRemote] = await Promise.all([
-    git(trimmed, ["branch", "--show-current"]),
-    git(trimmed, ["rev-parse", "--show-toplevel"]),
-    git(trimmed, ["rev-parse", "--git-dir"]),
-    git(trimmed, ["rev-parse", "--git-common-dir"]),
-    git(trimmed, ["config", "--get", "remote.origin.url"]),
+  // Read from the repository's files when they answer plainly; git otherwise.
+  const headBranch = readHeadBranch(gitDir);
+  const originFromFiles = readOriginUrl(gitDir, commonDir);
+  const [currentBranch, originRemote] = await Promise.all([
+    headBranch !== undefined ? headBranch : git(trimmed, ["branch", "--show-current"]),
+    originFromFiles !== undefined
+      ? originFromFiles
+      // Includes and config.worktree can give siblings different origins.
+      // Roots are already deduplicated by the caller; do not share this result.
+      : git(trimmed, ["config", "--get", "remote.origin.url"]),
   ]);
   const branch = currentBranch ?? (await git(trimmed, ["rev-parse", "--short", "HEAD"]));
-  const gitDir = resolveGitPath(trimmed, gitDirRaw);
-  const commonDir = resolveGitPath(trimmed, commonDirRaw);
   const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
   const repositoryRoot =
     isWorktree && commonDir && path.basename(commonDir) === ".git"
@@ -243,6 +273,18 @@ const defaultRootEnrichmentCache = createRootEnrichmentCache();
 // one in-flight read per root instead of each spawning the full probe set.
 const inflightRoots = new WeakMap<RootEnrichmentCache, Map<string, Promise<CachedRoot | null>>>();
 
+export type GitEnrichOptions = {
+  /**
+   * Longest the caller waits for git (#5608). A root still being probed when
+   * it passes is served from its last cached enrichment, however old, or
+   * without git context if it has none; the probes keep running and fill the
+   * cache. Omitted: wait for every root, as before.
+   */
+  deadlineMs?: number;
+  /** Called once the probes that outlived the deadline have all finished. */
+  onLateEnrichment?: () => void;
+};
+
 /**
  * Enrich session rows with git context (branch/worktree), a committed-diff
  * stat vs the repo base ref, and cached PR context. All git work is async and
@@ -256,6 +298,7 @@ export async function enrichSessionsWithGitContext(
   prCache: BranchPrCache = branchPrCache,
   urlPrCache: PrUrlCache = prUrlCache,
   rootCache: RootEnrichmentCache | null = git === defaultGitRunner ? defaultRootEnrichmentCache : null,
+  options: GitEnrichOptions = {},
 ): Promise<SessionRow[]> {
   // Collect unique roots and, per root, the branches sessions sit on — the
   // per-root git work happens once regardless of how many sessions share it.
@@ -273,6 +316,7 @@ export async function enrichSessionsWithGitContext(
   // before each await keeps the cap exact even with concurrent workers.
   let diffCalls = 0;
   const enrichmentByRoot = new Map<string, RootEnrichment>();
+  const repoMemo: RepoMemo = new Map();
 
   // Returns the root's enrichment and whether it is complete (safe to
   // cache): a diff skipped for budget must be retried on a later compute.
@@ -287,7 +331,10 @@ export async function enrichSessionsWithGitContext(
     const branch = entry.gitContext?.branch;
     if (!branch) return { entry, complete: true, read };
     if (diffCalls >= MAX_DIFF_CALLS) return { entry, complete: false, read };
-    entry.base = await defaultBaseRef(git, root);
+    const baseFromFiles = readDefaultBaseRef(read.commonDir);
+    entry.base = baseFromFiles !== undefined
+      ? baseFromFiles
+      : await perRepo(repoMemo, `base:${read.commonDir ?? root}`, () => defaultBaseRef(git, root));
     if (!entry.base) {
       entry.diffByBranch.set(branch, null);
       return { entry, complete: true, read };
@@ -303,7 +350,7 @@ export async function enrichSessionsWithGitContext(
     return { entry, complete: true, read };
   };
 
-  await mapWithConcurrency(roots, ROOT_CONCURRENCY, async (root) => {
+  const work = mapWithConcurrency(roots, ROOT_CONCURRENCY, async (root) => {
     if (!rootCache) {
       enrichmentByRoot.set(root, (await readRoot(root)).entry);
       return;
@@ -362,9 +409,34 @@ export async function enrichSessionsWithGitContext(
     }
   });
 
+  if (options.deadlineMs === undefined) {
+    await work;
+  } else {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<"expired">((resolve) => {
+      timer = setTimeout(() => resolve("expired"), options.deadlineMs);
+    });
+    const outcome = await Promise.race([work.then(() => "done" as const), expired]);
+    clearTimeout(timer);
+    if (outcome === "expired") {
+      // Rows are built from a snapshot below, so the probes still running can
+      // keep filling enrichmentByRoot and the cache without touching them.
+      for (const root of roots) {
+        if (enrichmentByRoot.has(root)) continue;
+        const stale = rootCache?.get(root);
+        if (stale) enrichmentByRoot.set(root, stale.enrichment);
+      }
+      void work.then(
+        () => options.onLateEnrichment?.(),
+        () => options.onLateEnrichment?.(),
+      );
+    }
+  }
+
+  const snapshot = new Map(enrichmentByRoot);
   return sessions.map((session) => {
     const root = session.project_root?.trim();
-    const entry = root ? enrichmentByRoot.get(root) : undefined;
+    const entry = root ? snapshot.get(root) : undefined;
     const enriched: SessionRow = { ...session };
     if (entry?.gitContext) enriched.git = entry.gitContext;
     const branch = entry?.gitContext?.branch;

@@ -31,9 +31,10 @@ type Props = {
   /** Rendered under the title — say what the caller is waiting on. */
   waitingLabel?: string;
   onClose: () => void;
+  immersive?: boolean;
 };
 
-export function ArcadePanel({ waitingLabel, onClose }: Props) {
+export function ArcadePanel({ waitingLabel, onClose, immersive = false }: Props) {
   const reducedMotion = usePrefersReducedMotion();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   // Bumping this remounts the document. An identical `srcDoc` does not reload
@@ -46,7 +47,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
   );
 
   return (
-    <section className="arcade-panel" aria-label={`${ARCADE_TITLE} — something to do while you wait`}>
+    <section className={`arcade-panel${immersive ? " arcade-panel--immersive" : ""}`} aria-label={`${ARCADE_TITLE} — something to do while you wait`}>
       <header className="arcade-panel__header">
         <div className="arcade-panel__heading">
           <Icon name="ph:magic-wand-fill" aria-hidden />
@@ -68,7 +69,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
           >
             <Icon name="ph:arrow-counter-clockwise" />
           </button>
-          <button
+          {!immersive && <button
             type="button"
             className="arcade-panel__action focus-ring"
             aria-label={`Close ${ARCADE_TITLE}`}
@@ -76,7 +77,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
             onClick={onClose}
           >
             <Icon name="ph:x" />
-          </button>
+          </button>}
         </div>
       </header>
       <iframe
@@ -84,6 +85,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
         ref={frameRef}
         className="arcade-panel__frame"
         title={`${ARCADE_TITLE} — playable`}
+        tabIndex={0}
         sandbox="allow-scripts"
         srcDoc={srcDoc}
       />

@@ -17,7 +17,9 @@
 // COVEN_HOME is pointed at an empty temp dir too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -840,4 +842,246 @@ test("GET with toolOutputs=recent omits older large outputs; the default GET kee
   assert.equal(noTool.status, 400);
   const badId = await TOOL_OUTPUT(new Request("http://test/api/chat/conversation/x/tool-output?toolId=a"), paramsFor("../escape"));
   assert.equal(badId.status, 400);
+});
+
+// #5607: reopening an unchanged chat is a bodiless 304.
+test("GET is conditional: an unchanged transcript answers 304, any change a new tag", async () => {
+  const id = "sess-etag";
+  const url = `http://test/api/chat/conversation/${id}?toolOutputs=recent`;
+  const get = (headers = {}, target = url) => GET(new Request(target, { headers }), paramsFor(id));
+  writeConversation(id, [
+    { id: "t1", parentId: null, role: "user", text: "hello", createdAt: "2026-06-01T00:00:01Z" },
+  ]);
+  const first = await get();
+  assert.equal(first.status, 200);
+  const tag = first.headers.get("etag");
+  assert.match(tag, /^"c-[A-Za-z0-9_-]{32}"$/);
+  assert.equal((await first.json()).conversation.turns.length, 1);
+
+  const unchanged = await get({ "if-none-match": tag });
+  assert.equal(unchanged.status, 304);
+  assert.equal(unchanged.headers.get("etag"), tag);
+  assert.equal(await unchanged.text(), "", "a 304 carries no transcript");
+
+  const full = await get({ "if-none-match": tag }, `http://test/api/chat/conversation/${id}`);
+  assert.equal(full.status, 200, "the full flavor never matches the recent flavor's tag");
+  assert.notEqual(full.headers.get("etag"), tag);
+
+  writeConversation(id, [
+    { id: "t1", parentId: null, role: "user", text: "hello", createdAt: "2026-06-01T00:00:01Z" },
+    { id: "t2", parentId: "t1", role: "assistant", text: "hi", createdAt: "2026-06-01T00:00:02Z" },
+  ]);
+  const changed = await get({ "if-none-match": tag });
+  assert.equal(changed.status, 200, "a changed transcript is a full response");
+  const changedTag = changed.headers.get("etag");
+  assert.notEqual(changedTag, tag);
+  assert.equal((await changed.json()).conversation.turns.length, 2);
+
+  // Linked context comes from the board, not the transcript file.
+  writeFileSync(BOARD_PATH, JSON.stringify({
+    version: 1,
+    cards: [{
+      id: "card-etag", title: "Etag task", notes: "", status: "running", lifecycle: "running",
+      priority: "medium", familiarId: "milo", sessionId: id, cwd: null, projectId: null,
+      links: [], github: [], asana: [], labels: [], steps: [], needsHuman: false,
+      createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z",
+    }],
+  }));
+  const linked = await get({ "if-none-match": changedTag });
+  assert.equal(linked.status, 200, "a new board link invalidates the tag");
+  assert.equal((await linked.json()).context?.task?.id, "card-etag");
+});
+
+// #5611: pasted images from before #5587 move to the attachment store on the
+// first open instead of shipping inline on every one.
+test("GET migrates inline images to the attachment store without touching updatedAt", async () => {
+  const id = "sess-inline-images";
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  writeConversation(id, [
+    {
+      id: "t1", parentId: null, role: "user", text: "look", createdAt: "2026-06-01T00:00:01Z",
+      attachments: [
+        { name: "shot.png", type: "image/png", mimeType: "image/png", size: 68, dataUrl: png },
+        { name: "notes.txt", type: "text/plain", size: 5, text: "hello" },
+      ],
+    },
+    { id: "t2", parentId: "t1", role: "assistant", text: "seen", createdAt: "2026-06-01T00:00:02Z" },
+  ]);
+  const res = await GET(new Request(`http://test/api/chat/conversation/${id}?toolOutputs=recent`), paramsFor(id));
+  assert.equal(res.status, 200);
+  const served = (await res.json()).conversation.turns[0].attachments;
+  assert.equal(served[0].dataUrl, undefined, "the image is no longer shipped inline");
+  assert.match(served[0].storedId, /^[0-9a-f-]{36}\.png$/);
+  assert.equal(served[1].text, "hello", "non-image attachments are untouched");
+
+  const stored = storedConversation(id);
+  assert.equal(stored.updatedAt, "2026-06-01T00:00:00Z", "a migration is not activity: the chat keeps its place");
+  assert.equal(stored.turns[0].attachments[0].storedId, served[0].storedId, "the file itself was migrated");
+  assert.equal(stored.turns[0].attachments[0].dataUrl, undefined);
+  assert.equal(stored.turns.length, 2);
+
+  const { readChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+  const image = await readChatImageAttachment(served[0].storedId);
+  assert.equal(`data:image/png;base64,${image.data.toString("base64")}`, png, "the stored bytes are the pasted image");
+
+  const tag = res.headers.get("etag");
+  const again = await GET(
+    new Request(`http://test/api/chat/conversation/${id}?toolOutputs=recent`, { headers: { "if-none-match": tag } }),
+    paramsFor(id),
+  );
+  assert.equal(again.status, 304, "the tag describes the migrated transcript that was served");
+});
+
+const LEGACY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+function writeLegacyImage(id, dataUrl = LEGACY_PNG) {
+  writeConversation(id, [{
+    id: "image-turn", role: "user", text: "look", createdAt: "2026-06-01T00:00:01Z",
+    attachments: [{ name: "shot.png", mimeType: "image/png", dataUrl }],
+  }]);
+}
+function getConversation(id, etag) {
+  return GET(new Request(`http://test/api/chat/conversation/${id}`, {
+    headers: etag ? { "if-none-match": etag } : {},
+  }), paramsFor(id));
+}
+
+test("GET migrates valid mixed-case legacy image headers", async () => {
+  const id = "sess-mixed-image";
+  writeLegacyImage(id, LEGACY_PNG.replace("data:image/png", "data:IMAGE/PNG"));
+  const res = await getConversation(id);
+  const attachment = (await res.json()).conversation.turns[0].attachments[0];
+  assert.match(attachment.storedId, /^[0-9a-f-]{36}\.png$/);
+  assert.equal(attachment.dataUrl, undefined);
+});
+
+test("a conditional reopen retries migration after the attachment store recovers", async (t) => {
+  const id = "sess-store-recovery";
+  writeLegacyImage(id);
+  const before = readFileSync(conversationPath(id), "utf8");
+  const blockedStore = join(TMP, "blocked-attachments");
+  writeFileSync(blockedStore, "not a directory");
+  const previous = process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
+  process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = blockedStore;
+  t.after(() => {
+    if (previous === undefined) delete process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
+    else process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = previous;
+  });
+  const failed = await getConversation(id);
+  assert.equal(failed.status, 200);
+  assert.equal((await failed.json()).conversation.turns[0].attachments[0].dataUrl, LEGACY_PNG);
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before, "a refused store leaves the source byte-for-byte intact");
+  const stillFailing = await getConversation(id, failed.headers.get("etag"));
+  assert.equal(stillFailing.status, 304, "after retrying an unchanged failure, do not resend the inline payload");
+  assert.equal(await stillFailing.text(), "");
+  rmSync(blockedStore);
+  mkdirSync(blockedStore);
+  const recovered = await getConversation(id, failed.headers.get("etag"));
+  assert.equal(recovered.status, 200, "the cached inline response must not prevent retry after recovery");
+  const attachment = (await recovered.json()).conversation.turns[0].attachments[0];
+  assert.ok(attachment.storedId);
+  assert.equal(attachment.dataUrl, undefined);
+  assert.notEqual(recovered.headers.get("etag"), failed.headers.get("etag"));
+  const { getStoreReadCacheMetrics, resetStoreReadCacheMetrics } = await import("@/lib/server/store-read-cache");
+  resetStoreReadCacheMetrics();
+  const unchanged = await getConversation(id, recovered.headers.get("etag"));
+  assert.equal(unchanged.status, 304);
+  assert.equal(await unchanged.text(), "");
+  const metrics = getStoreReadCacheMetrics();
+  assert.equal(metrics.hits + metrics.misses, 0, "a known migrated revision keeps the clone-free 304 fast path");
+});
+
+test("a failed transcript replacement preserves inline data and retries on conditional reopen", async (t) => {
+  const id = "sess-replace-recovery";
+  writeLegacyImage(id);
+  const { chatAttachmentRoot, saveChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+  const existingId = await saveChatImageAttachment(LEGACY_PNG, "image/png");
+  const original = storedConversation(id);
+  original.turns[0].attachments.push({ name: "existing.png", storedId: existingId });
+  original.turns[0].attachments.push({ name: "legacy.ico", dataUrl: LEGACY_PNG.replace("image/png", "image/x-icon") });
+  writeFileSync(conversationPath(id), JSON.stringify(original));
+  const before = readFileSync(conversationPath(id), "utf8");
+  const filesBefore = readdirSync(chatAttachmentRoot()).sort();
+  const rename = fsPromises.rename;
+  const mocked = t.mock.method(fsPromises, "rename", async (source, target) => {
+    if (target === conversationPath(id)) throw Object.assign(new Error("injected I/O failure"), { code: "EIO" });
+    return rename(source, target);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+  const failed = await getConversation(id);
+  assert.equal(failed.status, 200);
+  assert.equal((await failed.json()).conversation.turns[0].attachments[0].dataUrl, LEGACY_PNG);
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before);
+  assert.deepEqual(readdirSync(chatAttachmentRoot()).sort(), filesBefore, "failed replacement removes only images created by this attempt");
+  assert.ok(mocked.mock.calls.some(({ arguments: args }) => args[1] === conversationPath(id)), "the atomic replacement failure was exercised");
+  const failedAgain = await getConversation(id, failed.headers.get("etag"));
+  assert.equal(failedAgain.status, 304);
+  assert.deepEqual(readdirSync(chatAttachmentRoot()).sort(), filesBefore, "repeated failures do not accumulate orphaned copies");
+  mocked.mock.restore();
+  syncBuiltinESMExports();
+  const recovered = await getConversation(id, failed.headers.get("etag"));
+  assert.equal(recovered.status, 200);
+  assert.ok((await recovered.json()).conversation.turns[0].attachments[0].storedId);
+});
+
+test("migration serializes with other writes, is idempotent, and preserves refused images and legacy fields", async () => {
+  const id = "sess-migration-concurrent";
+  writeLegacyImage(id);
+  const original = storedConversation(id);
+  original.legacyExtension = { keep: true };
+  original.turns[0].attachments.push({ name: "refused.png", dataUrl: "data:image/png;base64," });
+  writeFileSync(conversationPath(id), JSON.stringify(original));
+  const { migrateConversationInlineImages, withConversationLock } = await import("@/lib/cave-conversations");
+  const { writeJsonAtomic } = await import("@/lib/server/atomic-write");
+  let release;
+  let entered;
+  const ready = new Promise((resolve) => { entered = resolve; });
+  const held = withConversationLock(id, () => new Promise((resolve) => { release = resolve; entered(); }));
+  await ready;
+  const priorWriter = withConversationLock(id, async () => {
+    const latest = storedConversation(id);
+    latest.turns[0].text = "Edit queued before migration";
+    await writeJsonAtomic(conversationPath(id), latest);
+  });
+  const first = migrateConversationInlineImages(id);
+  const second = migrateConversationInlineImages(id);
+  const writer = withConversationLock(id, async () => {
+    const latest = storedConversation(id);
+    latest.title = "Concurrent edit";
+    latest.turns.push({ id: "new-turn", role: "assistant", text: "new reply" });
+    await writeJsonAtomic(conversationPath(id), latest);
+  });
+  release();
+  const [, , moved, repeated] = await Promise.all([held, priorWriter, first, second, writer]);
+  assert.equal(moved, 1);
+  assert.equal(repeated, 0);
+  const result = storedConversation(id);
+  assert.equal(result.title, "Concurrent edit");
+  assert.equal(result.turns[0].text, "Edit queued before migration", "migration re-reads after acquiring the lock");
+  assert.equal(result.turns[1].text, "new reply");
+  assert.equal(result.updatedAt, original.updatedAt);
+  assert.deepEqual(result.legacyExtension, original.legacyExtension);
+  assert.equal(result.turns[0].parentId, undefined, "raw migration does not persist unrelated legacy normalization");
+  assert.equal(result.turns[0].attachments[1].dataUrl, "data:image/png;base64,");
+  const { readChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+  const storedId = result.turns[0].attachments[0].storedId;
+  assert.ok(await readChatImageAttachment(storedId));
+  const before = readFileSync(conversationPath(id), "utf8");
+  assert.equal(await migrateConversationInlineImages(id), 0);
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before);
+});
+
+test("concurrent first opens all serve the migrated image and its final tag", async () => {
+  const id = "sess-concurrent-opens";
+  writeLegacyImage(id);
+  const responses = await Promise.all(Array.from({ length: 8 }, () => getConversation(id)));
+  const stored = storedConversation(id).turns[0].attachments[0];
+  assert.ok(stored.storedId);
+  for (const response of responses) {
+    assert.equal(response.status, 200);
+    const attachment = (await response.json()).conversation.turns[0].attachments[0];
+    assert.equal(attachment.storedId, stored.storedId);
+    assert.equal(attachment.dataUrl, undefined);
+    assert.equal((await getConversation(id, response.headers.get("etag"))).status, 304);
+  }
 });

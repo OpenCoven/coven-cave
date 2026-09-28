@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server.js";
-import { caveToolSpawnEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnvAsync } from "@/lib/coven-bin";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import {
@@ -35,7 +35,7 @@ async function ghPrList(repoRoot: string, args: string[]): Promise<unknown> {
   const { stdout } = await execFileAsync("gh", args, {
     windowsHide: true,
     cwd: repoRoot, // cwd's repo → gh targets the right OWNER/REPO without hardcoding
-    env: { ...caveToolSpawnEnv(), GH_PROMPT_DISABLED: "1" },
+    env: { ...(await caveToolSpawnEnvAsync()), GH_PROMPT_DISABLED: "1" },
     timeout: GH_TIMEOUT_MS,
     maxBuffer: MAX_GH_BUFFER,
   });

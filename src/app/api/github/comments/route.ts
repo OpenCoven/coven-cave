@@ -19,6 +19,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { githubTokenIdentity } from "@/lib/server/github-item-cache";
+import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { restSource } from "@/lib/github-assigned-meta";
 
 export const dynamic = "force-dynamic";
@@ -253,7 +255,13 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
   };
 }
 
+/** Identical concurrent asks share one set of GitHub calls (#5627). */
 export async function GET(req: Request) {
+  const url = new URL(req.url);
+  return joinInFlightResponse(`comments:${githubTokenIdentity(resolveGitHubToken())}:${url.searchParams.get("repo") ?? ""}#${url.searchParams.get("number") ?? ""}:${url.searchParams.get("isPull") === "1" ? "pull" : "issue"}`, () => load(req));
+}
+
+async function load(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const repo = (url.searchParams.get("repo") ?? "").trim();
   const numberRaw = (url.searchParams.get("number") ?? "").trim();

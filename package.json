@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -54,6 +54,7 @@
     "bench:store-reads": "node --experimental-strip-types scripts/store-read-benchmark.mjs",
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
+    "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",
     "codemod:design": "node scripts/codemods/tokenize-tsx-design.mjs",

@@ -386,7 +386,8 @@ for (const rel of [
   "./queue-project-readiness.ts",
 ]) {
   const spawnSite = await readFile(new URL(rel, import.meta.url), "utf8");
-  assert.match(spawnSite, /caveToolSpawnEnv\(\)/, `${rel} uses Cave's augmented, scrubbed launch PATH`);
+  // The async variant (#5621) composes the same PATH off the event loop.
+  assert.match(spawnSite, /caveToolSpawnEnv(?:Async)?\(\)/, `${rel} uses Cave's augmented, scrubbed launch PATH`);
 }
 
 assert.match(
@@ -665,15 +666,23 @@ assert.match(
   );
 }
 
+// NVM/FNM candidates share one memoized health check (#5621) that still runs
+// with the bounded discovery context, and never keeps a deadline-cut answer.
 assert.match(
   source,
-  /function nodeNvmBinDirs\([^)]*\)[\s\S]*return runnableNodeToolchainDirs\(directories, \{[\s\S]*env: discovery\.env[\s\S]*deadline: discovery\.deadline/,
-  "NVM candidates are health-checked with the bounded discovery context before Cave prepends them",
+  /function healthyToolchainDirs\([^)]*\)[\s\S]*?runnableNodeToolchainDirs\(directories, \{[\s\S]*?env: discovery\.env[\s\S]*?deadline: discovery\.deadline/,
+  "toolchain candidates are health-checked with the bounded discovery context before Cave prepends them",
+);
+assert.match(source, /if \(discovery\.deadline !== undefined\) return null;/, "a deadline-bounded health check is never memoized");
+assert.match(
+  source,
+  /function nodeNvmBinDirs\([^)]*\)[^{]*\{\s*return healthyToolchainDirs\(versionManagerBinDirs\(NVM_ROOT/,
+  "NVM candidates go through the health check",
 );
 assert.match(
   source,
-  /function fnmBinDirs\([^)]*\)[\s\S]*return runnableNodeToolchainDirs\(directories, \{[\s\S]*env: discovery\.env[\s\S]*deadline: discovery\.deadline/,
-  "FNM candidates are health-checked with the bounded discovery context before Cave prepends them",
+  /function fnmBinDirs\([^)]*\)[^{]*\{\s*return healthyToolchainDirs\(versionManagerBinDirs\(FNM_ROOT/,
+  "FNM candidates go through the health check",
 );
 assert.match(
   source,

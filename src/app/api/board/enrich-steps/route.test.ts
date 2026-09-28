@@ -47,7 +47,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(req\.signal\.aborted\) break;/,
+  /for \(const card of lane\) \{\s*if \(req\.signal\.aborted\) return;/,
   "Enrich route should stop iterating cards after abort",
 );
 
@@ -96,7 +96,56 @@ assert.match(
 assert.match(
   source,
   /const candidates = board\.cards\.filter\([\s\S]*c\.familiarId === familiarId[\s\S]*!SKIP_LIFECYCLE\.has\(c\.lifecycle\)[\s\S]*\);/,
-  "Enrich route should revisit active assigned tasks only for the selected familiar",
+  "Enrich route should revisit every open task, or only one familiar's when scoped",
+);
+
+// Every open task is considered (#5629): `scope: "all"` sweeps the whole Board,
+// each task runs through its own assigned familiar, and a task with no
+// familiar is reported rather than dropped.
+assert.match(
+  source,
+  /if \(body\.scope === "all"\) return \{ familiarId: null, cardIds \};/,
+  "Enrich route should accept an all-tasks scope",
+);
+assert.match(
+  source,
+  /\(familiarId === null \|\| c\.familiarId === familiarId\)/,
+  "An all-tasks run must not filter candidates by familiar",
+);
+assert.match(
+  source,
+  /const owner = card\.familiarId;\s*if \(!owner \|\| !SAFE_FAMILIAR_ID\.test\(owner\)\) \{\s*push\(\{ kind: "skip", cardId: card\.id, reason: "unassigned" \}\);/,
+  "Unassigned tasks are reported, not dropped",
+);
+assert.match(
+  source,
+  /const \[familiarId, lane\] = next;[\s\S]*await reviewCard\(card, familiarId\);\s*\} catch \(error\) \{[\s\S]*push\(\{ kind: "skip", cardId: card\.id, reason: "error", message:/,
+  "Each task runs as its own assigned familiar, and a failing task is reported without stopping its lane",
+);
+assert.match(
+  source,
+  /Array\.from\(\{ length: Math\.min\(MAX_PARALLEL_FAMILIARS, queue\.length\) \}, runLane\)/,
+  "Familiars work their own lanes side by side, bounded",
+);
+assert.match(
+  source,
+  /If the outcome is delivered[\s\S]*close it: status "done", lifecycle "completed"[\s\S]*obsolete, a duplicate, or no longer wanted, close it: lifecycle "cancelled"/,
+  "The prompt should tell the familiar when to close a task",
+);
+assert.match(
+  source,
+  /`Task id: \$\{card\.id\}`/,
+  "The prompt should name the task id so the familiar can reason about its own dependencies",
+);
+assert.match(
+  source,
+  /for \(let attempt = 0; attempt < 2 && !enrichment; attempt \+= 1\)/,
+  "Unparsable familiar output should be retried once before the task is skipped",
+);
+assert.match(
+  source,
+  /closed: CLOSED_LIFECYCLES\.has\(final\.lifecycle\)/,
+  "Done events should say whether the task actually ended closed",
 );
 
 assert.doesNotMatch(
@@ -227,4 +276,78 @@ assert.match(
   source,
   /Live board tasks you may reference as task dependencies/,
   "Enrich prompt should hand the familiar the live board task ids it may ground against",
+);
+
+// The familiar's answer is read from assistant text only (#5629). Transport
+// frames used to be appended ahead of it, so the system-init object parsed as
+// an empty enrichment and every card was written back unchanged as "done".
+assert.match(
+  source,
+  /return assistantTextFromStream\(stripAnsi\(raw\)\);/,
+  "Enrich route should read the answer through the shared stream reader",
+);
+assert.match(
+  source,
+  /TASK_ENRICHMENT_KEYS\.some\(\(key\) => Object\.prototype\.hasOwnProperty\.call\(parsed, key\)\)/,
+  "An object with no task keys is not treated as a review",
+);
+
+// A structurally rejected dependency/next-step suggestion is recorded as a
+// blocked proposal, but the rest of the familiar's review still lands and the
+// task is reported as done, never left unaccounted (#5629).
+assert.match(
+  source,
+  /recorded = await updateCard\(card\.id, \{ \.\.\.taskPatch, agenticEnhance \}, \{ automated: true \}\);[\s\S]*status: card\.status,\s*lifecycle: card\.lifecycle,[\s\S]*needsHuman: true,/,
+  "A blocked orchestration suggestion must not discard the task review; a status that needed it is held and flagged",
+);
+assert.match(
+  source,
+  /proposalId: blocked\.id,\s*\}\);\s*push\(\{\s*kind: "done",/,
+  "A task whose suggestion was blocked is still reported as done",
+);
+assert.match(
+  source,
+  /\(cardIds === null \|\| cardIds\.has\(c\.id\)\)/,
+  "A run can be narrowed to named tasks",
+);
+
+// Cancel/fail decisions go through the Board's lifecycle transition, which
+// records the execution blocker a "blocked" status needs; an illegal move is
+// held and flagged for a human instead of written as a bare status (#5629).
+assert.match(
+  source,
+  /return await transitionCard\(card\.id, \{ to, reason \}\) \?\? written;\s*\} catch \{\s*return await updateCard\(card\.id, \{ needsHuman: true \}/,
+  "A familiar's cancel goes through transitionCard, falling back to a human flag",
+);
+
+// A PR closed without merging cancels the task; only a merged PR or a closed
+// issue completes it (#5635). Cancel waits until nothing linked is still open,
+// and both write paths route it through the Board's cancel transition.
+assert.match(
+  source,
+  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed" && !closedWithoutLanding\(item\)\),/,
+  "Only a merged PR or an issue closed as done completes a task",
+);
+assert.match(
+  source,
+  /const abandoned = tracked\.find\(\s*\(item\) => \(item\.kind === "pr" && item\.state === "closed"\) \|\| closedWithoutLanding\(item\),\s*\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*"PR closed without merging"[\s\S]*"issue closed as duplicate" : "issue closed as not planned"/,
+  "A PR closed without merging cancels the task when nothing linked is still open",
+);
+assert.equal(
+  (source.match(/finishLifecycleTransition\(card, transitionTo, normalized\.lifecycleReason, /g) ?? []).length,
+  2,
+  "Both the parsed and unparsed write paths finish through the cancel transition",
+);
+
+// The issue close reason is read from GitHub and kept on the link, so an issue
+// closed as not planned can be told apart from one closed as done (#5635).
+assert.match(
+  source,
+  /typeof data\.state_reason === "string" \? \{ stateReason: data\.state_reason \} : \{\}/,
+  "The refresh records GitHub's issue close reason",
+);
+assert.match(
+  source,
+  /item\.kind === "issue" && item\.state === "closed"\s*&& \(item\.stateReason === "not_planned" \|\| item\.stateReason === "duplicate"\)/,
+  "An issue closed as not planned or as a duplicate is abandoned, not landed",
 );

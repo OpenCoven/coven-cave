@@ -16,6 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { reviewRequests, type ReviewRequest } from "./chat-review-requests.ts";
 import type { GitHubItem } from "./github-tasks.ts";
 import { useRefreshOnFocus } from "./use-refresh-on-focus.ts";
+import { whenStartupSettled } from "./startup-gate.ts";
+import { sharedJsonFetch } from "./shared-json-fetch.ts";
 
 type AssignedResponse = {
   ok?: boolean;
@@ -37,17 +39,18 @@ export function useReviewRequests(enabled = true): ReviewRequestsSnapshot {
   const [loading, setLoading] = useState(enabled);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  // Shared across remounts (#5663); a window focus refreshes live.
+  const load = useCallback(async (force = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
     try {
-      const res = await fetch("/api/github/assigned", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const json = (await res.json()) as AssignedResponse;
+      // Not needed until it is on screen: wait out app load (#5649).
+      await whenStartupSettled();
+      if (controller.signal.aborted) return;
+      const { data } = await sharedJsonFetch<AssignedResponse>("/api/github/assigned", { force });
+      const json = data ?? ({} as AssignedResponse);
       if (controller.signal.aborted) return;
       // `configured: false` (no token) and a rejected/expired PAT both mean
       // "nothing to offer here" from a brand-new chat's point of view. The
@@ -76,7 +79,8 @@ export function useReviewRequests(enabled = true): ReviewRequestsSnapshot {
     void load();
     return () => abortRef.current?.abort();
   }, [enabled, load]);
-  useRefreshOnFocus(load, { enabled });
+  const refresh = useCallback(() => load(true), [load]);
+  useRefreshOnFocus(refresh, { enabled });
 
   return { rows: reviewRequests(items), configured, loading };
 }

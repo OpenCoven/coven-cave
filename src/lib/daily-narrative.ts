@@ -18,6 +18,14 @@ export const NARRATIVE_MIN_REGEN_MS = 60 * 60_000;
 /** Wait at least this long before retrying a failed generation. */
 export const NARRATIVE_RETRY_MS = 15 * 60_000;
 
+/**
+ * Hold the narrative back this long after the workspace loads (#5639). It is a
+ * streaming model run that holds one of the browser's six per-host connections
+ * for its whole duration; started at load, it made the first chat opens queue
+ * behind it. The report keeps its deterministic body until it lands.
+ */
+export const NARRATIVE_STARTUP_DELAY_MS = 20_000;
+
 /** Hard cap on stored narrative length (defense against runaway generations). */
 export const NARRATIVE_MAX_CHARS = 1_200;
 

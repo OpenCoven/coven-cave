@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { CheckSummary } from "@/lib/github-checks";
 import type { PrCheckRun } from "@/lib/github-pr-reader";
+import { fetchGitHubItem } from "@/lib/github-item-fetch";
 
 const CHECKS_POLL_MS = 30_000;
 
@@ -146,8 +147,10 @@ export function useGitHubPrDetail(repo: string, number: number): PrDetailState {
   useEffect(() => {
     let cancelled = false;
     setState({ phase: "loading" });
-    void getJson<PrDetail>(
-      `/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}&pull=1`,
+    // Shared with the transcript's cards for the same PR (#5615).
+    void fetchGitHubItem(repo, number).then(
+      (res) => (res.status === 200 ? (res.data as PrDetail) : null),
+      () => null,
     ).then((data) => {
       if (cancelled) return;
       setState(data ? { phase: "ready", detail: data } : { phase: "error" });

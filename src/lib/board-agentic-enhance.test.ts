@@ -338,3 +338,13 @@ assert.notEqual(
 );
 
 console.log("board-agentic-enhance.test.ts: ok");
+
+// Legacy cards can be stored without a `notes` field. Building Enhance context
+// for (or around) one must not throw, or the task is never reviewed (#5629).
+{
+  const legacy = Object.fromEntries(
+    Object.entries(card("legacy-notes")).filter(([key]) => key !== "notes"),
+  ) as unknown as Card;
+  const context = buildBoardAgenticContext(legacy, [legacy, card("neighbor")]);
+  assert.equal(typeof context.fingerprint, "string");
+}

@@ -54,6 +54,8 @@ import { FamiliarAnalyticsSection } from "@/components/familiar-tab-analytics";
 import { FamiliarMemorySection } from "@/components/familiar-tab-memory";
 import { FamiliarSettingsSection } from "@/components/familiar-tab-settings";
 import "@/styles/familiar-tab.css";
+import { whenStartupSettled } from "@/lib/startup-gate";
+import { sharedJsonFetch } from "@/lib/shared-json-fetch";
 
 // ── Identity hero ────────────────────────────────────────────────────────────
 
@@ -294,20 +296,22 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
       ? `/api/capabilities?harness=${encodeURIComponent(harnessId)}`
       : "/api/capabilities";
 
-    void Promise.all([
-      fetch("/api/roles", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; roles?: RoleEntry[]; error?: string }>)
+    // Not needed until it is on screen: wait out app load (#5649).
+    void whenStartupSettled().then(() => cancelled ? Promise.reject(new Error("unmounted")) : Promise.all([
+      // Shared across remounts — a familiar switch remounts this panel (#5663).
+      sharedJsonFetch<{ ok: boolean; roles?: RoleEntry[]; error?: string }>("/api/roles")
+        .then(({ data }) => data ?? { ok: false as const, error: "roles fetch failed" })
         .catch(() => ({ ok: false as const, error: "roles fetch failed" })),
-      fetch("/api/skills/local", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; skills?: LocalSkillEntry[]; error?: string }>)
+      sharedJsonFetch<{ ok: boolean; skills?: LocalSkillEntry[]; error?: string }>("/api/skills/local")
+        .then(({ data }) => data ?? { ok: false as const, error: "skills/local fetch failed" })
         .catch(() => ({ ok: false as const, error: "skills/local fetch failed" })),
-      fetch(capabilitiesUrl, { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; harness_capabilities?: HarnessCapabilityManifest[]; error?: string }>)
+      sharedJsonFetch<{ ok: boolean; harness_capabilities?: HarnessCapabilityManifest[]; error?: string }>(capabilitiesUrl)
+        .then(({ data }) => data ?? { ok: false as const, error: "capabilities fetch failed" })
         .catch(() => ({ ok: false as const, error: "capabilities fetch failed" })),
-      fetch("/api/harnesses", { cache: "no-store" })
-        .then((r) => r.json() as Promise<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>)
+      sharedJsonFetch<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>("/api/harnesses")
+        .then(({ data }) => data ?? { ok: false as const, error: "harnesses fetch failed" })
         .catch(() => ({ ok: false as const, error: "harnesses fetch failed" })),
-    ]).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
+    ])).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
       if (cancelled) return;
       const errors: string[] = [];
       if (!rolesRes.ok) errors.push(rolesRes.error ?? "roles unavailable");
@@ -322,6 +326,8 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
         loading: false,
         errors,
       });
+    }).catch(() => {
+      // Unmounted before app load settled: nothing to show.
     });
     return () => { cancelled = true; };
   }, [harnessId]);

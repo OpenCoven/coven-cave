@@ -170,6 +170,12 @@ struct TasksView: View {
         filtered.count == 1 ? "1 task" : "\(filtered.count) tasks"
     }
 
+    /// While Enhance runs, the title's detail line shows its progress.
+    private var titleDetail: String {
+        guard let tally = app.enhanceTasksTally else { return visibleTaskLabel }
+        return tally.total > 0 ? "Enhancing \(tally.reached)/\(tally.total)" : "Enhancing…"
+    }
+
     private var groupBySelection: Binding<String> {
         Binding(
             get: { Self.normalizedGroupByRaw(groupByRaw) },
@@ -215,7 +221,7 @@ struct TasksView: View {
                         .accessibilityLabel("Open navigation")
                     }
                     ToolbarItem(placement: .principal) {
-                        EditorialSurfaceTitle(title: "Tasks", detail: visibleTaskLabel)
+                        EditorialSurfaceTitle(title: "Tasks", detail: titleDetail)
                     }
                     ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -229,6 +235,20 @@ struct TasksView: View {
                                 ForEach(SortBy.allCases) { s in
                                     Label(s.rawValue, systemImage: s.systemImage).tag(s.rawValue)
                                 }
+                            }
+                            // Each open task's assigned familiar reviews it,
+                            // then updates or closes it (#5652).
+                            Section {
+                                Button {
+                                    app.enhanceAllTasks()
+                                } label: {
+                                    Label(
+                                        app.enhancingTasks ? "Enhancing tasks…" : "Enhance tasks",
+                                        systemImage: "sparkles"
+                                    )
+                                }
+                                .disabled(app.enhancingTasks)
+                                .accessibilityHint("Each assigned familiar reviews its open tasks, then updates or closes them")
                             }
                         } label: {
                             Label("View options", systemImage: "ellipsis.circle")

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { caveToolSpawnEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnvAsync } from "@/lib/coven-bin";
 
 /**
  * The Queue and Work surfaces read and write GitHub Issues through the `gh`
@@ -74,7 +74,7 @@ export async function runGh(repoRoot: string, args: string[]): Promise<GhResult>
     const { stdout, stderr } = await execFileAsync("gh", args, {
       windowsHide: true,
       cwd: repoRoot,
-      env: { ...caveToolSpawnEnv(), GH_PROMPT_DISABLED: "1" },
+      env: { ...(await caveToolSpawnEnvAsync()), GH_PROMPT_DISABLED: "1" },
       timeout: GH_TIMEOUT_MS,
       maxBuffer: MAX_GH_BUFFER,
     });

@@ -28,6 +28,32 @@ export function shouldAutoReviewThread(input: {
     : input.settledAssistantTurns >= MATURE_THREAD_REVIEW_TURNS;
 }
 
+/** Where the automatic review last saw a thread (#5637). `eligible` is null
+ *  until the thread's own history has painted: that first view is a baseline. */
+export type ReviewCheckpoint = { sessionId: string | null; eligible: boolean | null };
+
+/**
+ * Advance the automatic-review tracker. The review is for a thread that just
+ * reached its checkpoint while the user watched, so only a transition to
+ * eligible after the baseline counts. Opening a chat used to count: the effect
+ * saw it first with no turns (history still loading) and then with all of
+ * them, which looked like a live crossing and started a paid review of every
+ * mature chat that was opened. On a session change the values in hand may
+ * still be the previous thread's, so no baseline is taken on that run.
+ */
+export function advanceReviewCheckpoint(
+  previous: ReviewCheckpoint,
+  current: { sessionId: string | null; eligible: boolean; historyPainted: boolean },
+): { next: ReviewCheckpoint; reached: boolean } {
+  if (current.sessionId !== previous.sessionId) {
+    return { next: { sessionId: current.sessionId, eligible: null }, reached: false };
+  }
+  if (!current.historyPainted) return { next: previous, reached: false };
+  const next = { sessionId: current.sessionId, eligible: current.eligible };
+  if (previous.eligible === null) return { next, reached: false };
+  return { next, reached: !previous.eligible && current.eligible };
+}
+
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
   const lines = turns

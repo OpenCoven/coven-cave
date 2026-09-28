@@ -1,6 +1,16 @@
 # Chat v1 Phase 7 — Packaging, Compatibility, Publishing, and Rollout: Verified Program Status
 
-> **Current refresh — 2026-09-21:** the consolidated #4781 checklist was
+> **Phase 2 update: 2026-09-27.** The [canonical-read gate](../../workflows/chat-v1-phase-2-canonical-reads-gate.md)
+> now passes for its frozen candidate and approved MVP scope. Its authenticated
+> three-platform aggregate supersedes the Windows-failure statements below.
+> Val superseded acceptance of the retired Cave-connected Chat shell; this does
+> not certify the current standalone Chat UI. The dated Phase 7 inventory below
+> remains historical, not a current release verdict. #4781, Chat #356, SDK #41
+> and the #5339 security hold retain their own acceptance criteria. This update
+> authorizes no publication, signing, rollout or hold removal.
+
+
+> **Historical refresh — 2026-09-21:** the consolidated #4781 checklist was
 > reconciled against live state on every owner repository. Cave v0.4.2 is a
 > signed, notarized, rollback-ready line (baseline v0.4.1, updater chain PASS,
 > installed-app Client v1 smoke ok). Chat's only successful release run is an

@@ -7375,16 +7375,16 @@ import {
   closeSync,
   fsyncSync,
   lstatSync,
-  mkdirSync as mkdirSync2,
+  mkdirSync as mkdirSync3,
   openSync,
   readFileSync as readFileSync3,
   realpathSync as realpathSync2,
   readdirSync as readdirSync2,
-  renameSync as renameSync2,
+  renameSync as renameSync3,
   rmSync,
   statSync as statSync3,
   unlinkSync as unlinkSync2,
-  writeFileSync as writeFileSync2
+  writeFileSync as writeFileSync3
 } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -7768,9 +7768,9 @@ function createClientV1WindowsAclProbe(execute = execFileAsync) {
           }
         ));
       } catch (error) {
-        const timedOut = windowsAclProbeTimedOut(error);
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
-          if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
+        const timedOut2 = windowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut2) {
+          if (timedOut2) throw sanitizedWindowsAclProbeTimeout(error);
           throw sanitizedWindowsAclProbeFailure(error);
         }
         continue;
@@ -8759,7 +8759,7 @@ var CLIENT_V1_AUTHENTICATED_PATHS = [
 
 // src/lib/coven-bin.ts
 import { execFile as execFile3, execFileSync } from "node:child_process";
-import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync2, realpathSync, statSync } from "node:fs";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, realpathSync, renameSync as renameSync2, statSync, writeFileSync as writeFileSync2 } from "node:fs";
 import os from "node:os";
 import path4 from "node:path";
 
@@ -9325,23 +9325,32 @@ var FNM_ROOT = path4.join(
   ".fnm",
   "node-versions"
 );
-function nodeNvmBinDirsAsync(discovery) {
-  const directories = versionManagerBinDirs(NVM_ROOT, ["bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
+function toolchainKey(directories, discovery) {
+  if (discovery.deadline !== void 0) return null;
+  return `${directories.join("\0")}${discovery.env.PATH ?? ""}`;
+}
+function rememberToolchains(key, dirs) {
+  if (key !== null) (pathState.toolchains ??= /* @__PURE__ */ new Map()).set(key, dirs);
+  return dirs;
+}
+async function healthyToolchainDirsAsync(directories, discovery) {
+  if (directories.length === 0) return [];
+  const key = toolchainKey(directories, discovery);
+  const known = key === null ? void 0 : pathState.toolchains?.get(key);
+  if (known) return known;
+  const generation = pathState.discoveryGeneration;
+  const dirs = await runnableNodeToolchainDirsAsync(directories, {
     env: discovery.env,
     deadline: discovery.deadline,
     now: discovery.now
   });
+  return generation === pathState.discoveryGeneration ? rememberToolchains(key, dirs) : dirs;
+}
+function nodeNvmBinDirsAsync(discovery) {
+  return healthyToolchainDirsAsync(versionManagerBinDirs(NVM_ROOT, ["bin"]), discovery);
 }
 function fnmBinDirsAsync(discovery) {
-  const directories = versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]);
-  if (directories.length === 0) return Promise.resolve([]);
-  return runnableNodeToolchainDirsAsync(directories, {
-    env: discovery.env,
-    deadline: discovery.deadline,
-    now: discovery.now
-  });
+  return healthyToolchainDirsAsync(versionManagerBinDirs(FNM_ROOT, ["installation", "bin"]), discovery);
 }
 function windowsNpmBinDirs(discovery) {
   if (process.platform === "win32") {
@@ -9420,12 +9429,125 @@ function assembleCandidateDirs(nvmDirs, fnmDirs, discovery) {
     d
   ));
 }
+function loginShellKey(discovery) {
+  const env = discovery.env;
+  return [env["SHELL"], env["HOME"], env["ZDOTDIR"], env["PATH"]].map((value) => value ?? "").join("\0");
+}
+function cachedLoginShell(key) {
+  return pathState.loginShell?.key === key ? pathState.loginShell.value : void 0;
+}
+function persistedLoginShellFile() {
+  const home = caveHome();
+  if (!path4.isAbsolute(home)) return null;
+  return path4.join(
+    /* turbopackIgnore: true */
+    home,
+    "spawn-login-path.json"
+  );
+}
+function readPersistedLoginShell(key) {
+  if (pathState.persistedAllowed === false) return void 0;
+  const file = persistedLoginShellFile();
+  if (!file) return void 0;
+  try {
+    const parsed = JSON.parse(readFileSync2(
+      /* turbopackIgnore: true */
+      file,
+      "utf8"
+    ));
+    if (parsed?.key !== key) return void 0;
+    return typeof parsed.value === "string" ? parsed.value : null;
+  } catch {
+    return void 0;
+  }
+}
+function writePersistedLoginShell(key, value) {
+  const file = persistedLoginShellFile();
+  if (!file) return;
+  try {
+    const current = readPersistedLoginShellRaw(file);
+    if (current?.key === key && current.value === value) return;
+    mkdirSync2(
+      /* turbopackIgnore: true */
+      path4.dirname(file),
+      { recursive: true }
+    );
+    const temp = `${file}.${process.pid}.tmp`;
+    writeFileSync2(
+      /* turbopackIgnore: true */
+      temp,
+      JSON.stringify({ key, value })
+    );
+    renameSync2(
+      /* turbopackIgnore: true */
+      temp,
+      file
+    );
+  } catch {
+  }
+}
+function readPersistedLoginShellRaw(file) {
+  try {
+    return JSON.parse(readFileSync2(
+      /* turbopackIgnore: true */
+      file,
+      "utf8"
+    ));
+  } catch {
+    return null;
+  }
+}
+function adoptPersistedLoginShell(discovery, key) {
+  const persisted = readPersistedLoginShell(key);
+  if (persisted === void 0) return void 0;
+  pathState.loginShell = { key, value: persisted };
+  const revalidating = pathState.revalidating ??= /* @__PURE__ */ new Set();
+  if (!revalidating.has(key)) {
+    revalidating.add(key);
+    const generation = pathState.discoveryGeneration;
+    void probeLoginShellAsync({ ...discovery, deadline: void 0 }).then(({ value, timedOut: expired }) => {
+      revalidating.delete(key);
+      if (expired || generation !== pathState.discoveryGeneration) return;
+      writePersistedLoginShell(key, value);
+      if (pathState.loginShell?.key !== key || pathState.loginShell.value === value) return;
+      pathState.loginShell = { key, value };
+      pathState.cachedPath = null;
+      pathState.cachedToolPath = null;
+    }, () => revalidating.delete(key));
+  }
+  return persisted;
+}
+function timedOut(error) {
+  const failure = error;
+  return failure?.code === "ETIMEDOUT" || failure?.signal === "SIGTERM";
+}
 function loginShellPathAsync(discovery) {
   if (process.platform === "win32") return Promise.resolve(null);
+  const key = loginShellKey(discovery);
+  const cached = cachedLoginShell(key);
+  if (cached !== void 0) return Promise.resolve(cached);
+  const persisted = adoptPersistedLoginShell(discovery, key);
+  if (persisted !== void 0) return Promise.resolve(persisted);
+  const pending = pathState.pendingLoginShell;
+  if (pending && pending.key === key) return pending.promise;
+  const generation = pathState.discoveryGeneration;
+  const promise = probeLoginShellAsync(discovery).then(({ value, timedOut: expired }) => {
+    if (!expired && generation === pathState.discoveryGeneration) {
+      pathState.loginShell = { key, value };
+      writePersistedLoginShell(key, value);
+    }
+    return value;
+  }).finally(() => {
+    if (pathState.pendingLoginShell?.promise === promise) pathState.pendingLoginShell = null;
+  });
+  pathState.pendingLoginShell = { key, promise };
+  return promise;
+}
+function probeLoginShellAsync(discovery) {
   const env = discovery.env;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   const timeout = remainingDiscoveryTimeout(4e3, discovery.deadline, discovery.now);
-  if (timeout <= 0) return Promise.resolve(null);
+  if (timeout <= 0) return Promise.resolve({ value: null, timedOut: true });
   return new Promise((resolve3) => {
     execFile3(
       /* turbopackIgnore: true */
@@ -9434,11 +9556,11 @@ function loginShellPathAsync(discovery) {
       { windowsHide: true, encoding: "utf-8", timeout, env: discovery.env },
       (error, stdout) => {
         if (error) {
-          resolve3(null);
+          resolve3({ value: null, timedOut: timedOut(error) });
           return;
         }
         const out = String(stdout).trim();
-        resolve3(out || null);
+        resolve3({ value: out || null, timedOut: false });
       }
     );
   });
@@ -10648,9 +10770,9 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
         );
         break;
       } catch (error) {
-        const timedOut = standaloneWindowsAclProbeTimedOut(error);
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !timedOut) {
-          if (timedOut) throw sanitizedWindowsAclProbeTimeout2(error);
+        const timedOut2 = standaloneWindowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !timedOut2) {
+          if (timedOut2) throw sanitizedWindowsAclProbeTimeout2(error);
           throw error;
         }
       }
@@ -10748,7 +10870,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   clientV1DiscoveryEndpoint = endpoint;
   const windowsAclProbeDeadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join4(clientV1DiscoveryFile(), "..");
-  mkdirSync2(root, { recursive: true, mode: 448 });
+  mkdirSync3(root, { recursive: true, mode: 448 });
   const rootMetadata = lstatSync(root);
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
     throw discoveryPublicationFailure(
@@ -10836,13 +10958,13 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   try {
     fd = openSync(temporaryPath, "wx", 384);
     ownsTemporaryPath = true;
-    writeFileSync2(fd, `${JSON.stringify(record2, null, 2)}
+    writeFileSync3(fd, `${JSON.stringify(record2, null, 2)}
 `, "utf8");
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
     assertStandaloneDiscoveryTarget(path6, windowsAclProbeDeadline);
-    renameSync2(temporaryPath, path6);
+    renameSync3(temporaryPath, path6);
     ownsTemporaryPath = false;
     chmodSync(path6, 384);
     clientV1DiscoveryPublished = true;
@@ -11640,6 +11762,21 @@ var hostname = loopbackHostname();
 var port = cavePort();
 var app = next({ dev, hostname, port });
 var handle = app.getRequestHandler();
+var DEFERRED_ENTRY_PRELOAD_MS = 15e3;
+function scheduleDeferredEntryPreload() {
+  if (dev) return;
+  const timer = setTimeout(() => {
+    void (async () => {
+      try {
+        const wrapper = app.server;
+        const nextServer = await wrapper?.getServer?.();
+        await nextServer?.unstable_preloadEntries?.();
+      } catch {
+      }
+    })();
+  }, DEFERRED_ENTRY_PRELOAD_MS);
+  timer.unref?.();
+}
 var wss = new WebSocketServer({ noServer: true });
 var remotePtyClients = /* @__PURE__ */ new Set();
 var deviceAccessSecret = randomUUID3();
@@ -11807,6 +11944,7 @@ server.listen(port, hostname, () => {
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
   void warmHarnessSpawnPath();
 });
+scheduleDeferredEntryPreload();
 var httpShutdownStarted = false;
 function shutdownHttpServer() {
   if (httpShutdownStarted) return;
@@ -11881,7 +12019,7 @@ function startHeapMonitor() {
     if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
     try {
       const dir = heapDiagnosticsDir();
-      mkdirSync2(dir, { recursive: true });
+      mkdirSync3(dir, { recursive: true });
       const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
       const seq = String(heapSnapshotSeq += 1).padStart(3, "0");
       const file = join4(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);

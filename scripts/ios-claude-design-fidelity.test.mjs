@@ -153,7 +153,7 @@ assert.match(
 );
 assert.match(
   appModel,
-  /navigationDrawerOpen: Bool = \{[\s\S]*?--ui-open-drawer/,
+  /navigationDrawerOpenValue: Bool = \{[\s\S]*?--ui-open-drawer/,
   "the layered drawer has a deterministic native screenshot fixture",
 );
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
@@ -234,8 +234,10 @@ assert.match(
   "primary destination titles share one editorial component",
 );
 assert.match(home, /visibleConversationLabel/, "the Chats title names its conversation context");
-assert.match(tasks, /EditorialSurfaceTitle\(title: "Tasks", detail: visibleTaskLabel\)/,
+assert.match(tasks, /EditorialSurfaceTitle\(title: "Tasks", detail: titleDetail\)/,
   "Tasks shares the editorial primary-surface hierarchy");
+assert.match(tasks, /guard let tally = app\.enhanceTasksTally else \{ return visibleTaskLabel \}/,
+  "the Tasks detail line names the visible task count unless Enhance is running (#5652)");
 assert.match(settings, /EditorialSurfaceTitle\(title: "Settings"\)/,
   "Settings shares the editorial primary-surface hierarchy");
 assert.match(

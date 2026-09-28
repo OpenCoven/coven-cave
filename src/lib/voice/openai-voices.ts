@@ -16,27 +16,22 @@ export type OpenAiVoiceInfo = {
   accent: string;
   /** Short character sketch used as the second half of the detail line. */
   vibe: string;
-  /**
-   * Marin and cedar exist only on the Realtime API — the plain
-   * text-to-speech endpoint used for previews may reject them.
-   */
-  realtimeOnly?: boolean;
 };
 
 export const OPENAI_REALTIME_VOICES: OpenAiVoiceInfo[] = [
   { id: "alloy", label: "Alloy", gender: "androgynous", accent: "American", vibe: "balanced, versatile" },
   { id: "ash", label: "Ash", gender: "masculine", accent: "American", vibe: "warm, confident" },
   { id: "ballad", label: "Ballad", gender: "masculine", accent: "British", vibe: "gentle, melodic" },
-  { id: "cedar", label: "Cedar", gender: "masculine", accent: "American", vibe: "natural, grounded", realtimeOnly: true },
+  { id: "cedar", label: "Cedar", gender: "masculine", accent: "American", vibe: "natural, grounded" },
   { id: "coral", label: "Coral", gender: "feminine", accent: "American", vibe: "bright, upbeat" },
   { id: "echo", label: "Echo", gender: "masculine", accent: "American", vibe: "crisp, resonant" },
-  { id: "marin", label: "Marin", gender: "feminine", accent: "American", vibe: "clear, professional", realtimeOnly: true },
+  { id: "marin", label: "Marin", gender: "feminine", accent: "American", vibe: "clear, professional" },
   { id: "sage", label: "Sage", gender: "feminine", accent: "American", vibe: "calm, soothing" },
   { id: "shimmer", label: "Shimmer", gender: "feminine", accent: "American", vibe: "energetic, expressive" },
   { id: "verse", label: "Verse", gender: "masculine", accent: "American", vibe: "dynamic, expressive" },
 ];
 
-export const DEFAULT_OPENAI_VOICE_ID = "alloy";
+export const DEFAULT_OPENAI_VOICE_ID = "marin";
 
 export function findOpenAiVoice(id: string): OpenAiVoiceInfo | null {
   return OPENAI_REALTIME_VOICES.find((voice) => voice.id === id) ?? null;

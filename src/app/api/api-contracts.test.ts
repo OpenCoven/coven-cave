@@ -1340,7 +1340,8 @@ for (const contract of contracts) {
   // and every call site awaits the seam rather than firing it and moving on.
   assert.match(
     sessionsListSource,
-    /const withGitContext = async \([\s\S]{0,160}enrichSessionsWithGitContext\(rows\)/,
+    // The seam may pass options after the rows (the #5608 deadline).
+    /const withGitContext = async \([\s\S]{0,240}enrichSessionsWithGitContext\(rows[,)]/,
     "/sessions/list: the git-enrichment seam is async and delegates to the async lib",
   );
   assert.equal(
@@ -1430,7 +1431,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionGitEnrichSource,
-    /"rev-parse", "--show-toplevel"[\s\S]*"rev-parse", "--git-common-dir"/,
+    // One rev-parse answers the location probes together (#5608).
+    /"rev-parse",[^\]]*"--show-toplevel",[^\]]*"--git-common-dir"/,
     "session-git-enrich: git context should detect worktree-backed roots",
   );
   assert.match(

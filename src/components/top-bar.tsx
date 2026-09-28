@@ -63,7 +63,7 @@ type Props = {
 };
 
 const ENRICH_TASKS_TITLE =
-  "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+  "Enhance every open task: each assigned familiar reviews its tasks, then updates or closes them";
 const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar";
 const NEW_CHAT_LABEL = "New chat";
 const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
@@ -215,11 +215,11 @@ export function TopBar(props: Props) {
               {onEnrichTasks ? (
                 <PopoverItem
                   icon="ph:sparkle"
-                  disabled={enrichingTasks || !activeFamiliar}
+                  disabled={enrichingTasks}
                   onSelect={onEnrichTasks}
-                  title={activeFamiliar ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
+                  title={ENRICH_TASKS_TITLE}
                 >
-                  {activeFamiliar ? enrichLabel : "Select a familiar to enhance tasks"}
+                  {enrichLabel}
                 </PopoverItem>
               ) : null}
               {onViewTasks ? (

@@ -7,7 +7,8 @@ import { caveHome } from "./coven-paths.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { externalizeInlineImages } from "./server/externalize-inline-images.ts";
-import { readCachedStore } from "./server/store-read-cache.ts";
+import { removeChatImageAttachment } from "./server/chat-attachment-store.ts";
+import { inspectStoreFile, readCachedStore, type FileIdentity } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
@@ -291,16 +292,19 @@ export function clearConversationListMetadataCache(): void {
 // restart reads only the files that changed while Cave was down.
 //
 // A persisted summary is only as current as the code that derived it, so the
-// index is keyed by SUMMARY_INDEX_VERSION plus a hash of the derivation
-// functions' own source. A release that changes how a summary is derived gets
-// a different key and rebuilds the index instead of serving stale rows. Bump
-// the version for a change the hash cannot see (e.g. in a helper not listed).
+// index is keyed by SUMMARY_INDEX_VERSION, and a release that changes how a
+// summary is derived bumps it and rebuilds the index instead of serving stale
+// rows. The key is a constant on purpose (#5605): it used to hash the
+// derivation functions' runtime source, which differs between the dev server,
+// each production bundle and the installed app. Those share this one file, so
+// each rebuilt it from every transcript (6.7 s measured) and overwrote it under
+// its own key. The source check lives in the unit test instead, which pins
+// summaryDerivationSourceDigest() and fails until the version is bumped.
 
 const SUMMARY_INDEX_PATH = path.join(caveHome(), "conversation-summary-index.json");
-const SUMMARY_INDEX_VERSION = 1;
+export const SUMMARY_INDEX_VERSION = 2;
 const SUMMARY_INDEX_WRITE_DELAY_MS = 2_000;
 
-let summaryIndexKeyValue: string | null = null;
 let summaryIndexHydration: Promise<void> | null = null;
 let summaryIndexDirty = false;
 let summaryIndexTimer: ReturnType<typeof setTimeout> | null = null;
@@ -310,8 +314,17 @@ let summaryIndexWriting: Promise<void> | null = null;
 let summaryIndexGeneration = 0;
 
 function summaryIndexKey(): string {
-  if (summaryIndexKeyValue) return summaryIndexKeyValue;
-  const hash = createHash("sha256").update(`v${SUMMARY_INDEX_VERSION}`);
+  return `summary-index-v${SUMMARY_INDEX_VERSION}`;
+}
+
+/**
+ * Digest of every function a persisted summary depends on. Whitespace is
+ * dropped so the digest does not depend on how a runtime strips types. Only
+ * the unit test reads it: a change here without a SUMMARY_INDEX_VERSION bump
+ * fails the pin there rather than serving summaries derived by older code.
+ */
+export function summaryDerivationSourceDigest(): string {
+  const hash = createHash("sha256");
   for (const derivation of [
     readConversationSummary,
     fallbackConversationSummary,
@@ -333,10 +346,9 @@ function summaryIndexKey(): string {
     normalizeChatAttentionOperationId,
     normalizeChatAttentionOperationLineage,
   ]) {
-    hash.update("\0").update(String(derivation));
+    hash.update("\0").update(String(derivation).replace(/\s+/g, ""));
   }
-  summaryIndexKeyValue = hash.digest("hex");
-  return summaryIndexKeyValue;
+  return hash.digest("hex");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -750,6 +762,15 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
 const CONVERSATION_READ_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 
 /**
+ * How long a transcript may be served from the read cache (#5607). Every hit
+ * is already verified against a SHA-256 of the file's bytes, so this is only
+ * a backstop; the store cache's 1 s default meant any reopen more than a
+ * second later re-parsed the file (46 ms for a 21 MB transcript). The byte
+ * bound above, not this, is what limits memory.
+ */
+const CONVERSATION_READ_CACHE_TTL_MS = 10 * 60_000;
+
+/**
  * {@link loadConversation} with the transcript held across requests.
  *
  * `GET /api/chat/conversation/[id]` is not a once-per-open path: `chat-list.tsx`
@@ -781,7 +802,45 @@ export async function loadConversationCached(sessionId: string): Promise<Convers
   }
   return readCachedStore(filePath, () => loadConversation(sessionId), {
     maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
+    ttlMs: CONVERSATION_READ_CACHE_TTL_MS,
   });
+}
+
+export type ConversationFileRevision = {
+  /** SHA-256 of the transcript file's bytes. */
+  digest: string;
+  /** Loads the transcript through the read cache without re-hashing the file. */
+  load(): Promise<ConversationFile | null>;
+};
+
+/**
+ * The transcript's content digest, taken before anything is parsed, so a
+ * conditional GET can answer 304 without loading, cloning or serializing the
+ * transcript (#5607). `load` reuses the same identity: if the file is replaced
+ * between the two, the value is filed under the older identity and the next
+ * read misses, and the caller's tag is the older one, so the client's next
+ * revalidation gets the newer transcript rather than a false 304.
+ */
+export async function conversationFileRevision(
+  sessionId: string,
+): Promise<ConversationFileRevision | null> {
+  let filePath: string;
+  let identity: FileIdentity;
+  try {
+    filePath = pathFor(sessionId);
+    identity = await inspectStoreFile(filePath);
+  } catch {
+    return null;
+  }
+  return {
+    digest: identity.digest,
+    load: () =>
+      readCachedStore(filePath, () => loadConversation(sessionId), {
+        maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
+        ttlMs: CONVERSATION_READ_CACHE_TTL_MS,
+        identity,
+      }),
+  };
 }
 
 /** Serialize read-modify-write operations for one conversation. Atomic file
@@ -808,6 +867,52 @@ export async function withConversationLock<T>(
       conversationLockTails.delete(sessionId);
     }
   }
+}
+
+/** Whether any turn still carries a pasted image inline (#5611). */
+export function hasInlineImages(conv: Pick<ConversationFile, "turns">): boolean {
+  return conv.turns.some((turn) =>
+    turn.attachments?.some((attachment) =>
+      typeof attachment?.dataUrl === "string"
+      && attachment.dataUrl.slice(0, 11).toLowerCase() === "data:image/"
+      && !attachment.storedId,
+    ),
+  );
+}
+
+/**
+ * Move a transcript's inline images to the attachment store now, rather than
+ * on a next write that an old chat may never get (#5611). Unlike
+ * saveConversation this keeps `updatedAt` — nothing the user did changed the
+ * chat, so it must not jump in the list — and it rewrites the file exactly as
+ * read apart from the moved bytes: the raw JSON is used, not loadConversation's
+ * in-memory legacy migration. An image the store refuses stays inline.
+ * Returns how many images moved; 0 leaves the file untouched.
+ */
+export async function migrateConversationInlineImages(sessionId: string): Promise<number> {
+  return withConversationLock(sessionId, async () => {
+    const file = pathFor(sessionId);
+    let conv: ConversationFile;
+    try {
+      conv = JSON.parse(await readFile(file, "utf8")) as ConversationFile;
+    } catch {
+      return 0;
+    }
+    if (!Array.isArray(conv?.turns) || !hasInlineImages(conv)) return 0;
+    const createdIds: string[] = [];
+    try {
+      const moved = await externalizeInlineImages(conv.turns, createdIds);
+      if (moved === 0) return 0;
+      await writeJsonAtomic(file, conv);
+      conversationSummaryCache.delete(file);
+      return moved;
+    } catch (error) {
+      // The raw file is still authoritative. Never delete pre-existing ids,
+      // and do not accumulate a fresh orphan on every conditional retry.
+      await Promise.allSettled(createdIds.map(removeChatImageAttachment));
+      throw error;
+    }
+  });
 }
 
 export async function saveConversation(conv: ConversationFile): Promise<void> {

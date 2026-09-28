@@ -16,6 +16,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
+import { fetchGitHubItem, fetchSharedGitHubJson } from "@/lib/github-item-fetch";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/text-area";
@@ -105,16 +106,18 @@ function useCardChecks(repo: string, number: number | undefined, enabled: boolea
     setState((prev) => (prev.phase === "ready" ? prev : { phase: "loading" }));
     (async () => {
       try {
-        const res = await fetch(
+        // Shared with this PR's other cards (#5627); the 15 s reuse is under
+        // the 30 s pending-poll interval, so every poll is answered live.
+        const res = await fetchSharedGitHubJson(
           `/api/github/checks?repo=${encodeURIComponent(repo)}&number=${number}`,
-          { cache: "no-store" },
+          { freshMs: 15_000 },
         );
-        const data = (await res.json().catch(() => null)) as
+        const data = res.data as
           | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[] }
           | { ok: false }
           | null;
         if (cancelled) return;
-        if (!res.ok || !data || data.ok !== true) {
+        if (res.status !== 200 || !data || data.ok !== true) {
           // A failed refresh keeps the last good strip.
           setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
           return;
@@ -165,16 +168,18 @@ function useReviewThreads(
     setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
     (async () => {
       try {
-        const res = await fetch(
+        // Shared with this PR's other cards (#5627); a refresh (tick > 0)
+        // follows an action on the thread and asks live.
+        const res = await fetchSharedGitHubJson(
           `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${number}&isPull=1`,
-          { cache: "no-store" },
+          { freshMs: 30_000, fresh: tick > 0 },
         );
-        const data = (await res.json().catch(() => null)) as
+        const data = res.data as
           | { ok: true; authed: boolean; reviewThreads: ReviewThreadDetail[] }
           | { ok: false }
           | null;
         if (cancelled) return;
-        if (!res.ok || !data || data.ok !== true) {
+        if (res.status !== 200 || !data || data.ok !== true) {
           setState({ phase: "error" });
           return;
         }
@@ -206,17 +211,16 @@ function useGitHubItem(
         // pull=1 asks for the PR-only block (head/base ref, commit count, review
         // tally) the composer's merge and gate sections need. The server ignores
         // it for issues, and omitting it is what every other caller still does.
-        const res = await fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}&pull=1`, {
-          cache: "no-store",
-        });
+        // Shared with every other card for this item (#5615); a refresh
+        // (tick > 0) follows an action on it, so it asks for a fresh answer.
+        const res = await fetchGitHubItem(repo, number, { fresh: tick > 0 });
         if (cancelled) return;
         if (res.status === 401 || res.status === 403) {
           setState({ phase: "unauth" });
           return;
         }
-        const data = (await res.json().catch(() => null)) as ItemDetail | { ok: false } | null;
-        if (cancelled) return;
-        if (!res.ok || !data || data.ok !== true) {
+        const data = res.data as ItemDetail | { ok: false } | null;
+        if (res.status !== 200 || !data || data.ok !== true) {
           setState({ phase: "error" });
           return;
         }

@@ -104,6 +104,18 @@ export function chatAttachmentRoot(): string {
   );
 }
 
+/** Remove an unpublished image created by a failed transcript migration.
+ * Callers must supply only ids allocated by their own failed attempt. */
+export async function removeChatImageAttachment(storedId: string): Promise<void> {
+  // Saving can mint extensions (including .img) outside the serving MIME map.
+  // The attempt's allocation ledger owns the id; validate its path shape here.
+  if (!isValidChatAttachmentId(storedId)) return;
+  const root = await resolvedRoot(false);
+  const target = path.join(/* turbopackIgnore: true */ root, storedId);
+  if (!isContained(root, target)) return;
+  await rm(/* turbopackIgnore: true */ target, { force: true });
+}
+
 function extensionFor(mimeType: string): string {
   const subtype = mimeType.split("/")[1]?.toLowerCase() ?? "";
   const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;

@@ -1,6 +1,15 @@
 # Chat v1 Phase 2 — Chat shell working record and claimable scope (verified 2026-08-30)
 
-> **Current refresh — 2026-09-04:** OpenCoven/chat#41-#45, #47-#51, #53, and
+> **Superseded status: 2026-09-27.** Read the [canonical Phase 2 verdict](../../workflows/chat-v1-phase-2-canonical-reads-gate.md)
+> for the approved MVP scope and frozen candidate. Three-platform protocol
+> conformance passes. Val accepted the browser-storage exception and explicitly
+> superseded acceptance of the retired Cave-connected Chat shell. The dated
+> claims, blockers and proposed work below are historical, not a current work
+> assignment or release verdict. Legacy Beads identifiers are citations only.
+> Current standalone Chat acceptance remains under the release gates.
+
+
+> **Historical refresh — 2026-09-04:** OpenCoven/chat#41-#45, #47-#51, #53, and
 > #55 merged as conformance and harness hardening; #46, #52, and #54 closed
 > unmerged. This work did not complete the canonical Phase 2 shell.
 > GitHub #4837 remains open and canonical Bead `cave-ff3j6` remains blocked.

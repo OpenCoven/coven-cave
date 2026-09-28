@@ -18,6 +18,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parkedFollowUps, type QueueFollowUp } from "./chat-queue-followups.ts";
 import type { ReadyIssue } from "./work-queue.ts";
 import { useRefreshOnFocus } from "./use-refresh-on-focus.ts";
+import { whenStartupSettled } from "./startup-gate.ts";
+import { sharedJsonFetch } from "./shared-json-fetch.ts";
 
 type ReadinessResponse = {
   ok?: boolean;
@@ -50,17 +52,19 @@ export function useQueueFollowUps(
   const [loading, setLoading] = useState(enabled);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  // Shared across remounts — a familiar switch remounts the launcher (#5663);
+  // a window focus refreshes live.
+  const load = useCallback(async (force = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
     try {
-      const readinessRes = await fetch("/api/queue/readiness", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const readinessJson = (await readinessRes.json()) as ReadinessResponse;
+      // Not needed until it is on screen: wait out app load (#5649).
+      await whenStartupSettled();
+      if (controller.signal.aborted) return;
+      const { data: readinessData } = await sharedJsonFetch<ReadinessResponse>("/api/queue/readiness", { force });
+      const readinessJson = readinessData ?? ({} as ReadinessResponse);
       const project = readinessJson.readiness?.ok ? readinessJson.readiness.project ?? null : null;
       if (controller.signal.aborted) return;
       if (!project?.root) {
@@ -68,11 +72,11 @@ export function useQueueFollowUps(
         setProjectName(null);
         return;
       }
-      const issuesRes = await fetch(
+      const { data: issuesData } = await sharedJsonFetch<IssuesResponse>(
         `/api/queue/issues?mode=ready&projectRoot=${encodeURIComponent(project.root)}`,
-        { cache: "no-store", signal: controller.signal },
+        { force },
       );
-      const issuesJson = (await issuesRes.json()) as IssuesResponse;
+      const issuesJson = issuesData ?? ({} as IssuesResponse);
       if (controller.signal.aborted) return;
       setIssues(issuesJson.ok && Array.isArray(issuesJson.data) ? issuesJson.data : []);
       setProjectName(project.name ?? null);
@@ -99,7 +103,8 @@ export function useQueueFollowUps(
     void load();
     return () => abortRef.current?.abort();
   }, [enabled, load]);
-  useRefreshOnFocus(load, { enabled });
+  const refresh = useCallback(() => load(true), [load]);
+  useRefreshOnFocus(refresh, { enabled });
 
   return {
     rows: parkedFollowUps(issues, { familiarId }),

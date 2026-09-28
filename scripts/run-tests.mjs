@@ -271,6 +271,7 @@ export const SUITES = {
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
     "scripts/cave-performance-report.test.mjs",
+    "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/enforce-branch-cap.test.mjs",
     "scripts/branch-cap-workflow.test.mjs",
@@ -317,6 +318,9 @@ export const SUITES = {
     "src/lib/server/project-icon-rate-limit.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/github-checks.test.ts",
+    "src/lib/github-item-fetch.test.ts",
+    "src/lib/server/github-item-cache.test.ts",
+    "src/lib/server/join-inflight-response.test.ts",
     "src/lib/github-activity.test.ts",
     "src/lib/stage-model.test.ts",
     "src/lib/skill-blocks.test.ts",
@@ -857,7 +861,10 @@ export const SUITES = {
     "src/lib/github-activity-projection.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
+    "src/lib/startup-gate.test.ts",
+    "src/lib/shared-json-fetch.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
+    "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",
     "src/lib/pausable-poll-discipline.test.ts",
     "src/lib/use-autogrow-textarea.test.ts",
@@ -888,6 +895,8 @@ export const SUITES = {
     "src/lib/research-context-pack.test.ts",
     "src/lib/research-topic-discovery.test.ts",
     "src/lib/server/research-model-task-executor.test.ts",
+    "src/lib/server/coven-stream-text.test.ts",
+    "src/lib/enrich-tasks-summary.test.ts",
     "src/lib/server/research-topic-discovery-store.test.ts",
     "src/lib/server/research-topic-discovery-runner.test.ts",
     "src/lib/server/research-topic-discovery-authority.test.ts",
@@ -955,6 +964,8 @@ export const SUITES = {
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",
     "src/components/voice-call-overlay.test.ts",
+    "src/components/voice-call-overlay.behavior.test.tsx",
+    "src/components/voice-call-settings.test.tsx",
     "src/components/voice-new-chat.test.ts",
     "src/lib/session-debug.test.ts",
     "src/lib/chat-debug-store.test.ts",
@@ -1653,6 +1664,8 @@ export const SUITES = {
     "src/lib/coven-daemon-bytes.test.ts",
     "src/lib/coven-bin.test.ts",
     "src/lib/spawn-path-shared-state.test.ts",
+    "src/lib/login-shell-probe-cache.test.ts",
+    "src/lib/login-shell-persisted.test.ts",
     "src/lib/coven-bin-async-discovery.test.ts",
     "src/lib/npx-bin.test.ts",
     "src/lib/harness-version.test.ts",
@@ -1772,6 +1785,7 @@ export const SUITES = {
     "src/lib/runtime-model-surfaces.test.ts",
     "src/lib/context-meter.test.ts",
     "src/lib/chat-usage-plan.test.ts",
+    "src/lib/server/chat-usage-turns.test.ts",
     "src/lib/cave-conversations.test.ts",
     "src/lib/openclaw-conversation.test.ts",
     "src/lib/session-initiator.test.ts",
@@ -1788,6 +1802,7 @@ export const SUITES = {
     "src/lib/session-list-merge.test.ts",
     "src/lib/session-pin-persistence.test.ts",
     "src/lib/session-git-enrich.test.ts",
+    "src/lib/git-ref-files.test.ts",
     "src/lib/server/chat-work-branch.test.ts",
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
@@ -1853,6 +1868,7 @@ export const SUITES = {
     "src/app/api/voice/elevenlabs/catalog/route.test.ts",
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
+    "src/server-entry-preload.test.ts",
     "src/server-heap-monitor.test.ts",
     "src/lib/pty-upgrade-auth.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
@@ -1876,6 +1892,7 @@ export const SUITES = {
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
+    "src/app/api/github/assigned/route-cache.test.ts",
     "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
     "src/app/api/github/diff/route.test.ts",
@@ -1987,6 +2004,7 @@ export const SUITES = {
     "scripts/ios-task-notes-reader.test.mjs",
     "scripts/ios-task-notes-edit.test.mjs",
     "scripts/ios-task-actions.test.mjs",
+    "scripts/ios-enhance-tasks.test.mjs",
     "scripts/ios-task-revert-scope.test.mjs",
     "scripts/ios-ipad-split-tasks.test.mjs",
     "scripts/ios-ipad-split-chats.test.mjs",
@@ -2111,6 +2129,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports the route (@/ aliases) with a stubbed GitHub fetch (#5641)
+  "src/app/api/github/assigned/route-cache.test.ts",
   "src/app/api/wikis/route.test.ts",
   // x-comms-model.ts imports "@/lib/x-publish-composer" as a runtime value —
   // deliberately, so the two X rooms share one definition of the 280 limit.
@@ -2502,8 +2522,11 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/voice-call-overlay.behavior.test.tsx",
+    "src/components/voice-call-settings.test.tsx",
   "src/lib/use-surface-warmup.behavior.test.tsx",
   "src/lib/use-pausable-poll.behavior.test.tsx",
+  "src/lib/use-reply-recommendation.behavior.test.tsx",
   "src/app/wikis/wiki-page.test.tsx",
   "src/components/covenwiki-reader.test.tsx",
   // Renders the whole X Comms room through react-test-renderer (JSX).

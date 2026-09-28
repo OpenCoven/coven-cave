@@ -230,7 +230,7 @@ assert.match(
 );
 assert.match(menusHook, /skillCommandMatches\(activeInvocation\.commandToken, skills\)/, "the shared hook surfaces skills at the active slash token");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
-assert.match(menusHook, /fetch\("\/api\/skills\/local"/, "the shared hook sources skills from the local skill scan");
+assert.match(menusHook, /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/skills\/local"/, "the shared hook sources skills from the local skill scan");
 
 // argument-hint flows from SKILL.md frontmatter to the picker metadata.
 const scan = await readFile(new URL("./server/skill-scan.ts", import.meta.url), "utf8");

@@ -1,6 +1,7 @@
 import {
   loadBoard,
   OrchestrationValidationError,
+  transitionCard,
   updateCard,
 } from "@/lib/cave-board";
 import {
@@ -21,6 +22,7 @@ import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-oneshot";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { stripAnsi } from "@/lib/ansi";
+import { assistantTextFromStream } from "@/lib/server/coven-stream-text";
 import { resolveGitHubToken } from "@/lib/github-token";
 import {
   appendEnrichmentProposal,
@@ -69,7 +71,16 @@ type TaskEnrichment = {
 type EnrichRequestBody = {
   intent?: unknown;
   familiarId?: unknown;
+  /** `"all"` sweeps every open task on the Board, each through its own
+   *  assigned familiar. Without it the run covers one familiar's tasks. */
+  scope?: unknown;
+  /** Optional: only these task ids, still each through its own familiar. */
+  cardIds?: unknown;
 };
+
+const SAFE_FAMILIAR_ID = /^[a-z0-9_-]+$/i;
+const CLOSED_LIFECYCLES = new Set<CardLifecycle>(["completed", "cancelled"]);
+const MAX_PARALLEL_FAMILIARS = 3;
 
 function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus): CardStatus {
   if (lifecycle === "dispatched" || lifecycle === "running") return "running";
@@ -204,7 +215,7 @@ function reachableGitHubContext(card: Card): string {
   ].join("\n");
 }
 
-function enrichPrompt(card: Card, board: Card[]): string {
+function enrichPrompt(card: Card, board: Card[], today: string, retry = false): string {
   const labels = card.labels?.length
     ? `\nLabels: ${card.labels.join(", ")}`
     : "";
@@ -225,6 +236,8 @@ function enrichPrompt(card: Card, board: Card[]): string {
     : "";
   return [
     `You are the assigned familiar refreshing your board task so it reflects the current best plan, ownership, links, schedule, and state.`,
+    `Today: ${today}`,
+    `Task id: ${card.id}`,
     `Task: ${card.title.trim()}${labels}${notes}`,
     `Current status: ${card.status}`,
     `Current lifecycle: ${card.lifecycle}`,
@@ -241,11 +254,14 @@ function enrichPrompt(card: Card, board: Card[]): string {
     `Simplify the description into concise task notes without losing constraints.`,
     `Create or update subtasks for the assigned task; include 3-8 short action steps.`,
     `Set startDate and endDate when the task has clear timing or sequence; use null only to clear a wrong date.`,
-    `Update status, lifecycle, priority, needsHuman, and lifecycleReason to match the current reality.`,
+    `Decide whether this task is still open. Check the linked GitHub items, chats, and workspace when they can confirm its state; do not do the task's work in this run.`,
+    `If the outcome is delivered (the linked PR merged, the issue closed, or the work otherwise finished), close it: status "done", lifecycle "completed".`,
+    `If it is obsolete, a duplicate, or no longer wanted, close it: lifecycle "cancelled".`,
+    `Otherwise keep it open and set status, lifecycle, priority, and needsHuman to where the work actually stands.`,
+    `Always state the reason for the status you chose in lifecycleReason.`,
     `Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats that belong on this task.`,
     `Preserve useful existing links and GitHub/chat assignments unless they are clearly wrong.`,
     `Each subtask must be a short, actionable sentence under 80 characters.`,
-    `Use status, lifecycle, priority, needsHuman, and lifecycleReason to reflect the task's current reality.`,
     `Dependencies: propose only what actually blocks this task. A task dependency must name a live board task id from the list above; a github dependency must use a repo#number from the reachable items; a service dependency must use a known svc: reference. Never invent task ids, issue numbers, or services.`,
     `primaryBlockerId must be the id of one of your proposed dependencies or the task's existing dependencies, or null.`,
     `primaryBlockerPinned: true only to freeze the operator's chosen primary blocker.`,
@@ -253,18 +269,32 @@ function enrichPrompt(card: Card, board: Card[]): string {
     `confidence: your self-reported 0..1 confidence. It only ranks suggestions; it never authorizes a write.`,
     `Never propose replacing a human-authored dependency or next step; propose a reviewable change instead.`,
     `Return no explanation, no markdown, and no extra text.`,
+    ...(retry ? [`Your previous response could not be parsed. Return only the JSON object now.`] : []),
   ].join("\n");
 }
 
-async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string } | null> {
+type EnrichScope = { familiarId: string | null; cardIds: Set<string> | null };
+
+function cardIdsFrom(value: unknown): Set<string> | null | undefined {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 256) return undefined;
+  if (!value.every((id) => typeof id === "string" && id.length > 0 && id.length <= 160)) return undefined;
+  return new Set(value as string[]);
+}
+
+/** `familiarId: null` means every open task, whoever it is assigned to. */
+async function readEnrichRequestBody(req: Request): Promise<EnrichScope | null> {
   if (req.headers.get("x-coven-cave-intent") !== "board-enrich-steps")
     return null;
   try {
     const body = (await req.json()) as EnrichRequestBody;
-    if (body.intent !== ENRICH_INTENT || typeof body.familiarId !== "string")
-      return null;
+    if (body.intent !== ENRICH_INTENT) return null;
+    const cardIds = cardIdsFrom(body.cardIds);
+    if (cardIds === undefined) return null;
+    if (body.scope === "all") return { familiarId: null, cardIds };
+    if (typeof body.familiarId !== "string") return null;
     const familiarId = body.familiarId.trim();
-    return /^[a-z0-9_-]+$/i.test(familiarId) ? { familiarId } : null;
+    return SAFE_FAMILIAR_ID.test(familiarId) ? { familiarId, cardIds } : null;
   } catch {
     return null;
   }
@@ -273,35 +303,7 @@ async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string
 
 
 function assistantTextFromOutput(raw: string): string {
-  const clean = stripAnsi(raw);
-  let assistantText = "";
-  for (const line of clean.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        const ev = JSON.parse(trimmed) as {
-          type?: string;
-          message?: { content?: Array<{ type?: string; text?: string }> };
-        };
-        if (ev.type === "assistant" && ev.message?.content) {
-          for (const block of ev.message.content) {
-            if (block.type === "text" && typeof block.text === "string") {
-              assistantText += block.text;
-            }
-          }
-          continue;
-        }
-      } catch {
-        /* fall through */
-      }
-    }
-
-    // Fallback for harnesses that emit plain text even with --stream-json.
-    assistantText += trimmed + "\n";
-  }
-  return assistantText.trim() ? assistantText : clean;
+  return assistantTextFromStream(stripAnsi(raw));
 }
 
 function parseJsonObject(haystack: string): unknown {
@@ -342,11 +344,22 @@ function parseJsonArray(haystack: string): unknown {
   return JSON.parse(match[0]);
 }
 
+const TASK_ENRICHMENT_KEYS = [
+  "notes", "description", "steps", "status", "lifecycle", "priority", "startDate", "endDate",
+  "links", "github", "sessionId", "needsHuman", "lifecycleReason", "dependencies",
+  "primaryBlockerId", "nextStep",
+];
+
 function parseTaskEnrichment(raw: string): TaskEnrichment | null {
   const haystack = assistantTextFromOutput(raw);
   try {
     const parsed = parseJsonObject(haystack);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    // An object with none of the task keys is not an answer; treating it as one
+    // records a review that never happened.
+    if (
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && TASK_ENRICHMENT_KEYS.some((key) => Object.prototype.hasOwnProperty.call(parsed, key))
+    ) {
       const candidate = parsed as Record<string, unknown>;
       const startDate = cleanBoardDate(candidate.startDate);
       const endDate = cleanBoardDate(candidate.endDate);
@@ -466,6 +479,7 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
         kind: pull ? "pr" : item.kind,
         title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : item.title,
         state: state || item.state,
+        ...(typeof data.state_reason === "string" ? { stateReason: data.state_reason } : {}),
         labels: labelsFromGitHub(data.labels),
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : item.updatedAt,
         url: typeof data.html_url === "string" ? data.html_url : item.url,
@@ -477,28 +491,86 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
   return normalizeTaskGitHubLinks(refreshed);
 }
 
+function githubTarget(item: CardGitHubLink): string {
+  return `${item.repo}${item.number ? ` #${item.number}` : ""}`;
+}
+
+/**
+ * The task's end state implied by its linked GitHub items, or null.
+ *
+ * A merged PR or an issue closed as done means the work landed: the task
+ * completes. A PR closed without merging, or an issue closed as not planned or
+ * as a duplicate, means it did not (#5635, #5647): the task is cancelled, but
+ * only when nothing linked landed and no linked issue or PR is still open,
+ * since an open one is usually the replacement. An issue closed with no
+ * recorded reason counts as done.
+ */
 function terminalPatchFromGitHub(
   card: Card,
   github: CardGitHubLink[],
   now: string,
 ): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
-  const terminal = github.find(
-    (item) =>
-      (item.kind === "issue" || item.kind === "pr") &&
-      (item.state === "closed" || item.state === "merged"),
+  const tracked = github.filter((item) => item.kind === "issue" || item.kind === "pr");
+  const closedWithoutLanding = (item: CardGitHubLink) =>
+    item.kind === "issue" && item.state === "closed"
+    && (item.stateReason === "not_planned" || item.stateReason === "duplicate");
+  const landed = tracked.find(
+    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed" && !closedWithoutLanding(item)),
   );
-  if (!terminal) return null;
-  const kind = terminal.kind === "pr"
-    ? (terminal.state === "merged" ? "PR merged" : "PR closed")
-    : "issue closed";
-  const target = `${terminal.repo}${terminal.number ? ` #${terminal.number}` : ""}`;
+  if (landed) {
+    const kind = landed.kind === "pr" ? "PR merged" : "issue closed";
+    return {
+      status: "done",
+      lifecycle: "completed",
+      needsHuman: false,
+      lifecycleReason: `GitHub ${kind}: ${githubTarget(landed)}`.slice(0, 240),
+      lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
+    };
+  }
+  const abandoned = tracked.find(
+    (item) => (item.kind === "pr" && item.state === "closed") || closedWithoutLanding(item),
+  );
+  if (!abandoned || tracked.some((item) => item.state === "open")) return null;
+  // Cancelled is reached through transitionCard, which records the blocker
+  // the Board requires (see lifecycleTransitionTarget).
   return {
-    status: "done",
-    lifecycle: "completed",
+    status: "blocked",
+    lifecycle: "cancelled",
     needsHuman: false,
-    lifecycleReason: `GitHub ${kind}: ${target}`.slice(0, 240),
-    lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
+    lifecycleReason: `GitHub ${
+      abandoned.kind === "pr"
+        ? "PR closed without merging"
+        : abandoned.stateReason === "duplicate" ? "issue closed as duplicate" : "issue closed as not planned"
+    }: ${githubTarget(abandoned)}`.slice(0, 240),
+    lifecycleAt: card.lifecycle === "cancelled" ? card.lifecycleAt : now,
   };
+}
+
+/**
+ * Cancelling or failing a task goes through the Board's own lifecycle
+ * transition, which records the execution blocker a "blocked" status requires.
+ * A plain patch to "cancelled" is rejected by the orchestration validator.
+ */
+function lifecycleTransitionTarget(card: Card, lifecycle: CardLifecycle): "cancelled" | "failed" | null {
+  return (lifecycle === "cancelled" || lifecycle === "failed") && lifecycle !== card.lifecycle
+    ? lifecycle
+    : null;
+}
+
+/** Run a held transition after the review is written. An illegal move (review
+ *  to cancelled, say) leaves the task where it is and asks a human. */
+async function finishLifecycleTransition(
+  card: Card,
+  to: "cancelled" | "failed" | null,
+  reason: string | undefined,
+  written: Card,
+): Promise<Card> {
+  if (!to) return written;
+  try {
+    return await transitionCard(card.id, { to, reason }) ?? written;
+  } catch {
+    return await updateCard(card.id, { needsHuman: true }, { automated: true }) ?? written;
+  }
 }
 
 function applyGitHubState(
@@ -516,8 +588,8 @@ function applyGitHubState(
 }
 
 function githubStateChanged(previous: CardGitHubLink[], next: CardGitHubLink[]): boolean {
-  return JSON.stringify(previous.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt }))) !==
-    JSON.stringify(next.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt })));
+  return JSON.stringify(previous.map(({ url, state, stateReason, title, labels, updatedAt }) => ({ url, state, stateReason, title, labels, updatedAt }))) !==
+    JSON.stringify(next.map(({ url, state, stateReason, title, labels, updatedAt }) => ({ url, state, stateReason, title, labels, updatedAt })));
 }
 
 export async function POST(req: Request) {
@@ -533,16 +605,20 @@ export async function POST(req: Request) {
   }
 
   const [board, config] = await Promise.all([loadBoard(), loadConfig()]);
-  const { familiarId } = body;
+  const { familiarId, cardIds } = body;
 
-  // Only enrich active tasks assigned to the selected familiar. Existing steps
-  // are included so the familiar can refresh stale plans and task metadata.
-  const SKIP_LIFECYCLE = new Set(["completed", "cancelled"]);
+  // Every open task is considered, and each is reviewed by its own assigned
+  // familiar. Existing steps are included so the familiar can refresh stale
+  // plans and task metadata. Unassigned tasks have no one to review them; they
+  // are still counted and reported so the run never silently drops a task.
+  const SKIP_LIFECYCLE = CLOSED_LIFECYCLES;
   const candidates = board.cards.filter(
     (c) =>
-      c.familiarId === familiarId &&
+      (familiarId === null || c.familiarId === familiarId) &&
+      (cardIds === null || cardIds.has(c.id)) &&
       !SKIP_LIFECYCLE.has(c.lifecycle),
   );
+  const today = new Date().toISOString().slice(0, 10);
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -559,9 +635,22 @@ export async function POST(req: Request) {
 
       push({ kind: "start", total: candidates.length });
 
+      // Every open task is accounted for. Unassigned tasks have no familiar to
+      // review them and are reported up front; the rest are grouped into one
+      // lane per assigned familiar.
+      const lanes = new Map<string, Card[]>();
       for (const card of candidates) {
-        if (req.signal.aborted) break;
-        const familiarId = card.familiarId!;
+        const owner = card.familiarId;
+        if (!owner || !SAFE_FAMILIAR_ID.test(owner)) {
+          push({ kind: "skip", cardId: card.id, reason: "unassigned" });
+          continue;
+        }
+        const lane = lanes.get(owner);
+        if (lane) lane.push(card);
+        else lanes.set(owner, [card]);
+      }
+
+      const reviewCard = async (card: Card, familiarId: string): Promise<void> => {
         const binding = bindingFor(config, familiarId);
 
         // Only bundled, reviewed Coven harnesses may run headlessly through
@@ -573,7 +662,7 @@ export async function POST(req: Request) {
             cardId: card.id,
             reason: `harness:${binding.harness}`,
           });
-          continue;
+          return;
         }
 
         push({ kind: "progress", cardId: card.id, title: card.title });
@@ -583,24 +672,30 @@ export async function POST(req: Request) {
           : card;
 
         const title = `Refresh task: ${card.title.trim().slice(0, 80) || card.id}`;
-        const args: string[] = [
-          "run",
-          binding.harness,
-          "--stream-json",
-          "--archive",
-          "--title",
-          title,
-          "--labels",
-          "board,enrich-steps",
-        ];
-        if (/^[a-z0-9_-]+$/i.test(familiarId))
-          args.push("--familiar", familiarId);
-        args.push("--", enrichPrompt(cardForPrompt, board.cards));
-
         const workspace = await resolveFamiliarWorkspace(familiarId);
-        const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
-        if (req.signal.aborted) break;
-        const enrichment = parseTaskEnrichment(raw);
+        // One retry for unparsable output: a task the familiar never managed to
+        // report on is a task that was not reviewed.
+        let enrichment: TaskEnrichment | null = null;
+        for (let attempt = 0; attempt < 2 && !enrichment; attempt += 1) {
+          if (req.signal.aborted) break;
+          const args: string[] = [
+            "run",
+            binding.harness,
+            "--stream-json",
+            "--archive",
+            "--title",
+            title,
+            "--labels",
+            "board,enrich-steps",
+            "--familiar",
+            familiarId,
+            "--",
+            enrichPrompt(cardForPrompt, board.cards, today, attempt === 1),
+          ];
+          const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
+          enrichment = parseTaskEnrichment(raw);
+        }
+        if (req.signal.aborted) return;
         const now = new Date().toISOString();
 
         if (!enrichment) {
@@ -611,24 +706,25 @@ export async function POST(req: Request) {
             normalized.lifecycle === card.lifecycle
           ) {
             push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
-            continue;
+            return;
           }
+          const transitionTo = lifecycleTransitionTarget(card, normalized.lifecycle);
           let updated;
           try {
             updated = await updateCard(card.id, {
               notes: normalized.notes,
               steps: normalized.steps,
-              status: normalized.status,
-              lifecycle: normalized.lifecycle,
+              status: transitionTo ? card.status : normalized.status,
+              lifecycle: transitionTo ? card.lifecycle : normalized.lifecycle,
               priority: normalized.priority,
               startDate: normalized.startDate,
               endDate: normalized.endDate,
               links: normalized.links,
               github: normalized.github,
               sessionId: normalized.sessionId,
-              needsHuman: normalized.needsHuman,
+              needsHuman: transitionTo ? card.needsHuman : normalized.needsHuman,
               lifecycleReason: normalized.lifecycleReason,
-              lifecycleAt: normalized.lifecycleAt,
+              lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
             }, { automated: true });
           } catch (error) {
             if (error instanceof OrchestrationValidationError) {
@@ -638,16 +734,22 @@ export async function POST(req: Request) {
                 reason: "orchestration_invalid",
                 errors: error.errors,
               });
-              continue;
+              return;
             }
             throw error;
           }
           if (!updated) {
             push({ kind: "skip", cardId: card.id, reason: "card_missing" });
-            continue;
+            return;
           }
-          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
-          continue;
+          const final = await finishLifecycleTransition(card, transitionTo, normalized.lifecycleReason, updated);
+          push({
+            kind: "done",
+            cardId: card.id,
+            count: normalized.steps.length,
+            closed: CLOSED_LIFECYCLES.has(final.lifecycle),
+          });
+          return;
         }
 
         const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
@@ -668,22 +770,28 @@ export async function POST(req: Request) {
           gates = assessEnrichmentGates(card, board.cards, orchestration, candidate);
           proposalRecord = buildEnrichmentProposalRecord(card, board.cards, orchestration, gates, now);
         }
+        const transitionTo = lifecycleTransitionTarget(card, normalized.lifecycle);
+        const taskPatch = {
+          notes: normalized.notes,
+          steps: normalized.steps,
+          status: transitionTo ? card.status : normalized.status,
+          lifecycle: transitionTo ? card.lifecycle : normalized.lifecycle,
+          priority: normalized.priority,
+          startDate: normalized.startDate,
+          endDate: normalized.endDate,
+          links: normalized.links,
+          github: normalized.github,
+          sessionId: normalized.sessionId,
+          needsHuman: transitionTo ? card.needsHuman : normalized.needsHuman,
+          lifecycleReason: normalized.lifecycleReason,
+          lifecycleAt: transitionTo ? card.lifecycleAt : normalized.lifecycleAt,
+        };
+        const finishTransition = (written: Card) =>
+          finishLifecycleTransition(card, transitionTo, normalized.lifecycleReason, written);
         let updated;
         try {
           updated = await updateCard(card.id, {
-            notes: normalized.notes,
-            steps: normalized.steps,
-            status: normalized.status,
-            lifecycle: normalized.lifecycle,
-            priority: normalized.priority,
-            startDate: normalized.startDate,
-            endDate: normalized.endDate,
-            links: normalized.links,
-            github: normalized.github,
-            sessionId: normalized.sessionId,
-            needsHuman: normalized.needsHuman,
-            lifecycleReason: normalized.lifecycleReason,
-            lifecycleAt: normalized.lifecycleAt,
+            ...taskPatch,
             // Only a suggestion that passed every gate is folded into the write;
             // the review queue still records what was proposed and why.
             ...(gates && gates.gatesFailed.length === 0 ? enrichmentPatch(orchestration) : {}),
@@ -705,13 +813,32 @@ export async function POST(req: Request) {
               // Defense in depth: the mutator re-ran the same validator and
               // rejected the write (acceptance test 3 parity). Persist the
               // suggestion as a gate-blocked review proposal so the operator
-              // sees exactly why it could not auto-apply.
+              // sees exactly why it could not auto-apply. The rest of the
+              // familiar's review (status, notes, steps, dates) still lands:
+              // a bad dependency suggestion must not discard it (#5629).
               const blocked = blockedRecordFromWriteErrors(card, board.cards, orchestration, error.errors, now);
+              const agenticEnhance = appendEnrichmentProposal(card.agenticEnhance, blocked, "blocked", "enhance", now);
               try {
-                const recorded = await updateCard(card.id, {
-                  agenticEnhance: appendEnrichmentProposal(card.agenticEnhance, blocked, "blocked", "enhance", now),
-                }, { automated: true });
+                let recorded;
+                try {
+                  recorded = await updateCard(card.id, { ...taskPatch, agenticEnhance }, { automated: true });
+                } catch (retryError) {
+                  if (!(retryError instanceof OrchestrationValidationError)) throw retryError;
+                  // The status itself depended on the rejected suggestion (a
+                  // "blocked" task must name its blocker). Keep the review but
+                  // hold the task where it was, flagged for a human, with the
+                  // familiar's reason.
+                  recorded = await updateCard(card.id, {
+                    ...taskPatch,
+                    status: card.status,
+                    lifecycle: card.lifecycle,
+                    lifecycleAt: card.lifecycleAt,
+                    needsHuman: true,
+                    agenticEnhance,
+                  }, { automated: true });
+                }
                 if (recorded) {
+                  const final = await finishTransition(recorded);
                   push({
                     kind: "orchestration",
                     cardId: card.id,
@@ -719,6 +846,12 @@ export async function POST(req: Request) {
                     gatesPassed: [],
                     gatesFailed: ["structural"],
                     proposalId: blocked.id,
+                  });
+                  push({
+                    kind: "done",
+                    cardId: card.id,
+                    count: normalized.steps.length,
+                    closed: CLOSED_LIFECYCLES.has(final.lifecycle),
                   });
                 } else {
                   push({ kind: "skip", cardId: card.id, reason: "card_missing" });
@@ -734,14 +867,15 @@ export async function POST(req: Request) {
                 errors: error.errors,
               });
             }
-            continue;
+            return;
           }
           throw error;
         }
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
-          continue;
+          return;
         }
+        const final = await finishTransition(updated);
         if (hasOrchestration && gates && proposalRecord) {
           push({
             kind: "orchestration",
@@ -752,9 +886,38 @@ export async function POST(req: Request) {
             proposalId: proposalRecord.id,
           });
         }
-        push({ kind: "done", cardId: card.id, count: normalized.steps.length });
+        push({
+          kind: "done",
+          cardId: card.id,
+          count: normalized.steps.length,
+          closed: CLOSED_LIFECYCLES.has(final.lifecycle),
+        });
+      };
 
-      }
+      // Each familiar works through its own tasks in order, and up to
+      // MAX_PARALLEL_FAMILIARS familiars run side by side, so a large Board
+      // doesn't take one familiar's turn per task end to end. Board writes are
+      // serialized by withBoardLock. A failure on one task is reported and the
+      // lane moves on, so it never hides the tasks after it.
+      const queue = [...lanes.entries()];
+      const runLane = async () => {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          const [familiarId, lane] = next;
+          for (const card of lane) {
+            if (req.signal.aborted) return;
+            try {
+              await reviewCard(card, familiarId);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error(`[enrich-steps] ${familiarId} failed on ${card.id}:`, error);
+              push({ kind: "skip", cardId: card.id, reason: "error", message: message.slice(0, 240) });
+            }
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(MAX_PARALLEL_FAMILIARS, queue.length) }, runLane),
+      );
 
       push({ kind: "complete" });
       try {

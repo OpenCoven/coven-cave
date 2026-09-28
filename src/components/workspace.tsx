@@ -194,6 +194,7 @@ import {
 } from "@/lib/daily-summary-refresh";
 import {
   NARRATIVE_RETRY_MS,
+  NARRATIVE_STARTUP_DELAY_MS,
   generateDailyNarrative,
   shouldRegenerateNarrative,
 } from "@/lib/daily-narrative";
@@ -282,6 +283,11 @@ import {
 } from "@/lib/global-search-request";
 import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import { startSpan } from "@/lib/perf/marks";
+import {
+  emptyEnrichTasksTally,
+  enrichTasksSummary,
+  tallyEnrichTasksEvent,
+} from "@/lib/enrich-tasks-summary";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
@@ -2296,10 +2302,19 @@ export function Workspace() {
     enabled: sessionsLoaded,
   });
 
+  // One-shot startup gate for the narrative (#5639): a flag rather than a timer
+  // inside the effect below, whose inputs change too often to let one finish.
+  const [narrativeStartupElapsed, setNarrativeStartupElapsed] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setNarrativeStartupElapsed(true), NARRATIVE_STARTUP_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   // Layer a familiar-written narrative on today's report once its facts
   // exist. One-shot generation through the chat bridge; every failure path is
   // silent — the deterministic count-line body simply remains the summary.
   useEffect(() => {
+    if (!narrativeStartupElapsed) return;
     if (!sessionsLoaded || daemonOffline || narrativeInFlightRef.current) return;
     const now = new Date();
     const item = inboxItems.find((it) => it.auto === dailySummaryAutoKey(now));
@@ -2350,7 +2365,7 @@ export function Workspace() {
         narrativeInFlightRef.current = false;
       }
     })();
-  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
+  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId, narrativeStartupElapsed]);
 
   const openOnboarding = useCallback(() => {
     setOnboardingOpen(true);
@@ -2655,15 +2670,16 @@ export function Workspace() {
   }, []);
 
   const handleEnrichTasks = useCallback(async () => {
-    if (!activeId || enrichingTasks) return;
+    if (enrichingTasks) return;
     setEnrichingTasks(true);
     setEnrichProgress(null);
     // The trigger is a small top-bar button with no surface of its own — count
     // the outcome so it can say what happened when the run ends (issue #2991:
     // "clicking it results in loading and then returns to the start, no
     // feedback").
-    let total = 0;
-    let enhanced = 0;
+    // Every open task is swept, each by its own assigned familiar (#5629), and
+    // the tally accounts for all of them in the closing toast.
+    let tally = emptyEnrichTasksTally();
     try {
       const res = await fetch("/api/board/enrich-steps", {
         method: "POST",
@@ -2671,7 +2687,7 @@ export function Workspace() {
           "content-type": "application/json",
           "x-coven-cave-intent": "board-enrich-steps",
         },
-        body: JSON.stringify({ intent: "board-enrich-steps", familiarId: activeId }),
+        body: JSON.stringify({ intent: "board-enrich-steps", scope: "all" }),
       });
       if (!res.ok) throw new Error(`enrich tasks failed (${res.status})`);
       if (!res.body) throw new Error("enrich tasks: missing response body");
@@ -2689,11 +2705,10 @@ export function Workspace() {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed) as Record<string, unknown>;
+            tally = tallyEnrichTasksEvent(tally, msg);
             if (msg.kind === "start") {
-              total = (msg.total as number) ?? 0;
-              setEnrichProgress({ done: 0, total });
+              setEnrichProgress({ done: 0, total: tally.total });
             } else if (msg.kind === "done" || msg.kind === "skip") {
-              if (msg.kind === "done") enhanced += 1;
               setEnrichProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
             } else if (msg.kind === "complete") {
               window.dispatchEvent(new CustomEvent("cave:board:reload"));
@@ -2707,19 +2722,13 @@ export function Workspace() {
       // Close the loop: the live label disappears when the run ends, so state
       // the outcome — especially the two "nothing happened" shapes that read
       // as a silent failure.
-      pushToast(
-        total === 0
-          ? "No open tasks to enhance right now."
-          : enhanced === 0
-            ? "Open tasks already have steps — nothing to enhance."
-            : `Enhanced ${enhanced} task${enhanced === 1 ? "" : "s"} — open Tasks to review.`,
-      );
+      pushToast(enrichTasksSummary(tally));
     } catch {
       pushToast("Enhance tasks failed — check the daemon banner and try again.");
     } finally {
       setEnrichingTasks(false);
     }
-  }, [activeId, enrichingTasks, pushToast, refreshOpenTaskCards]);
+  }, [enrichingTasks, pushToast, refreshOpenTaskCards]);
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
@@ -4939,7 +4948,6 @@ export function Workspace() {
               />
             </div>
             <FamiliarMenuBar
-              activeFamiliarId={activeId}
               // Needs you: the bell opens the attention inbox — sessions that
               // are blocked, failed or awaiting you, oldest wait first — with
               // the running count demoted to footer text (cave-21rp; the

@@ -76,7 +76,9 @@ import {
   ConversationLoadError,
   invalidateConversation,
   loadConversation,
+  offlineConversationWriteNeeded,
   readCachedConversation,
+  recordOfflineConversationWrite,
 } from "@/lib/conversation-cache";
 import { fetchToolOutput } from "@/lib/tool-output-fetch";
 import { sameConversationRevision } from "@/lib/conversation-revision";
@@ -369,7 +371,9 @@ import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  advanceReviewCheckpoint,
   shouldAutoReviewThread,
+  type ReviewCheckpoint,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
@@ -388,6 +392,7 @@ import {
 import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
 import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
+import { markStartupSettled } from "@/lib/startup-gate";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -2104,10 +2109,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, sessionId);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
-  const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
-    sessionId: null,
-    eligible: false,
-  });
+  const autoSelfReportEligibilityRef = useRef<ReviewCheckpoint>({ sessionId: null, eligible: null });
 
   // Publish live chat state for the session debug pane (modal) and the code
   // rail. Per-instance token: a second ChatView instance unmounting
@@ -2230,9 +2232,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       terminal,
       busy,
     });
-    const previous = autoSelfReportEligibilityRef.current;
-    const reachedReviewCheckpoint = previous.sessionId === sessionId && !previous.eligible && eligible;
-    autoSelfReportEligibilityRef.current = { sessionId, eligible };
+    // The first painted view of a thread is its baseline (#5637): opening a
+    // mature chat is not the thread reaching its checkpoint.
+    const { next, reached: reachedReviewCheckpoint } = advanceReviewCheckpoint(
+      autoSelfReportEligibilityRef.current,
+      {
+        sessionId,
+        eligible,
+        historyPainted: historyState === "loaded" || historyState === "revalidating" || historyState === "offline",
+      },
+    );
+    autoSelfReportEligibilityRef.current = next;
     if (!sessionId || !reachedReviewCheckpoint || !familiar.autoSelfReport) return;
     if (autoSelfReportSessionsRef.current.has(sessionId)) return;
     autoSelfReportSessionsRef.current.add(sessionId);
@@ -2241,6 +2251,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     autoReflectOnThread,
     busy,
     familiar.autoSelfReport,
+    historyState,
     session?.archived_at,
     session?.status,
     sessionId,
@@ -4350,7 +4361,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Open-to-first-paint for this thread (#5448), recorded once and only when
     // a transcript actually paints: a cache hit, the durable copy, or the
     // network payload. An abandoned or failed open records nothing.
-    const endThreadOpenSpan = startSpan(THREAD_OPEN_SPAN);
+    const endThreadSpan = startSpan(THREAD_OPEN_SPAN);
+    // A painted transcript is what app load was waiting for (#5649).
+    const endThreadOpenSpan = () => {
+      endThreadSpan();
+      markStartupSettled();
+    };
     const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
@@ -4421,12 +4437,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
-          void writeOfflineCache(
-            "conversation",
-            sessionId,
-            json,
-            json.conversation.activeLeafId ?? "conversation",
-          );
+          // Skipped for an unchanged revision (#5607): the write re-encrypts
+          // the whole transcript, and a reopen almost always revalidates to
+          // exactly what was written last time.
+          if (offlineConversationWriteNeeded(sessionId, json)) {
+            void writeOfflineCache(
+              "conversation",
+              sessionId,
+              json,
+              json.conversation.activeLeafId ?? "conversation",
+            ).then((written) => {
+              if (written) recordOfflineConversationWrite(sessionId, json);
+            });
+          }
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the

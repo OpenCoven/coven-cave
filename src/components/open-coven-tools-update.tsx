@@ -20,6 +20,7 @@ import {
 } from "@/lib/opencoven-tools-state";
 import { relativeTime } from "@/lib/relative-time";
 import { createOpenCovenInstallJobObserver } from "@/lib/opencoven-install-job-observer";
+import { whenStartupSettled } from "@/lib/startup-gate";
 
 export type InstallTarget = "coven-cli";
 
@@ -327,7 +328,10 @@ export function OpenCovenToolsBannerTrigger() {
           /* Update checks are best-effort. */
         });
     };
-    refreshBanner();
+    // Not needed until it is on screen: wait out app load (#5649).
+    void whenStartupSettled().then(() => {
+      if (!cancelled) refreshBanner();
+    });
     window.addEventListener(TOOL_UPDATE_RECHECK_EVENT, refreshBanner);
     return () => {
       cancelled = true;

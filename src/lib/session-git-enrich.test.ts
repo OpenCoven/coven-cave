@@ -20,9 +20,11 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   enrichSessionsWithGitContext,
   parseShortstat,
@@ -32,7 +34,7 @@ import {
 } from "./session-git-enrich.ts";
 
 // Real directories: the lib stat-gates roots before probing git.
-const scratch = mkdtempSync(path.join(tmpdir(), "session-git-enrich-"));
+const scratch = realpathSync(mkdtempSync(path.join(tmpdir(), "session-git-enrich-")));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 function makeRoot(name) {
   const dir = path.join(scratch, name);
@@ -50,8 +52,7 @@ function session(id, root) {
  */
 function fakeGit(script) {
   const calls = [];
-  const runner = async (root, args) => {
-    calls.push({ root, args });
+  const answer = async (root, args) => {
     const key = args.join(" ");
     for (const [prefix, value] of Object.entries(script)) {
       if (key.startsWith(prefix)) {
@@ -59,6 +60,21 @@ function fakeGit(script) {
       }
     }
     return null;
+  };
+  const runner = async (root, args) => {
+    calls.push({ root, args });
+    // Like real git, a multi-flag rev-parse prints one line per flag and fails
+    // as a whole when any flag fails (#5608), so scripts stay per-flag.
+    if (args[0] === "rev-parse" && args.length > 2 && args.slice(1).every((arg) => arg.startsWith("--"))) {
+      const lines = [];
+      for (const flag of args.slice(1)) {
+        const line = await answer(root, ["rev-parse", flag]);
+        if (line == null) return null;
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+    return answer(root, args);
   };
   return { runner, calls };
 }
@@ -144,7 +160,7 @@ const REPO_SCRIPT = {
   }
   const diffCalls = calls.filter((c) => c.args[0] === "diff");
   assert.equal(diffCalls.length, 1, "one diff per root, not per session");
-  const gateCalls = calls.filter((c) => c.args.join(" ") === "rev-parse --is-inside-work-tree");
+  const gateCalls = calls.filter((c) => c.args[0] === "rev-parse" && c.args.includes("--is-inside-work-tree"));
   assert.equal(gateCalls.length, 1, "one context probe set per root");
   const originCalls = calls.filter((c) => c.args.join(" ") === "config --get remote.origin.url");
   assert.equal(originCalls.length, 1, "one origin probe per root, not per session");
@@ -263,7 +279,9 @@ const REPO_SCRIPT = {
     }
     await new Promise((r) => setTimeout(r, 2));
     const key = args.join(" ");
-    if (key === "rev-parse --is-inside-work-tree") return "true";
+    if (key === "rev-parse --is-inside-work-tree --show-toplevel --git-dir --git-common-dir") {
+      return `true\n${root}\n.git\n.git`;
+    }
     if (key === "branch --show-current") return "main";
     if (key === "rev-parse --show-toplevel") return root;
     if (key.startsWith("diff")) {
@@ -545,6 +563,157 @@ const REPO_SCRIPT = {
     const spawned = calls.length;
     await enrichSessionsWithGitContext([session("i", root)], runner);
     assert.equal(calls.length, spawned * 2, "without a cache every compute re-reads");
+  }
+}
+
+// ── 15. a plain shared origin needs no spawn; base probes are shared (#5608)
+{
+  const common = makeRoot("shared-repo-common");
+  writeFileSync(path.join(common, "config"), '[remote "origin"]\n\turl = git@github.com:acme/repo-a.git\n');
+  const roots = [makeRoot("shared-wt-a"), makeRoot("shared-wt-b"), makeRoot("shared-wt-c")];
+  const { runner, calls } = fakeGit({
+    ...REPO_SCRIPT,
+    "rev-parse --git-dir": (root) => path.join(common, "worktrees", path.basename(root)),
+    "rev-parse --git-common-dir": common,
+  });
+  const rows = await enrichSessionsWithGitContext(roots.map((root, i) => session(`w${i}`, root)), runner);
+  for (const row of rows) {
+    assert.equal(row.git.isWorktree, true);
+    assert.equal(row.git.repositoryUrl, "https://github.com/acme/repo-a");
+    assert.deepEqual(row.diff, { additions: 10, deletions: 2 });
+  }
+  const count = (prefix) => calls.filter((c) => c.args.join(" ").startsWith(prefix)).length;
+  assert.equal(count("config --get remote.origin.url"), 0, "the plain shared origin is read without spawning git");
+  assert.equal(count("symbolic-ref"), 1, "one base-ref probe per repository");
+  assert.equal(count("diff"), 3, "diffs stay per worktree");
+  assert.equal(count("rev-parse --is-inside-work-tree"), 3, "one location probe per root");
+}
+
+// Real Git resolves inherited config and worktree-dependent fallbacks. Keep
+// the fixture independent of the user's global/system Git configuration.
+{
+  const exec = promisify(execFile);
+  const globalConfig = path.join(scratch, "global.gitconfig");
+  writeFileSync(globalConfig, '[remote "origin"]\n\turl = git@github.com:acme/inherited.git\n');
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: "1" };
+  const run = async (root, ...args) => (await exec("git", args, { cwd: root, env })).stdout.trim();
+  const runner = async (root, args) => {
+    try { return (await run(root, ...args)) || null; } catch { return null; }
+  };
+  const root = makeRoot("config-real");
+  await run(root, "init", "-q", "-b", "main");
+  await run(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "fixture");
+  const sibling = path.join(scratch, "config-sibling");
+  await run(root, "worktree", "add", "-q", "-b", "sibling", sibling);
+  await run(root, "config", "extensions.worktreeConfig", "true");
+  await run(root, "config", "--worktree", "remote.origin.url", "git@github.com:acme/primary.git");
+  await run(sibling, "config", "--worktree", "remote.origin.url", "git@github.com:acme/sibling.git");
+  const noPrs = { get: () => null };
+  const noUrls = { get: () => null };
+  const enrich = (roots) => enrichSessionsWithGitContext(roots.map((dir, i) => session(`real-${i}`, dir)), runner, noPrs, noUrls);
+  for (const roots of [[root, sibling], [sibling, root]]) {
+    const rows = await enrich(roots);
+    for (const [i, dir] of roots.entries()) {
+      assert.equal(rows[i].git.repositoryUrl, dir === root ? "https://github.com/acme/primary" : "https://github.com/acme/sibling", "each worktree uses its own Git config regardless of row order");
+    }
+  }
+
+  // A conditional include can differ by worktree even without config.worktree.
+  await run(root, "config", "--worktree", "--unset", "remote.origin.url");
+  await run(sibling, "config", "--worktree", "--unset", "remote.origin.url");
+  await run(root, "config", "--unset", "extensions.worktreeConfig");
+  rmSync(path.join(root, ".git", "config.worktree"));
+  const siblingGitDir = path.resolve(sibling, await run(sibling, "rev-parse", "--git-dir"));
+  rmSync(path.join(siblingGitDir, "config.worktree"));
+  const include = path.join(scratch, "sibling.gitconfig");
+  writeFileSync(include, '[remote "origin"]\n\turl = git@github.com:acme/conditional.git\n');
+  await run(root, "config", `includeIf.gitdir:${siblingGitDir}.path`, include);
+  assert.equal(await run(sibling, "config", "--get", "remote.origin.url"), "git@github.com:acme/conditional.git");
+  const rows = await enrich([root, sibling]);
+  assert.equal(rows[0].git.repositoryUrl, "https://github.com/acme/inherited", "a missing local origin inherits the global value");
+  assert.equal(rows[1].git.repositoryUrl, "https://github.com/acme/conditional", "the sibling's includeIf overrides the inherited origin");
+
+  await run(root, "config", "--remove-section", `includeIf.gitdir:${siblingGitDir}`);
+  assert.equal((await enrich([root]))[0].git.repositoryUrl, "https://github.com/acme/inherited", "plain local config without an origin still asks Git");
+  await run(root, "config", "remote.origin.url", "");
+  assert.equal(await run(root, "config", "--get", "remote.origin.url"), "");
+  assert.equal((await enrich([root]))[0].git.repositoryUrl, undefined, "explicitly empty local config suppresses the inherited origin");
+}
+
+// ── 14. deadline: a slow root never holds the list (#5608) ─────────────────
+{
+  const noPrs = { get: () => null };
+  const noUrls = { get: () => null };
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let slow = true;
+  const { runner } = fakeGit({
+    ...REPO_SCRIPT,
+    "rev-parse --is-inside-work-tree": async () => {
+      if (slow) await gate;
+      return "true";
+    },
+  });
+
+  // 14a. First start: nothing cached, so the row is served without git context
+  // at the deadline and the late probe is reported when it lands.
+  {
+    const root = makeRoot("deadline-cold");
+    const cache = createRootEnrichmentCache({ fingerprint: () => "stable" });
+    let late = 0;
+    const lateLanded = new Promise((resolve) => {
+      const started = Date.now();
+      const rowsPromise = enrichSessionsWithGitContext([session("d", root)], runner, noPrs, noUrls, cache, {
+        deadlineMs: 20,
+        onLateEnrichment: () => {
+          late += 1;
+          resolve(undefined);
+        },
+      });
+      rowsPromise.then((rows) => {
+        assert.ok(Date.now() - started < 1_000, "the deadline, not the probe, decides when rows return");
+        assert.equal(rows[0].git, undefined, "no cached context yet: served without badges");
+        assert.equal(late, 0, "the probe is still running");
+        release();
+      });
+    });
+    await lateLanded;
+    assert.equal(late, 1);
+    assert.equal(cache.get(root)?.enrichment.gitContext?.branch, "feat/thing", "the late probe filled the cache");
+    const warm = await enrichSessionsWithGitContext([session("d", root)], runner, noPrs, noUrls, cache, { deadlineMs: 20 });
+    assert.equal(warm[0].git?.branch, "feat/thing", "the next compute carries the badges");
+  }
+
+  // 14b. A root that already showed badges keeps them while it is re-probed.
+  {
+    slow = false;
+    const root = makeRoot("deadline-stale");
+    const fingerprint = { value: "f1" };
+    const cache = createRootEnrichmentCache({ fingerprint: () => fingerprint.value });
+    await enrichSessionsWithGitContext([session("s", root)], runner, noPrs, noUrls, cache);
+    fingerprint.value = "f2";
+    let releaseAgain;
+    const gateAgain = new Promise((resolve) => { releaseAgain = resolve; });
+    const { runner: slowRunner } = fakeGit({
+      ...REPO_SCRIPT,
+      "rev-parse --is-inside-work-tree": async () => {
+        await gateAgain;
+        return "true";
+      },
+    });
+    const rows = await enrichSessionsWithGitContext([session("s", root)], slowRunner, noPrs, noUrls, cache, {
+      deadlineMs: 20,
+    });
+    assert.equal(rows[0].git?.branch, "feat/thing", "the stale cached context is served, never erased");
+    assert.deepEqual(rows[0].diff, { additions: 10, deletions: 2 });
+    releaseAgain();
+  }
+
+  // 14c. Without a deadline every root is awaited, as before.
+  {
+    const root = makeRoot("deadline-none");
+    const rows = await enrichSessionsWithGitContext([session("n", root)], runner, noPrs, noUrls, null);
+    assert.equal(rows[0].git?.branch, "feat/thing");
   }
 }
 
