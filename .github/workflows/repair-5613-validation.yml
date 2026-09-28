@@ -1,0 +1,105 @@
+name: Temporary transcript repair validation
+
+on:
+  push:
+    branches: [fix/5613-transcript-viewport-recovery]
+    paths: [.github/workflows/repair-5613-validation.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    if: github.repository == 'OpenCoven/coven-cave' && github.ref == 'refs/heads/fix/5613-transcript-viewport-recovery'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Apply checksum-pinned reviewed source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object apps/ios/CovenCave/CovenCave/Views/ChatView.swift)" = 0e7db67924ec5d46f64de8872cab1c9271e33557
+          echo '7087fa67cc68e312cb882beef5def6242342da8527d310b1461234c162062ba2  .github/repair-5613.patch.gz' | shasum -a 256 -c -
+          gzip -dc .github/repair-5613.patch.gz > "$RUNNER_TEMP/repair.patch"
+          git apply --check "$RUNNER_TEMP/repair.patch"
+          git apply "$RUNNER_TEMP/repair.patch"
+          git diff --check
+          git config user.name 'Valentina Alexander'
+          git config user.email '68980965+BunsDev@users.noreply.github.com'
+          git add apps/ios/CovenCave/CovenCave/Views/ChatView.swift apps/ios/CovenCave/CovenCave/State/ChatScrollState.swift apps/ios/CovenCave/CovenCave/Performance/CavePerformanceFixture.swift apps/ios/CovenCave/CovenCaveTests/ChatScrollStateTests.swift apps/ios/CovenCave/CovenCaveUITests/PerformanceBaselineUITests.swift
+          git commit -s -m 'fix(ios): keep latest renderer mounted and recover shrunken transcript extent'
+      - name: Publish only to isolated repair branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head=$(git ls-remote origin refs/heads/fix/5613-transcript-viewport-recovery | cut -f1)
+          test "$remote_head" = "$GITHUB_SHA"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/fix/5613-transcript-viewport-recovery
+          git rev-parse HEAD
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install locked renderer dependencies
+        run: |
+          corepack enable
+          corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Require real bundled markdown, not native fallback
+        run: node scripts/build-ios-markdown.mjs
+      - name: Generate Xcode project and select available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          command -v xcodegen >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          (cd apps/ios/CovenCave && xcodegen generate)
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/devices.json') as f:
+              devices = json.load(f)['devices']
+          iphones = [d for runtime, rows in devices.items() if 'iOS' in runtime for d in rows if d.get('isAvailable') and 'iPhone' in d['name']]
+          assert iphones, 'No available iPhone simulator'
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('CAVE_TEST_DESTINATION=platform=iOS Simulator,id=' + iphones[0]['udid'] + '\n')
+          PY
+      - name: Debug scroll state and existing long-chat UI regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
+            -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
+            -resultBundlePath "$RUNNER_TEMP/scroll-debug.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -only-testing:CovenCaveTests/ChatScrollStateTests \
+            -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
+            -only-testing:CovenCaveUITests/ChatScrollingUITests \
+            | tee "$RUNNER_TEMP/scroll-debug.log"
+      - name: Release shrink and independent no-shrink repeated-open regressions
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \
+            -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
+            -resultBundlePath "$RUNNER_TEMP/scroll-release.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess \
+            -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink \
+            | tee "$RUNNER_TEMP/scroll-release.log"
+      - name: Retain test logs and screenshot-bearing results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: transcript-repair-evidence
+          path: |
+            ${{ runner.temp }}/scroll-*.log
+            ${{ runner.temp }}/scroll-*.xcresult
+          retention-days: 7
+          if-no-files-found: warn
