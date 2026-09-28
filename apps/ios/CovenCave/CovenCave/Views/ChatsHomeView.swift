@@ -57,8 +57,11 @@ struct ChatsHomeView: View {
     /// it never changes a chat's project binding or selection.
     @State private var familiarFilter: String?
     /// The Reflections section starts collapsed so review runs never push
-    /// live chats down; opening it once is remembered across launches.
-    @AppStorage("cave.chats.reflectionsExpanded") private var reflectionsExpanded = false
+    /// live chats down; opening it once is remembered across launches. It is
+    /// read once and written on toggle rather than held in `@AppStorage`, so
+    /// the whole list never subscribes to the defaults store.
+    @State private var reflectionsExpanded = UserDefaults.standard.bool(forKey: Self.reflectionsExpandedKey)
+    private static let reflectionsExpandedKey = "cave.chats.reflectionsExpanded"
     @State private var renamingThread: ChatThread?
     @State private var pendingDelete: ChatThread?
     /// Server-only rows have no ChatThread to hand the existing dialog, so
@@ -719,6 +722,7 @@ struct ChatsHomeView: View {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
                     reflectionsExpanded.toggle()
                 }
+                UserDefaults.standard.set(reflectionsExpanded, forKey: Self.reflectionsExpandedKey)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: reflectionsExpanded ? "chevron.down" : "chevron.right")
