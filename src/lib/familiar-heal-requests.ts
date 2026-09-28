@@ -5,6 +5,7 @@ import type {
   ThreadSelfReport,
   ThreadSignalsAggregate,
 } from "@/lib/thread-self-report";
+import { selfReportSourceSessionId } from "./thread-self-report.ts";
 
 export type HealSource = "contract" | "growth-signal" | "self-report-aggregate";
 export type HealActionKind = "fix-contract" | "write-memory" | "request-skill" | "manual";
@@ -156,7 +157,7 @@ export function escalateBlockers(
           "Review the recurring blocker and choose the next manual intervention.",
         actionKind,
         createdAt: blocker.firstSeenAt ?? STATIC_CREATED_AT,
-        traceSessionId: sourceReport?.sessionId,
+        traceSessionId: sourceReport ? selfReportSourceSessionId(sourceReport) ?? undefined : undefined,
         traceThreadTitle: sourceReport?.threadTitle,
         resolved: false,
       };

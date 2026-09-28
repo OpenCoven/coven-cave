@@ -68,7 +68,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
         // tie-breaking. Match this store's existing malformed-line policy by
         // dropping the row while preserving the rest of the append-only ledger.
         if (!isThreadSelfReport(parsed)) continue;
-        reports.push(redactReport(parsed));
+        reports.push(redactSelfReport(parsed));
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
@@ -94,9 +94,11 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
  * `authId` everywhere else in the app.
  *
  * Applied on read as well as write: reports written while this was broken, and
- * any redacted on the way back out, both go through here.
+ * any redacted on the way back out, both go through here. Routes must use this
+ * export instead of calling redactSecretsDeep on a report themselves: a route
+ * that redacts first hands this guard an already-"[redacted]" id to preserve.
  */
-function redactReport(report: ThreadSelfReport): ThreadSelfReport {
+export function redactSelfReport(report: ThreadSelfReport): ThreadSelfReport {
   const redacted = redactSecretsDeep(report);
   if (redacted.sessionId === report.sessionId) return redacted;
   return { ...redacted, sessionId: report.sessionId };
@@ -105,7 +107,7 @@ function redactReport(report: ThreadSelfReport): ThreadSelfReport {
 export async function appendSelfReport(familiarId: string, report: ThreadSelfReport): Promise<void> {
   const dir = await reportsDir(familiarId);
   await mkdir(dir, { recursive: true });
-  const redacted = redactReport(report);
+  const redacted = redactSelfReport(report);
   await appendFile(path.join(dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
   // Also persist the compact metric snapshot (signal trends). Additive:
   // readers backfill from full reports, so a failure here only costs a cache.

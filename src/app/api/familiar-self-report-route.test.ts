@@ -217,3 +217,23 @@ describe("reflection auto-archive CTA gate and review-run archive", () => {
     );
   });
 });
+
+describe("self-report routes keep the source thread id", () => {
+  // redactSecretsDeep treats a `sessionId` key as a session secret. A route
+  // that runs it over a report before the store sees it hands the store's
+  // guard an id that is already "[redacted]", so every report lost its thread
+  // link and every Thread Signal fix failed with "The source thread's project
+  // is unavailable". All report redaction goes through redactSelfReport.
+  const routes = [
+    "./familiars/[id]/self-report/route.ts",
+    "./familiars/[id]/self-reports/route.ts",
+    "./familiars/[id]/self-reports/[sessionId]/route.ts",
+  ];
+  for (const route of routes) {
+    it(`${route} redacts reports with redactSelfReport only`, () => {
+      const source = readFileSync(fileURLToPath(new URL(route, import.meta.url)), "utf8");
+      assert.doesNotMatch(source, /redactSecretsDeep\(/, "the generic redactor drops sessionId");
+      assert.match(source, /redactSelfReport/);
+    });
+  }
+});

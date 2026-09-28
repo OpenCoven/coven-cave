@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
+import { redactSecretText } from "@/lib/secret-redaction";
 import {
   autoArchiveReflectedSessionLocal,
   autoArchiveReviewRunLocal,
@@ -14,6 +14,7 @@ import { loadConversation } from "@/lib/cave-conversations";
 import {
   appendSelfReport,
   listSelfReports,
+  redactSelfReport,
   SELF_REPORT_SESSION_ID_RE,
 } from "@/lib/server/familiar-self-reports";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
@@ -272,7 +273,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   try {
-    const report = redactSecretsDeep(normalizePayload(parseSelfReportJsonObject(raw), {
+    const report = redactSelfReport(normalizePayload(parseSelfReportJsonObject(raw), {
       familiarId: id,
       sessionId,
       threadTitle: optionalText(body.threadTitle),
@@ -311,5 +312,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
   const before = url.searchParams.get("before") ?? undefined;
   const result = await listSelfReports(id, { limit, before });
-  return NextResponse.json({ ok: true, reports: redactSecretsDeep(result.reports), total: result.total });
+  return NextResponse.json({ ok: true, reports: result.reports.map(redactSelfReport), total: result.total });
 }

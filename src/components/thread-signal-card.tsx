@@ -16,6 +16,7 @@ import {
   buildThreadSignalScoreTiles,
   compositeTone,
   deriveThreadScore,
+  selfReportSourceSessionId,
   type ThreadSelfReport,
   type ThreadSignalRow,
   type ThreadSignalScoreTile,
@@ -35,6 +36,13 @@ const DISMISS_UNDO_MS = 4_000;
 
 /** 2πr for the header ring's r=15 circle. */
 const RING_CIRCUMFERENCE = 94.25;
+
+/** Human-readable provenance for prompts and task notes. */
+function selfReportSourceLabel(report: ThreadSelfReport): string {
+  const sessionId = selfReportSourceSessionId(report);
+  if (sessionId) return `self-report from thread ${sessionId}`;
+  return report.threadTitle ? `self-report on "${report.threadTitle}"` : "self-report";
+}
 
 const SEVERITY_TO_PRIORITY = { critical: "urgent", warning: "high", info: "medium" } as const;
 
@@ -131,12 +139,15 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
           ? buildThreadSignalResolutionPrompt(targets[0])
           : buildThreadSignalBatchResolutionPrompt(targets);
       const requestId = crypto.randomUUID();
+      // A report without a linkable thread (stored while the id was redacted)
+      // opens in the current workspace project rather than failing the lookup.
+      const sourceSessionId = selfReportSourceSessionId(report);
       const result = requestAgentsNewChat({
         requestId,
         destination: "right-panel",
         familiarId: report.familiarId,
-        sourceSessionId: report.sessionId,
-        initialPrompt: `${prompt}\n\nSource: self-report from thread ${report.sessionId}.`,
+        ...(sourceSessionId ? { sourceSessionId } : {}),
+        initialPrompt: `${prompt}\n\nSource: ${selfReportSourceLabel(report)}.`,
         origin: "chat" as const,
       });
       if (result.ok) {
@@ -147,7 +158,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
       setLaunchError(result.ok ? null : result.error);
       announce(result.ok ? label : result.error, result.ok ? "polite" : "assertive");
     },
-    [announce, report.id, report.familiarId, report.sessionId],
+    [announce, report],
   );
 
   const createTask = useCallback(
@@ -162,7 +173,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             title: `${row.kindLabel}: ${row.title}`,
-            notes: `${row.detail}${row.resolution ? `\n\nSuggested fix: ${row.resolution}` : ""}\n\nSource: thread ${report.sessionId} self-report.`,
+            notes: `${row.detail}${row.resolution ? `\n\nSuggested fix: ${row.resolution}` : ""}\n\nSource: ${selfReportSourceLabel(report)}.`,
             priority: SEVERITY_TO_PRIORITY[row.severity],
             familiarId: report.familiarId,
             labels: ["thread-signal"],
@@ -186,7 +197,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
         announce(`Could not add "${row.title}" to Tasks - try again.`, "assertive");
       }
     },
-    [announce, report.familiarId, report.sessionId, taskPending, tasked],
+    [announce, report, taskPending, tasked],
   );
 
   function onQueueKeyDown(event: KeyboardEvent<HTMLDivElement>) {

@@ -11,6 +11,7 @@ import {
   findSelfReport,
   listMetricSnapshots,
   listSelfReports,
+  redactSelfReport,
 } from "./familiar-self-reports.ts";
 
 let tmpRoot = "";
@@ -222,5 +223,16 @@ describe("familiar self-report storage", () => {
 
   it("listMetricSnapshots returns an empty result for a missing directory", async () => {
     assert.deepEqual(await listMetricSnapshots("cody"), { snapshots: [], total: 0 });
+  });
+});
+
+describe("redactSelfReport", () => {
+  it("redacts secrets in the report but keeps the thread id routes hand back", () => {
+    // Assembled at runtime so the fixture never reads as a real key in the diff.
+    const token = ["sk", "ant", "api03", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
+    const input = report({ sessionId: "session-keep", threadTitle: `Deploy with token ${token}` });
+    const out = redactSelfReport(input);
+    assert.equal(out.sessionId, "session-keep");
+    assert.ok(!JSON.stringify(out).includes(token), "the token is still redacted");
   });
 });

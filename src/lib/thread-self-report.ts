@@ -337,6 +337,20 @@ export function selfReportRequiresHumanAction(
   return report.skillsNeedingAccess.length > 0;
 }
 
+/**
+ * The thread a report was written about, or null when the report cannot link
+ * back to one. The self-report routes used to run the generic secret redactor
+ * over whole reports, which treats a `sessionId` key as a session secret, so
+ * every report stored before the fix carries "[redacted]" instead of an id.
+ * That value is not recoverable. Passing it on as a source thread made every
+ * Thread Signal fix fail with "The source thread's project is unavailable".
+ * Mirrors the server's SELF_REPORT_SESSION_ID_RE.
+ */
+export function selfReportSourceSessionId(report: Pick<ThreadSelfReport, "sessionId">): string | null {
+  const id = report.sessionId;
+  return typeof id === "string" && /^[a-z0-9_-]+$/i.test(id) ? id : null;
+}
+
 export function deriveThreadScore(report: ThreadSelfReport): number {
   return Math.round(
     report.overallConfidence * 0.35 +

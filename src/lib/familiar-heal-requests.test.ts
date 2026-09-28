@@ -204,6 +204,30 @@ describe("escalateBlockers", () => {
     assert.equal(request.traceThreadTitle, "Repair deployment auth");
   });
 
+  it("leaves the trace unset when the source report lost its thread id", () => {
+    const blocker = {
+      id: "missing-auth",
+      title: "Authentication is missing",
+      category: "auth" as const,
+      impact: "blocking" as const,
+      detail: "The thread could not authenticate.",
+    };
+    const reports = [
+      report({
+        id: "legacy",
+        sessionId: "[redacted]",
+        threadTitle: "Legacy thread",
+        reportedAt: "2026-08-02T00:00:00.000Z",
+        persistentBlockers: [blocker],
+      }),
+    ];
+
+    const [request] = escalateBlockers("nova", aggregateThreadSignals(reports), [], reports);
+
+    assert.equal(request.traceSessionId, undefined, "a redacted placeholder is not a thread to trace or fix from");
+    assert.equal(request.traceThreadTitle, "Legacy thread");
+  });
+
   it("turns critical aggregate blockers into critical self-heal requests", () => {
     const requests = escalateBlockers("cody", aggregateWithBlockers([blocker("auth-oauth", "auth")]), []);
 

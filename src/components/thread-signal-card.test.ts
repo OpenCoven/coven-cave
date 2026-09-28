@@ -94,6 +94,15 @@ describe("thread-signal-card module wiring", () => {
     assert.match(source, /launch\(\s*openCriticals,/);
   });
 
+  it("only names a source thread the report can actually link to", () => {
+    // Reports stored while the routes redacted sessionId carry "[redacted]".
+    // Sending that as sourceSessionId made every fix fail its project lookup.
+    assert.match(source, /const sourceSessionId = selfReportSourceSessionId\(report\)/);
+    assert.match(source, /\.\.\.\(sourceSessionId \? \{ sourceSessionId \} : \{\}\)/);
+    assert.doesNotMatch(source, /sourceSessionId: report\.sessionId/);
+    assert.doesNotMatch(source, /thread \$\{report\.sessionId\}/);
+  });
+
   it("announces where the completed Reflect landed and offers the daily note", () => {
     // cave-mo4q: the card announces the persisted destination (growth analytics)
     // and carries an Open daily note action wired to the report's familiar.
