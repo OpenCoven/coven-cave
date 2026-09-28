@@ -95,4 +95,19 @@ assert.match(
   "the wiki index covers every memory file, not just the scanned window",
 );
 
+// An LRU walked in order over more entries than it holds never hits: at 600
+// entries against a 1200-file scan, every Grimoire visit re-read the whole
+// corpus (#5682). The content cache must be sized from the scan cap.
+assert.match(
+  scan,
+  /const CONTENT_CACHE_MAX = MEMORY_SCAN_CAP \+ \d+;/,
+  "the memory content cache holds a whole scan window",
+);
+// …and an unchanged corpus reuses its graph instead of rebuilding it.
+assert.match(
+  scan,
+  /graphMemo\.build\(scopeKey, docs, index\)/,
+  "the scan builds through the per-scope graph memo",
+);
+
 console.log("grimoire-graph-scan.test.ts: ok");

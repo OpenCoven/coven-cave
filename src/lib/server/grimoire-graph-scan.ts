@@ -23,6 +23,7 @@ import { familiarInScope } from "../familiar-multiselect";
 import { parseMdDocument } from "../md-frontmatter";
 import { buildDocGraph, type DocGraph, type GraphSourceDoc } from "../grimoire-graph";
 import type { WikiDocIndex } from "../wiki-link-resolve";
+import { createDocGraphMemo } from "./doc-graph-memo";
 
 export type GrimoireGraphMeta = {
   knowledge: { scanned: number };
@@ -86,8 +87,18 @@ const READ_CONCURRENCY = 16;
 const MARKDOWN_RE = /\.(md|markdown)$/i;
 
 // (mtime|size)-keyed content cache, LRU-ish via Map insertion order.
+//
+// It must hold a whole scan. Each request walks up to MEMORY_SCAN_CAP files in
+// the same order, and an LRU walked in order over more entries than it holds
+// evicts every entry before it is asked for again: at 600 against a 1200-file
+// scan it never hit, and every Grimoire visit re-read the corpus (#5682). The
+// headroom covers files that move into the scan window between requests.
+const CONTENT_CACHE_MAX = MEMORY_SCAN_CAP + 300;
 const contentCache = new Map<string, { stamp: string; text: string }>();
-const CONTENT_CACHE_MAX = 600;
+
+// Rebuilding the graph costs ~120 ms on a 1350-doc corpus; an unchanged
+// corpus reuses the last graph for its scope (#5682).
+const graphMemo = createDocGraphMemo(buildDocGraph);
 
 async function readCapped(fullPath: string): Promise<string | null> {
   let fh: Awaited<ReturnType<typeof open>> | null = null;
@@ -223,7 +234,8 @@ export async function scanGrimoireGraph(
   });
   for (const d of journalDocs) if (d) docs.push(d);
 
-  const graph = buildDocGraph(docs, index);
+  const scopeKey = [...familiarScope].sort().join("\0");
+  const graph = graphMemo.build(scopeKey, docs, index);
   const meta: GrimoireGraphMeta = {
     knowledge: { scanned: knowledge.length },
     memory: {
