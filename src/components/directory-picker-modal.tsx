@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import "@/styles/directory-picker-modal.css";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
@@ -474,7 +475,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const atDrivesList = cwd === DRIVES;
   const pendingPath = selected?.path ?? (atDrivesList ? null : cwd);
   const pendingName = selected ? selected.name : atHomeRoot || !cwd || atDrivesList ? null : baseName(cwd, sep);
-  const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : atDrivesList ? "Open a drive" : "Select home";
+  const selectLabel = pendingName ? `Select ${truncateName(pendingName)}` : atDrivesList ? "Open a drive" : "Select folder";
   // $HOME itself and bare volume roots are never valid project roots
   // (isAllowedNewProjectRoot excludes both as unbounded), so selection stays
   // disabled there until the user highlights or enters a subfolder.
@@ -489,7 +490,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   // true-viewport fixed positioning regardless of the host's styling.
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-6 [background:color-mix(in_oklch,var(--bg-panel)_62%,transparent)] backdrop-blur-[6px] [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)] motion-reduce:[animation:none]"
+      className="directory-picker-scrim fixed inset-0 z-[200] flex items-center justify-center p-6 [background:color-mix(in_oklch,var(--bg-panel)_62%,transparent)] backdrop-blur-[6px] [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)] motion-reduce:[animation:none]"
       onClick={onClose}
     >
       <div
@@ -498,10 +499,10 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
         aria-modal="true"
         aria-label="Choose a project folder"
         tabIndex={-1}
-        className="flex w-[760px] max-w-full max-h-[min(680px,92dvh)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-[0_30px_70px_-18px_oklch(0_0_0/70%),0_0_0_1px_color-mix(in_oklch,var(--foreground)_4%,transparent)] [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)] motion-reduce:[animation:none] focus:outline-none"
+        className="directory-picker flex w-[760px] max-w-full max-h-[min(680px,92dvh)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-[0_30px_70px_-18px_oklch(0_0_0/70%),0_0_0_1px_color-mix(in_oklch,var(--foreground)_4%,transparent)] [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)] motion-reduce:[animation:none] focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-4 px-5 pb-4 pt-[18px]">
+        <div className="directory-picker-header flex items-center justify-between gap-4 px-5 py-3">
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="text-[length:var(--text-md)] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
               Choose a project folder
@@ -509,7 +510,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Pick where this project&apos;s chats will live.
             </span>
-            <span className="directory-picker-workspace-help max-w-[520px] text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
+            <span className="directory-picker-workspace-help sr-only">
               {PROJECT_ROOT_WORKSPACE_HELP}
             </span>
           </div>
@@ -521,19 +522,19 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             aria-label="Close"
             className="h-[30px] w-[30px] flex-none rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
-            <Icon name="ph:x" width={16} aria-hidden />
+            <Icon name="ph:x" width={16} height={16} aria-hidden />
           </Button>
         </div>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="directory-picker-body flex min-h-0 flex-1">
           <nav
             aria-label="Places"
-            className="flex w-[196px] flex-none flex-col gap-3.5 overflow-y-auto border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-2.5"
+            className="directory-picker-places flex w-[196px] flex-none flex-col gap-3.5 overflow-y-auto border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-2.5"
           >
             {railGroups.map((group) => (
               <div key={group.id} className="flex flex-col gap-px">
                 <span className="px-2 pb-1 text-[length:var(--text-2xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-                  {group.label}
+                  {group.id === "quick" ? "Favorites" : group.id === "this-pc" ? "Locations" : group.label}
                 </span>
                 {group.places.map((place) => {
                   const isCurrent = place.path === cwd;
@@ -558,7 +559,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                         }`}
                         aria-hidden
                       >
-                        <Icon name={placeIcon(place)} width={16} />
+                        <Icon name={placeIcon(place)} width={16} height={16} />
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
                         {place.name}
@@ -571,7 +572,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           </nav>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-1.5 px-3.5 pb-3 pt-0.5">
+            <div className="directory-picker-toolbar flex items-center gap-1.5 px-3 py-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -580,7 +581,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 aria-label="Up one folder"
                 className="h-[30px] w-[30px] flex-none rounded-[var(--radius-control)] p-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40"
               >
-                <Icon name="ph:arrow-up" width={15} aria-hidden />
+                <Icon name="ph:arrow-up" width={15} height={15} aria-hidden />
               </Button>
               <nav
                 aria-label="Folder breadcrumbs"
@@ -604,7 +605,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                       </Button>
                       {!isLast ? (
                         <span className="flex flex-none text-[var(--text-muted)] opacity-50" aria-hidden>
-                          <Icon name="ph:caret-right" width={13} />
+                          <Icon name="ph:caret-right" width={13} height={13} />
                         </span>
                       ) : null}
                     </span>
@@ -625,7 +626,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               </Button>
             </div>
 
-            <div className="px-5 pb-2">
+            <div className="directory-picker-address px-3 pb-2">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -641,7 +642,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 </label>
                 <input
                   id="directory-picker-path"
-                  className="focus-ring h-full min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent font-mono text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
+                  className="focus-ring h-full min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent font-mono text-[length:var(--text-sm)] text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
                   value={pathDraft}
                   onChange={(event) => {
                     setPathDraft(event.target.value);
@@ -668,7 +669,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                   Go
                 </Button>
               </form>
-              <p id={pathHintId} className="mt-1.5 px-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              <p id={pathHintId} className="sr-only">
                 Paste an absolute path, then press Enter.
               </p>
               {pathError ? (
@@ -682,11 +683,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               ) : null}
             </div>
 
-            <div className="flex items-center gap-2 px-5 pb-2">
+            <div className="directory-picker-search flex items-center gap-2 px-3 pb-2">
               <label className="flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
-                <Icon name="ph:magnifying-glass" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                <Icon name="ph:magnifying-glass" width={15} height={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                 <input
-                  className="h-full w-full min-w-0 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)]"
+                  className="h-full w-full min-w-0 bg-transparent text-[length:var(--text-sm)] text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)]"
                   placeholder="Filter folders…"
                   value={filter}
                   onChange={(event) => {
@@ -732,7 +733,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
             <div className="h-px flex-none bg-[var(--border-hairline)]" />
 
-            <div className="min-h-[120px] flex-1 overflow-y-auto px-3 pb-2.5 pt-2">
+            <div className="directory-picker-list min-h-0 flex-1 overflow-y-auto px-2 py-1">
               {creatingFolder ? (
                 <div
                   className="mb-1 rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] p-2 [background:color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
@@ -740,7 +741,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 >
                   <div className="flex items-center gap-2.5">
                     <span className="flex flex-none text-[var(--accent-presence)]" aria-hidden>
-                      <Icon name="ph:folder" width={18} />
+                      <Icon name="ph:folder" width={18} height={18} />
                     </span>
                     <input
                       id="directory-picker-new-folder-name"
@@ -791,7 +792,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               {error && !pathError ? (
                 <p role="alert" className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
               ) : loading && entries.length === 0 ? (
-                <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
+                <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading folders…</p>
               ) : visibleEntries.length === 0 && !creatingFolder ? (
                 <div className="flex flex-col items-center gap-1.5 px-5 py-8 text-center">
                   <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
@@ -812,7 +813,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                   const isSelected = selected?.path === entry.path;
                   const pinned = isPinned(pins, entry.path);
                   return (
-                    <div key={entry.path} className="relative">
+                    <div key={entry.path} className="directory-picker-row reveal-scope relative">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -824,9 +825,9 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                         onDoubleClick={() => navigateTo(entry.path)}
                         disabled={createBusy}
                         aria-pressed={isSelected}
-                        className={`h-auto w-full justify-start gap-[11px] rounded-[var(--radius-card)] px-[11px] py-[9px] pr-[68px] text-left font-normal ${
+                        className={`h-auto w-full justify-start gap-2 rounded-[var(--radius-control)] px-2 py-2 pr-[68px] text-left font-normal ${
                           isSelected
-                            ? "bg-[var(--bg-hover)] shadow-[inset_0_0_0_1px_var(--accent-presence)]"
+                            ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                             : ""
                         }`}
                       >
@@ -834,7 +835,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                           className={`flex flex-none ${entry.workspace ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
                           aria-hidden
                         >
-                          <Icon name={atDrivesList ? "ph:hard-drives" : "ph:folder"} width={18} />
+                          <Icon name={atDrivesList ? "ph:hard-drives" : "ph:folder"} width={18} height={18} />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[length:var(--text-base)] text-[var(--text-primary)]">
                           {entry.name}
@@ -842,10 +843,10 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                         {entry.workspace ? (
                           <span
                             title="Inside a Cave workspace"
-                            className="flex flex-none items-center gap-[5px] text-[length:var(--text-2xs)] uppercase tracking-[0.06em] text-[var(--accent-presence)]"
+                            className="directory-picker-workspace-badge flex flex-none items-center gap-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
                           >
                             <span
-                              className="h-1.5 w-1.5 rounded-full bg-[var(--accent-presence)] shadow-[0_0_8px_var(--accent-presence)]"
+                              className="h-1.5 w-1.5 rounded-full bg-[var(--accent-presence)]"
                               aria-hidden
                             />
                             workspace
@@ -860,14 +861,14 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                           disabled={createBusy}
                           aria-pressed={pinned}
                           aria-label={pinned ? `Unpin ${entry.name}` : `Pin ${entry.name}`}
-                          title={pinned ? "Remove from Quick access" : "Pin to Quick access"}
-                          className={`absolute right-[35px] top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-[7px] p-0 ${
+                          title={pinned ? "Remove from Favorites" : "Pin to Favorites"}
+                          className={`${pinned ? "" : "reveal-on-hover"} absolute right-[35px] top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-[7px] p-0 ${
                             pinned
                               ? "text-[var(--accent-presence)]"
                               : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                           }`}
                         >
-                          <Icon name={pinned ? "ph:push-pin-fill" : "ph:push-pin"} width={15} aria-hidden />
+                          <Icon name={pinned ? "ph:push-pin-fill" : "ph:push-pin"} width={15} height={15} aria-hidden />
                         </Button>
                       )}
                       <Button
@@ -878,7 +879,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                         aria-label={`Open ${entry.name}`}
                         className="absolute right-[7px] top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-[7px] p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                       >
-                        <Icon name="ph:caret-right" width={16} aria-hidden />
+                        <Icon name="ph:caret-right" width={16} height={16} aria-hidden />
                       </Button>
                     </div>
                   );
@@ -888,14 +889,14 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           </div>
         </div>
 
-        <div className="flex items-end justify-between gap-4 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-3.5">
+        <div className="directory-picker-footer flex items-center justify-between gap-4 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-3.5">
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">Selecting</span>
+            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">{selectDisabled ? "Choose a project folder" : "Selected folder"}</span>
             <span
               className="max-w-[260px] truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
               title={pendingPath ?? undefined}
             >
-              {pendingPath ? collapseHome(pendingPath) : "…"}
+              {pendingPath === home || (pendingPath && isVolumeRootPath(pendingPath)) ? "Select a subfolder to continue." : pendingPath ? collapseHome(pendingPath) : "Open a location to continue."}
             </span>
           </div>
           <div className="flex flex-none items-center gap-2">
