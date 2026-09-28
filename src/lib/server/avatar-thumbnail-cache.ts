@@ -24,6 +24,16 @@ export const AVATAR_THUMB_VERSION = 1;
 export const AVATAR_THUMB_MAX_FILES = 128;
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+// Every complete PNG ends with an empty IEND chunk: length, type and CRC.
+const PNG_IEND = Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+
+/** Signature at the start and IEND at the end, so a truncated file is a miss
+ *  and gets re-rendered rather than served broken until the source changes. */
+function isCompletePng(bytes: Buffer): boolean {
+  return bytes.length > PNG_MAGIC.length + PNG_IEND.length
+    && bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)
+    && bytes.subarray(bytes.length - PNG_IEND.length).equals(PNG_IEND);
+}
 
 export type AvatarThumbSource = {
   absPath: string;
@@ -39,7 +49,9 @@ export function avatarThumbKey(source: AvatarThumbSource, maxDim: number): strin
         maxDim,
         source.absPath,
         source.size,
-        Math.round(source.mtimeMs),
+        // Full precision: two same-size replacements within one millisecond
+        // must not share a key.
+        source.mtimeMs,
       ]),
     )
     .digest("hex");
@@ -64,10 +76,7 @@ export async function readAvatarThumb(key: string): Promise<Buffer | null> {
   if (!file) return null;
   try {
     const bytes = await readFile(file);
-    if (bytes.length <= PNG_MAGIC.length || !bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
-      return null;
-    }
-    return bytes;
+    return isCompletePng(bytes) ? bytes : null;
   } catch {
     return null;
   }

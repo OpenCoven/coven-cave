@@ -1630,6 +1630,7 @@ export const SUITES = {
     "src/app/api/familiars/[id]/dashboard/route.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
+    "src/app/api/familiars/[id]/avatar/route-thumbnail-cache.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
     "src/app/api/projects/icon/route.test.ts",
     "src/app/api/images/generate/route.test.ts",
@@ -2133,6 +2134,8 @@ export const SUITE_PREFLIGHTS = {
 const ALIAS_LOADER = new Set([
   // imports caveHome through the @/ alias (#5679)
   "src/lib/server/avatar-thumbnail-cache.test.ts",
+  // imports the avatar route and renders through sharp (#5679)
+  "src/app/api/familiars/[id]/avatar/route-thumbnail-cache.test.ts",
   // imports the route (@/ aliases) with a stubbed GitHub fetch (#5641)
   "src/app/api/github/assigned/route-cache.test.ts",
   "src/app/api/wikis/route.test.ts",

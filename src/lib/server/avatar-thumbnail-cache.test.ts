@@ -13,7 +13,8 @@ import {
   writeAvatarThumb,
 } from "./avatar-thumbnail-cache.ts";
 
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, ...IEND]);
 const source = { absPath: "/w/familiars/charm/avatars/charm.png", size: 34_329_645, mtimeMs: 1_750_000_000_123.4 };
 
 function withHome(fn) {
@@ -36,6 +37,7 @@ test("the key changes with the source file and the render size", () => {
   assert.match(key, /^[0-9a-f]{64}$/);
   assert.equal(avatarThumbKey({ ...source }, 256), key);
   assert.notEqual(avatarThumbKey({ ...source, mtimeMs: source.mtimeMs + 1000 }, 256), key);
+  assert.notEqual(avatarThumbKey({ ...source, mtimeMs: source.mtimeMs + 0.25 }, 256), key, "sub-millisecond mtimes differ");
   assert.notEqual(avatarThumbKey({ ...source, size: source.size + 1 }, 256), key);
   assert.notEqual(avatarThumbKey({ ...source, absPath: "/w/other.png" }, 256), key);
   assert.notEqual(avatarThumbKey(source, 512), key);
@@ -55,6 +57,8 @@ test("a file that is not a PNG is treated as a miss", withHome(async () => {
   await writeAvatarThumb(key, PNG);
   writeFileSync(path.join(avatarThumbDir(), `${key}.png`), "truncated");
   assert.equal(await readAvatarThumb(key), null);
+  writeFileSync(path.join(avatarThumbDir(), `${key}.png`), PNG.subarray(0, PNG.length - 4));
+  assert.equal(await readAvatarThumb(key), null, "a PNG cut off before IEND is a miss");
 }));
 
 test("keys that are not a sha256 hex digest never touch the filesystem", withHome(async () => {
