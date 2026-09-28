@@ -162,8 +162,13 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /ChatsHomeView\(\)[\s\S]*accessibilityHidden\(app\.selectedTab == \.settings\)[\s\S]*if app\.selectedTab == \.settings \{\s*SettingsView\(\)/s,
+  /ChatsHomeView\(\)[\s\S]*accessibilityHidden\(app\.selectedTab == \.settings\)[\s\S]*if settingsMounted \|\| app\.selectedTab == \.settings \{\s*SettingsView\(\)/s,
   "Settings preserves the mounted conversation while hiding it from interaction and accessibility",
+);
+assert.match(
+  root,
+  /SettingsView\(\)\s*\.opacity\(app\.selectedTab == \.settings \? 1 : 0\)\s*\.allowsHitTesting\(app\.selectedTab == \.settings\)\s*\.accessibilityHidden\(app\.selectedTab != \.settings\)/,
+  "a visited Settings stays mounted but hidden from interaction and accessibility",
 );
 assert.doesNotMatch(root, /switch app\.projectContextGateState/,
   "chat and Settings remain reachable without an ambient project gate");
