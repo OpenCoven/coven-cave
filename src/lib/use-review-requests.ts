@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { reviewRequests, type ReviewRequest } from "./chat-review-requests.ts";
 import type { GitHubItem } from "./github-tasks.ts";
 import { useRefreshOnFocus } from "./use-refresh-on-focus.ts";
+import { whenStartupSettled } from "./startup-gate.ts";
 
 type AssignedResponse = {
   ok?: boolean;
@@ -43,6 +44,9 @@ export function useReviewRequests(enabled = true): ReviewRequestsSnapshot {
     abortRef.current = controller;
     setLoading(true);
     try {
+      // Not needed until it is on screen: wait out app load (#5649).
+      await whenStartupSettled();
+      if (controller.signal.aborted) return;
       const res = await fetch("/api/github/assigned", {
         cache: "no-store",
         signal: controller.signal,

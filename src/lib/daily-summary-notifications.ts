@@ -7,6 +7,7 @@ import {
   type MergedPr,
 } from "./daily-report-facts.ts";
 import type { SessionRow } from "./types";
+import { whenStartupSettled } from "./startup-gate.ts";
 
 // Title hygiene lives in daily-report-facts.ts (shared with the day-in-review
 // payload); re-exported here for existing consumers.
@@ -280,6 +281,8 @@ export async function ensureDailySummaryNotification({
   const exists = !shouldCreateDailySummary(items, now);
   if (!exists && !buildDailySummaryContent({ items, sessions, now })) return "skipped";
   try {
+    // The report can wait out app load (#5649).
+    await whenStartupSettled();
     const res = await fetch("/api/inbox/daily-summary", {
       method: "POST",
       headers: { "content-type": "application/json" },
