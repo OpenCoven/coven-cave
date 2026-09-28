@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Card, CardGitHubLink } from "./cave-board-types.ts";
-import { calibrate, outcomeFromCard, summarizeFamiliarOutcomes, type FamiliarOutcome } from "./familiar-outcomes.ts";
+import {
+  calibrate,
+  outcomeFromCard,
+  outcomesFromFeedback,
+  summarizeFamiliarOutcomes,
+  type FamiliarOutcome,
+  type FeedbackVoteRecord,
+} from "./familiar-outcomes.ts";
 import type { ThreadSelfReport } from "./thread-self-report.ts";
 
 function card(overrides: Partial<Card> = {}): Card {
@@ -153,7 +160,17 @@ describe("summarizeFamiliarOutcomes", () => {
       { ...report("s5", 10), familiarId: "nova" },
     ]);
     assert.deepEqual(summary.outcomes.map((outcome) => outcome.cardId), ["new", "bad", "old"]);
-    assert.deepEqual(summary.counts, { accepted: 2, acceptedStrong: 1, rejected: 1, acceptRate: 2 / 3 });
+    assert.deepEqual(summary.counts, {
+      accepted: 2,
+      acceptedStrong: 1,
+      rejected: 1,
+      acceptRate: 2 / 3,
+      bySource: {
+        board: { accepted: 1, rejected: 0 },
+        "github-pr": { accepted: 1, rejected: 1 },
+        "chat-feedback": { accepted: 0, rejected: 0 },
+      },
+    });
     assert.equal(summary.calibration?.samples, 1, "another familiar's report never calibrates this one");
   });
 
@@ -178,5 +195,81 @@ describe("summarizeFamiliarOutcomes", () => {
     const summary = summarizeFamiliarOutcomes("cody", [], []);
     assert.equal(summary.counts.acceptRate, null);
     assert.equal(summary.calibration, null);
+  });
+});
+
+function vote(overrides: Partial<FeedbackVoteRecord> = {}): FeedbackVoteRecord {
+  return { messageId: "msg-1", vote: "down", cleared: false, familiarId: "cody", sessionId: "s-vote", at: "2026-09-10T00:00:00.000Z", ...overrides };
+}
+
+describe("outcomesFromFeedback", () => {
+  it("turns a thumbs vote into an explicit outcome on its thread", () => {
+    const [down] = outcomesFromFeedback([vote()]);
+    assert.equal(down.kind, "rejected");
+    assert.equal(down.evidence, "strong");
+    assert.equal(down.source, "chat-feedback");
+    assert.equal(down.sessionId, "s-vote");
+    assert.equal(down.messageId, "msg-1");
+    assert.equal(down.id, "feedback:msg-1");
+    assert.equal(outcomesFromFeedback([vote({ vote: "up" })])[0].kind, "accepted");
+  });
+
+  it("uses each message's latest vote, by instant", () => {
+    const [latest] = outcomesFromFeedback([
+      vote({ vote: "down", at: "2026-09-10T02:00:00+02:00" }), // 00:00Z
+      vote({ vote: "up", at: "2026-09-10T01:00:00Z" }),
+    ]);
+    assert.equal(latest.kind, "accepted", "the later vote (01:00Z) wins even though its text sorts first");
+  });
+
+  it("shows a thumbs-down's one-tap reason as the outcome detail", () => {
+    const [latest] = outcomesFromFeedback([
+      vote({ at: "2026-09-10T00:00:00Z" }),
+      vote({ at: "2026-09-10T00:00:05Z", reason: "misunderstood" }),
+    ]);
+    assert.equal(latest.kind, "rejected", "the reason follow-up is still the same down vote");
+    assert.equal(latest.detail, "Misunderstood me");
+    assert.equal(outcomesFromFeedback([vote({ reason: "not-a-reason" })])[0].detail, undefined);
+    assert.equal(outcomesFromFeedback([vote({ vote: "up", reason: "incorrect" })])[0].detail, undefined);
+  });
+
+  it("drops a vote that was toggled off, and votes without a familiar", () => {
+    assert.deepEqual(outcomesFromFeedback([vote({ at: "2026-09-10T00:00:00Z" }), vote({ cleared: true, at: "2026-09-10T00:01:00Z" })]), []);
+    assert.deepEqual(outcomesFromFeedback([vote({ familiarId: undefined })]), []);
+  });
+
+  it("keeps a legacy vote without a thread id as an outcome that cannot calibrate", () => {
+    const [legacy] = outcomesFromFeedback([vote({ sessionId: undefined })]);
+    assert.equal(legacy.sessionId, null);
+    assert.equal(calibrate([legacy], [report("s-vote", 80)]), null);
+  });
+});
+
+describe("calibration with chat feedback", () => {
+  it("scores each thread once, by the share of its outcomes accepted", () => {
+    const completed = outcomeFromCard(card({ id: "c", sessionId: "s-mixed" })) as FamiliarOutcome;
+    const [down] = outcomesFromFeedback([vote({ sessionId: "s-mixed" })]);
+    const result = calibrate([completed, down], [report("s-mixed", 70)]);
+    assert.equal(result?.samples, 1, "one thread, one sample");
+    // actual = 1 of 2 accepted = 0.5; gap = 0.7 - 0.5
+    assert.ok(Math.abs((result?.meanGap ?? NaN) - 0.2) < 1e-9);
+  });
+
+  it("does not let many upvoted messages in one thread count as many samples", () => {
+    const ups = outcomesFromFeedback(["a", "b", "c"].map((messageId) => vote({ messageId, vote: "up", sessionId: "s-busy" })));
+    assert.equal(calibrate(ups, [report("s-busy", 40)])?.samples, 1);
+  });
+
+  it("folds votes into the familiar's summary and splits counts by source", () => {
+    const summary = summarizeFamiliarOutcomes(
+      "cody",
+      [card({ id: "done", sessionId: "s1" })],
+      [],
+      [vote({ messageId: "m1", vote: "down" }), vote({ messageId: "m2", vote: "up" }), vote({ messageId: "m3", familiarId: "nova" })],
+    );
+    assert.equal(summary.outcomes.length, 3, "another familiar's vote is excluded");
+    assert.deepEqual(summary.counts.bySource["chat-feedback"], { accepted: 1, rejected: 1 });
+    assert.deepEqual(summary.counts.bySource.board, { accepted: 1, rejected: 0 });
+    assert.equal(summary.counts.rejected, 1);
   });
 });

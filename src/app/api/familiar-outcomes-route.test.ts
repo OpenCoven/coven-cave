@@ -15,7 +15,8 @@ describe("familiar outcomes route", () => {
   });
 
   it("derives outcomes through the shared pure summary", () => {
-    assert.match(source, /summarizeFamiliarOutcomes\(id, board\.cards, reports\.reports\)/);
+    assert.match(source, /summarizeFamiliarOutcomes\(id, board\.cards, reports\.reports, feedback\)/);
+    assert.match(source, /loadMessageFeedback\(\)/);
     assert.match(source, /listSelfReports\(id, \{ limit: "all" \}\)/);
   });
 
@@ -24,6 +25,7 @@ describe("familiar outcomes route", () => {
     // it here would erase the thread link calibration depends on (#5666).
     assert.doesNotMatch(source, /redactSecretsDeep\(/);
     assert.match(source, /cardTitle: redactSecretText\(outcome\.cardTitle\)/);
+    assert.match(source, /\.\.\.\(outcome\.cardTitle \?/, "chat-feedback outcomes have no card title");
     assert.match(source, /detail: redactSecretText\(outcome\.detail\)/);
   });
 });

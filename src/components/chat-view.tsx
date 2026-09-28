@@ -3919,8 +3919,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ? modelState.effectiveModel
           : visibleModelId(session?.model ?? familiar.model ?? undefined, familiar.harness ?? undefined) ?? undefined,
       runtime: modelHarness,
+      ...(sessionId ? { sessionId } : {}),
     }),
-    [familiar.harness, familiar.id, familiar.model, modelHarness, modelState?.effectiveModel, session?.model],
+    [familiar.harness, familiar.id, familiar.model, modelHarness, modelState?.effectiveModel, session?.model, sessionId],
   );
 
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
@@ -10831,7 +10832,8 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // fresh identity when the model/runtime actually changes.
     prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&
     prev.feedbackContext?.model === next.feedbackContext?.model &&
-    prev.feedbackContext?.runtime === next.feedbackContext?.runtime
+    prev.feedbackContext?.runtime === next.feedbackContext?.runtime &&
+    prev.feedbackContext?.sessionId === next.feedbackContext?.sessionId
   );
 }
 

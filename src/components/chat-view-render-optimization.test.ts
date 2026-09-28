@@ -153,4 +153,10 @@ assert.match(
 assert.match(chatViewSource, /role="log"[\s\S]{0,80}aria-busy=\{busy \|\| undefined\}/, "the transcript log is aria-busy while streaming so AT doesn't re-announce the growing message");
 assert.match(chatViewSource, /aria-controls=\{panelId\}/, "RunActivityStrip's disclosure references its panel");
 
+// Thumbs votes carry the thread id so a vote joins its thread's self-report
+// (familiar outcome calibration). The memo comparator must compare it too, or a
+// row reused across a thread switch would stamp votes with the old thread.
+assert.match(chatViewSource, /runtime: modelHarness,\s*\.\.\.\(sessionId \? \{ sessionId \} : \{\}\),/, "feedback context stamps the current thread id");
+assert.match(chatViewSource, /prev\.feedbackContext\?\.sessionId === next\.feedbackContext\?\.sessionId/, "memo comparator compares the feedback thread id");
+
 console.log("✓ All render optimization tests pass");

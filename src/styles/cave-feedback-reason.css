@@ -1,0 +1,19 @@
+/* One-tap reason row shown under a response after a thumbs-down
+   (message-bubble.tsx). Imported by that component only, not globals. */
+.cave-feedback-reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  /* Line up with the response action row above (its buttons sit 8px in). */
+  padding-inline-start: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.cave-feedback-reason__prompt {
+  margin-right: var(--space-1);
+}
+.cave-feedback-reason--thanks {
+  color: var(--text-secondary);
+}

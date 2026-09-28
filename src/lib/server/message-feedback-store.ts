@@ -10,6 +10,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
+import { isFeedbackReason, type FeedbackReason } from "@/lib/message-feedback";
 
 export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
 
@@ -24,6 +25,11 @@ export type MessageFeedback = {
   model?: string;
   /** Runtime/harness id at vote time — seeds per-runtime quality analytics. */
   runtime?: string;
+  /** The chat thread the voted message belongs to. An id, not content. Votes
+   *  recorded before this field existed have none. */
+  sessionId?: string;
+  /** One-tap category chosen after a thumbs-down (fixed list, never free text). */
+  reason?: FeedbackReason;
   at: string;
 };
 
@@ -35,7 +41,12 @@ export type MessageFeedbackInput = {
   familiarId?: string;
   model?: string;
   runtime?: string;
+  sessionId?: string;
+  reason?: string;
 };
+
+/** Same shape the self-report store accepts for thread ids. */
+const FEEDBACK_SESSION_ID_RE = /^[a-z0-9_-]+$/i;
 
 type FeedbackFile = { entries: MessageFeedback[] };
 
@@ -61,6 +72,12 @@ export function sanitizeMessageFeedback(input: MessageFeedbackInput, at: string)
   if (typeof input.runtime === "string" && input.runtime.trim()) {
     fb.runtime = input.runtime.trim().slice(0, 60);
   }
+  if (typeof input.sessionId === "string") {
+    const sessionId = input.sessionId.trim();
+    if (sessionId.length <= 200 && FEEDBACK_SESSION_ID_RE.test(sessionId)) fb.sessionId = sessionId;
+  }
+  // A reason only explains a thumbs-down; anything off the fixed list is dropped.
+  if (fb.vote === "down" && !fb.cleared && isFeedbackReason(input.reason)) fb.reason = input.reason;
   return fb;
 }
 
@@ -75,16 +92,22 @@ export async function loadMessageFeedback(): Promise<MessageFeedback[]> {
 }
 
 let feedbackTmpCounter = 0;
+let feedbackWriteQueue: Promise<void> = Promise.resolve();
 
 /** Append one sanitized feedback entry. Returns the stored entry, or null if invalid. */
 export async function recordMessageFeedback(input: MessageFeedbackInput): Promise<MessageFeedback | null> {
   const entry = sanitizeMessageFeedback(input, new Date().toISOString());
   if (!entry) return null;
-  await mkdir(path.dirname(MESSAGE_FEEDBACK_PATH), { recursive: true });
-  const entries = await loadMessageFeedback();
-  entries.push(entry);
-  const tmp = `${MESSAGE_FEEDBACK_PATH}.${process.pid}.${feedbackTmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify({ entries }, null, 2), "utf8");
-  await rename(tmp, MESSAGE_FEEDBACK_PATH);
-  return entry;
+  const write = feedbackWriteQueue.then(async () => {
+    await mkdir(path.dirname(MESSAGE_FEEDBACK_PATH), { recursive: true });
+    const entries = await loadMessageFeedback();
+    entries.push(entry);
+    const tmp = `${MESSAGE_FEEDBACK_PATH}.${process.pid}.${feedbackTmpCounter++}.tmp`;
+    await writeFile(tmp, JSON.stringify({ entries }, null, 2), "utf8");
+    await rename(tmp, MESSAGE_FEEDBACK_PATH);
+    return entry;
+  });
+  // Keep later votes writable even if this request fails.
+  feedbackWriteQueue = write.then(() => {}, () => {});
+  return write;
 }

@@ -1,10 +1,11 @@
 // Familiar outcomes: what actually happened to a familiar's work, as opposed
 // to what the familiar said about it in a thread self-report.
 //
-// Pure and deterministic. Outcomes are derived on read from Board cards, so
-// there is no second store that can drift from the Board. Only machine-recorded
-// fields decide an outcome: the card lifecycle, and the PR state that the Board
-// refreshes from the GitHub API (see enrich-steps `refreshGitHubStates`).
+// Pure and deterministic. Outcomes are derived on read from Board cards and
+// from thumbs votes in chat, so there is no second store that can drift. Only
+// machine-recorded fields or explicit human verdicts decide an outcome: the card
+// lifecycle, the PR state the Board refreshes from the GitHub API (see
+// enrich-steps `refreshGitHubStates`), and a thumbs vote.
 // `lifecycleReason` is prose written by a familiar, so it is carried as detail
 // but never decides anything; grading familiars on their own words is exactly
 // what this module exists to avoid.
@@ -16,12 +17,21 @@
 //                      without merging and none merged
 // - no outcome         cancelled with no PR evidence (usually superseded,
 //                      obsolete, or a duplicate), or still open
+// - accepted / strong  thumbs up on a familiar's chat message (latest vote)
+// - rejected / strong  thumbs down on a familiar's chat message (latest vote)
+//
+// Corrections are deliberately NOT inferred from chat wording or Stop presses.
+// Measured on 8,372 stored replies (2026-09-28): matching pushback phrases was
+// about half false positives ("No worries", "Stop the dev server"), a strict
+// pattern found 1, and 63 of 88 stopped replies were a thread's last turn with
+// no follow-up. An explicit vote is the only trustworthy correction signal.
 //
 // Calibration compares a familiar's self-reported confidence with those
 // outcomes, joined by thread id. A familiar that is getting better should see
 // its outcome rate rise and its calibration gap shrink.
 
 import type { Card, CardGitHubLink } from "./cave-board-types.ts";
+import { feedbackReasonLabel, isFeedbackReason } from "./message-feedback.ts";
 import type { ThreadSelfReport } from "./thread-self-report.ts";
 
 export type FamiliarOutcomeKind = "accepted" | "rejected";
@@ -35,18 +45,34 @@ export type FamiliarOutcome = {
   sessionId: string | null;
   kind: FamiliarOutcomeKind;
   evidence: FamiliarOutcomeEvidence;
-  source: "board" | "github-pr";
-  cardId: string;
-  cardTitle: string;
+  source: "board" | "github-pr" | "chat-feedback";
+  /** Board outcomes only. */
+  cardId?: string;
+  cardTitle?: string;
+  /** Chat-feedback outcomes only: the voted assistant message. */
+  messageId?: string;
   /** PR URLs that decided the outcome; empty when the Board alone decided it. */
   refs: string[];
   at: string;
-  /** The Board's lifecycle reason, for display only. */
+  /** Display only: the Board's lifecycle reason, or a thumbs-down's reason. */
   detail?: string;
 };
 
+/** The fields of a stored thumbs vote this module reads (see message-feedback-store). */
+export type FeedbackVoteRecord = {
+  messageId: string;
+  vote: "up" | "down";
+  cleared: boolean;
+  familiarId?: string;
+  sessionId?: string;
+  /** One-tap reason given with a thumbs-down, when the user chose one. */
+  reason?: string;
+  at: string;
+};
+
 export type FamiliarCalibration = {
-  /** Threads with both a self-report and an outcome. */
+  /** Threads with both a self-report and at least one outcome. Each thread
+   *  counts once, scored by the share of its outcomes that were accepted. */
   samples: number;
   /** Mean squared error of confidence/100 against the outcome (0 best, 1 worst). */
   brier: number;
@@ -63,6 +89,8 @@ export type FamiliarOutcomeSummary = {
     rejected: number;
     /** Share of outcomes that were accepted, or null with no outcomes. */
     acceptRate: number | null;
+    /** The same split per source, so Board work and chat votes read apart. */
+    bySource: Record<FamiliarOutcome["source"], { accepted: number; rejected: number }>;
   };
   calibration: FamiliarCalibration | null;
 };
@@ -124,6 +152,36 @@ export function outcomeFromCard(card: Card): FamiliarOutcome | null {
   return null;
 }
 
+/**
+ * One outcome per voted message: its latest vote, unless that vote was
+ * toggled off. Votes without a familiar are skipped; votes recorded before the
+ * thread id existed still count, they just cannot join calibration.
+ */
+export function outcomesFromFeedback(entries: readonly FeedbackVoteRecord[]): FamiliarOutcome[] {
+  const latest = new Map<string, FeedbackVoteRecord>();
+  for (const entry of entries) {
+    const current = latest.get(entry.messageId);
+    if (!current || instant(entry.at) >= instant(current.at)) latest.set(entry.messageId, entry);
+  }
+  const outcomes: FamiliarOutcome[] = [];
+  for (const entry of latest.values()) {
+    if (entry.cleared || !entry.familiarId) continue;
+    outcomes.push({
+      id: `feedback:${entry.messageId}`,
+      familiarId: entry.familiarId,
+      sessionId: entry.sessionId ?? null,
+      kind: entry.vote === "up" ? "accepted" : "rejected",
+      evidence: "strong",
+      source: "chat-feedback",
+      messageId: entry.messageId,
+      refs: [],
+      at: entry.at,
+      ...(entry.vote === "down" && isFeedbackReason(entry.reason) ? { detail: feedbackReasonLabel(entry.reason) } : {}),
+    });
+  }
+  return outcomes;
+}
+
 /** The newest self-report per thread, so a re-reflected thread counts once. */
 function latestReportBySession(reports: readonly ThreadSelfReport[]): Map<string, ThreadSelfReport> {
   const bySession = new Map<string, ThreadSelfReport>();
@@ -139,15 +197,22 @@ export function calibrate(
   reports: readonly ThreadSelfReport[],
 ): FamiliarCalibration | null {
   const bySession = latestReportBySession(reports);
+  const perThread = new Map<string, { accepted: number; total: number }>();
+  for (const outcome of outcomes) {
+    if (!outcome.sessionId) continue;
+    const tally = perThread.get(outcome.sessionId) ?? { accepted: 0, total: 0 };
+    tally.total += 1;
+    if (outcome.kind === "accepted") tally.accepted += 1;
+    perThread.set(outcome.sessionId, tally);
+  }
   let samples = 0;
   let squared = 0;
   let signed = 0;
-  for (const outcome of outcomes) {
-    if (!outcome.sessionId) continue;
-    const report = bySession.get(outcome.sessionId);
+  for (const [sessionId, tally] of perThread) {
+    const report = bySession.get(sessionId);
     if (!report || !Number.isFinite(report.overallConfidence)) continue;
     const predicted = Math.min(100, Math.max(0, report.overallConfidence)) / 100;
-    const actual = outcome.kind === "accepted" ? 1 : 0;
+    const actual = tally.accepted / tally.total;
     samples += 1;
     squared += (predicted - actual) ** 2;
     signed += predicted - actual;
@@ -161,14 +226,23 @@ export function summarizeFamiliarOutcomes(
   familiarId: string,
   cards: readonly Card[],
   reports: readonly ThreadSelfReport[],
+  feedback: readonly FeedbackVoteRecord[] = [],
 ): FamiliarOutcomeSummary {
-  const outcomes = cards
-    .filter((card) => card.familiarId === familiarId)
-    .map(outcomeFromCard)
-    .filter((outcome): outcome is FamiliarOutcome => outcome !== null)
-    .sort((a, b) => instant(b.at) - instant(a.at) || a.id.localeCompare(b.id));
+  const outcomes = [
+    ...cards
+      .filter((card) => card.familiarId === familiarId)
+      .map(outcomeFromCard)
+      .filter((outcome): outcome is FamiliarOutcome => outcome !== null),
+    ...outcomesFromFeedback(feedback).filter((outcome) => outcome.familiarId === familiarId),
+  ].sort((a, b) => instant(b.at) - instant(a.at) || a.id.localeCompare(b.id));
   const accepted = outcomes.filter((outcome) => outcome.kind === "accepted");
   const rejected = outcomes.length - accepted.length;
+  const bySource: FamiliarOutcomeSummary["counts"]["bySource"] = {
+    board: { accepted: 0, rejected: 0 },
+    "github-pr": { accepted: 0, rejected: 0 },
+    "chat-feedback": { accepted: 0, rejected: 0 },
+  };
+  for (const outcome of outcomes) bySource[outcome.source][outcome.kind] += 1;
   return {
     familiarId,
     outcomes,
@@ -177,6 +251,7 @@ export function summarizeFamiliarOutcomes(
       acceptedStrong: accepted.filter((outcome) => outcome.evidence === "strong").length,
       rejected,
       acceptRate: outcomes.length > 0 ? accepted.length / outcomes.length : null,
+      bySource,
     },
     calibration: calibrate(
       outcomes,
