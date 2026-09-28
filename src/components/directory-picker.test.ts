@@ -46,7 +46,7 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /body\.code === LOCAL_REQUEST_REQUIRED_CODE/, "uses the machine-readable code instead of matching forbidden text");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
-  assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : atDrivesList \? "Open a drive" : "Select home";/, "the primary action names the folder it will select");
+  assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : atDrivesList \? "Open a drive" : "Select folder";/, "the primary action names the folder it will select");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
   // cave-psp8: a true modal must trap focus + restore it on close, not just listen
@@ -64,7 +64,7 @@ test("the modal keeps a stable panel and creates folders inline", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(
     src,
-    /className="flex w-\[760px\] max-w-full max-h-\[min\(680px,92dvh\)\] flex-col overflow-hidden/,
+    /className="directory-picker flex w-\[760px\] max-w-full max-h-\[min\(680px,92dvh\)\] flex-col overflow-hidden/,
     "the panel keeps its viewport caps at the width the places rail needs",
   );
   assert.match(src, /fetch\("\/api\/fs-browse", \{\s*method: "POST"/, "new folders post to the browse route");
@@ -172,7 +172,7 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
 test("the modal portals to <body> so host stacking contexts can't bury it", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
-  assert.match(src, /return createPortal\(\s*<div\s*\n?\s*className="fixed inset-0 z-\[200\]/, "the fixed scrim renders through a portal");
+  assert.match(src, /return createPortal\(\s*<div\s*\n?\s*className="directory-picker-scrim fixed inset-0 z-\[200\]/, "the fixed scrim renders through a portal");
   assert.match(src, /document\.body,\s*\n\s*\);/, "the portal targets document.body");
   assert.match(src, /if \(!open\) return null;[\s\S]*createPortal/, "closed modal renders nothing (portal only touches document.body when open)");
 });
@@ -202,8 +202,8 @@ test("the redesigned modal separates selection from navigation", () => {
     /const selectDisabled =\s*\n?\s*!cwd \|\| createBusy \|\| !pendingPath \|\| pendingPath === home \|\| isVolumeRootPath\(pendingPath\);/,
     "bare $HOME and bare volume roots cannot be selected",
   );
-  assert.match(src, />Selecting</, "the footer labels the pending selection");
-  assert.match(src, /\{pendingPath \? collapseHome\(pendingPath\) : "…"\}/, "the footer echoes the ~-collapsed pending path");
+  assert.match(src, /"Selected folder"/, "the footer labels the pending selection");
+  assert.match(src, /pendingPath \? collapseHome\(pendingPath\) : "Open a location to continue\."/, "the footer echoes the ~-collapsed pending path");
 });
 
 test("the redesigned modal keeps breadcrumbs, filtering, and per-folder state resets", () => {
@@ -522,4 +522,12 @@ test("the picker never reports a folder as empty while it is withholding dot fol
     /\$\{withheldHidden\} hidden folder\$\{withheldHidden === 1 \? " is" : "s are"\} not shown\./,
     "the sub-line says how many are withheld, under the no-match copy too",
   );
+});
+
+// A null initial location is still loading, not the user's home directory.
+test("picker root guidance requires a resolved path and touch actions keep square targets", () => {
+  const src = read("./directory-picker-modal.tsx");
+  const css = read("../styles/directory-picker-modal.css");
+  assert.match(src, /pendingPath && \(pendingPath === home \|\| isVolumeRootPath\(pendingPath\)\)/);
+  assert.match(css, /@media \(pointer: coarse\)[\s\S]*?\.directory-picker button \{\s*min-width: var\(--touch-target\);\s*min-height: var\(--touch-target\);/);
 });
