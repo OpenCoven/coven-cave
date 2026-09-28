@@ -581,6 +581,15 @@ final class AppModel {
         destinationFrameTick = CavePerformanceFrameTick { [weak self] in
             guard let self else { return }
             self.destinationFrameTick = nil
+            guard self.performanceSpans.span(for: .destinationStableFrame) === span else { return }
+            // The drawer reopened before this tick: keep the visit pending so
+            // the next completed close confirms it instead.
+            guard !self.navigationDrawerOpenValue,
+                  self.drawerClosedRevision == self.drawerPresentationRevision
+            else {
+                self.destinationCommittedSpan = span
+                return
+            }
             self.performanceSpans.finish(.destinationStableFrame, matching: span)
         }
     }

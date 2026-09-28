@@ -667,6 +667,31 @@ final class CavePerformanceTests: XCTestCase {
         XCTAssertEqual(recorder.snapshot()[CavePerformanceSpanName.destinationStableFrame.rawValue]?.count, 1)
     }
 
+    func testDestinationFrameIsNotConfirmedUnderAReopenedDrawer() async throws {
+        let suite = "CavePerformanceTests.destinationReopen.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, isPerformanceFixture: true,
+                           performanceRecorder: recorder, widgetSnapshotDefaults: defaults)
+        let window = mountDestinationProbe(app)
+        defer { window.isHidden = true; app.performanceSpans.cancelAll() }
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Reopen the drawer before the switch can confirm its frame.
+        app.selectedTab = .settings
+        app.navigationDrawerOpen = true
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(app.performanceSpans.isActive(.destinationStableFrame),
+                      "A visit under an open drawer is not a stable destination frame")
+
+        app.navigationDrawerOpen = false
+        try await waitUntil { !app.performanceSpans.isActive(.destinationStableFrame) }
+        XCTAssertFalse(app.performanceSpans.isActive(.destinationStableFrame))
+        XCTAssertEqual(recorder.snapshot()[CavePerformanceSpanName.destinationStableFrame.rawValue]?.count, 1)
+    }
+
     func testFixtureConnectionRecoveryPreservesSyntheticConnectedState() async {
         let suite = "CavePerformanceTests.recovery.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
