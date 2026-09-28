@@ -21,7 +21,7 @@ concurrency:
 jobs:
   transcript:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -51,6 +51,11 @@ jobs:
             exit 1
           fi
           echo "CAVE_TEST_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
+      # Hosted runners cold-start WebKit slowly and can raise system banners
+      # (e.g. "Ready for Apple Intelligence") over the app; the same head has
+      # passed and failed different ChatScrollingUITests cases across runs.
+      # A retry re-runs only a failed test, and every assertion must pass in
+      # full on the retry, so a consistent regression still fails the job.
       - name: Debug scroll state and existing long-chat UI regressions
         shell: bash
         run: |
@@ -58,6 +63,7 @@ jobs:
           xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
             -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
             -resultBundlePath "$RUNNER_TEMP/scroll-debug.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -retry-tests-on-failure -test-iterations 3 \
             -only-testing:CovenCaveTests/ChatScrollStateTests \
             -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
             -only-testing:CovenCaveUITests/ChatScrollingUITests \
@@ -70,6 +76,7 @@ jobs:
           xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \
             -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
             -resultBundlePath "$RUNNER_TEMP/scroll-release.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -retry-tests-on-failure -test-iterations 3 \
             -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess \
             -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink \
             | tee "$RUNNER_TEMP/scroll-release.log"
