@@ -39,7 +39,6 @@ struct ChatsHomeView: View {
     @State private var query = ""
     @State private var searchMeasurementRevision: UInt64 = 0
     @State private var searchMeasurement: CavePerformanceSpan?
-    @State private var listSnapshotCache = ChatListSnapshotCache()
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
     /// The sidebar selection: a familiar (drills into its threads in the detail
@@ -151,7 +150,7 @@ struct ChatsHomeView: View {
         let snapshot = app.performanceRecorder.measureSynchronous(
             CavePerformanceSpanName.chatListProjection.rawValue
         ) {
-            listSnapshotCache.resolve(
+            app.chatListSnapshotCache.resolve(
                 threads: app.chatThreads,
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
