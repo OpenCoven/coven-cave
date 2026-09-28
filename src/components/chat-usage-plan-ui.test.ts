@@ -13,8 +13,21 @@ assert.match(
 
 assert.match(
   chatView,
-  /fetch\(`\/api\/chat\/usage\?\$\{params\.toString\(\)\}`/,
+  /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\(\s*`\/api\/chat\/usage\?\$\{params\.toString\(\)\}`/,
   "ChatView should fetch model-aware chat usage from /api/chat/usage",
+);
+
+// #5668: a switch's identical re-runs share one request; a completed reply
+// (called with its confirmed model) always asks live.
+assert.match(
+  chatView,
+  /\{ force: modelOverride !== undefined, freshMs: USAGE_PLAN_REUSE_MS \}/,
+  "ChatView shares identical usage requests except for an explicit refresh",
+);
+assert.match(
+  chatView,
+  /void refreshUsagePlan\(ev\.responseMetadata\?\.confirmedModel \?\? ev\.responseMetadata\?\.model \?\? null\)/,
+  "a completed reply refreshes the meter with an explicit model",
 );
 
 assert.match(

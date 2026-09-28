@@ -393,6 +393,10 @@ import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-sessio
 import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 import { markStartupSettled } from "@/lib/startup-gate";
+import { sharedJsonFetch } from "@/lib/shared-json-fetch";
+
+/** How long an identical usage-meter request is shared across re-runs (#5668). */
+const USAGE_PLAN_REUSE_MS = 10_000;
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -2989,8 +2993,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           : visibleModelId(session?.model ?? familiar.model ?? undefined, familiar.harness ?? undefined));
       if (model) params.set("model", model);
       try {
-        const res = await fetch(`/api/chat/usage?${params.toString()}`, { cache: "no-store" });
-        const json = (await res.json()) as { ok?: boolean; snapshot?: ChatUsagePlanSnapshot };
+        // A switch re-runs the effect below as familiar and session fields
+        // settle, with identical parameters; those join one request (#5668).
+        // An explicit refresh (a reply completed, with its confirmed model)
+        // always asks live.
+        const { data } = await sharedJsonFetch<{ ok?: boolean; snapshot?: ChatUsagePlanSnapshot }>(
+          `/api/chat/usage?${params.toString()}`,
+          { force: modelOverride !== undefined, freshMs: USAGE_PLAN_REUSE_MS },
+        );
+        const json = data ?? {};
         const next = json.ok && json.snapshot ? json.snapshot : null;
         if (shouldApply()) setUsagePlan(next);
         return next;
