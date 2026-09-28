@@ -3123,6 +3123,54 @@ final class AppModel {
         publishWidgetSnapshot()
     }
 
+    // MARK: - Enhance tasks (#5652)
+
+    /// Live tally of the Enhance run in flight; nil when none is running.
+    var enhanceTasksTally: EnhanceTasksTally?
+    var enhancingTasks: Bool { enhanceTasksTally != nil }
+    private var enhanceTasksRun: Task<Void, Never>?
+
+    /// Have every open task's assigned familiar review it, then update or
+    /// close it — the same sweep as the web app's Enhance action. Progress is
+    /// published on `enhanceTasksTally`; the run ends with a toast that
+    /// accounts for every task, and the task list reloads.
+    func enhanceAllTasks() {
+        guard enhanceTasksRun == nil, let client else { return }
+        enhanceTasksTally = EnhanceTasksTally()
+        enhanceTasksRun = Task { @MainActor [weak self] in
+            var tally = EnhanceTasksTally()
+            var failure: Error?
+            do {
+                for try await event in client.enhanceTasks() {
+                    tally.apply(event)
+                    self?.enhanceTasksTally = tally
+                }
+            } catch {
+                failure = error
+            }
+            guard let self else { return }
+            enhanceTasksRun = nil
+            enhanceTasksTally = nil
+            if tally.total > 0 || tally.completed { await loadTasks() }
+            if let failure, !tally.completed {
+                if failure is CancellationError { return }
+                showToast(
+                    tally.total > 0
+                        ? "Enhance stopped early. \(tally.summary)"
+                        : "Enhance tasks failed — check the connection and try again.",
+                    systemImage: "exclamationmark.triangle.fill",
+                    style: .error,
+                    actionTitle: "Retry",
+                    action: { [weak self] in self?.enhanceAllTasks() }
+                )
+                Haptics.error()
+                return
+            }
+            showToast(tally.summary, systemImage: "sparkles")
+            Haptics.success()
+        }
+    }
+
     // MARK: - Task actions
 
     /// Per-card+field single-flight coordination for task mutations. Same-field

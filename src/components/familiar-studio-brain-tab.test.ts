@@ -10,7 +10,7 @@ const css = readFileSync(new URL("../styles/globals/shell-responsive.css", impor
 
 assert.match(
   source,
-  /import \{ VOICE_PROVIDER_CATALOG \} from "@\/lib\/voice\/provider-catalog"/,
+  /import \{[^}]*VOICE_PROVIDER_CATALOG \} from "@\/lib\/voice\/provider-catalog"/,
   "Familiar Studio imports the shared provider catalog",
 );
 assert.match(
@@ -376,7 +376,7 @@ assert.match(
 );
 assert.match(
   source,
-  /options=\{elevenModelOptions\}/,
+  /options=\{draftVoiceProvider === "openai" \? openAiModelOptions : elevenModelOptions\}/,
   "the ElevenLabs Voice-model picker renders the account-model dropdown options",
 );
 assert.match(

@@ -128,7 +128,7 @@ function deferredMouth() {
   };
 }
 
-function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected } = {}) {
+function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected, onError } = {}) {
   const ears = fakeEars();
   const mic = fakeMic();
   const mouth = injected ?? fakeMouth();
@@ -144,7 +144,7 @@ function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected } = {}) {
       onAssistantTranscriptFinal: (t) => events.assistantFinals.push(t),
       onPartialTranscript: () => {},
       onSpeaking: (utterance) => events.speaking.push(utterance),
-      onError: (err) => events.errors.push(err),
+      onError: (err) => { events.errors.push(err); onError?.(err); },
       onDisconnect: () => {},
     },
     brain: brain ?? (async (userText, speak) => {
@@ -157,6 +157,204 @@ function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected } = {}) {
   });
   return { ears, mic, mouth, events, session };
 }
+
+function preparableMouth() {
+  const mouth = deferredMouth();
+  const prepared = [];
+  mouth.mouth.prepare = (text) => {
+    const entry = { text, played: false, cancelled: false };
+    prepared.push(entry);
+    return {
+      speak() { entry.played = true; return mouth.mouth.speak(text); },
+      cancel() { entry.cancelled = true; },
+    };
+  };
+  return { ...mouth, prepared };
+}
+
+test("prepares only the next utterance while speaking and plays prepared speech in order", async () => {
+  const mouth = preparableMouth();
+  const { ears, session } = loopFixture({ mouth, brain: async (_text, speak) => {
+    for (const sentence of ["One.", "Two.", "Three.", "Four."]) speak(sentence);
+    return "One. Two. Three. Four.";
+  } });
+  try {
+    ears.handlers.onFinal("count");
+    await tick();
+    assert.deepEqual(mouth.spoken, ["One."]);
+    assert.deepEqual(mouth.prepared.map(entry => entry.text), ["Two."]);
+    assert.equal(mouth.prepared[0].played, false, "lookahead does not play overlapping audio");
+    mouth.release();
+    await tick();
+    assert.deepEqual(mouth.spoken, ["One.", "Two."]);
+    assert.equal(mouth.prepared[0].played, true, "consume the existing preparation");
+    assert.deepEqual(mouth.prepared.map(entry => entry.text), ["Two.", "Three."]);
+    mouth.release();
+    await tick();
+    assert.deepEqual(mouth.spoken, ["One.", "Two.", "Three."]);
+    assert.deepEqual(mouth.prepared.map(entry => entry.text), ["Two.", "Three.", "Four."]);
+    mouth.release();
+    await tick();
+    mouth.release();
+    await tick();
+    assert.deepEqual(mouth.spoken, ["One.", "Two.", "Three.", "Four."]);
+  } finally { await session.close(); }
+});
+
+for (const action of ["interrupt", "close"]) {
+  test(`${action} cancels prepared speech and drops queued utterances`, async () => {
+    const mouth = preparableMouth();
+    const { ears, session } = loopFixture({ mouth, brain: async (_text, speak) => {
+      speak("One."); speak("Two."); speak("Three.");
+      return "One. Two. Three.";
+    } });
+    ears.handlers.onFinal("count");
+    await tick();
+    assert.equal(mouth.prepared.length, 1);
+    await session[action]();
+    await tick();
+    assert.equal(mouth.prepared[0].cancelled, true);
+    assert.deepEqual(mouth.spoken.filter(text => !text.startsWith("<")), ["One."]);
+    await session.close();
+  });
+}
+
+test("a playback failure cancels the speculative request before continuing the queue", async () => {
+  const mouth = preparableMouth();
+  let rejectFirst;
+  const speak = mouth.mouth.speak;
+  mouth.mouth.speak = text => text === "One."
+    ? new Promise((_resolve, reject) => { rejectFirst = reject; })
+    : speak(text);
+  const { ears, events, session } = loopFixture({ mouth, brain: async (_text, emit) => {
+    emit("One."); emit("Two."); return "One. Two.";
+  } });
+  try {
+    ears.handlers.onFinal("count");
+    await tick();
+    rejectFirst(new VoiceConnectError("audio_playback_failed"));
+    await tick();
+    assert.equal(mouth.prepared[0]?.cancelled, true);
+    assert.equal(mouth.prepared[0].played, false, "a cancelled preparation cannot be consumed");
+    assert.deepEqual(events.errors.map(error => error.message), ["audio_playback_failed"]);
+    assert.deepEqual(mouth.spoken, ["Two."]);
+  } finally { await session.close(); }
+});
+
+test("late failure from interrupted playback does not report against the new turn", async () => {
+  let rejectFirst;
+  const { ears, events, session } = loopFixture({ mouth: { mouth: {
+    speak: text => text === "first" ? new Promise((_resolve, reject) => { rejectFirst = reject; }) : Promise.resolve(),
+    cancel() {}, interrupt() {},
+  } }, brain: async (text, speak) => { speak(text); return text; } });
+  ears.handlers.onFinal("first");
+  await tick();
+  session.sendText("second");
+  rejectFirst(new VoiceConnectError("old_audio_failure"));
+  await tick();
+  assert.deepEqual(events.errors, []);
+  assert.deepEqual(events.assistantFinals, ["first", "second"]);
+  await session.close();
+});
+
+for (const error of [new VoiceConnectError("old_brain_failure"), new Error("late runtime failure")]) {
+  test(`an interrupted brain's ${error.name} cannot fail the call or block the newer reply`, async () => {
+    let rejectFirst;
+    const calls = [];
+    const { events, session } = loopFixture({ brain: async (text, speak) => {
+      calls.push(text);
+      if (text === "first") await new Promise((_resolve, reject) => { rejectFirst = reject; });
+      speak(`heard: ${text}`);
+      return `heard: ${text}`;
+    } });
+    try {
+      session.sendText("first");
+      session.sendText("second");
+      assert.deepEqual(calls, ["first"], "the newer reply waits for the active brain turn");
+      rejectFirst(error);
+      await tick();
+      assert.deepEqual(events.errors, [], "a superseded turn must not send PROVIDER_ERROR to the overlay");
+      assert.deepEqual(calls, ["first", "second"]);
+      assert.deepEqual(events.assistantFinals, ["heard: second"]);
+    } finally { await session.close(); }
+  });
+}
+
+for (const error of [new VoiceConnectError("current_brain_failure"), new Error("runtime failure")]) {
+  test(`a current brain's ${error.name} still reports and releases its queued user turn`, async () => {
+    let rejectFirst;
+    const { ears, events, session } = loopFixture({ brain: async (text, speak) => {
+      if (text === "first") await new Promise((_resolve, reject) => { rejectFirst = reject; });
+      speak(`heard: ${text}`);
+      return `heard: ${text}`;
+    } });
+    try {
+      ears.handlers.onFinal("first");
+      // Recognition finals queue without barge-in, so this is a current error.
+      ears.handlers.onFinal("second");
+      rejectFirst(error);
+      await tick();
+      assert.deepEqual(events.errors.map(value => value.message), [
+        error instanceof VoiceConnectError ? "current_brain_failure" : "test_brain_failed",
+      ]);
+      assert.deepEqual(events.assistantFinals, ["heard: second"]);
+    } finally { await session.close(); }
+  });
+}
+
+test("closing on a current brain error stops active speech and discards prepared and queued speech", async () => {
+  const mouth = preparableMouth();
+  let rejectBrain;
+  const { ears, events, session } = loopFixture({ mouth,
+    onError: () => { void session.close(); },
+    brain: async (_text, speak) => {
+      speak("Active."); speak("Prepared."); speak("Queued.");
+      await new Promise((_resolve, reject) => { rejectBrain = reject; });
+      return "";
+    },
+  });
+  ears.handlers.onFinal("start");
+  await tick();
+  rejectBrain(new VoiceConnectError("familiar_brain_failed"));
+  await tick();
+  assert.deepEqual(events.errors.map(error => error.message), ["familiar_brain_failed"]);
+  assert.equal(mouth.prepared[0].cancelled, true);
+  assert.deepEqual(mouth.spoken, ["Active.", "<cancel>"]);
+  assert.equal(ears.log.at(-1), "close");
+});
+
+test("loop transcript keys reconcile a typed interruption with the earlier streamed reply", async () => {
+  const { applyPartial, applyFinal, emptyTranscript } = await import("./call-transcript.ts");
+  let transcript = emptyTranscript;
+  const ears = fakeEars();
+  let finish;
+  const callbacks = {
+    onUserTranscriptFinal(text, key) { transcript = applyFinal(transcript, "user", text, key); },
+    onAssistantTranscriptFinal(text, key) { transcript = applyFinal(transcript, "assistant", text, key); },
+    onPartialTranscript(role, text, key) { transcript = applyPartial(transcript, role, text, key); },
+    onError() {}, onDisconnect() {},
+  };
+  const session = connectSpeechLoop({
+    mic: fakeMic().stream, ears: ears.factory, callbacks,
+    mouth: { speak: async () => {}, cancel() {}, interrupt() {} },
+    brain: async (text, _speak, key) => {
+      callbacks.onPartialTranscript("assistant", `Answer ${text}`, key);
+      if (text === "first") await new Promise(resolve => { finish = resolve; });
+      return `Answer ${text}.`;
+    },
+    brainErrorCode: "test", brainErrorHint: "test",
+  });
+  ears.handlers.onPartial("first");
+  ears.handlers.onFinal("first");
+  session.sendText("second");
+  finish();
+  await tick();
+  assert.deepEqual(transcript.turns.map(t => [t.role, t.text, t.final]), [
+    ["user", "first", true], ["assistant", "Answer first.", true],
+    ["user", "second", true], ["assistant", "Answer second.", true],
+  ]);
+  await session.close();
+});
 
 test("a user final runs the brain, hushes while speaking, listens after the queue drains", async () => {
   const { ears, mouth, events } = loopFixture();

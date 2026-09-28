@@ -5,11 +5,43 @@ import {
   applyFinal,
   applyPartial,
   applySpeaking,
+  applyInterrupted,
   emptyTranscript,
   MAX_CALL_TURNS,
   speakingTurnId,
   splitSpokenText,
 } from "./call-transcript.ts";
+
+test("keyed transcripts reconcile interleaved roles without duplicate bubbles", () => {
+  let t = applyPartial(emptyTranscript, "assistant", "Hello", "a1");
+  const assistantId = t.turns[0].id;
+  t = applyPartial(t, "user", "Next", "u1");
+  const userId = t.turns[1].id;
+  t = applyPartial(t, "assistant", "Hello Val", "a1");
+  t = applyFinal(t, "assistant", "Hello Val.", "a1");
+  t = applyFinal(t, "user", "Next question.", "u1");
+  t = applyFinal(t, "assistant", "Hello Val.", "a1");
+  t = applyPartial(t, "assistant", "late", "a1");
+  assert.deepEqual(t.turns.map(({ id, role, text, final }) => ({ id, role, text, final })), [
+    { id: assistantId, role: "assistant", text: "Hello Val.", final: true },
+    { id: userId, role: "user", text: "Next question.", final: true },
+  ]);
+  t = applyFinal(t, "assistant", "Hello Val.", "a2");
+  assert.equal(t.turns.length, 3, "identical text in a different item is a new turn");
+});
+
+test("interrupt settles only its provisional item without merging the next response", () => {
+  let t = applyPartial(emptyTranscript, "assistant", "Old prefix", "a1");
+  t = applyPartial(t, "user", "Wait", "u1");
+  t = applyInterrupted(t, "assistant", "a1");
+  t = applyPartial(t, "assistant", "New answer", "a2");
+  t = applyPartial(t, "assistant", "late old", "a1");
+  assert.equal(t.turns[0].final, true);
+  assert.equal(t.turns[0].text, "Old prefix");
+  assert.equal(t.turns[1].final, false);
+  assert.equal(t.turns[2].text, "New answer");
+  assert.equal(t.turns[2].final, false);
+});
 
 test("partials replace the open turn instead of stacking bubbles", () => {
   let t = applyPartial(emptyTranscript, "user", "light the");
@@ -62,12 +94,13 @@ test("blank text never opens a turn", () => {
   assert.equal(applyFinal(emptyTranscript, "user", "\n").turns.length, 0);
 });
 
-test("a long call keeps a bounded window of turns", () => {
+test("a long call retains earlier turns for the full transcript", () => {
   let t = emptyTranscript;
   for (let i = 0; i < MAX_CALL_TURNS + 12; i += 1) {
     t = applyFinal(t, i % 2 === 0 ? "user" : "assistant", `turn ${i}`);
   }
-  assert.equal(t.turns.length, MAX_CALL_TURNS);
+  assert.equal(t.turns.length, MAX_CALL_TURNS + 12);
+  assert.equal(t.turns[0].text, "turn 0");
   assert.equal(t.turns[t.turns.length - 1].text, `turn ${MAX_CALL_TURNS + 11}`);
 });
 

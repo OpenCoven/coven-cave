@@ -27,12 +27,6 @@ test("every voice carries the traits the picker surfaces", () => {
   }
 });
 
-test("cedar and marin are flagged realtime-only (TTS preview may reject them)", () => {
-  assert.equal(findOpenAiVoice("cedar")?.realtimeOnly, true);
-  assert.equal(findOpenAiVoice("marin")?.realtimeOnly, true);
-  const others = OPENAI_REALTIME_VOICES.filter((voice) => !["cedar", "marin"].includes(voice.id));
-  assert.ok(others.every((voice) => !voice.realtimeOnly));
-});
 
 test("detail line reads Gender · Accent · vibe", () => {
   const ballad = findOpenAiVoice("ballad");
@@ -58,4 +52,8 @@ test("preview text is stable per voice and names the voice", () => {
   const marin = findOpenAiVoice("marin");
   assert.equal(openAiVoicePreviewText(marin), openAiVoicePreviewText(marin));
   assert.match(openAiVoicePreviewText(marin), /Marin/);
+});
+
+test("the default uses an OpenAI recommended high-quality voice", () => {
+  assert.equal(DEFAULT_OPENAI_VOICE_ID, "marin");
 });

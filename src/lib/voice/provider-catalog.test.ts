@@ -46,7 +46,7 @@ test("Gemini remains cataloged but unavailable and non-defaultable", () => {
 
 test("catalog uses shared OpenAI and ElevenLabs defaults", () => {
   assert.deepEqual(getVoiceProviderDefinition("openai")?.defaults, {
-    model: "gpt-realtime",
+    model: "gpt-realtime-2.1",
     voice: DEFAULT_OPENAI_VOICE_ID,
   });
   assert.deepEqual(getVoiceProviderDefinition("elevenlabs")?.defaults, {
@@ -57,7 +57,7 @@ test("catalog uses shared OpenAI and ElevenLabs defaults", () => {
 });
 
 test("reviewed OpenAI Realtime model ids are immutable and validated centrally", () => {
-  assert.deepEqual(OPENAI_REALTIME_MODEL_IDS, ["gpt-realtime"]);
+  assert.deepEqual(OPENAI_REALTIME_MODEL_IDS, ["gpt-realtime-2.1", "gpt-realtime-2.1-mini", "gpt-realtime"]);
   assert.equal(Object.isFrozen(OPENAI_REALTIME_MODEL_IDS), true);
   assert.equal(isReviewedOpenAiRealtimeModelId("gpt-realtime"), true);
   assert.equal(isReviewedOpenAiRealtimeModelId("gpt-4o-realtime-preview"), false);
@@ -111,7 +111,7 @@ test("catalog definitions and nested defaults are deeply immutable", () => {
   assert.strictEqual(subsequent, openai);
   assert.equal(subsequent?.vaultKey, "OPENAI_API_KEY");
   assert.deepEqual(subsequent?.defaults, {
-    model: "gpt-realtime",
+    model: "gpt-realtime-2.1",
     voice: DEFAULT_OPENAI_VOICE_ID,
   });
 });

@@ -659,6 +659,47 @@ struct CaveClient {
 
     // MARK: - Tasks (board)
 
+    /// Run Enhance over every open task: each is reviewed by its own assigned
+    /// familiar, which updates it or closes it (#5652). The server streams one
+    /// NDJSON event per step. A sweep can take many minutes, so this uses the
+    /// long-lived stream session; the REST session's 300 s cap would cut it off.
+    /// Cancelling the stream aborts the request, and the server stops after the
+    /// task it is working on.
+    func enhanceTasks() -> AsyncThrowingStream<EnhanceTasksEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task { @MainActor in
+                do {
+                    let payload = try JSONSerialization.data(
+                        withJSONObject: ["intent": "board-enrich-steps", "scope": "all"]
+                    )
+                    var req = try request("api/board/enrich-steps", method: "POST", body: payload)
+                    req.setValue("board-enrich-steps", forHTTPHeaderField: "x-coven-cave-intent")
+                    req.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+                    req.timeoutInterval = 600
+
+                    let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
+                    if let http = resp as? HTTPURLResponse,
+                       !(200..<300).contains(http.statusCode) {
+                        let data = try await Self.readServerErrorBody(from: bytes)
+                        throw Self.serverResponseError(statusCode: http.statusCode, data: data)
+                    }
+                    let decoder = JSONDecoder()
+                    for try await line in bytes.lines {
+                        let trimmed = line.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty,
+                              let event = try? decoder.decode(EnhanceTasksEvent.self, from: Data(trimmed.utf8))
+                        else { continue }
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     func tasks() async throws -> [BoardCard] {
         let req = try request("api/board")
         let (data, resp) = try await data(for: req)

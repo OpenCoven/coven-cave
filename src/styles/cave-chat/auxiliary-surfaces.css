@@ -960,15 +960,10 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .workspace-rail-reopen:hover .workspace-rail-reopen__tab,
   .workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab { background: var(--bg-raised); }
-  .voice-call-overlay__dialog { background: var(--bg-raised); }
 }
 @media (prefers-reduced-transparency: reduce) {
   .workspace-rail-reopen:hover .workspace-rail-reopen__tab,
   .workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab {
-    background: var(--bg-raised);
-    backdrop-filter: none;
-  }
-  .voice-call-overlay__dialog {
     background: var(--bg-raised);
     backdrop-filter: none;
   }

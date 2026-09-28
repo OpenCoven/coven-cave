@@ -249,7 +249,7 @@ describe("VoiceProviderSettings", () => {
 
     await act(async () => provider.props.onChange({ target: { value: "openai" } }));
     expect(updateAppPreferences).toHaveBeenLastCalledWith({
-      voice: { defaultProvider: "openai", defaultModel: "gpt-realtime", defaultVoice: "alloy" },
+      voice: { defaultProvider: "openai", defaultModel: "gpt-realtime-2.1", defaultVoice: "marin" },
     });
     expect(announce).toHaveBeenLastCalledWith("Default voice provider set to OpenAI Realtime.", "polite");
 
