@@ -392,6 +392,7 @@ import {
 import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
 import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
+import { markStartupSettled } from "@/lib/startup-gate";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -4360,7 +4361,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Open-to-first-paint for this thread (#5448), recorded once and only when
     // a transcript actually paints: a cache hit, the durable copy, or the
     // network payload. An abandoned or failed open records nothing.
-    const endThreadOpenSpan = startSpan(THREAD_OPEN_SPAN);
+    const endThreadSpan = startSpan(THREAD_OPEN_SPAN);
+    // A painted transcript is what app load was waiting for (#5649).
+    const endThreadOpenSpan = () => {
+      endThreadSpan();
+      markStartupSettled();
+    };
     const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
