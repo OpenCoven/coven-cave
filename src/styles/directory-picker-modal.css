@@ -87,6 +87,17 @@
 @media (pointer: coarse) {
   .directory-picker input { font-size: var(--text-lg); }
   .directory-picker button { min-height: var(--touch-target); }
+  .directory-picker-address form,
+  .directory-picker-search label { min-height: var(--touch-target); }
+  .directory-picker-row > button:first-child {
+    min-height: var(--touch-target);
+    padding-inline-end: calc(var(--touch-target) * 2 + var(--space-3));
+  }
+  .directory-picker-row > button:not(:first-child) { min-width: var(--touch-target); }
+  .directory-picker-row > button:last-child { right: var(--space-1); }
+  .directory-picker-row > button:nth-child(2):not(:last-child) {
+    right: calc(var(--touch-target) + var(--space-1));
+  }
 }
 @media (pointer: fine) {
   .directory-picker-address input,
