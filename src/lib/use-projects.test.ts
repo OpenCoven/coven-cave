@@ -38,8 +38,8 @@ assert.match(
 );
 assert.match(
   cacheSource,
-  /lastGoodProjects\.set\(snapshotKey\(familiarId\), payload\.projects\)/,
-  "snapshots are recorded per familiar scope, only from successful responses",
+  /payload\.ok !== false && payload\.projects && generation === projectsGeneration\) \{\s*lastGoodProjects\.set\(snapshotKey\(familiarId\), payload\.projects\);/,
+  "snapshots are recorded per familiar scope, only from successful responses that no mutation has overtaken",
 );
 
 // The clear must live in the [enabled, load] effect (load is memoized on
@@ -73,7 +73,7 @@ assert.match(
 );
 assert.match(
   cacheSource,
-  /export function advanceProjectsCacheGeneration\(\): number \{\s*projectsGeneration \+= 1;\s*projectsCache\.clear\(\);\s*return projectsGeneration;\s*\}/,
+  /export function advanceProjectsCacheGeneration\(\): number \{\s*projectsGeneration \+= 1;\s*projectsCache\.clear\(\);[\s\S]{0,200}?lastGoodProjects\.clear\(\);\s*return projectsGeneration;\s*\}/,
   "one shared generation advance clears old entries once per emitted mutation",
 );
 assert.match(

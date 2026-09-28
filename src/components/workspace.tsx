@@ -1913,7 +1913,9 @@ export function Workspace() {
   // Last applied list per familiar scope, so switching back to a familiar
   // paints its chats in the same frame instead of after the list round trip
   // (a cold compute takes over a second). The fetch that follows replaces it.
-  const sessionsByScopeRef = useRef(new Map<string, SessionRow[]>());
+  // Holds the base rows too: a degraded response rebuilds from
+  // baseSessionsRef, so a restored snapshot has to seed it as well.
+  const sessionsByScopeRef = useRef(new Map<string, { base: SessionRow[]; visible: SessionRow[] }>());
   const sessionsListEtagRef = useRef<{ scopeKey: string; etag: string; payload: { ok?: boolean; degraded?: boolean; sessions?: unknown[] } } | null>(null);
   // Familiar-switch latency (#5448): from the scope change until that scope's
   // list is applied. The first load is boot, not a switch, so it's not timed.
@@ -2023,7 +2025,7 @@ export function Workspace() {
         if (!degraded) {
           const byScope = sessionsByScopeRef.current;
           byScope.delete(capturedScopeKey);
-          byScope.set(capturedScopeKey, visibleSessions);
+          byScope.set(capturedScopeKey, { base: baseSessions, visible: visibleSessions });
           if (byScope.size > SESSIONS_SCOPE_SNAPSHOTS) byScope.delete(byScope.keys().next().value!);
         }
         if (familiarSwitchSpanRef.current?.scopeKey === capturedScopeKey) {
@@ -2073,6 +2075,20 @@ export function Workspace() {
     loadFamiliars();
     void loadGitHubTasks();
   }, [loadFamiliars, loadGitHubTasks]);
+  // Paint a familiar's last list for its scope in the same frame as the
+  // switch. Declared before the load effect below, so it runs first.
+  useEffect(() => {
+    const scopeKey = chatAttentionProjectionScopeKey(activeId);
+    const snapshot = sessionsByScopeRef.current.get(scopeKey);
+    if (snapshot) {
+      const base = filterDeletedSessions(snapshot.base, locallyDeletedSessionIdsRef.current);
+      baseSessionsRef.current = base;
+      baseSessionScopeKeyByIdRef.current = new Map(base.map((session) => [session.id, scopeKey]));
+      const rows = filterDeletedSessions(snapshot.visible, locallyDeletedSessionIdsRef.current);
+      setSessions((prev) => (sameSessionList(prev, rows) ? prev : rows));
+      setSessionsScopeFamiliarId(activeId);
+    }
+  }, [activeId]);
   useEffect(() => {
     if (familiarSwitchBaselineRef.current) {
       familiarSwitchSpanRef.current = {
@@ -2081,12 +2097,6 @@ export function Workspace() {
       };
     }
     familiarSwitchBaselineRef.current = true;
-    const snapshot = sessionsByScopeRef.current.get(chatAttentionProjectionScopeKey(activeId));
-    if (snapshot) {
-      const rows = filterDeletedSessions(snapshot, locallyDeletedSessionIdsRef.current);
-      setSessions((prev) => (sameSessionList(prev, rows) ? prev : rows));
-      setSessionsScopeFamiliarId(activeId);
-    }
     void loadSessions();
   }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime

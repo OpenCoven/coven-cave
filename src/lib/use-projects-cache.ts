@@ -44,12 +44,16 @@ async function requestProjects(familiarId: string | null): Promise<ProjectsPaylo
   const url = familiarId
     ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
     : "/api/projects";
+  const generation = projectsGeneration;
   const res = await fetch(url);
   // Thrown (not returned) so HTTP failures are never cached — swr-cache only
   // stores resolutions — and every coalesced caller sees the same error.
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const payload = normalizePayload((await res.json()) as ProjectsPayload);
-  if (payload.ok !== false && payload.projects) lastGoodProjects.set(snapshotKey(familiarId), payload.projects);
+  // A response that started before a mutation is not a snapshot of it.
+  if (payload.ok !== false && payload.projects && generation === projectsGeneration) {
+    lastGoodProjects.set(snapshotKey(familiarId), payload.projects);
+  }
   return payload;
 }
 
@@ -107,6 +111,9 @@ function generationKey(familiarId: string | null): string {
 export function advanceProjectsCacheGeneration(): number {
   projectsGeneration += 1;
   projectsCache.clear();
+  // A mutation (delete, grant change) makes every snapshot suspect: a switch
+  // must not seed a removed project or revoked grant, so it waits instead.
+  lastGoodProjects.clear();
   return projectsGeneration;
 }
 

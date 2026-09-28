@@ -245,7 +245,9 @@ type ThreadRowProps = {
   onToggleSelect?: () => void;
   /** Transient per-row outcome after a broadcast: "sent" | "failed". */
   broadcast?: "sent" | "failed" | null;
-  onTogglePin: () => void;
+  /** Omitted where pinning has no home (reflection rows: Pinned only lists
+   *  live chats), so the row offers no dead Pin button. */
+  onTogglePin?: () => void;
   /** Archive/unarchive via the sessions PATCH (same endpoint as chat-list). */
   onToggleArchive: () => void;
   /** True while any row's archive PATCH is in flight — disables the buttons. */
@@ -416,16 +418,18 @@ function ThreadRow({
         </span>
       ) : (
         <span className="cnav__row-actions">
-          <button
-            type="button"
-            title={pinned ? "Unpin thread" : "Pin thread"}
-            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-            aria-pressed={pinned}
-            onClick={onTogglePin}
-            className={`cnav__icon-btn focus-ring${pinned ? " is-on" : ""}`}
-          >
-            <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
-          </button>
+          {onTogglePin ? (
+            <button
+              type="button"
+              title={pinned ? "Unpin thread" : "Pin thread"}
+              aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+              aria-pressed={pinned}
+              onClick={onTogglePin}
+              className={`cnav__icon-btn focus-ring${pinned ? " is-on" : ""}`}
+            >
+              <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
+            </button>
+          ) : null}
           <button
             type="button"
             title={archived ? "Unarchive chat" : "Archive chat"}
@@ -1099,7 +1103,6 @@ export function SidebarChatsSection({
                         selected={false}
                         onToggleSelect={() => undefined}
                         broadcast={null}
-                        onTogglePin={() => togglePin(session.id)}
                         onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
                         archiving={archivingId !== null}
                         onRequestDelete={() => setConfirmingSessionId(session.id)}

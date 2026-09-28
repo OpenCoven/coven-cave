@@ -270,6 +270,10 @@ test("reflection runs sit in their own collapsed section, never among live chats
   expect(titles()).toEqual(["Live chat"]);
   await act(async () => { toggle.props.onClick(); });
   expect(titles()).toEqual(["Live chat", "Thread you just completed (session…"]);
+  const pinLabels = renderer.root
+    .findAll((node) => node.type === "button" && String(node.props["aria-label"] ?? "").startsWith("Pin "))
+    .map((node) => String(node.props["aria-label"]));
+  expect(pinLabels).toEqual(["Pin Live chat"]);
   await act(async () => renderer.unmount());
 });
 
