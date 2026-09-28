@@ -16,14 +16,15 @@ const dashboard = readFileSync(new URL("./chat-new-dashboard.tsx", import.meta.u
 test("the snapshot is one-shot, abort-guarded, focus-refreshed — never polled", () => {
   assert.match(hook, /new AbortController\(\)/, "the load allocates an abort controller");
   assert.match(hook, /controller\.signal\.aborted/, "aborted responses are ignored");
-  assert.match(hook, /useRefreshOnFocus\(load, \{ enabled \}\)/, "the snapshot refreshes on window refocus");
+  // A refocus refreshes live, past the shared remount cache (#5663).
+  assert.match(hook, /const refresh = useCallback\(\(\) => load\(true\), \[load\]\);\s*useRefreshOnFocus\(refresh, \{ enabled \}\)/, "the snapshot refreshes on window refocus");
   assert.doesNotMatch(hook, /setInterval/, "the starting page must not poll");
 });
 
 test("the Queue project comes from the Queue's own selection, not the chat's", () => {
   assert.match(
     hook,
-    /fetch\("\/api\/queue\/readiness"/,
+    /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/queue\/readiness"/,
     "readiness owns which project the Queue means",
   );
   assert.match(

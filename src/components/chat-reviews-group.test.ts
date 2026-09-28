@@ -15,7 +15,8 @@ const dashboard = readFileSync(new URL("./chat-new-dashboard.tsx", import.meta.u
 test("the snapshot is one-shot, abort-guarded, focus-refreshed — never polled", () => {
   assert.match(hook, /new AbortController\(\)/, "the load allocates an abort controller");
   assert.match(hook, /controller\.signal\.aborted/, "aborted responses are ignored");
-  assert.match(hook, /useRefreshOnFocus\(load, \{ enabled \}\)/, "the snapshot refreshes on window refocus");
+  // A refocus refreshes live, past the shared remount cache (#5663).
+  assert.match(hook, /const refresh = useCallback\(\(\) => load\(true\), \[load\]\);\s*useRefreshOnFocus\(refresh, \{ enabled \}\)/, "the snapshot refreshes on window refocus");
   assert.doesNotMatch(hook, /setInterval/, "the starting page must not poll");
 });
 
@@ -30,7 +31,7 @@ test("no token, a rejected token, or a thrown fetch all resolve to absence", () 
     /\} catch \{[\s\S]{0,300}setConfigured\(false\);[\s\S]{0,80}setItems\(\[\]\);/,
     "a thrown fetch degrades to an empty snapshot",
   );
-  assert.match(hook, /fetch\("\/api\/github\/assigned"/, "reads the established assigned route");
+  assert.match(hook, /(?:fetch|sharedJsonFetch(?:<[^>]*>)?)\("\/api\/github\/assigned"/, "reads the established assigned route");
 });
 
 test("both new-session surfaces mount the group, and neither renders it empty", () => {
