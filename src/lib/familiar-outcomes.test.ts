@@ -122,6 +122,16 @@ describe("calibrate", () => {
     assert.ok(Math.abs((result?.meanGap ?? NaN) - -0.1) < 1e-9);
   });
 
+  it("orders reports by instant, not text, when timestamps carry offsets", () => {
+    // 01:00+02:00 on the 2nd is 23:00Z on the 1st: earlier than 23:30Z, but it
+    // sorts later as text. The 23:30Z report is the newest.
+    const result = calibrate([accepted], [
+      report("s-accepted", 20, "2026-09-02T01:00:00+02:00"),
+      report("s-accepted", 90, "2026-09-01T23:30:00Z"),
+    ]);
+    assert.ok(Math.abs((result?.meanGap ?? NaN) - -0.1) < 1e-9);
+  });
+
   it("ignores outcomes without a linked report, including redacted legacy ids", () => {
     assert.equal(calibrate([accepted], [report("[redacted]", 80)]), null);
     assert.equal(calibrate([{ ...accepted, sessionId: null }], [report("s-accepted", 80)]), null);
@@ -145,6 +155,23 @@ describe("summarizeFamiliarOutcomes", () => {
     assert.deepEqual(summary.outcomes.map((outcome) => outcome.cardId), ["new", "bad", "old"]);
     assert.deepEqual(summary.counts, { accepted: 2, acceptedStrong: 1, rejected: 1, acceptRate: 2 / 3 });
     assert.equal(summary.calibration?.samples, 1, "another familiar's report never calibrates this one");
+  });
+
+  it("orders outcomes and dates rejections by instant when timestamps carry offsets", () => {
+    const cards = [
+      // 23:00Z on the 1st, written with an offset: text sorts it after "2026-09-01T23:30:00Z".
+      card({ id: "offset", lifecycleAt: "2026-09-02T01:00:00+02:00" }),
+      card({ id: "zulu", lifecycleAt: "2026-09-01T23:30:00Z" }),
+      card({
+        id: "bad",
+        lifecycle: "cancelled",
+        status: "blocked",
+        github: [pr(1, "closed", "2026-09-02T01:00:00+02:00"), pr(2, "closed", "2026-09-01T23:30:00Z"), pr(3, "closed", "not a date")],
+      }),
+    ];
+    const summary = summarizeFamiliarOutcomes("cody", cards, []);
+    assert.deepEqual(summary.outcomes.map((outcome) => outcome.cardId), ["bad", "zulu", "offset"]);
+    assert.equal(summary.outcomes[0].at, "2026-09-01T23:30:00Z", "the latest closure by instant dates the rejection");
   });
 
   it("reports no rate and no calibration when there is no evidence yet", () => {

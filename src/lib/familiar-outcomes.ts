@@ -67,6 +67,17 @@ export type FamiliarOutcomeSummary = {
   calibration: FamiliarCalibration | null;
 };
 
+/**
+ * A timestamp as an instant, for ordering. Timestamps may carry an offset
+ * (`+02:00`) or a `Z`, so their text does not sort chronologically; compare
+ * parsed instants instead. An unparseable value sorts as the oldest possible,
+ * never as NaN, which would break any comparator it reaches.
+ */
+function instant(value: string | undefined): number {
+  const ms = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
+}
+
 function isMergedPr(link: CardGitHubLink): boolean {
   return link.kind === "pr" && link.state === "merged";
 }
@@ -99,9 +110,8 @@ export function outcomeFromCard(card: Card): FamiliarOutcome | null {
   if (merged.length === 0 && closedUnmerged.length > 0) {
     const latest = closedUnmerged
       .map((link) => link.updatedAt)
-      .filter((value): value is string => typeof value === "string")
-      .sort()
-      .at(-1);
+      .filter((value): value is string => typeof value === "string" && Number.isFinite(Date.parse(value)))
+      .reduce<string | undefined>((newest, value) => (newest === undefined || instant(value) > instant(newest) ? value : newest), undefined);
     return {
       ...base,
       kind: "rejected",
@@ -119,7 +129,7 @@ function latestReportBySession(reports: readonly ThreadSelfReport[]): Map<string
   const bySession = new Map<string, ThreadSelfReport>();
   for (const report of reports) {
     const current = bySession.get(report.sessionId);
-    if (!current || report.reportedAt > current.reportedAt) bySession.set(report.sessionId, report);
+    if (!current || instant(report.reportedAt) > instant(current.reportedAt)) bySession.set(report.sessionId, report);
   }
   return bySession;
 }
@@ -156,7 +166,7 @@ export function summarizeFamiliarOutcomes(
     .filter((card) => card.familiarId === familiarId)
     .map(outcomeFromCard)
     .filter((outcome): outcome is FamiliarOutcome => outcome !== null)
-    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id.localeCompare(b.id)));
+    .sort((a, b) => instant(b.at) - instant(a.at) || a.id.localeCompare(b.id));
   const accepted = outcomes.filter((outcome) => outcome.kind === "accepted");
   const rejected = outcomes.length - accepted.length;
   return {
