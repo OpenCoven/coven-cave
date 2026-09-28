@@ -898,7 +898,7 @@ assert.match(
 );
 assert.match(
   home,
-  /listSnapshotCache\.resolve\([\s\S]{0,220}familiars: app\.familiars/,
+  /chatListSnapshotCache\.resolve\([\s\S]{0,220}familiars: app\.familiars/,
   "global Chats keeps exact familiar identity without a project filter",
 );
 assert.match(
