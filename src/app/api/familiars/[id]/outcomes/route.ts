@@ -24,7 +24,7 @@ function redactOutcome(outcome: FamiliarOutcome): FamiliarOutcome {
  * GET /api/familiars/[id]/outcomes
  *
  * What actually happened to this familiar's work (accepted or rejected, from
- * Board lifecycle, GitHub PR state, and thumbs votes in chat), and how well its self-reported
+ * Board lifecycle, GitHub PR state, and thumbs votes in chat, and how well its self-reported
  * confidence predicted that. See src/lib/familiar-outcomes.ts for the rules.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
