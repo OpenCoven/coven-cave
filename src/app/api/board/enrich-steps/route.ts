@@ -499,10 +499,11 @@ function githubTarget(item: CardGitHubLink): string {
  * The task's end state implied by its linked GitHub items, or null.
  *
  * A merged PR or an issue closed as done means the work landed: the task
- * completes. A PR closed without merging, or an issue closed as not planned,
- * means it did not (#5635): the task is cancelled, but only when nothing linked
- * landed and no linked issue or PR is still open, since an open one is usually
- * the replacement. An issue closed with no recorded reason counts as done.
+ * completes. A PR closed without merging, or an issue closed as not planned or
+ * as a duplicate, means it did not (#5635, #5647): the task is cancelled, but
+ * only when nothing linked landed and no linked issue or PR is still open,
+ * since an open one is usually the replacement. An issue closed with no
+ * recorded reason counts as done.
  */
 function terminalPatchFromGitHub(
   card: Card,
@@ -510,10 +511,11 @@ function terminalPatchFromGitHub(
   now: string,
 ): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
   const tracked = github.filter((item) => item.kind === "issue" || item.kind === "pr");
-  const notPlanned = (item: CardGitHubLink) =>
-    item.kind === "issue" && item.state === "closed" && item.stateReason === "not_planned";
+  const closedWithoutLanding = (item: CardGitHubLink) =>
+    item.kind === "issue" && item.state === "closed"
+    && (item.stateReason === "not_planned" || item.stateReason === "duplicate");
   const landed = tracked.find(
-    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed" && !notPlanned(item)),
+    (item) => item.state === "merged" || (item.kind === "issue" && item.state === "closed" && !closedWithoutLanding(item)),
   );
   if (landed) {
     const kind = landed.kind === "pr" ? "PR merged" : "issue closed";
@@ -526,7 +528,7 @@ function terminalPatchFromGitHub(
     };
   }
   const abandoned = tracked.find(
-    (item) => (item.kind === "pr" && item.state === "closed") || notPlanned(item),
+    (item) => (item.kind === "pr" && item.state === "closed") || closedWithoutLanding(item),
   );
   if (!abandoned || tracked.some((item) => item.state === "open")) return null;
   // Cancelled is reached through transitionCard, which records the blocker
@@ -535,7 +537,11 @@ function terminalPatchFromGitHub(
     status: "blocked",
     lifecycle: "cancelled",
     needsHuman: false,
-    lifecycleReason: `GitHub ${abandoned.kind === "pr" ? "PR closed without merging" : "issue closed as not planned"}: ${githubTarget(abandoned)}`.slice(0, 240),
+    lifecycleReason: `GitHub ${
+      abandoned.kind === "pr"
+        ? "PR closed without merging"
+        : abandoned.stateReason === "duplicate" ? "issue closed as duplicate" : "issue closed as not planned"
+    }: ${githubTarget(abandoned)}`.slice(0, 240),
     lifecycleAt: card.lifecycle === "cancelled" ? card.lifecycleAt : now,
   };
 }

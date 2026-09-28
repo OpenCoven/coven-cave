@@ -325,12 +325,12 @@ assert.match(
 // and both write paths route it through the Board's cancel transition.
 assert.match(
   source,
-  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed" && !notPlanned\(item\)\),/,
+  /const landed = tracked\.find\(\s*\(item\) => item\.state === "merged" \|\| \(item\.kind === "issue" && item\.state === "closed" && !closedWithoutLanding\(item\)\),/,
   "Only a merged PR or an issue closed as done completes a task",
 );
 assert.match(
   source,
-  /const abandoned = tracked\.find\(\s*\(item\) => \(item\.kind === "pr" && item\.state === "closed"\) \|\| notPlanned\(item\),\s*\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*PR closed without merging" : "issue closed as not planned"/,
+  /const abandoned = tracked\.find\(\s*\(item\) => \(item\.kind === "pr" && item\.state === "closed"\) \|\| closedWithoutLanding\(item\),\s*\);\s*if \(!abandoned \|\| tracked\.some\(\(item\) => item\.state === "open"\)\) return null;[\s\S]*lifecycle: "cancelled",[\s\S]*"PR closed without merging"[\s\S]*"issue closed as duplicate" : "issue closed as not planned"/,
   "A PR closed without merging cancels the task when nothing linked is still open",
 );
 assert.equal(
@@ -348,6 +348,6 @@ assert.match(
 );
 assert.match(
   source,
-  /item\.kind === "issue" && item\.state === "closed" && item\.stateReason === "not_planned"/,
-  "An issue closed as not planned is abandoned, not landed",
+  /item\.kind === "issue" && item\.state === "closed"\s*&& \(item\.stateReason === "not_planned" \|\| item\.stateReason === "duplicate"\)/,
+  "An issue closed as not planned or as a duplicate is abandoned, not landed",
 );
