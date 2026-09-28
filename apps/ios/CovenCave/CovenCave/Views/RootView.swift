@@ -255,7 +255,8 @@ struct MainShellView: View {
                     .accessibilityHidden(app.selectedTab != .settings)
             }
         }
-        .onChange(of: app.selectedTab) { _, tab in
+        // `initial` covers a launch that starts on Settings (`--ui-tab settings`).
+        .onChange(of: app.selectedTab, initial: true) { _, tab in
             if tab == .settings { settingsMounted = true }
         }
     }
