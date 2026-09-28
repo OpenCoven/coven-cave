@@ -165,6 +165,15 @@ final class ChatListSnapshotCache {
     private var sessionKeys: [SessionRow] = []
     private var familiarKeys: [FamiliarKey] = []
     private var snapshot: ChatListSnapshot?
+    private struct FilterKey: Equatable {
+        let query: String
+        let includeArchived: Bool
+        let familiarId: String?
+    }
+    /// The last filtered result and the filter that produced it. Filtering
+    /// copies every entry, so an unchanged snapshot and filter return it as is
+    /// rather than re-copying the whole list on each body pass (#5651).
+    private var filtered: (key: FilterKey, value: ChatListSnapshot)?
 
     func resolve(threads: [ChatThread], sessions: [SessionRow], familiars: [Familiar],
                  query: String, includeArchived: Bool, familiarId: String? = nil) -> ChatListSnapshot {
@@ -181,7 +190,12 @@ final class ChatListSnapshotCache {
             threadKeys = nextThreads
             sessionKeys = sessions
             familiarKeys = nextFamiliars
+            filtered = nil
         }
-        return snapshot!.filtered(query: query, includeArchived: includeArchived, familiarId: familiarId)
+        let key = FilterKey(query: query, includeArchived: includeArchived, familiarId: familiarId)
+        if let filtered, filtered.key == key { return filtered.value }
+        let value = snapshot!.filtered(query: query, includeArchived: includeArchived, familiarId: familiarId)
+        filtered = (key, value)
+        return value
     }
 }
