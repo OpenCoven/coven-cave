@@ -37,6 +37,7 @@ export interface VoiceClientAdapter {
     grant: VoiceSessionGrant,
     mic: MediaStream,
     callbacks: VoiceCallbacks,
+    signal?: AbortSignal,
   ): Promise<LiveSession>;
 }
 

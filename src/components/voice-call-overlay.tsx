@@ -2,7 +2,7 @@
 
 import "@/styles/cave-chat.css";
 
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
@@ -29,6 +29,7 @@ import { voiceErrorHint } from "@/lib/voice/types";
 import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 import { ArcadePanel } from "./arcade-panel";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 /**
  * States where the caller is waiting on machinery rather than on a person:
@@ -45,12 +46,26 @@ type Props = {
 };
 
 export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
+  const { announce } = useAnnouncer();
   const [state, dispatch] = useReducer(reduce, { ...initialState, state: "requesting-mic" });
   const liveRef = useRef<LiveSession | null>(null);
   const grantRef = useRef<VoiceSessionGrant | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const attemptRef = useRef({ active: true });
+  const cleanup = useCallback(() => {
+    attemptRef.current.active = false;
+    micStreamRef.current?.getTracks().forEach(t => t.stop());
+    micStreamRef.current = null;
+    grantRef.current = null;
+    if (audioElRef.current) audioElRef.current.srcObject = null;
+    const live = liveRef.current;
+    liveRef.current = null;
+    if (live) void live.close().catch(() => { /* already closed */ });
+  }, []);
+  // Navigation and parent removal are hangups too, including during setup.
+  useEffect(() => cleanup, [cleanup]);
 
   // The live transcript (cave-zr9dx). Kept outside the call reducer because it
   // is high-frequency, append-mostly data with its own pure model.
@@ -78,8 +93,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       if (state.state === "requesting-mic") {
+        attemptRef.current.active = false;
+        attemptRef.current = { active: true };
         try {
           const stream = await requestMicrophoneStream();
           if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -101,6 +119,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ familiarId: familiar.id, sessionId }),
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
           });
           const json = await res.json();
           if (cancelled) return;
@@ -116,6 +135,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           grantRef.current = json.grant;
           dispatch({ type: "SESSION_GRANTED", callId: json.callId });
         } catch {
+          if (cancelled) return;
           dispatch({ type: "SESSION_FAILED", errorCode: "network" });
         }
       } else if (state.state === "connecting") {
@@ -135,26 +155,35 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           // already persisted both sides, so appending voice-origin transcript
           // turns would double every exchange.
           const persistTranscript = !provider.persistsTranscripts;
+          const attempt = attemptRef.current;
           const live = await provider.clientAdapter.connect(grant, mic, {
             onUserTranscriptFinal: (text) => {
+              if (!attempt.active) return;
               setTranscript((t) => applyFinal(t, "user", text));
               if (persistTranscript) postTranscript(sessionId, callId, "user", text);
             },
             onAssistantTranscriptFinal: (text) => {
+              if (!attempt.active) return;
               setTranscript((t) => applyFinal(t, "assistant", text));
               if (persistTranscript) postTranscript(sessionId, callId, "assistant", text);
             },
             // Live captions are rendered, never persisted — the settled turn
             // above is the record.
             onPartialTranscript: (role, text) => {
+              if (!attempt.active) return;
               setTranscript((t) => applyPartial(t, role, text));
             },
             onSpeaking: (utterance) => {
+              if (!attempt.active) return;
               setTranscript((t) => applySpeaking(t, utterance));
             },
-            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) }),
-            onDisconnect: () => dispatch({ type: "DISCONNECTED" }),
-          });
+            onError: (err) => {
+              if (attempt.active) dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) });
+            },
+            onDisconnect: () => {
+              if (attempt.active) dispatch({ type: "DISCONNECTED" });
+            },
+          }, controller.signal);
           if (cancelled) { await live.close(); return; }
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
@@ -166,6 +195,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             canSendText: typeof live.sendText === "function",
           });
         } catch (err) {
+          if (cancelled) return;
           dispatch({
             type: "PROVIDER_ERROR",
             errorCode: err instanceof Error ? err.message : "connect_failed",
@@ -173,28 +203,16 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           });
         }
       } else if (state.state === "ending") {
-        const live = liveRef.current;
-        if (live) await live.close();
-        liveRef.current = null;
+        cleanup();
         dispatch({ type: "DISCONNECTED" });
       } else if (state.state === "error") {
-        const live = liveRef.current;
-        if (live) {
-          try { await live.close(); } catch { /* already closed */ }
-          liveRef.current = null;
-        }
         cleanup();
       } else if (state.state === "closed") {
-        const live = liveRef.current;
-        if (live) {
-          try { await live.close(); } catch { /* ignore */ }
-          liveRef.current = null;
-        }
         cleanup();
         onClose();
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.state]);
 
@@ -316,11 +334,6 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
     }
   };
 
-  const cleanup = () => {
-    micStreamRef.current?.getTracks().forEach(t => t.stop());
-    micStreamRef.current = null;
-  };
-
   const duration = state.startedAt ? Math.floor((Date.now() - state.startedAt) / 1000) : 0;
   const mm = String(Math.floor(duration / 60)).padStart(2, "0");
   const ss = String(duration % 60).padStart(2, "0");
@@ -339,7 +352,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         <header className="voice-call-overlay__header">
           <div className="voice-call-overlay__heading">
             <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
-            <span className="voice-call-overlay__state" role="status" aria-live="polite">{labelFor(state)}</span>
+            <span className="voice-call-overlay__state" role="status" aria-live="polite">{state.state === "live" && transcript.speaking && !state.muted ? "Replying…" : labelFor(state)}</span>
           </div>
           {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
         </header>
@@ -536,7 +549,12 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               type="button"
               className="voice-call-overlay__control focus-ring"
               aria-label={state.muted ? "Unmute" : "Mute"}
-              onClick={() => dispatch({ type: "MUTE_TOGGLE" })}
+              aria-pressed={state.muted}
+              title={state.muted ? "Unmute microphone" : "Mute microphone"}
+              onClick={() => {
+                announce(state.muted ? "Microphone unmuted." : "Microphone muted.", "polite");
+                dispatch({ type: "MUTE_TOGGLE" });
+              }}
               disabled={state.state !== "live"}
             >
               <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
@@ -610,7 +628,7 @@ function labelFor(s: CallState): string {
     case "requesting-mic": return "Requesting microphone…";
     case "minting-session": return "Connecting…";
     case "connecting": return "Connecting…";
-    case "live": return "Live";
+    case "live": return s.muted ? "Microphone off" : "Listening";
     case "ending": return "Ending…";
     case "closed": return "Ended";
     case "error": return "Error";
@@ -637,6 +655,14 @@ function errorMessage(code: string | undefined): string {
       return "Microphone capture isn't available in this window.";
     case "microphone_permission_failed":
       return "Coven Cave couldn't request microphone access.";
+    case "audio_playback_blocked":
+      return "Audio playback is blocked. Allow sound for Cave and retry.";
+    case "audio_playback_failed":
+      return "Speech playback stopped. Try the call again.";
+    case "connection_lost":
+      return "The voice connection was lost. Try the call again.";
+    case "connect_timeout":
+      return "The voice service took too long to connect. Try again.";
     case "network":
       return "Couldn't reach the voice service. Check your connection and try again.";
     case "internal":

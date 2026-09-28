@@ -149,3 +149,152 @@ test("parseElevenLabsModels keeps only TTS-capable models", async () => {
   );
   assert.deepEqual(parseElevenLabsModels({ not: "an array" }), []);
 });
+
+function installAudioContext({ blocked = false } = {}) {
+  const sources = [];
+  const buffers = [];
+  const contexts = [];
+  globalThis.AudioContext = class {
+    currentTime = 0;
+    state = blocked ? "suspended" : "running";
+    destination = {};
+    constructor() { contexts.push(this); }
+    async resume() { if (blocked) throw new Error("NotAllowedError"); }
+    async close() { this.state = "closed"; }
+    createBuffer(_channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      const buffer = { duration: length / sampleRate, getChannelData: () => data };
+      buffers.push(data); return buffer;
+    }
+    createBufferSource() {
+      const source = { buffer: null, onended: null, stopped: false,
+        connect() {}, disconnect() {}, start() { setImmediate(() => source.onended?.()); },
+        stop() { source.stopped = true; source.onended?.(); },
+      };
+      sources.push(source); return source;
+    }
+  };
+  return { sources, buffers, contexts };
+}
+
+test("mouth plays PCM before synthesis finishes and preserves split 16-bit samples", async () => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  const audio = installAudioContext();
+  let upstream;
+  let request;
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: "eleven_v3_conversational",
+    fetchImpl: async (_url, init) => {
+      request = JSON.parse(init.body);
+      return new Response(new ReadableStream({ start(controller) {
+        upstream = controller;
+        controller.enqueue(new Uint8Array([0, 64, 0]));
+        controller.enqueue(new Uint8Array([128]));
+      } }), { headers: { "content-type": "audio/pcm" } });
+    },
+  });
+  const result = mouth.speak("Hello Val.").then(() => null, error => error);
+  await new Promise(setImmediate);
+  try {
+    assert.equal(request.format, "pcm");
+    assert.ok(audio.sources.length > 0, "audio must be scheduled before the response body ends");
+    assert.deepEqual(audio.buffers.flatMap(buffer => [...buffer]), [0.5, -1]);
+  } finally { upstream.close(); await result; mouth.cancel(); }
+});
+
+test("mouth interruption settles pending audio, cancels its reader, and stays reusable", async () => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  const audio = installAudioContext();
+  let cancelled = false;
+  let upstream;
+  let calls = 0;
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: "eleven_v3_conversational",
+    fetchImpl: async () => ++calls === 1 ? new Response(new ReadableStream({
+      start(controller) { upstream = controller; controller.enqueue(new Uint8Array([0, 64])); },
+      cancel() { cancelled = true; },
+    })) : new Response(new Uint8Array([0, 64])),
+  });
+  const pending = mouth.speak("An interrupted utterance.");
+  await new Promise(setImmediate);
+  mouth.interrupt();
+  try { assert.equal(cancelled, true); }
+  finally { if (!cancelled) upstream.close(); await pending; }
+  await mouth.speak("A fresh utterance.");
+  assert.equal(calls, 2);
+  mouth.cancel();
+  assert.equal(audio.contexts[0].state, "closed");
+});
+
+test("blocked audio playback reports a recoverable error instead of silently succeeding", async () => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  installAudioContext({ blocked: true });
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: "eleven_v3_conversational",
+    fetchImpl: async () => new Response(new Uint8Array([0, 64])),
+  });
+  try { await assert.rejects(mouth.speak("Hello."), /audio_playback_blocked/); }
+  finally { mouth.cancel(); }
+});
+
+test("new live calls default to expressive conversational speech", () => {
+  assert.equal(DEFAULT_ELEVENLABS_MODEL_ID, "eleven_v3_conversational");
+});
+
+test("interrupt settles a browser that leaves AudioContext.resume pending", async () => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  installAudioContext();
+  globalThis.AudioContext.prototype.resume = () => new Promise(() => {});
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID,
+    fetchImpl: async () => { throw new Error("must not synthesize while suspended"); },
+  });
+  let settled = false;
+  const pending = mouth.speak("Hello.").then(() => { settled = true; });
+  await new Promise(setImmediate);
+  mouth.interrupt();
+  await new Promise(setImmediate);
+  try { assert.equal(settled, true, "barge-in must release the speech queue"); }
+  finally { mouth.cancel(); if (settled) await pending; }
+});
+
+test("a pending resume reports blocked playback after a bounded wait", async (t) => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  installAudioContext();
+  globalThis.AudioContext.prototype.resume = () => new Promise(() => {});
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID });
+  let error;
+  const pending = mouth.speak("Hello.").catch(e => { error = e; });
+  t.mock.timers.tick(3_000);
+  await new Promise(setImmediate);
+  try { assert.equal(error?.message, "audio_playback_blocked"); }
+  finally { mouth.cancel(); if (error) await pending; }
+});
+
+test("interrupt stops scheduled audio that has not finished playing", async () => {
+  const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+  const audio = installAudioContext();
+  const createSource = globalThis.AudioContext.prototype.createBufferSource;
+  globalThis.AudioContext.prototype.createBufferSource = function () {
+    const source = createSource.call(this); source.start = () => {}; return source;
+  };
+  const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID,
+    fetchImpl: async () => new Response(new Uint8Array([0, 64, 0, 32])),
+  });
+  const playing = mouth.speak("Hello.");
+  await new Promise(setImmediate);
+  assert.equal(audio.sources.length, 1);
+  mouth.interrupt();
+  await playing;
+  assert.equal(audio.sources[0].stopped, true);
+  mouth.cancel();
+});
+
+for (const bytes of [new Uint8Array(), new Uint8Array([0, 64, 0])]) {
+  test(`invalid PCM (${bytes.length} bytes) reports incomplete playback`, async () => {
+    const { createElevenLabsMouth } = await import("./elevenlabs.ts");
+    installAudioContext();
+    const mouth = createElevenLabsMouth({ voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID,
+      fetchImpl: async () => new Response(bytes),
+    });
+    try { await assert.rejects(mouth.speak("Hello."), /audio_playback_failed/); }
+    finally { mouth.cancel(); }
+  });
+}

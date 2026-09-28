@@ -1482,6 +1482,22 @@ details[open] > .cave-tool-summary::before {
   background: color-mix(in oklch, var(--color-danger) 86%, black);
 }
 
+/* Keep call controls usable with a thumb, including narrow desktop panes. */
+@media (pointer: coarse), (max-width: 640px) {
+  .voice-call-overlay__control,
+  .voice-call-overlay__retry,
+  .voice-call-overlay__end,
+  .voice-call-overlay__reply-input,
+  .voice-call-overlay__reply-send {
+    min-height: var(--touch-target);
+  }
+
+  .voice-call-overlay__control,
+  .voice-call-overlay__reply-send {
+    min-width: var(--touch-target);
+  }
+}
+
 @keyframes cave-chat-meta-blip {
   0%, 100% { opacity: 0.45; }
   50%      { opacity: 1; }

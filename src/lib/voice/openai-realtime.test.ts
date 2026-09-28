@@ -11,6 +11,8 @@ let nextResponse: Response = new Response("{}", { status: 200 });
 };
 
 // Minimal WebRTC stubs so clientAdapter.connect runs under node.
+let channelReadyState = "open";
+let peerClosed = 0;
 let lastDataChannel: { onmessage: ((ev: { data: unknown }) => void) | null; close: () => void } | null = null;
 (globalThis as any).RTCPeerConnection = class {
   ontrack: unknown = null;
@@ -19,7 +21,7 @@ let lastDataChannel: { onmessage: ((ev: { data: unknown }) => void) | null; clos
   createDataChannel() {
     lastDataChannel = {
       onmessage: null,
-      readyState: "open",
+      readyState: channelReadyState,
       sent: [],
       send(payload: string) { this.sent.push(JSON.parse(payload)); },
       close() {},
@@ -29,7 +31,7 @@ let lastDataChannel: { onmessage: ((ev: { data: unknown }) => void) | null; clos
   async createOffer() { return { type: "offer", sdp: "v=0\r\n" }; }
   async setLocalDescription() {}
   async setRemoteDescription() {}
-  close() {}
+  close() { peerClosed++; }
 };
 (globalThis as any).MediaStream = class {
   addTrack() {}
@@ -284,4 +286,109 @@ test("a typed reply mid-answer cancels the response first, and never otherwise",
     lastDataChannel?.sent.map((ev: any) => ev.type),
     ["response.cancel", "conversation.item.create", "response.create"],
   );
+});
+
+const emitRealtime = (event: Record<string, unknown>) => lastDataChannel?.onmessage?.({ data: JSON.stringify(event) });
+
+test("interrupt cancels a response before its first transcript arrives", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks);
+  emitRealtime({ type: "response.created", response: { id: "r1" } });
+  session.interrupt();
+  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), ["response.cancel"]);
+});
+
+test("stop clears buffered audio after generation has finished", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const speaking: (string | null)[] = [];
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks, onSpeaking(text: string | null) { speaking.push(text); },
+  });
+  emitRealtime({ type: "response.created", response: { id: "r1" } });
+  emitRealtime({ type: "output_audio_buffer.started", response_id: "r1" });
+  emitRealtime({ type: "response.output_audio_transcript.delta", response_id: "r1", delta: "Still being heard." });
+  emitRealtime({ type: "response.output_audio_transcript.done", response_id: "r1", transcript: "Still being heard." });
+  emitRealtime({ type: "response.done", response: { id: "r1", status: "completed" } });
+  assert.equal(speaking.at(-1), "Still being heard.", "generation completion must not hide Stop speaking");
+  session.interrupt();
+  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), ["output_audio_buffer.clear"]);
+  assert.equal(speaking.at(-1), null);
+});
+
+test("interrupt cancels generation and clears playback before a typed turn", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks);
+  emitRealtime({ type: "response.created", response: { id: "r1" } });
+  emitRealtime({ type: "output_audio_buffer.started", response_id: "r1" });
+  session.sendText("New question");
+  assert.deepEqual(lastDataChannel?.sent.map((e: any) => e.type), [
+    "response.cancel", "output_audio_buffer.clear", "conversation.item.create", "response.create",
+  ]);
+});
+
+test("a failed response surfaces its provider error even without an error event", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const errors: Error[] = [];
+  await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, { ...noopCallbacks, onError(error: Error) { errors.push(error); } });
+  emitRealtime({ type: "response.done", response: { status: "failed", status_details: { error: { message: "Quota exhausted" } } } });
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].hint, "Quota exhausted");
+});
+
+test("connect waits for the data channel before exposing a live session", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  channelReadyState = "connecting";
+  let connected = false;
+  const pending = openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks).then((session) => { connected = true; return session; });
+  await new Promise(setImmediate);
+  try {
+    assert.equal(connected, false);
+  } finally {
+    lastDataChannel.readyState = "open";
+    lastDataChannel.onopen?.();
+    channelReadyState = "open";
+    await pending;
+  }
+});
+
+test("aborting a pending connection closes the peer and rejects", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  channelReadyState = "connecting";
+  peerClosed = 0;
+  const abort = new AbortController();
+  const pending = openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks, abort.signal);
+  await new Promise(setImmediate);
+  abort.abort();
+  channelReadyState = "open";
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(peerClosed, 1);
+});
+
+test("interrupted and superseded responses cannot revive speech or finish a newer turn", async () => {
+  const { createRealtimeEventStream } = await import("./openai-realtime.ts");
+  const spoken: (string | null)[] = [];
+  const finals: string[] = [];
+  const stream = createRealtimeEventStream({
+    ...noopCallbacks,
+    onSpeaking(text) { spoken.push(text); },
+    onAssistantTranscriptFinal(text) { finals.push(text); },
+  });
+  const emit = (event: unknown) => stream.handle(JSON.stringify(event));
+  emit({ type: "response.created", response: { id: "old" } });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "old", delta: "Old" });
+  stream.interrupt();
+  emit({ type: "output_audio_buffer.started", response_id: "old" });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "old", delta: " unheard" });
+  emit({ type: "response.output_audio_transcript.done", response_id: "old", transcript: "Old unheard" });
+  assert.equal(spoken.at(-1), null);
+  assert.equal(stream.isPlaying(), false);
+  assert.deepEqual(finals, []);
+  emit({ type: "response.created", response: { id: "new" } });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "new", delta: "New" });
+  emit({ type: "output_audio_buffer.started", response_id: "new" });
+  emit({ type: "response.done", response: { id: "old" } });
+  emit({ type: "output_audio_buffer.cleared", response_id: "old" });
+  assert.equal(stream.isResponding(), true);
+  assert.equal(stream.isPlaying(), true);
+  assert.equal(spoken.at(-1), "New");
 });

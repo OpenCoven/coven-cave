@@ -181,7 +181,7 @@ assert.match(
 );
 assert.match(
   component,
-  /onError:\s*\(err\)\s*=>\s*dispatch\(\{\s*type:\s*"PROVIDER_ERROR",\s*errorCode:\s*err\.message,\s*hint:\s*voiceErrorHint\(err\)\s*\}\)/,
+  /onError:\s*\(err\)\s*=>\s*\{\s*if \(attempt.active\) dispatch\(\{\s*type:\s*"PROVIDER_ERROR",\s*errorCode:\s*err\.message,\s*hint:\s*voiceErrorHint\(err\)\s*\}\)/,
   "live provider errors thread their hint into PROVIDER_ERROR",
 );
 assert.match(
@@ -308,7 +308,7 @@ assert.match(
 );
 assert.match(
   component,
-  /onSpeaking:\s*\(utterance\)\s*=>\s*\{\s*setTranscript\(\(t\)\s*=>\s*applySpeaking\(t,\s*utterance\)\)/,
+  /onSpeaking:\s*\(utterance\)\s*=>\s*\{\s*if \(!attempt.active\) return;\s*setTranscript\(\(t\)\s*=>\s*applySpeaking\(t,\s*utterance\)\)/,
   "the overlay tracks the utterance the mouth is voicing",
 );
 assert.match(
@@ -323,7 +323,7 @@ assert.match(
 );
 assert.match(
   component,
-  /onPartialTranscript:\s*\(role,\s*text\)\s*=>\s*\{\s*setTranscript\(\(t\)\s*=>\s*applyPartial\(t,\s*role,\s*text\)\)/,
+  /onPartialTranscript:\s*\(role,\s*text\)\s*=>\s*\{\s*if \(!attempt.active\) return;\s*setTranscript\(\(t\)\s*=>\s*applyPartial\(t,\s*role,\s*text\)\)/,
   "in-flight text renders live without being persisted",
 );
 assert.match(

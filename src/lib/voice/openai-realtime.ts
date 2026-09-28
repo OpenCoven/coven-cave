@@ -62,7 +62,12 @@ const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
 // ── Client adapter (browser only) ─────────────────────────────────────────────
 
 const clientAdapter: VoiceClientAdapter = {
-  async connect(grant, mic, callbacks): Promise<LiveSession> {
+  async connect(grant, mic, callbacks, signal): Promise<LiveSession> {
+    const timeout = AbortSignal.timeout(15_000);
+    const connectingSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    connectingSignal.throwIfAborted();
+    let closed = false;
+    let connected = false;
     const pc = new RTCPeerConnection();
     const inbound = new MediaStream();
     pc.ontrack = (ev) => {
@@ -74,10 +79,11 @@ const clientAdapter: VoiceClientAdapter = {
 
     const events = pc.createDataChannel("oai-events");
     const stream = createRealtimeEventStream(callbacks);
-    events.onmessage = (ev) => stream.handle(ev.data);
+    events.onmessage = (ev) => { if (!closed) stream.handle(ev.data); };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed") {
-        callbacks.onDisconnect();
+      if (!closed && connected && pc.connectionState === "failed") {
+        connected = false;
+        callbacks.onError(new VoiceConnectError("connection_lost", "The voice connection was lost. Retry the call."));
       }
     };
 
@@ -92,6 +98,7 @@ const clientAdapter: VoiceClientAdapter = {
           "content-type": "application/sdp",
         },
         body: offer.sdp,
+        signal: connectingSignal,
       });
       if (!res.ok) {
         // The mint endpoint accepts unknown models, so a bad voiceModel only
@@ -105,15 +112,40 @@ const clientAdapter: VoiceClientAdapter = {
       }
       const answer = await res.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
+      await new Promise<void>((resolve, reject) => {
+        const settle = (error?: unknown) => {
+          connectingSignal.removeEventListener("abort", aborted);
+          events.onopen = null;
+          events.onclose = null;
+          events.onerror = null;
+          if (error) reject(error); else resolve();
+        };
+        const aborted = () => settle(connectingSignal.reason);
+        events.onopen = () => settle();
+        events.onclose = events.onerror = () => settle(new VoiceConnectError("connection_lost"));
+        connectingSignal.addEventListener("abort", aborted, { once: true });
+        if (connectingSignal.aborted) aborted();
+        else if (events.readyState === "open") settle();
+        else if (events.readyState === "closed") settle(new VoiceConnectError("connection_lost"));
+      });
+      connected = true;
+      events.onclose = () => {
+        if (!closed) callbacks.onError(new VoiceConnectError("connection_lost", "The voice connection was lost. Retry the call."));
+      };
     } catch (err) {
+      closed = true;
+      try { events.close(); } catch { /* already closing */ }
       try { pc.close(); } catch { /* already closing */ }
+      if (timeout.aborted && !signal?.aborted) {
+        throw new VoiceConnectError("connect_timeout", "The voice service took too long to connect. Retry the call.");
+      }
       throw err;
     }
 
     const localTracks = mic.getAudioTracks();
 
     const send = (payload: unknown) => {
-      if (events.readyState !== "open") return false;
+      if (closed || events.readyState !== "open") return false;
       try {
         events.send(JSON.stringify(payload));
         return true;
@@ -126,9 +158,11 @@ const clientAdapter: VoiceClientAdapter = {
      *  flight — `response.cancel` with nothing to cancel comes back as an
      *  error event, which would surface to the user as a call failure. */
     const interrupt = () => {
-      if (!stream.isResponding()) return;
-      send({ type: "response.cancel" });
-      stream.endResponse();
+      if (stream.isResponding()) send({ type: "response.cancel" });
+      // Generation commonly finishes before the speaker does. WebRTC owns
+      // the playback buffer and truncates unheard audio when it is cleared.
+      if (stream.isPlaying()) send({ type: "output_audio_buffer.clear" });
+      stream.interrupt();
     };
 
     return {
@@ -156,6 +190,8 @@ const clientAdapter: VoiceClientAdapter = {
         callbacks.onUserTranscriptFinal(trimmed);
       },
       async close() {
+        closed = true;
+        stream.interrupt();
         try { events.close(); } catch { /* ignore */ }
         try { pc.close(); } catch { /* ignore */ }
       },
@@ -177,29 +213,54 @@ export function createRealtimeEventStream(callbacks: VoiceCallbacks) {
   let assistant = "";
   let user = "";
   let responding = false;
+  let playing = false;
+  let responseId: string | undefined;
+  let interrupted = false;
 
   const endResponse = () => {
     responding = false;
     assistant = "";
-    callbacks.onSpeaking?.(null);
+    if (!playing) callbacks.onSpeaking?.(null);
   };
 
   return {
     isResponding: () => responding,
-    endResponse,
+    isPlaying: () => playing,
+    interrupt() {
+      interrupted ||= responding || playing;
+      playing = false;
+      endResponse();
+    },
     handle(raw: unknown) {
       if (typeof raw !== "string") return;
       let ev: any;
       try { ev = JSON.parse(raw); } catch { return; }
       const type = ev?.type as string | undefined;
       if (!type) return;
-      if (type === "conversation.item.input_audio_transcription.completed") {
+      const eventResponseId = ev.response_id ?? ev.response?.id;
+      const responseEvent = type.startsWith("response.") || type.startsWith("output_audio_buffer.");
+      // Cancellation is asynchronous: queued deltas and the old completion
+      // can arrive after interruption or after the next response has started.
+      if (responseEvent && type !== "response.created" &&
+          (interrupted || (responseId && eventResponseId && eventResponseId !== responseId))) return;
+      if (type === "response.created") {
+        responseId = typeof eventResponseId === "string" ? eventResponseId : undefined;
+        interrupted = false;
+        responding = true;
+        assistant = "";
+      } else if (type === "output_audio_buffer.started") {
+        playing = true;
+      } else if (type === "output_audio_buffer.stopped" || type === "output_audio_buffer.cleared") {
+        playing = false;
+        callbacks.onSpeaking?.(null);
+      } else if (type === "conversation.item.input_audio_transcription.completed") {
         user = "";
         if (typeof ev.transcript === "string") callbacks.onUserTranscriptFinal(ev.transcript);
       } else if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
         // GA name first; beta name kept for compatibility.
         if (typeof ev.transcript === "string") callbacks.onAssistantTranscriptFinal(ev.transcript);
-        endResponse();
+        assistant = "";
+        if (!playing) callbacks.onSpeaking?.(null);
       } else if (type === "response.output_audio_transcript.delta" || type === "response.audio_transcript.delta") {
         if (typeof ev.delta === "string") {
           responding = true;
@@ -214,6 +275,10 @@ export function createRealtimeEventStream(callbacks: VoiceCallbacks) {
         }
       } else if (type === "response.done" || type === "response.cancelled") {
         endResponse();
+        if (ev.response?.status === "failed") {
+          const detail = ev.response.status_details?.error?.message;
+          callbacks.onError(new VoiceConnectError("provider_error", typeof detail === "string" ? detail : undefined));
+        }
       } else if (type === "error") {
         const detail = typeof ev.error?.message === "string" ? ev.error.message : undefined;
         callbacks.onError(new VoiceConnectError("provider_error", detail));
