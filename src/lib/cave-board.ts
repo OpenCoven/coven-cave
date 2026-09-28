@@ -1786,7 +1786,12 @@ function hasOnlySettledDependencies(card: Card): boolean {
  */
 export async function deleteCard(
   id: string,
-  options: { actor?: string } = {},
+  options: {
+    actor?: string;
+    /** Receives the stored card as it was removed, in full. The board list is
+     *  lean (#5690), so an undo snapshot must come from here, not the list. */
+    onDeleted?: (card: Card) => void;
+  } = {},
 ): Promise<DeleteCardOutcome> {
   return withBoardLock(async () => {
   const board = await loadBoard();
@@ -1821,6 +1826,7 @@ export async function deleteCard(
   }
   board.cards = repaired;
   await saveBoard(board);
+  options.onDeleted?.(card);
   return "deleted";
   });
 }

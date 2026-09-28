@@ -30,5 +30,6 @@ test("the inspector loads its own card in full and keeps it on mutation", async 
   assert.match(source, /fetch\(`\/api\/board\/\$\{encodeURIComponent\(cardId\)\}`/, "the inspector fetches the full card");
   assert.match(source, /\}, \[cardId, cardUpdatedAt\]\);/, "it refreshes when the card changes");
   assert.match(source, /const card = withAgenticEnhance\(listCard, loadedEnhance\);/, "the rendered card carries the loaded history");
-  assert.match(source, /if \(next\.id === cardId\) setLoadedEnhance\(next\.agenticEnhance \?\? null\);/, "mutation responses update it directly");
+  assert.match(source, /enhanceSeqRef\.current \+= 1;\s*setLoadedEnhance\(next\.agenticEnhance \?\? null\);/, "mutation responses update it directly and supersede any load in flight");
+  assert.match(source, /if \(controller\.signal\.aborted \|\| seq !== enhanceSeqRef\.current\) return;/, "an aborted or superseded load never overwrites newer state");
 });

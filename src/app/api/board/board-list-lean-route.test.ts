@@ -64,4 +64,21 @@ assert.equal(
   "reading the lean list never rewrites stored history",
 );
 
+// Clearing a card returns it in full so an undo restores its history too.
+const deleteRes = await item.DELETE(new Request("http://cave.test/api/board/card-1", { method: "DELETE" }), paramsFor("card-1"));
+assert.equal(deleteRes.status, 200);
+const deleted = (await deleteRes.json()).card;
+assert.equal(deleted.id, "card-1");
+assert.equal(deleted.agenticEnhance.proposals[0].id, "prop-1", "the deleted card carries its Enhance history");
+const restore = await import("./restore/route.ts");
+const restoreRes = await restore.POST(new Request("http://cave.test/api/board/restore", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ cards: [deleted] }),
+}));
+assert.equal((await restoreRes.json()).restored[0], "card-1");
+const restored = await (await item.GET(new Request("http://cave.test/api/board/card-1"), paramsFor("card-1"))).json();
+assert.equal(restored.card.agenticEnhance.proposals.length, 1, "undo keeps the proposal history");
+assert.equal(restored.card.agenticEnhance.audit.length, 1);
+
 console.log("board-list-lean-route.test.ts: ok");

@@ -1717,11 +1717,17 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
   );
   const cardId = listCard.id;
   const cardUpdatedAt = listCard.updatedAt;
+  // Every write to loadedEnhance takes a new sequence number; a load applies
+  // only if nothing newer (a later load or a mutation response) landed while
+  // it was in flight, and never after its effect was cleaned up.
+  const enhanceSeqRef = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
+    const seq = ++enhanceSeqRef.current;
     void fetch(`/api/board/${encodeURIComponent(cardId)}`, { cache: "no-store", signal: controller.signal })
       .then((res) => res.json())
       .then((json: { ok?: boolean; card?: Card }) => {
+        if (controller.signal.aborted || seq !== enhanceSeqRef.current) return;
         if (json?.ok && json.card?.id === cardId) setLoadedEnhance(json.card.agenticEnhance ?? null);
       })
       .catch(() => {
@@ -1731,7 +1737,10 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
   }, [cardId, cardUpdatedAt]);
   const card = withAgenticEnhance(listCard, loadedEnhance);
   const onCardReplaced = (next: Card) => {
-    if (next.id === cardId) setLoadedEnhance(next.agenticEnhance ?? null);
+    if (next.id === cardId) {
+      enhanceSeqRef.current += 1;
+      setLoadedEnhance(next.agenticEnhance ?? null);
+    }
     replaceListCard(next);
   };
   const dtPrefs = useDateTimePrefs();

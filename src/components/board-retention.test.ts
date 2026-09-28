@@ -29,7 +29,8 @@ assert.doesNotMatch(
 );
 
 // ── The server deletes without a link guard ─────────────────────────────────
-assert.match(route, /const outcome = await deleteCard\(id\);/, "DELETE removes the card");
+// The options argument only hands back the removed card for undo (#5690).
+assert.match(route, /const outcome = await deleteCard\(id[,)]/, "DELETE removes the card");
 assert.doesNotMatch(route, /linked_bead_requires_unlink|unlink/, "there is no unlink step");
 
 // ── Restore never clobbers ──────────────────────────────────────────────────

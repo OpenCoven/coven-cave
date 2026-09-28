@@ -8,7 +8,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
+import type { Card, CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { CardOps, CardPatch } from "@/lib/board-card-ops";
@@ -137,9 +137,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const outcome = await deleteCard(id);
+  let deleted: Card | null = null;
+  const outcome = await deleteCard(id, { onDeleted: (card) => { deleted = card; } });
   if (outcome === "not-found") {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true });
+  // The removed card in full, Enhance history included, so an undo can
+  // restore exactly what was stored (#5690).
+  return NextResponse.json({ ok: true, card: deleted });
 }
