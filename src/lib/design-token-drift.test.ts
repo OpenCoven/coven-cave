@@ -203,7 +203,7 @@ const BASELINES = {
 // 1607 at 1b371730d, so the 1617 above carried 10 of stale headroom — banked
 // down to the real floor plus this room's 9 rather than derived from it.
 // Measured after #5464: 1522; previous ceiling 1616.
-BASELINES.offScaleSpacingPx = 1522;
+BASELINES.offScaleSpacingPx = 1512; // -10: fullscreen voice call spacing uses the shared grid.
 // +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
 // cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
 // five: the two rail widths the USER DRAGS (one `style` object carrying

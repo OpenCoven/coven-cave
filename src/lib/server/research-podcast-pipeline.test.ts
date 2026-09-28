@@ -480,7 +480,7 @@ test("ElevenLabs TTS body carries delivery controls and optional segment context
     seed: 4242,
   });
 
-  // A bare call stays on the latency default and sends the baseline settings,
+  // A bare call stays on the live conversational default and sends the baseline settings,
   // with no segment context keys.
   const minimal = buildElevenLabsTtsBody("Hello.");
   assert.equal(minimal.model_id, DEFAULT_ELEVENLABS_MODEL_ID);
@@ -499,7 +499,7 @@ test("ElevenLabs TTS body carries delivery controls and optional segment context
 test("v3 renders drop segment context the provider would reject outright", () => {
   // Regression: sending previous_text/next_text to the v3 family returns HTTP
   // 400 invalid_parameters, which failed every v3 podcast render.
-  for (const modelId of ["eleven_v3", "eleven_v3_preview", "eleven_v3_alpha"]) {
+  for (const modelId of ["eleven_v3", "eleven_v3_preview", "eleven_v3_alpha", "eleven_v3_conversational"]) {
     const body = buildElevenLabsTtsBody("Hello.", {
       modelId,
       previousText: "Before.",
@@ -515,7 +515,7 @@ test("v3 renders drop segment context the provider would reject outright", () =>
   }
   assert.equal(modelSupportsRequestStitching("eleven_v3"), false);
   assert.equal(modelSupportsRequestStitching("eleven_multilingual_v2"), true);
-  assert.equal(modelSupportsRequestStitching(DEFAULT_ELEVENLABS_MODEL_ID), true);
+  assert.equal(modelSupportsRequestStitching(DEFAULT_ELEVENLABS_MODEL_ID), false);
   assert.equal(
     modelSupportsRequestStitching(DEFAULT_ELEVENLABS_PODCAST_MODEL_ID),
     true,

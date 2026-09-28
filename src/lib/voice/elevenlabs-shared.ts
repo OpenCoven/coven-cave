@@ -3,9 +3,18 @@
 // dragging the provider's client-side import graph (familiar-stream → "@/…")
 // into a route module.
 
-/** Balanced quality/latency default; users override per-familiar via the
- *  Studio "Voice model" field. */
-export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
+/** Expressive, conversational speech. Flash remains available for callers
+ * prioritizing latency; explicit per-familiar choices are preserved. */
+export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_v3_conversational";
+
+/** Short, task-facing tradeoffs for the live model picker. */
+export function elevenLabsModelDetail(id: string): string {
+  if (id === "eleven_v3_conversational") return "Expressive conversation · recommended";
+  if (id === "eleven_flash_v2_5" || id === "eleven_flash_v2") return "Fastest replies";
+  if (id === "eleven_v3") return "Expressive narration";
+  if (id.startsWith("eleven_turbo_")) return "Legacy · choose Flash for faster replies";
+  return id;
+}
 
 /** "Rachel", ElevenLabs' long-standing premade voice — a stable public id so
  *  the provider speaks out of the box before the user picks a voice. */
@@ -13,8 +22,7 @@ export const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
 /**
  * Quality-tier default for offline podcast renders.
- * The live voice-call path keeps `DEFAULT_ELEVENLABS_MODEL_ID` (turbo) because
- * latency is the binding constraint there; an offline render is a queued,
+ * The live voice-call path keeps `DEFAULT_ELEVENLABS_MODEL_ID` (conversational) for live delivery; an offline render is a queued,
  * character-capped job, so it can afford a higher-fidelity model and is
  * overridable per render through the render configuration's `model` field.
  */
@@ -155,7 +163,7 @@ export const ELEVENLABS_PODCAST_MODEL_OPTIONS: readonly {
 }[] = [
   { id: DEFAULT_ELEVENLABS_PODCAST_MODEL_ID, label: "Multilingual v2 · balanced (default)" },
   { id: "eleven_v3", label: "v3 · most expressive" },
-  { id: DEFAULT_ELEVENLABS_MODEL_ID, label: "Turbo v2.5 · fastest" },
+  { id: "eleven_turbo_v2_5", label: "Turbo v2.5 · fastest" },
 ];
 
 const ELEVENLABS_VOICE_SETTINGS_RANGES: Record<

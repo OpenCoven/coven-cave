@@ -37,17 +37,20 @@ export interface VoiceClientAdapter {
     grant: VoiceSessionGrant,
     mic: MediaStream,
     callbacks: VoiceCallbacks,
+    signal?: AbortSignal,
   ): Promise<LiveSession>;
 }
 
 export type VoiceCallbacks = {
-  onUserTranscriptFinal: (text: string) => void;
-  onAssistantTranscriptFinal: (text: string) => void;
+  onUserTranscriptFinal: (text: string, itemKey?: string) => void;
+  onAssistantTranscriptFinal: (text: string, itemKey?: string) => void;
   /** The ACCUMULATED text of the turn in flight, not a delta. Every adapter
    *  owes the caller whole-turn text so the live transcript can render it by
    *  replacement; the realtime adapter accumulates its own deltas to honor
    *  this. */
-  onPartialTranscript: (role: "user" | "assistant", text: string) => void;
+  onPartialTranscript: (role: "user" | "assistant", text: string, itemKey?: string) => void;
+  /** Settle a provisional caption without persisting it as a completed turn. */
+  onTranscriptInterrupted?: (role: "user" | "assistant", itemKey?: string) => void;
   /** The utterance the call's mouth is voicing right now, or null when it
    *  falls silent. Loop providers pass the exact sentence chunk they handed
    *  the synthesizer — a substring of the assistant turn, which is what lets

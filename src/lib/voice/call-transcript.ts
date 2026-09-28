@@ -18,6 +18,8 @@ export type CallTurn = {
   id: string;
   role: CallTurnRole;
   text: string;
+  /** Provider identity, when events can interleave across turns. */
+  itemKey?: string;
   /** False while the turn is still being transcribed or streamed. */
   final: boolean;
 };
@@ -32,13 +34,9 @@ export type CallTranscript = {
 
 export const emptyTranscript: CallTranscript = { turns: [], seq: 0, speaking: null };
 
-/** How many turns a single call keeps in view. A long call must not grow the
- *  DOM without bound; the persisted chat transcript is the durable record. */
+/** Default rendered window. Earlier turns remain available on demand; only
+ *  the DOM is windowed, never the caller’s conversation. */
 export const MAX_CALL_TURNS = 60;
-
-function trimToCap(turns: CallTurn[]): CallTurn[] {
-  return turns.length <= MAX_CALL_TURNS ? turns : turns.slice(turns.length - MAX_CALL_TURNS);
-}
 
 /**
  * Fold in the accumulated text of an in-flight turn. A partial for the role
@@ -49,10 +47,21 @@ export function applyPartial(
   transcript: CallTranscript,
   role: CallTurnRole,
   text: string,
+  itemKey?: string,
 ): CallTranscript {
   if (!text.trim()) return transcript;
+  if (itemKey !== undefined) {
+    const index = transcript.turns.findIndex(turn => turn.role === role && turn.itemKey === itemKey);
+    if (index >= 0) {
+      const turn = transcript.turns[index]!;
+      if (turn.final || turn.text === text) return transcript;
+      const turns = transcript.turns.slice();
+      turns[index] = { ...turn, text };
+      return { ...transcript, turns };
+    }
+  }
   const last = transcript.turns[transcript.turns.length - 1];
-  if (last && !last.final && last.role === role) {
+  if (itemKey === undefined && last && last.itemKey === undefined && !last.final && last.role === role) {
     if (last.text === text) return transcript;
     const turns = transcript.turns.slice(0, -1);
     turns.push({ ...last, text });
@@ -62,7 +71,7 @@ export function applyPartial(
   return {
     ...transcript,
     seq,
-    turns: trimToCap([...transcript.turns, { id: `t${seq}`, role, text, final: false }]),
+    turns: [...transcript.turns, { id: `t${seq}`, role, text, final: false, ...(itemKey === undefined ? {} : { itemKey }) }],
   };
 }
 
@@ -77,24 +86,44 @@ export function applyFinal(
   transcript: CallTranscript,
   role: CallTurnRole,
   text: string,
+  itemKey?: string,
 ): CallTranscript {
   const settled = text.trim();
   if (!settled) return transcript;
   const turns = transcript.turns.slice();
+  if (itemKey !== undefined) {
+    const index = turns.findIndex(turn => turn.role === role && turn.itemKey === itemKey);
+    if (index >= 0) {
+      if (turns[index]!.final) return transcript;
+      turns[index] = { ...turns[index]!, text: settled, final: true };
+      return { ...transcript, turns };
+    }
+  }
   const last = turns[turns.length - 1];
-  if (last && !last.final && last.role === role) {
+  if (itemKey === undefined && last && last.itemKey === undefined && !last.final && last.role === role) {
     turns[turns.length - 1] = { ...last, text: settled, final: true };
     return { ...transcript, turns };
   }
-  if (last && last.final && last.role === role && last.text === settled) {
+  if (itemKey === undefined && last && last.itemKey === undefined && last.final && last.role === role && last.text === settled) {
     return transcript;
   }
   const seq = transcript.seq + 1;
   return {
     ...transcript,
     seq,
-    turns: trimToCap([...turns, { id: `t${seq}`, role, text: settled, final: true }]),
+    turns: [...turns, { id: `t${seq}`, role, text: settled, final: true, ...(itemKey === undefined ? {} : { itemKey }) }],
   };
+}
+
+/** Stop a provisional caption's busy state without writing a final transcript. */
+export function applyInterrupted(transcript: CallTranscript, role: CallTurnRole, itemKey?: string): CallTranscript {
+  const index = itemKey === undefined
+    ? transcript.turns.findLastIndex(turn => turn.role === role && turn.itemKey === undefined && !turn.final)
+    : transcript.turns.findIndex(turn => turn.role === role && turn.itemKey === itemKey);
+  if (index < 0 || transcript.turns[index]!.final) return transcript;
+  const turns = transcript.turns.slice();
+  turns[index] = { ...turns[index]!, final: true };
+  return { ...transcript, turns };
 }
 
 /** Record (or clear) the utterance the mouth is voicing. */

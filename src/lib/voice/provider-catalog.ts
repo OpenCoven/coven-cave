@@ -8,8 +8,17 @@ import type { VoiceProviderId } from "./types.ts";
 export type SelectableVoiceProviderId = Exclude<VoiceProviderId, "gemini">;
 
 export const OPENAI_REALTIME_MODEL_IDS = Object.freeze([
+  "gpt-realtime-2.1",
+  "gpt-realtime-2.1-mini",
   "gpt-realtime",
 ] as const);
+
+export function openAiRealtimeModelDetail(id: string): string {
+  if (id === "gpt-realtime-2.1") return "Natural conversation · recommended";
+  if (id === "gpt-realtime-2.1-mini") return "Lower cost";
+  if (id === "gpt-realtime") return "Legacy model";
+  return id;
+}
 
 export type ReviewedOpenAiRealtimeModelId =
   (typeof OPENAI_REALTIME_MODEL_IDS)[number];

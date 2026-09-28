@@ -185,6 +185,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "voice-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /voice-call\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "setup-focus-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /onboarding-wizard\.spec\.ts/,

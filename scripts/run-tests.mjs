@@ -963,6 +963,8 @@ export const SUITES = {
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",
     "src/components/voice-call-overlay.test.ts",
+    "src/components/voice-call-overlay.behavior.test.tsx",
+    "src/components/voice-call-settings.test.tsx",
     "src/components/voice-new-chat.test.ts",
     "src/lib/session-debug.test.ts",
     "src/lib/chat-debug-store.test.ts",
@@ -2519,6 +2521,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/voice-call-overlay.behavior.test.tsx",
+    "src/components/voice-call-settings.test.tsx",
   "src/lib/use-surface-warmup.behavior.test.tsx",
   "src/lib/use-pausable-poll.behavior.test.tsx",
   "src/lib/use-reply-recommendation.behavior.test.tsx",
