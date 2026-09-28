@@ -54,6 +54,7 @@ import { FamiliarAnalyticsSection } from "@/components/familiar-tab-analytics";
 import { FamiliarMemorySection } from "@/components/familiar-tab-memory";
 import { FamiliarSettingsSection } from "@/components/familiar-tab-settings";
 import "@/styles/familiar-tab.css";
+import { whenStartupSettled } from "@/lib/startup-gate";
 
 // ── Identity hero ────────────────────────────────────────────────────────────
 
@@ -294,7 +295,8 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
       ? `/api/capabilities?harness=${encodeURIComponent(harnessId)}`
       : "/api/capabilities";
 
-    void Promise.all([
+    // Not needed until it is on screen: wait out app load (#5649).
+    void whenStartupSettled().then(() => cancelled ? Promise.reject(new Error("unmounted")) : Promise.all([
       fetch("/api/roles", { cache: "no-store" })
         .then((r) => r.json() as Promise<{ ok: boolean; roles?: RoleEntry[]; error?: string }>)
         .catch(() => ({ ok: false as const, error: "roles fetch failed" })),
@@ -307,7 +309,7 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
       fetch("/api/harnesses", { cache: "no-store" })
         .then((r) => r.json() as Promise<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>)
         .catch(() => ({ ok: false as const, error: "harnesses fetch failed" })),
-    ]).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
+    ])).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
       if (cancelled) return;
       const errors: string[] = [];
       if (!rolesRes.ok) errors.push(rolesRes.error ?? "roles unavailable");
@@ -322,6 +324,8 @@ function useCapabilitySnapshot(harnessId?: string): CapabilitySnapshot {
         loading: false,
         errors,
       });
+    }).catch(() => {
+      // Unmounted before app load settled: nothing to show.
     });
     return () => { cancelled = true; };
   }, [harnessId]);

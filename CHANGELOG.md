@@ -7,6 +7,70 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-28
+
+> Enhance reviews every task on the Board, from the desktop or your phone.
+
+Patch release on top of v0.5.0. Headline: Enhance now sweeps every open task
+through its assigned familiar, which updates or closes it with the evidence it
+found, and the iOS app can run it from the Tasks screen. Opening chats is much
+faster.
+
+### Added
+- **Enhance tasks on iOS** (#5653). Tasks → View options → **Enhance tasks**
+  runs the same sweep as the desktop. Progress shows in the Tasks title, and a
+  closing toast accounts for every task. The sweep streams on the long-lived
+  connection, so it isn't cut off at the 5-minute request limit.
+- Claude Opus 5.5 is available as a model, and the Opus alias no longer
+  mislabels it.
+
+### Changed
+- **Enhance reviews every open task** (#5631). A single run covers the whole
+  Board, not just the selected familiar's tasks. Each task is reviewed by its
+  own assigned familiar, and up to three familiars work side by side.
+  Unassigned tasks are reported rather than silently dropped. The familiar is
+  told to close delivered work, cancel obsolete work, or set the status to
+  where the work really stands, with a reason each time. The closing toast
+  counts updated, closed, unassigned, skipped, and not reached.
+- **GitHub state decides completed vs cancelled** (#5636, #5648). A merged PR,
+  or an issue closed as completed, completes the task. A PR closed without
+  merging, or an issue closed as not planned or as a duplicate, cancels the
+  task, provided nothing linked landed and nothing linked is still open.
+- Chat opens are much cheaper. An unchanged chat or chat list answers with a
+  304. Pasted and agent-attached images move out of the transcript. Tool
+  outputs load on demand. GitHub card, checks, and review-thread lookups are
+  shared and briefly cached. Git enrichment and conversation summaries persist
+  across restarts. Login-shell PATH discovery is warmed at start and no longer
+  blocks the server (#5623).
+- The phone composer rests at its input, slims to two lines while engaged, and
+  never collapses while in use. The phone chat chrome folds away so the
+  transcript gets the height.
+- The Queue and Work tabs are rebuilt on GitHub Issues (#5578). "Sessions" is
+  renamed "Chats" in the chat rail and list.
+- The catalog fonts are vendored in every subset, so builds never fetch Google
+  Fonts.
+- Remote clients receive compressed API JSON.
+
+### Fixed
+- **Enhance wrote nothing** (#5631). The stream reader parsed the system-init
+  frame instead of the familiar's answer, so every run saved the card
+  unchanged and still reported it as done. A familiar's cancel was always
+  rejected. A rejected dependency suggestion discarded the rest of the review.
+  Legacy cards without notes crashed the run.
+- Opening a chat no longer flashes offline, hangs on a fetch, or shows chats
+  that were deleted. A failed or degraded chat-list load no longer wipes panes
+  and deep links.
+- The daemon-unreachable message is plain and shows once. When chats or
+  reminders fail to load, the app now says so.
+- Keyboard focus stays inside the first-project gate and dialogs, and lands in
+  Tasks after "Open Tasks".
+- On iOS you can archive from the phone and filter chats by familiar, and
+  thread reviews are filed away.
+
+### Removed
+- The Watchtower room.
+- Beads data, tooling, and the Beads-backed worktree lifecycle (#5573, #5574).
+
 ## [0.5.0] - 2026-09-22
 
 > The Needs-you inbox, and a pass that removes what the app could not back.
