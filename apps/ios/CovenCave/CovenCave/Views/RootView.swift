@@ -146,6 +146,7 @@ private struct ReconnectPill: View {
 struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @State private var settingsMounted = false
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -244,9 +245,18 @@ struct MainShellView: View {
                 .opacity(app.selectedTab == .settings ? 0 : 1)
                 .allowsHitTesting(app.selectedTab != .settings)
                 .accessibilityHidden(app.selectedTab == .settings)
-            if app.selectedTab == .settings {
+            // Settings mounts on its first visit and then stays, hidden like
+            // Chats. Rebuilding its NavigationStack and Form on every visit
+            // made switching to Settings the slowest destination change.
+            if settingsMounted || app.selectedTab == .settings {
                 SettingsView()
+                    .opacity(app.selectedTab == .settings ? 1 : 0)
+                    .allowsHitTesting(app.selectedTab == .settings)
+                    .accessibilityHidden(app.selectedTab != .settings)
             }
+        }
+        .onChange(of: app.selectedTab) { _, tab in
+            if tab == .settings { settingsMounted = true }
         }
     }
 }
