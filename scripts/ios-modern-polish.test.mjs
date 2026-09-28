@@ -69,8 +69,13 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /let isLastMessage = row\.id == thread\.messages\.last\?\.id[\s\S]{0,450}?guard isLastMessage,[\s\S]{0,100}?geometry\.bounds\(of: \.scrollView\)/,
+  /ForEach\(thread\.transcriptRows\.dropLast\(\)\)[\s\S]{0,400}?if let row = thread\.transcriptRows\.last \{[\s\S]{0,300}?\.onGeometryChange\(for: ChatScrollGeometry\?\.self\)[\s\S]{0,120}?geometry\.bounds\(of: \.scrollView\)/,
   "bottom arrival must use the actual latest row, not the lazy stack's estimated content height",
+);
+assert.match(
+  chatView,
+  /viewportRecovery\.noteLatestRow\(id: row\.id, height: geometry\.contentHeight\)/,
+  "shrink recovery must be armed by the latest reply's own height, not lazy history re-estimation (#5613)",
 );
 assert.match(
   markdownCss,

@@ -12,6 +12,20 @@ struct CavePerformanceFixtureSnapshot {
 @MainActor
 enum CavePerformanceFixture {
     static let launchArgument = "--performance-fixture"
+    static var isTranscriptRecoveryFixture: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return shouldEnable(arguments: arguments) && arguments.contains("--transcript-recovery-fixture")
+    }
+
+    static func setRecoveryFixtureText(in thread: ChatThread, shrunk: Bool) {
+        guard isTranscriptRecoveryFixture, thread.id == identifier("chat", 0) else { return }
+        let paragraphs = shrunk ? "Recovered short response." : String(repeating:
+            "A deliberately long synthetic response for transcript recovery. Read above its tail before shrinking it.\n\n", count: 100)
+        thread.replaceStreamingText(identifier("message", 0),
+            "# Transcript recovery fixture\n\n" + paragraphs
+                + "\n\n[Transcript recovery tail](https://example.com/transcript-recovery)")
+    }
+
     static let defaultsSuiteName = "ai.opencoven.cave.performance-fixture"
     static let projectCount = 20
     static let localChatCount = 1_000
@@ -212,13 +226,16 @@ enum CavePerformanceFixture {
         app.projectMembershipLoaded = true
         app.projectContext = fixture.projects.first.map(ProjectContext.project)
         app.connectionState = .connected
+        if isTranscriptRecoveryFixture, let thread = fixture.threads.first {
+            setRecoveryFixtureText(in: thread, shrunk: false)
+        }
     }
 
     /// Stream a ten-second synthetic response at the coalesced UI cadence, then
     /// keep revising its final token in place so rendering never goes idle.
     /// This measures transcript/render work; it does not simulate network cost.
     static func runStreaming(in app: AppModel) async {
-        guard app.isPerformanceFixture,
+        guard app.isPerformanceFixture, !isTranscriptRecoveryFixture,
               let thread = app.threads.first(where: { $0.id == identifier("chat", 0) })
         else { return }
         var frame = 0

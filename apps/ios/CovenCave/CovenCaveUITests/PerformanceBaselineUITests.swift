@@ -30,6 +30,82 @@ final class PerformanceBaselineUITests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testTranscriptShrinkRecoversAndReopensInSameProcess() {
+        let app = launchRecoveryFixture()
+        defer { app.terminate() }
+        openRecoveryThread(in: app)
+        assertRecoveryTailVisible(in: app, phase: "initial")
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        transcript.swipeDown()
+        transcript.swipeDown()
+        let jump = app.buttons["Scroll to latest"].firstMatch
+        XCTAssertTrue(jump.waitForExistence(timeout: 10), "reader is deliberately away from latest")
+        app.buttons["Shrink transcript fixture"].tap()
+        assertRecoveryTailVisible(in: app, phase: "after-shrink")
+        leaveRecoveryThread(in: app)
+        openRecoveryThread(in: app)
+        assertRecoveryTailVisible(in: app, phase: "same-process-reopen-after-shrink")
+    }
+
+    @MainActor
+    func testTranscriptColdAndRepeatedOpenWithoutShrink() {
+        let app = launchRecoveryFixture()
+        defer { app.terminate() }
+        for index in 0..<3 {
+            openRecoveryThread(in: app)
+            assertRecoveryTailVisible(in: app, phase: "no-shrink-open-\(index)")
+            leaveRecoveryThread(in: app)
+        }
+    }
+
+    @MainActor
+    private func launchRecoveryFixture() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture",
+                               "--transcript-recovery-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 30))
+        return app
+    }
+
+    @MainActor
+    private func openRecoveryThread(in app: XCUIApplication) {
+        openDrawer(in: app)
+        let richThread = app.buttons["Rich streaming fixture"]
+        XCTAssertTrue(richThread.waitForExistence(timeout: 10))
+        richThread.tap()
+        XCTAssertTrue(app.navigationBars["Rich streaming fixture"].waitForExistence(timeout: 20))
+    }
+
+    @MainActor
+    private func leaveRecoveryThread(in app: XCUIApplication) {
+        openDrawer(in: app)
+        let other = app.buttons["Fixture chat 2"]
+        XCTAssertTrue(other.waitForExistence(timeout: 10))
+        other.tap()
+        XCTAssertTrue(app.navigationBars["Fixture chat 2"].waitForExistence(timeout: 20))
+    }
+
+    @MainActor
+    private func assertRecoveryTailVisible(in app: XCUIApplication, phase: String) {
+        // A native Text fallback or an empty bubble cannot satisfy this test.
+        let tail = app.webViews.links["Transcript recovery tail"].firstMatch
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: tail)
+        let result = XCTWaiter.wait(for: [visible], timeout: 30)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "transcript-\(phase)"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        if result != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "transcript-hierarchy-\(phase)"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
+        XCTAssertEqual(result, .completed, "Real WebKit tail must be visible: \(phase)")
+    }
+
     private var attachesToRunningApp: Bool {
         ProcessInfo.processInfo.environment["CAVE_PERFORMANCE_ATTACH_RUNNING"] == "1"
     }

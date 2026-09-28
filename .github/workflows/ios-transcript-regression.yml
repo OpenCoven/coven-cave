@@ -1,0 +1,92 @@
+name: iOS transcript regression
+
+on:
+  pull_request:
+    paths:
+      - apps/ios/**
+      - packages/ios-markdown/**
+      - scripts/build-ios-markdown.mjs
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/ios-transcript-regression.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-transcript-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  transcript:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Install locked renderer dependencies
+        run: |
+          corepack enable
+          corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Require bundled WebKit markdown rather than native fallback
+        run: node scripts/build-ios-markdown.mjs
+      - name: Generate project and select available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          command -v xcodegen >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          (cd apps/ios/CovenCave && xcodegen generate)
+          # Same tested selector as ci.yml: iOS 18+ runtimes, compared
+          # numerically, newest first (scripts/ios-select-simulator.test.mjs).
+          if ! udid="$(xcrun simctl list devices available -j | node scripts/ios-select-simulator.mjs)"; then
+            echo "::error::No available iPhone simulator on this runner image; the XCTest suite cannot run."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "CAVE_TEST_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
+      # Hosted runners cold-start WebKit slowly and can raise system banners
+      # (e.g. "Ready for Apple Intelligence") over the app; the same head has
+      # passed and failed different ChatScrollingUITests cases across runs.
+      # A retry re-runs only a failed test, and every assertion must pass in
+      # full on the retry, so a consistent regression still fails the job.
+      - name: Debug scroll state and existing long-chat UI regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
+            -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
+            -resultBundlePath "$RUNNER_TEMP/scroll-debug.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -retry-tests-on-failure -test-iterations 3 \
+            -only-testing:CovenCaveTests/ChatScrollStateTests \
+            -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
+            -only-testing:CovenCaveUITests/ChatScrollingUITests \
+            | tee "$RUNNER_TEMP/scroll-debug.log"
+      - name: Release shrink and independent no-shrink repeated opens
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \
+            -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
+            -resultBundlePath "$RUNNER_TEMP/scroll-release.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -retry-tests-on-failure -test-iterations 3 \
+            -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess \
+            -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink \
+            | tee "$RUNNER_TEMP/scroll-release.log"
+      - name: Retain test logs and screenshot-bearing results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: transcript-regression-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/scroll-*.log
+            ${{ runner.temp }}/scroll-*.xcresult
+          retention-days: 7
+          if-no-files-found: warn
