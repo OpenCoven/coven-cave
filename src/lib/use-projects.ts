@@ -11,7 +11,7 @@ import {
 import { isCurrentProjectScope, projectScopeKey, projectsForCurrentScope } from "./project-scope.ts";
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
-import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
+import { clearProjectsCache, fetchProjectsFromCache, peekProjectsSnapshot, type ProjectsPayload } from "./use-projects-cache.ts";
 import type { CreateProjectOptions } from "./chat-add-project.ts";
 
 export type { CreateProjectOptions } from "./chat-add-project.ts";
@@ -87,12 +87,18 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   // when familiarId has already changed but the previous list is still held.
   const scopeKey = projectScopeKey(familiarId);
   const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
-  const loadedSuccessfully = enabled && isCurrentProjectScope(loadedScopeKey, familiarId);
+  const scopeLoaded = enabled && isCurrentProjectScope(loadedScopeKey, familiarId);
+  // On a switch, this scope's own last successful list stands in for the
+  // render before the effect seeds it, so the rail never blanks between
+  // familiars it has already shown. It is keyed to this scope, so it cannot
+  // leak the previous familiar's grants.
+  const scopeSnapshot = enabled && !scopeLoaded ? peekProjectsSnapshot(familiarId) : null;
+  const loadedSuccessfully = scopeLoaded || scopeSnapshot !== null;
   // Effects cannot clear state until after this render. Mask the prior
   // scope's retained array synchronously so even a consumer that only maps
   // `projects` cannot expose a familiar A result for familiar B.
   const currentScopeProjects = enabled
-    ? projectsForCurrentScope(projects, loadedScopeKey, familiarId)
+    ? scopeSnapshot ?? projectsForCurrentScope(projects, loadedScopeKey, familiarId)
     : [];
   // Generation guard: bumped on every load() call, scope change, and disable,
   // so a stale response can't write into newer state. (Replaces the previous
@@ -152,13 +158,19 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     // so this effect only re-runs when the scope or `enabled` actually changes;
     // a manual reload() after a mutation calls load() directly and is
     // unaffected, so an in-place refresh never blanks the list.
-    setLoadedScopeKey(null);
-    setProjects([]);
+    const snapshot = peekProjectsSnapshot(familiarId);
+    if (snapshot) {
+      setProjects(snapshot);
+      setLoadedScopeKey(scopeKey);
+    } else {
+      setLoadedScopeKey(null);
+      setProjects([]);
+    }
     load();
     return () => {
       generationRef.current += 1;
     };
-  }, [enabled, load]);
+  }, [enabled, load, familiarId, scopeKey]);
 
   useEffect(() => {
     if (!enabled) return;

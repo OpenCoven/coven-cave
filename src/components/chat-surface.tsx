@@ -582,6 +582,7 @@ export function ChatSurface({
         <aside className="chat-inner-rail" aria-label="Chat threads">
           <SidebarChatsSection
             sessions={browseSessions}
+            reflectionSourceSessions={sessions}
             sessionsError={sessionsError}
             sessionsDegraded={sessionsDegraded}
             browseScope={effectiveBrowseScope}
@@ -805,6 +806,7 @@ export function ChatSurface({
         open={threadsSheetOpen}
         onClose={() => setThreadsSheetOpen(false)}
         sessions={browseSessions}
+        reflectionSourceSessions={sessions}
         sessionsError={sessionsError}
         sessionsDegraded={sessionsDegraded}
         browseScope={effectiveBrowseScope}

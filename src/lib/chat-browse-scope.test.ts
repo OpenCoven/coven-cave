@@ -71,6 +71,8 @@ console.log("chat-browse-scope.test.ts: ok");
   assert.deepEqual(effectiveChatBrowseScope(alphaScope, loaded), { ...alphaScope, ready: true, loading: false });
   assert.deepEqual(effectiveChatBrowseScope(alphaScope, fetching), { ...alphaScope, ready: false, loading: true },
     "a familiar switch refetching projects is loading, not unavailable");
+  assert.deepEqual(effectiveChatBrowseScope(alphaScope, { loaded: true, loading: true, error: null }), { ...alphaScope, ready: true, loading: false },
+    "revalidating this scope's loaded list never blanks the rail");
   assert.deepEqual(effectiveChatBrowseScope(alphaScope, failed), { ...alphaScope, ready: false, loading: false },
     "a failed project fetch is unavailable");
   assert.deepEqual(effectiveChatBrowseScope({ selection: "all", ready: true }, fetching), { selection: "all", ready: true, loading: false },

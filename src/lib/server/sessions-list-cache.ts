@@ -47,7 +47,10 @@ export type SessionsListResult = {
 };
 
 const SESSIONS_LIST_CACHE_MS = 2000;
-const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
+// Long enough that a familiar or project switch after a pause is still served
+// instantly while one background recompute refreshes it; every mutation path
+// busts the cache, so the window only ever covers daemon-side drift.
+const SESSIONS_LIST_STALE_SERVE_MS = 300_000;
 
 export const sessionsListCache = createSwrCache<SessionsListResult>({
   ttlMs: SESSIONS_LIST_CACHE_MS,

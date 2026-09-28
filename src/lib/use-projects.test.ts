@@ -19,7 +19,7 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{ clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload \} from "\.\/use-projects-cache\.ts";/,
+  /import \{ clearProjectsCache, fetchProjectsFromCache, peekProjectsSnapshot, type ProjectsPayload \} from "\.\/use-projects-cache\.ts";/,
   "useProjects imports the shared project cache helper",
 );
 
@@ -28,10 +28,18 @@ assert.match(
 // familiar-scoped consumer (new-card modal, command palette) keeps showing —
 // and lets the user pick — another familiar's projects during the in-flight
 // request, which then 403s at the board chat-launch (assertProjectAccess).
+// The one exception is the NEW scope's own last successful list: it is seeded
+// in place of the blank so a familiar switch paints at once. It is keyed by
+// familiar, so it can never carry the previous familiar's grants.
 assert.match(
   source,
-  /setProjects\(\[\]\);\s*\n\s*load\(\);/,
-  "useProjects clears the retained list before refetching on a scope/enable change",
+  /const snapshot = peekProjectsSnapshot\(familiarId\);\s*\n\s*if \(snapshot\) \{\s*\n\s*setProjects\(snapshot\);\s*\n\s*setLoadedScopeKey\(scopeKey\);\s*\n\s*\} else \{\s*\n\s*setLoadedScopeKey\(null\);\s*\n\s*setProjects\(\[\]\);\s*\n\s*\}\s*\n\s*load\(\);/,
+  "useProjects drops the retained list (or seeds this scope's own snapshot) before refetching on a scope/enable change",
+);
+assert.match(
+  cacheSource,
+  /lastGoodProjects\.set\(snapshotKey\(familiarId\), payload\.projects\)/,
+  "snapshots are recorded per familiar scope, only from successful responses",
 );
 
 // The clear must live in the [enabled, load] effect (load is memoized on
@@ -124,8 +132,8 @@ assert.match(
 
 assert.match(
   source,
-  /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);/,
-  "useProjects reports success only when the response belongs to the current familiar scope",
+  /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const scopeLoaded = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);[\s\S]*const scopeSnapshot = enabled && !scopeLoaded \? peekProjectsSnapshot\(familiarId\) : null;\s*\n\s*const loadedSuccessfully = scopeLoaded \|\| scopeSnapshot !== null;/,
+  "useProjects reports success only for the current familiar scope's own response or its own last snapshot",
 );
 // The payload arrives already deduped + sorted from the cache (cave-k0gf), so
 // the success branch stores it as-is. What this pin guards is unchanged: only

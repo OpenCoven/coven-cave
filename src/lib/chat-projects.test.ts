@@ -6,6 +6,8 @@ import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
   isGeneratedChatSession,
+  isThreadReflectionSession,
+  threadReflectionSessions,
 } from "./chat-projects.ts";
 import type { SessionRow } from "./types.ts";
 
@@ -800,4 +802,29 @@ console.log("chat-projects.test.ts: ok");
     false,
     "human chats that merely start with Write… stay visible",
   );
+}
+
+// Reflection runs get their own rail section: hidden from the live chat list,
+// collected per familiar, archived runs dropped, newest first.
+{
+  const reflection = (id: string, familiarId: string, updated_at: string, extra = {}) => ({
+    ...session(id, "/Users/me/.coven/workspaces/familiars/" + familiarId, updated_at, familiarId),
+    title: "Thread you just completed (session…",
+    origin: "enhance",
+    ...extra,
+  });
+  const older = reflection("r1", "nova", "2026-09-27T10:00:00.000Z");
+  const newer = reflection("r2", "nova", "2026-09-28T10:00:00.000Z");
+  const archived = reflection("r3", "nova", "2026-09-28T11:00:00.000Z", { archived_at: "2026-09-28T12:00:00.000Z" });
+  const otherFamiliar = reflection("r4", "cody", "2026-09-28T10:00:00.000Z");
+  const promptEnhance = { ...reflection("e1", "nova", "2026-09-28T10:00:00.000Z"), title: "Rewrite this prompt" };
+  const chat = session("c1", "/repo", "2026-09-28T10:00:00.000Z", "nova");
+  const rows = [older, newer, archived, otherFamiliar, promptEnhance, chat];
+
+  assert.equal(isThreadReflectionSession(newer), true);
+  assert.equal(isThreadReflectionSession(promptEnhance), false, "other enhance runs stay plain generated runs");
+  assert.equal(isThreadReflectionSession({ ...newer, origin: undefined }), false, "a human chat titled like the prompt is not a reflection");
+  assert.deepEqual(threadReflectionSessions(rows, "nova").map((s) => s.id), ["r2", "r1"]);
+  assert.deepEqual(threadReflectionSessions(rows, null).map((s) => s.id).sort(), ["r1", "r2", "r4"]);
+  assert.deepEqual(filterVisibleChatSessions(rows, "nova").map((s) => s.id), ["c1"], "reflections never sit among live chats");
 }

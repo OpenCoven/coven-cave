@@ -20,6 +20,7 @@ import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import {
   deriveChatProjectGroups,
+  threadReflectionSessions,
   type ChatProjectGroup,
 } from "@/lib/chat-projects";
 import { visibleChatSessions } from "@/lib/chat-list-model";
@@ -47,6 +48,10 @@ import { ChatRowTitle } from "@/components/chat-row-title";
 
 type Props = {
   sessions: SessionRow[];
+  /** The familiar's rows before the project filter. Reflections live in the
+   *  familiar's own workspace, so the project-scoped `sessions` never carry
+   *  them; defaults to `sessions`. */
+  reflectionSourceSessions?: SessionRow[];
   /** The sessions list request failed. With no rows to show, say so rather
    *  than presenting the failure as an empty history (#5527). */
   sessionsError?: boolean;
@@ -534,6 +539,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin,
 
 export function SidebarChatsSection({
   sessions,
+  reflectionSourceSessions,
   sessionsError = false,
   sessionsDegraded = false,
   browseScope,
@@ -603,6 +609,21 @@ export function SidebarChatsSection({
     ),
     [normalizedSessions, activeFamiliarId, projects, overrides, railBrowseScope],
   );
+
+  // Reflection runs ("Thread you just completed…") are never live chats. They
+  // get their own section, collapsed by default and pinned below every live
+  // group, scoped to the familiar only: a reflection's own cwd is the
+  // familiar's workspace, not the project of the thread it reviewed.
+  const reflectionSessions = useMemo(
+    // A finished review never needs the operator, so no attention styling.
+    () => threadReflectionSessions(reflectionSourceSessions ?? sessions, activeFamiliarId ?? null)
+      .map((session) => ({ ...session, attention: NO_CHAT_ATTENTION })),
+    [reflectionSourceSessions, sessions, activeFamiliarId],
+  );
+  const [reflectionsOpen, setReflectionsOpen] = useState(false);
+  const reflectionsListId = useId();
+  const reflectionsExpanded =
+    reflectionsOpen || (activeSessionId != null && reflectionSessions.some((s) => s.id === activeSessionId));
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
@@ -1042,6 +1063,67 @@ export function SidebarChatsSection({
               })
             )}
           </>
+          {!hasSearch && reflectionSessions.length > 0 ? (
+            <section aria-label="Reflections" className="cnav__reflections">
+              <button
+                type="button"
+                className="cnav__label cnav__label--toggle focus-ring"
+                aria-expanded={reflectionsExpanded}
+                aria-controls={reflectionsListId}
+                onClick={() => setReflectionsOpen(!reflectionsExpanded)}
+              >
+                <Icon name={reflectionsExpanded ? "ph:caret-down" : "ph:caret-right"} width={9} aria-hidden />
+                <span className="cnav__label-text">Reflections</span>
+                <span className="cnav__label-count">{reflectionSessions.length}</span>
+                <span className="cnav__label-rule" aria-hidden />
+              </button>
+              {reflectionsExpanded ? (
+                <ul id={reflectionsListId}>
+                  {(showAllByKey.has("reflections") ? reflectionSessions : reflectionSessions.slice(0, THREADS_PREVIEW)).map((session) => (
+                    <li key={`reflection:${session.id}`}>
+                      <ThreadRow
+                        session={session}
+                        active={activeSessionId === session.id}
+                        pinned={false}
+                        confirming={confirmingSessionId === session.id}
+                        deleting={deletingSessionId === session.id}
+                        indent="flat"
+                        project={null}
+                        glyph={threadLeadingIcon(sessionRailTitle(session))}
+                        onOpenUrl={onOpenUrl}
+                        onOpen={() => onOpenSession(session)}
+                        onOpenInSplit={
+                          onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                        }
+                        selectMode={false}
+                        selected={false}
+                        onToggleSelect={() => undefined}
+                        broadcast={null}
+                        onTogglePin={() => togglePin(session.id)}
+                        onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                        archiving={archivingId !== null}
+                        onRequestDelete={() => setConfirmingSessionId(session.id)}
+                        onCancelDelete={() => setConfirmingSessionId(null)}
+                        onConfirmDelete={() => void handleDeleteSession(session)}
+                        now={now}
+                      />
+                    </li>
+                  ))}
+                  {reflectionSessions.length > THREADS_PREVIEW && !showAllByKey.has("reflections") ? (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllByKey((cur) => new Set(cur).add("reflections"))}
+                        className="cnav__more cnav__more--flat focus-ring"
+                      >
+                        Show {reflectionSessions.length - THREADS_PREVIEW} more
+                      </button>
+                    </li>
+                  ) : null}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
           </nav>
         </div>
         {composerOpen ? (

@@ -334,6 +334,9 @@ function requestedWorkspaceProjectId(
   return projects.find((project) => normalizeProjectRoot(project.root) === normalizedRoot)?.id;
 }
 
+/** Familiar scopes whose last list is kept for instant switching. */
+const SESSIONS_SCOPE_SNAPSHOTS = 8;
+
 export function Workspace() {
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
@@ -1907,6 +1910,10 @@ export function Workspace() {
   // poll gets a bodiless 304 and replays this payload through the unchanged
   // accept path below, so projection and retirement behave exactly as if the
   // identical body had arrived, minus the download and parse.
+  // Last applied list per familiar scope, so switching back to a familiar
+  // paints its chats in the same frame instead of after the list round trip
+  // (a cold compute takes over a second). The fetch that follows replaces it.
+  const sessionsByScopeRef = useRef(new Map<string, SessionRow[]>());
   const sessionsListEtagRef = useRef<{ scopeKey: string; etag: string; payload: { ok?: boolean; degraded?: boolean; sessions?: unknown[] } } | null>(null);
   // Familiar-switch latency (#5448): from the scope change until that scope's
   // list is applied. The first load is boot, not a switch, so it's not timed.
@@ -2013,6 +2020,12 @@ export function Workspace() {
         setSessionsScopeFamiliarId(capturedActiveId);
         setSessionsLoaded(true);
         baseSessionsApplied = true;
+        if (!degraded) {
+          const byScope = sessionsByScopeRef.current;
+          byScope.delete(capturedScopeKey);
+          byScope.set(capturedScopeKey, visibleSessions);
+          if (byScope.size > SESSIONS_SCOPE_SNAPSHOTS) byScope.delete(byScope.keys().next().value!);
+        }
         if (familiarSwitchSpanRef.current?.scopeKey === capturedScopeKey) {
           familiarSwitchSpanRef.current.end();
           familiarSwitchSpanRef.current = null;
@@ -2068,6 +2081,12 @@ export function Workspace() {
       };
     }
     familiarSwitchBaselineRef.current = true;
+    const snapshot = sessionsByScopeRef.current.get(chatAttentionProjectionScopeKey(activeId));
+    if (snapshot) {
+      const rows = filterDeletedSessions(snapshot, locallyDeletedSessionIdsRef.current);
+      setSessions((prev) => (sameSessionList(prev, rows) ? prev : rows));
+      setSessionsScopeFamiliarId(activeId);
+    }
     void loadSessions();
   }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime

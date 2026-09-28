@@ -1388,8 +1388,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListCacheSource,
-    /SESSIONS_LIST_STALE_SERVE_MS = 30_000/,
-    "sessions-list-cache: stale serve window covers the poll cadence so polls never block on recompute",
+    /SESSIONS_LIST_STALE_SERVE_MS = 300_000/,
+    "sessions-list-cache: stale serve window covers the poll cadence and a familiar/project switch after a pause, so neither blocks on recompute",
   );
   assert.match(
     sessionsListCacheSource,

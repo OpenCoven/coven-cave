@@ -363,6 +363,27 @@
   background: var(--border-hairline);
 }
 
+/* Reflections: a collapsed disclosure under every live group, so a
+   familiar's post-thread review runs never read as more chats. The label is
+   the toggle; it stays quieter than the live section names. */
+.cnav__reflections {
+  margin-top: var(--space-2);
+}
+.cnav__label--toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cnav__label--toggle::before {
+  display: none;
+}
+.cnav__label--toggle:hover {
+  color: var(--text-primary);
+}
+
 .cnav__organization + .cnav__organization {
   margin-top: var(--space-1);
 }

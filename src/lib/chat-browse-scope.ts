@@ -29,7 +29,9 @@ export function effectiveChatBrowseScope(
   projects: ProjectsLoadState,
 ): ChatBrowseScope | undefined {
   if (!scope) return undefined;
-  const projectsReady = scope.selection === "all" || (projects.loaded && !projects.loading && projects.error === null);
+  // A revalidation of this scope's already-loaded list keeps it ready: the
+  // rows belong to the current scope, so a familiar switch paints at once.
+  const projectsReady = scope.selection === "all" || (projects.loaded && projects.error === null);
   const ready = scope.ready && projectsReady;
   const loading = !ready && (scope.ready ? projects.error === null : Boolean(scope.loading));
   return { ...scope, ready, loading };

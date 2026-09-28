@@ -1810,6 +1810,15 @@ final class AppModel {
         archivedServerSessions.filter { !$0.isGeneratedRun }
     }
 
+    /// Thread-reflection review runs, which `chatServerSessions` drops with
+    /// every other generated run. Only the chat list's collapsed Reflections
+    /// section reads these. Archived rows ride along so a local thread hydrated
+    /// from an archived reflection is still recognized and kept out of the
+    /// live list; the snapshot shows active reflections only.
+    var threadReflectionSessions: [SessionRow] {
+        (serverSessions + archivedServerSessions).filter(\.isThreadReflection)
+    }
+
     var projectThreads: [ChatThread] {
         guard let projectContext else { return [] }
         return chatThreads.filter { projectContext.matches(thread: $0, registeredProjects: projects) }
@@ -1895,10 +1904,7 @@ final class AppModel {
                     && !bound.contains($0.id)
                     && !$0.isGeneratedRun
             }
-            .sorted {
-                (caveParseISO($0.updatedAt) ?? .distantPast)
-                    > (caveParseISO($1.updatedAt) ?? .distantPast)
-            }
+            .newestFirstByUpdatedAt()
     }
 
     func threadCount(for familiarId: String, in context: ProjectContext) -> Int {
@@ -1965,10 +1971,7 @@ final class AppModel {
                     && !bound.contains($0.id)
                     && !$0.isGeneratedRun
             }
-            .sorted {
-                (caveParseISO($0.updatedAt) ?? .distantPast)
-                    > (caveParseISO($1.updatedAt) ?? .distantPast)
-            }
+            .newestFirstByUpdatedAt()
     }
 
     func globalThreadCount(for familiarId: String) -> Int {
@@ -3081,9 +3084,9 @@ final class AppModel {
         newChatRequested = false
         chatSearchRequested = false
         selectedTab = preservedTab
-        if let projectContext {
-            seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
-        }
+        // applyProjectContextSelection already seeded this context's familiars.
+        // Seeding again re-derived projectFamiliars — for Unassigned a scan of
+        // every thread, session and task — a second time on each tap.
         publishWidgetSnapshot()
     }
 
@@ -8343,5 +8346,17 @@ final class AppModel {
             return
         }
         familiarViews = views
+    }
+}
+
+private extension Array where Element == SessionRow {
+    /// Newest `updatedAt` first, parsing each timestamp once. Sorting with a
+    /// parse inside the comparator cost two parses per comparison, and the
+    /// familiar session picker and landing lookups re-run this on every
+    /// render of a familiar switch.
+    func newestFirstByUpdatedAt() -> [SessionRow] {
+        map { ($0, caveParseISO($0.updatedAt) ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }
+            .map(\.0)
     }
 }

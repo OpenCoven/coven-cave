@@ -305,6 +305,35 @@ export function isGeneratedChatSession(session: SessionRow): boolean {
   return LEGACY_JOURNAL_PROMPT_PREFIXES.some((prefix) => title.startsWith(prefix));
 }
 
+/** The reflect prompt's machine opener (thread-self-report.ts
+ *  `buildThreadReflectPrompt`); stored titles are cut from it. */
+const THREAD_REFLECTION_TITLE_PREFIX = "thread you just completed";
+
+/** True for a "Thread you just completed…" review run: the familiar's
+ *  post-thread self-report. It is an `enhance` run, so the chat lists hide
+ *  it, but the rail files it under its own collapsed Reflections section
+ *  rather than dropping it, so a reflection stays reachable without ever
+ *  sitting between live chats. */
+export function isThreadReflectionSession(session: SessionRow): boolean {
+  if (session.origin !== "enhance") return false;
+  return (session.title ?? "").trimStart().toLowerCase().startsWith(THREAD_REFLECTION_TITLE_PREFIX);
+}
+
+/** Unarchived reflection runs for the familiar, newest first. */
+export function threadReflectionSessions(
+  sessions: readonly SessionRow[],
+  familiarId: string | null,
+): SessionRow[] {
+  return sessions
+    .filter((session) => (
+      isThreadReflectionSession(session)
+      && !session.archived_at
+      && session.status !== "archived"
+      && (familiarId === null || session.familiarId === familiarId)
+    ))
+    .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
+}
+
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
