@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 
 // Short spoken sample of a realtime voice, synthesized once per voice through
 // OpenAI's plain TTS endpoint and cached for the process lifetime (the sample
-// text is fixed, so the audio never changes). Marin/cedar are realtime-only:
-// if the TTS endpoint rejects a voice we cache that verdict too and report
-// preview_unsupported instead of re-billing the failure on every click.
+// text is fixed, so the audio never changes). The current mini TTS model
+// supports all Realtime voices, including Marin and Cedar. Provider-specific
+// rejections still get a retryable, actionable message.
 const TTS_URL = "https://api.openai.com/v1/audio/speech";
 const TTS_MODEL = "gpt-4o-mini-tts";
 
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
       param = json.error?.param ?? "";
     } catch { /* keep empty */ }
     // Only a voice-parameter rejection means "this voice isn't on the TTS
-    // endpoint" (realtime-only marin/cedar) — cache that verdict. Every other
+    // endpoint" for this account — cache that verdict. Every other
     // failure (bad key, quota, transient) stays retryable and uncached.
     if (res.status === 400 && (param === "voice" || /voice/i.test(providerMessage))) {
       cache.set(voice.id, { kind: "unsupported" });
@@ -110,6 +110,6 @@ function unsupportedResponse(): Response {
   return NextResponse.json({
     ok: false,
     error: "preview_unsupported",
-    hint: "This voice is realtime-only, so no spoken sample is available yet — it still works on live calls.",
+    hint: "A spoken sample is unavailable for this voice on this account. Choose another voice or try it in a call.",
   }, { status: 422 });
 }

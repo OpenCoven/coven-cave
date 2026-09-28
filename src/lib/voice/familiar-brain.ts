@@ -49,7 +49,7 @@ export function createFamiliarSpeechBrain(opts: {
   sessionId: string;
   callbacks: VoiceCallbacks;
 }): SpeechBrain {
-  return async (userText, speak) => {
+  return async (userText, speak, itemKey) => {
     // Sentence-stream the reply into the mouth as it arrives. The next-paths
     // suggestion block must never be spoken: extractNextPaths is
     // streaming-safe, so chunking always runs on the visible text only.
@@ -65,7 +65,7 @@ export function createFamiliarSpeechBrain(opts: {
       responseSpeed: "fast",
       onText: (accumulated) => {
         visible = extractNextPaths(accumulated).visible;
-        opts.callbacks.onPartialTranscript("assistant", visible);
+        opts.callbacks.onPartialTranscript("assistant", visible, itemKey);
         for (const sentence of chunker.push(visible)) speak(sentence);
       },
     });

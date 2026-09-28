@@ -127,7 +127,7 @@ for (const sel of ["ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "
 const featureSheets: Array<[string, string[]]> = [
   ["../styles/dashboard.css", ["spark-tip"]],
   ["../styles/dash-act.css", ["dash-snooze__menu"]],
-  ["../styles/cave-chat.css", ["voice-call-overlay__dialog"]],
+  ["../styles/voice-call.css", ["voice-call-overlay__dialog"]],
   ["../styles/cave-composer.css", ["cave-chat-model-popover"]],
   ["../styles/cave-md.css", ["cave-table-lightbox__panel"]],
   // flow.css left with the retired FlowView surface (cave-c3yt).

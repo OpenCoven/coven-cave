@@ -21,6 +21,7 @@ import { updateAppPreferences, useAppPreferences } from "@/lib/app-preferences";
 import {
   getVoiceProviderDefinition,
   OPENAI_REALTIME_MODEL_IDS,
+  openAiRealtimeModelDetail,
   VOICE_PROVIDER_CATALOG,
   type SelectableVoiceProviderId,
   type VoiceProviderVaultKey,
@@ -40,6 +41,7 @@ import {
   OPENAI_REALTIME_VOICES,
   openAiVoiceDetail,
 } from "@/lib/voice/openai-voices";
+import { elevenLabsModelDetail } from "@/lib/voice/elevenlabs-shared";
 import { useOpenAiVoicePreview } from "@/components/use-openai-voice-preview";
 import {
   showSettingsSavedAfterPreferencesFlush,
@@ -58,7 +60,7 @@ const DEFAULT_PROVIDER_OPTIONS: StandardSelectOption<DefaultProviderValue>[] = [
 ];
 
 const OPENAI_MODEL_OPTIONS: StandardSelectOption<string>[] =
-  OPENAI_REALTIME_MODEL_IDS.map((id) => ({ value: id, label: id }));
+  OPENAI_REALTIME_MODEL_IDS.map((id) => ({ value: id, label: id, detail: openAiRealtimeModelDetail(id) }));
 
 const OPENAI_VOICE_OPTIONS: StandardSelectOption<string>[] =
   OPENAI_REALTIME_VOICES.map((voice) => ({
@@ -486,7 +488,7 @@ export function VoiceProviderSettings({
     return {
       modelOptions: [
         ...(savedModelMissing ? [{ value: voice.defaultModel, label: "Saved model ID", detail: voice.defaultModel }] : []),
-        ...elevenCatalog.models.map((model) => ({ value: model.id, label: model.name, detail: model.id })),
+        ...elevenCatalog.models.map((model) => ({ value: model.id, label: model.name, detail: elevenLabsModelDetail(model.id) })),
       ],
       voiceOptions: [
         ...(savedVoiceMissing ? [{ value: voice.defaultVoice, label: "Saved voice ID", detail: voice.defaultVoice }] : []),
@@ -538,7 +540,7 @@ export function VoiceProviderSettings({
             </>
           ) : (
             <>
-              <SettingsRow label="Model" controlId={`${providerId}-eleven-model`}>
+              <SettingsRow label="Model" controlId={`${providerId}-eleven-model`} description="Choose v3 Conversational for expression or Flash for faster replies.">
                 <StandardSelect id={`${providerId}-eleven-model`} label="ElevenLabs model" value={voice.defaultModel} onChange={(value) => savePreference("defaultModel", value, "ElevenLabs model saved.")} options={elevenDerived.modelOptions} className="ui-text-input focus-ring" />
               </SettingsRow>
               <SettingsRow label="Voice" controlId={`${providerId}-eleven-voice`}>

@@ -27,6 +27,7 @@ import {
 } from "@/lib/voice/openai-voices";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
+  elevenLabsModelDetail,
   DEFAULT_ELEVENLABS_VOICE_ID,
   type ElevenLabsModelOption,
   type ElevenLabsVoiceOption,
@@ -42,7 +43,7 @@ import {
 import { isTauri } from "@/lib/tauri-platform";
 import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-stt";
 import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
-import { VOICE_PROVIDER_CATALOG } from "@/lib/voice/provider-catalog";
+import { OPENAI_REALTIME_MODEL_IDS, openAiRealtimeModelDetail, VOICE_PROVIDER_CATALOG } from "@/lib/voice/provider-catalog";
 import { showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 type Props = { familiar: ResolvedFamiliar };
@@ -633,10 +634,17 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       options.push({ value: draftVoiceModel, label: "Saved model id", detail: draftVoiceModel });
     }
     for (const model of elevenCatalog.models) {
-      options.push({ value: model.id, label: model.name, detail: model.id });
+      options.push({ value: model.id, label: model.name, detail: elevenLabsModelDetail(model.id) });
     }
     return options;
   }, [elevenCatalog.models, draftVoiceModel]);
+
+  const openAiModelOptions = [
+    { value: "", label: `Default (${OPENAI_REALTIME_MODEL_IDS[0]})`, detail: openAiRealtimeModelDetail(OPENAI_REALTIME_MODEL_IDS[0]) },
+    ...(!OPENAI_REALTIME_MODEL_IDS.some((id) => id === draftVoiceModel) && draftVoiceModel
+      ? [{ value: draftVoiceModel, label: "Saved model ID", detail: draftVoiceModel }] : []),
+    ...OPENAI_REALTIME_MODEL_IDS.map((id) => ({ value: id, label: id, detail: openAiRealtimeModelDetail(id) })),
+  ];
 
   const elevenCatalogReady = elevenCatalog.status === "ready";
   const voiceProviderOptions = useMemo(() => [
@@ -1190,7 +1198,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar" || draftVoiceProvider === "elevenlabs") && (
               <>
                 {draftVoiceProvider !== "familiar" && (
-                  draftVoiceProvider === "elevenlabs" && elevenCatalogReady && elevenModelOptions.length > 1 ? (
+                  draftVoiceProvider === "openai" || (draftVoiceProvider === "elevenlabs" && elevenCatalogReady && elevenModelOptions.length > 1) ? (
                 <label className="familiar-studio-brain__row">
                   <span className="familiar-studio-brain__label">Voice model</span>
                   <div className="familiar-studio-brain__control">
@@ -1204,7 +1212,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         void save({ voiceModel: next || null });
                       }}
                       className="familiar-studio-brain__input"
-                      options={elevenModelOptions}
+                      options={draftVoiceProvider === "openai" ? openAiModelOptions : elevenModelOptions}
                     />
                   </div>
                 </label>
@@ -1230,7 +1238,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           ? "llama3.2"
                           : draftVoiceProvider === "elevenlabs"
                             ? DEFAULT_ELEVENLABS_MODEL_ID
-                            : "gpt-realtime"
+                            : OPENAI_REALTIME_MODEL_IDS[0]
                       }
                       className="familiar-studio-brain__input"
                     />

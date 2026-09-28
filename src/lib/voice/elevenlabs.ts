@@ -9,7 +9,7 @@
 // The API key never reaches the client: mint verifies ELEVENLABS_API_KEY
 // server-side (actionable failures for a missing/invalid key), and every
 // utterance is synthesized through our own /api/voice/elevenlabs/tts proxy,
-// fetched with the sidecar-token-carrying fetch and played from a blob URL.
+// fetched with the sidecar-token-carrying fetch and played as streaming PCM.
 
 import type {
   LiveSession,
@@ -19,7 +19,8 @@ import type {
   VoiceSessionRequest,
 } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
-import { connectSpeechLoop, type SpeechMouth } from "./speech-loop.ts";
+import { playPcmStream } from "./pcm-playback.ts";
+import { connectSpeechLoop, type PreparedSpeechUtterance, type SpeechMouth } from "./speech-loop.ts";
 import { resolvePreferredEars } from "./native-stt.ts";
 import {
   createFamiliarSpeechBrain,
@@ -96,8 +97,8 @@ async function mintSession(
 
 /**
  * The ElevenLabs mouth: synthesize each utterance through the server proxy
- * and play it from a blob URL. fetch (not a bare <audio src>) so the packaged
- * app's sidecar auth token rides along.
+ * and schedule streamed PCM immediately. Authenticated fetch keeps the
+ * packaged app's sidecar token on the request and provider keys server-side.
  */
 export function createElevenLabsMouth(opts: {
   voiceId: string;
@@ -106,105 +107,159 @@ export function createElevenLabsMouth(opts: {
 }): SpeechMouth {
   const fetchImpl = opts.fetchImpl ?? fetch;
   let cancelled = false;
-  let currentAudio: HTMLAudioElement | null = null;
-  let currentUrl: string | null = null;
-  let currentAbort: AbortController | null = null;
-  /** Settles the promise `speak()` is parked on, so a stop mid-playback lets
-   *  the speech loop's queue keep draining instead of wedging on an `onended`
-   *  that a pause never fires. */
-  let settlePlayback: (() => void) | null = null;
-  /** Bumped by every stop so a synthesis already in flight can tell that its
-   *  utterance has been abandoned. */
-  let generation = 0;
-
-  const releaseCurrent = () => {
-    if (currentUrl) URL.revokeObjectURL(currentUrl);
-    currentUrl = null;
-    currentAudio = null;
-    currentAbort = null;
-    settlePlayback = null;
-  };
+  let context: AudioContext | null = null;
+  let current: PreparedSpeechUtterance | null = null;
+  let prepared: PreparedSpeechUtterance | null = null;
+  // Give the current utterance first access to audio startup and the network.
+  let preparationGate: Promise<void> = Promise.resolve();
 
   const stopCurrent = () => {
-    generation += 1;
-    currentAbort?.abort();
-    currentAudio?.pause();
-    const settle = settlePlayback;
-    releaseCurrent();
-    settle?.();
+    current?.cancel();
+    prepared?.cancel();
+    current = null;
+    prepared = null;
+  };
+
+  const makeUtterance = (text: string, lookahead: boolean): PreparedSpeechUtterance => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    let response: Response | undefined;
+    type SynthesisResult = { response: Response } | { error: VoiceConnectError };
+    let synthesis: Promise<SynthesisResult> | undefined;
+    let playback: Promise<void> | undefined;
+    const disposeResponse = () => {
+      // Playback owns its locked reader and cancels it through the signal.
+      // A speculative response is deliberately unread: fetch backpressure
+      // bounds buffering instead of retaining an entire decoded utterance.
+      if (response?.body && !response.body.locked) void response.body.cancel().catch(() => {});
+    };
+    const synthesize = () => synthesis ??= (async (): Promise<SynthesisResult> => {
+      try {
+        const clamped = text.length > ELEVENLABS_TTS_MAX_CHARS
+          ? `${text.slice(0, ELEVENLABS_TTS_MAX_CHARS - 1)}…` : text;
+        response = await fetchImpl("/api/voice/elevenlabs/tts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: clamped, voiceId: opts.voiceId, modelId: opts.modelId, format: "pcm" }),
+          signal,
+        });
+        if (signal.aborted) disposeResponse();
+        return { response };
+      } catch {
+        // Store speculative failures as values until playback reaches them;
+        // rejected preparation promises must never become unhandled failures.
+        return { error: new VoiceConnectError(
+          "elevenlabs_tts_failed",
+          "Couldn't reach the ElevenLabs speech proxy — check your connection.",
+        ) };
+      }
+    })();
+
+    // Some WebViews do not settle fetch/resume promptly after abort. Release
+    // the speech queue immediately while the eventual response cleans itself up.
+    const untilAborted = <T,>(task: Promise<T>): Promise<T | undefined> => new Promise((resolve, reject) => {
+      const aborted = () => resolve(undefined);
+      if (signal.aborted) aborted();
+      else signal.addEventListener("abort", aborted, { once: true });
+      void task.then(value => {
+        signal.removeEventListener("abort", aborted);
+        resolve(value);
+      }, error => {
+        signal.removeEventListener("abort", aborted);
+        reject(error);
+      });
+    });
+
+    const play = async () => {
+      if (cancelled || signal.aborted) return;
+      if (prepared === utterance) prepared = null;
+      current = utterance;
+      let started!: () => void;
+      preparationGate = new Promise(resolve => { started = resolve; });
+      try {
+        let audioContext: AudioContext;
+        try {
+          context ??= new AudioContext();
+          audioContext = context;
+          await new Promise<void>((resolve, reject) => {
+            const finish = (error?: unknown) => {
+              clearTimeout(timer);
+              signal.removeEventListener("abort", aborted);
+              if (error) reject(error); else resolve();
+            };
+            const aborted = () => finish(signal.reason);
+            const timer = setTimeout(() => finish(new Error("audio startup timed out")), 3_000);
+            signal.addEventListener("abort", aborted, { once: true });
+            if (signal.aborted) aborted();
+            else void audioContext.resume().then(() => finish(), finish);
+          });
+          if (audioContext.state !== "running") throw new Error("suspended");
+        } catch {
+          if (cancelled || signal.aborted) return;
+          throw new VoiceConnectError("audio_playback_blocked", "Allow audio playback for Cave, then retry the call.");
+        }
+        if (cancelled || signal.aborted) return;
+        const request = synthesize();
+        started();
+        const result = await untilAborted(request);
+        if (!result || cancelled || signal.aborted) return;
+        if ("error" in result) throw result.error;
+        const res = result.response;
+        if (!res.ok) {
+          let code = "elevenlabs_tts_failed";
+          let hint: string | undefined;
+          try {
+            const json = await untilAborted(res.json()) as { error?: string; hint?: string } | undefined;
+            if (json?.error) code = json.error;
+            hint = json?.hint;
+          } catch { /* keep defaults */ }
+          if (cancelled || signal.aborted) return;
+          throw new VoiceConnectError(code, hint);
+        }
+        await playPcmStream(res, audioContext, signal);
+      } catch (error) {
+        if (cancelled || signal.aborted) return;
+        if (current === utterance) prepared?.cancel();
+        utterance.cancel();
+        throw error instanceof VoiceConnectError ? error : new VoiceConnectError(
+          "audio_playback_failed", "Speech playback stopped unexpectedly. Retry the call.",
+        );
+      } finally {
+        started();
+        if (current === utterance) current = null;
+      }
+    };
+    const utterance: PreparedSpeechUtterance = {
+      speak: () => playback ??= play(),
+      cancel() {
+        controller.abort();
+        disposeResponse();
+        if (prepared === utterance) prepared = null;
+      },
+    };
+    if (cancelled) utterance.cancel();
+    else if (lookahead) void preparationGate.then(() => {
+      if (!signal.aborted) void synthesize();
+    });
+    return utterance;
   };
 
   return {
-    async speak(text: string) {
-      if (cancelled) return;
-      const gen = generation;
-      const clamped =
-        text.length > ELEVENLABS_TTS_MAX_CHARS
-          ? `${text.slice(0, ELEVENLABS_TTS_MAX_CHARS - 1)}…`
-          : text;
-      const controller = new AbortController();
-      currentAbort = controller;
-      let res: Response;
-      try {
-        res = await fetchImpl("/api/voice/elevenlabs/tts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            text: clamped,
-            voiceId: opts.voiceId,
-            modelId: opts.modelId,
-          }),
-          signal: controller.signal,
-        });
-      } catch {
-        // An abandoned utterance is not a call failure — a barge-in aborted
-        // its own request on purpose.
-        if (cancelled || gen !== generation || controller.signal.aborted) return;
-        throw new VoiceConnectError(
-          "elevenlabs_tts_failed",
-          "Couldn't reach the ElevenLabs speech proxy — check your connection.",
-        );
-      }
-      if (cancelled || gen !== generation) return;
-      if (!res.ok) {
-        let code = "elevenlabs_tts_failed";
-        let hint: string | undefined;
-        try {
-          const json = (await res.json()) as { error?: string; hint?: string };
-          if (json.error) code = json.error;
-          hint = json.hint;
-        } catch { /* keep defaults */ }
-        throw new VoiceConnectError(code, hint);
-      }
-      const blob = await res.blob();
-      if (cancelled || gen !== generation) return;
-      const url = URL.createObjectURL(blob);
-      currentUrl = url;
-      await new Promise<void>((resolve) => {
-        const audio = new Audio();
-        currentAudio = audio;
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          releaseCurrent();
-          resolve();
-        };
-        settlePlayback = done;
-        audio.onended = done;
-        audio.onerror = done;
-        audio.src = url;
-        void audio.play().catch(done);
-      });
+    speak: text => makeUtterance(text, false).speak(),
+    prepare(text) {
+      // Defensive bound even for a caller other than connectSpeechLoop.
+      prepared?.cancel();
+      prepared = makeUtterance(text, true);
+      return prepared;
     },
     cancel() {
       cancelled = true;
       stopCurrent();
+      if (context) void context.close().catch(() => {});
+      context = null;
     },
-    // Barge-in: stop this utterance but stay usable, unlike cancel().
-    interrupt() {
-      stopCurrent();
-    },
+    // Barge-in: stop both requests but stay usable, unlike cancel().
+    interrupt: stopCurrent,
   };
 }
 

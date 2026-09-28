@@ -47,7 +47,8 @@ export type CallEvent =
   | { type: "PROVIDER_ERROR"; errorCode: string; hint?: string }
   | { type: "CLOSE_REQUEST" }
   | { type: "MUTE_TOGGLE" }
-  | { type: "RETRY" };
+  | { type: "RETRY" }
+  | { type: "RECONNECT" };
 
 export function reduce(s: CallState, ev: CallEvent): CallState {
   switch (ev.type) {
@@ -105,6 +106,8 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       return { ...s, state: "closed" };
     case "MUTE_TOGGLE":
       return { ...s, muted: !s.muted };
+    case "RECONNECT":
+      return { ...initialState, state: "requesting-mic", muted: s.muted };
     case "RETRY":
       return { ...initialState, state: "requesting-mic" };
     default:

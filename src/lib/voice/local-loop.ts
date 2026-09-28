@@ -155,7 +155,7 @@ async function connect(
     callbacks,
     brainErrorCode: "local_brain_failed",
     brainErrorHint: "The local model call failed — is the loopback server still running?",
-    brain: async (userText, speak) => {
+    brain: async (userText, speak, itemKey) => {
       turns.push({ role: "user", content: userText });
       const res = await fetch("/api/voice/local/chat", {
         method: "POST",
@@ -172,7 +172,7 @@ async function connect(
         throw new VoiceConnectError(json?.error ?? "local_brain_failed", json?.hint);
       }
       turns.push({ role: "assistant", content: json.text });
-      callbacks.onPartialTranscript("assistant", json.text);
+      callbacks.onPartialTranscript("assistant", json.text, itemKey);
       speak(json.text);
       return json.text;
     },
