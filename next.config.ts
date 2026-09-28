@@ -111,6 +111,10 @@ const nextConfig: NextConfig = {
   // bundle-budget postbuild gate and the e2e suite guard the output.
   reactCompiler: true,
   experimental: {
+    // Next preloads all 355 route entries as the server starts: ~1.9 s of
+    // main-thread work landing exactly on app launch (#5658). server.ts runs
+    // the same preload once the launch has settled instead.
+    preloadEntriesOnStart: false,
     // Next 16.2 enables Turbopack's persistent dev cache by default. In a
     // long-lived desktop session the cache reaches multiple gigabytes, then
     // its SST compaction can starve the PostCSS child-process IPC until
