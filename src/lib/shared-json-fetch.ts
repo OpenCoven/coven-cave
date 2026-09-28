@@ -14,50 +14,34 @@
  * after awaiting instead.
  */
 
+import { createSharedRequests } from "./shared-requests.ts";
+
 export const SHARED_JSON_FRESH_MS = 60_000;
-const MAX_ENTRIES = 64;
 
 export type SharedJsonResponse<T> = { ok: boolean; status: number; data: T | null };
 
-const answers = new Map<string, { at: number; value: SharedJsonResponse<unknown> }>();
-const inflight = new Map<string, Promise<SharedJsonResponse<unknown>>>();
+// Generation-aware sharing (#5671): a forced refresh is never overwritten by an
+// older request for the same URL.
+const requests = createSharedRequests<SharedJsonResponse<unknown>>({
+  keep: (value) => value.ok,
+  maxEntries: 64,
+});
 
 export function sharedJsonFetch<T>(
   url: string,
   options: { force?: boolean; freshMs?: number; now?: () => number } = {},
 ): Promise<SharedJsonResponse<T>> {
-  const now = options.now ?? Date.now;
-  const freshMs = options.freshMs ?? SHARED_JSON_FRESH_MS;
-  if (!options.force) {
-    const hit = answers.get(url);
-    if (hit && now() - hit.at < freshMs) return Promise.resolve(hit.value as SharedJsonResponse<T>);
-    const pending = inflight.get(url);
-    if (pending) return pending as Promise<SharedJsonResponse<T>>;
-  }
-  const request = (async (): Promise<SharedJsonResponse<unknown>> => {
-    const res = await fetch(url, { cache: "no-store" });
-    const value = { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
-    if (res.ok) {
-      answers.delete(url);
-      answers.set(url, { at: now(), value });
-      while (answers.size > MAX_ENTRIES) {
-        const oldest = answers.keys().next().value;
-        if (oldest === undefined) break;
-        answers.delete(oldest);
-      }
-    }
-    return value;
-  })();
-  inflight.set(url, request);
-  const clear = () => {
-    if (inflight.get(url) === request) inflight.delete(url);
-  };
-  request.then(clear, clear);
-  return request as Promise<SharedJsonResponse<T>>;
+  return requests.run(
+    url,
+    async () => {
+      const res = await fetch(url, { cache: "no-store" });
+      return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
+    },
+    { force: options.force, freshMs: options.freshMs ?? SHARED_JSON_FRESH_MS, now: options.now },
+  ) as Promise<SharedJsonResponse<T>>;
 }
 
 /** Test seam. */
 export function clearSharedJsonFetch(): void {
-  answers.clear();
-  inflight.clear();
+  requests.clear();
 }
