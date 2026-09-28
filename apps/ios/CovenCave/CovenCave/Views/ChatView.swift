@@ -63,6 +63,8 @@ struct ChatView: View {
     @State private var pickerPath: [ChatRoute] = []
     @Namespace private var pickerZoomNamespace
     @State private var scrollState = ChatScrollState()
+    @State private var viewportRecovery = ChatViewportRecovery()
+    @State private var transcriptPosition = ScrollPosition(edge: .bottom)
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -236,6 +238,8 @@ struct ChatView: View {
     private func resetScrollVisitState() {
         streamScroll.cancel()
         scrollState = ChatScrollState()
+        viewportRecovery = ChatViewportRecovery()
+        transcriptPosition = ScrollPosition(edge: .bottom)
         unreadDividerId = nil
         unreadComputed = false
         daysAboveTop.removeAll()
@@ -280,6 +284,15 @@ struct ChatView: View {
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if app.isPerformanceFixture && CavePerformanceFixture.isTranscriptRecoveryFixture
+                && thread.id == "performance-fixture-chat-0000" {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Shrink fixture") {
+                        CavePerformanceFixture.setRecoveryFixtureText(in: thread, shrunk: true)
+                    }
+                    .accessibilityIdentifier("Shrink transcript fixture")
+                }
+            }
             ToolbarItem(placement: .topBarLeading) {
                 Button { app.navigationDrawerOpen = true } label: {
                     Image(systemName: "line.3.horizontal")
@@ -825,41 +838,54 @@ struct ChatView: View {
         }
     }
 
+    private func recoverTranscriptViewportIfNeeded() {
+        guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
+        streamScroll.cancel()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            // Edge-based scrolling does not need to resolve an unmounted row ID.
+            transcriptPosition.scrollTo(edge: .bottom)
+        }
+    }
+
     private var messageScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 10) {
-                    // Rows come pre-derived from the thread (day dividers
-                    // interleaved with messages), so separator placement isn't
-                    // recomputed — and no `enumerated()` array is allocated —
-                    // on every body evaluation.
-                    // Each row renders through transcriptRow(_:) — extracted
-                    // so the compiler type-checks one row at a time instead of
-                    // the whole scroll view builder (cave-7nrp9).
-                    ForEach(thread.transcriptRows) { row in
-                        let isLastMessage = row.id == thread.messages.last?.id
+                VStack(spacing: 10) {
+                    // Keep history lazy, but never virtualize the latest row.
+                    // Its large WebView must be mounted on cold/repeated opens
+                    // and must survive a sharp shrink while reading above it
+                    // (#5613). This retains at most one extra message renderer.
+                    LazyVStack(spacing: 10) {
+                        ForEach(thread.transcriptRows.dropLast()) { row in
+                            VStack(spacing: 10) {
+                                transcriptRow(row, proxy: proxy)
+                            }
+                            .id(row.id)
+                        }
+                    }
+                    .scrollTargetLayout()
+                    if let row = thread.transcriptRows.last {
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
-                        .id(row.id)
-                        .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
-                            guard isLastMessage,
-                                  let viewport = geometry.bounds(of: .scrollView) else { return nil }
-                            // LazyVStack's total height is an estimate. Measure
-                            // the actual last row in the viewport instead.
-                            return ChatScrollGeometry(
-                                contentHeight: geometry.size.height,
-                                visibleBottom: viewport.maxY
-                            )
-                        } action: { _, geometry in
-                            guard let geometry else { return }
-                            if scrollState.isAtBottom != geometry.isAtBottom {
-                                scrollState.updateGeometry(atBottom: geometry.isAtBottom)
+                            .id(row.id)
+                            .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
+                                guard let viewport = geometry.bounds(of: .scrollView) else { return nil }
+                                return ChatScrollGeometry(
+                                    contentHeight: geometry.size.height,
+                                    visibleBottom: viewport.maxY
+                                )
+                            } action: { _, geometry in
+                                guard let geometry else { return }
+                                if scrollState.isAtBottom != geometry.isAtBottom {
+                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom)
+                                }
+                                if scrollState.isFollowingLatest, !geometry.isAtBottom {
+                                    streamScroll.request { scrollToLatest(proxy) }
+                                }
                             }
-                            if scrollState.isFollowingLatest, !geometry.isAtBottom {
-                                streamScroll.request { scrollToLatest(proxy) }
-                            }
-                        }
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -869,6 +895,19 @@ struct ChatView: View {
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
+            .scrollPosition($transcriptPosition)
+            .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
+                ChatViewportGeometry(
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height,
+                    contentOffset: geometry.contentOffset.y,
+                    topInset: geometry.contentInsets.top,
+                    bottomInset: geometry.contentInsets.bottom
+                )
+            } action: { _, geometry in
+                viewportRecovery.update(geometry)
+                recoverTranscriptViewportIfNeeded()
+            }
             .scrollDismissesKeyboard(.interactively)
             // Open at the latest message without the post-layout jump a
             // proxy.scrollTo onAppear causes (the onAppear call stays as a
@@ -898,7 +937,9 @@ struct ChatView: View {
                     Button {
                         scrollState.followLatest()
                         streamScroll.cancel()
-                        scrollToLatest(proxy, animation: .easeOut(duration: 0.2))
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            transcriptPosition.scrollTo(edge: .bottom)
+                        }
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 15, weight: .semibold))
@@ -936,6 +977,7 @@ struct ChatView: View {
                     streamScroll.cancel()
                 case .idle:
                     scrollState.endUserScroll()
+                    recoverTranscriptViewportIfNeeded()
                 default: break
                 }
                 dayChipIdleTask?.cancel()
