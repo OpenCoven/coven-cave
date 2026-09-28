@@ -16,6 +16,7 @@ import type {
 } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { trustedProjectCwd } from "@/lib/cave-projects";
+import { toBoardListCard } from "@/lib/board-list-card";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,9 @@ const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
 
 export async function GET() {
   const board = await loadBoard();
-  return NextResponse.json({ ok: true, cards: board.cards });
+  // Lean list: Enhance proposal history is loaded per card by the inspector
+  // from GET /api/board/<id> (#5690).
+  return NextResponse.json({ ok: true, cards: board.cards.map(toBoardListCard) });
 }
 
 export async function POST(req: Request) {

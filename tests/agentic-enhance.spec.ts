@@ -670,6 +670,27 @@ test.describe("governed Board Enhance", () => {
     expect(generationCount).toBe(4);
   });
 
+  test("loads proposals for a lean list card from the single-card endpoint", async ({ page }) => {
+    test.slow();
+    // #5690: /api/board leaves out Enhance history; the inspector reads it
+    // from GET /api/board/<id>.
+    const generated = familiarGeneratedCard();
+    const { agenticEnhance: _history, ...lean } = generated;
+    let cardReads = 0;
+    await page.route("**/api/board", (route) => route.fulfill({ json: { ok: true, cards: [lean] } }));
+    await page.route("**/api/board/card-governed", (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      cardReads += 1;
+      return route.fulfill({ json: { ok: true, card: generated } });
+    });
+    await openBoard(page);
+    const dialog = await openInspector(page);
+    await dialog.getByRole("button", { name: "Review enhancements" }).click();
+    await expect(dialog.getByRole("article", { name: "Enhancement: normalize-one" })).toBeVisible();
+    await expect(dialog.getByRole("article", { name: "Enhancement: normalize-two" })).toBeVisible();
+    expect(cardReads).toBeGreaterThan(0);
+  });
+
   test("generic needs-human recovery retains Retry and Cancel", async ({ page }) => {
     test.slow();
     const failed = baseCard({

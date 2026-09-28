@@ -24,6 +24,20 @@ const PATCH_FIELDS = [
   "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
 ] as const satisfies readonly (keyof CardPatch)[];
 
+/** One card in full, including the Enhance proposal history the board list
+ *  leaves out (#5690). */
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const card = (await loadBoard()).cards.find((entry) => entry.id === id);
+  if (!card) {
+    return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, card });
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },

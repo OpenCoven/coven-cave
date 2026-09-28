@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type {
+  BoardAgenticEnhanceState,
   Card,
   CardLifecycle,
   CardPriority,
   CardStatus,
 } from "@/lib/cave-board-types";
+import { withAgenticEnhance } from "@/lib/board-list-card";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
@@ -1705,7 +1707,33 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
 }
 
 
-export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
+export function BoardInspector({ card: listCard, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced: replaceListCard, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
+  // The board list leaves out Enhance proposal history (#5690), so the
+  // inspector loads its card in full and refreshes it whenever the card
+  // changes. Mutation responses carry the full card and update it directly,
+  // so a lean list poll never blanks the proposals already on screen.
+  const [loadedEnhance, setLoadedEnhance] = useState<BoardAgenticEnhanceState | null>(
+    listCard.agenticEnhance ?? null,
+  );
+  const cardId = listCard.id;
+  const cardUpdatedAt = listCard.updatedAt;
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/board/${encodeURIComponent(cardId)}`, { cache: "no-store", signal: controller.signal })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; card?: Card }) => {
+        if (json?.ok && json.card?.id === cardId) setLoadedEnhance(json.card.agenticEnhance ?? null);
+      })
+      .catch(() => {
+        /* the list card still renders; proposals stay as last known */
+      });
+    return () => controller.abort();
+  }, [cardId, cardUpdatedAt]);
+  const card = withAgenticEnhance(listCard, loadedEnhance);
+  const onCardReplaced = (next: Card) => {
+    if (next.id === cardId) setLoadedEnhance(next.agenticEnhance ?? null);
+    replaceListCard(next);
+  };
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
