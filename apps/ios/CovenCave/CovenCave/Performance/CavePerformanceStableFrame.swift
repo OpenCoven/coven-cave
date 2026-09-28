@@ -132,3 +132,42 @@ struct CavePerformanceStableFrame: UIViewRepresentable {
         }
     }
 }
+
+/// Runs its action once, at the next display tick. A span that already knows
+/// its update was committed uses this to end on the frame that presents it,
+/// without mounting a reporter view.
+@MainActor
+final class CavePerformanceFrameTick: NSObject {
+    private var displayLink: CADisplayLink?
+    private var action: (@MainActor () -> Void)?
+
+    init(action: @escaping @MainActor () -> Void) {
+        self.action = action
+        super.init()
+        let displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink.add(to: .main, forMode: .common)
+        self.displayLink = displayLink
+    }
+
+    func cancel() {
+        displayLink?.invalidate()
+        displayLink = nil
+        action = nil
+    }
+
+    @objc private func tick() {
+        let action = self.action
+        cancel()
+        action?()
+    }
+
+    /// SwiftUI calls transaction completions on the main thread; run there
+    /// directly rather than paying a task hop, and hop only if it ever isn't.
+    nonisolated static func onMain(_ body: @escaping @MainActor @Sendable () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(body)
+        } else {
+            Task { @MainActor in body() }
+        }
+    }
+}

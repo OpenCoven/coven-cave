@@ -266,8 +266,11 @@ The current shell has Chats and Settings, with inline chat search.
 `drawer.open` starts at the drawer-state change and waits for SwiftUI's
 animation-removal completion, layout, and two display ticks. Closing cancels
 an unfinished open sample. `destination.stable-frame` starts at a change of
-selected destination and waits for its transaction to complete, the drawer to
-close and finish animating, and two display ticks. Delayed callbacks match their
+selected destination and waits for its transaction to complete and the drawer
+to close and finish animating, then ends at the next display tick. Until
+2026-09-28 it instead hopped to a task, mounted a reporter view and waited two
+display ticks, which added about 36–40 ms at 60 Hz that was not app work (see
+#5292). Samples from before then are not comparable. Delayed callbacks match their
 original span so they cannot complete a newer visit. These measurements include
 the existing animation duration; no fixed sleep substitutes for completion. Retired
 Tasks/project-switcher journeys must not be restored to satisfy the older

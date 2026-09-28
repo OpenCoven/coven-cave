@@ -544,19 +544,55 @@ final class AppModel {
             guard performanceRecorder.isEnabled else { selectedTabValue = newValue; return }
             performanceSpans.begin(.destinationStableFrame)
             let span = performanceSpans.span(for: .destinationStableFrame)
-            destinationPresentationReady = false
+            destinationCommittedSpan = nil
+            destinationFrameTick?.cancel()
+            destinationFrameTick = nil
             var transaction = Transaction()
             transaction.addAnimationCompletion(criteria: .removed) { [weak self] in
-                Task { @MainActor [weak self] in
+                CavePerformanceFrameTick.onMain { [weak self] in
                     guard let self, let span,
                           self.performanceSpans.span(for: .destinationStableFrame) === span else { return }
-                    self.destinationPresentationReady = true
+                    self.destinationCommittedSpan = span
+                    self.confirmDestinationFrame()
                 }
             }
             withTransaction(transaction) { selectedTabValue = newValue }
         }
     }
-    var destinationPresentationReady = true
+    /// The destination visit whose transaction has completed, waiting for the
+    /// drawer to finish closing before its frame is confirmed.
+    @ObservationIgnored private var destinationCommittedSpan: CavePerformanceSpan?
+    @ObservationIgnored private var destinationFrameTick: CavePerformanceFrameTick?
+    /// The drawer revision whose close animation has completed.
+    @ObservationIgnored private var drawerClosedRevision: UInt64 = 0
+
+    /// `destination.stable-frame` ends at the first display tick after the
+    /// destination's transaction has completed with the drawer closed and
+    /// settled. It is called from both completions; whichever lands last
+    /// schedules the tick, and a newer visit supersedes it.
+    private func confirmDestinationFrame() {
+        guard let span = destinationCommittedSpan,
+              performanceSpans.span(for: .destinationStableFrame) === span,
+              !navigationDrawerOpenValue,
+              drawerClosedRevision == drawerPresentationRevision
+        else { return }
+        destinationCommittedSpan = nil
+        destinationFrameTick?.cancel()
+        destinationFrameTick = CavePerformanceFrameTick { [weak self] in
+            guard let self else { return }
+            self.destinationFrameTick = nil
+            guard self.performanceSpans.span(for: .destinationStableFrame) === span else { return }
+            // The drawer reopened before this tick: keep the visit pending so
+            // the next completed close confirms it instead.
+            guard !self.navigationDrawerOpenValue,
+                  self.drawerClosedRevision == self.drawerPresentationRevision
+            else {
+                self.destinationCommittedSpan = span
+                return
+            }
+            self.performanceSpans.finish(.destinationStableFrame, matching: span)
+        }
+    }
 
     /// A thread the central resolver asked Chats to open. `ChatsHomeView`
     /// observes this, pushes the thread, and clears it back to nil.
@@ -590,6 +626,13 @@ final class AppModel {
             else { performanceSpans.cancel(.drawerOpen) }
             var transaction = Transaction()
             transaction.addAnimationCompletion(criteria: .removed) { [weak self] in
+                if !newValue {
+                    CavePerformanceFrameTick.onMain { [weak self] in
+                        guard let self, self.drawerPresentationRevision == revision else { return }
+                        self.drawerClosedRevision = revision
+                        self.confirmDestinationFrame()
+                    }
+                }
                 Task { @MainActor [weak self] in
                     guard let self, self.drawerPresentationRevision == revision else { return }
                     self.drawerPresentationReady = true
