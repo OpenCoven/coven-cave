@@ -7,6 +7,28 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-28
+
+> Every task Enhance reviews now says why it is where it is.
+
+Patch release on top of v0.5.2. Headline: when a familiar reviews a task and
+keeps it where it is, its reason is now recorded instead of discarded.
+
+### Fixed
+- **Enhance keeps the familiar's review reason** (#5685). The Board recorded a
+  task's reason only when its lifecycle changed, so a familiar's explanation
+  for keeping a task open was dropped. Most open tasks showed no reason. Enhance
+  reviews now record the reason even when the task stays put. Every other write
+  still records a reason only for a lifecycle change.
+- An older shared request can no longer overwrite a forced refresh.
+
+### Changed
+- Familiar outcomes are measured against the familiar's self-reported
+  confidence (#5676).
+- Settings stays mounted after its first visit (#5681).
+- Rendered avatar thumbnails survive server restarts, and the Grimoire graph is
+  reused while its corpus is unchanged.
+
 ## [0.5.2] - 2026-09-28
 
 > Enhance lets each familiar decide when a task is done.
