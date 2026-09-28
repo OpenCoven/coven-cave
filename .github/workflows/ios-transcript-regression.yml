@@ -43,16 +43,14 @@ jobs:
           xcodebuild -version
           command -v xcodegen >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
           (cd apps/ios/CovenCave && xcodegen generate)
-          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
-          python3 - <<'PY'
-          import json, os
-          with open(os.environ['RUNNER_TEMP'] + '/devices.json') as f:
-              devices = json.load(f)['devices']
-          iphones = [d for runtime, rows in devices.items() if 'iOS' in runtime for d in rows if d.get('isAvailable') and 'iPhone' in d['name']]
-          assert iphones, 'No available iPhone simulator'
-          with open(os.environ['GITHUB_ENV'], 'a') as f:
-              f.write('CAVE_TEST_DESTINATION=platform=iOS Simulator,id=' + iphones[0]['udid'] + '\n')
-          PY
+          # Same tested selector as ci.yml: iOS 18+ runtimes, compared
+          # numerically, newest first (scripts/ios-select-simulator.test.mjs).
+          if ! udid="$(xcrun simctl list devices available -j | node scripts/ios-select-simulator.mjs)"; then
+            echo "::error::No available iPhone simulator on this runner image; the XCTest suite cannot run."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "CAVE_TEST_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
       - name: Debug scroll state and existing long-chat UI regressions
         shell: bash
         run: |

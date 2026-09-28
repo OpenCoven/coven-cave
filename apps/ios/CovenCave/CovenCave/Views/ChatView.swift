@@ -2,6 +2,13 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
+/// Message count keyed by thread, so shrink recovery can tell a removed
+/// message from switching to a shorter thread.
+private struct TranscriptCount: Equatable {
+    let threadId: String
+    let count: Int
+}
+
 /// An image chosen in the composer, pending send.
 struct PendingImage: Identifiable {
     let id = UUID()
@@ -1011,6 +1018,14 @@ struct ChatView: View {
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
             // otherwise the unread stays put behind the jump-to-latest button.
+            // A removed message shortens the transcript under a new last-row
+            // id, which the latest row's same-id height check cannot see.
+            // Keyed by thread so switching to a shorter thread is not removal.
+            .onChange(of: TranscriptCount(threadId: thread.id, count: thread.messages.count)) { old, new in
+                guard old.threadId == new.threadId, new.count < old.count else { return }
+                viewportRecovery.noteRowsRemoved()
+                recoverTranscriptViewportIfNeeded(proxy)
+            }
             .onChange(of: thread.messages.count) { _, _ in
                 let ownSend = thread.messages.last?.role == .user
                 guard scrollState.isFollowingLatest || ownSend else { return }

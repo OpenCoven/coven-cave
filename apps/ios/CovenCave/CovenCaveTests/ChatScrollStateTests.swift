@@ -129,6 +129,40 @@ final class ChatViewportRecoveryTests: XCTestCase {
         XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
     }
 
+    func testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteLatestRow(id: "older", height: 9_000)
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        recovery.noteLatestRow(id: "older", height: 40)
+        recovery.update(geometry(height: 500, offset: 7_000))
+        XCTAssertTrue(recovery.hasPendingRecovery)
+        recovery.noteLatestRow(id: "newer", height: 200)
+        XCTAssertFalse(recovery.hasPendingRecovery, "an appended row starts a fresh baseline")
+        recovery.update(geometry(height: 700, offset: 7_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteLatestRow(id: "removed", height: 9_000)
+        recovery.update(geometry(height: 10_000, offset: 7_000))
+        recovery.noteRowsRemoved()
+        recovery.noteLatestRow(id: "previous", height: 300)
+        recovery.update(geometry(height: 1_000, offset: 7_000))
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false), "one correction per removal")
+    }
+
+    func testRemovalWithAValidOffsetDoesNotMoveTheReader() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteLatestRow(id: "removed", height: 2_000)
+        recovery.update(geometry(height: 10_000, offset: 1_000))
+        recovery.noteRowsRemoved()
+        recovery.noteLatestRow(id: "previous", height: 300)
+        recovery.update(geometry(height: 8_300, offset: 1_000))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
     func testValidHistoryPositionIsNotMovedByShrink() {
         var recovery = ChatViewportRecovery()
         recovery.noteLatestRow(id: "latest", height: 6_000)
