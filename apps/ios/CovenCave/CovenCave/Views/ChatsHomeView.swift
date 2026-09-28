@@ -39,7 +39,6 @@ struct ChatsHomeView: View {
     @State private var query = ""
     @State private var searchMeasurementRevision: UInt64 = 0
     @State private var searchMeasurement: CavePerformanceSpan?
-    @State private var listSnapshotCache = ChatListSnapshotCache()
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
     /// The sidebar selection: a familiar (drills into its threads in the detail
@@ -115,9 +114,9 @@ struct ChatsHomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { cancelSearchMeasurement() }
         }
-        .onChange(of: app.selectedTab) { _, tab in
-            if tab == .settings { cancelSearchMeasurement() }
-        }
+        // Observed in a child view: reading `selectedTab` here would make every
+        // destination switch re-render the whole Chats list (#5651).
+        .background(SettingsSelectionObserver { cancelSearchMeasurement() })
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
@@ -151,7 +150,7 @@ struct ChatsHomeView: View {
         let snapshot = app.performanceRecorder.measureSynchronous(
             CavePerformanceSpanName.chatListProjection.rawValue
         ) {
-            listSnapshotCache.resolve(
+            app.chatListSnapshotCache.resolve(
                 threads: app.chatThreads,
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
@@ -191,10 +190,10 @@ struct ChatsHomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if app.selectedTab != .settings { header(snapshot) }
+                HiddenUnderSettings { header(snapshot) }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if app.selectedTab != .settings { homeSearchBar }
+                HiddenUnderSettings { homeSearchBar }
             }
             .sheet(
                 isPresented: $showNewChat,
@@ -1002,5 +1001,35 @@ struct ThreadRow: View {
         if last.streaming && last.text.isEmpty { return "…" }
         let prefix = last.role == .user ? "\(app.operatorDisplayName): " : ""
         return prefix + last.text.replacingOccurrences(of: "\n", with: " ")
+    }
+}
+
+/// Shows its content except while Settings is the selected destination. It
+/// reads `selectedTab` in its own body, so a destination switch re-renders only
+/// this inset. Reading it in `ChatsHomeView.body` re-ran the list projection
+/// and SwiftUI's diff of every chat row on each switch, even though Chats
+/// stays mounted behind Settings (#5651).
+private struct HiddenUnderSettings<Content: View>: View {
+    @Environment(AppModel.self) private var app
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if app.selectedTab != .settings { content }
+    }
+}
+
+/// Calls `onEnterSettings` when Settings becomes the selected destination,
+/// without making the view that owns it observe `selectedTab` (#5651).
+private struct SettingsSelectionObserver: View {
+    @Environment(AppModel.self) private var app
+    let onEnterSettings: () -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onChange(of: app.selectedTab) { _, tab in
+                if tab == .settings { onEnterSettings() }
+            }
     }
 }

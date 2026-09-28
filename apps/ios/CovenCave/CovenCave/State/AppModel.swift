@@ -467,6 +467,12 @@ final class AppModel {
     @ObservationIgnored let performanceRecorder: CavePerformanceRecorder
     @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
     @ObservationIgnored let isPerformanceFixture: Bool
+    /// The Chats home's list projection cache. It lives here, created once,
+    /// rather than as a class-valued `@State` in `ChatsHomeView`: that initial
+    /// value was allocated on every parent pass, so the view never compared
+    /// equal ("@self changed") and every destination switch re-rendered the
+    /// whole Chats list, twice (#5651).
+    @ObservationIgnored let chatListSnapshotCache = ChatListSnapshotCache()
 
     var familiars: [Familiar] = [] {
         didSet {

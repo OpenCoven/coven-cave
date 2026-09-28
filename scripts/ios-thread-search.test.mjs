@@ -64,7 +64,7 @@ assert.match(
 );
 
 // Global home search organizes conversations without scanning transcripts.
-assert.match(home, /listSnapshotCache\.resolve\([\s\S]*query: query/, "home searches the conversation projection");
+assert.match(home, /chatListSnapshotCache\.resolve\([\s\S]*query: query/, "home searches the conversation projection");
 assert.match(
   home,
   /snapshot\.entries\.isEmpty && !query\.isEmpty/,

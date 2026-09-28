@@ -173,6 +173,38 @@ final class ChatListSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.entries.map(\.id), ["server:chat"])
     }
 
+    func testCacheNeverServesAStaleFilteredList() {
+        let cache = ChatListSnapshotCache()
+        let alpha = chat("alpha", root: "/repos/alpha")
+        let beta = chat("beta", root: "/repos/beta")
+
+        let all = cache.resolve(threads: [alpha, beta], sessions: [], familiars: [],
+                                query: "", includeArchived: false)
+        XCTAssertEqual(Set(all.entries.map(\.id)), ["local:alpha", "local:beta"])
+        let again = cache.resolve(threads: [alpha, beta], sessions: [], familiars: [],
+                                  query: "", includeArchived: false)
+        XCTAssertEqual(again.entries.map(\.id), all.entries.map(\.id), "an unchanged filter returns the same list")
+
+        let searched = cache.resolve(threads: [alpha, beta], sessions: [], familiars: [],
+                                     query: "beta", includeArchived: false)
+        XCTAssertEqual(searched.entries.map(\.id), ["local:beta"], "a new query filters again")
+
+        let gamma = chat("gamma", root: "/repos/gamma")
+        let grown = cache.resolve(threads: [alpha, beta, gamma], sessions: [], familiars: [],
+                                  query: "", includeArchived: false)
+        XCTAssertEqual(Set(grown.entries.map(\.id)), ["local:alpha", "local:beta", "local:gamma"],
+                       "new data with a previously seen filter is filtered afresh")
+
+        gamma.archived = true
+        let archivedHidden = cache.resolve(threads: [alpha, beta, gamma], sessions: [], familiars: [],
+                                           query: "", includeArchived: false)
+        XCTAssertEqual(Set(archivedHidden.entries.map(\.id)), ["local:alpha", "local:beta"])
+        XCTAssertEqual(archivedHidden.archivedCount, 1)
+        let archivedShown = cache.resolve(threads: [alpha, beta, gamma], sessions: [], familiars: [],
+                                          query: "", includeArchived: true)
+        XCTAssertEqual(Set(archivedShown.entries.map(\.id)), ["local:alpha", "local:beta", "local:gamma"])
+    }
+
     private func chat(
         _ id: String,
         root: String?,

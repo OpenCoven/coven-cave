@@ -7,6 +7,30 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-28
+
+> Enhance lets each familiar decide when a task is done.
+
+Patch release on top of v0.5.1. Headline: Enhance no longer marks a task
+complete just because a linked PR merged. That rule closed tasks on PRs linked
+only for context, including one that removed the feature the task asked for.
+
+### Fixed
+- **The familiar decides completion; GitHub state is evidence** (#5670).
+  Enhance completed a task whenever any linked PR merged or any linked issue
+  closed, overriding the familiar. An audit of the 41 tasks it closed found 13
+  wrong and 5 only partly done. Now the familiar's own verdict decides. Its
+  prompt lists each linked issue and PR with its state and close reason, and
+  says a merge completes a task only if it delivered that task's outcome.
+
+### Changed
+- Voice calls are fullscreen, with faster speech and voice switching.
+- The project folder picker's layout and selection are clearer (#5664).
+- Switching familiars is cheaper. Each familiar's chat list filters one
+  shared list, composer and launcher data survive remounts, and the usage
+  meter fetches once per switch.
+- Next's all-route preload waits until after the app launches.
+
 ## [0.5.1] - 2026-09-28
 
 > Enhance reviews every task on the Board, from the desktop or your phone.
