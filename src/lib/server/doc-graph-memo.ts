@@ -32,7 +32,7 @@ export function createDocGraphMemo(
         return hit.graph;
       }
       const graph = buildGraph(docs, index);
-      entries.set(scopeKey, { docs, index, graph });
+      entries.set(scopeKey, { docs: snapshotDocs(docs), index: snapshotIndex(index), graph });
       while (entries.size > maxScopes) {
         const oldest = entries.keys().next().value;
         if (oldest === undefined) break;
@@ -43,8 +43,28 @@ export function createDocGraphMemo(
   };
 }
 
+// The memo compares against its own copies, never the caller's arrays: a
+// caller that edits a doc or index entry in place and asks again must get a
+// rebuild, not the graph of the pre-edit inputs. Strings are immutable, so
+// the copies share them and the `===` comparisons stay pointer checks.
+function snapshotDocs(docs: readonly GraphSourceDoc[]): GraphSourceDoc[] {
+  return docs.map((doc) => ({
+    ref: { ...doc.ref },
+    title: doc.title,
+    markdown: doc.markdown,
+    ...(doc.tags ? { tags: [...doc.tags] } : {}),
+  }));
+}
+
+function snapshotIndex(index: WikiDocIndex): WikiDocIndex {
+  return {
+    knowledge: index.knowledge.map((entry) => ({ ...entry })),
+    memory: index.memory.map((entry) => ({ ...entry })),
+    journal: index.journal.map((entry) => ({ ...entry })),
+  };
+}
+
 function sameList<T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => boolean): boolean {
-  if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
     if (!same(a[i], b[i])) return false;

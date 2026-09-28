@@ -57,6 +57,24 @@ for (const [label, change] of Object.entries(changes)) {
   });
 }
 
+test("inputs edited in place after a build still rebuild", () => {
+  const { memo, builds } = counting();
+  const c = corpus();
+  const first = memo.build("", c.docs, c.index);
+  c.docs[1].markdown = "edited in place";
+  assert.notEqual(memo.build("", c.docs, c.index), first, "a mutated doc rebuilds");
+  const second = memo.build("", c.docs, c.index);
+  c.docs[0].tags.push("b");
+  assert.notEqual(memo.build("", c.docs, c.index), second, "a mutated tag list rebuilds");
+  const third = memo.build("", c.docs, c.index);
+  c.index.memory.push({ path: "/m/new.md" });
+  assert.notEqual(memo.build("", c.docs, c.index), third, "a mutated index rebuilds");
+  const fourth = memo.build("", c.docs, c.index);
+  c.docs[1].ref.path = "/m/moved.md";
+  assert.notEqual(memo.build("", c.docs, c.index), fourth, "a mutated ref rebuilds");
+  assert.equal(builds(), 5);
+});
+
 test("each scope keeps its own graph, bounded to the newest scopes", () => {
   const { memo, builds } = counting();
   const c = corpus();
