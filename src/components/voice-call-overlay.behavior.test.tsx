@@ -8,6 +8,7 @@ vi.mock("@iconify/react", () => ({ Icon: () => null }));
 vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => {} }));
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: mocks.announce }) }));
 vi.mock("./arcade-panel", () => ({ ArcadePanel: () => null }));
+vi.mock("./voice-call-settings", () => ({ VoiceCallSettings: () => null }));
 vi.mock("@/lib/voice/registry", () => ({ getVoiceProvider: () => ({ clientAdapter: { connect: mocks.connect } }) }));
 vi.mock("@/lib/voice/microphone-access", () => ({
   requestMicrophoneStream: mocks.mic,
@@ -116,4 +117,92 @@ test("a provider connection completed after unmount is closed", async () => {
   await act(async () => pending.resolve(live));
   expect(live.close).toHaveBeenCalledTimes(1);
   expect(track.stop).toHaveBeenCalled();
+});
+
+test("interleaved captions reconcile by item and interruption does not persist a partial", async () => {
+  await mount();
+  await act(async () => {
+    callbacks[0].onPartialTranscript("assistant", "Hello", "a1");
+    callbacks[0].onUserTranscriptFinal("Wait", "u1");
+    callbacks[0].onAssistantTranscriptFinal("Hello Val.", "a1");
+    callbacks[0].onPartialTranscript("assistant", "Unfinished", "a2");
+  });
+  const before = fetch.mock.calls.length;
+  await act(async () => callbacks[0].onTranscriptInterrupted("assistant", "a2"));
+  const turns = renderer.root.findAllByType("li");
+  expect(turns).toHaveLength(3);
+  expect(turns.every(turn => !turn.props["aria-busy"])).toBe(true);
+  expect(fetch.mock.calls).toHaveLength(before);
+});
+
+test("playing keeps recent captions above the game and full history reachable", async () => {
+  await mount();
+  await act(async () => {
+    callbacks[0].onUserTranscriptFinal("First", "u1");
+    callbacks[0].onAssistantTranscriptFinal("Second", "a1");
+    callbacks[0].onUserTranscriptFinal("Latest", "u2");
+    renderer.root.findByProps({ "aria-label": "Play Glitter Crypt" }).props.onClick();
+  });
+  const captions = renderer.root.findByProps({ "aria-label": "Live game captions" });
+  expect(captions.findAllByType("li")).toHaveLength(2);
+  expect(captions.findAllByType("li").at(-1).findByType("p").props.children).toBe("Latest");
+  await act(async () => renderer.root.findByProps({ "aria-label": "Show full transcript" }).props.onClick());
+  expect(renderer.root.findByProps({ "aria-label": "Call transcript" }).findAllByType("li")).toHaveLength(3);
+});
+
+test("changing voice reconnects, preserves captions and mute, and ignores old callbacks", async () => {
+  await mount();
+  await act(async () => {
+    callbacks[0].onUserTranscriptFinal("Keep this conversation", "u1");
+    renderer.root.findByProps({ "aria-label": "Mute" }).props.onClick();
+    renderer.root.findByProps({ "aria-label": "Change familiar voice" }).props.onClick();
+  });
+  const settings = renderer.root.find(node => typeof node.type === "function" && node.type.name === "VoiceCallSettings");
+  await act(async () => settings.props.onSaved({ voiceProvider: "elevenlabs", voiceModel: "eleven_v3_conversational", voiceName: "Rachel" }));
+  expect(sessions[0].close).toHaveBeenCalledTimes(1);
+  expect(sessions).toHaveLength(2);
+  expect(sessions[1].setMuted).toHaveBeenLastCalledWith(true);
+  expect(renderer.root.findByProps({ "aria-label": "Call transcript" }).findAllByType("li")).toHaveLength(1);
+  const before = fetch.mock.calls.length;
+  await act(async () => callbacks[0].onUserTranscriptFinal("Stale", "old"));
+  expect(fetch.mock.calls).toHaveLength(before);
+});
+
+test("retrying a failed voice change keeps the conversation and muted microphone", async () => {
+  await mount();
+  await act(async () => {
+    callbacks[0].onUserTranscriptFinal("Keep me", "u1");
+    renderer.root.findByProps({ "aria-label": "Mute" }).props.onClick();
+    renderer.root.findByProps({ "aria-label": "Change familiar voice" }).props.onClick();
+  });
+  mocks.connect.mockRejectedValueOnce(new Error("network"));
+  const settings = renderer.root.find(node => typeof node.type === "function" && node.type.name === "VoiceCallSettings");
+  await act(async () => settings.props.onSaved({ voiceProvider: "elevenlabs" }));
+  await act(async () => renderer.root.findAllByType("button").find(b => b.props.children === "Try again").props.onClick());
+  expect(renderer.root.findByProps({ "aria-label": "Call transcript" }).findAllByType("li")).toHaveLength(1);
+  expect(renderer.root.findByProps({ "aria-label": "Unmute" }).props["aria-pressed"]).toBe(true);
+  expect(sessions.at(-1).setMuted).toHaveBeenLastCalledWith(true);
+});
+
+test("long calls can reveal earlier turns without losing the latest captions", async () => {
+  await mount();
+  await act(async () => {
+    for (let i = 0; i < 72; i++) callbacks[0].onUserTranscriptFinal(`Turn ${i}`, `u${i}`);
+  });
+  expect(renderer.root.findByProps({ "aria-label": "Call transcript" }).findAllByType("li")).toHaveLength(61);
+  await act(async () => renderer.root.findAllByType("button").find(b => b.props.children === "Show earlier turns").props.onClick());
+  const turns = renderer.root.findByProps({ "aria-label": "Call transcript" }).findAllByType("li");
+  expect(turns).toHaveLength(72);
+  expect(turns[0].findByType("p").props.children.join("")).toBe("Turn 0");
+});
+
+test("switching chats behind a call cannot reconnect its familiar into another chat", async () => {
+  await mount();
+  await act(async () => renderer.update(<VoiceCallOverlay familiar={{ id: "other", display_name: "Other familiar", voiceProvider: "openai" }} sessionId="other-session" onClose={onClose} />));
+  await act(async () => renderer.root.findByProps({ "aria-label": "Change familiar voice" }).props.onClick());
+  const settings = renderer.root.find(node => typeof node.type === "function" && node.type.name === "VoiceCallSettings");
+  expect(settings.props.familiar.id).toBe("voice-test");
+  await act(async () => settings.props.onSaved({ voiceProvider: "elevenlabs" }));
+  const mints = fetch.mock.calls.filter(([url]) => url === "/api/voice/session");
+  expect(JSON.parse(mints.at(-1)[1].body)).toEqual({ familiarId: "voice-test", sessionId: "voice-test-session" });
 });

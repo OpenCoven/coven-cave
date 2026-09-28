@@ -211,10 +211,11 @@ const clientAdapter: VoiceClientAdapter = {
  */
 export function createRealtimeEventStream(callbacks: VoiceCallbacks) {
   let assistant = "";
-  let user = "";
+  const userPartials = new Map<string, string>();
   let responding = false;
   let playing = false;
   let responseId: string | undefined;
+  let assistantItemKey: string | undefined;
   let interrupted = false;
 
   const endResponse = () => {
@@ -227,6 +228,7 @@ export function createRealtimeEventStream(callbacks: VoiceCallbacks) {
     isResponding: () => responding,
     isPlaying: () => playing,
     interrupt() {
+      if (assistant) callbacks.onTranscriptInterrupted?.("assistant", assistantItemKey);
       interrupted ||= responding || playing;
       playing = false;
       endResponse();
@@ -248,32 +250,45 @@ export function createRealtimeEventStream(callbacks: VoiceCallbacks) {
         interrupted = false;
         responding = true;
         assistant = "";
+        assistantItemKey = undefined;
       } else if (type === "output_audio_buffer.started") {
         playing = true;
       } else if (type === "output_audio_buffer.stopped" || type === "output_audio_buffer.cleared") {
         playing = false;
         callbacks.onSpeaking?.(null);
       } else if (type === "conversation.item.input_audio_transcription.completed") {
-        user = "";
-        if (typeof ev.transcript === "string") callbacks.onUserTranscriptFinal(ev.transcript);
+        const key = typeof ev.item_id === "string" ? `${ev.item_id}:${ev.content_index ?? 0}` : "";
+        userPartials.delete(key);
+        if (typeof ev.transcript === "string") callbacks.onUserTranscriptFinal(ev.transcript, key || undefined);
       } else if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
         // GA name first; beta name kept for compatibility.
-        if (typeof ev.transcript === "string") callbacks.onAssistantTranscriptFinal(ev.transcript);
+        const key = typeof ev.item_id === "string" ? `${ev.item_id}:${ev.content_index ?? 0}` : assistantItemKey;
+        if (typeof ev.transcript === "string") callbacks.onAssistantTranscriptFinal(ev.transcript, key);
         assistant = "";
         if (!playing) callbacks.onSpeaking?.(null);
       } else if (type === "response.output_audio_transcript.delta" || type === "response.audio_transcript.delta") {
         if (typeof ev.delta === "string") {
           responding = true;
+          const key = typeof ev.item_id === "string" ? `${ev.item_id}:${ev.content_index ?? 0}` : responseId;
+          if (key !== assistantItemKey) assistant = "";
+          assistantItemKey = key;
           assistant += ev.delta;
-          callbacks.onPartialTranscript("assistant", assistant);
+          callbacks.onPartialTranscript("assistant", assistant, assistantItemKey);
           callbacks.onSpeaking?.(assistant);
         }
       } else if (type === "conversation.item.input_audio_transcription.delta") {
         if (typeof ev.delta === "string") {
-          user += ev.delta;
-          callbacks.onPartialTranscript("user", user);
+          const key = typeof ev.item_id === "string" ? `${ev.item_id}:${ev.content_index ?? 0}` : "";
+          const text = (userPartials.get(key) ?? "") + ev.delta;
+          userPartials.set(key, text);
+          // Failed transcription items may never send a completion event.
+          if (userPartials.size > 64) userPartials.delete(userPartials.keys().next().value!);
+          callbacks.onPartialTranscript("user", text, key || undefined);
         }
       } else if (type === "response.done" || type === "response.cancelled") {
+        if (assistant && (type === "response.cancelled" || ev.response?.status === "cancelled")) {
+          callbacks.onTranscriptInterrupted?.("assistant", assistantItemKey);
+        }
         endResponse();
         if (ev.response?.status === "failed") {
           const detail = ev.response.status_details?.error?.message;

@@ -5,6 +5,8 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getVoiceProviderDefinition } from "../../../../lib/voice/provider-catalog.ts";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 
 const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
@@ -245,4 +247,46 @@ test("200 elevenlabs provider mints with defaults and binds the session id", asy
   assert.equal(json.grant.connection.modelId, defaults.model);
   // The vault key must never reach the client.
   assert.equal(JSON.stringify(json).includes("xi-good"), false);
+});
+
+for (const voiceProvider of ["familiar", "elevenlabs"]) {
+  test(`${voiceProvider} mint skips identity and history hydration owned by its chat runtime`, async (t) => {
+    writeFamiliar({ display_name: "Hydration sentinel", role: "companion", voiceProvider });
+    writeSession([]);
+    process.env.ELEVENLABS_API_KEY = "xi-fixture";
+    t.after(() => { delete process.env.ELEVENLABS_API_KEY; });
+    nextFetchResponse = new Response("[]", { status: 200 });
+    const reads: string[] = [];
+    const readFile = fsPromises.readFile;
+    const mocked = t.mock.method(fsPromises, "readFile", async (...args) => {
+      reads.push(String(args[0]));
+      return readFile(...args);
+    });
+    syncBuiltinESMExports();
+    t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+
+    const response = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+    const { grant } = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(grant.connection.familiarId, FAMILIAR_ID);
+    assert.equal(grant.connection.sessionId, SESSION_ID);
+    const configPath = join(TMP, ".coven", "cave", "config.json");
+    assert.equal(reads.filter(file => file === configPath).length, 1,
+      "mint only loads provider settings; the chat runtime owns persona assembly");
+    assert.equal(reads.some(file => file.endsWith(`${SESSION_ID}.json`)), false,
+      "mint must not load history that the chat runtime will load again");
+  });
+}
+
+test("OpenAI mint still receives hydrated familiar identity", async () => {
+  writeFamiliar({ display_name: "Hydration sentinel", role: "test guardian", voiceProvider: "openai" });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-fixture";
+  nextFetchResponse = new Response(JSON.stringify({ value: "ek_fixture" }));
+  const response = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  assert.equal(response.status, 200);
+  const { session } = JSON.parse(lastFetchCall.init.body);
+  assert.match(session.instructions, /You are Hydration sentinel/);
+  assert.match(session.instructions, /Your role: test guardian/);
+  assert.match(session.instructions, /live voice call/);
 });

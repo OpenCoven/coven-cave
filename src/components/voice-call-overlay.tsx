@@ -1,8 +1,8 @@
 "use client";
 
-import "@/styles/cave-chat.css";
+import "@/styles/voice-call.css";
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
@@ -11,9 +11,11 @@ import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/ch
 import { getVoiceProvider } from "@/lib/voice/registry";
 import {
   applyFinal,
+  applyInterrupted,
   applyPartial,
   applySpeaking,
   emptyTranscript,
+  MAX_CALL_TURNS,
   speakingTurnId,
   splitSpokenText,
   type CallTranscript,
@@ -29,6 +31,9 @@ import { voiceErrorHint } from "@/lib/voice/types";
 import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 import { ArcadePanel } from "./arcade-panel";
+import { VoiceCallSettings, type FamiliarVoiceSelection } from "./voice-call-settings";
+import { getVoiceProviderDefinition } from "@/lib/voice/provider-catalog";
+import { findOpenAiVoice } from "@/lib/voice/openai-voices";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 /**
@@ -45,9 +50,27 @@ type Props = {
   onClose: () => void;
 };
 
-export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
+export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initialSessionId, onClose }: Props) {
+  // Cmd-K can switch chats behind this portal. A call (and every reconnect)
+  // remains bound to the familiar/chat pair it was opened for.
+  const [sessionId] = useState(initialSessionId);
+  const [familiar, setFamiliar] = useState(initialFamiliar);
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [earlierTurnsOpen, setEarlierTurnsOpen] = useState(false);
+  const captionsRef = useRef<HTMLOListElement | null>(null);
+  const preserveConversation = useRef(false);
+  const restoreVoiceFocus = useRef(false);
+  const voiceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dismissHistoryRef = useRef<(() => boolean) | null>(null);
   const { announce } = useAnnouncer();
   const [state, dispatch] = useReducer(reduce, { ...initialState, state: "requesting-mic" });
+  useEffect(() => {
+    if (restoreVoiceFocus.current && (state.state === "live" || state.state === "error")) {
+      restoreVoiceFocus.current = false;
+      voiceButtonRef.current?.focus();
+    }
+  }, [state.state]);
   const liveRef = useRef<LiveSession | null>(null);
   const grantRef = useRef<VoiceSessionGrant | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -83,6 +106,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   replyTargetRef.current = replyTarget;
   useFocusTrap(true, dialogRef, {
     onEscape: () => {
+      if (dismissHistoryRef.current?.()) return;
       if (replyTargetRef.current) {
         setReplyTarget(null);
         return;
@@ -101,6 +125,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         try {
           const stream = await requestMicrophoneStream();
           if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+          stream.getAudioTracks().forEach(track => { track.enabled = !state.muted; });
           micStreamRef.current = stream;
           dispatch({ type: "MIC_READY" });
         } catch (error) {
@@ -157,21 +182,25 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           const persistTranscript = !provider.persistsTranscripts;
           const attempt = attemptRef.current;
           const live = await provider.clientAdapter.connect(grant, mic, {
-            onUserTranscriptFinal: (text) => {
+            onUserTranscriptFinal: (text, itemKey) => {
               if (!attempt.active) return;
-              setTranscript((t) => applyFinal(t, "user", text));
+              setTranscript((t) => applyFinal(t, "user", text, itemKey));
               if (persistTranscript) postTranscript(sessionId, callId, "user", text);
             },
-            onAssistantTranscriptFinal: (text) => {
+            onAssistantTranscriptFinal: (text, itemKey) => {
               if (!attempt.active) return;
-              setTranscript((t) => applyFinal(t, "assistant", text));
+              setTranscript((t) => applyFinal(t, "assistant", text, itemKey));
               if (persistTranscript) postTranscript(sessionId, callId, "assistant", text);
             },
             // Live captions are rendered, never persisted — the settled turn
             // above is the record.
-            onPartialTranscript: (role, text) => {
+            onPartialTranscript: (role, text, itemKey) => {
               if (!attempt.active) return;
-              setTranscript((t) => applyPartial(t, role, text));
+              setTranscript((t) => applyPartial(t, role, text, itemKey));
+            },
+            onTranscriptInterrupted: (role, itemKey) => {
+              if (!attempt.active) return;
+              setTranscript((t) => applyInterrupted(t, role, itemKey));
             },
             onSpeaking: (utterance) => {
               if (!attempt.active) return;
@@ -185,6 +214,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             },
           }, controller.signal);
           if (cancelled) { await live.close(); return; }
+          live.setMuted(state.muted);
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
           dispatch({
@@ -233,6 +263,9 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   // and staged reply must not bleed into it.
   useEffect(() => {
     if (state.state !== "requesting-mic") return;
+    if (preserveConversation.current) {
+      return;
+    }
     setTranscript(emptyTranscript);
     setReplyTarget(null);
     setReplyDraft("");
@@ -283,6 +316,24 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   // Opt-in, always. A game that appears unasked during a call is a bug.
   const [arcadeOpen, setArcadeOpen] = useState(false);
   const waiting = WAITING_STATES.has(state.state);
+  dismissHistoryRef.current = () => {
+    if (historyOpen) { setHistoryOpen(false); return true; }
+    if (arcadeOpen) { setArcadeOpen(false); return true; }
+    return false;
+  };
+  const changeVoice = (selection: FamiliarVoiceSelection) => {
+    cleanup();
+    preserveConversation.current = true;
+    restoreVoiceFocus.current = true;
+    setTranscript(t => ({ ...t, speaking: null, turns: t.turns.map(turn => ({ ...turn, final: true })) }));
+    setFamiliar(current => ({ ...current, ...selection }));
+    setVoiceSettingsOpen(false);
+    dispatch({ type: "RECONNECT" });
+  };
+  const providerLabel = getVoiceProviderDefinition(familiar.voiceProvider || "")?.label || "Choose a voice";
+  const voiceLabel = familiar.voiceProvider === "openai"
+    ? findOpenAiVoice(familiar.voiceName || "marin")?.label
+    : familiar.voiceProvider === "elevenlabs" ? "ElevenLabs" : undefined;
   useEffect(() => {
     if (state.state !== "error") {
       setKeyDraft("");
@@ -290,6 +341,21 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
       setSettingsOpenError(null);
     }
   }, [state.state]);
+
+  // Keep the newest words visible even when an accumulated utterance wraps.
+  useLayoutEffect(() => {
+    const paragraphs = captionsRef.current?.querySelectorAll("p");
+    if (!paragraphs) return;
+    const follow = () => paragraphs.forEach(p => { p.scrollTop = p.scrollHeight; });
+    follow();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(follow);
+    paragraphs.forEach(p => observer.observe(p));
+    return () => observer.disconnect();
+  }, [transcript, arcadeOpen, historyOpen]);
+
+  const retryCall = () => dispatch({ type: preserveConversation.current ? "RECONNECT" : "RETRY" });
+  const visibleTurns = earlierTurnsOpen ? transcript.turns : transcript.turns.slice(-MAX_CALL_TURNS);
 
   const fixableKey = state.state === "error"
     ? voiceRecoveryVaultKey({
@@ -317,7 +383,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         return;
       }
       setKeyDraft("");
-      dispatch({ type: "RETRY" });
+      retryCall();
     } catch {
       setKeySaveError("Couldn't save the key — is the daemon running?");
     } finally {
@@ -343,6 +409,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
       <div
         ref={dialogRef}
         className="voice-call-overlay__dialog"
+        data-game={arcadeOpen || undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby="voice-call-overlay-title"
@@ -354,11 +421,27 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
             <span className="voice-call-overlay__state" role="status" aria-live="polite">{state.state === "live" && transcript.speaking && !state.muted ? "Replying…" : labelFor(state)}</span>
           </div>
-          {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
+          <div className="voice-call-overlay__header-actions">
+            {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
+            <button ref={voiceButtonRef} type="button" className="voice-call-overlay__voice focus-ring" aria-label="Change familiar voice" title={providerLabel}
+              disabled={waiting || state.state === "ending"} onClick={() => setVoiceSettingsOpen(true)}>
+              <Icon icon="ph:waveform" aria-hidden="true" /><span>{voiceLabel || "Voice"}</span><Icon icon="ph:caret-down-bold" aria-hidden="true" />
+            </button>
+            <button type="button" className="voice-call-overlay__control focus-ring"
+              aria-label={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
+              title={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
+              aria-pressed={arcadeOpen} onClick={() => { setArcadeOpen(open => !open); setHistoryOpen(false); }}>
+              <Icon icon="ph:magic-wand-fill" />
+            </button>
+            {arcadeOpen && <button type="button" className="voice-call-overlay__control focus-ring"
+              aria-label={historyOpen ? "Hide full transcript" : "Show full transcript"} aria-pressed={historyOpen}
+              onClick={() => setHistoryOpen(open => !open)}><Icon icon="ph:chat-text" /></button>}
+          </div>
         </header>
-        <div className="voice-call-overlay__body">
+        <div className="voice-call-overlay__body" data-game={arcadeOpen || undefined} data-history={historyOpen || undefined}>
           {arcadeOpen && (
             <ArcadePanel
+              immersive
               waitingLabel={waiting ? `${labelFor(state)} — play while you wait.` : undefined}
               onClose={() => setArcadeOpen(false)}
             />
@@ -376,7 +459,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               <span>Play Glitter Crypt while you wait</span>
             </button>
           )}
-          {state.state === "live" && (state.earsEngine || state.mouthEngine) && (
+          {state.state === "live" && !arcadeOpen && (state.earsEngine || state.mouthEngine) && (
             <div className="voice-call-overlay__engines">
               {state.earsEngine && (
                 <span className="voice-call-overlay__ears" title="How this call hears you">
@@ -390,7 +473,15 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               )}
             </div>
           )}
-          {state.state === "live" && (
+          {state.state === "live" && arcadeOpen && !historyOpen && (
+            <ol ref={captionsRef} className="voice-call-overlay__captions" aria-label="Live game captions" role="log" aria-live="polite" aria-relevant="additions">
+              {transcript.turns.slice(-2).map(turn => <li key={turn.id} aria-busy={turn.final ? undefined : true}>
+                <span>{turn.role === "user" ? "You" : familiar.display_name}</span>
+                <p>{turn.id === highlightedTurnId && transcript.speaking ? transcript.speaking : turn.text}</p>
+              </li>)}
+            </ol>
+          )}
+          {state.state === "live" && (!arcadeOpen || historyOpen) && (
             <ol
               ref={transcriptScrollRef}
               className="voice-call-overlay__transcript"
@@ -402,12 +493,15 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               // screen reader unusable.
               aria-relevant="additions"
             >
+              {!earlierTurnsOpen && transcript.turns.length > MAX_CALL_TURNS && <li>
+                <button type="button" className="voice-call-overlay__retry focus-ring" onClick={() => setEarlierTurnsOpen(true)}>Show earlier turns</button>
+              </li>}
               {transcript.turns.length === 0 ? (
                 <li className="voice-call-overlay__transcript-empty">
                   Start talking — what you both say appears here as it happens.
                 </li>
               ) : (
-                transcript.turns.map((turn) => {
+                visibleTurns.map((turn) => {
                   const isSpeaking = turn.id === highlightedTurnId;
                   const split = splitSpokenText(turn.text, isSpeaking ? transcript.speaking : null);
                   return (
@@ -494,7 +588,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               <button
                 type="button"
                 className="voice-call-overlay__retry focus-ring"
-                onClick={() => dispatch({ type: "RETRY" })}
+                onClick={retryCall}
               >
                 Try again
               </button>
@@ -559,16 +653,6 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             >
               <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
             </button>
-            <button
-              type="button"
-              className="voice-call-overlay__control focus-ring"
-              aria-label={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
-              title={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
-              aria-pressed={arcadeOpen}
-              onClick={() => setArcadeOpen((open) => !open)}
-            >
-              <Icon icon="ph:magic-wand-fill" />
-            </button>
             {/* Barge-in without typing: cut the familiar off mid-sentence.
                 Only offered while it is actually speaking, so the control
                 never lies about what it would do. */}
@@ -594,6 +678,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           </button>
         </footer>
         <audio ref={audioElRef} autoPlay hidden />
+        {voiceSettingsOpen && <VoiceCallSettings familiar={familiar} onClose={() => setVoiceSettingsOpen(false)} onSaved={changeVoice} />}
       </div>
     </div>
   );

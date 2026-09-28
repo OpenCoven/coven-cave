@@ -28,7 +28,15 @@ import { VoiceConnectError } from "./types.ts";
 export type SpeechBrain = (
   userText: string,
   speak: (chunk: string) => void,
+  itemKey?: string,
 ) => Promise<string>;
+
+export type PreparedSpeechUtterance = {
+  /** Play the prepared utterance once. Preparation failures surface here. */
+  speak(): Promise<void>;
+  /** Release speculative network/audio resources without playing them. */
+  cancel(): void;
+};
 
 /** The mouth half of the loop: voice one utterance, resolving when playback
  *  finishes. `cancel()` stops playback immediately and retires the mouth (call
@@ -39,6 +47,9 @@ export type SpeechBrain = (
  *  system synthesizer; ElevenLabs plugs in a network mouth. */
 export type SpeechMouth = {
   speak(text: string): Promise<void>;
+  /** Optional one-utterance lookahead; never plays audio or throws early.
+   *  The loop owns cancellation and prepares only the next queued sentence. */
+  prepare?(text: string): PreparedSpeechUtterance;
   cancel(): void;
   interrupt?(): void;
 };
@@ -263,23 +274,40 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   let muted = false;
   let brainBusy = false;
   const pendingUser: string[] = [];
+  const transcriptPrefix = crypto.randomUUID();
+  let transcriptSeq = 0;
+  const nextItemKey = () => `${transcriptPrefix}:${++transcriptSeq}`;
+  let userItemKey = nextItemKey();
 
   // ── Mouth: a draining utterance queue (half-duplex with the ears) ──────────
-  const utterances: string[] = [];
+  const utterances: Array<{ text: string; prepared?: PreparedSpeechUtterance }> = [];
   let speaking = false;
   let onQueueDrained: (() => void) | null = null;
   /** Bumped by every barge-in; a brain turn only feeds the queue while its
    *  own epoch is still current. */
   let speechEpoch = 0;
 
+  const cancelPrepared = () => {
+    const next = utterances[0];
+    next?.prepared?.cancel();
+    if (next) next.prepared = undefined;
+  };
+  const prepareNext = () => {
+    const next = utterances[0];
+    if (!closed && speaking && next && !next.prepared && mouth.prepare) {
+      next.prepared = mouth.prepare(next.text);
+    }
+  };
+
   const ears = earsFactory({
     onPartial: (text) => {
-      if (!closed) callbacks.onPartialTranscript("user", text);
+      if (!closed) callbacks.onPartialTranscript("user", text, userItemKey);
     },
     onFinal: (text) => {
       if (closed || !text.trim()) return;
       const trimmed = text.trim();
-      callbacks.onUserTranscriptFinal(trimmed);
+      callbacks.onUserTranscriptFinal(trimmed, userItemKey);
+      userItemKey = nextItemKey();
       void askBrain(trimmed);
     },
     onError: (code, hint) => {
@@ -297,32 +325,37 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
 
   const speakNext = () => {
     if (closed) {
+      cancelPrepared();
       utterances.length = 0;
       speaking = false;
       callbacks.onSpeaking?.(null);
       onQueueDrained?.();
       return;
     }
-    const text = utterances.shift();
-    if (text === undefined) {
+    const utterance = utterances.shift();
+    if (utterance === undefined) {
       speaking = false;
       callbacks.onSpeaking?.(null);
       onQueueDrained?.();
       listen();
       return;
     }
+    const { text, prepared } = utterance;
+    const epoch = speechEpoch;
     speaking = true;
     hush();
     // The transcript highlight rides the queue, not the brain: this is the
     // exact sentence the synthesizer is about to voice, so the overlay can
     // mark those words as they are heard (cave-zr9dx).
     callbacks.onSpeaking?.(text);
-    mouth
-      .speak(text)
+    const playback = prepared ? prepared.speak() : mouth.speak(text);
+    prepareNext();
+    playback
       .catch((err) => {
         // A mouth failure (e.g. the TTS proxy erroring) surfaces like a brain
         // failure but keeps draining — one bad utterance must not end the call.
-        if (!closed) {
+        if (!closed && epoch === speechEpoch) {
+          cancelPrepared();
           callbacks.onError(
             err instanceof VoiceConnectError
               ? err
@@ -336,8 +369,9 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   const enqueueSpeech = (chunk: string) => {
     const text = chunk.trim();
     if (!text || closed) return;
-    utterances.push(text);
+    utterances.push({ text });
     if (!speaking) speakNext();
+    else prepareNext();
   };
 
   /** Barge-in: drop whatever is still queued and stop the utterance in
@@ -351,6 +385,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     // sentences after the barge-in, and without this they refill the queue we
     // just cleared — the familiar would talk over the reply that stopped it.
     speechEpoch += 1;
+    cancelPrepared();
     utterances.length = 0;
     mouth.interrupt?.();
     callbacks.onSpeaking?.(null);
@@ -373,16 +408,20 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     }
     brainBusy = true;
     const epoch = speechEpoch;
+    const itemKey = nextItemKey();
     try {
       const finalText = await opts.brain(userText, (chunk) => {
         if (epoch !== speechEpoch) return;
         enqueueSpeech(chunk);
-      });
+      }, itemKey);
       if (closed) return;
-      callbacks.onAssistantTranscriptFinal(finalText);
+      callbacks.onAssistantTranscriptFinal(finalText, itemKey);
       await queueDrained();
     } catch (err) {
-      if (!closed) {
+      // A typed barge-in supersedes the old runtime turn as well as its audio.
+      // Its eventual rejection must not fail the replacement call/turn.
+      if (!closed && epoch === speechEpoch) {
+        cancelPrepared();
         callbacks.onError(
           err instanceof VoiceConnectError
             ? err
@@ -426,12 +465,13 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
       const trimmed = text.trim();
       if (closed || !trimmed) return;
       interrupt();
-      callbacks.onUserTranscriptFinal(trimmed);
+      callbacks.onUserTranscriptFinal(trimmed, nextItemKey());
       void askBrain(trimmed);
     },
     async close() {
       closed = true;
       ears.close();
+      cancelPrepared();
       utterances.length = 0;
       mouth.cancel();
       for (const track of mic.getAudioTracks()) track.stop();

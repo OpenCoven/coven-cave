@@ -13,6 +13,7 @@ const styles = [
   "calendar",
   "cave-chat",
   "cave-chat/activity",
+  "voice-call",
   "cave-chat/auxiliary-surfaces",
 ]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
@@ -31,7 +32,7 @@ assert.match(
 );
 assert.match(
   component,
-  /onEscape:[\s\S]{0,220}dispatch\(\{\s*type:\s*"CLOSE_REQUEST"\s*\}\);?\s*\},/,
+  /onEscape:[\s\S]{0,300}dispatch\(\{\s*type:\s*"CLOSE_REQUEST"\s*\}\);?\s*\},/,
   "Escape ends the call cleanly once nothing else is staged",
 );
 
@@ -161,12 +162,12 @@ assert.match(
 );
 assert.match(
   component,
-  /onUserTranscriptFinal:\s*\(text\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
+  /onUserTranscriptFinal:\s*\(text, itemKey\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
   "user transcript finals persist only when the provider does not",
 );
 assert.match(
   component,
-  /onAssistantTranscriptFinal:\s*\(text\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
+  /onAssistantTranscriptFinal:\s*\(text, itemKey\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
   "assistant transcript finals persist only when the provider does not",
 );
 
@@ -260,7 +261,7 @@ assert.match(
 );
 assert.match(
   component,
-  /setKeyDraft\(""\);\s*dispatch\(\{\s*type:\s*"RETRY"\s*\}\)/,
+  /setKeyDraft\(""\);\s*retryCall\(\)/,
   "a successful save clears the draft and retries the call in place",
 );
 assert.match(
@@ -323,7 +324,7 @@ assert.match(
 );
 assert.match(
   component,
-  /onPartialTranscript:\s*\(role,\s*text\)\s*=>\s*\{\s*if \(!attempt.active\) return;\s*setTranscript\(\(t\)\s*=>\s*applyPartial\(t,\s*role,\s*text\)\)/,
+  /onPartialTranscript:\s*\(role,\s*text,\s*itemKey\)\s*=>\s*\{\s*if \(!attempt.active\) return;\s*setTranscript\(\(t\)\s*=>\s*applyPartial\(t,\s*role,\s*text,\s*itemKey\)\)/,
   "in-flight text renders live without being persisted",
 );
 assert.match(

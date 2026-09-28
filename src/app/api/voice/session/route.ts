@@ -93,10 +93,12 @@ export async function POST(req: Request) {
     apiKey = resolved;
   }
 
-  const { instructions, conversationSeed } = await hydrateForVoiceCall(
-    { familiarId, sessionId },
-    { seedTurns: 12 },
-  );
+  // True-voice providers run real chat turns, whose runtime assembles identity,
+  // tools, and history. Their mint only binds that session; hydrating here adds
+  // startup I/O for instructions these providers never consume.
+  const { instructions, conversationSeed } = provider.persistsTranscripts
+    ? { instructions: "", conversationSeed: undefined }
+    : await hydrateForVoiceCall({ familiarId, sessionId }, { seedTurns: 12 });
 
   const model = familiar.voiceModel || definition.defaults.model;
   const voice = familiar.voiceName || definition.defaults.voice;

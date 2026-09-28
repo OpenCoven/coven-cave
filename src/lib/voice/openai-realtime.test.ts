@@ -392,3 +392,46 @@ test("interrupted and superseded responses cannot revive speech or finish a newe
   assert.equal(stream.isPlaying(), true);
   assert.equal(spoken.at(-1), "New");
 });
+
+test("transcript item keys survive interleaving and interrupted prefixes settle without persistence", async () => {
+  const { createRealtimeEventStream } = await import("./openai-realtime.ts");
+  const { applyPartial, applyFinal, applyInterrupted, emptyTranscript } = await import("./call-transcript.ts");
+  let transcript = emptyTranscript;
+  const persisted: string[] = [];
+  const stream = createRealtimeEventStream({
+    ...noopCallbacks,
+    onPartialTranscript(role, text, key) { transcript = applyPartial(transcript, role, text, key); },
+    onAssistantTranscriptFinal(text, key) { persisted.push(text); transcript = applyFinal(transcript, "assistant", text, key); },
+    onUserTranscriptFinal(text, key) { transcript = applyFinal(transcript, "user", text, key); },
+    onTranscriptInterrupted(role, key) { transcript = applyInterrupted(transcript, role, key); },
+  });
+  const emit = (event: unknown) => stream.handle(JSON.stringify(event));
+  emit({ type: "response.created", response: { id: "r1" } });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "r1", item_id: "a1", content_index: 0, delta: "Hello" });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u1", content_index: 0, transcript: "Next question" });
+  emit({ type: "response.output_audio_transcript.done", response_id: "r1", item_id: "a1", content_index: 0, transcript: "Hello Val." });
+  assert.deepEqual(transcript.turns.map(t => [t.role, t.text, t.final]), [["assistant", "Hello Val.", true], ["user", "Next question", true]]);
+  emit({ type: "response.created", response: { id: "r2" } });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "r2", item_id: "a2", delta: "Interrupted prefix" });
+  stream.interrupt();
+  assert.equal(transcript.turns.at(-1)?.final, true);
+  assert.deepEqual(persisted, ["Hello Val."], "settling an interrupted caption must not persist it as a completed turn");
+  emit({ type: "response.created", response: { id: "r3" } });
+  emit({ type: "response.output_audio_transcript.delta", response_id: "r3", item_id: "a3", delta: "New reply" });
+  emit({ type: "response.output_audio_transcript.done", response_id: "r2", item_id: "a2", transcript: "Old late final" });
+  assert.deepEqual(transcript.turns.slice(-2).map(t => [t.text, t.final]), [["Interrupted prefix", true], ["New reply", false]]);
+});
+
+test("a late user completion does not clear another item's accumulated caption", async () => {
+  const { createRealtimeEventStream } = await import("./openai-realtime.ts");
+  const partials: string[] = [];
+  const stream = createRealtimeEventStream({ ...noopCallbacks,
+    onPartialTranscript(_role, text) { partials.push(text); },
+  });
+  const emit = (event: unknown) => stream.handle(JSON.stringify(event));
+  emit({ type: "conversation.item.input_audio_transcription.delta", item_id: "u1", delta: "First" });
+  emit({ type: "conversation.item.input_audio_transcription.delta", item_id: "u2", delta: "Second question " });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u1", transcript: "First." });
+  emit({ type: "conversation.item.input_audio_transcription.delta", item_id: "u2", delta: "continues" });
+  assert.equal(partials.at(-1), "Second question continues");
+});
