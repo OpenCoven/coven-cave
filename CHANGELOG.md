@@ -7,6 +7,47 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-09-29
+
+> Chats open instantly, and reflections get their own shelf.
+
+Patch release on top of v0.5.3. Headline: opening, reopening and switching
+chats no longer waits on the network, and a familiar's "Thread you just
+completed" reflections move out of the live chat list into their own collapsed
+section on desktop and iOS.
+
+### Added
+- **Reflections section** (#5677, #5694). A familiar's post-thread reflection
+  runs sit in a collapsed Reflections section below the live chats, on desktop
+  and iOS, instead of crowding them.
+- Thumbs votes on replies count as familiar outcomes, with an optional one-tap
+  reason (#5678). The analytics page shows the familiar outcome numbers.
+
+### Fixed
+- **Chats open instantly** (#5699). A chat reopened after 45 seconds paints its
+  kept copy at once instead of waiting on the server; the top chats in the rail
+  are loaded ahead while idle; and the composer no longer re-scans the whole
+  transcript for secrets on every render and keystroke.
+- A dropped connection or a server restart no longer shows "Couldn't load chat
+  history": the transcript request retries once before reporting an error
+  (#5699).
+- Switching familiars or projects in the chat rail paints at once instead of
+  blanking while projects and chats reload (#5677).
+- Familiar self-reports keep their source thread, so a Thread Signal's Fix
+  button opens the right project (#5666).
+- iOS: the chat transcript no longer goes blank after the latest message
+  shrinks (#5673), and chat headers align under the status bar (#5689).
+- Tools launched from a Coven Cave shell can prompt for camera access.
+
+### Changed
+- The sessions list drops a chat's settled backing sessions: about 40% less
+  data on every refresh with no change to the chats shown (#5706).
+- The board list leaves out Enhance proposal history, which made up 5 MB of
+  one real board's 5.6 MB response, and Schedules fetches every last-run badge
+  in one request.
+- iOS performance capture ends the destination span at the tick after its
+  commit (#5692).
+
 ## [0.5.3] - 2026-09-28
 
 > Every task Enhance reviews now says why it is where it is.
