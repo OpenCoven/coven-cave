@@ -90,10 +90,28 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+// The composer rebuilds its enhance context on every chat render (each
+// keystroke, each step of opening a thread), and that context carries whole
+// recent messages and tool outputs. Redaction is a pure function of the text,
+// so an unchanged text is redacted once rather than on every render.
+const REDACTED_TEXT_CACHE_LIMIT = 256;
+const redactedTextCache = new Map<string, string>();
+
+function redactedText(text: string): string {
+  const cached = redactedTextCache.get(text);
+  if (cached !== undefined) return cached;
+  const redacted = redactSecretText(text);
+  if (redactedTextCache.size >= REDACTED_TEXT_CACHE_LIMIT) {
+    redactedTextCache.delete(redactedTextCache.keys().next().value!);
+  }
+  redactedTextCache.set(text, redacted);
+  return redacted;
+}
+
 function boundedContextText(value: unknown, maxLength = 480): string | null {
   const text = asText(value);
   if (!text) return null;
-  return redactSecretText(text).slice(0, maxLength).trim() || null;
+  return redactedText(text).slice(0, maxLength).trim() || null;
 }
 
 function boundedContextRecords(value: unknown, limit = 3): Record<string, unknown>[] {
@@ -212,7 +230,7 @@ export function promptEnhancementContextFingerprintInput(context: unknown) {
     },
     selectedFiles: asStringList(normalized.selectedFiles)
       .slice(0, 8)
-      .map((file) => redactSecretText(file).slice(0, 320)),
+      .map((file) => redactedText(file).slice(0, 320)),
     recentThreadTitle: boundedContextText(normalized.recentThreadTitle, 160),
     modelScope: boundedContextText(normalized.modelScope, 160),
     recentMessages: boundedContextRecords(normalized.recentMessages).map((message) => ({

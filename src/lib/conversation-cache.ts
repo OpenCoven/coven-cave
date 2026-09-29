@@ -14,7 +14,9 @@
 // Conditional revalidation (#5607): an entry past its paint TTL is kept, with
 // the server's ETag, only to revalidate. The next load sends If-None-Match and
 // a 304 reuses the kept payload, so reopening an unchanged chat transfers and
-// parses nothing. An expired entry never paints.
+// parses nothing. An expired entry is not "fresh" (readCachedConversation, and
+// so prefetch, treat it as absent), but it still paints on reopen through
+// readConversationForPaint while that revalidation runs.
 
 import { startSpan } from "./perf/marks.ts";
 
@@ -108,6 +110,23 @@ export function storeConversation(
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
+}
+
+/**
+ * What a reopened thread paints at once: the fresh entry, or else the entry
+ * kept past its paint TTL for revalidation. Opening a thread always
+ * revalidates, and a changed transcript replaces the painted one, so painting
+ * the kept copy costs at most a moment of staleness. Blanking to the skeleton
+ * instead made every chat reopened after 45 s wait on a round trip that is
+ * almost always a bodiless 304 of exactly what was kept.
+ */
+export function readConversationForPaint(
+  sessionId: string,
+  now: number = Date.now(),
+): CachedConversationPayload | null {
+  const fresh = readCachedConversation(sessionId, now);
+  if (fresh) return fresh;
+  return cache.get(sessionId)?.payload ?? null;
 }
 
 /** The server's tag for a payload this module loaded, if it sent one. */
