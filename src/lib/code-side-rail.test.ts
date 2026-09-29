@@ -13,6 +13,7 @@ const {
   countCodeRailViewed,
   codeRailDiffBar,
   isCodeRailTab,
+  nextUnviewedCodeFile,
 } = await import("./code-side-rail.ts");
 
 // ── Tab vocabulary ───────────────────────────────────────────────────────────
@@ -95,3 +96,22 @@ assert.deepEqual(codeRailDiffBar(0, 0), { addedPct: 0, removedPct: 0 });
 assert.deepEqual(codeRailDiffBar(-3, 0), { addedPct: 0, removedPct: 0 });
 
 console.log("code-side-rail: ok");
+
+// ── Next unviewed (#5705) ────────────────────────────────────────────────────
+// Starts after the current file, wraps, and is null once everything is viewed.
+{
+  const files = [
+    { path: "a.ts", status: "modified", additions: 1, deletions: 0 },
+    { path: "b.ts", status: "modified", additions: 2, deletions: 0 },
+    { path: "c.ts", status: "added", additions: 3, deletions: 0 },
+  ];
+  assert.equal(nextUnviewedCodeFile(files, {}, null)?.path, "a.ts");
+  assert.equal(nextUnviewedCodeFile(files, {}, "a.ts")?.path, "b.ts");
+  assert.equal(nextUnviewedCodeFile(files, {}, "c.ts")?.path, "a.ts", "wraps past the end");
+  let viewed = toggleCodeRailViewed({}, files[1]);
+  assert.equal(nextUnviewedCodeFile(files, viewed, "a.ts")?.path, "c.ts", "skips a viewed file");
+  viewed = toggleCodeRailViewed(toggleCodeRailViewed(viewed, files[0]), files[2]);
+  assert.equal(nextUnviewedCodeFile(files, viewed, "a.ts"), null);
+  assert.equal(nextUnviewedCodeFile([], {}, null), null);
+  assert.equal(nextUnviewedCodeFile(files, {}, "zzz.ts")?.path, "a.ts", "an unknown current path starts from the top");
+}

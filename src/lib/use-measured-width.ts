@@ -35,3 +35,29 @@ export function useMeasuredWidth(ref: RefObject<HTMLElement | null>): number | n
 
   return width;
 }
+
+/**
+ * Live height of an element's content box, on the same contract as
+ * `useMeasuredWidth`: `null` until measured. The Coding Desk clamps its
+ * terminal drawer against this so a stored height from a taller window cannot
+ * swallow the source viewer on a shorter one (#5705).
+ */
+export function useMeasuredHeight(ref: RefObject<HTMLElement | null>): number | null {
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const read = (next: number) => {
+      setHeight((previous) => (previous === next ? previous : next));
+    };
+    read(element.clientHeight);
+    const observer = new ResizeObserver((entries) => {
+      read(entries[0]?.contentRect.height ?? element.clientHeight);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return height;
+}

@@ -130,3 +130,21 @@ export function codeRailDiffBar(additions: number, deletions: number): {
   const addedPct = Math.round((Math.max(0, additions) / total) * 100);
   return { addedPct, removedPct: 100 - addedPct };
 }
+
+/**
+ * The next changed file not yet marked viewed, starting after `currentPath`
+ * and wrapping — the desk's "Next unviewed" action (#5705). Null when every
+ * file is viewed or there are none, so the control can disable itself
+ * rather than reopen the file you are on.
+ */
+export function nextUnviewedCodeFile<
+  T extends { path: string; status?: string | null; additions?: number | null; deletions?: number | null },
+>(files: readonly T[], viewed: CodeRailViewedState, currentPath: string | null): T | null {
+  if (!files.length) return null;
+  const start = currentPath ? files.findIndex((file) => file.path === currentPath) : -1;
+  for (let offset = 1; offset <= files.length; offset += 1) {
+    const candidate = files[(start + offset) % files.length];
+    if (!isCodeRailFileViewed(viewed, candidate)) return candidate;
+  }
+  return null;
+}

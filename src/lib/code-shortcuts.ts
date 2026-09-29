@@ -22,6 +22,8 @@ export type CodeShortcutId =
   | "files"
   | "outline"
   | "terminal"
+  | "next-file"
+  | "previous-file"
   | "help";
 
 export type CodeShortcutDef = {
@@ -57,6 +59,11 @@ export const CODE_SHORTCUTS: readonly CodeShortcutDef[] = [
   { id: "files", label: "Focus the file tree", combo: "Mod+Shift+F" },
   { id: "outline", label: "Toggle the file outline", combo: "Mod+Shift+O" },
   { id: "terminal", label: "Terminal drawer", combo: "Mod+`" },
+  // Open-file tabs (#5705). Alt+Arrow rather than Mod+Shift+[ ] because the
+  // bracket pair is the browser's own tab switch on every platform and cannot
+  // be prevented from a page; Option+Arrow prints no dead key on macOS.
+  { id: "next-file", label: "Next open file", combo: "Alt+ArrowDown" },
+  { id: "previous-file", label: "Previous open file", combo: "Alt+ArrowUp" },
   { id: "help", label: "This dialog", combo: "?" },
 ] as const;
 
