@@ -34,8 +34,10 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
       else if (event.key === "Home") next = 0;
       else if (event.key === "End") next = paths.length - 1;
       else if (event.key === "Delete" || event.key === "Backspace") {
+        const fallback = paths[index - 1] ?? paths[index + 1] ?? null;
         event.preventDefault();
         onClose(path);
+        if (fallback) requestAnimationFrame(() => tabRefs.current.get(fallback)?.focus());
         return;
       }
       if (next === null) return;
