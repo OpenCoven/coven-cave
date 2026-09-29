@@ -1606,6 +1606,13 @@ jobs:
           # from the bundle, dlopen'd host libraries (libayatana-appindicator3,
           # GVFS, GIO) resolve against host GLib/libmount and see matching
           # versioned symbols such as MOUNT_2_40.
+          #
+          # libsystemd goes too: host libmount links it and needs newer
+          # versioned symbols (LIBSYSTEMD_251) than the build image ships, so a
+          # bundled copy stops the app at load time. libwayland-* goes because
+          # host Mesa's libEGL is linked against host libwayland; an older
+          # bundled copy makes WebKit's EGL display init fail with
+          # EGL_BAD_PARAMETER and abort the web process on every launch.
           find squashfs-root/usr/lib \
             \( -name 'libglib-2.0*' \
                -o -name 'libgio-2.0*' \
@@ -1614,7 +1621,9 @@ jobs:
                -o -name 'libgthread-2.0*' \
                -o -name 'libmount.so.1*' \
                -o -name 'libblkid.so.1*' \
-               -o -name 'libuuid.so.1*' \) \
+               -o -name 'libuuid.so.1*' \
+               -o -name 'libsystemd.so.0*' \
+               -o -name 'libwayland-*.so*' \) \
             -delete -print | sed 's/^/🧹 Removed host-ABI library: /'
 
           # ── 3. Re-pack into AppImage ──
