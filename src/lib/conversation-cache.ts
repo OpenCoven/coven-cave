@@ -172,6 +172,14 @@ export function clearConversationCache(): void {
 }
 
 export const CONVERSATION_FETCH_TIMEOUT_MS = 20_000;
+const CONVERSATION_RETRY_DELAY_MS = 400;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function isTimeoutOrAbort(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
 
 /** Fetches a conversation and shares an existing request for the same session. */
 export function loadConversation(
@@ -197,11 +205,28 @@ export function loadConversation(
       // and Retry would re-join the same in-flight promise. The entry clears
       // when this settles, so Retry after a timeout starts a fresh request.
       const kept = cache.get(sessionId);
-      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
+      const request = () => fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
         cache: "no-store",
         signal: AbortSignal.timeout(CONVERSATION_FETCH_TIMEOUT_MS),
         headers: kept?.etag ? { "If-None-Match": kept.etag } : undefined,
       });
+      // One quiet retry for a transient failure: a dropped connection or a
+      // 5xx while the server restarts or recompiles. Without it every such
+      // blip surfaced as "Couldn't load chat history" until the user pressed
+      // Retry. A 4xx is an answer and a timeout already waited its full
+      // bound, so neither is retried.
+      let res: Response;
+      try {
+        res = await request();
+        if (res.status >= 500) {
+          await sleep(CONVERSATION_RETRY_DELAY_MS);
+          res = await request();
+        }
+      } catch (error) {
+        if (isTimeoutOrAbort(error)) throw error;
+        await sleep(CONVERSATION_RETRY_DELAY_MS);
+        res = await request();
+      }
       if (res.status === 304 && kept) {
         // Unchanged (#5607): the same payload object, so a view that painted
         // it sees an identical revision and does not rebuild the transcript.

@@ -238,6 +238,36 @@ test("foreground loading preserves the response status for error handling", asyn
   );
 });
 
+test("a transient failure is retried once, quietly; a 4xx or second failure is not", async () => {
+  clearConversationCache();
+  let n = 0;
+  let calls = stubFetch(async () => {
+    n += 1;
+    if (n === 1) throw new TypeError("Failed to fetch");
+    return { ok: true, status: 200, headers: new Headers(), json: async () => payload("after blip") };
+  });
+  assert.equal((await loadConversation("blip-network")).conversation.turns[0].text, "after blip");
+  assert.equal(calls.length, 2, "a dropped connection retries once");
+
+  n = 0;
+  calls = stubFetch(async () => {
+    n += 1;
+    return n === 1
+      ? { ok: false, status: 503, json: async () => ({ ok: false, error: "restarting" }) }
+      : { ok: true, status: 200, headers: new Headers(), json: async () => payload("after 503") };
+  });
+  assert.equal((await loadConversation("blip-503")).conversation.turns[0].text, "after 503");
+  assert.equal(calls.length, 2, "a 5xx retries once");
+
+  calls = stubFetch(async () => ({ ok: false, status: 404, json: async () => ({ ok: false, error: "not found" }) }));
+  await assert.rejects(loadConversation("gone"), (error) => error instanceof ConversationLoadError && error.status === 404);
+  assert.equal(calls.length, 1, "a 404 is an answer, not retried");
+
+  calls = stubFetch(async () => ({ ok: false, status: 500, json: async () => ({ ok: false, error: "still down" }) }));
+  await assert.rejects(loadConversation("down"), (error) => error instanceof ConversationLoadError && error.status === 500);
+  assert.equal(calls.length, 2, "a second failure surfaces instead of retrying forever");
+});
+
 test("foreground loading rejects malformed successful responses", async () => {
   stubFetch(async () => ({
     ok: true,
