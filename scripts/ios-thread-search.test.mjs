@@ -72,7 +72,7 @@ assert.match(
 );
 assert.match(
   home,
-  /homeList\(fullList, zoom: query\.isEmpty \? zoomNamespace : hiddenListNamespace\)\s*\.opacity\(query\.isEmpty \? 1 : 0\)\s*\.allowsHitTesting\(query\.isEmpty\)\s*\.accessibilityHidden\(!query\.isEmpty\)/,
+  /homeList\(fullList, zoom: query\.isEmpty \? zoomNamespace : hiddenListNamespace,\s*hidden: !query\.isEmpty\)\s*\.opacity\(query\.isEmpty \? 1 : 0\)\s*\.allowsHitTesting\(query\.isEmpty\)\s*\.accessibilityHidden\(!query\.isEmpty\)/,
   "the full list stays mounted and hidden under search results, so clearing a search never re-inserts every row",
 );
 
