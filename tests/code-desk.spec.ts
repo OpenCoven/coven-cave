@@ -372,10 +372,14 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave.code.terminal-height"))).toBe("324");
 
     // Pointer drag: the drawer hangs from the bottom, so dragging up grows it.
+    // The drawer animates its height, and the grip rides on its top edge, so
+    // measure only once the previous step has settled — a box read mid-
+    // transition puts the pointer where the grip used to be.
+    await expect(drawer).toHaveCSS("height", "324px");
     const box = (await grip.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 4 });
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 8 });
     await page.mouse.up();
     await expect(grip).toHaveAttribute("aria-valuenow", "364");
 
