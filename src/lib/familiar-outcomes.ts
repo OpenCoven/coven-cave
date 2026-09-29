@@ -221,6 +221,50 @@ export function calibrate(
   return { samples, brier: squared / samples, meanGap: signed / samples };
 }
 
+export type FamiliarOutcomeCounts = FamiliarOutcomeSummary["counts"];
+
+/**
+ * Accepted/rejected totals, the accept rate, and the same split per source.
+ * The one definition both the route's summary and the analytics page's
+ * window-scoped recount use, so a tile never disagrees with the API.
+ */
+export function countOutcomes(outcomes: readonly FamiliarOutcome[]): FamiliarOutcomeCounts {
+  const accepted = outcomes.filter((outcome) => outcome.kind === "accepted");
+  const bySource: FamiliarOutcomeCounts["bySource"] = {
+    board: { accepted: 0, rejected: 0 },
+    "github-pr": { accepted: 0, rejected: 0 },
+    "chat-feedback": { accepted: 0, rejected: 0 },
+  };
+  for (const outcome of outcomes) bySource[outcome.source][outcome.kind] += 1;
+  return {
+    accepted: accepted.length,
+    acceptedStrong: accepted.filter((outcome) => outcome.evidence === "strong").length,
+    rejected: outcomes.length - accepted.length,
+    acceptRate: outcomes.length > 0 ? accepted.length / outcomes.length : null,
+    bySource,
+  };
+}
+
+/**
+ * How well self-reported confidence predicted outcomes, as card copy: a
+ * `headline` verdict (the mean gap in points; over = claimed more than it
+ * delivered) and a `detail` sentence with the sample size and Brier score.
+ * Null calibration means no thread has both a self-report and an outcome yet.
+ */
+export function describeCalibration(calibration: FamiliarCalibration | null): { headline: string; detail: string } {
+  if (!calibration) {
+    return { headline: "Not calibrated yet", detail: "No thread has both a self-report and an outcome yet." };
+  }
+  const points = Math.round(calibration.meanGap * 100);
+  const headline =
+    points >= 1 ? `${points} pts overconfident` : points <= -1 ? `${-points} pts underconfident` : "On target";
+  const threads = `${calibration.samples} thread${calibration.samples === 1 ? "" : "s"}`;
+  return {
+    headline,
+    detail: `Across ${threads} with both a self-report and an outcome. Brier ${calibration.brier.toFixed(2)}; 0 is perfect.`,
+  };
+}
+
 /** Outcomes and calibration for one familiar, newest outcome first. */
 export function summarizeFamiliarOutcomes(
   familiarId: string,
@@ -235,24 +279,10 @@ export function summarizeFamiliarOutcomes(
       .filter((outcome): outcome is FamiliarOutcome => outcome !== null),
     ...outcomesFromFeedback(feedback).filter((outcome) => outcome.familiarId === familiarId),
   ].sort((a, b) => instant(b.at) - instant(a.at) || a.id.localeCompare(b.id));
-  const accepted = outcomes.filter((outcome) => outcome.kind === "accepted");
-  const rejected = outcomes.length - accepted.length;
-  const bySource: FamiliarOutcomeSummary["counts"]["bySource"] = {
-    board: { accepted: 0, rejected: 0 },
-    "github-pr": { accepted: 0, rejected: 0 },
-    "chat-feedback": { accepted: 0, rejected: 0 },
-  };
-  for (const outcome of outcomes) bySource[outcome.source][outcome.kind] += 1;
   return {
     familiarId,
     outcomes,
-    counts: {
-      accepted: accepted.length,
-      acceptedStrong: accepted.filter((outcome) => outcome.evidence === "strong").length,
-      rejected,
-      acceptRate: outcomes.length > 0 ? accepted.length / outcomes.length : null,
-      bySource,
-    },
+    counts: countOutcomes(outcomes),
     calibration: calibrate(
       outcomes,
       reports.filter((report) => report.familiarId === familiarId),

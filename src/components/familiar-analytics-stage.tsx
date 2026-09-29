@@ -12,6 +12,7 @@ import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Icon } from "@/lib/icon";
 import type { SelfHealRequest } from "@/lib/familiar-heal-requests";
+import type { FamiliarOutcomeCounts } from "@/lib/familiar-outcomes";
 import { pulseTotal, type PulseDay } from "@/lib/session-pulse";
 import { FamiliarActivityLattice } from "@/components/familiar-activity-lattice";
 import type { ActivityLattice } from "@/lib/activity-lattice";
@@ -184,6 +185,14 @@ function StatHead({ label, icon }: { label: string; icon: Parameters<typeof Icon
   );
 }
 
+const OUTCOME_SOURCES: { key: keyof FamiliarOutcomeCounts["bySource"]; label: string; full: string }[] = [
+  // Labels are short on purpose: the tile is ~145px wide and a wrapped row
+  // pushes the last one off the face. The hover text spells them out.
+  { key: "board", label: "Board", full: "Board cards" },
+  { key: "github-pr", label: "PRs", full: "Pull requests" },
+  { key: "chat-feedback", label: "Chat", full: "Chat thumbs votes" },
+];
+
 /** Session rows are "done" unless the status says otherwise. */
 function isFailed(session: SessionRow): boolean {
   return /(error|fail|killed|crash)/i.test(session.status);
@@ -196,6 +205,7 @@ export const StatBand = memo(function StatBand({
   windowDays,
   healRequests,
   reportCount,
+  outcomes,
   queueCount,
   pulseOpen,
   onTogglePulse,
@@ -212,6 +222,8 @@ export const StatBand = memo(function StatBand({
   /** Lens-scoped heal requests — the number the Self-heal card reports. */
   healRequests: SelfHealRequest[];
   reportCount: number;
+  /** Window-scoped outcome counts — the Outcomes card's numbers. */
+  outcomes: FamiliarOutcomeCounts;
   queueCount: number;
   pulseOpen: boolean;
   onTogglePulse: () => void;
@@ -219,12 +231,13 @@ export const StatBand = memo(function StatBand({
   onSelectDay: (day: PulseDay) => void;
   selectedDayKey: string | null;
 }) {
-  const [flipped, setFlipped] = useState<{ activity: boolean; contract: boolean; heal: boolean }>({
+  const [flipped, setFlipped] = useState<{ activity: boolean; contract: boolean; outcomes: boolean; heal: boolean }>({
     activity: false,
     contract: false,
+    outcomes: false,
     heal: false,
   });
-  const flip = useCallback((key: "activity" | "contract" | "heal") => {
+  const flip = useCallback((key: "activity" | "contract" | "outcomes" | "heal") => {
     setFlipped((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
@@ -237,6 +250,10 @@ export const StatBand = memo(function StatBand({
   const contract = model.contractReport;
   const passCount = contract ? contract.properties.filter((property) => property.pass).length : 0;
   const failing = contract ? contract.properties.filter((property) => !property.pass) : [];
+
+  const outcomeTotal = outcomes.accepted + outcomes.rejected;
+  const acceptPercent = outcomes.acceptRate === null ? null : Math.round(outcomes.acceptRate * 100);
+  const outcomeTone = acceptPercent === null ? "" : acceptPercent >= 80 ? " is-good" : acceptPercent < 50 ? " is-warn" : "";
 
   const bySeverity: { key: SelfHealRequest["severity"]; label: string }[] = [
     { key: "crit", label: "critical" },
@@ -334,6 +351,60 @@ export const StatBand = memo(function StatBand({
                 </span>
               </>
             ) : null}
+          </>
+        }
+      />
+
+      <FlipStat
+        label="Outcomes"
+        ariaLabel={
+          outcomeTotal > 0
+            ? `Outcomes — ${outcomes.accepted} accepted, ${outcomes.rejected} rejected, ${acceptPercent}% accepted. Flip for the split by source.`
+            : "Outcomes — none recorded in this window. Flip for the split by source."
+        }
+        flipped={flipped.outcomes}
+        onFlip={() => flip("outcomes")}
+        front={
+          <>
+            <StatHead label="Outcomes" icon="ph:seal-check" />
+            <b className={`fa-stat__value${outcomeTone}`}>
+              {acceptPercent === null ? "—" : `${acceptPercent}%`}
+            </b>
+            <span className="fa-stat__sub">
+              {outcomeTotal > 0 ? `${outcomes.accepted} of ${outcomeTotal} accepted` : "no outcomes yet"}
+            </span>
+            {outcomeTotal > 0 ? (
+              <span
+                className="fa-stat__split"
+                aria-hidden
+                style={{
+                  "--fa-pass": Math.max(outcomes.accepted, 0.001),
+                  "--fa-fail": Math.max(outcomes.rejected, 0.001),
+                } as React.CSSProperties}
+              >
+                <i className="is-pass" />
+                <i className="is-fail" />
+              </span>
+            ) : null}
+          </>
+        }
+        back={
+          <>
+            <StatHead label="By source" icon="ph:arrow-u-up-left" />
+            {OUTCOME_SOURCES.map((source) => {
+              const split = outcomes.bySource[source.key];
+              const seen = split.accepted + split.rejected > 0;
+              return (
+                <span
+                  key={source.key}
+                  className="fa-stat__row"
+                  title={`${source.full}: ${seen ? `${split.accepted} accepted, ${split.rejected} rejected` : "no outcomes in this window"}`}
+                >
+                  <span>{source.label}</span>
+                  <b>{seen ? `${split.accepted}✓ ${split.rejected}✗` : "—"}</b>
+                </span>
+              );
+            })}
           </>
         }
       />

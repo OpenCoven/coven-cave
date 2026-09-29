@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import type { Card, CardGitHubLink } from "./cave-board-types.ts";
 import {
   calibrate,
+  countOutcomes,
+  describeCalibration,
   outcomeFromCard,
   outcomesFromFeedback,
   summarizeFamiliarOutcomes,
@@ -271,5 +273,58 @@ describe("calibration with chat feedback", () => {
     assert.deepEqual(summary.counts.bySource["chat-feedback"], { accepted: 1, rejected: 1 });
     assert.deepEqual(summary.counts.bySource.board, { accepted: 1, rejected: 0 });
     assert.equal(summary.counts.rejected, 1);
+  });
+});
+
+describe("countOutcomes + describeCalibration (the analytics Outcomes tile, #5697)", () => {
+  it("reports no rate with no outcomes, and splits counts by source", () => {
+    assert.deepEqual(countOutcomes([]), {
+      accepted: 0,
+      acceptedStrong: 0,
+      rejected: 0,
+      acceptRate: null,
+      bySource: {
+        board: { accepted: 0, rejected: 0 },
+        "github-pr": { accepted: 0, rejected: 0 },
+        "chat-feedback": { accepted: 0, rejected: 0 },
+      },
+    });
+    const board = outcomeFromCard(card({ id: "done" }));
+    assert.ok(board);
+    const counts = countOutcomes([
+      board,
+      ...outcomesFromFeedback([vote({ messageId: "m1", vote: "down" }), vote({ messageId: "m2", vote: "up" })]),
+    ]);
+    assert.equal(counts.accepted, 2);
+    assert.equal(counts.rejected, 1);
+    assert.ok(Math.abs((counts.acceptRate ?? 0) - 2 / 3) < 1e-9);
+    assert.deepEqual(counts.bySource.board, { accepted: 1, rejected: 0 });
+    assert.deepEqual(counts.bySource["chat-feedback"], { accepted: 1, rejected: 1 });
+  });
+
+  it("is the same count the route's summary reports, so a tile cannot disagree with the API", () => {
+    const summary = summarizeFamiliarOutcomes(
+      "cody",
+      [card({ id: "done", sessionId: "s1" })],
+      [],
+      [vote({ messageId: "m1", vote: "down" }), vote({ messageId: "m2", vote: "up" })],
+    );
+    assert.deepEqual(countOutcomes(summary.outcomes), summary.counts);
+  });
+
+  it("describes calibration as a verdict in points plus the sample size and Brier score", () => {
+    const none = describeCalibration(null);
+    assert.equal(none.headline, "Not calibrated yet");
+    assert.equal(none.detail, "No thread has both a self-report and an outcome yet.");
+
+    const over = describeCalibration({ samples: 5, brier: 0.0416, meanGap: 0.06 });
+    assert.equal(over.headline, "6 pts overconfident", "positive gap = claimed more than delivered");
+    assert.equal(over.detail, "Across 5 threads with both a self-report and an outcome. Brier 0.04; 0 is perfect.");
+
+    const under = describeCalibration({ samples: 1, brier: 0, meanGap: -0.2 });
+    assert.equal(under.headline, "20 pts underconfident");
+    assert.equal(under.detail, "Across 1 thread with both a self-report and an outcome. Brier 0.00; 0 is perfect.");
+    // Under half a point either way is not a verdict.
+    assert.equal(describeCalibration({ samples: 2, brier: 0.01, meanGap: 0.004 }).headline, "On target");
   });
 });
