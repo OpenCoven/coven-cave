@@ -247,6 +247,12 @@ struct MainShellView: View {
                     .opacity(app.selectedTab == .settings ? 1 : 0)
                     .allowsHitTesting(app.selectedTab == .settings)
                     .accessibilityHidden(app.selectedTab != .settings)
+                    // Off-screen while hidden: its UIKit-hosted Form ignores
+                    // accessibilityHidden, so in place it covered Chats for
+                    // taps and VoiceOver. The move never animates; the drawer's
+                    // close would otherwise slide Settings in from off-screen.
+                    .offset(x: app.selectedTab == .settings ? 0 : 10_000)
+                    .transaction(value: app.selectedTab) { $0.animation = nil }
             }
         }
         // `initial` covers a launch that starts on Settings (`--ui-tab settings`).

@@ -56,6 +56,7 @@ const sessions = SEEDS.map((s) => ({
   hasLocalConversation: true,
 }));
 
+const IN_FLIGHT_REUSE_TEST = "reuses the in-flight transcript request";
 const rows = (page: Page) => page.locator(".chat-session-card");
 const chip = (page: Page, name: string) =>
   page.locator(".chat-status-chip").filter({ hasText: new RegExp(`^${name}`) }).first();
@@ -91,6 +92,9 @@ async function openSessionsList(page: Page, seededSessions = sessions) {
 test.describe("sessions list", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the list's card layout is desktop-only (min-width: 768px)");
+    // The in-flight reuse test counts every transcript request from its one
+    // page load, so it installs its counter first and opens the list itself.
+    if (testInfo.title.includes(IN_FLIGHT_REUSE_TEST)) return;
     await openSessionsList(page);
   });
 
@@ -236,7 +240,7 @@ test.describe("sessions list", () => {
     await expect(failed).toHaveAttribute("data-status", "failed");
   });
 
-  test("opening a hover-prefetched chat reuses the in-flight transcript request", async ({ page }) => {
+  test(`opening a hover-prefetched chat ${IN_FLIGHT_REUSE_TEST}`, async ({ page }) => {
     let requestCount = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -269,6 +273,11 @@ test.describe("sessions list", () => {
       });
     });
 
+    // Open the list only now, with the counter in place: the rail warms its
+    // top rows' transcripts while idle (#5699), so the first request for this
+    // chat can come from that warmup or from the hover. Either way it must be
+    // the only one, and opening the chat must reuse it.
+    await openSessionsList(page);
     const running = rows(page).first();
     await running.hover();
     await expect.poll(() => requestCount).toBe(1);

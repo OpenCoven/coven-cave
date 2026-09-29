@@ -90,6 +90,9 @@ export type SessionRow = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Daemon: the conversation this session serves. A chat's follow-up turns
+   *  can each run in their own daemon session tagged with the chat's id. */
+  conversation_id?: string | null;
   /** Canonical conversational responsibility; independent of runtime status. */
   attention: ChatAttention;
   /** Latest selected-path human send causally preceding canonical attention. */
