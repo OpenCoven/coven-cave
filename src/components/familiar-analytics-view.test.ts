@@ -7,6 +7,7 @@ import {
 } from "./familiar-analytics-data.ts";
 import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-window.ts";
 import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
+import { calibrate, countOutcomes } from "../lib/familiar-outcomes.ts";
 import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
 import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
 import type { SessionRow } from "../lib/types.ts";
@@ -369,6 +370,42 @@ function mockFetchFor(score: "low" | "trusted") {
                 memoryRecall: 80,
                 fileLocatability: 80,
                 contextPressure: "adequate",
+              },
+            ]
+          : [],
+      },
+    ],
+    [
+      "/api/familiars/cody/outcomes",
+      {
+        ok: true,
+        // One accepted Board card and one thumbs-down, both on session-1 (the
+        // thread the "trusted" self-report scores at 90).
+        outcomes: score === "trusted"
+          ? [
+              {
+                id: "board:card-1",
+                familiarId: "cody",
+                sessionId: "session-1",
+                kind: "accepted",
+                evidence: "strong",
+                source: "board",
+                cardId: "card-1",
+                cardTitle: "Fix the thing",
+                refs: [],
+                at: "2026-06-25T12:30:00.000Z",
+              },
+              {
+                id: "feedback:m-2",
+                familiarId: "cody",
+                sessionId: "session-1",
+                kind: "rejected",
+                evidence: "strong",
+                source: "chat-feedback",
+                messageId: "m-2",
+                refs: [],
+                at: "2026-06-10T12:00:00.000Z",
+                detail: "Misunderstood me",
               },
             ]
           : [],
@@ -1201,5 +1238,72 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(faCss, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
     assert.match(faCss, /\.fa-factor-bar \{[\s\S]*?min-width: 44px/, "the metric bar keeps a min-width floor in narrow cells");
     assert.match(faCss, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
+  });
+});
+
+describe("outcome numbers on the analytics page (#5697)", () => {
+  it("loads the familiar's outcomes with the other per-familiar resources", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    assert.equal(data.outcomes.length, 2);
+    assert.deepEqual(data.errors, []);
+    const model = buildFamiliarAnalyticsModel(data);
+    assert.equal(model.outcomes, data.outcomes, "the model passes the ledger through untouched");
+    assert.match(dataSource, /fetchResource<OutcomesResponse>\(`\/api\/familiars\/\$\{encodedId\}\/outcomes`/);
+
+    mockFetchFor("low");
+    assert.deepEqual((await loadFamiliarAnalyticsData("cody")).outcomes, []);
+  });
+
+  it("degrades a failed outcomes endpoint into the partial-availability band, not a blank page", async () => {
+    mockFetchFor("trusted");
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) =>
+      String(url).endsWith("/outcomes") ? { ok: false, status: 503, json: async () => null } : inner(url, init)) as typeof fetch;
+    const data = await loadFamiliarAnalyticsData("cody");
+    assert.deepEqual(data.outcomes, []);
+    assert.ok(data.errors.includes("HTTP 503"), `errors: ${data.errors.join(" | ")}`);
+    assert.equal(buildFamiliarAnalyticsModel(data).confidence.hasData, true, "the rest of the model still builds");
+  });
+
+  it("recounts outcomes for the page window with the ledger's own functions", async () => {
+    mockFetchFor("trusted");
+    const model = buildFamiliarAnalyticsModel(await loadFamiliarAnalyticsData("cody"));
+    const now = Date.parse("2026-06-25T20:00:00.000Z");
+
+    const week = model.outcomes.filter((outcome) => withinWindow(outcome.at, "7d", now));
+    assert.deepEqual(countOutcomes(week).bySource.board, { accepted: 1, rejected: 0 });
+    assert.equal(countOutcomes(week).acceptRate, 1, "the Jun 10 thumbs-down is outside the week");
+
+    const all = model.outcomes.filter((outcome) => withinWindow(outcome.at, "all", now));
+    assert.equal(countOutcomes(all).acceptRate, 0.5);
+    const calibration = calibrate(all, model.threadReports);
+    assert.equal(calibration?.samples, 1, "session-1 is the one thread with a report and outcomes");
+    assert.ok(Math.abs((calibration?.meanGap ?? 0) - 0.4) < 1e-9, "90% confidence against a 50% accept share");
+    assert.ok(Math.abs((calibration?.brier ?? 0) - 0.16) < 1e-9);
+
+    // The content does exactly this, in this order, and hands the band both numbers.
+    assert.match(contentSource, /model\.outcomes\.filter\(\(outcome\) => withinWindow\(outcome\.at, windowId, now\)\)/);
+    assert.match(contentSource, /countOutcomes\(windowOutcomes\)/);
+    assert.match(contentSource, /calibrate\(windowOutcomes, windowReports\)/);
+    assert.match(contentSource, /<StatBand[\s\S]*?outcomes=\{outcomeCounts\}/, "the band gets the window counts");
+    assert.match(contentSource, /<ThreadAnalysisBody[\s\S]*?calibration=\{outcomeCalibration\}/, "the confidence panel gets the calibration");
+  });
+
+  it("shows the numbers as an Outcomes tile in the headline band", () => {
+    assert.match(stageSource, /<FlipStat\s+label="Outcomes"/);
+    assert.match(stageSource, /acceptPercent === null \? "—" : `\$\{acceptPercent\}%`/, "accept rate is the headline; no outcomes reads as a dash");
+    assert.match(stageSource, /`\$\{outcomes\.accepted\} of \$\{outcomeTotal\} accepted`/);
+    assert.match(stageSource, /label="By source"/, "the back face splits the counts by source");
+    assert.match(stageSource, /\{ key: "board", label: "Board", full: "Board cards" \},\s*\{ key: "github-pr", label: "PRs", full: "Pull requests" \},\s*\{ key: "chat-feedback", label: "Chat", full: "Chat thumbs votes" \}/);
+    assert.match(stageSource, /`\$\{split\.accepted\}✓ \$\{split\.rejected\}✗`/, "compact per-source counts that fit the tile");
+    assert.match(stageSource, /"--fa-pass": Math\.max\(outcomes\.accepted, 0\.001\)/, "reuses the band's pass/fail split bar");
+    assert.doesNotMatch(stageSource, /describeCalibration/, "calibration is not squeezed onto the 104px tile");
+    assert.match(stageSource, /flipped\.outcomes\s*\? `Outcomes by source — \$\{outcomesBySourceLabel\}\. Flip back\.`/, "the accessible name follows the flip and reads the split");
+  });
+
+  it("reads calibration as a context card in the confidence panel, beside the confidence it scores", () => {
+    assert.match(contentSource, /const calibrationCopy = describeCalibration\(calibration\);/);
+    assert.match(contentSource, /<span className="fa-thread-context-card__eyebrow">Confidence vs outcomes<\/span>\s*<b>\{calibrationCopy\.headline\}<\/b>\s*<p>\{calibrationCopy\.detail\}<\/p>/);
   });
 });

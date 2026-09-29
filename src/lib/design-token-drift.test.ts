@@ -249,7 +249,12 @@ BASELINES.offScaleSpacingPx = 1512; // -10: fullscreen voice call spacing uses t
 // literals were snapped to --space-1/-2 in this PR rather than banked, so
 // offScaleSpacingPx is unchanged rather than raised.
 // -5: retiring Review Desk removes its exclusive dynamic pane styles (#5412).
-BASELINES.inlineTsxStyles = 285;
+// +1: the analytics Outcomes tile (#5697) sizes its pass/fail split bar from
+// the window's accepted and rejected counts through `--fa-pass`/`--fa-fail`,
+// the same mechanism the Contract tile uses for its property counts. Both are
+// recounted per time window at render time, so the stylesheet holds the track
+// and the two tints and cannot hold the ratio.
+BASELINES.inlineTsxStyles = 286;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

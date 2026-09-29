@@ -22,6 +22,7 @@ import {
   type MessageFeedbackRollup,
 } from "@/lib/message-feedback-rollup";
 import type { FamiliarExecutionAnalytics } from "@/lib/familiar-execution-analytics";
+import type { FamiliarOutcome } from "@/lib/familiar-outcomes";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -59,6 +60,9 @@ type MessageFeedbackResponse =
 type ExecutionAnalyticsResponse =
   | { ok: true; analytics: FamiliarExecutionAnalytics }
   | { ok: false; analytics?: FamiliarExecutionAnalytics; error?: string };
+type OutcomesResponse =
+  | { ok: true; outcomes: FamiliarOutcome[] }
+  | { ok: false; outcomes?: FamiliarOutcome[]; error?: string };
 
 export type FamiliarAnalyticsData = {
   familiarId: string;
@@ -75,6 +79,9 @@ export type FamiliarAnalyticsData = {
   modelFeedback: MessageFeedbackRollup;
   /** Metadata-only model/harness execution analytics across Cave run surfaces. */
   executionAnalytics: FamiliarExecutionAnalytics | null;
+  /** What happened to this familiar's work — Board lifecycle, PR state, chat
+   *  thumbs votes — newest first (familiar-outcomes). */
+  outcomes: FamiliarOutcome[];
   errors: string[];
 };
 
@@ -95,6 +102,9 @@ export type FamiliarAnalyticsModel = {
   modelFeedback: MessageFeedbackRollup;
   /** Metadata-only model/harness execution analytics across Cave run surfaces. */
   executionAnalytics: FamiliarExecutionAnalytics | null;
+  /** What happened to this familiar's work — Board lifecycle, PR state, chat
+   *  thumbs votes — newest first (familiar-outcomes). */
+  outcomes: FamiliarOutcome[];
   /**
    * Renown + ritual streak — the progression system's read of this familiar
    * (same derivation as the roster cards, so the surfaces always agree).
@@ -187,6 +197,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     metricSnapshotsJson,
     feedbackJson,
     executionAnalyticsJson,
+    outcomesJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -203,6 +214,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
     fetchResource<ExecutionAnalyticsResponse>(`/api/familiars/${encodedId}/execution-analytics`, { ok: false }),
+    fetchResource<OutcomesResponse>(`/api/familiars/${encodedId}/outcomes`, { ok: false, outcomes: [] }),
   ]);
 
   const fileMemoryReady = fileMemoryJson.ok && Array.isArray(fileMemoryJson.entries);
@@ -217,6 +229,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
     responseError(executionAnalyticsJson, "execution analytics unavailable"),
+    responseError(outcomesJson, "outcomes unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -236,6 +249,8 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     executionAnalytics: executionAnalyticsJson.ok ? executionAnalyticsJson.analytics : null,
+    // Same runtime guard as the reports: `ok` does not prove the payload shape.
+    outcomes: outcomesJson.ok && Array.isArray(outcomesJson.outcomes) ? outcomesJson.outcomes : [],
     errors,
   };
 }
@@ -285,6 +300,7 @@ export function buildFamiliarAnalyticsModel(
     metricSnapshots: data.metricSnapshots,
     modelFeedback: data.modelFeedback,
     executionAnalytics: data.executionAnalytics,
+    outcomes: data.outcomes,
     progression: familiar
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
