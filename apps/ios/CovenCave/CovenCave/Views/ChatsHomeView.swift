@@ -193,15 +193,19 @@ struct ChatsHomeView: View {
                     // an iPhone 16 Pro Max, re-inserting 1,500 rows into one
                     // list took about 250 ms.
                     ZStack {
-                        homeList(fullList, zoom: query.isEmpty ? zoomNamespace : hiddenListNamespace)
+                        homeList(fullList, zoom: query.isEmpty ? zoomNamespace : hiddenListNamespace,
+                                 hidden: !query.isEmpty)
                             .opacity(query.isEmpty ? 1 : 0)
                             .allowsHitTesting(query.isEmpty)
                             .accessibilityHidden(!query.isEmpty)
+                            // Out of the results' way: at the same position its
+                            // cells still won hit and accessibility tests.
+                            .offset(x: query.isEmpty ? 0 : 10_000)
                         if !query.isEmpty {
                             if snapshot.entries.isEmpty && snapshot.reflections.isEmpty {
                                 ContentUnavailableView.search(text: query)
                             } else {
-                                homeList(snapshot, zoom: zoomNamespace)
+                                homeList(snapshot, zoom: zoomNamespace, hidden: false)
                             }
                         }
                     }
@@ -623,7 +627,7 @@ struct ChatsHomeView: View {
         verticalSizeClass == .compact ? 14 : 16
     }
 
-    private func homeList(_ snapshot: ChatListSnapshot, zoom: Namespace.ID) -> some View {
+    private func homeList(_ snapshot: ChatListSnapshot, zoom: Namespace.ID, hidden: Bool) -> some View {
         List(selection: $selection) {
             ForEach(snapshot.entries) { entry in
                 Group {
@@ -685,6 +689,9 @@ struct ChatsHomeView: View {
                     }
                 }
                 .accessibilityIdentifier("Chat row \(entry.id)")
+                // The list's own accessibilityHidden does not reach its
+                // UIKit-hosted cells; hide each row of the list under results.
+                .accessibilityHidden(hidden)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(sizeClass == .compact ? Color.clear : nil)
             }
