@@ -256,8 +256,9 @@ export function describeCalibration(calibration: FamiliarCalibration | null): { 
     return { headline: "Not calibrated yet", detail: "No thread has both a self-report and an outcome yet." };
   }
   const points = Math.round(calibration.meanGap * 100);
+  const pts = (n: number) => `${n} pt${n === 1 ? "" : "s"}`;
   const headline =
-    points >= 1 ? `${points} pts overconfident` : points <= -1 ? `${-points} pts underconfident` : "On target";
+    points >= 1 ? `${pts(points)} overconfident` : points <= -1 ? `${pts(-points)} underconfident` : "On target";
   const threads = `${calibration.samples} thread${calibration.samples === 1 ? "" : "s"}`;
   return {
     headline,

@@ -254,6 +254,12 @@ export const StatBand = memo(function StatBand({
   const outcomeTotal = outcomes.accepted + outcomes.rejected;
   const acceptPercent = outcomes.acceptRate === null ? null : Math.round(outcomes.acceptRate * 100);
   const outcomeTone = acceptPercent === null ? "" : acceptPercent >= 80 ? " is-good" : acceptPercent < 50 ? " is-warn" : "";
+  // The button's accessible name replaces its text, so it must follow the flip
+  // or a screen reader never hears the per-source split.
+  const outcomesBySourceLabel = OUTCOME_SOURCES.map((source) => {
+    const split = outcomes.bySource[source.key];
+    return `${source.full} ${split.accepted} accepted, ${split.rejected} rejected`;
+  }).join("; ");
 
   const bySeverity: { key: SelfHealRequest["severity"]; label: string }[] = [
     { key: "crit", label: "critical" },
@@ -358,9 +364,11 @@ export const StatBand = memo(function StatBand({
       <FlipStat
         label="Outcomes"
         ariaLabel={
-          outcomeTotal > 0
-            ? `Outcomes — ${outcomes.accepted} accepted, ${outcomes.rejected} rejected, ${acceptPercent}% accepted. Flip for the split by source.`
-            : "Outcomes — none recorded in this window. Flip for the split by source."
+          flipped.outcomes
+            ? `Outcomes by source — ${outcomesBySourceLabel}. Flip back.`
+            : outcomeTotal > 0
+              ? `Outcomes — ${outcomes.accepted} accepted, ${outcomes.rejected} rejected, ${acceptPercent}% accepted. Flip for the split by source.`
+              : "Outcomes — none recorded in this window. Flip for the split by source."
         }
         flipped={flipped.outcomes}
         onFlip={() => flip("outcomes")}

@@ -324,7 +324,9 @@ describe("countOutcomes + describeCalibration (the analytics Outcomes tile, #569
     const under = describeCalibration({ samples: 1, brier: 0, meanGap: -0.2 });
     assert.equal(under.headline, "20 pts underconfident");
     assert.equal(under.detail, "Across 1 thread with both a self-report and an outcome. Brier 0.00; 0 is perfect.");
-    // Under half a point either way is not a verdict.
+    // Under half a point either way is not a verdict; exactly one point is singular.
     assert.equal(describeCalibration({ samples: 2, brier: 0.01, meanGap: 0.004 }).headline, "On target");
+    assert.equal(describeCalibration({ samples: 2, brier: 0.01, meanGap: 0.012 }).headline, "1 pt overconfident");
+    assert.equal(describeCalibration({ samples: 2, brier: 0.01, meanGap: -0.006 }).headline, "1 pt underconfident");
   });
 });

@@ -1299,6 +1299,7 @@ describe("outcome numbers on the analytics page (#5697)", () => {
     assert.match(stageSource, /`\$\{split\.accepted\}✓ \$\{split\.rejected\}✗`/, "compact per-source counts that fit the tile");
     assert.match(stageSource, /"--fa-pass": Math\.max\(outcomes\.accepted, 0\.001\)/, "reuses the band's pass/fail split bar");
     assert.doesNotMatch(stageSource, /describeCalibration/, "calibration is not squeezed onto the 104px tile");
+    assert.match(stageSource, /flipped\.outcomes\s*\? `Outcomes by source — \$\{outcomesBySourceLabel\}\. Flip back\.`/, "the accessible name follows the flip and reads the split");
   });
 
   it("reads calibration as a context card in the confidence panel, beside the confidence it scores", () => {
