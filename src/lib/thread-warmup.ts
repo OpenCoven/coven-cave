@@ -27,7 +27,9 @@ export function warmThreadTranscripts(sessionIds: readonly string[], deps: Warmu
     if (cancelled || !sessionId) return;
     cancelIdle = deps.scheduleIdle(() => {
       if (cancelled) return;
-      void deps.prefetch(sessionId).catch(() => null).then(next);
+      // Promise.resolve().then: a prefetch that throws synchronously or
+      // returns no promise still advances the queue instead of breaking it.
+      void Promise.resolve().then(() => deps.prefetch(sessionId)).catch(() => null).then(next);
     });
   };
   next();
@@ -46,8 +48,8 @@ function scheduleIdle(callback: () => void): () => void {
     const id = idle.requestIdleCallback(callback, { timeout: 2_000 });
     return () => idle.cancelIdleCallback?.(id);
   }
-  const id = window.setTimeout(callback, 250);
-  return () => window.clearTimeout(id);
+  const id = setTimeout(callback, 250);
+  return () => clearTimeout(id);
 }
 
 /** Warms the given rows' transcripts while the browser is idle. */
