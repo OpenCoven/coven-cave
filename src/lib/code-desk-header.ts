@@ -42,7 +42,7 @@ export function codeDeskPrState(
   const state = (pr.state ?? "").trim().toLowerCase();
   if (state === "merged") return "merged";
   if (state === "closed") return "closed";
-  if (pr.draft) return "draft";
+  if (pr.draft || state === "draft") return "draft";
   if (state === "open") return "open";
   return "unknown";
 }
