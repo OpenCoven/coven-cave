@@ -165,8 +165,13 @@ export function CodeTerminalDrawer({
         dragRef.current = null;
         if (drag) commitHeight(drag.startHeight - (upEvent.clientY - drag.startY));
       };
+      const cancel = () => {
+        controller.abort();
+        dragRef.current = null;
+      };
       window.addEventListener("pointermove", move, { signal: controller.signal });
       window.addEventListener("pointerup", up, { signal: controller.signal });
+      window.addEventListener("pointercancel", cancel, { signal: controller.signal });
     },
     [commitHeight, heightPx, roomHeightPx],
   );
