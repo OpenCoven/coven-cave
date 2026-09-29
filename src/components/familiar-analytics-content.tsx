@@ -37,6 +37,7 @@ import {
   type WindowId,
 } from "@/components/familiar-analytics-stage";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
+import { calibrate, countOutcomes, describeCalibration, type FamiliarCalibration } from "@/lib/familiar-outcomes";
 import {
   deriveThreadConfidence,
   THREAD_CONFIDENCE_EMPTY_STATE,
@@ -253,11 +254,14 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
   confidence,
   trends,
   familiar,
+  calibration,
   onSelfReportEnabled,
 }: {
   confidence: ThreadConfidence;
   trends: SignalTrends;
   familiar: Familiar | null;
+  /** Self-reported confidence against what actually happened (familiar-outcomes). */
+  calibration: FamiliarCalibration | null;
   onSelfReportEnabled?: () => void;
 }) {
   const trendByKey = new Map(trends.metrics.map((metric) => [metric.key, metric]));
@@ -285,6 +289,7 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
     confidence.contextCounts.critical;
   const pressurePercent =
     confidence.reportCount > 0 ? Math.round((pressuredReports / confidence.reportCount) * 100) : 0;
+  const calibrationCopy = describeCalibration(calibration);
   return (
     <div className="fa-thread-analysis">
       <div className="fa-thread-analysis__top">
@@ -342,6 +347,13 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
               {pressure} <b>{confidence.contextCounts[pressure]}</b>
             </span>
           ))}
+        </div>
+      </div>
+      <div className="fa-thread-context-card">
+        <div>
+          <span className="fa-thread-context-card__eyebrow">Confidence vs outcomes</span>
+          <b>{calibrationCopy.headline}</b>
+          <p>{calibrationCopy.detail}</p>
         </div>
       </div>
     </div>
@@ -1948,6 +1960,17 @@ export function FamiliarAnalyticsContent({
     () => model.metricSnapshots.filter((snapshot) => withinWindow(snapshot.reportedAt, windowId, now)),
     [model.metricSnapshots, now, windowId],
   );
+  // Outcomes follow the same window as everything else on the band, and are
+  // recounted with the ledger's own functions so the tile and the route agree.
+  const windowOutcomes = useMemo(
+    () => model.outcomes.filter((outcome) => withinWindow(outcome.at, windowId, now)),
+    [model.outcomes, now, windowId],
+  );
+  const outcomeCounts = useMemo(() => countOutcomes(windowOutcomes), [windowOutcomes]);
+  const outcomeCalibration = useMemo(
+    () => calibrate(windowOutcomes, windowReports),
+    [windowOutcomes, windowReports],
+  );
   const windowConfidence = useMemo(
     () => deriveThreadConfidence(windowReports),
     [windowReports],
@@ -2134,6 +2157,7 @@ export function FamiliarAnalyticsContent({
           windowDays={windowSpec.days}
           healRequests={healRequests}
           reportCount={windowReports.length}
+          outcomes={outcomeCounts}
           queueCount={reviewQueue.length}
           pulseOpen={pulseOpen}
           onTogglePulse={() => setPulseOpen((prev) => !prev)}
@@ -2180,6 +2204,7 @@ export function FamiliarAnalyticsContent({
                     confidence={windowConfidence}
                     trends={windowSignalTrends}
                     familiar={model.familiar}
+                    calibration={outcomeCalibration}
                     onSelfReportEnabled={onRefresh}
                   />
                 </div>

@@ -77,7 +77,7 @@ import {
   invalidateConversation,
   loadConversation,
   offlineConversationWriteNeeded,
-  readCachedConversation,
+  readConversationForPaint,
   recordOfflineConversationWrite,
 } from "@/lib/conversation-cache";
 import { fetchToolOutput } from "@/lib/tool-output-fetch";
@@ -4379,7 +4379,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       endThreadSpan();
       markStartupSettled();
     };
-    const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
+    const cachedPayload = readConversationForPaint(sessionId) as ConversationHistoryPayload | null;
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
     if (cachedConversation) {

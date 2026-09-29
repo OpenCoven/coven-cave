@@ -16,7 +16,6 @@ import {
   parsePromptEnhancementRecommendationOutput,
   promptEnhancementContextFingerprintInput,
   promptEnhancementEvidenceRefs,
-  promptEnhancementLifecycleFingerprint,
   serializePromptEnhancementRecommendation,
   settleEnhance,
   type EnhanceIntent,
@@ -149,7 +148,9 @@ export function usePromptEnhance({
     familiarId: familiarId ?? null,
     context: promptEnhancementContextFingerprintInput(context),
   });
-  const currentContextFingerprint = promptEnhancementLifecycleFingerprint({ mode, familiarId, context });
+  // Same value as promptEnhancementLifecycleFingerprint({ mode, familiarId,
+  // context }), without building the redacted context input a second time.
+  const currentContextFingerprint = contextFingerprint({ contextKey });
   currentContextFingerprintRef.current = currentContextFingerprint;
   const agenticContext = useMemo<PromptEnhanceLifecycleContext>(() => ({ contextKey }), [contextKey]);
 
