@@ -41,6 +41,16 @@ assert.match(
 );
 assert.match(workbench, /setOpenFiles\(\(current\) => openCodeFile\(current, absolute\)\)/, "opening a path goes through openCodeFile");
 assert.match(workbench, /setOpenFiles\(emptyCodeOpenFiles\(\)\);/, "tabs reset per session");
+assert.match(
+  workbench,
+  /const openPath = useCallback\([\s\S]*?setSelectedPath\(absolute\);\s*setFocusLine\(null\);\s*setRangeLabel\(null\);/,
+  "ordinary file opens clear the previous file's focus and range",
+);
+assert.match(
+  workbench,
+  /openPath\(openTarget\.path\);[\s\S]*?setFocusLine\(openTarget\.line \?\? null\);[\s\S]*?setRangeLabel\(openTarget\.origin\?\.selectionLabel \?\? null\);/,
+  "routed opens apply their own focus and range after openPath clears stale context",
+);
 assert.match(tabs, /role="tablist" aria-label="Open files"/, "the strip is a real tablist");
 assert.match(tabs, /aria-label=\{`Close \$\{label\}`\}/, "each close control names its file");
 assert.match(shortcuts, /\{ id: "next-file", label: "Next open file", combo: "Alt\+ArrowDown" \}/, "next-file is rebindable and defaults off the browser's tab-switch keys");
@@ -67,6 +77,7 @@ assert.match(drawer, /role="separator"[\s\S]{0,200}aria-orientation="horizontal"
 assert.match(drawer, /setHeightPx\(readCodeTerminalHeight\(safeStorage\(\)\)\);/, "the remembered height is read after mount");
 assert.match(drawer, /setHeightPx\(\(current\) => clampCodeTerminalHeight\(current, roomHeightPx\)\);/, "a shrinking room re-clamps the drawer");
 assert.match(drawer, /writeCodeTerminalHeight\(safeStorage\(\), clamped\);/, "commits persist the clamped height");
+assert.match(drawer, /aria-valuemin=\{clampCodeTerminalHeight\(CODE_TERMINAL_MIN_HEIGHT_PX, roomHeightPx\)\}/, "the accessible minimum respects an undersized room's ceiling");
 assert.match(drawer, /visible=\{open\}/, "the workspace still hides via its keepalive prop, never by unmounting");
 assert.match(workbench, /roomHeightPx=\{deskHeight\}/, "the workbench measures its own height for the clamp");
 

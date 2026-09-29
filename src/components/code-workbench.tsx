@@ -251,6 +251,8 @@ export function CodeWorkbench({
     (path: string) => {
       const absolute = path.startsWith("/") ? path : absolutePath(workRoot, path);
       setSelectedPath(absolute);
+      setFocusLine(null);
+      setRangeLabel(null);
       setOpenFiles((current) => openCodeFile(current, absolute));
     },
     [workRoot],
@@ -311,7 +313,6 @@ export function CodeWorkbench({
   useEffect(() => {
     if (!openTarget) return;
     handledOpenNonceRef.current = openTarget.nonce;
-    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
     if (openTarget.kind === "changes") {
       setRailTab("changes");
       onReviewOpenChange(true);
@@ -322,6 +323,7 @@ export function CodeWorkbench({
       setFocusLine(openTarget.line ?? null);
       setStep("source");
     }
+    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
   }, [onReviewOpenChange, openPath, openTarget]);
 
   const changes = useWorktreeChanges(workRoot, running);

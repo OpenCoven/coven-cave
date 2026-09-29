@@ -16,12 +16,12 @@ export const CODE_TERMINAL_TALL_HEIGHT_PX = 460;
 export const CODE_TERMINAL_MAX_FRACTION = 0.7;
 
 export function clampCodeTerminalHeight(heightPx: number, roomHeightPx: number | null | undefined): number {
-  if (!Number.isFinite(heightPx)) return CODE_TERMINAL_DEFAULT_HEIGHT_PX;
+  const height = Number.isFinite(heightPx) ? heightPx : CODE_TERMINAL_DEFAULT_HEIGHT_PX;
   const max =
-    roomHeightPx && roomHeightPx > 0
-      ? Math.max(CODE_TERMINAL_MIN_HEIGHT_PX, Math.floor(roomHeightPx * CODE_TERMINAL_MAX_FRACTION))
+    roomHeightPx != null && roomHeightPx >= 0
+      ? Math.floor(roomHeightPx * CODE_TERMINAL_MAX_FRACTION)
       : Number.POSITIVE_INFINITY;
-  return Math.round(Math.min(max, Math.max(CODE_TERMINAL_MIN_HEIGHT_PX, heightPx)));
+  return Math.round(Math.min(max, Math.max(CODE_TERMINAL_MIN_HEIGHT_PX, height)));
 }
 
 export function isCodeTerminalTall(heightPx: number, roomHeightPx: number | null | undefined): boolean {

@@ -264,7 +264,7 @@ export function CodeTerminalDrawer({
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize the terminal drawer"
-              aria-valuemin={CODE_TERMINAL_MIN_HEIGHT_PX}
+              aria-valuemin={clampCodeTerminalHeight(CODE_TERMINAL_MIN_HEIGHT_PX, roomHeightPx)}
               aria-valuemax={Number.isFinite(maxHeightPx) ? maxHeightPx : undefined}
               aria-valuenow={heightPx}
               tabIndex={0}
