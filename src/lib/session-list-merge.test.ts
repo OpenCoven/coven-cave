@@ -1774,4 +1774,46 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   );
 }
 
+// A chat's settled backing sessions (its follow-up turns' daemon runs, tagged
+// with the chat's conversation id) fold into the chat instead of shipping as
+// rows. Running ones, flow-tracked ones, ones with their own transcript, and
+// ones whose parent this list does not know stay.
+{
+  const row = (id, extra = {}) => ({
+    id,
+    project_root: "/repo",
+    harness: "claude",
+    title: "Runtime filesystem boundary: ...",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-09-28T10:00:00.000Z",
+    updated_at: "2026-09-28T10:00:00.000Z",
+    ...extra,
+  });
+  const chat = { ...localConversation, sessionId: "chat-1", updatedAt: "2026-09-28T11:00:00.000Z" };
+  const trimmed = mergeSessionRows({
+    daemonSessions: [
+      row("chat-1"),
+      row("turn-done", { conversation_id: "chat-1" }),
+      row("turn-failed", { conversation_id: "chat-1", status: "failed", exit_code: 1 }),
+      row("turn-running", { conversation_id: "chat-1", status: "running", exit_code: null }),
+      row("turn-flow", { conversation_id: "chat-1" }),
+      row("turn-of-daemon-parent", { conversation_id: "daemon-parent" }),
+      row("daemon-parent"),
+      row("turn-of-unknown", { conversation_id: "somewhere-else" }),
+      row("self-tagged", { conversation_id: "self-tagged" }),
+    ],
+    localConversations: [chat],
+    state: { ...state, sessionFlow: { "turn-flow": { flowId: "f1", runId: "r1" } } },
+    includeArchived: false,
+  });
+  const ids = trimmed.map((s) => s.id).sort();
+  assert.deepEqual(
+    ids,
+    ["chat-1", "daemon-parent", "self-tagged", "turn-flow", "turn-of-unknown", "turn-running"],
+    "settled backing sessions of a known chat are dropped; everything else stays",
+  );
+}
+
 console.log("session-list-merge.test.ts: ok");

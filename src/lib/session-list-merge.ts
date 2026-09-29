@@ -219,7 +219,9 @@ export function mergeSessionRows({
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
   const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
+  const localIds = new Set<string>();
   for (const conv of localConversations) {
+    localIds.add(conv.sessionId);
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
       localById.set(conv.sessionId, conv);
@@ -229,6 +231,25 @@ export function mergeSessionRows({
     }
   }
 
+  // A chat's follow-up turns can each run in their own daemon session tagged
+  // with the chat's conversation id. Once settled, such a backing session is
+  // the chat itself: its transcript lives in the parent, opening it alone
+  // finds nothing, and every surface already hides it as a generated run. Yet
+  // they were over a quarter of a familiar's list (171 of 608 rows measured),
+  // shipped and re-merged on every refresh. Drop them here. A running one
+  // stays (it may carry the live status), as does one a flow tracks, one
+  // with its own transcript, and one whose parent is unknown to this list.
+  const daemonIds = new Set(daemonSessions.map((session) => session.id));
+  const isSettledBackingSession = (session: DaemonSessionRow): boolean => {
+    const parentId = session.conversation_id;
+    if (!parentId || parentId === session.id) return false;
+    if (localIds.has(session.id) || localByHarnessSessionId.has(session.id)) return false;
+    if (!localIds.has(parentId) && !daemonIds.has(parentId)) return false;
+    if (flowSessionReferenceFor(state.sessionFlow, session.id)) return false;
+    const status = (session.status ?? "").toLowerCase();
+    return status !== "created" && !ACTIVE_SESSION_STATUSES.has(status);
+  };
+
   type MappedDaemonSession = {
     session: DaemonSessionRow;
     local: LocalConversationSummary | undefined;
@@ -237,6 +258,7 @@ export function mergeSessionRows({
   };
   const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
+    if (isSettledBackingSession(session)) continue;
     const directLocal = localById.get(session.id);
     const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
     const local = directLocal ?? harnessLocal;
