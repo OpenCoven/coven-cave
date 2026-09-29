@@ -193,14 +193,21 @@ struct ChatsHomeView: View {
                     // an iPhone 16 Pro Max, re-inserting 1,500 rows into one
                     // list took about 250 ms.
                     ZStack {
-                        homeList(fullList, zoom: query.isEmpty ? zoomNamespace : hiddenListNamespace,
-                                 hidden: !query.isEmpty)
-                            .opacity(query.isEmpty ? 1 : 0)
-                            .allowsHitTesting(query.isEmpty)
-                            .accessibilityHidden(!query.isEmpty)
-                            // Out of the results' way: at the same position its
-                            // cells still won hit and accessibility tests.
-                            .offset(x: query.isEmpty ? 0 : 10_000)
+                        // Frozen while covered: the parent body re-runs on every
+                        // keystroke, and re-evaluating a 1,500-row list each time
+                        // made every search slower. It still updates when its
+                        // rows change.
+                        FrozenWhileCovered(covered: !query.isEmpty, key: .init(fullList)) {
+                            homeList(fullList, zoom: query.isEmpty ? zoomNamespace : hiddenListNamespace,
+                                     hidden: !query.isEmpty)
+                        }
+                        .equatable()
+                        .opacity(query.isEmpty ? 1 : 0)
+                        .allowsHitTesting(query.isEmpty)
+                        .accessibilityHidden(!query.isEmpty)
+                        // Out of the results' way: at the same position its
+                        // cells still won hit and accessibility tests.
+                        .offset(x: query.isEmpty ? 0 : 10_000)
                         if !query.isEmpty {
                             if snapshot.entries.isEmpty && snapshot.reflections.isEmpty {
                                 ContentUnavailableView.search(text: query)
@@ -1147,5 +1154,33 @@ private struct SettingsSelectionObserver: View {
             .onChange(of: app.selectedTab) { _, tab in
                 if tab == .settings { onEnterSettings() }
             }
+    }
+}
+
+/// Skips re-evaluating its content while covered and its rows are unchanged.
+/// While uncovered it never compares equal, so it always updates normally.
+private struct FrozenWhileCovered<Content: View>: View, Equatable {
+    struct Key: Equatable {
+        let ids: [String]
+        let updatedAt: [Date]
+        let flags: [UInt8]
+        let reflections: [String]
+
+        init(_ snapshot: ChatListSnapshot) {
+            ids = snapshot.entries.map(\.id)
+            updatedAt = snapshot.entries.map(\.updatedAt)
+            flags = snapshot.entries.map { ($0.pinned ? 1 : 0) | ($0.archived ? 2 : 0) }
+            reflections = snapshot.reflections.map(\.id)
+        }
+    }
+
+    let covered: Bool
+    let key: Key
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.covered && rhs.covered && lhs.key == rhs.key
     }
 }
