@@ -73,6 +73,9 @@ struct ChatsHomeView: View {
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
     @Namespace private var zoomNamespace
+    /// Zoom sources for the full list while search results sit over it, so a
+    /// hidden row never competes with its visible result as a zoom source.
+    @Namespace private var hiddenListNamespace
 
     var body: some View {
         splitView
@@ -153,18 +156,24 @@ struct ChatsHomeView: View {
     private var splitView: some View {
         // Both server lists go in; the snapshot owns the archived filter, so
         // the "Show archived" count includes server-only rows (#5429).
-        let snapshot = app.performanceRecorder.measureSynchronous(
+        // The full list and the search results are separate projections, so
+        // clearing a search never re-inserts every row into one list.
+        let (fullList, snapshot) = app.performanceRecorder.measureSynchronous(
             CavePerformanceSpanName.chatListProjection.rawValue
         ) {
-            app.chatListSnapshotCache.resolve(
-                threads: app.chatThreads,
-                sessions: app.chatServerSessions + app.chatArchivedServerSessions,
-                familiars: app.familiars,
-                reflections: app.threadReflectionSessions,
-                query: query,
-                includeArchived: showArchived,
-                familiarId: familiarFilter
-            )
+            let resolve = { (query: String) in
+                app.chatListSnapshotCache.resolve(
+                    threads: app.chatThreads,
+                    sessions: app.chatServerSessions + app.chatArchivedServerSessions,
+                    familiars: app.familiars,
+                    reflections: app.threadReflectionSessions,
+                    query: query,
+                    includeArchived: showArchived,
+                    familiarId: familiarFilter
+                )
+            }
+            let full = resolve("")
+            return (full, query.isEmpty ? full : resolve(query))
         }
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
@@ -175,13 +184,27 @@ struct ChatsHomeView: View {
                     } else {
                         emptyState
                     }
-                } else if snapshot.entries.isEmpty && !query.isEmpty && snapshot.reflections.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                } else if snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
+                } else if query.isEmpty, snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
                           let familiarId = familiarFilter {
                     familiarFilterEmptyState(familiarId, snapshot: snapshot)
                 } else {
-                    homeList(snapshot)
+                    // The full list stays mounted, hidden, under a search's
+                    // results. Clearing then only removes the results list: on
+                    // an iPhone 16 Pro Max, re-inserting 1,500 rows into one
+                    // list took about 250 ms.
+                    ZStack {
+                        homeList(fullList, zoom: query.isEmpty ? zoomNamespace : hiddenListNamespace)
+                            .opacity(query.isEmpty ? 1 : 0)
+                            .allowsHitTesting(query.isEmpty)
+                            .accessibilityHidden(!query.isEmpty)
+                        if !query.isEmpty {
+                            if snapshot.entries.isEmpty && snapshot.reflections.isEmpty {
+                                ContentUnavailableView.search(text: query)
+                            } else {
+                                homeList(snapshot, zoom: zoomNamespace)
+                            }
+                        }
+                    }
                 }
             }
             .background {
@@ -600,7 +623,7 @@ struct ChatsHomeView: View {
         verticalSizeClass == .compact ? 14 : 16
     }
 
-    private func homeList(_ snapshot: ChatListSnapshot) -> some View {
+    private func homeList(_ snapshot: ChatListSnapshot, zoom: Namespace.ID) -> some View {
         List(selection: $selection) {
             ForEach(snapshot.entries) { entry in
                 Group {
@@ -612,7 +635,7 @@ struct ChatsHomeView: View {
                             isSelected: sizeClass == .regular && selection == .thread(thread)
                         )
                             .tag(ChatRoute.thread(thread))
-                            .matchedTransitionSource(id: thread.id, in: zoomNamespace)
+                            .matchedTransitionSource(id: thread.id, in: zoom)
                             .contextMenu { threadActions(thread, activityAt: entry.updatedAt) }
                             .swipeActions(edge: .leading) {
                                 Button { app.setThreadPinned(thread, !thread.pinned) } label: {

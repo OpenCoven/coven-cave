@@ -67,8 +67,13 @@ assert.match(
 assert.match(home, /chatListSnapshotCache\.resolve\([\s\S]*query: query/, "home searches the conversation projection");
 assert.match(
   home,
-  /snapshot\.entries\.isEmpty && !query\.isEmpty/,
+  /if !query\.isEmpty \{\s*if snapshot\.entries\.isEmpty && snapshot\.reflections\.isEmpty \{\s*ContentUnavailableView\.search\(text: query\)/,
   "home search retains an honest empty state for matching conversations",
+);
+assert.match(
+  home,
+  /homeList\(fullList, zoom: query\.isEmpty \? zoomNamespace : hiddenListNamespace\)\s*\.opacity\(query\.isEmpty \? 1 : 0\)\s*\.allowsHitTesting\(query\.isEmpty\)\s*\.accessibilityHidden\(!query\.isEmpty\)/,
+  "the full list stays mounted and hidden under search results, so clearing a search never re-inserts every row",
 );
 
 console.log("ios-thread-search.test.mjs: ok");
