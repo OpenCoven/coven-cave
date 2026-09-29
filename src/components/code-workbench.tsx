@@ -350,13 +350,13 @@ export function CodeWorkbench({
     );
   }, []);
   const railFileShapes = useMemo(
-    () => railFiles.map((file) => ({ path: file.path, status: file.status, additions: file.insertions, deletions: file.deletions })),
-    [railFiles],
+    () => changes.files.map((file) => ({ path: file.path, status: file.status, additions: file.insertions, deletions: file.deletions })),
+    [changes.files],
   );
   const viewedCount = countCodeRailViewed(viewed, railFileShapes);
-  const reviewProgress = codeDeskReviewProgress(viewedCount, railFiles.length);
+  const reviewProgress = codeDeskReviewProgress(viewedCount, changes.files.length);
   const nextUnviewedShape = nextUnviewedCodeFile(railFileShapes, viewed, selectedRelative);
-  const nextUnviewed = nextUnviewedShape ? railFiles.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
+  const nextUnviewed = nextUnviewedShape ? changes.files.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
   const openNextUnviewed = useCallback(() => {
     if (!nextUnviewed) return;
     openPath(absolutePath(changesBase, nextUnviewed.path));
