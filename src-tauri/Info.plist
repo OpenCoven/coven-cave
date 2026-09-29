@@ -23,5 +23,13 @@
 	<string>Coven Cave uses the microphone for voice calls with your familiars.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Coven Cave transcribes your voice on this Mac so local voice calls work without any cloud service.</string>
+	<!--
+	Cave does not capture video itself, but tools launched from a Cave shell
+	(e.g. a `tauri dev` binary) are bare executables whose camera request
+	macOS attributes to the responsible process: Coven Cave. Without this key
+	TCC denies them silently with no prompt (#5696).
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>Tools you run from Coven Cave may use the camera, for example a webcam-tracked avatar. Video never leaves this Mac.</string>
 </dict>
 </plist>
