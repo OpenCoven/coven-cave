@@ -215,15 +215,14 @@ export function loadConversation(
       // blip surfaced as "Couldn't load chat history" until the user pressed
       // Retry. A 4xx is an answer and a timeout already waited its full
       // bound, so neither is retried.
-      let res: Response;
+      let res: Response | null = null;
       try {
         res = await request();
-        if (res.status >= 500) {
-          await sleep(CONVERSATION_RETRY_DELAY_MS);
-          res = await request();
-        }
       } catch (error) {
         if (isTimeoutOrAbort(error)) throw error;
+      }
+      // Exactly one retry, outside the try: its own failure surfaces as is.
+      if (!res || res.status >= 500) {
         await sleep(CONVERSATION_RETRY_DELAY_MS);
         res = await request();
       }

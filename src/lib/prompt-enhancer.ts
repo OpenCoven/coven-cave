@@ -93,25 +93,42 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 // The composer rebuilds its enhance context on every chat render (each
 // keystroke, each step of opening a thread), and that context carries whole
 // recent messages and tool outputs. Redaction is a pure function of the text,
-// so an unchanged text is redacted once rather than on every render.
+// so an unchanged text is redacted once rather than on every render. The cache
+// keeps neither raw text nor full redacted copies: the key is a 64-bit hash
+// with the length, and the value is only the bounded prefix callers use, so it
+// stays small and never retains a secret.
 const REDACTED_TEXT_CACHE_LIMIT = 256;
-const redactedTextCache = new Map<string, string>();
+const redactedPrefixCache = new Map<string, string>();
 
-function redactedText(text: string): string {
-  const cached = redactedTextCache.get(text);
-  if (cached !== undefined) return cached;
-  const redacted = redactSecretText(text);
-  if (redactedTextCache.size >= REDACTED_TEXT_CACHE_LIMIT) {
-    redactedTextCache.delete(redactedTextCache.keys().next().value!);
+function textKey(text: string, maxLength: number): string {
+  // Two independent FNV-1a passes: a cheap 64-bit identity for the text.
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ text.length;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
   }
-  redactedTextCache.set(text, redacted);
-  return redacted;
+  return `${maxLength}:${text.length}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
+}
+
+/** redactSecretText(text).slice(0, maxLength), memoized. */
+function redactedPrefix(text: string, maxLength: number): string {
+  const key = textKey(text, maxLength);
+  const cached = redactedPrefixCache.get(key);
+  if (cached !== undefined) return cached;
+  const prefix = redactSecretText(text).slice(0, maxLength);
+  if (redactedPrefixCache.size >= REDACTED_TEXT_CACHE_LIMIT) {
+    redactedPrefixCache.delete(redactedPrefixCache.keys().next().value!);
+  }
+  redactedPrefixCache.set(key, prefix);
+  return prefix;
 }
 
 function boundedContextText(value: unknown, maxLength = 480): string | null {
   const text = asText(value);
   if (!text) return null;
-  return redactedText(text).slice(0, maxLength).trim() || null;
+  return redactedPrefix(text, maxLength).trim() || null;
 }
 
 function boundedContextRecords(value: unknown, limit = 3): Record<string, unknown>[] {
@@ -230,7 +247,7 @@ export function promptEnhancementContextFingerprintInput(context: unknown) {
     },
     selectedFiles: asStringList(normalized.selectedFiles)
       .slice(0, 8)
-      .map((file) => redactedText(file).slice(0, 320)),
+      .map((file) => redactedPrefix(file, 320)),
     recentThreadTitle: boundedContextText(normalized.recentThreadTitle, 160),
     modelScope: boundedContextText(normalized.modelScope, 160),
     recentMessages: boundedContextRecords(normalized.recentMessages).map((message) => ({

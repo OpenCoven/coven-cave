@@ -263,6 +263,15 @@ test("a transient failure is retried once, quietly; a 4xx or second failure is n
   await assert.rejects(loadConversation("gone"), (error) => error instanceof ConversationLoadError && error.status === 404);
   assert.equal(calls.length, 1, "a 404 is an answer, not retried");
 
+  n = 0;
+  calls = stubFetch(async () => {
+    n += 1;
+    if (n === 1) return { ok: false, status: 502, json: async () => ({ ok: false }) };
+    throw new TypeError("Failed to fetch");
+  });
+  await assert.rejects(loadConversation("flaky"), (error) => error instanceof TypeError);
+  assert.equal(calls.length, 2, "a 5xx then a network error is still one retry, never a third request");
+
   calls = stubFetch(async () => ({ ok: false, status: 500, json: async () => ({ ok: false, error: "still down" }) }));
   await assert.rejects(loadConversation("down"), (error) => error instanceof ConversationLoadError && error.status === 500);
   assert.equal(calls.length, 2, "a second failure surfaces instead of retrying forever");
