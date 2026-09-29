@@ -12,6 +12,7 @@ import {
   loadConversation,
   prefetchConversation,
   readCachedConversation,
+  readConversationForPaint,
   storeConversation,
 } from "./conversation-cache.ts";
 
@@ -78,7 +79,7 @@ test("entries expire after the TTL", () => {
   assert.equal(readCachedConversation("s1", t0 + 46_000), null);
 });
 
-// #5607: an expired entry never paints, but its tag revalidates it.
+// #5607: an expired entry is not fresh, but its tag revalidates it.
 test("an expired entry revalidates with If-None-Match and a 304 reuses it", async () => {
   const kept = payload("kept");
   storeConversation("s1", kept, Date.now() - 60_000, '"c-v1"');
@@ -88,6 +89,17 @@ test("an expired entry revalidates with If-None-Match and a 304 reuses it", asyn
   assert.equal(calls[0][1].headers["If-None-Match"], '"c-v1"');
   assert.equal(loaded, kept, "the same payload object, so the view sees no change");
   assert.equal(readCachedConversation("s1"), kept, "a 304 refreshes the paint window");
+});
+
+test("a reopened thread paints the kept entry past its TTL; invalidation drops it", () => {
+  const t0 = 1_000_000;
+  const kept = payload("kept");
+  storeConversation("s1", kept, t0);
+  assert.equal(readCachedConversation("s1", t0 + 60_000), null, "not fresh: prefetch still refetches");
+  assert.equal(readConversationForPaint("s1", t0 + 60_000), kept, "but a reopen paints it instead of the skeleton");
+  invalidateConversation("s1");
+  assert.equal(readConversationForPaint("s1", t0 + 60_000), null, "a send or delete invalidation never paints stale history");
+  assert.equal(readConversationForPaint("missing"), null);
 });
 
 test("a changed revision replaces the kept payload and its tag", async () => {
@@ -226,6 +238,45 @@ test("foreground loading preserves the response status for error handling", asyn
   );
 });
 
+test("a transient failure is retried once, quietly; a 4xx or second failure is not", async () => {
+  clearConversationCache();
+  let n = 0;
+  let calls = stubFetch(async () => {
+    n += 1;
+    if (n === 1) throw new TypeError("Failed to fetch");
+    return { ok: true, status: 200, headers: new Headers(), json: async () => payload("after blip") };
+  });
+  assert.equal((await loadConversation("blip-network")).conversation.turns[0].text, "after blip");
+  assert.equal(calls.length, 2, "a dropped connection retries once");
+
+  n = 0;
+  calls = stubFetch(async () => {
+    n += 1;
+    return n === 1
+      ? { ok: false, status: 503, json: async () => ({ ok: false, error: "restarting" }) }
+      : { ok: true, status: 200, headers: new Headers(), json: async () => payload("after 503") };
+  });
+  assert.equal((await loadConversation("blip-503")).conversation.turns[0].text, "after 503");
+  assert.equal(calls.length, 2, "a 5xx retries once");
+
+  calls = stubFetch(async () => ({ ok: false, status: 404, json: async () => ({ ok: false, error: "not found" }) }));
+  await assert.rejects(loadConversation("gone"), (error) => error instanceof ConversationLoadError && error.status === 404);
+  assert.equal(calls.length, 1, "a 404 is an answer, not retried");
+
+  n = 0;
+  calls = stubFetch(async () => {
+    n += 1;
+    if (n === 1) return { ok: false, status: 502, json: async () => ({ ok: false }) };
+    throw new TypeError("Failed to fetch");
+  });
+  await assert.rejects(loadConversation("flaky"), (error) => error instanceof TypeError);
+  assert.equal(calls.length, 2, "a 5xx then a network error is still one retry, never a third request");
+
+  calls = stubFetch(async () => ({ ok: false, status: 500, json: async () => ({ ok: false, error: "still down" }) }));
+  await assert.rejects(loadConversation("down"), (error) => error instanceof ConversationLoadError && error.status === 500);
+  assert.equal(calls.length, 2, "a second failure surfaces instead of retrying forever");
+});
+
 test("foreground loading rejects malformed successful responses", async () => {
   stubFetch(async () => ({
     ok: true,
@@ -301,8 +352,9 @@ test("chat-list rows prefetch on hover, pointer down, and keyboard focus", () =>
 
 
 test("chat-view paints cached payloads and shares revalidation with prefetch", () => {
-  // Cached paint goes through the same apply path as a fresh fetch…
-  assert.match(chatView, /readCachedConversation\(sessionId\)/);
+  // Cached paint (fresh, or kept past its TTL while it revalidates) goes
+  // through the same apply path as a fresh fetch…
+  assert.match(chatView, /readConversationForPaint\(sessionId\)/);
   assert.match(chatView, /applyConversationPayload\(cachedConversation\)/);
   // …the network revalidation joins any row prefetch already in progress.
   assert.match(chatView, /loadConversation\(sessionId\)/);

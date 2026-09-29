@@ -11,11 +11,12 @@ import {
   normalizeEnhanceMode,
   parsePromptEnhancementRecommendationOutput,
   promptEnhancementEvidenceRefs,
+  promptEnhancementContextFingerprintInput,
   promptEnhancementLifecycleFingerprint,
   serializePromptEnhancementRecommendation,
   settleEnhance,
 } from "./prompt-enhancer.ts";
-import { parseAgenticRecommendationsOutput } from "./agentic-recommendations.ts";
+import { contextFingerprint, parseAgenticRecommendationsOutput } from "./agentic-recommendations.ts";
 
 const code = buildPromptEnhancement({
   draft: "fix login bug",
@@ -289,5 +290,30 @@ for (const section of ["Primary questions:", "Method:", "Sources and confidence:
 const dottedOnce = buildPromptEnhancement({ draft: "compare runtimes.", mode: "research" });
 const dottedTwice = buildPromptEnhancement({ draft: dottedOnce.enhanced, mode: "research" });
 assert.equal(dottedTwice.enhanced, dottedOnce.enhanced, "a trailing period in the question survives idempotency");
+
+// The hook derives the lifecycle fingerprint from the contextKey it already
+// built (one redaction pass per render, not two); both must stay identical.
+{
+  const fakeKey = ["sk", "ant", "api03", "A".repeat(40)].join("-");
+  const input = {
+    mode: "chat" as const,
+    familiarId: "nova",
+    context: {
+      recentMessages: [{ id: "m1", role: "user", text: `use ${fakeKey} please` }],
+      recentToolOutcomes: [{ id: "t1", name: "Bash", status: "ok", output: "x".repeat(20_000) }],
+    },
+  };
+  const contextKey = contextFingerprint({
+    mode: input.mode,
+    familiarId: input.familiarId,
+    context: promptEnhancementContextFingerprintInput(input.context),
+  });
+  assert.equal(contextFingerprint({ contextKey }), promptEnhancementLifecycleFingerprint(input));
+  // Memoized redaction still redacts, on the first call and on a cached one.
+  for (let i = 0; i < 2; i++) {
+    const fingerprintInput = promptEnhancementContextFingerprintInput(input.context);
+    assert.ok(!JSON.stringify(fingerprintInput).includes(fakeKey), "a cached redaction never returns the raw secret");
+  }
+}
 
 console.log("prompt-enhancer.test.ts: ok");

@@ -14,7 +14,9 @@
 // Conditional revalidation (#5607): an entry past its paint TTL is kept, with
 // the server's ETag, only to revalidate. The next load sends If-None-Match and
 // a 304 reuses the kept payload, so reopening an unchanged chat transfers and
-// parses nothing. An expired entry never paints.
+// parses nothing. An expired entry is not "fresh" (readCachedConversation, and
+// so prefetch, treat it as absent), but it still paints on reopen through
+// readConversationForPaint while that revalidation runs.
 
 import { startSpan } from "./perf/marks.ts";
 
@@ -110,6 +112,23 @@ export function storeConversation(
   }
 }
 
+/**
+ * What a reopened thread paints at once: the fresh entry, or else the entry
+ * kept past its paint TTL for revalidation. Opening a thread always
+ * revalidates, and a changed transcript replaces the painted one, so painting
+ * the kept copy costs at most a moment of staleness. Blanking to the skeleton
+ * instead made every chat reopened after 45 s wait on a round trip that is
+ * almost always a bodiless 304 of exactly what was kept.
+ */
+export function readConversationForPaint(
+  sessionId: string,
+  now: number = Date.now(),
+): CachedConversationPayload | null {
+  const fresh = readCachedConversation(sessionId, now);
+  if (fresh) return fresh;
+  return cache.get(sessionId)?.payload ?? null;
+}
+
 /** The server's tag for a payload this module loaded, if it sent one. */
 export function conversationPayloadEtag(payload: object | null | undefined): string | null {
   return payload ? payloadEtags.get(payload) ?? null : null;
@@ -153,6 +172,14 @@ export function clearConversationCache(): void {
 }
 
 export const CONVERSATION_FETCH_TIMEOUT_MS = 20_000;
+const CONVERSATION_RETRY_DELAY_MS = 400;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function isTimeoutOrAbort(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
 
 /** Fetches a conversation and shares an existing request for the same session. */
 export function loadConversation(
@@ -178,11 +205,27 @@ export function loadConversation(
       // and Retry would re-join the same in-flight promise. The entry clears
       // when this settles, so Retry after a timeout starts a fresh request.
       const kept = cache.get(sessionId);
-      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
+      const request = () => fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}?toolOutputs=recent`, {
         cache: "no-store",
         signal: AbortSignal.timeout(CONVERSATION_FETCH_TIMEOUT_MS),
         headers: kept?.etag ? { "If-None-Match": kept.etag } : undefined,
       });
+      // One quiet retry for a transient failure: a dropped connection or a
+      // 5xx while the server restarts or recompiles. Without it every such
+      // blip surfaced as "Couldn't load chat history" until the user pressed
+      // Retry. A 4xx is an answer and a timeout already waited its full
+      // bound, so neither is retried.
+      let res: Response | null = null;
+      try {
+        res = await request();
+      } catch (error) {
+        if (isTimeoutOrAbort(error)) throw error;
+      }
+      // Exactly one retry, outside the try: its own failure surfaces as is.
+      if (!res || res.status >= 500) {
+        await sleep(CONVERSATION_RETRY_DELAY_MS);
+        res = await request();
+      }
       if (res.status === 304 && kept) {
         // Unchanged (#5607): the same payload object, so a view that painted
         // it sees an identical revision and does not rebuild the transcript.

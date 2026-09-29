@@ -1804,6 +1804,7 @@ export const SUITES = {
     "src/lib/chat-project-access.test.ts",
     "src/lib/chat-history-fallback.test.ts",
     "src/lib/conversation-cache.test.ts",
+    "src/lib/thread-warmup.test.ts",
     "src/lib/conversation-tool-output.test.ts",
     "src/lib/tool-output-fetch.test.ts",
     "src/lib/offline-cache.test.ts",

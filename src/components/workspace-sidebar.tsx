@@ -5,6 +5,7 @@ import { cancelHoverPrefetch, hoverPrefetchConversation, prefetchConversation } 
 import { chatBrowseEmptyMessage, effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useMultiSelect } from "@/lib/use-multi-select";
+import { useThreadWarmup } from "@/lib/thread-warmup";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
 import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
@@ -716,6 +717,12 @@ export function SidebarChatsSection({
   }, [pinnedSessions, attentionSessions, recentBuckets, showAllByKey]);
 
   const select = useMultiSelect(visibleThreads, (session) => session.id);
+  // The rows at the top of the rail are the likeliest next click: warm their
+  // transcripts while idle so opening one paints from cache. Keyed on the rows
+  // alone, never the selection: a warmup restarting on every click would
+  // fetch and parse transcripts in the very frames the clicked one renders.
+  const warmupIds = useMemo(() => visibleThreads.map((session) => session.id), [visibleThreads]);
+  useThreadWarmup(warmupIds, !select.selectMode);
   const [composerOpen, setComposerOpen] = useState(false);
   const [broadcastState, setBroadcastState] = useState<Record<string, "sent" | "failed">>({});
 
