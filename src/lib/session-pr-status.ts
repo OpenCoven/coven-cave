@@ -24,7 +24,9 @@ export type SessionPrStatus = {
 const MERGED = new Set(["merged"]);
 const CLOSED = new Set(["closed"]);
 
-function statusKey(pr: SessionPullRequestContext): SessionPrStatusKey {
+/** The canonical open / draft / merged / closed key for a PR context. Shared
+ *  with the Coding Desk identity strip (#5705) so no two badges disagree. */
+export function sessionPrStatusKey(pr: SessionPullRequestContext): SessionPrStatusKey {
   const state = (pr.state ?? "").toLowerCase();
   if (MERGED.has(state)) return "merged";
   if (CLOSED.has(state)) return "closed";
@@ -52,7 +54,7 @@ export function sessionPrStatus(
       : null);
   if (!url) return null;
 
-  const key = statusKey(pr);
+  const key = sessionPrStatusKey(pr);
   const icon: IconName = key === "merged" ? "ph:git-merge" : "ph:git-pull-request";
   const number = typeof pr.number === "number" ? ` #${pr.number}` : "";
   const label = key === "unknown" ? `PR${number}` : `PR${number} · ${key}`;

@@ -84,7 +84,7 @@ export function CodeTerminalDrawer({
     resolveFocusedPane(createTerminalLayout(), null),
   );
   const [broadcast, setBroadcast] = useState(false);
-  const dragRef = useRef<{ startY: number; startHeight: number; controller: AbortController } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; controller: AbortController } | null>(null);
 
   // Read the remembered height after mount — the server render and the first
   // client paint must agree, and localStorage is client-only.
@@ -153,20 +153,24 @@ export function CodeTerminalDrawer({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       const controller = new AbortController();
-      dragRef.current = { startY: event.clientY, startHeight: heightPx, controller };
+      dragRef.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: heightPx, controller };
       const move = (moveEvent: PointerEvent) => {
         const drag = dragRef.current;
-        if (!drag) return;
+        if (!drag || moveEvent.pointerId !== drag.pointerId) return;
         setHeightPx(clampCodeTerminalHeight(drag.startHeight - (moveEvent.clientY - drag.startY), roomHeightPx));
       };
-      const up = (upEvent: PointerEvent) => {
+      const end = (endEvent: PointerEvent) => {
         const drag = dragRef.current;
+        if (!drag || endEvent.pointerId !== drag.pointerId) return;
         controller.abort();
         dragRef.current = null;
-        if (drag) commitHeight(drag.startHeight - (upEvent.clientY - drag.startY));
+        commitHeight(drag.startHeight - (endEvent.clientY - drag.startY));
       };
       window.addEventListener("pointermove", move, { signal: controller.signal });
-      window.addEventListener("pointerup", up, { signal: controller.signal });
+      window.addEventListener("pointerup", end, { signal: controller.signal });
+      // A touch or pen gesture can end in pointercancel; without this the
+      // listeners stay live and later movement keeps resizing.
+      window.addEventListener("pointercancel", end, { signal: controller.signal });
     },
     [commitHeight, heightPx, roomHeightPx],
   );
@@ -197,6 +201,7 @@ export function CodeTerminalDrawer({
 
   const tall = isCodeTerminalTall(heightPx, roomHeightPx);
   const maxHeightPx = clampCodeTerminalHeight(Number.MAX_SAFE_INTEGER, roomHeightPx);
+  const minHeightPx = Math.min(CODE_TERMINAL_MIN_HEIGHT_PX, maxHeightPx);
 
   return (
     <div className="code-term" data-open={open ? "true" : undefined}>
@@ -259,7 +264,7 @@ export function CodeTerminalDrawer({
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize the terminal drawer"
-              aria-valuemin={CODE_TERMINAL_MIN_HEIGHT_PX}
+              aria-valuemin={minHeightPx}
               aria-valuemax={Number.isFinite(maxHeightPx) ? maxHeightPx : undefined}
               aria-valuenow={heightPx}
               tabIndex={0}

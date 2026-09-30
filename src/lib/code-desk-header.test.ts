@@ -23,6 +23,7 @@ test("PR state folds draft in as its own word and lets merged/closed win over dr
   assert.equal(codeDeskPrState(null), "unknown");
   assert.equal(codeDeskPrState({ state: "open" }), "open");
   assert.equal(codeDeskPrState({ state: "OPEN", draft: true }), "draft");
+  assert.equal(codeDeskPrState({ state: "draft" }), "draft", "a normalized draft state counts without the boolean");
   assert.equal(codeDeskPrState({ state: "merged", draft: true }), "merged");
   assert.equal(codeDeskPrState({ state: "closed" }), "closed");
   assert.equal(codeDeskPrState({ state: "weird" }), "unknown");

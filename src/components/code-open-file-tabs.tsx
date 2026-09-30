@@ -8,7 +8,7 @@
  * the tint is never the only channel.
  */
 
-import { useCallback, useRef, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { codeOpenFileLabels } from "@/lib/code-open-files";
 
@@ -23,6 +23,16 @@ export type CodeOpenFileTabsProps = {
 
 export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: CodeOpenFileTabsProps) {
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  // A tab closed from the keyboard would otherwise drop focus on the document
+  // body once React removes its button; the neighbour that takes over is
+  // recorded here and focused after the strip re-renders.
+  const focusAfterCloseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const target = focusAfterCloseRef.current;
+    if (!target) return;
+    focusAfterCloseRef.current = null;
+    tabRefs.current.get(target)?.focus();
+  }, [paths]);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, path: string) => {
@@ -35,6 +45,8 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
       else if (event.key === "End") next = paths.length - 1;
       else if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
+        const neighbour = paths[index - 1] ?? paths[index + 1] ?? null;
+        focusAfterCloseRef.current = neighbour;
         onClose(path);
         return;
       }

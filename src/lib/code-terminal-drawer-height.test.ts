@@ -18,7 +18,8 @@ test("the clamp holds the drawer between the minimum and 70% of the room", () =>
   assert.equal(clampCodeTerminalHeight(900, 1000), 700);
   assert.equal(clampCodeTerminalHeight(900, null), 900, "no room measurement means no ceiling");
   assert.equal(clampCodeTerminalHeight(Number.NaN, 1000), CODE_TERMINAL_DEFAULT_HEIGHT_PX);
-  assert.equal(clampCodeTerminalHeight(400, 100), CODE_TERMINAL_MIN_HEIGHT_PX, "a tiny room never drops below the minimum");
+  assert.equal(clampCodeTerminalHeight(400, 100), 70, "in a room shorter than the minimum, the 70% ceiling wins");
+  assert.equal(clampCodeTerminalHeight(10, 100), 70, "and the floor follows the ceiling down");
 });
 
 test("the toggle moves between presets and respects the room ceiling", () => {

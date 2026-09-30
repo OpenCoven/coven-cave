@@ -13,7 +13,8 @@ import {
   codeSessionBranch,
   type CodeSessionActivity,
 } from "@/lib/code-surface";
-import type { SessionRow } from "@/lib/types";
+import { sessionPrStatusKey } from "@/lib/session-pr-status";
+import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 /** Semantic tint. Resolved to tokens in CSS via `data-tone`. */
 export type CodeDeskTone = "neutral" | "presence" | "success" | "warning" | "danger";
@@ -34,17 +35,13 @@ export const CODE_DESK_PR_TONE: Record<CodeDeskPrState, CodeDeskTone> = {
   unknown: "neutral",
 };
 
-/** GitHub's state vocabulary, with draft folded in as its own word. */
+/** GitHub's state vocabulary, with draft folded in as its own word — the
+ *  same mapping the chat list's PR badge uses, so the two never disagree. */
 export function codeDeskPrState(
-  pr: { state?: string | null; draft?: boolean | null } | null | undefined,
+  pr: Pick<SessionPullRequestContext, "state" | "draft"> | null | undefined,
 ): CodeDeskPrState {
   if (!pr) return "unknown";
-  const state = (pr.state ?? "").trim().toLowerCase();
-  if (state === "merged") return "merged";
-  if (state === "closed") return "closed";
-  if (pr.draft) return "draft";
-  if (state === "open") return "open";
-  return "unknown";
+  return sessionPrStatusKey({ repo: "", ...pr });
 }
 
 export type CodeDeskIdentity = {

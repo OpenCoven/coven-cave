@@ -57,9 +57,8 @@ export type CodeReviewRailProps = {
   focusNonce?: number;
   /** Open the full-width PR reader. Absent when the session has no PR. */
   onOpenFullPr?: () => void;
-  /** The live changed-file list, owned by the workbench (#5705). */
+  /** The live changed-file list — the workbench's `useWorktreeChanges` summary (#5705). */
   files: ChangedFile[];
-  onFilesChange: (files: ChangedFile[]) => void;
   viewed: CodeRailViewedState;
   onToggleViewed: (file: ChangedFile) => void;
   /** The next unviewed file, or null when every file is viewed. */
@@ -82,7 +81,6 @@ export function CodeReviewRail({
   focusNonce,
   onOpenFullPr,
   files,
-  onFilesChange,
   viewed,
   onToggleViewed,
   nextUnviewed,
@@ -91,7 +89,7 @@ export function CodeReviewRail({
   const { announce } = useAnnouncer();
   // The AbortController rides along so an unmount mid-drag can tear the window
   // listeners down — typed rather than cast, so the field is real.
-  const dragRef = useRef<{ startX: number; startWidth: number; controller: AbortController } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; controller: AbortController } | null>(null);
 
   // ── Drag to resize ─────────────────────────────────────────────────────────
   // Pointer events on window, not the handle, so a fast drag that outruns the
@@ -100,19 +98,22 @@ export function CodeReviewRail({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       const controller = new AbortController();
-      dragRef.current = { startX: event.clientX, startWidth: widthPx, controller };
+      dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: widthPx, controller };
       const move = (moveEvent: PointerEvent) => {
         const drag = dragRef.current;
-        if (!drag) return;
+        if (!drag || moveEvent.pointerId !== drag.pointerId) return;
         // The rail is on the right, so dragging left widens it.
         onWidthChange(clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx));
       };
-      const up = () => {
+      const end = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== dragRef.current?.pointerId) return;
         controller.abort();
         dragRef.current = null;
       };
       window.addEventListener("pointermove", move, { signal: controller.signal });
-      window.addEventListener("pointerup", up, { signal: controller.signal });
+      window.addEventListener("pointerup", end, { signal: controller.signal });
+      // A touch or pen gesture can end in pointercancel (#5707 review).
+      window.addEventListener("pointercancel", end, { signal: controller.signal });
     },
     [onWidthChange, roomWidthPx, widthPx],
   );
@@ -312,7 +313,6 @@ export function CodeReviewRail({
               focusNonce={focusNonce}
               viewed={viewed}
               onToggleViewed={onToggleViewed}
-              onFilesChange={onFilesChange}
             />
           </div>
         </>

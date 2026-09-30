@@ -223,7 +223,6 @@ export function CodeWorkbench({
   // Review state is per session: carrying one session's ticks into another
   // would certify files nobody looked at.
   const [viewed, setViewed] = useState<CodeRailViewedState>({});
-  const [railFiles, setRailFiles] = useState<ChangedFile[]>([]);
   const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
   useEffect(() => {
     setSelectedPath(null);
@@ -233,7 +232,6 @@ export function CodeWorkbench({
     setPrFull(false);
     setOpenFiles(emptyCodeOpenFiles());
     setViewed({});
-    setRailFiles([]);
     setReviewFocus(null);
   }, [row.id]);
 
@@ -252,6 +250,10 @@ export function CodeWorkbench({
       const absolute = path.startsWith("/") ? path : absolutePath(workRoot, path);
       setSelectedPath(absolute);
       setOpenFiles((current) => openCodeFile(current, absolute));
+      // A line and a handed-off range belong to the open that carried them;
+      // a routed open sets its own after this, and any other open starts clean.
+      setFocusLine(null);
+      setRangeLabel(null);
     },
     [workRoot],
   );
@@ -311,8 +313,8 @@ export function CodeWorkbench({
   useEffect(() => {
     if (!openTarget) return;
     handledOpenNonceRef.current = openTarget.nonce;
-    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
     if (openTarget.kind === "changes") {
+      setRangeLabel(openTarget.origin?.selectionLabel ?? null);
       setRailTab("changes");
       onReviewOpenChange(true);
       setStep("review");
@@ -320,6 +322,7 @@ export function CodeWorkbench({
     } else if (openTarget.path) {
       openPath(openTarget.path);
       setFocusLine(openTarget.line ?? null);
+      setRangeLabel(openTarget.origin?.selectionLabel ?? null);
       setStep("source");
     }
   }, [onReviewOpenChange, openPath, openTarget]);
@@ -339,6 +342,10 @@ export function CodeWorkbench({
   }, [changesBase, selectedPath]);
 
   // ── Review progress (#5705) ────────────────────────────────────────────────
+  // Read from the room's own changes subscription, not from the rail: the
+  // Changes panel only mounts while its tab is showing, so a rail that starts
+  // collapsed or on Pull request would otherwise leave the header blank.
+  const railFiles = changes.files;
   const toggleViewed = useCallback((file: ChangedFile) => {
     setViewed((current) =>
       toggleCodeRailViewed(current, {
@@ -360,8 +367,6 @@ export function CodeWorkbench({
   const openNextUnviewed = useCallback(() => {
     if (!nextUnviewed) return;
     openPath(absolutePath(changesBase, nextUnviewed.path));
-    setFocusLine(null);
-    setRangeLabel(null);
     setRailTab("changes");
     onReviewOpenChange(true);
     setReviewFocus((current) => ({ path: nextUnviewed.path, nonce: (current?.nonce ?? 0) + 1 }));
@@ -635,7 +640,6 @@ export function CodeWorkbench({
             focusNonce={reviewFocus?.nonce}
             onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
             files={railFiles}
-            onFilesChange={setRailFiles}
             viewed={viewed}
             onToggleViewed={toggleViewed}
             nextUnviewed={nextUnviewed}
@@ -658,7 +662,7 @@ export function CodeWorkbench({
         onJumpToSession={onJumpToSession}
         contextPath={selectedRelative}
         rangeLabel={rangeLabel}
-        hasChanges={changedFiles.length > 0 || railFiles.length > 0}
+        hasChanges={changedFiles.length > 0}
         hasPr={Boolean(pr)}
       />
 

@@ -19,9 +19,12 @@ export function clampCodeTerminalHeight(heightPx: number, roomHeightPx: number |
   if (!Number.isFinite(heightPx)) return CODE_TERMINAL_DEFAULT_HEIGHT_PX;
   const max =
     roomHeightPx && roomHeightPx > 0
-      ? Math.max(CODE_TERMINAL_MIN_HEIGHT_PX, Math.floor(roomHeightPx * CODE_TERMINAL_MAX_FRACTION))
+      ? Math.max(0, Math.floor(roomHeightPx * CODE_TERMINAL_MAX_FRACTION))
       : Number.POSITIVE_INFINITY;
-  return Math.round(Math.min(max, Math.max(CODE_TERMINAL_MIN_HEIGHT_PX, heightPx)));
+  // In a room too short for the minimum, the ceiling wins: a drawer taller
+  // than 70% of its room would swallow the source viewer.
+  const min = Math.min(CODE_TERMINAL_MIN_HEIGHT_PX, max);
+  return Math.round(Math.min(max, Math.max(min, heightPx)));
 }
 
 export function isCodeTerminalTall(heightPx: number, roomHeightPx: number | null | undefined): boolean {
