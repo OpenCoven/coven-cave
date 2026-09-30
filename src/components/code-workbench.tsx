@@ -25,6 +25,17 @@
  * popover; its GitHub and Browser tabs are the surface's own top-level tabs and
  * the Browser surface, both of which already existed and neither of which ever
  * wanted a sidebar-width column.
+ *
+ * The #5705 overhaul, in the order you meet it top to bottom:
+ *   - the header is an identity strip — activity pill, branch, PR state,
+ *     diffstat and review progress as chips whose meaning is a word;
+ *   - the viewer keeps a strip of open-file tabs (`code-open-files.ts`), so a
+ *     second file no longer erases the first;
+ *   - the per-file *viewed* state lives here, not in the rail, so the header
+ *     can print progress while the rail is a spine and "Next unviewed" can open
+ *     the file in the viewer while focusing its diff in the rail;
+ *   - the terminal drawer is resizable and remembers its height;
+ *   - the composer knows the open file and the session's state.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,23 +45,23 @@ import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { relativeTime } from "@/lib/relative-time";
 import { CodeComposer } from "@/components/code-composer";
+import { CodeOpenFileTabs } from "@/components/code-open-file-tabs";
 import { CodeReviewRail } from "@/components/code-review-rail";
 import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
 import { CodeTerminalDrawer } from "@/components/code-terminal-drawer";
-import { CodeWorkbenchTree } from "@/components/code-workbench-tree";
+import { CodeWorkbenchTree, STATUS_LETTER, absolutePath } from "@/components/code-workbench-tree";
 import dynamic from "next/dynamic";
 import { CodeInspector } from "@/components/code-inspector";
 import { RailFilePreview } from "@/components/rail-file-preview";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useIsMobile } from "@/lib/use-viewport";
-import { useMeasuredWidth } from "@/lib/use-measured-width";
+import { useMeasuredHeight, useMeasuredWidth } from "@/lib/use-measured-width";
 import {
   CODE_STEP_ANNOUNCEMENT,
   CODE_WORKBENCH_STEPS,
   codeRailTabForWorkbenchTab,
   codeSessionActivity,
-  codeSessionBranch,
   codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
@@ -61,8 +72,21 @@ import {
 import {
   CODE_RAIL_DEFAULT_WIDTH_PX,
   clampCodeRailWidth,
+  countCodeRailViewed,
+  nextUnviewedCodeFile,
+  toggleCodeRailViewed,
   type CodeRailTab,
+  type CodeRailViewedState,
 } from "@/lib/code-side-rail";
+import { codeDeskIdentity, codeDeskReviewProgress } from "@/lib/code-desk-header";
+import {
+  closeCodeFile,
+  cycleCodeFile,
+  emptyCodeOpenFiles,
+  openCodeFile,
+  type CodeOpenFiles,
+} from "@/lib/code-open-files";
+import type { ChangedFile } from "@/lib/session-changes-api";
 import {
   CODE_SHORTCUT_STORAGE_KEY,
   codeComboFromEvent,
@@ -130,7 +154,6 @@ export function CodeWorkbench({
   onInitialTabHandled?: () => void;
 }) {
   const workRoot = codeSessionWorkRoot(row);
-  const branch = codeSessionBranch(row);
   const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
   const prRepo = pr?.repo ?? null;
@@ -147,6 +170,9 @@ export function CodeWorkbench({
   // the first measurement lands.
   const roomRef = useRef<HTMLDivElement | null>(null);
   const measuredWidth = useMeasuredWidth(roomRef);
+  // The whole desk's height bounds the terminal drawer (#5705).
+  const deskRef = useRef<HTMLDivElement | null>(null);
+  const deskHeight = useMeasuredHeight(deskRef);
   const isMobile = useIsMobile();
   const roomWidth = measuredWidth ?? (isMobile ? 390 : 1200);
 
@@ -192,12 +218,21 @@ export function CodeWorkbench({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [rangeLabel, setRangeLabel] = useState<string | null>(null);
+  // Open-file tabs (#5705): per session, bounded, the viewer's own history.
+  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(emptyCodeOpenFiles);
+  // Review state is per session: carrying one session's ticks into another
+  // would certify files nobody looked at.
+  const [viewed, setViewed] = useState<CodeRailViewedState>({});
+  const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
   useEffect(() => {
     setSelectedPath(null);
     setFocusLine(null);
     setRangeLabel(null);
     setTreeChangedOnly(false);
     setPrFull(false);
+    setOpenFiles(emptyCodeOpenFiles());
+    setViewed({});
+    setReviewFocus(null);
   }, [row.id]);
 
   const panels = resolveCodeWorkbenchPanels({
@@ -212,12 +247,46 @@ export function CodeWorkbench({
 
   const openPath = useCallback(
     (path: string) => {
-      setSelectedPath(
-        path.startsWith("/") ? path : `${workRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`,
-      );
+      const absolute = path.startsWith("/") ? path : absolutePath(workRoot, path);
+      setSelectedPath(absolute);
+      setFocusLine(null);
+      setRangeLabel(null);
+      setOpenFiles((current) => openCodeFile(current, absolute));
     },
     [workRoot],
   );
+
+  // Switching tabs keeps the strip; a routed line/range belongs to the open
+  // that carried it, so leaving that tab drops it.
+  const selectTab = useCallback((path: string) => {
+    setOpenFiles((current) => openCodeFile(current, path));
+    setSelectedPath(path);
+    setFocusLine(null);
+    setRangeLabel(null);
+  }, []);
+  const closeTab = useCallback((path: string) => {
+    setOpenFiles((current) => {
+      const next = closeCodeFile(current, path);
+      if (next === current) return current;
+      if (current.active === path) {
+        setSelectedPath(next.active);
+        setFocusLine(null);
+        setRangeLabel(null);
+      }
+      return next;
+    });
+  }, []);
+  const cycleTab = useCallback((direction: 1 | -1) => {
+    setOpenFiles((current) => {
+      const next = cycleCodeFile(current, direction);
+      if (next !== current && next.active) {
+        setSelectedPath(next.active);
+        setFocusLine(null);
+        setRangeLabel(null);
+      }
+      return next;
+    });
+  }, []);
 
   // A routed open outranks whatever the room was showing: a diff jump selects
   // the review rail, a file open selects the file — and either one reopens a
@@ -242,19 +311,63 @@ export function CodeWorkbench({
   useEffect(() => {
     if (!openTarget) return;
     handledOpenNonceRef.current = openTarget.nonce;
-    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
     if (openTarget.kind === "changes") {
       setRailTab("changes");
       onReviewOpenChange(true);
       setStep("review");
+      if (openTarget.path) setReviewFocus({ path: openTarget.path, nonce: openTarget.nonce });
     } else if (openTarget.path) {
       openPath(openTarget.path);
       setFocusLine(openTarget.line ?? null);
       setStep("source");
     }
+    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
   }, [onReviewOpenChange, openPath, openTarget]);
 
   const changes = useWorktreeChanges(workRoot, running);
+  // The tree and the tabs resolve change paths against the same base.
+  const changesBase = changes.repoRoot || workRoot;
+  const tabStatus = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const file of changes.files) map.set(absolutePath(changesBase, file.path), STATUS_LETTER[file.status] ?? "M");
+    return map;
+  }, [changes.files, changesBase]);
+  const selectedRelative = useMemo(() => {
+    if (!selectedPath) return null;
+    const base = changesBase.replace(/\/$/, "");
+    return selectedPath.startsWith(`${base}/`) ? selectedPath.slice(base.length + 1) : selectedPath;
+  }, [changesBase, selectedPath]);
+
+  // ── Review progress (#5705) ────────────────────────────────────────────────
+  const toggleViewed = useCallback((file: ChangedFile) => {
+    setViewed((current) =>
+      toggleCodeRailViewed(current, {
+        path: file.path,
+        status: file.status,
+        additions: file.insertions,
+        deletions: file.deletions,
+      }),
+    );
+  }, []);
+  const railFileShapes = useMemo(
+    () => changes.files.map((file) => ({ path: file.path, status: file.status, additions: file.insertions, deletions: file.deletions })),
+    [changes.files],
+  );
+  const viewedCount = countCodeRailViewed(viewed, railFileShapes);
+  const reviewProgress = codeDeskReviewProgress(viewedCount, changes.files.length);
+  const nextUnviewedShape = nextUnviewedCodeFile(railFileShapes, viewed, selectedRelative);
+  const nextUnviewed = nextUnviewedShape ? changes.files.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
+  const openNextUnviewed = useCallback(() => {
+    if (!nextUnviewed) return;
+    openPath(absolutePath(changesBase, nextUnviewed.path));
+    setFocusLine(null);
+    setRangeLabel(null);
+    setRailTab("changes");
+    onReviewOpenChange(true);
+    setReviewFocus((current) => ({ path: nextUnviewed.path, nonce: (current?.nonce ?? 0) + 1 }));
+    if (!fitsSplit) setStep("source");
+    announce(`Opened ${nextUnviewed.path}.`);
+  }, [announce, changesBase, fitsSplit, nextUnviewed, onReviewOpenChange, openPath]);
 
   // ── Shortcuts ──────────────────────────────────────────────────────────────
   const [keymap, setKeymap] = useState<Record<CodeShortcutId, string>>(defaultCodeKeymap);
@@ -301,51 +414,96 @@ export function CodeWorkbench({
           ?.querySelector<HTMLElement>('.workspace-rail__preview-action[aria-expanded]')
           ?.click();
       } else if (action === "prompt") {
-        roomRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+        deskRef.current?.querySelector<HTMLTextAreaElement>(".code-composer textarea")?.focus();
       } else if (action === "picker") {
-        roomRef.current?.querySelector<HTMLElement>(".code-picker__trigger")?.click();
+        deskRef.current?.querySelector<HTMLElement>(".code-picker__trigger")?.click();
+      } else if (action === "next-file") {
+        cycleTab(1);
+      } else if (action === "previous-file") {
+        cycleTab(-1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
+  }, [cycleTab, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
+  const identity = codeDeskIdentity(row);
 
   return (
-    <div className="code-room" data-testid="code-workbench">
+    <div className="code-room" data-testid="code-workbench" ref={deskRef}>
       <div className="code-room__header" data-testid="code-workbench-header">
         <div className="code-room__identity">
-          <CodeSessionPicker
-            queue={queue}
-            mode={queueMode}
-            selected={row}
-            onModeChange={onQueueModeChange}
-            onSelect={(id) => onSelectSession?.(id)}
-            onCreate={onNewSession}
-          />
-          <div className="code-room__facts">
-            {branch ? (
-              <span className="code-room__fact" title={workRoot}>
-                <Icon name="ph:git-branch" width={10} height={10} aria-hidden />
-                <span className="code-room__fact-value">{branch}</span>
-                {row.git?.isWorktree ? <span className="code-room__fact-note">worktree</span> : null}
+          <div className="code-room__identity-row">
+            <CodeSessionPicker
+              queue={queue}
+              mode={queueMode}
+              selected={row}
+              onModeChange={onQueueModeChange}
+              onSelect={(id) => onSelectSession?.(id)}
+              onCreate={onNewSession}
+            />
+            {/* Activity is a WORD beside the dot, never the dot alone. */}
+            <span
+              className="code-room__pill"
+              data-tone={identity.activity.tone}
+              data-activity={identity.activity.kind}
+              data-testid="code-desk-activity"
+            >
+              <span className="code-room__pill-dot" aria-hidden="true" />
+              {identity.activity.word}
+            </span>
+          </div>
+          <div className="code-room__chips" data-testid="code-desk-chips">
+            {identity.branch ? (
+              <span className="code-room__chip" title={workRoot} data-testid="code-desk-branch">
+                <Icon name="ph:git-branch" width={11} height={11} aria-hidden />
+                <span className="code-room__chip-value">{identity.branch.name}</span>
+                {identity.branch.worktree ? <span className="code-room__chip-note">worktree</span> : null}
               </span>
             ) : null}
-            {diffstat ? <span className="code-room__fact">{diffstat}</span> : null}
-            {pr?.url ? (
-              <a
-                className="focus-ring code-room__fact code-room__fact--link"
-                href={pr.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Icon name="ph:git-pull-request" width={10} height={10} aria-hidden />
-                {pr.number != null ? `#${pr.number}` : "PR"}
-                {pr.state ? <span className="code-room__fact-note">{pr.state}</span> : null}
-              </a>
+            {identity.pr ? (
+              identity.pr.url ? (
+                <a
+                  className="focus-ring code-room__chip code-room__chip--link"
+                  data-tone={identity.pr.tone}
+                  data-state={identity.pr.state}
+                  data-testid="code-desk-pr"
+                  href={identity.pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Icon name={identity.pr.state === "merged" ? "ph:git-merge" : "ph:git-pull-request"} width={11} height={11} aria-hidden />
+                  <span className="code-room__chip-value">{identity.pr.label}</span>
+                  <span className="code-room__chip-state">{identity.pr.state}</span>
+                </a>
+              ) : (
+                <span
+                  className="code-room__chip"
+                  data-tone={identity.pr.tone}
+                  data-state={identity.pr.state}
+                  data-testid="code-desk-pr"
+                >
+                  <Icon name="ph:git-pull-request" width={11} height={11} aria-hidden />
+                  <span className="code-room__chip-value">{identity.pr.label}</span>
+                  <span className="code-room__chip-state">{identity.pr.state}</span>
+                </span>
+              )
             ) : null}
-            <span className="code-room__fact code-room__fact--muted">
+            {identity.diff ? (
+              <span className="code-room__chip" data-testid="code-desk-diffstat" title={diffstat ?? undefined}>
+                <Icon name="ph:git-diff" width={11} height={11} aria-hidden />
+                <span className="code-rail__add">+{identity.diff.additions}</span>
+                <span className="code-rail__del">&minus;{identity.diff.deletions}</span>
+              </span>
+            ) : null}
+            {reviewProgress ? (
+              <span className="code-room__chip" data-testid="code-desk-progress" data-complete={viewedCount === changes.files.length ? "true" : undefined}>
+                <Icon name="ph:eye" width={11} height={11} aria-hidden />
+                {reviewProgress}
+              </span>
+            ) : null}
+            <span className="code-room__chip code-room__chip--muted" title={row.updated_at}>
               {relativeTime(row.updated_at)}
             </span>
           </div>
@@ -439,6 +597,13 @@ export function CodeWorkbench({
         ) : null}
         {prFull ? null : fitsSplit || step === "source" ? (
           <div className="code-room__viewer">
+            <CodeOpenFileTabs
+              paths={openFiles.paths}
+              active={openFiles.active}
+              status={tabStatus}
+              onSelect={selectTab}
+              onClose={closeTab}
+            />
             <RailFilePreview
               path={selectedPath}
               projectRoot={workRoot}
@@ -466,9 +631,14 @@ export function CodeWorkbench({
             widthPx={fitsSplit ? railWidth : roomWidth}
             onWidthChange={setRailWidth}
             roomWidthPx={roomWidth}
-            focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
-            focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+            focusPath={reviewFocus?.path}
+            focusNonce={reviewFocus?.nonce}
             onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
+            files={changes.files}
+            viewed={viewed}
+            onToggleViewed={toggleViewed}
+            nextUnviewed={nextUnviewed}
+            onOpenNextUnviewed={openNextUnviewed}
           />
         ) : null}
       </div>
@@ -479,9 +649,17 @@ export function CodeWorkbench({
         running={running}
         open={panels.terminalOpen}
         onOpenChange={onTerminalOpenChange}
+        roomHeightPx={deskHeight}
       />
 
-      <CodeComposer row={row} onJumpToSession={onJumpToSession} />
+      <CodeComposer
+        row={row}
+        onJumpToSession={onJumpToSession}
+        contextPath={selectedRelative}
+        rangeLabel={rangeLabel}
+        hasChanges={changedFiles.length > 0}
+        hasPr={Boolean(pr)}
+      />
 
       <CodeShortcutsDialog
         open={keysOpen}

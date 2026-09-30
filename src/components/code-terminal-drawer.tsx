@@ -2,7 +2,7 @@
 
 /**
  * CodeTerminalDrawer — the Coding Desk's shell, docked to the bottom edge
- * (cave-0rcku).
+ * (cave-0rcku, resizable since #5705).
  *
  * The `Cody Code Reading v2` frame keeps the terminal permanently present as a
  * status strip — state, shell, working directory, pane count, the ⌃` hint —
@@ -14,9 +14,15 @@
  * The workspace never unmounts. Collapsing hides the drawer and drops
  * `visible`, so the PTY keeps running and its scrollback survives — the same
  * `cave.rail.<id>` shell you started from Chat is still the one here.
+ *
+ * Height is yours, not a preset: a grip on the drawer's top edge drags
+ * (pointer) or steps (keyboard), the value is remembered on this device, and
+ * every read of it is clamped to the room so a height saved on a tall window
+ * cannot swallow the source viewer on a short one. Taller/Shorter remains as
+ * the two-preset toggle.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
@@ -29,15 +35,28 @@ import {
   type TerminalLayoutNode,
   type TerminalSplitDirection,
 } from "@/lib/code-terminal-tree";
-
-/** Drawer heights. "Tall" is the frame's expand toggle. */
-const DRAWER_HEIGHT = { normal: 260, tall: 460 } as const;
-type DrawerHeight = keyof typeof DRAWER_HEIGHT;
+import {
+  CODE_TERMINAL_DEFAULT_HEIGHT_PX,
+  CODE_TERMINAL_MIN_HEIGHT_PX,
+  clampCodeTerminalHeight,
+  isCodeTerminalTall,
+  readCodeTerminalHeight,
+  toggleCodeTerminalHeight,
+  writeCodeTerminalHeight,
+} from "@/lib/code-terminal-drawer-height";
 
 function shortRoot(root: string): string {
   const trimmed = root.replace(/\/$/, "");
   const parts = trimmed.split("/").filter(Boolean);
   return parts.length <= 2 ? trimmed : `…/${parts.slice(-2).join("/")}`;
+}
+
+function safeStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export type CodeTerminalDrawerProps = {
@@ -46,6 +65,8 @@ export type CodeTerminalDrawerProps = {
   running: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Measured height of the room the drawer opens over; null until measured. */
+  roomHeightPx?: number | null;
 };
 
 export function CodeTerminalDrawer({
@@ -54,14 +75,38 @@ export function CodeTerminalDrawer({
   running,
   open,
   onOpenChange,
+  roomHeightPx = null,
 }: CodeTerminalDrawerProps) {
   const { announce } = useAnnouncer();
-  const [height, setHeight] = useState<DrawerHeight>("normal");
+  const [heightPx, setHeightPx] = useState(CODE_TERMINAL_DEFAULT_HEIGHT_PX);
   const [layout, setLayout] = useState<TerminalLayoutNode>(createTerminalLayout);
   const [focusedPaneId, setFocusedPaneId] = useState<string>(() =>
     resolveFocusedPane(createTerminalLayout(), null),
   );
   const [broadcast, setBroadcast] = useState(false);
+  const dragRef = useRef<{ startY: number; startHeight: number; controller: AbortController } | null>(null);
+
+  // Read the remembered height after mount — the server render and the first
+  // client paint must agree, and localStorage is client-only.
+  useEffect(() => {
+    setHeightPx(readCodeTerminalHeight(safeStorage()));
+  }, []);
+
+  // The room shrank under a remembered height: re-clamp, but do not persist —
+  // the preference is still the taller one for the next big window.
+  useEffect(() => {
+    setHeightPx((current) => clampCodeTerminalHeight(current, roomHeightPx));
+  }, [roomHeightPx]);
+
+  const commitHeight = useCallback(
+    (next: number) => {
+      const clamped = clampCodeTerminalHeight(next, roomHeightPx);
+      setHeightPx(clamped);
+      writeCodeTerminalHeight(safeStorage(), clamped);
+      return clamped;
+    },
+    [roomHeightPx],
+  );
 
   // The split layout is per-session: switching sessions resets to one pane
   // rather than carrying another session's splits over.
@@ -99,6 +144,64 @@ export function CodeTerminalDrawer({
     onOpenChange(next);
     announce(next ? "Terminal drawer open." : "Terminal drawer closed.");
   }, [announce, onOpenChange, open]);
+
+  // ── Drag to resize ─────────────────────────────────────────────────────────
+  // Pointer events on window, not the grip, so a fast drag that outruns the
+  // hit area keeps resizing instead of dropping the gesture. The drawer hangs
+  // from the bottom edge, so dragging UP makes it taller.
+  const onGripPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const controller = new AbortController();
+      dragRef.current = { startY: event.clientY, startHeight: heightPx, controller };
+      const move = (moveEvent: PointerEvent) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        setHeightPx(clampCodeTerminalHeight(drag.startHeight - (moveEvent.clientY - drag.startY), roomHeightPx));
+      };
+      const up = (upEvent: PointerEvent) => {
+        const drag = dragRef.current;
+        controller.abort();
+        dragRef.current = null;
+        if (drag) commitHeight(drag.startHeight - (upEvent.clientY - drag.startY));
+      };
+      const cancel = () => {
+        controller.abort();
+        dragRef.current = null;
+      };
+      window.addEventListener("pointermove", move, { signal: controller.signal });
+      window.addEventListener("pointerup", up, { signal: controller.signal });
+      window.addEventListener("pointercancel", cancel, { signal: controller.signal });
+    },
+    [commitHeight, heightPx, roomHeightPx],
+  );
+
+  // A drag interrupted by an unmount would otherwise leave two window
+  // listeners alive holding this component's closure.
+  useEffect(() => {
+    return () => dragRef.current?.controller.abort();
+  }, []);
+
+  // Keyboard resize: a pointer-only divider is not a control, it is a hazard.
+  const onGripKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 64 : 16;
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        commitHeight(heightPx + step);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        commitHeight(heightPx - step);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx));
+      }
+    },
+    [commitHeight, heightPx, roomHeightPx],
+  );
+
+  const tall = isCodeTerminalTall(heightPx, roomHeightPx);
+  const maxHeightPx = clampCodeTerminalHeight(Number.MAX_SAFE_INTEGER, roomHeightPx);
 
   return (
     <div className="code-term" data-open={open ? "true" : undefined}>
@@ -147,7 +250,8 @@ export function CodeTerminalDrawer({
       <div
         id={`code-term-drawer-${sessionId}`}
         className="code-term__drawer"
-        style={{ height: open ? DRAWER_HEIGHT[height] : 0 }}
+        style={{ height: open ? heightPx : 0 }}
+        data-testid="code-terminal-drawer"
         // Hidden rather than unmounted: the PTY keeps running and the
         // scrollback survives, which is the whole reason the shell is a drawer
         // and not a tab.
@@ -155,18 +259,34 @@ export function CodeTerminalDrawer({
         inert={!open}
       >
         {open ? (
-          <div className="code-term__drawer-bar">
-            <span className="code-term__drawer-title">Terminal · this worktree</span>
-            <span className="code-term__spacer" />
-            <button
-              type="button"
-              className="focus-ring code-term__drawer-action"
-              aria-pressed={height === "tall"}
-              onClick={() => setHeight((value) => (value === "tall" ? "normal" : "tall"))}
-            >
-              {height === "tall" ? "Shorter" : "Taller"}
-            </button>
-          </div>
+          <>
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize the terminal drawer"
+              aria-valuemin={clampCodeTerminalHeight(CODE_TERMINAL_MIN_HEIGHT_PX, roomHeightPx)}
+              aria-valuemax={Number.isFinite(maxHeightPx) ? maxHeightPx : undefined}
+              aria-valuenow={heightPx}
+              tabIndex={0}
+              className="focus-ring code-term__grip"
+              onPointerDown={onGripPointerDown}
+              onDoubleClick={() => commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx))}
+              onKeyDown={onGripKeyDown}
+              title="Drag to resize · double-click to toggle tall"
+            />
+            <div className="code-term__drawer-bar">
+              <span className="code-term__drawer-title">Terminal · this worktree</span>
+              <span className="code-term__spacer" />
+              <button
+                type="button"
+                className="focus-ring code-term__drawer-action"
+                aria-pressed={tall}
+                onClick={() => commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx))}
+              >
+                {tall ? "Shorter" : "Taller"}
+              </button>
+            </div>
+          </>
         ) : null}
         <div className="code-term__drawer-body">
           <CodeTerminalWorkspace

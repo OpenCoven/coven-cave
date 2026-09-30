@@ -946,6 +946,7 @@ export const SUITES = {
     "src/components/session-changes-inner.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
+    "src/components/code-desk-overhaul.test.ts",
     "src/components/code-review-queue-controls.test.tsx",
     "src/components/code-session-picker.test.tsx",
     "src/lib/code-surface.test.ts",
@@ -954,6 +955,10 @@ export const SUITES = {
     "src/lib/code-outline.test.ts",
     "src/lib/code-side-rail.test.ts",
     "src/lib/code-shortcuts.test.ts",
+    "src/lib/code-desk-header.test.ts",
+    "src/lib/code-open-files.test.ts",
+    "src/lib/code-composer-context.test.ts",
+    "src/lib/code-terminal-drawer-height.test.ts",
     "src/lib/github-pr-reader.test.ts",
     "src/lib/code-room-shortcuts.test.ts",
     "src/lib/code-terminal-tree.test.ts",
@@ -2140,6 +2145,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports code-surface through the @/ alias (#5705)
+  "src/lib/code-desk-header.test.ts",
   // imports caveHome through the @/ alias (#5679)
   "src/lib/server/avatar-thumbnail-cache.test.ts",
   // imports the avatar route and renders through sharp (#5679)

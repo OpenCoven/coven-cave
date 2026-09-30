@@ -432,7 +432,7 @@ assert.doesNotMatch(
 // reading any of them.
 assert.match(
   workbench,
-  /<CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/>/,
+  /<CodeComposer[\s\S]{0,600}row=\{row\}[\s\S]{0,600}onJumpToSession=\{onJumpToSession\}/,
   "the composer rides under the whole room",
 );
 

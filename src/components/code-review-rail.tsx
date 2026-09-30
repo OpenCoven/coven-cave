@@ -11,11 +11,13 @@
  * unanswerable without reopening it.
  *
  * Both tabs mount the proven panels (`SessionChangesInner`, `CodeSessionPrPanel`),
- * so this owns geometry, the summary header, and the per-file *viewed*
- * bookkeeping — nothing about git or GitHub.
+ * so this owns geometry and the summary header — nothing about git or GitHub.
+ * The per-file *viewed* bookkeeping moved up to the workbench (#5705) so the
+ * desk header can print review progress while the rail is a spine, and so
+ * "Next unviewed" can open the file in the viewer AND focus its diff here.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -26,7 +28,6 @@ import {
   codeRailDiffBar,
   countCodeRailViewed,
   isCodeRailWide,
-  toggleCodeRailViewed,
   toggleCodeRailWidth,
   type CodeRailTab,
   type CodeRailViewedState,
@@ -56,6 +57,13 @@ export type CodeReviewRailProps = {
   focusNonce?: number;
   /** Open the full-width PR reader. Absent when the session has no PR. */
   onOpenFullPr?: () => void;
+  /** The live changed-file list — the workbench's `useWorktreeChanges` summary (#5705). */
+  files: ChangedFile[];
+  viewed: CodeRailViewedState;
+  onToggleViewed: (file: ChangedFile) => void;
+  /** The next unviewed file, or null when every file is viewed. */
+  nextUnviewed: ChangedFile | null;
+  onOpenNextUnviewed: () => void;
 };
 
 export function CodeReviewRail({
@@ -72,30 +80,16 @@ export function CodeReviewRail({
   focusPath,
   focusNonce,
   onOpenFullPr,
+  files,
+  viewed,
+  onToggleViewed,
+  nextUnviewed,
+  onOpenNextUnviewed,
 }: CodeReviewRailProps) {
   const { announce } = useAnnouncer();
-  const [files, setFiles] = useState<ChangedFile[]>([]);
-  const [viewed, setViewed] = useState<CodeRailViewedState>({});
   // The AbortController rides along so an unmount mid-drag can tear the window
   // listeners down — typed rather than cast, so the field is real.
-  const dragRef = useRef<{ startX: number; startWidth: number; controller: AbortController } | null>(null);
-
-  // Review state is per session: carrying one session's ticks into another
-  // would certify files nobody looked at.
-  useEffect(() => {
-    setViewed({});
-  }, [row.id]);
-
-  const toggleViewed = useCallback((file: ChangedFile) => {
-    setViewed((current) =>
-      toggleCodeRailViewed(current, {
-        path: file.path,
-        status: file.status,
-        additions: file.insertions,
-        deletions: file.deletions,
-      }),
-    );
-  }, []);
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; controller: AbortController } | null>(null);
 
   // ── Drag to resize ─────────────────────────────────────────────────────────
   // Pointer events on window, not the handle, so a fast drag that outruns the
@@ -104,19 +98,23 @@ export function CodeReviewRail({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       const controller = new AbortController();
-      dragRef.current = { startX: event.clientX, startWidth: widthPx, controller };
+      dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: widthPx, controller };
       const move = (moveEvent: PointerEvent) => {
         const drag = dragRef.current;
-        if (!drag) return;
+        if (!drag || moveEvent.pointerId !== drag.pointerId) return;
         // The rail is on the right, so dragging left widens it.
         onWidthChange(clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx));
       };
-      const up = () => {
+      const end = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== dragRef.current?.pointerId) return;
         controller.abort();
         dragRef.current = null;
       };
       window.addEventListener("pointermove", move, { signal: controller.signal });
-      window.addEventListener("pointerup", up, { signal: controller.signal });
+      window.addEventListener("pointerup", end, { signal: controller.signal });
+      // A touch or pen gesture can end in pointercancel — same fix as the
+      // terminal drawer's grip (#5707 review).
+      window.addEventListener("pointercancel", end, { signal: controller.signal });
     },
     [onWidthChange, roomWidthPx, widthPx],
   );
@@ -284,6 +282,16 @@ export function CodeReviewRail({
                 <span className="code-rail__summary-viewed">
                   {viewedCount} of {files.length} viewed
                 </span>
+                <button
+                  type="button"
+                  className="focus-ring code-rail__next"
+                  disabled={!nextUnviewed}
+                  title={nextUnviewed ? `Open ${nextUnviewed.path}` : "Every changed file is viewed"}
+                  onClick={onOpenNextUnviewed}
+                >
+                  Next unviewed
+                  <Icon name="ph:arrow-right" width={11} height={11} aria-hidden />
+                </button>
               </div>
               {/* The bar is decoration over numbers that are already printed —
                   colour is never the only channel for the diffstat. */}
@@ -305,8 +313,7 @@ export function CodeReviewRail({
               focusPath={focusPath}
               focusNonce={focusNonce}
               viewed={viewed}
-              onToggleViewed={toggleViewed}
-              onFilesChange={setFiles}
+              onToggleViewed={onToggleViewed}
             />
           </div>
         </>

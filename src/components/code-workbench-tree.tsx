@@ -20,8 +20,9 @@ import { Icon } from "@/lib/icon";
 import { ProjectTree, type TreeDecoration } from "@/components/project-tree";
 import type { ChangedFile, FileStatus } from "@/lib/session-changes-api";
 
-/** Porcelain letters, matching what `git status --short` prints. */
-const STATUS_LETTER: Record<FileStatus, string> = {
+/** Porcelain letters, matching what `git status --short` prints. Shared with
+ *  the viewer's open-file tabs (#5705) so both print the same letter. */
+export const STATUS_LETTER: Record<FileStatus, string> = {
   modified: "M",
   added: "A",
   deleted: "D",
@@ -30,7 +31,7 @@ const STATUS_LETTER: Record<FileStatus, string> = {
 };
 
 /** Join a repo-relative change path onto the root the tree renders absolute. */
-function absolutePath(root: string, relative: string): string {
+export function absolutePath(root: string, relative: string): string {
   return `${root.replace(/\/$/, "")}/${relative.replace(/^\.?\//, "")}`;
 }
 

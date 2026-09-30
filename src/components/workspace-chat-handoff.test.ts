@@ -210,9 +210,17 @@ assert.match(
   /setRailTab\("changes"\);\s*onReviewOpenChange\(true\);/,
   "a routed diff open shows Changes and asks the host to reopen the review rail",
 );
+// #5705: the routed diff target and the desk's own "Next unviewed" share one
+// focus slot (`reviewFocus`), so the rail is fed from that rather than from
+// the open target directly.
 assert.match(
   codeWorkbench,
-  /<CodeReviewRail[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
+  /if \(openTarget\.path\) setReviewFocus\(\{ path: openTarget\.path, nonce: openTarget\.nonce \}\);/,
+  "a routed diff open records the target as the rail's focus",
+);
+assert.match(
+  codeWorkbench,
+  /<CodeReviewRail[\s\S]*focusPath=\{reviewFocus\?\.path\}[\s\S]*focusNonce=\{reviewFocus\?\.nonce\}/,
   "the workbench forwards the diff target to the rail that renders it",
 );
 assert.match(

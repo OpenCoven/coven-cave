@@ -622,7 +622,9 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(header.getByRole("button", { name: /Wire the flux capacitor/ })).toBeVisible();
     await expect(header.getByText("feat/flux")).toBeVisible();
     await expect(header.getByText("#7")).toBeVisible();
-    await expect(header.getByText("+12 −3")).toBeVisible();
+    // #5705: the diffstat is a chip with separate +/− channels, not one string.
+    await expect(header.getByTestId("code-desk-diffstat")).toContainText("+12");
+    await expect(header.getByTestId("code-desk-diffstat")).toContainText("−3");
 
     // cave-0rcku: review docks BESIDE the source as a rail whose default tab is
     // Changes — never a workbench tab you have to leave the file to reach.
