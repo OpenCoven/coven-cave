@@ -83,9 +83,12 @@ assert.match(workbench, /roomHeightPx=\{deskHeight\}/, "the workbench measures i
 
 // 6. Review progress: viewed state is the workbench's, the rail is controlled.
 assert.match(workbench, /const \[viewed, setViewed\] = useState<CodeRailViewedState>\(\{\}\);/, "the workbench owns per-file viewed state");
-assert.match(workbench, /setViewed\(\{\}\);[\s\S]{0,80}setRailFiles\(\[\]\);/, "review state resets per session");
+assert.match(workbench, /setViewed\(\{\}\);[\s\S]{0,80}setReviewFocus\(null\);/, "review state resets per session");
+assert.doesNotMatch(workbench, /railFiles/, "every progress figure — count, next file, completion tint — reads the room's live changes summary");
 assert.doesNotMatch(reviewRail, /useState<CodeRailViewedState>/, "the rail no longer keeps its own viewed state");
-assert.match(reviewRail, /viewed=\{viewed\}\s*onToggleViewed=\{onToggleViewed\}\s*onFilesChange=\{onFilesChange\}/, "the changes panel is wired to the lifted state");
+assert.match(reviewRail, /viewed=\{viewed\}\s*onToggleViewed=\{onToggleViewed\}/, "the changes panel is wired to the lifted state");
+assert.doesNotMatch(reviewRail, /onFilesChange/, "the rail no longer reports a second file list up — the workbench's summary is the one source");
+assert.match(reviewRail, /addEventListener\("pointercancel", end/, "a cancelled touch or pen drag releases the rail grip too");
 assert.match(reviewRail, /disabled=\{!nextUnviewed\}/, "Next unviewed disables itself once every file is viewed");
 assert.match(workbench, /const nextUnviewedShape = nextUnviewedCodeFile\(railFileShapes, viewed, selectedRelative\);/, "the next file comes from the pure model, relative to the file in the viewer");
 assert.match(workbench, /openPath\(absolutePath\(changesBase, nextUnviewed\.path\)\);[\s\S]{0,400}setReviewFocus\(/, "Next unviewed opens the file in the viewer AND focuses its diff in the rail");

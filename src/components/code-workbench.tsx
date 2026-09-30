@@ -223,7 +223,6 @@ export function CodeWorkbench({
   // Review state is per session: carrying one session's ticks into another
   // would certify files nobody looked at.
   const [viewed, setViewed] = useState<CodeRailViewedState>({});
-  const [railFiles, setRailFiles] = useState<ChangedFile[]>([]);
   const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
   useEffect(() => {
     setSelectedPath(null);
@@ -233,7 +232,6 @@ export function CodeWorkbench({
     setPrFull(false);
     setOpenFiles(emptyCodeOpenFiles());
     setViewed({});
-    setRailFiles([]);
     setReviewFocus(null);
   }, [row.id]);
 
@@ -500,7 +498,7 @@ export function CodeWorkbench({
               </span>
             ) : null}
             {reviewProgress ? (
-              <span className="code-room__chip" data-testid="code-desk-progress" data-complete={viewedCount === railFiles.length ? "true" : undefined}>
+              <span className="code-room__chip" data-testid="code-desk-progress" data-complete={viewedCount === changes.files.length ? "true" : undefined}>
                 <Icon name="ph:eye" width={11} height={11} aria-hidden />
                 {reviewProgress}
               </span>
@@ -636,8 +634,7 @@ export function CodeWorkbench({
             focusPath={reviewFocus?.path}
             focusNonce={reviewFocus?.nonce}
             onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
-            files={railFiles}
-            onFilesChange={setRailFiles}
+            files={changes.files}
             viewed={viewed}
             onToggleViewed={toggleViewed}
             nextUnviewed={nextUnviewed}
@@ -660,7 +657,7 @@ export function CodeWorkbench({
         onJumpToSession={onJumpToSession}
         contextPath={selectedRelative}
         rangeLabel={rangeLabel}
-        hasChanges={changedFiles.length > 0 || railFiles.length > 0}
+        hasChanges={changedFiles.length > 0}
         hasPr={Boolean(pr)}
       />
 
