@@ -120,8 +120,13 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
     "the compatibility-mode build must not reuse the normal build's Turbopack state",
   );
   assert.equal(manifest.scripts?.["build:conformance"], "node scripts/build-conformance.mjs");
-  assert.match(manifest.scripts?.build ?? "", /^next build(?:\s|$)/);
+  // The normal build is plain `next build` (Turbopack), run through the
+  // wrapper that pins NODE_ENV=production (#5701); neither adds --webpack.
+  const nextBuildWrapper = readFileSync(path.join(process.cwd(), "scripts", "next-build.mjs"), "utf8");
+  assert.match(manifest.scripts?.build ?? "", /^node scripts\/next-build\.mjs(?:\s|$)/);
   assert.doesNotMatch(manifest.scripts?.build ?? "", /--webpack/);
+  assert.match(nextBuildWrapper, /\[nextBin, "build", \.\.\.process\.argv\.slice\(2\)\]/);
+  assert.doesNotMatch(nextBuildWrapper, /--webpack/);
   assert.doesNotMatch(
     config,
     /turbopackPluginRuntimeStrategy/,
