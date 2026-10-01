@@ -387,6 +387,27 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    /// Image source for a familiar's avatar. The server serves workspace
+    /// avatars from `/api/familiars/<id>/avatar`, which the access gate
+    /// rejects without the credential on any non-loopback connection (a phone
+    /// over Tailscale), so a bare URL silently degrades every avatar to
+    /// initials. Mirrors `operatorAvatarSource`: the Cave host's own route gets
+    /// the header credential; a foreign absolute URL never receives it.
+    func familiarAvatarSource(for familiar: Familiar) -> CaveImageSource? {
+        guard let url = avatarURL(for: familiar) else { return nil }
+        guard let base = connection.baseURL,
+              url.scheme == base.scheme, url.host == base.host, url.port == base.port
+        else { return .remoteURL(url) }
+        do {
+            if let token = try CaveConnection.credentialForRequest(to: url) {
+                return .authenticatedRemoteURL(url, bearerToken: token)
+            }
+            return .remoteURL(url)
+        } catch {
+            return nil
+        }
+    }
+
     struct FamiliarAvatarMutation: Decodable {
         var ok: Bool
         var avatarUrl: String?

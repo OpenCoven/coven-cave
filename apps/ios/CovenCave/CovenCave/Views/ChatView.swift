@@ -442,7 +442,8 @@ struct ChatView: View {
             ResponseReaderView(item: item)
         }
         .fullScreenCover(item: $voiceCall) { model in
-            LiveVoiceCallView(model: model)
+            LiveVoiceCallView(model: model,
+                              avatarSource: app.client?.familiarAvatarSource(for: model.familiar))
         }
         .onChange(of: thread.isStreaming) { _, streaming in
             if !streaming {
@@ -1136,6 +1137,7 @@ struct ChatView: View {
                           onRetryDelete: bubbleRetryDelete,
                           operatorName: app.operatorDisplayName,
                           operatorAvatarSource: app.operatorAvatarSource,
+                          familiarAvatarSource: bubbleFamiliar.flatMap { app.client?.familiarAvatarSource(for: $0) },
                           onContentHeightChange: {
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
@@ -1321,7 +1323,7 @@ struct ChatView: View {
             }
             if showingMentionMenu {
                 MentionMenu(familiars: mentionMatches,
-                            avatarURL: { app.client?.avatarURL(for: $0) }) { familiar in
+                            avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { familiar in
                     draft = MentionInput.insert(name: familiar.displayName, into: draft)
                     composerFocused = true
                 }
@@ -2770,7 +2772,7 @@ struct FamiliarPickerSheet: View {
                     Button { onPick(familiar) } label: {
                         HStack(spacing: 12) {
                             AvatarView(familiar: familiar,
-                                       url: app.client?.avatarURL(for: familiar),
+                                       source: app.client?.familiarAvatarSource(for: familiar),
                                        size: 40, showStatus: true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(familiar.displayName).font(.body).foregroundStyle(.primary)

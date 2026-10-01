@@ -2068,6 +2068,7 @@ export const SUITES = {
     "scripts/ios-familiar-attention-overflow.test.mjs",
     "scripts/ios-accessible-controls.test.mjs",
     "scripts/ios-group-mentions.test.mjs",
+    "scripts/ios-familiar-avatars.test.mjs",
     "scripts/ios-reply-feedback.test.mjs",
     "scripts/ios-link-previews.test.mjs",
     "scripts/ios-markdown-accent.test.mjs",

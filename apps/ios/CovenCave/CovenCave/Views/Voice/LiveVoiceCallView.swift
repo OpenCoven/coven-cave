@@ -12,9 +12,11 @@ struct LiveVoiceCallView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var model: LiveVoiceCallModel
+    private let avatarSource: CaveImageSource?
 
-    init(model: LiveVoiceCallModel) {
+    init(model: LiveVoiceCallModel, avatarSource: CaveImageSource? = nil) {
         _model = State(initialValue: model)
+        self.avatarSource = avatarSource
     }
 
     var body: some View {
@@ -42,7 +44,7 @@ struct LiveVoiceCallView: View {
     private var header: some View {
         HStack(spacing: 12) {
             AvatarView(familiar: model.familiar,
-                       url: model.familiar.avatarUrl.flatMap(URL.init(string:)),
+                       source: avatarSource,
                        size: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.familiar.displayName)

@@ -343,7 +343,7 @@ struct TaskDetailView: View {
 
     private func assigneeRow(_ familiar: Familiar) -> some View {
         HStack(spacing: 12) {
-            AvatarView(familiar: familiar, url: app.client?.avatarURL(for: familiar), size: 40)
+            AvatarView(familiar: familiar, source: app.client?.familiarAvatarSource(for: familiar), size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(familiar.displayName).font(.headline)
                 if let role = familiar.role, !role.isEmpty {
