@@ -2,7 +2,7 @@
 
 Thank you for your interest in Coven Cave. **We welcome external contributions.**
 
-Coven Cave is MIT licensed and community-driven. Bug fixes, docs, new skills and
+Coven Cave is dual-licensed (`MIT OR AGPL-3.0-only`) and community-driven. Bug fixes, docs, new skills and
 integrations, performance work, and community-requested features are all fair
 game. The full flow — DCO sign-off, what we're looking for, and getting started
 — is below.
@@ -47,7 +47,7 @@ So:
 
 ## OpenCoven DCO and Patent Terms
 
-Thank you for your interest in contributing. OpenCoven is MIT licensed and community-driven. We want contributing to be easy, open, and safe for everyone.
+Thank you for your interest in contributing. Coven Cave is dual-licensed (`MIT OR AGPL-3.0-only`) and community-driven. We want contributing to be easy, open, and safe for everyone.
 
 ## Developer Certificate of Origin (DCO)
 
