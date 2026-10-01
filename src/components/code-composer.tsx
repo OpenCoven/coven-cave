@@ -48,6 +48,10 @@ export type CodeComposerProps = {
   rangeLabel?: string | null;
   hasChanges?: boolean;
   hasPr?: boolean;
+  /** An unsent draft restored for this session (#5718). */
+  initialDraft?: string;
+  /** Reports every edit so the desk can keep the draft across session switches. */
+  onDraftChange?: (draft: string) => void;
 };
 
 export function CodeComposer({
@@ -57,9 +61,11 @@ export function CodeComposer({
   rangeLabel = null,
   hasChanges = false,
   hasPr = false,
+  initialDraft = "",
+  onDraftChange,
 }: CodeComposerProps) {
   const id = useId();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialDraft);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [reply, setReply] = useState("");
   const [includeContext, setIncludeContext] = useState(true);
@@ -77,6 +83,14 @@ export function CodeComposer({
   useEffect(() => {
     setApple(/Mac|iPhone|iPad|iPod/.test(navigator.platform));
   }, []);
+
+  // Every edit, a send that clears the field, and a failed send that puts the
+  // text back all flow through `prompt`, so one effect keeps the memory true.
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  useEffect(() => {
+    onDraftChangeRef.current?.(prompt);
+  }, [prompt]);
 
   // A new file in the viewer re-arms the chip: "leave this one out" is a
   // decision about that file, not about every file opened after it.

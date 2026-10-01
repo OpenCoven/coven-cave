@@ -62,7 +62,6 @@ import {
   CODE_WORKBENCH_STEPS,
   codeRailTabForWorkbenchTab,
   codeSessionActivity,
-  codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
   resolveCodeWorkbenchPanels,
@@ -77,6 +76,8 @@ import {
   toggleCodeRailViewed,
   type CodeRailTab,
   type CodeRailViewedState,
+  codeRailShapeOf,
+  codeChangeSnapshotKey,
 } from "@/lib/code-side-rail";
 import { codeDeskIdentity, codeDeskReviewProgress } from "@/lib/code-desk-header";
 import {
@@ -87,6 +88,7 @@ import {
   type CodeOpenFiles,
 } from "@/lib/code-open-files";
 import type { ChangedFile } from "@/lib/session-changes-api";
+import { codeDeskMemory } from "@/lib/code-desk-memory";
 import {
   CODE_SHORTCUT_STORAGE_KEY,
   codeComboFromEvent,
@@ -154,7 +156,6 @@ export function CodeWorkbench({
   onInitialTabHandled?: () => void;
 }) {
   const workRoot = codeSessionWorkRoot(row);
-  const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
   const prRepo = pr?.repo ?? null;
   const prNumber = pr?.number ?? null;
@@ -170,9 +171,12 @@ export function CodeWorkbench({
   // the first measurement lands.
   const roomRef = useRef<HTMLDivElement | null>(null);
   const measuredWidth = useMeasuredWidth(roomRef);
-  // The whole desk's height bounds the terminal drawer (#5705).
   const deskRef = useRef<HTMLDivElement | null>(null);
-  const deskHeight = useMeasuredHeight(deskRef);
+  // The column body's height bounds the terminal drawer (#5718). The drawer
+  // shares its space only with the columns — measuring the whole desk counted
+  // the header and the composer too, and let the drawer leave the columns so
+  // little height that the review rail painted over the drawer's pane bar.
+  const bodyHeight = useMeasuredHeight(roomRef);
   const isMobile = useIsMobile();
   const roomWidth = measuredWidth ?? (isMobile ? 390 : 1200);
 
@@ -215,24 +219,44 @@ export function CodeWorkbench({
   }, [announce, fitsSplit, step]);
 
   // ── Selected file ──────────────────────────────────────────────────────────
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // Tabs, viewed ticks and the draft are remembered per session (#5718):
+  // CodeView remounts this workbench for every session it shows, so without
+  // the memory a round trip to another session threw the reader's work away.
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    () => codeDeskMemory.read(row.id)?.openFiles.active ?? null,
+  );
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [rangeLabel, setRangeLabel] = useState<string | null>(null);
   // Open-file tabs (#5705): per session, bounded, the viewer's own history.
-  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(emptyCodeOpenFiles);
+  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(
+    () => codeDeskMemory.read(row.id)?.openFiles ?? emptyCodeOpenFiles(),
+  );
   // Review state is per session: carrying one session's ticks into another
-  // would certify files nobody looked at.
-  const [viewed, setViewed] = useState<CodeRailViewedState>({});
+  // would certify files nobody looked at. Restoring a session's OWN ticks is
+  // safe — each is recorded against the file's diffstat, so a file that
+  // changed while you were away reads as unviewed again.
+  const [viewed, setViewed] = useState<CodeRailViewedState>(() => codeDeskMemory.read(row.id)?.viewed ?? {});
   const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
+  // Which session the state above currently belongs to. Writes are skipped
+  // for the one render where `row.id` has moved on but the restore has not
+  // landed yet — otherwise the previous session's tabs would be filed under
+  // the new one.
+  const memoryOwnerRef = useRef(row.id);
   useEffect(() => {
-    setSelectedPath(null);
+    if (memoryOwnerRef.current !== row.id) return;
+    codeDeskMemory.write(row.id, { openFiles, viewed });
+  }, [openFiles, row.id, viewed]);
+  useEffect(() => {
+    const memory = codeDeskMemory.read(row.id);
+    setSelectedPath(memory?.openFiles.active ?? null);
     setFocusLine(null);
     setRangeLabel(null);
     setTreeChangedOnly(false);
     setPrFull(false);
-    setOpenFiles(emptyCodeOpenFiles());
-    setViewed({});
+    setOpenFiles(memory?.openFiles ?? emptyCodeOpenFiles());
+    setViewed(memory?.viewed ?? {});
     setReviewFocus(null);
+    memoryOwnerRef.current = row.id;
   }, [row.id]);
 
   const panels = resolveCodeWorkbenchPanels({
@@ -340,20 +364,36 @@ export function CodeWorkbench({
 
   // ── Review progress (#5705) ────────────────────────────────────────────────
   const toggleViewed = useCallback((file: ChangedFile) => {
-    setViewed((current) =>
-      toggleCodeRailViewed(current, {
-        path: file.path,
-        status: file.status,
-        additions: file.insertions,
-        deletions: file.deletions,
-      }),
-    );
+    setViewed((current) => toggleCodeRailViewed(current, codeRailShapeOf(file)));
   }, []);
   const railFileShapes = useMemo(
-    () => changes.files.map((file) => ({ path: file.path, status: file.status, additions: file.insertions, deletions: file.deletions })),
+    () => changes.files.map(codeRailShapeOf),
     [changes.files],
   );
   const viewedCount = countCodeRailViewed(viewed, railFileShapes);
+
+  // ── One snapshot (#5720 review) ────────────────────────────────────────────
+  // The changes panel keeps its own fetch — it owns the commit, revert and
+  // error states — so it can settle on a newer response than the room's
+  // subscription (or an older one). When the two disagree, ask both to
+  // refetch through the shared `cave:changes-refresh` signal they already
+  // listen for. Once per distinct disagreement: a worktree an agent is
+  // rewriting on every request must not turn this into a fetch loop.
+  const [panelFiles, setPanelFiles] = useState<ChangedFile[] | null>(null);
+  const reconciledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!panelFiles || !changes.ok) return;
+    const roomKey = codeChangeSnapshotKey(railFileShapes);
+    const panelKey = codeChangeSnapshotKey(panelFiles.map(codeRailShapeOf));
+    if (roomKey === panelKey) {
+      reconciledRef.current = null;
+      return;
+    }
+    const pair = `${roomKey}\u0002${panelKey}`;
+    if (reconciledRef.current === pair) return;
+    reconciledRef.current = pair;
+    window.dispatchEvent(new Event("cave:changes-refresh"));
+  }, [changes.ok, panelFiles, railFileShapes]);
   const reviewProgress = codeDeskReviewProgress(viewedCount, changes.files.length);
   const nextUnviewedShape = nextUnviewedCodeFile(railFileShapes, viewed, selectedRelative);
   const nextUnviewed = nextUnviewedShape ? changes.files.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
@@ -428,7 +468,7 @@ export function CodeWorkbench({
   }, [cycleTab, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
-  const identity = codeDeskIdentity(row);
+  const identity = codeDeskIdentity(row, changes);
 
   return (
     <div className="code-room" data-testid="code-workbench" ref={deskRef}>
@@ -491,7 +531,12 @@ export function CodeWorkbench({
               )
             ) : null}
             {identity.diff ? (
-              <span className="code-room__chip" data-testid="code-desk-diffstat" title={diffstat ?? undefined}>
+              <span
+                className="code-room__chip"
+                data-testid="code-desk-diffstat"
+                // The tooltip reads the same figure the chip prints (#5720 review).
+                title={`${identity.diff.additions} added, ${identity.diff.deletions} removed`}
+              >
                 <Icon name="ph:git-diff" width={11} height={11} aria-hidden />
                 <span className="code-rail__add">+{identity.diff.additions}</span>
                 <span className="code-rail__del">&minus;{identity.diff.deletions}</span>
@@ -639,6 +684,7 @@ export function CodeWorkbench({
             onToggleViewed={toggleViewed}
             nextUnviewed={nextUnviewed}
             onOpenNextUnviewed={openNextUnviewed}
+            onPanelFilesChange={setPanelFiles}
           />
         ) : null}
       </div>
@@ -649,11 +695,14 @@ export function CodeWorkbench({
         running={running}
         open={panels.terminalOpen}
         onOpenChange={onTerminalOpenChange}
-        roomHeightPx={deskHeight}
+        bodyHeightPx={bodyHeight}
       />
 
       <CodeComposer
+        key={row.id}
         row={row}
+        initialDraft={codeDeskMemory.read(row.id)?.draft ?? ""}
+        onDraftChange={(draft) => codeDeskMemory.write(row.id, { draft })}
         onJumpToSession={onJumpToSession}
         contextPath={selectedRelative}
         rangeLabel={rangeLabel}

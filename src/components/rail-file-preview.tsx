@@ -286,8 +286,17 @@ export function RailFilePreview({
   }
 
   const name = fileName(path);
-  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   const workbench = variant === "workbench";
+  const absoluteDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  // The desk prints the directory relative to the work root (#5718): the
+  // absolute `.worktrees/<branch>/…` prefix is the same for every file in the
+  // session and was long enough to push the name and the actions off the
+  // header. The full path stays in the tooltip.
+  const root = projectRoot?.replace(/\/+$/, "") ?? "";
+  const dir =
+    workbench && root && (absoluteDir === root || absoluteDir.startsWith(`${root}/`))
+      ? absoluteDir.slice(root.length + 1)
+      : absoluteDir;
 
   return (
     <div className="workspace-rail__preview" data-variant={variant}>
@@ -324,10 +333,13 @@ export function RailFilePreview({
                 type="button"
                 className="focus-ring workspace-rail__preview-action"
                 aria-expanded={outlineOpen}
+                // The visible word can collapse in a narrow viewer (#5718);
+                // the accessible name keeps it, and still contains the label.
+                aria-label={`Outline, ${outline.length} ${outline.length === 1 ? "symbol" : "symbols"}`}
                 onClick={() => setOutlineOpen((open) => !open)}
               >
                 <Icon name="ph:list-bullets" width={11} aria-hidden />
-                Outline
+                <span className="workspace-rail__preview-action-label">Outline</span>
                 <span className="workspace-rail__preview-outline-count">{outline.length}</span>
               </button>
             ) : null}

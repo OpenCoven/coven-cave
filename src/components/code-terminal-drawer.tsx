@@ -65,8 +65,9 @@ export type CodeTerminalDrawerProps = {
   running: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Measured height of the room the drawer opens over; null until measured. */
-  roomHeightPx?: number | null;
+  /** Measured height of the column body the drawer shares its space with;
+   *  null until measured. */
+  bodyHeightPx?: number | null;
 };
 
 export function CodeTerminalDrawer({
@@ -75,7 +76,7 @@ export function CodeTerminalDrawer({
   running,
   open,
   onOpenChange,
-  roomHeightPx = null,
+  bodyHeightPx = null,
 }: CodeTerminalDrawerProps) {
   const { announce } = useAnnouncer();
   const [heightPx, setHeightPx] = useState(CODE_TERMINAL_DEFAULT_HEIGHT_PX);
@@ -84,6 +85,10 @@ export function CodeTerminalDrawer({
     resolveFocusedPane(createTerminalLayout(), null),
   );
   const [broadcast, setBroadcast] = useState(false);
+  // The region the drawer and the columns share: the body plus the drawer's
+  // own height while open. Opening or resizing moves height between the two,
+  // so their sum is stable and the 70% ceiling cannot chase itself.
+  const roomHeightPx = bodyHeightPx == null ? null : bodyHeightPx + (open ? heightPx : 0);
   const dragRef = useRef<{ startY: number; startHeight: number; controller: AbortController } | null>(null);
 
   // Read the remembered height after mount — the server render and the first
@@ -274,18 +279,6 @@ export function CodeTerminalDrawer({
               onKeyDown={onGripKeyDown}
               title="Drag to resize · double-click to toggle tall"
             />
-            <div className="code-term__drawer-bar">
-              <span className="code-term__drawer-title">Terminal · this worktree</span>
-              <span className="code-term__spacer" />
-              <button
-                type="button"
-                className="focus-ring code-term__drawer-action"
-                aria-pressed={tall}
-                onClick={() => commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx))}
-              >
-                {tall ? "Shorter" : "Taller"}
-              </button>
-            </div>
           </>
         ) : null}
         <div className="code-term__drawer-body">
@@ -300,6 +293,20 @@ export function CodeTerminalDrawer({
             onSplit={handleSplit}
             onClosePane={handleClosePane}
             onToggleBroadcast={() => setBroadcast((on) => !on)}
+            // The height toggle lives in the pane bar: a separate "Terminal ·
+            // this worktree" bar above it repeated the status strip and cost
+            // the shell a row (#5718).
+            trailingActions={
+              <button
+                type="button"
+                className="focus-ring code-terminal-workspace__action"
+                aria-pressed={tall}
+                onClick={() => commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx))}
+              >
+                <Icon name={tall ? "ph:caret-down" : "ph:caret-up"} width={12} height={12} aria-hidden />
+                {tall ? "Shorter" : "Taller"}
+              </button>
+            }
           />
         </div>
       </div>
