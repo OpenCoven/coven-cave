@@ -360,3 +360,63 @@ enum CaveError: LocalizedError {
         }
     }
 }
+
+/// Memoizes the access credential for image loads. Avatar sources are resolved
+/// while SwiftUI builds rows, and `credentialForRequest` synchronously reads
+/// and decodes a Keychain item, so without this every row of every render pass
+/// (a composer keystroke re-renders the chat transcript) paid a Keychain read.
+///
+/// Any Keychain write in this process bumps `KeychainStore.writeGeneration`,
+/// which drops every snapshot, so re-pairing, a refreshed legacy token, or a
+/// forgotten connection is seen on the very next lookup. Only a resolved
+/// credential is kept: a missing, unreadable, or refused one is re-evaluated
+/// each time rather than pinned, and errors still fail closed to the caller.
+/// Dispatch paths keep calling `credentialForRequest` directly.
+final class CredentialSnapshotCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generation: UInt64?
+    private var tokens: [String: String] = [:]
+    private let currentGeneration: () -> UInt64
+    private let resolve: (URL) throws -> String?
+
+    init(
+        currentGeneration: @escaping () -> UInt64 = { KeychainStore.writeGeneration },
+        resolve: @escaping (URL) throws -> String? = { try CaveConnection.credentialForRequest(to: $0) }
+    ) {
+        self.currentGeneration = currentGeneration
+        self.resolve = resolve
+    }
+
+    func credential(for url: URL) throws -> String? {
+        // `credentialForRequest` depends on the scheme (managed grants need
+        // https), the host (loopback may use http), and the origin binding.
+        guard let origin = CaveConnection.credentialOrigin(for: url),
+              let scheme = url.scheme?.lowercased()
+        else { return try resolve(url) }
+        let key = "\(scheme) \(origin)"
+        let observed = currentGeneration()
+
+        lock.lock()
+        if generation != observed {
+            tokens.removeAll()
+            generation = observed
+        }
+        let cached = tokens[key]
+        lock.unlock()
+        if let cached { return cached }
+
+        guard let token = try resolve(url) else { return nil }
+        lock.lock()
+        // A write that landed during the read makes this value unsafe to keep.
+        if generation == observed, currentGeneration() == observed {
+            tokens[key] = token
+        }
+        lock.unlock()
+        return token
+    }
+}
+
+extension CaveConnection {
+    /// Shared snapshot for header-authenticated image sources (avatars).
+    static let imageCredentials = CredentialSnapshotCache()
+}

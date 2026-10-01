@@ -54,11 +54,46 @@ export type CodeDeskIdentity = {
   diff: { additions: number; deletions: number } | null;
 };
 
-export function codeDeskIdentity(row: SessionRow): CodeDeskIdentity {
+/**
+ * `live` is the room's own worktree summary (`useWorktreeChanges`). Once it
+ * has loaded it is the truth for the diffstat — the session list's figure is
+ * an enrichment snapshot that can lag the worktree, and the header and the
+ * review rail printed two different numbers for the same files (#5718).
+ */
+export type CodeDeskLiveChanges = {
+  additions: number;
+  deletions: number;
+  loaded: boolean;
+  /** A request actually succeeded — a failed one also ends loading. */
+  ok: boolean;
+  files: readonly unknown[];
+};
+
+/** The diffstat the header prints: live counts when it has them, the list's otherwise. */
+export function codeDeskDiff(
+  listed: { additions: number; deletions: number } | null | undefined,
+  live?: CodeDeskLiveChanges | null,
+): { additions: number; deletions: number } | null {
+  // Only a snapshot that actually arrived can speak for the worktree: a failed
+  // or unavailable request also ends loading, with an empty file list that
+  // must not read as clean (#5720 review).
+  if (live?.loaded && live.ok) {
+    // A loaded, empty worktree is clean, whatever the list still remembers.
+    if (live.files.length === 0) return null;
+    if (live.additions > 0 || live.deletions > 0) return { additions: live.additions, deletions: live.deletions };
+    // Files without line counts (untracked, binary) say nothing about size;
+    // keep the list's figure rather than print a false +0 −0.
+  }
+  return listed && (listed.additions > 0 || listed.deletions > 0)
+    ? { additions: listed.additions, deletions: listed.deletions }
+    : null;
+}
+
+export function codeDeskIdentity(row: SessionRow, live?: CodeDeskLiveChanges | null): CodeDeskIdentity {
   const activityKind = codeSessionActivity(row);
   const branchName = codeSessionBranch(row);
   const pr = row.pullRequest ?? null;
-  const diff = row.diff ?? null;
+  const diff = codeDeskDiff(row.diff, live);
   const prState = codeDeskPrState(pr);
   return {
     activity: { kind: activityKind, ...CODE_DESK_ACTIVITY[activityKind] },
@@ -71,10 +106,7 @@ export function codeDeskIdentity(row: SessionRow): CodeDeskIdentity {
           url: pr.url ?? null,
         }
       : null,
-    diff:
-      diff && (diff.additions > 0 || diff.deletions > 0)
-        ? { additions: diff.additions, deletions: diff.deletions }
-        : null,
+    diff,
   };
 }
 

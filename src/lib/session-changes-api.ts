@@ -6,6 +6,9 @@ export type ChangedFile = {
   renamedFrom?: string;
   insertions?: number;
   deletions?: number;
+  /** Filesystem stamp (mtime:ctime:size) the server attaches on each poll, so
+   *  a rewrite that keeps the same diffstat still reads as a new version. */
+  changeVersion?: string;
 };
 
 export type DiffState = {

@@ -117,7 +117,7 @@ struct PermissionsView: View {
         let supreme = familiar.id == supremeFamiliarId
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                AvatarView(familiar: familiar, url: app.client?.avatarURL(for: familiar), size: 34)
+                AvatarView(familiar: familiar, source: app.client?.familiarAvatarSource(for: familiar), size: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(familiar.displayName).font(.headline)
                     if supreme {

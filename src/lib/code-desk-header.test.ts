@@ -56,6 +56,33 @@ test("a failed exit reads as failed, a clean idle session prints no diffstat and
   assert.equal(identity.diff, null);
 });
 
+test("the live worktree summary outranks the session list's diffstat once it has loaded", () => {
+  const listed = row({ diff: { additions: 12, deletions: 3 } });
+  assert.deepEqual(codeDeskIdentity(listed).diff, { additions: 12, deletions: 3 }, "no live summary: the list's figure");
+  const files = [{}, {}];
+  assert.deepEqual(
+    codeDeskIdentity(listed, { additions: 17, deletions: 3, loaded: false, ok: false, files }).diff,
+    { additions: 12, deletions: 3 },
+    "a summary still loading does not blank or replace the figure",
+  );
+  assert.deepEqual(codeDeskIdentity(listed, { additions: 17, deletions: 3, loaded: true, ok: true, files }).diff, { additions: 17, deletions: 3 });
+  assert.equal(
+    codeDeskIdentity(listed, { additions: 0, deletions: 0, loaded: true, ok: true, files: [] }).diff,
+    null,
+    "a clean worktree prints no diffstat even if the list still remembers one",
+  );
+  assert.deepEqual(
+    codeDeskIdentity(listed, { additions: 0, deletions: 0, loaded: true, ok: true, files }).diff,
+    { additions: 12, deletions: 3 },
+    "files without line counts keep the list's figure rather than print +0 −0",
+  );
+  assert.deepEqual(
+    codeDeskIdentity(listed, { additions: 0, deletions: 0, loaded: true, ok: false, files: [] }).diff,
+    { additions: 12, deletions: 3 },
+    "a failed request also ends loading, but its empty list is not a clean worktree",
+  );
+});
+
 test("review progress is null with nothing to review and never exceeds the total", () => {
   assert.equal(codeDeskReviewProgress(0, 0), null);
   assert.equal(codeDeskReviewProgress(2, 5), "2 of 5 viewed");

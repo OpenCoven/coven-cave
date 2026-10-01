@@ -480,7 +480,7 @@ struct ServerSessionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             AvatarView(familiar: familiar,
-                       url: familiar.flatMap { app.client?.avatarURL(for: $0) },
+                       source: familiar.flatMap { app.client?.familiarAvatarSource(for: $0) },
                        size: 48, showStatus: true)
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {

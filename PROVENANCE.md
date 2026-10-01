@@ -12,7 +12,7 @@
 - Website: https://OpenCoven.ai
 - Discord: https://discord.gg/OpenCoven
 - X / Twitter: https://x.com/OpenCvn
-- License: MIT (https://opensource.org/licenses/MIT)
+- License of this repository: `MIT OR AGPL-3.0-only`, at your option (see [LICENSE](LICENSE), [LICENSE-MIT](LICENSE-MIT) and [LICENSE-AGPL](LICENSE-AGPL))
 - Repository creation date: **2026-04-27** (verifiable via GitHub API: `https://api.github.com/repos/OpenCoven/coven`)
 
 This repository has no fork parent. It is an original work with no upstream source repository.

@@ -65,12 +65,14 @@ struct AvatarClusterView: View {
     @Environment(\.chrome) private var chrome
     let familiars: [Familiar]
     var size: CGFloat = 44
+    /// Resolves each member's avatar image; nil renders initials.
+    var source: (Familiar) -> CaveImageSource? = { _ in nil }
 
     var body: some View {
         let shown = Array(familiars.prefix(3))
         ZStack {
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, fam in
-                AvatarView(familiar: fam, size: size * 0.62)
+                AvatarView(familiar: fam, source: source(fam), size: size * 0.62)
                     .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: 1.5))
                     .offset(offset(index: index, count: shown.count))
             }

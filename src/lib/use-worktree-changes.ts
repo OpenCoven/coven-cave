@@ -29,6 +29,9 @@ export type WorktreeChanges = {
   additions: number;
   deletions: number;
   loaded: boolean;
+  /** At least one request for this root succeeded. `loaded` is also true after
+   *  a failed first request, which must not read as a clean worktree. */
+  ok: boolean;
   /** Refetch now, bypassing the microcache (used after a mutation). */
   refresh: () => void;
 };
@@ -37,6 +40,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [ok, setOk] = useState(false);
   const inFlight = useRef(false);
 
   const load = useCallback(
@@ -53,6 +57,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
         // agent is mid-edit.
         const next = payload.files ?? [];
         setFiles((prev) => (arrayContentEqual(prev, next) ? prev : next));
+        setOk(true);
       } catch {
         /* keep the last known summary — a transient failure is not "clean" */
       } finally {
@@ -65,6 +70,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
 
   useEffect(() => {
     setLoaded(false);
+    setOk(false);
     void load();
     const onVisible = () => {
       if (document.visibilityState === "visible") void load();
@@ -93,5 +99,5 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
     deletions += file.deletions ?? 0;
   }
 
-  return { files, repoRoot, additions, deletions, loaded, refresh: () => void load() };
+  return { files, repoRoot, additions, deletions, loaded, ok, refresh: () => void load() };
 }

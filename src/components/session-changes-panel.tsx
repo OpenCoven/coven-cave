@@ -19,7 +19,9 @@ import {
   type CheckpointMeta,
   type DiffState,
 } from "@/lib/session-changes-api";
-import { isCodeRailFileViewed, type CodeRailViewedState } from "@/lib/code-side-rail";
+import { isCodeRailFileViewed, type CodeRailViewedState,
+  codeRailShapeOf,
+} from "@/lib/code-side-rail";
 import { ChangesSkeleton, CheckpointSection, FileRow } from "./session-changes-rows";
 
 /**
@@ -594,12 +596,7 @@ export function SessionChangesInner({
                     reverting={revertingPath === file.path}
                     onToggle={() => toggleFile(file)}
                     onRevert={() => void revertFile(file)}
-                    viewed={reviewable ? isCodeRailFileViewed(viewed ?? {}, {
-                      path: file.path,
-                      status: file.status,
-                      additions: file.insertions,
-                      deletions: file.deletions,
-                    }) : undefined}
+                    viewed={reviewable ? isCodeRailFileViewed(viewed ?? {}, codeRailShapeOf(file)) : undefined}
                     onToggleViewed={reviewable ? () => onToggleViewed?.(file) : undefined}
                   />
                 ))}

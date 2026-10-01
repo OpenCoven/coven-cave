@@ -10,6 +10,7 @@ import {
   useState,
   useImperativeHandle,
 } from "react";
+import "@/styles/project-tree.css";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";

@@ -816,7 +816,7 @@ test.describe("code surface (Coding familiar's room)", () => {
       "aria-expanded",
       "true",
     );
-    await expect(page.getByText("Terminal · this worktree")).toBeVisible();
+    await expect(page.getByRole("separator", { name: "Resize the terminal drawer" })).toBeVisible();
 
     await page.locator(".code-picker__trigger").click();
     await page.getByRole("dialog", { name: "Switch session" }).locator('[data-code-session-id="s-clean"]').click();
@@ -834,7 +834,7 @@ test.describe("code surface (Coding familiar's room)", () => {
       "aria-expanded",
       "true",
     );
-    await expect(page.getByText("Terminal · this worktree")).toBeVisible();
+    await expect(page.getByRole("separator", { name: "Resize the terminal drawer" })).toBeVisible();
 
     await page.locator(".code-picker__trigger").click();
     await page.getByRole("dialog", { name: "Switch session" }).locator('[data-code-session-id="s-new"]').click();

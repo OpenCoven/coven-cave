@@ -2,7 +2,7 @@
 
 ## Patent Non-Assertion
 
-OpenCoven is MIT licensed. The maintainers of this project have not filed and do not intend to file patents on the architectural patterns, protocols, or mechanisms described in this repository.
+This repository is dual-licensed under `MIT OR AGPL-3.0-only`, at your option (see LICENSE). The maintainers of this project have not filed and do not intend to file patents on the architectural patterns, protocols, or mechanisms described in this repository.
 
 **Architectural concepts originating in this repository include, but are not limited to:**
 
@@ -25,7 +25,7 @@ These dates are verifiable from public GitHub commit history and repository crea
 
 ## Non-Assertion Pledge
 
-The OpenCoven maintainers pledge not to assert any patent claims — now held or later acquired — against any person or organization that uses, implements, or builds upon the architectural patterns, protocols, or mechanisms described in this repository or its documentation, provided that use is consistent with the MIT License terms.
+The OpenCoven maintainers pledge not to assert any patent claims — now held or later acquired — against any person or organization that uses, implements, or builds upon the architectural patterns, protocols, or mechanisms described in this repository or its documentation, provided that use is consistent with the terms of either license (MIT or AGPL-3.0-only).
 
 ## For Contributors
 
@@ -33,7 +33,7 @@ By contributing to this repository, contributors agree that:
 
 1. They own the intellectual property they contribute, or have the right to contribute it
 2. They will not assert patent claims against this project or its users arising from their contributions
-3. Their contributions are made under the MIT License
+3. Their contributions are made under the same dual license, `MIT OR AGPL-3.0-only`
 
 ## Notice to Third Parties
 

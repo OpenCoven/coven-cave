@@ -165,7 +165,7 @@ private struct FamiliarRosterRow: View {
     var body: some View {
         HStack(spacing: 13) {
             AvatarView(familiar: familiar,
-                       url: app.client?.avatarURL(for: familiar),
+                       source: app.client?.familiarAvatarSource(for: familiar),
                        size: 46, showStatus: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(familiar.displayName)
@@ -352,7 +352,7 @@ struct FamiliarDetailView: View {
                 HStack(spacing: 12) {
                     AvatarView(
                         familiar: currentFamiliar,
-                        url: app.client?.avatarURL(for: currentFamiliar),
+                        source: app.client?.familiarAvatarSource(for: currentFamiliar),
                         size: 40,
                         showStatus: false
                     )
