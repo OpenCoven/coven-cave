@@ -135,10 +135,12 @@ test("voice retains one captured presentation and permanently ends it on authori
   const coordinator = read("CovenCave/Voice/VoiceCallCoordinator.swift");
   const realtime = read("CovenCave/Voice/OpenAIRealtimeTransport.swift");
   assert.match(chat, /@State private var voiceCall: LiveVoiceCallModel\?/);
-  assert.match(chat, /\.fullScreenCover\(item: \$voiceCall\) \{ model in\s*LiveVoiceCallView\(model: model\)/);
+  // The cover presents the one captured model; the header avatar source
+  // (#5714) is presentation data, never a second model or call authority.
+  assert.match(chat, /\.fullScreenCover\(item: \$voiceCall\) \{ model in\s*LiveVoiceCallView\(model: model,\s*avatarSource: app\.client\?\.familiarAvatarSource\(for: model\.familiar\)\)\s*\}/);
   assert.doesNotMatch(chat, /showVoiceCall/);
   assert.match(chat, /private func beginVoiceCall[\s\S]*let callThread = thread[\s\S]*captureConnectionDispatchLease\(\)[\s\S]*LiveVoiceCallModel\([\s\S]*client: client,[\s\S]*authorityIsCurrent: \{[\s\S]*dispatchIsCurrent\(binding, in: callThread, lease: dispatchLease\)[\s\S]*binding\.matches\(callThread, includingSessions: true\)/);
-  assert.match(view, /init\(model: LiveVoiceCallModel\)/);
+  assert.match(view, /init\(model: LiveVoiceCallModel, avatarSource: CaveImageSource\? = nil\) \{\s*_model = State\(initialValue: model\)\s*self\.avatarSource = avatarSource\s*\}/);
   assert.doesNotMatch(view, /LiveVoiceCallModel\(/);
   assert.match(view, /onChange\(of: model\.authorityIsCurrent, initial: true\)[\s\S]*model\.refreshAuthority\(\)/);
   assert.match(view, /\.onDisappear \{ model\.end\(\) \}/);
