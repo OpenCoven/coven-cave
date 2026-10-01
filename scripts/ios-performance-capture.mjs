@@ -213,8 +213,10 @@ async function attachRecorder({ device, udid, pid, dir }) {
       // recording, then a few seconds more: a cold cycle starts at once and
       // its first spans were otherwise lost.
       await waitFor(() => /Ctrl-C to stop/.test(logText(log)) || recorder.exitCode !== null, 60_000, 500);
-      await sleep(5_000);
-      return recorder;
+      if (/Ctrl-C to stop/.test(logText(log)) && recorder.exitCode === null) {
+        await sleep(5_000);
+        if (recorder.exitCode === null) return recorder;
+      }
     }
     recorder.kill("SIGINT");
     await sleep(3_000);
