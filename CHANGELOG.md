@@ -15,6 +15,12 @@ Patch release on top of v0.5.4. Headline: the Coding Desk keeps every opened
 file in tabs and gains a context-aware follow-up dock, and the Linux AppImage
 no longer fails to start on current Arch.
 
+### Security
+- Next.js 16.3.3 → 16.3.6 (#5712). 16.3.6 fixes GHSA-vcvr-r3jv-pc5j, a
+  critical remote code execution in `next/og`'s `ImageResponse`. Coven Cave
+  does not use `ImageResponse`, so it was not exposed, but the patch is
+  applied. 16.3.4–16.3.5 are bug-fix backports.
+
 ### Added
 - **Coding Desk overhaul** (#5707). The desk fills its window. A row of
   readable chips shows activity, branch, PR state, diffstat, review progress and
