@@ -29,6 +29,11 @@ export const DISPOSABLE_ROOTS = Object.freeze([
 ]);
 
 export const DISPOSABLE_FILES = Object.freeze([
+  // Tool output every working worktree gains (#5726): Next's fixed type
+  // template and TypeScript's incremental build cache. Both are gitignored and
+  // regenerate on the next dev run or typecheck, so they hold no work.
+  "next-env.d.ts",
+  "tsconfig.tsbuildinfo",
   "public/pdf.worker.min.mjs",
   ".claude/worktree-autolock.stamp",
   ".claude/worktree-autolock.log",
