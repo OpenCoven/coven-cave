@@ -387,6 +387,41 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    /// Image source for a familiar's avatar. The server serves workspace
+    /// avatars from `/api/familiars/<id>/avatar`, which the access gate
+    /// rejects without the credential on any non-loopback connection (a phone
+    /// over Tailscale), so a bare URL silently degrades every avatar to
+    /// initials. Mirrors `operatorAvatarSource`: the Cave host's own route gets
+    /// the header credential; a foreign absolute URL never receives it, and
+    /// the credential is not even looked up for one.
+    ///
+    /// `credential` defaults to the memoized image snapshot so rows built per
+    /// render do not each read the Keychain; tests inject their own.
+    func familiarAvatarSource(
+        for familiar: Familiar,
+        credential: (URL) throws -> String? = { try CaveConnection.imageCredentials.credential(for: $0) }
+    ) -> CaveImageSource? {
+        guard let url = avatarURL(for: familiar) else { return nil }
+        guard let base = connection.baseURL, Self.isSameOrigin(url, base) else { return .remoteURL(url) }
+        do {
+            if let token = try credential(url) {
+                return .authenticatedRemoteURL(url, bearerToken: token)
+            }
+            return .remoteURL(url)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Scheme, host, and effective port all match the connected Cave host.
+    static func isSameOrigin(_ url: URL, _ base: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == base.scheme?.lowercased(),
+              let origin = CaveConnection.credentialOrigin(for: url)
+        else { return false }
+        return origin == CaveConnection.credentialOrigin(for: base)
+    }
+
     struct FamiliarAvatarMutation: Decodable {
         var ok: Bool
         var avatarUrl: String?
@@ -635,7 +670,7 @@ struct CaveClient {
         if !items.isEmpty { comps.queryItems = items }
         guard let url = comps.url else { return nil }
         do {
-            if let token = try CaveConnection.credentialForRequest(to: url) {
+            if let token = try CaveConnection.imageCredentials.credential(for: url) {
                 return .authenticatedRemoteURL(url, bearerToken: token)
             }
             return .remoteURL(url)

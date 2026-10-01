@@ -25,6 +25,9 @@ struct MessageBubble: View {
     /// The operator's server avatar image source for that same row; nil falls back
     /// to name initials.
     var operatorAvatarSource: CaveImageSource? = nil
+    /// The speaking familiar's avatar image source for group threads; nil falls
+    /// back to initials.
+    var familiarAvatarSource: CaveImageSource? = nil
     /// Rich markdown rows report height settlement so ChatView can preserve
     /// bottom-follow without treating WebKit measurement as a reader gesture.
     var onContentHeightChange: (() -> Void)? = nil
@@ -239,7 +242,7 @@ struct MessageBubble: View {
             if isUser { Spacer(minLength: 48) }
 
             if !isUser, isGroup {
-                AvatarView(familiar: familiar, size: 28)
+                AvatarView(familiar: familiar, source: familiarAvatarSource, size: 28)
             }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
@@ -797,6 +800,7 @@ extension MessageBubble: Equatable {
             && lhs.isLast == rhs.isLast
             && lhs.operatorName == rhs.operatorName
             && lhs.operatorAvatarSource == rhs.operatorAvatarSource
+            && lhs.familiarAvatarSource == rhs.familiarAvatarSource
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
             && (lhs.onDelete == nil) == (rhs.onDelete == nil)

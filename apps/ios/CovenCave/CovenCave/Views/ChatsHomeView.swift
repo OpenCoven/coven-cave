@@ -981,10 +981,11 @@ struct ThreadRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if thread.isGroup {
-                AvatarClusterView(familiars: familiars, size: 48)
+                AvatarClusterView(familiars: familiars, size: 48,
+                                  source: { app.client?.familiarAvatarSource(for: $0) })
             } else {
                 AvatarView(familiar: familiars.first,
-                           url: familiars.first.flatMap { app.client?.avatarURL(for: $0) },
+                           source: familiars.first.flatMap { app.client?.familiarAvatarSource(for: $0) },
                            size: 48, showStatus: true)
             }
             VStack(alignment: .leading, spacing: 3) {

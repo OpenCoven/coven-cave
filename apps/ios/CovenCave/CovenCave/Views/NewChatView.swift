@@ -142,7 +142,7 @@ struct NewChatView: View {
                     HStack(spacing: 12) {
                         AvatarView(
                             familiar: familiar,
-                            url: app.client?.avatarURL(for: familiar),
+                            source: app.client?.familiarAvatarSource(for: familiar),
                             size: 40,
                             showStatus: true
                         )

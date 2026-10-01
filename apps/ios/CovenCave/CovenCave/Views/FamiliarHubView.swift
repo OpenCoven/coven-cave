@@ -189,7 +189,7 @@ struct FamiliarHubView: View {
         HStack(alignment: .center, spacing: 12) {
             AvatarView(
                 familiar: familiar,
-                url: app.client?.avatarURL(for: familiar),
+                source: app.client?.familiarAvatarSource(for: familiar),
                 size: 52,
                 showStatus: true
             )

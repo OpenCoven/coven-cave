@@ -5,7 +5,7 @@ import SwiftUI
 /// familiars (avatar + name + role).
 struct MentionMenu: View {
     let familiars: [Familiar]
-    var avatarURL: (Familiar) -> URL? = { _ in nil }
+    var avatarSource: (Familiar) -> CaveImageSource? = { _ in nil }
     let onSelect: (Familiar) -> Void
 
     var body: some View {
@@ -33,7 +33,7 @@ struct MentionMenu: View {
 
     private func row(_ familiar: Familiar) -> some View {
         HStack(spacing: 10) {
-            AvatarView(familiar: familiar, url: avatarURL(familiar), size: 32)
+            AvatarView(familiar: familiar, source: avatarSource(familiar), size: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text("@\(familiar.displayName)")
                     .font(.subheadline.weight(.semibold))

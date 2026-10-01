@@ -7,6 +7,24 @@ import Security
 enum KeychainStore {
     private static let service = "ai.opencoven.cave"
 
+    private static let generationLock = NSLock()
+    nonisolated(unsafe) private static var generation: UInt64 = 0
+
+    /// Bumped by every write or removal this process makes, so a reader that
+    /// memoizes a decoded item (`CredentialSnapshotCache`) can tell when it is
+    /// stale without reading the Keychain again.
+    static var writeGeneration: UInt64 {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return generation
+    }
+
+    private static func noteWrite() {
+        generationLock.lock()
+        generation &+= 1
+        generationLock.unlock()
+    }
+
     static func string(forKey key: String) -> String? {
         var query = baseQuery(key)
         query[kSecReturnData as String] = true
@@ -18,6 +36,7 @@ enum KeychainStore {
     }
 
     static func set(_ value: String, forKey key: String) {
+        defer { noteWrite() }
         let data = Data(value.utf8)
         let query = baseQuery(key)
         let update: [String: Any] = [kSecValueData as String: data]
@@ -33,6 +52,7 @@ enum KeychainStore {
     }
 
     static func remove(_ key: String) {
+        defer { noteWrite() }
         SecItemDelete(baseQuery(key) as CFDictionary)
     }
 
@@ -51,6 +71,7 @@ enum KeychainStore {
     }
 
     static func setDeviceAccess(_ value: String, forKey key: String) throws {
+        defer { noteWrite() }
         let query = baseQuery(key)
         let attributes: [String: Any] = [
             kSecValueData as String: Data(value.utf8),
