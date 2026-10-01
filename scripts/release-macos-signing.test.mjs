@@ -184,6 +184,8 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.match(releaseWorkflow, /libmount\.so\.1\*/);
   assert.match(releaseWorkflow, /libblkid\.so\.1\*/);
   assert.match(releaseWorkflow, /libuuid\.so\.1\*/);
+  assert.match(releaseWorkflow, /libsystemd\.so\.0\*/);
+  assert.match(releaseWorkflow, /libwayland-\*\.so\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
   assert.match(releaseWorkflow, /name: Upload and re-sign stripped AppImage/);
   assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
