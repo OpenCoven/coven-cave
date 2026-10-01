@@ -37,8 +37,7 @@ no longer fails to start on current Arch.
 ### Changed
 - iOS 26: the chat header matches native toolbars. Back and navigation share
   one glass capsule, Call is a tinted primary action, and the title gets more
-  room (#5713). This applies to builds made with Xcode 26; release builds use
-  Xcode 16 and keep today's header.
+  room (#5713). iOS 18–25 keep today's header.
 
 ## [0.5.4] - 2026-09-29
 
