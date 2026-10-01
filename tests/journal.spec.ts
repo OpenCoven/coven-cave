@@ -88,9 +88,9 @@ async function fulfillJournal(route: Route, scenario: JournalState) {
     });
   }
 
-  // Mirror the real route's familiar filter. The Journal tab is coven-wide, so
-  // a detail request that incorrectly carries active familiar "nova" hides
-  // Sage's entry and reproduces the list/detail mismatch.
+  // Mirror the real route's familiar filter. Entries are per familiar, so a
+  // day read names the familiar whose entry it wants; a read that carries the
+  // active familiar "nova" for Sage's row would hide Sage's entry.
   const requestedFamiliar = url.searchParams.get("familiar");
   const reflectedBy = scenario.reflectedBy ?? "sage";
   const hiddenByScope = Boolean(requestedFamiliar && requestedFamiliar !== reflectedBy);
@@ -175,6 +175,9 @@ test.describe("Journal tab", () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await gotoJournal(page, { reflection: longReflection, reflectedBy: "sage" });
 
+    // Entries are per familiar: the pane opens on the active familiar's day,
+    // and any familiar's row in the (unscoped) rail opens that familiar's entry.
+    await page.locator(".journal-day").filter({ hasText: "Paragraph 1" }).first().click();
     await expect(page.locator(".journal-entry__reflection")).toContainText("Paragraph 45");
     const detail = page.locator(".journal-detail");
     const metrics = await detail.evaluate((element) => {
@@ -223,7 +226,11 @@ test.describe("Journal tab", () => {
 
     await page.getByRole("button", { name: "Collapse journal entries" }).click();
     await page.locator(".journal-detail").getByRole("button", { name: "Generate today's entry" }).click();
-    await expect(page.locator(".journal-detail .journal-list__error")).toContainText("Journal store unavailable.");
+    // The failure reads as a retryable error card; the raw message stays
+    // available under Details.
+    const genError = page.locator(".journal-detail .journal-gen-error");
+    await expect(genError).toContainText("Journal store unavailable.");
+    await expect(genError.getByRole("button", { name: "Retry" })).toBeVisible();
     await expect(page.getByText("Reflection generated.")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Expand journal entries" })).toBeVisible();
   });
@@ -244,7 +251,7 @@ test.describe("Journal tab", () => {
     state.dayStatus = 200;
     await page.locator(".journal-detail").getByRole("button", { name: "Retry" }).click();
 
-    await expect(page.locator(".journal-detail .ui-empty-state")).toContainText("No reflection yet for this day");
+    await expect(page.locator(".journal-detail .ui-empty-state")).toContainText(/hasn't reflected on this day yet/);
   });
 
   test("drops a stale list failure after a newer post-generation refresh", async ({ page }) => {

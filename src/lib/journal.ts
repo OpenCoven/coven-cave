@@ -1,6 +1,8 @@
 /**
- * Personal Journal — one entry per day. Each entry is a Markdown file at
- * `~/.coven/journal/<YYYY-MM-DD>.md`: a small frontmatter block (which familiar
+ * Personal Journal — one entry per familiar per day. Each entry is a Markdown
+ * file at `~/.coven/journal/familiars/<familiarId>/<YYYY-MM-DD>.md` (legacy
+ * coven-wide entries live at `~/.coven/journal/<YYYY-MM-DD>.md`; see
+ * server/journal-store.ts): a small frontmatter block (which familiar
  * reflected, when) followed by the reflection body. This is the pure
  * parse/format/validate layer shared by the API route (fs) and the UI (no fs).
  *
@@ -63,6 +65,25 @@ export function entryPreview(entry: JournalEntry, max = 120): string {
     .replace(/\s+/g, " ")
     .trim();
   return source.length > max ? `${source.slice(0, max - 1)}…` : source;
+}
+
+export type JournalMemoryCounts = { covenOrigin: number; externalRuntimes: number; runtimeMemory: number };
+
+/**
+ * The day pane's compact memory meta line — "166 Coven files · 3 runtime
+ * files". Zero parts are hidden; with nothing at all it says so plainly. These
+ * are the familiar's memory-file totals, not the day's touched files (those
+ * are the Sources chips).
+ */
+export function formatJournalMemoryMeta(stats: JournalMemoryCounts): string {
+  const parts: string[] = [];
+  const add = (count: number, one: string, many: string) => {
+    if (count > 0) parts.push(`${count} ${count === 1 ? one : many}`);
+  };
+  add(stats.covenOrigin, "Coven file", "Coven files");
+  add(stats.externalRuntimes, "external runtime file", "external runtime files");
+  add(stats.runtimeMemory, "runtime file", "runtime files");
+  return parts.length ? parts.join(" · ") : "No memory files yet";
 }
 
 type JournalContextInput = {

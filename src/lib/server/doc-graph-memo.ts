@@ -53,6 +53,7 @@ function snapshotDocs(docs: readonly GraphSourceDoc[]): GraphSourceDoc[] {
     title: doc.title,
     markdown: doc.markdown,
     ...(doc.tags ? { tags: [...doc.tags] } : {}),
+    ...(doc.owner !== undefined ? { owner: doc.owner } : {}),
   }));
 }
 
@@ -78,6 +79,7 @@ function sameDocs(a: readonly GraphSourceDoc[], b: readonly GraphSourceDoc[]): b
   return sameList(a, b, (x, y) =>
     x.title === y.title
     && x.markdown === y.markdown
+    && (x.owner ?? null) === (y.owner ?? null)
     && sameRef(x.ref, y.ref)
     && sameList(x.tags ?? [], y.tags ?? [], sameString),
   );
@@ -91,7 +93,8 @@ function sameRef(a: GraphSourceDoc["ref"], b: GraphSourceDoc["ref"]): boolean {
     case "memory":
       return b.kind === "memory" && a.path === b.path;
     case "journal":
-      return b.kind === "journal" && a.date === b.date;
+      // A date can hold one entry per familiar; the familiar is identity.
+      return b.kind === "journal" && a.date === b.date && (a.familiar ?? null) === (b.familiar ?? null);
     default:
       // A ref kind this memo does not know about is never assumed equal.
       return false;
@@ -103,5 +106,5 @@ function sameIndex(a: WikiDocIndex, b: WikiDocIndex): boolean {
     x.id === y.id && x.collection === y.collection && x.title === y.title,
   )
     && sameList(a.memory, b.memory, (x, y) => x.path === y.path)
-    && sameList(a.journal, b.journal, (x, y) => x.date === y.date);
+    && sameList(a.journal, b.journal, (x, y) => x.date === y.date && (x.familiar ?? null) === (y.familiar ?? null));
 }

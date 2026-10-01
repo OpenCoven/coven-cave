@@ -80,6 +80,207 @@
   }
 }
 
+/* Journal and Relations bring their own rails — the Library navigator steps
+ * aside at every width so they get the whole surface. */
+.grimoire-navigator--hidden {
+  display: none;
+}
+
+/* ── Navigator rows ───────────────────────────────────────────────────────
+ * Human tags read as quiet #words, not machine ids; a research mission's
+ * artifacts hang under one group header on a single hairline. */
+.grimoire-nav-tags {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.grimoire-nav-tag {
+  white-space: nowrap;
+}
+
+.grimoire-nav-mission__meta {
+  padding-left: calc(var(--space-2) + var(--space-1));
+}
+
+.grimoire-nav-mission__children {
+  margin: 0 0 var(--space-1) calc(var(--space-3) + var(--space-1));
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border-hairline);
+}
+
+/* ── Reader (the default document view) ───────────────────────────────────
+ * The shared DocumentReader with a Library measure: ~70ch, left-aligned,
+ * manual hyphenation unless the person's reading preferences say otherwise. */
+.grimoire-reader {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.grimoire-reader__body {
+  min-height: 0;
+  flex: 1;
+}
+
+.grimoire-reader .document-reader {
+  /* Memories is a presence surface: its accent (selected rows, Done) also
+   * marks the active contents entry, the kicker, and wiki-links. Some themes
+   * set --accent to a surface tone, which made those disappear. */
+  --document-reader-accent: var(--accent-presence);
+  --document-reader-accent-soft: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  /* 68ch of the reader's base font lands near 70 characters of body text. */
+  --document-reader-prose-measure: var(--cave-reading-width, 68ch);
+}
+
+/* The app's reset strips list markers; numbered findings need their numbers. */
+.grimoire-reader .document-reader__list--ordered {
+  list-style: decimal;
+}
+
+.grimoire-reader .document-reader__list--unordered {
+  list-style: disc;
+}
+
+.grimoire-reader .document-reader__list--unordered .document-reader__list--unordered {
+  list-style: circle;
+}
+
+.grimoire-reader .document-reader__column li::marker {
+  color: var(--text-muted);
+}
+
+/* Each task is its own one-item list; stack them like one checklist. */
+.grimoire-reader .document-reader__list--tasks {
+  margin-bottom: var(--space-2);
+  padding-left: 0;
+  list-style: none;
+}
+
+.grimoire-reader .document-reader__scroll:focus {
+  outline: none;
+}
+
+/* The whole reading column is the focus target, so its ring is a quiet inset
+ * hairline rather than the bright control ring around 1,600px of prose. */
+.grimoire-reader .document-reader__scroll:focus-visible {
+  outline: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  outline-offset: -1px;
+}
+
+.grimoire-reader .document-reader__title {
+  font-size: calc(var(--text-xl) * 1.35 * var(--reader-text-scale));
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.grimoire-reader .document-reader__context {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-6);
+  font-size: var(--text-sm);
+}
+
+.grimoire-reader__summary {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: calc(var(--text-md) * var(--reader-text-scale));
+  line-height: var(--cave-reading-leading, 1.6);
+}
+
+.grimoire-reader .document-reader__column p.grimoire-reader__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.grimoire-reader__meta > span + span::before {
+  margin-right: var(--space-2);
+  content: "·";
+}
+
+.grimoire-reader .document-reader__toc-link[data-level="3"] {
+  padding-left: calc(var(--space-5) + var(--space-3));
+  font-size: var(--text-xs);
+}
+
+.grimoire-reader .document-reader__toc-link[data-level="4"],
+.grimoire-reader .document-reader__toc-link[data-level="5"],
+.grimoire-reader .document-reader__toc-link[data-level="6"] {
+  padding-left: calc(var(--space-5) + var(--space-6));
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.grimoire-reader .document-reader__toc-link[data-level="3"]::before,
+.grimoire-reader .document-reader__toc-link[data-level="4"]::before,
+.grimoire-reader .document-reader__toc-link[data-level="5"]::before,
+.grimoire-reader .document-reader__toc-link[data-level="6"]::before {
+  width: var(--space-1);
+  height: var(--space-1);
+}
+
+.grimoire-reader__progress {
+  position: absolute;
+  z-index: 4;
+  inset: 0 0 auto;
+  height: 2px;
+  pointer-events: none;
+}
+
+.grimoire-reader__progress-fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent-presence);
+  transition: width var(--duration-fast) linear;
+}
+
+.grimoire-reader__loading {
+  display: grid;
+  gap: var(--space-3);
+  width: min(100% - var(--space-8), 68ch);
+  margin: 0 auto;
+  padding: var(--space-8) 0;
+}
+
+/* Unsaved edits kept while reading: a quiet banner with one way back. */
+.grimoire-reader-notice {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 34%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.grimoire-reader-notice > svg {
+  flex: none;
+  color: var(--color-warning);
+}
+
+.grimoire-reader-notice__action {
+  flex: none;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.grimoire-reader-notice__action:hover {
+  background: var(--bg-elevated);
+}
+
 .grimoire-header .surface-compact-actions {
   justify-self: end;
 }
@@ -622,7 +823,8 @@
 @media (prefers-reduced-motion: reduce) {
   .gl-stage__knot,
   .gl-memory-row,
-  .grimoire-tab {
+  .grimoire-tab,
+  .grimoire-reader__progress-fill {
     transition: none;
   }
 }

@@ -35,10 +35,13 @@ for (const rel of [
   assert.match(src, /const inboxBulkDelete = \(\) =>/, "bulk inbox delete is deferred (no async confirm)");
 }
 
-// Journal: a pending date makes the day read as empty without mutating `day`.
+// Journal: a pending (date, familiar) entry reads as empty without mutating
+// `day`. Storage is one entry per familiar per day, so the undo key names the
+// familiar too — another familiar's entry for that date stays visible.
 {
   const src = read("./journal/journal-entries.tsx");
-  assert.match(src, /day\?\.date !== deletePending\?\.item/, "journal treats the pending day as empty during the undo window");
+  assert.match(src, /const dayKey = day \? entryKey\(day\.date, day\.familiar\) : null;/, "journal keys the open entry by date + familiar");
+  assert.match(src, /dayKey !== deletePending\?\.item/, "journal treats the pending entry as empty during the undo window");
 }
 
 // Familiar lifecycle: a familiar pending removal loses its archive/remove

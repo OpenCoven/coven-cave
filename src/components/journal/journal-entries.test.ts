@@ -40,9 +40,11 @@ assert.match(entries, /function startEdit\(\)/, "JournalEntries exposes an edit 
 assert.match(entries, /async function saveEdit\(text\?: string\): Promise<boolean>/, "JournalEntries saves edited reflections");
 assert.match(entries, /fetch\("\/api\/journal",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?reflection:\s*draft/, "JournalEntries persists edited reflection text through /api/journal POST");
 assert.match(entries, /function deleteEntry\(\)/, "JournalEntries exposes a delete action");
-assert.match(entries, /fetch\(`\/api\/journal\?date=\$\{encodeURIComponent\(date\)\}`,\s*\{ method: "DELETE" \}/, "JournalEntries deletes the selected persisted day through /api/journal DELETE");
-// Delete is deferred + undoable: it routes through the shared useUndoDelete helper.
-assert.match(entries, /scheduleDelete\(date,/, "JournalEntries defers the delete through useUndoDelete");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(target\)\}`,\s*\{ method: "DELETE" \}/, "JournalEntries deletes the selected (date, familiar) entry through /api/journal DELETE");
+// Delete is deferred + undoable: it routes through the shared useUndoDelete helper,
+// keyed by (date, familiar) so another familiar's entry for that day never reads as deleted.
+assert.match(entries, /scheduleDelete\(key,/, "JournalEntries defers the delete through useUndoDelete");
+assert.match(entries, /const key = entryKey\(day\.date, day\.familiar\);/, "the undo key is the entry's (date, familiar)");
 assert.match(entries, /<UndoToast/, "JournalEntries renders an UndoToast for deletes");
 assert.match(entries, /aria-label="Edit journal entry"/, "JournalEntries renders an edit affordance");
 assert.match(entries, /aria-label="Delete journal entry"/, "JournalEntries renders a delete affordance");
@@ -74,12 +76,32 @@ assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiar
 // scope (empty = All), so switching familiars/scope never refetches.
 assert.match(entries, /await fetch\(`\/api\/journal`, \{ cache: "no-store" \}\)/, "JournalEntries fetches the full journal day list");
 assert.match(entries, /if \(!familiarInScope\(scope, d\.reflectedBy\)\) return false/, "JournalEntries filters the day list by the familiar multiselect scope");
-// Entry reads stay coven-wide so a list row written by another familiar always
-// opens. Only the inventory-derived stats/context request is familiar-scoped.
-assert.match(entries, /const entryQuery = useCallback\(\(slug: string\) => `date=\$\{encodeURIComponent\(slug\)\}`/, "journal entry reads never inherit the active-familiar filter");
-assert.match(entries, /const statsQuery = useCallback\(\(slug: string\) => \(\s*selectedFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(selectedFamiliarId\)\}`/, "journal stats and generation context use the selected familiar");
-assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(slug\)\}`/, "loadDay uses the coven-wide entry query");
-assert.match(entries, /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/, "fetchDayStats uses the familiar-scoped stats query");
+// ── One entry per familiar per day ───────────────────────────────────────────
+// Storage is per familiar, so a day can carry several rows. The selection is a
+// (date, familiar) pair; every read/stats/delete names the familiar so the
+// right file is used, and the rail keys rows by date + familiar.
+assert.match(entries, /type JournalSelection = \{ date: string; familiar: string \| null \}/, "the selection is a (date, familiar) pair");
+assert.match(entries, /function entryKey\(date: string, familiar: string \| null\): string \{\s*\n\s*return `\$\{date\}\|\$\{familiar \?\? ""\}`;/, "entries are keyed by date + familiar");
+assert.match(
+  entries,
+  /function entryQuery\(sel: JournalSelection\): string \{\s*\n\s*return sel\.familiar\s*\n?\s*\? `date=\$\{encodeURIComponent\(sel\.date\)\}&familiar=\$\{encodeURIComponent\(sel\.familiar\)\}`/,
+  "entry reads pass &familiar= so the selected familiar's own file is read",
+);
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(sel\)\}`/, "loadDay reads the selected (date, familiar) entry");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(sel\)\}&stats=1`/, "fetchDayStats is scoped to the selected entry's familiar");
+assert.match(entries, /const rowKey = entryKey\(d\.date, d\.reflectedBy\);[\s\S]*?<li key=\{rowKey\}>/, "rail rows are keyed by date + familiar (several familiars can share a day)");
+assert.match(entries, /onClick=\{\(\) => selectDay\(d\.date, d\.reflectedBy\)\}/, "clicking a row selects that familiar's entry");
+// Generation writes as the open entry's familiar; with per-familiar files it
+// can only ever replace that familiar's own entry.
+assert.match(entries, /const authorId = selected\.familiar \?\? defaultFamiliarId;/, "generation writes as the selected familiar");
+assert.doesNotMatch(entries, /keeps one entry per day/, "the retired one-entry-per-day copy is gone");
+assert.doesNotMatch(entries, /outOfScopeBy/, "the cross-familiar overwrite guard is obsolete with per-familiar storage");
+// The default selection never opens a familiar the scoped rail is hiding.
+assert.match(
+  entries,
+  /const defaultFamiliarId = scope\.size > 0 && \(!selectedFamiliarId \|\| !scope\.has\(selectedFamiliarId\)\)/,
+  "the default familiar falls back into the scope",
+);
 
 // ── Perf: the entry paints without waiting for the memory inventory (cave-tgx9)
 // The stats block needs a full memory-file inventory walk server-side (~1900
@@ -99,29 +121,33 @@ assert.match(
 );
 assert.match(
   entries,
-  /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/,
-  "JournalEntries fetches the stats block on a separate non-blocking request",
+  /const block = await fetchDayStats\(sel\);/,
+  "JournalEntries fetches the stats block on a separate non-blocking request after the entry paints",
 );
 assert.match(
   entries,
-  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context" \| "sources">\), stats: null, context: null, sources: null \}\)/,
+  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "familiar" \| "stats" \| "context" \| "sources">\), familiar: sel\.familiar, stats: null, context: null, sources: null \}\)/,
   "JournalEntries paints the entry immediately with stats pending",
 );
 assert.match(
   entries,
-  /prev && prev\.date === slug \? \{ \.\.\.prev, \.\.\.block \} : prev/,
-  "Late stats only merge into the same day they were requested for",
+  /prev && prev\.date === sel\.date && prev\.familiar === sel\.familiar \? \{ \.\.\.prev, \.\.\.block \} : prev/,
+  "Late stats only merge into the same entry they were requested for",
 );
 // If the user hits Generate before the stats fetch lands, the context is
 // fetched inline — generation must always carry the memory-scope note.
 assert.match(
   entries,
-  /const context = day\.context \?\? \(await fetchDayStats\(day\.date\)\)\?\.context \?\? ""/,
+  /const context = day\.context \?\? \(await fetchDayStats\(day\)\)\?\.context \?\? ""/,
   "Generate falls back to an inline context fetch when stats have not arrived",
 );
-assert.match(entries, /day\.stats\.covenOrigin[\s\S]*?coven files/, "Journal stats include Coven-origin memory files");
-assert.match(entries, /day\.stats\.externalRuntimes[\s\S]*?external runtime files/, "Journal stats include external runtime memory files");
-assert.match(entries, /day\.stats\.runtimeMemory[\s\S]*?runtime files/, "Journal stats include runtime memory files");
+// The memory totals are one compact muted line, not three dominant tiles.
+assert.match(entries, /formatJournalMemoryMeta\(day\.stats\)/, "Journal stats render as one compact meta line");
+assert.match(entries, /<p className="journal-entry__meta">/, "the meta line sits under the heading");
+assert.match(entries, /"Loading memory stats…"/, "the pending stats line is named, not blank");
+assert.doesNotMatch(entries, /journal-entry__stat\b/, "the big stat tiles are gone");
+assert.doesNotMatch(css, /\.journal-entry__stats? \{/, "and so is their styling");
+assert.match(css, /\.journal-entry__meta \{[\s\S]*?color: var\(--text-muted\)/, "the meta line is muted");
 
 // ── Day-fetch race + unmount guards ─────────────────────────────────────────
 // Rapid day switching must not let a slow earlier fetch overwrite the current
@@ -155,8 +181,8 @@ assert.match(entries, /onClick=\{\(\) => \{ void loadDays\(\); \}\}/, "list fail
 assert.match(entries, /const selectedRef = useRef\(selected\)/, "generation can read the current selection");
 assert.match(
   entries,
-  /if \(selectedRef\.current === day\.date\) await loadDay\(day\.date\);/,
-  "generation only reloads the detail when its day is still selected",
+  /if \(isSelected\(target\.date, target\.familiar\)\) \{[\s\S]*?else await loadDay\(target\);/,
+  "generation only reloads the detail when its (date, familiar) entry is still selected",
 );
 
 // Mutation failures stay visible even when the independently collapsible rail
@@ -170,7 +196,8 @@ assert.match(
 }
 
 // ── Selected day is announced + keyboard-navigable ──────────────────────────
-assert.match(entries, /aria-current=\{d\.date === selected \? "true" : undefined\}/, "the open day row is aria-current");
+assert.match(entries, /aria-current=\{isRowSelected \? "true" : undefined\}/, "the open day row is aria-current");
+assert.match(entries, /const isRowSelected = rowKey === selectedKey;/, "row selection compares the (date, familiar) key");
 assert.match(entries, /onKeyDown=\{onRailKeyDown\}/, "the day rail handles arrow-key navigation");
 assert.match(entries, /e\.key === "ArrowDown" \? Math\.min\(btns\.length - 1, i \+ 1\)/, "ArrowDown moves to the next day");
 // Chronological prev/next entry controls in the detail header.
@@ -233,7 +260,14 @@ assert.doesNotMatch(
 );
 assert.match(entries, /sources: Array\.isArray\(json\.sources\) \? \(json\.sources as JournalSource\[\]\) : \[\]/, "sources ride the non-blocking stats fetch");
 assert.match(entries, /<JournalConstellation/, "the entry pane renders the constellation Visual");
-assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Generation prompt<\/h4>/, "the generation-prompt section is a real heading");
+// The prompt editor is a collapsed-by-default disclosure, its open state
+// remembered locally (it used to take the bottom third of every day).
+assert.match(entries, /JOURNAL_PROMPT_OPEN_KEY = "cave:journal:prompt-open:v1"/, "the prompt disclosure uses a versioned preference");
+assert.match(entries, /const \[promptOpen, setPromptOpen\] = useState\(false\)/, "the prompt editor starts collapsed");
+assert.match(entries, /window\.localStorage\.setItem\(JOURNAL_PROMPT_OPEN_KEY, String\(next\)\)/, "the disclosure state persists locally");
+assert.match(entries, /aria-expanded=\{promptOpen\}\s*\n\s*aria-controls="journal-prompt-panel"/, "the disclosure exposes its state and target");
+assert.match(entries, />\s*\n?\s*<Icon name=\{promptOpen \? "ph:caret-down" : "ph:caret-right"\}[^>]*\/>\s*\n\s*Customize the prompt/, "the disclosure is named for what it does");
+assert.match(entries, /id="journal-prompt-panel" className="journal-prompt__panel" hidden=\{!promptOpen\}/, "the editor is hidden while collapsed");
 assert.match(entries, /aria-label="Generation prompt template"/, "the template textarea is labelled");
 assert.match(entries, /splitPromptSegments\(journalPrompt\)/, "the highlight overlay marks {placeholder} runs");
 assert.match(entries, /writeStoredJournalPrompt\(value\)/, "template edits persist");
@@ -243,7 +277,12 @@ assert.match(
   /promptTemplate: journalPrompt,\s*\n\s*familiarName: familiarName\(familiarId\) \?\? undefined,/,
   "generate sends the edited template + placeholder vars",
 );
-assert.match(entries, /\{generating \? "Reflecting…" : "Regenerate entry"\}/, "an existing today-entry can be regenerated from the prompt section");
+assert.match(entries, /\{generating \? "Reflecting…" : "Regenerate entry"\}/, "an existing today-entry can be regenerated");
+{
+  const regen = entries.indexOf('"Regenerate entry"');
+  const panel = entries.indexOf('id="journal-prompt-panel"');
+  assert.ok(regen > 0 && panel > 0 && regen < panel, "Regenerate stays reachable with the prompt disclosure collapsed");
+}
 const constellation = read("./journal-constellation.tsx");
 assert.match(constellation, /usePrefersReducedMotion\(\)/, "the visual's sketch beat respects prefers-reduced-motion");
 assert.match(constellation, /var\(--accent-presence\)/, "constellation stars use theme tokens (no raw hex)");
@@ -269,5 +308,45 @@ assert.match(
   /reflectedBy: familiarId, expectedModified: day\.modified \}\)/,
   "saveEdit sends the mtime baseline and no generatedAt (preserved server-side)",
 );
+
+// ── Generation errors say what happened and what to do ───────────────────────
+// The banner used to show the bare transport string ("the familiar reported an
+// error"). It now maps the message to a headline + next step, offers Retry,
+// and keeps the raw text behind a Details disclosure.
+assert.match(entries, /describeJournalGenerateError\(genError\.message, familiarName\(genError\.familiar\)\)/, "generate errors are humanized");
+assert.match(entries, /genError && genError\.key === selectedKey/, "a generate error only shows on the entry it was for");
+assert.match(entries, /className="journal-gen-error"[\s\S]*?<summary>Details<\/summary>[\s\S]*?\{genErrorCopy\.detail\}/, "the raw message sits behind Details");
+assert.match(entries, /className="journal-gen-error"[\s\S]*?onClick=\{\(\) => \{ void generate\(\); \}\}[\s\S]*?Retry/, "the banner offers Retry");
+assert.match(css, /\.journal-gen-error \{[\s\S]*?var\(--color-danger\)/, "the banner uses the danger tint recipe");
+
+// ── Reflection reads at a comfortable measure ────────────────────────────────
+assert.match(entries, /<MarkdownBlock text=\{visible\} className="journal-entry__reflection" \/>/, "the reflection uses the chat's markdown reader");
+assert.match(css, /\.journal-entry__reflection \{[\s\S]*?max-width: 68ch;[\s\S]*?line-height: var\(--leading-relaxed\);[\s\S]*?font-size: var\(--text-md\);/, "the reflection has a reading measure built from tokens");
+
+// ── Empty state names the familiar ───────────────────────────────────────────
+assert.match(entries, /`\$\{selectedName\} hasn't reflected on this day yet`/, "the empty state names the selected familiar");
+
+// ── Automation card: the familiar's daily reflection routine ─────────────────
+const auto = read("./journal-automation-card.tsx");
+assert.match(entries, /<JournalAutomationCard\s*\n\s*key=\{selected\.familiar\}/, "the day pane hosts the selected familiar's automation card");
+assert.match(auto, /fetch\(`\/api\/journal\/automation\?familiar=\$\{encodeURIComponent\(familiarId\)\}`/, "the card reads the familiar's routine");
+assert.match(auto, /method: "PUT",[\s\S]*?JSON\.stringify\(\{ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName \}\)/, "toggle, hour and harness save through PUT");
+assert.match(auto, /JSON\.stringify\(\{ familiar: familiarId, action: "run" \}\)/, "Run now posts the run action");
+assert.match(auto, /role="switch"\s*\n\s*aria-checked=\{enabled\}/, "the toggle is an accessible switch");
+// The native scheduler runs on the hour (no BYMINUTE), so the picker is an
+// hour select, not a minute-level time input that would be refused.
+assert.match(auto, /<StandardSelect\s*\n\s*id="journal-auto-time"/, "an hour picker sets the reflection time");
+assert.doesNotMatch(auto, /type="time"/, "no minute-level time input — the daemon cannot run at :30");
+assert.match(auto, /DEFAULT_JOURNAL_ROUTINE_TIME/, "a new routine defaults to 21:00");
+assert.match(auto, /json\.available === false \|\| res\.status === 503/, "an unreachable daemon is detected");
+assert.match(auto, /Automations service isn&apos;t reachable/, "and said precisely, with no fallback");
+assert.match(auto, /Last run: <span data-run-status=\{wroteNothing \? "empty" : lastRun\.status\}>/, "the last run's status is shown");
+// A signed-out harness exits 0 ("Login expired"), so "succeeded" alone is not
+// proof; the pane trusts the server's check that the entry file landed.
+assert.match(auto, /const wroteNothing = lastRun\?\.status === "succeeded" && lastRunEntry !== null && !lastRunEntry\.written;/, "a succeeded run that wrote nothing is called out");
+assert.match(auto, /<StandardSelect<JournalRuntime>\s*\n\s*id="journal-auto-runtime"/, "the harness the reflection runs on is choosable");
+assert.match(auto, /announce\(/, "automation mutations are announced");
+assert.match(css, /\.journal-auto__switch \{/, "the switch is styled in the surface stylesheet");
+assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.journal-auto__switch,/, "the switch respects reduced motion");
 
 console.log("journal-entries.test.ts: ok");

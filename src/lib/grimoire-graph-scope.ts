@@ -1,10 +1,11 @@
 // Narrow the Grimoire doc graph to the shell's familiar multiselect, mirroring
 // what the Memory navigator rail already does.
 //
-// Only MEMORY nodes carry an owner, so only memory nodes are scoped. Stitches
-// and journal days stay coven-wide for the same reason the rail keeps them:
-// knowledge is deliberately shared, and they are the graph's connective tissue —
-// dropping them would shred the very relations the view exists to show.
+// Memory nodes are scoped by inventory ownership and journal days by the
+// familiar that reflected them (`node.owner`). Stitches stay coven-wide for the
+// same reason the rail keeps them: knowledge is deliberately shared, and it is
+// the graph's connective tissue — dropping it would shred the very relations
+// the view exists to show.
 //
 // Dropping nodes is not enough on its own. Edges whose endpoint disappeared
 // would dangle, and a tag node that loses every edge becomes a floating orphan
@@ -57,6 +58,11 @@ export function scopeDocGraph(
   const nodes: DocGraphNode[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "memory" && !familiarInScope(scope, memoryOwnerByNodeId.get(node.id) ?? null)) {
+      continue;
+    }
+    // Journal days follow their reflecting familiar. An entry with no
+    // attribution (an old hand-written day) stays visible, since no one owns it.
+    if (node.kind === "journal" && node.owner && !familiarInScope(scope, node.owner)) {
       continue;
     }
     kept.add(node.id);

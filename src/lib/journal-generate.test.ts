@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts";
+import { buildReflectionPrompt, describeJournalGenerateError, generateReflection } from "./journal-generate.ts";
 
 {
   const p = buildReflectionPrompt("2026-06-20: 2 responses.\n- Reply to Sage");
@@ -392,6 +392,35 @@ for (const [event, expectedError] of [
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+// ── Generation errors read as what happened + what to do ─────────────────────
+// The pane used to show the bare transport string ("the familiar reported an
+// error"). Each known shape maps to a sentence with a next step; the raw
+// message is always kept as `detail` for the Details disclosure.
+{
+  const cases = [
+    ["the familiar reported an error", /Astra couldn't finish the reflection/, /Retry/],
+    ["generation error", /Astra couldn't finish the reflection/, /runtime/],
+    ["daemon unavailable: connect ECONNREFUSED", /Couldn't reach the Coven daemon/, /Start it/],
+    ["chat bridge 503", /Couldn't reach the Coven daemon/, /retry/],
+    ["request timed out after 120s", /Astra took too long to reflect/, /Retry/],
+    ["The familiar didn't return a reflection. Try again.", /Astra didn't write anything/, /empty/],
+    ["the connection dropped mid-generation", /The connection dropped mid-reflection/, /server/],
+    ["cancelled", /Reflection cancelled/, /Generate again/],
+    ["This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.", /entry changed/, /instead of overwriting/],
+    ["Couldn't save the generated reflection.", /couldn't be saved/, /~\/\.coven\/journal/],
+    ["chat bridge 400", /Cave couldn't start the reflection/, /runtime settings/],
+    ["something novel", /Couldn't generate the reflection/, /Details/],
+  ];
+  for (const [raw, headline, hint] of cases) {
+    const copy = describeJournalGenerateError(raw, "Astra");
+    assert.match(copy.headline, headline, `${raw} → headline`);
+    assert.match(copy.hint, hint, `${raw} → hint`);
+    assert.equal(copy.detail, raw, "the raw message is preserved for Details");
+  }
+  assert.match(describeJournalGenerateError("the familiar reported an error").headline, /^The familiar couldn't/, "no name → generic subject");
+  assert.equal(describeJournalGenerateError("").detail, "No error message was returned.");
 }
 
 console.log("journal-generate.test.ts: ok");

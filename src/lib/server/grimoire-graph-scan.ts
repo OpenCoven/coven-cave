@@ -35,6 +35,8 @@ export type GrimoireGraphMeta = {
    * applies, so the shortfall notice never has to infer it.
    */
   memory: { scanned: number; total: number; scoped: boolean };
+  /** Scope-relative like `memory`: entries reflected by the scope, plus
+   *  unattributed (legacy, hand-written) days, which no familiar owns. */
   journal: { scanned: number; total: number };
 };
 
@@ -78,7 +80,7 @@ export type GrimoireGraphMeta = {
  * reports it scope-relative (cave-ed4s3).
  */
 export const MEMORY_SCAN_CAP = 1200;
-/** …and the most recent N journal days. */
+/** …and the most recent N journal entries (one per familiar per day). */
 export const JOURNAL_SCAN_CAP = 200;
 /** Per-file byte cap — links/tags overwhelmingly live near the top. */
 const CONTENT_BYTE_CAP = 32 * 1024;
@@ -166,9 +168,10 @@ function memoryBasename(fullPath: string): string {
  *
  * Scoping first is better on BOTH axes rather than a trade: the familiar gets
  * all of their files up to the cap, AND the node count stays small so the sim
- * stays cheap. Only MEMORY entries carry an owner, so only they are scoped —
- * knowledge and journal stay coven-wide, matching `scopeDocGraph`, because they
- * are the graph's connective tissue.
+ * stays cheap. MEMORY entries are scoped by inventory owner and JOURNAL
+ * entries by the familiar that reflected them (an unattributed legacy day
+ * stays visible, since no one owns it) — matching `scopeDocGraph`. Knowledge
+ * stays coven-wide: it is the graph's connective tissue.
  *
  * An empty scope means "All" and reproduces the previous coven-wide behavior
  * exactly, so the unscoped caller is unchanged.
@@ -182,11 +185,24 @@ export async function scanGrimoireGraph(
     listJournalEntries(),
   ]);
 
-  // Resolution index spans the ENTIRE corpus, scanned or not.
+  // Journal entries in scope: the scope's own reflections plus unattributed
+  // legacy days (see `scopeDocGraph`). An empty scope keeps every entry.
+  const journalInScope = journalDays.filter(
+    (j) => !j.reflectedBy || familiarInScope(familiarScope, j.reflectedBy),
+  );
+
+  // Resolution index spans the ENTIRE corpus, scanned or not (the journal
+  // part: every in-scope entry).
   const index: WikiDocIndex = {
     knowledge: knowledge.map((k) => ({ id: k.id, collection: k.collection, title: k.title })),
     memory: memoryEntries.map((m) => ({ path: m.fullPath })),
-    journal: journalDays.map((j) => ({ date: j.date })),
+    // Journal: a date can carry one entry per familiar, so a [[YYYY-MM-DD]]
+    // link resolves to the first in-scope entry (list order: newest first,
+    // legacy day before familiar entries, then by familiar id).
+    journal: journalInScope.map((j) => ({
+      date: j.date,
+      ...(j.source === "familiar" && j.reflectedBy ? { familiar: j.reflectedBy } : {}),
+    })),
   };
 
   const docs: GraphSourceDoc[] = knowledge.map((k) => ({
@@ -214,19 +230,23 @@ export async function scanGrimoireGraph(
   });
   for (const d of memoryDocs) if (d) docs.push(d);
 
-  // Journal — most recent days first (the list is already newest-first, but
-  // don't rely on it).
-  const journalScanSet = [...journalDays]
+  // Journal — most recent entries first (the list is already newest-first,
+  // but don't rely on it). Each entry carries its owner: a familiar's own
+  // entry is node `journal:<familiar>:<date>`, a legacy coven-wide day file is
+  // `journal:<date>` (owner = its `reflectedBy`, null when unattributed).
+  const journalScanSet = [...journalInScope]
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .slice(0, JOURNAL_SCAN_CAP);
   const journalDocs = await mapConcurrent(journalScanSet, async (j) => {
     try {
-      const record = await readJournalEntry(j.date);
+      const record = await readJournalEntry(j.date, j.reflectedBy);
       if (!record.exists) return null;
+      const familiar = record.source === "familiar" ? record.entry.reflectedBy : null;
       return {
-        ref: { kind: "journal", date: j.date },
+        ref: { kind: "journal", date: j.date, ...(familiar ? { familiar } : {}) },
         title: j.date,
         markdown: record.entry.reflection,
+        owner: record.entry.reflectedBy,
       } satisfies GraphSourceDoc;
     } catch {
       return null;
@@ -243,7 +263,7 @@ export async function scanGrimoireGraph(
       total: memoryMarkdown.length,
       scoped: familiarScope.size > 0,
     },
-    journal: { scanned: journalScanSet.length, total: journalDays.length },
+    journal: { scanned: journalScanSet.length, total: journalInScope.length },
   };
   return { graph, meta };
 }

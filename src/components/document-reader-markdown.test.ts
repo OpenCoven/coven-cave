@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DocumentReaderMarkdown } from "./document-reader-markdown.tsx";
+import { parse } from "@create-markdown/core";
+import {
+  DocumentReaderMarkdown,
+  MarkdownReaderBlock,
+  ReaderWikiLinkContext,
+} from "./document-reader-markdown.tsx";
 import { LiveRegionProvider } from "./ui/live-region.tsx";
 
 function render(content: string, mode: "rendered" | "raw" = "rendered"): string {
@@ -108,4 +113,34 @@ test("lists, tables, and callouts use escaped semantic elements", () => {
   assert.match(markup, /&lt;script&gt;never&lt;\/script&gt;/);
   assert.match(markup, /<aside[^>]*>/);
   assert.match(markup, /&lt;em&gt;review locally&lt;\/em&gt;/);
+});
+
+test("wiki-links stay literal without a host and become doc links with one", () => {
+  const source = "See [[Grimoire Notes]], [[missing|a gap]] and `[[code]]`.";
+  assert.match(render(source), /\[\[Grimoire Notes\]\]/, "no provider: [[...]] renders as written");
+
+  const block = parse(source)[0];
+  const markup = renderToStaticMarkup(
+    createElement(
+      ReaderWikiLinkContext.Provider,
+      {
+        value: {
+          resolves: (target: string) => target.toLowerCase() === "grimoire notes",
+          open: () => {},
+        },
+      },
+      createElement(MarkdownReaderBlock, { block, blockKey: "wiki" }),
+    ),
+  );
+  assert.match(
+    markup,
+    /<button type="button" class="document-reader__wikilink focus-ring" title="Open Grimoire Notes">Grimoire Notes<\/button>/,
+    "a resolved target is a button that opens the doc",
+  );
+  assert.match(
+    markup,
+    /<span class="document-reader__wikilink" data-unresolved="true" title="No matching Memories doc">a gap<\/span>/,
+    "an unresolved target shows its alias, inert",
+  );
+  assert.match(markup, /<code>\[\[code\]\]<\/code>/, "inline code keeps literal brackets");
 });

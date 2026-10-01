@@ -93,4 +93,39 @@ for (const k of ["repelStrength", "linkDistance", "linkStrength", "centerStrengt
   assert.ok(DEFAULT_FORCE_PARAMS[k] > 0, `${k} has a positive default`);
 }
 
+
+// ── hubs stay bounded (the blank-Relations regression) ───────────────────────
+// A real corpus had tag:research with 120 edges and tag:autoresearch with 98.
+// Un-normalised springs summed per tick overshot further every tick and the
+// layout diverged to ±1e100, so every node drew off-screen. Degree-normalised
+// springs keep a hub's pull bounded at any degree, in 2D and in 3D.
+for (const dims of [2, 3]) {
+  const hubNodes = [{ id: "hub-a", radius: 4 }, { id: "hub-b", radius: 4 }];
+  const hubLinks = [];
+  for (let i = 0; i < 160; i++) {
+    hubNodes.push({ id: `doc-${i}`, radius: 5 });
+    if (i < 120) hubLinks.push({ source: `doc-${i}`, target: "hub-a", strength: 0.7, distanceScale: 0.85 });
+    if (i >= 62) hubLinks.push({ source: `doc-${i}`, target: "hub-b", strength: 0.7, distanceScale: 0.85 });
+  }
+  const sim = createForceSim(hubNodes, hubLinks, { dims });
+  for (let t = 0; t < 400; t++) tickForceSim(sim);
+  let extent = 0;
+  for (let i = 0; i < sim.count; i++) {
+    assert.ok(Number.isFinite(sim.x[i]) && Number.isFinite(sim.y[i]) && Number.isFinite(sim.z[i]), `${dims}D hub layout stays finite`);
+    extent = Math.max(extent, Math.abs(sim.x[i]), Math.abs(sim.y[i]), Math.abs(sim.z[i]));
+  }
+  assert.ok(extent < 5000, `${dims}D hub layout stays on a screen-sized scale (extent ${extent.toFixed(0)})`);
+  if (dims === 2) assert.ok([...sim.z].every((v) => v === 0), "a 2D sim never moves along z");
+  else assert.ok([...sim.z].some((v) => Math.abs(v) > 1), "a 3D sim uses its depth axis");
+}
+
+// ── 3D sims are deterministic and honour seeded depth ────────────────────────
+const t1 = createForceSim(nodes, links, { dims: 3 });
+const t2 = createForceSim(nodes, links, { dims: 3 });
+settleForceSim(t1, PARAMS);
+settleForceSim(t2, PARAMS);
+assert.deepEqual([...t1.z], [...t2.z], "3D z positions are deterministic");
+const seeded3 = createForceSim([{ id: "a", radius: 5, x: 1, y: 2, z: 3 }], [], { dims: 3 });
+assert.equal(seeded3.z[0], 3, "an explicit seed z is used as-is");
+
 console.log("grimoire-force.test.ts: ok");

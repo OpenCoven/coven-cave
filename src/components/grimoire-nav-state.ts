@@ -6,13 +6,28 @@ export type GrimoireSelection =
   | { kind: "knowledge-new" }
   | { kind: "stitch-new" }
   | { kind: "memory"; path: string }
-  | { kind: "journal"; date: string };
+  /** `familiar` is set for a familiar's own entry; absent for a legacy
+   *  coven-wide day file. Same identity as `WikiDocRef`'s journal variant. */
+  | { kind: "journal"; date: string; familiar?: string };
 
-/** Stable identity shared by the navigator, tab strip, and persisted tab list. */
+const JOURNAL_FAMILIAR_ID = /^(.+):(\d{4}-\d{2}-\d{2})$/;
+
+/** A journal doc's id inside keys and hashes: `<familiar>:<date>` or `<date>`. */
+function journalId(sel: { date: string; familiar?: string }): string {
+  return sel.familiar ? `${sel.familiar}:${sel.date}` : sel.date;
+}
+
+function journalFromId(id: string): { kind: "journal"; date: string; familiar?: string } {
+  const match = id.match(JOURNAL_FAMILIAR_ID);
+  return match ? { kind: "journal", date: match[2], familiar: match[1] } : { kind: "journal", date: id };
+}
+
+/** Stable identity shared by the navigator, tab strip, and persisted tab list.
+ *  Matches `docRefKey` (wiki-link-resolve) so graph backlinks find the open doc. */
 export function selectionKey(sel: GrimoireSelection): string {
   if (sel.kind === "knowledge") return `knowledge:${knowledgeDocKey(sel.id, sel.collection)}`;
   if (sel.kind === "memory") return `memory:${sel.path}`;
-  if (sel.kind === "journal") return `journal:${sel.date}`;
+  if (sel.kind === "journal") return `journal:${journalId(sel)}`;
   if (sel.kind === "stitch-new") return "stitch-new";
   return "knowledge-new";
 }
@@ -39,7 +54,7 @@ export function readGrimoireHash(): GrimoireSelection | null {
       : { kind: "knowledge", id };
   }
   if (kind === "memory") return { kind: "memory", path: id };
-  if (kind === "journal") return { kind: "journal", date: id };
+  if (kind === "journal") return journalFromId(id);
   return null;
 }
 
@@ -52,7 +67,7 @@ export function writeGrimoireHash(sel: GrimoireSelection | null) {
     }
     return;
   }
-  const id = sel.kind === "knowledge" ? knowledgeDocKey(sel.id, sel.collection) : sel.kind === "memory" ? sel.path : sel.date;
+  const id = sel.kind === "knowledge" ? knowledgeDocKey(sel.id, sel.collection) : sel.kind === "memory" ? sel.path : journalId(sel);
   window.history.replaceState(null, "", `${base}${GRIMOIRE_HASH_PREFIX}${sel.kind}:${encodeURIComponent(id)}`);
 }
 
@@ -77,7 +92,11 @@ export function parseStoredTabs(raw: string | null): GrimoireSelection[] {
       } else if (item.kind === "memory" && typeof item.path === "string" && item.path) {
         tabs.push({ kind: "memory", path: item.path });
       } else if (item.kind === "journal" && typeof item.date === "string" && item.date) {
-        tabs.push({ kind: "journal", date: item.date });
+        tabs.push({
+          kind: "journal",
+          date: item.date,
+          ...(typeof item.familiar === "string" && item.familiar ? { familiar: item.familiar } : {}),
+        });
       }
     }
     return tabs.slice(0, MAX_OPEN_TABS);

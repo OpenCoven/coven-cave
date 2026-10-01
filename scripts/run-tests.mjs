@@ -848,6 +848,9 @@ export const SUITES = {
     "src/lib/journal-prompt.test.ts",
     "src/lib/journal-constellation.test.ts",
     "src/lib/server/journal-store.test.ts",
+    "src/lib/journal-automation.test.ts",
+    "src/lib/server/journal-automation-service.test.ts",
+    "src/app/api/journal/automation/route.test.ts",
     "src/components/chat-canvas-command.test.ts",
     "src/components/chat-diagram-command.test.ts",
     "src/components/calendar-actions.test.ts",
@@ -1353,6 +1356,7 @@ export const SUITES = {
     "src/components/grimoire-stub-links.test.ts",
     "src/components/grimoire-launcher.test.ts",
     "src/lib/grimoire-launcher-data.test.ts",
+    "src/lib/grimoire-library.test.ts",
     "src/lib/knowledge-flags.test.ts",
     "src/components/grimoire-graph-view.test.ts",
     "src/components/stitch-intake.test.ts",
@@ -2425,6 +2429,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/journal-prompt.test.ts",
   "src/lib/journal-constellation.test.ts",
   "src/lib/server/journal-store.test.ts",
+  // the automation service + route resolve the daemon client and journal
+  // store through "@/lib/…"; the route also imports next/server
+  "src/lib/server/journal-automation-service.test.ts",
+  "src/app/api/journal/automation/route.test.ts",
   "src/lib/task-archive-nudge.test.ts",
   "src/lib/task-chat-context.test.ts",
   "src/lib/board-session-index.test.ts",

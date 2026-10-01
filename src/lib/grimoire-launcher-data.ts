@@ -8,6 +8,7 @@
  */
 
 import type { DocGraph } from "@/lib/grimoire-graph";
+import { cleanDocTitle } from "./grimoire-library.ts";
 
 // ── Inputs (structural — mirrors what grimoire-view already loads) ──────────
 
@@ -33,6 +34,10 @@ export type LauncherJournalInput = {
   date: string;
   preview: string;
   modified: string | null;
+  /** Who reflected; with `source: "familiar"` it is also the entry's owner. */
+  reflectedBy?: string | null;
+  /** "familiar" = a familiar's own entry, "legacy" = a coven-wide day file. */
+  source?: "familiar" | "legacy";
 };
 
 // ── Pool items ───────────────────────────────────────────────────────────────
@@ -40,7 +45,7 @@ export type LauncherJournalInput = {
 export type LauncherDocRef =
   | { kind: "knowledge"; id: string; collection?: string }
   | { kind: "memory"; path: string }
-  | { kind: "journal"; date: string };
+  | { kind: "journal"; date: string; familiar?: string };
 
 /** Visual marker classes, after the prototype's type language:
  *  diamond = canonical memory files, ring-dashed = stitches,
@@ -78,6 +83,8 @@ function toMs(iso: string | null | undefined): number | null {
 export function launcherExcerpt(body: string | undefined, max = 200): string | undefined {
   if (!body) return undefined;
   const text = body
+    // Provenance headers (`<!-- research-provenance … -->`) are bookkeeping.
+    .replace(/<!--[\s\S]*?(-->|$)/g, " ")
     .replace(/```[\s\S]*?(```|$)/g, " ")
     .replace(/^#{1,6}\s+.*$/gm, " ")
     .replace(/^>\s?/gm, "")
@@ -105,7 +112,7 @@ export function buildLauncherItems(input: {
     items.push({
       key: `knowledge:${k.collection ? `${k.collection}/` : ""}${k.id}`,
       ref: { kind: "knowledge", id: k.id, ...(k.collection ? { collection: k.collection } : {}) },
-      title: k.title || k.id,
+      title: cleanDocTitle(k.title) || k.id,
       kindLabel: "Stitch",
       marker: "ring-dashed",
       modifiedMs: toMs(k.modified),
@@ -127,15 +134,18 @@ export function buildLauncherItems(input: {
   }
   for (const j of input.journal) {
     const excerpt = launcherExcerpt(j.preview);
+    // Several familiars can each reflect on one day; the familiar is part of
+    // the entry's identity (same key shape as docRefKey).
+    const familiar = j.source === "familiar" && j.reflectedBy ? j.reflectedBy : undefined;
     items.push({
-      key: `journal:${j.date}`,
-      ref: { kind: "journal", date: j.date },
+      key: `journal:${familiar ? `${familiar}:` : ""}${j.date}`,
+      ref: { kind: "journal", date: j.date, ...(familiar ? { familiar } : {}) },
       title: j.date,
       kindLabel: "Journal",
       marker: "ring-open",
       modifiedMs: toMs(j.modified) ?? toMs(`${j.date}T12:00:00`),
       ...(excerpt ? { excerpt } : {}),
-      haystack: `${j.date} ${j.preview} journal reflection`.toLowerCase(),
+      haystack: `${j.date} ${j.reflectedBy ?? ""} ${j.preview} journal reflection`.toLowerCase(),
     });
   }
   return items.sort((a, b) => {

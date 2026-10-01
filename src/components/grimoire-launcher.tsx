@@ -36,12 +36,12 @@ function MemoryRow({
 }: {
   item: LauncherItem;
   nowMs: number;
-  journalTitle: (date: string) => string;
+  journalTitle: (date: string, familiar?: string) => string;
   onOpen: (ref: LauncherDocRef) => void;
 }) {
   const title =
     item.ref.kind === "journal"
-      ? `Journal — ${journalTitle(item.ref.date)}`
+      ? `Journal — ${journalTitle(item.ref.date, item.ref.familiar)}`
       : item.title;
   return (
     <button
@@ -89,7 +89,7 @@ export function GrimoireLauncher({
   scopeLabel?: string | null;
   query: string;
   onQueryChange: (query: string) => void;
-  journalTitle: (date: string) => string;
+  journalTitle: (date: string, familiar?: string) => string;
   onOpen: (ref: LauncherDocRef) => void;
   onNewStitch: (opts?: { patternId?: string; pinUrl?: string }) => void;
   onBlankEntry: () => void;
