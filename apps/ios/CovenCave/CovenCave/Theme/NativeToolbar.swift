@@ -71,9 +71,14 @@ private struct BackNavigationProbe: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: Controller, context: Context) {
         let binding = $canGoBack
         controller.report = { value in
-            guard binding.wrappedValue != value else { return }
-            // Never write SwiftUI state from inside a view update.
-            DispatchQueue.main.async { binding.wrappedValue = value }
+            // Never write SwiftUI state from inside a view update. Every report
+            // is queued and compared only when it runs: checking before the hop
+            // could drop a newer value while an older one is still queued (a
+            // split view reparenting reports false, then true), and that stale
+            // write would leave Back hidden. FIFO order keeps the latest.
+            DispatchQueue.main.async {
+                if binding.wrappedValue != value { binding.wrappedValue = value }
+            }
         }
         controller.refresh()
     }
