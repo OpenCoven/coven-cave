@@ -173,6 +173,30 @@ struct ChatView: View {
         app.isRecoveryOnlyThread(thread)
     }
 
+    /// True when UIKit's navigation stack has a screen under this one: a
+    /// conversation pushed in the detail stack, or the detail column pushed
+    /// over the Chats list on a collapsed (iPhone) split view. An iPad detail
+    /// root has nothing to go back to. Reported by `groupedBackNavigation`.
+    @State private var canGoBack = false
+
+    /// On iOS 26 the header draws its own back button so it can share one
+    /// Liquid Glass capsule with Open navigation, as native toolbars group
+    /// related leading controls (#5695). The system back button cannot join a
+    /// toolbar group, so it is hidden and the edge-swipe gesture is restored.
+    private var drawsGroupedBackButton: Bool {
+        NativeToolbar.usesLiquidGlass && canGoBack
+    }
+
+    private func voiceCallButton(_ launch: VoiceCallLaunch) -> some View {
+        Button {
+            Haptics.tap()
+            beginVoiceCall()
+        } label: {
+            Image(systemName: "phone.fill")
+        }
+        .accessibilityLabel("Call \(launch.familiar.displayName)")
+    }
+
     private var visibleThreadContext: ProjectContext {
         app.projectContext(for: thread)
     }
@@ -288,6 +312,7 @@ struct ChatView: View {
         .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
+        .groupedBackNavigation(canGoBack: $canGoBack)
         .toolbar {
             if app.isPerformanceFixture && CavePerformanceFixture.isTranscriptRecoveryFixture
                 && thread.id == "performance-fixture-chat-0000" {
@@ -298,7 +323,15 @@ struct ChatView: View {
                     .accessibilityIdentifier("Shrink transcript fixture")
                 }
             }
-            ToolbarItem(placement: .topBarLeading) {
+            // One group, so iOS 26 draws Back and Open navigation in a single
+            // shared glass capsule instead of two loose circles (#5695).
+            ToolbarItemGroup(placement: .topBarLeading) {
+                if drawsGroupedBackButton {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.backward")
+                    }
+                    .accessibilityLabel("Back")
+                }
                 Button { app.navigationDrawerOpen = true } label: {
                     Image(systemName: "line.3.horizontal")
                 }
@@ -312,19 +345,15 @@ struct ChatView: View {
                     Text(thread.title)
                         .font(.headline.weight(.semibold))
                         .lineLimit(1)
+                        .nativeToolbarTitleScaling()
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                if let voiceCallLaunch, app.client != nil {
-                    Button {
-                        Haptics.tap()
-                        beginVoiceCall()
-                    } label: {
-                        Image(systemName: "phone.fill")
-                    }
-                    .accessibilityLabel("Call \(voiceCallLaunch.familiar.displayName)")
+            // iOS 18–25 keep the original order: Call, then Session controls.
+            if !NativeToolbar.usesLiquidGlass, let voiceCallLaunch, app.client != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    voiceCallButton(voiceCallLaunch)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -337,6 +366,20 @@ struct ChatView: View {
                 .accessibilityLabel("Session controls")
                 .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
             }
+            // On iOS 26, calling the familiar is the screen's primary action:
+            // native toolbars put it last, filled and tinted, in its own
+            // capsule apart from the secondary controls (#5695).
+            // Compiled only with the iOS 26 SDK; an Xcode 16 build keeps Call in
+            // the iOS 18–25 slot above (NativeToolbar.usesLiquidGlass is false).
+#if compiler(>=6.2)
+            if #available(iOS 26, *), let voiceCallLaunch, app.client != nil {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) {
+                    voiceCallButton(voiceCallLaunch)
+                        .prominentToolbarAction(tint: chrome.accent)
+                }
+            }
+#endif
             // The header stays lean (sim review, cave feedback): Commands lives
             // in the composer's + menu (same sheet), and Markdown export stays
             // on the thread list's flows — neither earns a toolbar slot here.
