@@ -428,4 +428,41 @@ overlapping and left out rather than guessed. A span with no completed sample
 still gets a row. It writes the same data to `summary.json`
 and names any round it skipped. The 2026-09-27 baseline on #5292 came from
 these rounds, and re-analysing that capture with this script reproduces it.
-Cold journeys still need separate external launches, as described above.
+`--cold` measures the first cycle of a freshly launched fixture process
+instead (`testCurrentShellColdJourneys`, phase `cold-app-launch`), one process
+and one recording per round. App startup precedes the window and is excluded;
+this is not a clean install and does not clear OS or WebKit caches. A cold
+process emits no span before the driver's first tap, so a cold round counts as
+covered when all four of the journey's `drawer.open` spans fall inside its
+window. In both modes the recorder starts the driver only after `xctrace`
+reports that it is recording, and is stopped as soon as the test case ends,
+before `xcodebuild` writes its result bundle.
+
+```bash
+pnpm ios:performance:capture --cold --device <core-device-uuid> \
+  --products /tmp/cave-performance-release/Build/Products --out /tmp/cave-capture-cold
+```
+
+### Device baseline, 2026-10-01 (#5292)
+
+Signed Release `CovenCavePerformance` build of `main` at `ce0c9c71f` (0.5.5,
+build 2026100108) on an iPhone 16 Pro Max, iOS 27.0 (24A437), portrait, with
+the isolated fixture and instrumentation enabled. Points of Interest only;
+no desktop endpoint is involved (the fixture is offline).
+
+| span | warm (10 cycles) n · median / p95 / max ms | cold (10 processes) n · median / p95 / max ms |
+| --- | --- | --- |
+| `drawer.open` | 40 · 66.3 / 82.9 / 99.4 | 40 · 81.7 / 82.8 / 98.8 |
+| `destination.stable-frame` | 20 · 72.3 / 73.7 / 74.1 | 20 · 95.5 / 134.4 / 141.8 |
+| `search.query` | 41 · 59.8 / 173.5 / 185.8 | 40 · 124.5 / 142.0 / 150.0 |
+| `chat.first-rich-render` | 20 · 220.2 / 268.8 / 333.2 | 20 · 315.9 / 438.6 / 449.0 |
+| `markdown.webview.init` | 20 · 167.0 / 236.8 / 293.1 | 20 · 264.7 / 350.1 / 356.2 |
+| `markdown.render.streaming` | 1,301 · 4.8 / 19.0 / 55.7 | 1,263 · 5.0 / 19.1 / 124.0 |
+| `markdown.render.settled` | 10 · 9.3 / 13.5 / 13.5 | 10 · 9.8 / 11.9 / 11.9 |
+| `chat.list-projection` | 297 · 1.9 / 6.2 / 8.2 | 150 · 1.9 / 3.3 / 5.0 |
+
+Warm `search.query` splits into 31 typed queries (57.7 / 69.4 / 100.2 ms) and
+one clear back to 1,500 rows per cycle (10 samples, 171.0 / 185.8 / 185.8 ms),
+the recorded known exception. In a cold process the first rich render is the
+first WebKit acquisition (10 samples, median 399 ms, max 449 ms) and the first
+destination switch takes 103.9–141.8 ms; the second of each is near warm cost.

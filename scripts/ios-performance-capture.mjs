@@ -37,13 +37,18 @@ import {
 
 const BUNDLE_ID = "ai.opencoven.cave";
 const TEST_ID = "PerformanceBaselineUITests/testCurrentShellWarmJourneys";
+const COLD_TEST_ID = "PerformanceBaselineUITests/testCurrentShellColdJourneys";
+// `--cold` measures the first cycle of each freshly launched fixture process
+// (phase "cold-app-launch") instead of a warm cycle after priming. App startup
+// precedes the window and is not included.
+let measuredPhase = "warm";
 const TRIES_PER_ROUND = 3;
 const ATTACH_ATTEMPTS = 8;
 const SAVE_TIMEOUT_MS = 120_000;
 const DRIVER_TIMEOUT_MS = 10 * 60_000;
 
 function parseArgs(argv) {
-  const options = { rounds: 20, analyzeOnly: false, resume: false };
+  const options = { rounds: 20, analyzeOnly: false, resume: false, cold: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -57,6 +62,7 @@ function parseArgs(argv) {
     else if (arg === "--rounds") options.rounds = Number(next());
     else if (arg === "--analyze-only") options.analyzeOnly = true;
     else if (arg === "--resume") options.resume = true;
+    else if (arg === "--cold") options.cold = true;
     else throw new Error(`unknown option ${arg}`);
   }
   if (!options.out) throw new Error("--out is required");
@@ -113,7 +119,7 @@ function hardwareUdid(device) {
  * against the already running fixture, using the installed apps instead of
  * reinstalling over the process Instruments is attached to.
  */
-export function attachPlan(generatedPlan) {
+export function attachPlan(generatedPlan, testId = TEST_ID) {
   const plan = structuredClone(generatedPlan);
   const target = plan.CovenCaveUITests;
   if (!target) throw new Error("the xctestrun has no CovenCaveUITests target");
@@ -122,7 +128,7 @@ export function attachPlan(generatedPlan) {
     CAVE_PERFORMANCE_REPETITIONS: "1",
     CAVE_PERFORMANCE_ATTACH_RUNNING: "1",
   };
-  target.OnlyTestIdentifiers = [TEST_ID];
+  target.OnlyTestIdentifiers = [testId];
   target.UseDestinationArtifacts = true;
   target.UITargetAppBundleIdentifier = BUNDLE_ID;
   target.TestBundleDestinationRelativePath = "__TESTHOST__/PlugIns/CovenCaveUITests.xctest";
@@ -133,10 +139,10 @@ export function attachPlan(generatedPlan) {
   return plan;
 }
 
-function writeAttachXctestrun(products) {
+function writeAttachXctestrun(products, testId = TEST_ID) {
   const generated = readdirSync(products).find((name) => /^CovenCavePerformance_iphoneos.*\.xctestrun$/.test(name));
   if (!generated) throw new Error(`no generated CovenCavePerformance xctestrun in ${products}; run build-for-testing first`);
-  const plan = attachPlan(JSON.parse(run("plutil", ["-convert", "json", "-o", "-", path.join(products, generated)])));
+  const plan = attachPlan(JSON.parse(run("plutil", ["-convert", "json", "-o", "-", path.join(products, generated)])), testId);
   // Stay beside the generated file so __TESTROOT__ keeps resolving.
   const attach = path.join(products, "CovenCavePerformance-attach-capture.xctestrun");
   const json = path.join(products, "CovenCavePerformance-attach-capture.json");
@@ -202,7 +208,14 @@ async function attachRecorder({ device, udid, pid, dir }) {
     recorder.stdout.on("data", append);
     recorder.stderr.on("data", append);
     await waitFor(() => /Attaching to|Cannot|Timed out|rror/.test(logText(log)) || recorder.exitCode !== null, 120_000);
-    if (/Attaching to/.test(logText(log))) return recorder;
+    if (/Attaching to/.test(logText(log))) {
+      // "Attaching to" precedes live recording. Wait until xctrace says it is
+      // recording, then a few seconds more: a cold cycle starts at once and
+      // its first spans were otherwise lost.
+      await waitFor(() => /Ctrl-C to stop/.test(logText(log)) || recorder.exitCode !== null, 60_000, 500);
+      await sleep(5_000);
+      return recorder;
+    }
     recorder.kill("SIGINT");
     await sleep(3_000);
     recorder.kill("SIGKILL");
@@ -243,7 +256,7 @@ function readRound(dir) {
         return null;
       }
     })
-    .find((candidate) => candidate?.phase === "warm");
+    .find((candidate) => candidate?.phase === measuredPhase);
   if (!window) return null;
   const start = traceStartSeconds(exportTable(trace));
   const events = parseSpanEvents(
@@ -254,7 +267,37 @@ function readRound(dir) {
   const inside = spansInWindow(pairSpans(events), window);
   // A positive lead only proves data began before the window; the round must
   // also hold completed spans inside it, or it contributes nothing.
-  return { window, events, lead, inside, covered: lead > 0 && inside.spans.length > 0 };
+  // A cold process is idle until the driver's first tap, so no span precedes
+  // its window. There, coverage means the cycle's first interaction was kept:
+  // all four drawer opens of the journey are inside the window.
+  const covered = measuredPhase === "warm"
+    ? lead > 0 && inside.spans.length > 0
+    : inside.spans.filter((span) => span.span === "drawer.open").length >= 4;
+  return { window, events, lead, inside, covered };
+}
+
+/** Run the UI driver; stop the recording when its test case ends. */
+async function runDriverAndStop({ attach, device, dir, recorder }) {
+  const child = spawn("xcodebuild", [
+    "test-without-building", "-xctestrun", attach, "-destination", `id=${device}`,
+    "-resultBundlePath", path.join(dir, "r.xcresult"),
+  ], { cwd: path.dirname(attach), stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  let stopping = null;
+  const onData = (chunk) => {
+    output += chunk;
+    if (!stopping && /Test Case '-\[[^\]]+\]' (passed|failed)/.test(output)) {
+      stopping = stopRecorder(recorder, dir);
+    }
+  };
+  child.stdout.on("data", onData);
+  child.stderr.on("data", onData);
+  const timer = setTimeout(() => child.kill("SIGKILL"), DRIVER_TIMEOUT_MS);
+  const status = await new Promise((resolve) => child.on("close", (code) => resolve(code)));
+  clearTimeout(timer);
+  writeFileSync(path.join(dir, "test.log"), output);
+  const saved = await (stopping ?? stopRecorder(recorder, dir));
+  return { driver: { status }, saved };
 }
 
 async function captureRound({ device, udid, attach, dir }) {
@@ -268,13 +311,12 @@ async function captureRound({ device, udid, attach, dir }) {
     await sleep(10_000);
     await confirmFixturePid(device, pid);
     const recorder = await attachRecorder({ device, udid, pid, dir });
-    const driver = spawnSync("xcodebuild", [
-      "test-without-building", "-xctestrun", attach, "-destination", `id=${device}`,
-      "-resultBundlePath", path.join(dir, "r.xcresult"),
-    ], { cwd: path.dirname(attach), encoding: "utf8", timeout: DRIVER_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
-    writeFileSync(path.join(dir, "test.log"), `${driver.stdout ?? ""}${driver.stderr ?? ""}`);
+    // The device keeps only the recording's last ~48 s of signposts, so stop
+    // the recorder as soon as the test case finishes rather than after
+    // xcodebuild has written its result bundle; that tail costs coverage at
+    // the start of the window, where a cold cycle's first spans are.
+    const { driver, saved } = await runDriverAndStop({ attach, device, dir, recorder });
     const samePid = runningCavePid(device) === pid;
-    const saved = await stopRecorder(recorder, dir);
     const reason = driver.status !== 0 ? "driver failed"
       : !samePid ? "the fixture process changed during the cycle"
         : !saved ? "recording hung while saving"
@@ -310,20 +352,21 @@ function analyze(out) {
     usable.push(round.inside);
   }
   const rows = summarize(usable);
-  const report = { cycles: usable.length, skipped, rows };
+  const report = { phase: measuredPhase, cycles: usable.length, skipped, rows };
   writeFileSync(path.join(out, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(markdownTable(rows, usable.length));
+  console.log(markdownTable(rows, usable.length, measuredPhase === "warm" ? "warm" : "cold"));
   if (skipped.length) console.log(`\nSkipped (missing or incomplete): ${skipped.join(", ")}`);
   return report;
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.cold) measuredPhase = "cold-app-launch";
   mkdirSync(options.out, { recursive: true });
   if (!options.analyzeOnly) {
     requireUnlocked(options.device);
     const udid = hardwareUdid(options.device);
-    const attach = writeAttachXctestrun(options.products);
+    const attach = writeAttachXctestrun(options.products, options.cold ? COLD_TEST_ID : TEST_ID);
     for (let index = 1; index <= options.rounds; index += 1) {
       const dir = path.join(options.out, `r${index}`);
       if (options.resume) {

@@ -214,10 +214,10 @@ export function traceStartSeconds(tocXml) {
   return seconds;
 }
 
-export function markdownTable(rows, cycles) {
+export function markdownTable(rows, cycles, phase = "warm") {
   const format = (ms) => (ms === null ? "—" : ms.toFixed(1));
   const lines = [
-    `| span (warm, ${cycles} cycles) | n | median ms | p95 ms | max ms |`,
+    `| span (${phase}, ${cycles} cycles) | n | median ms | p95 ms | max ms |`,
     "|---|---:|---:|---:|---:|",
   ];
   for (const row of rows) {
