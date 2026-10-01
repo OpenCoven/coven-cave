@@ -7,6 +7,44 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-01
+
+> The Coding Desk grows tabs, and the Linux AppImage runs on current Arch.
+
+Patch release on top of v0.5.4. Headline: the Coding Desk keeps every opened
+file in tabs and gains a context-aware follow-up dock, and the Linux AppImage
+no longer fails to start on current Arch.
+
+### Security
+- Next.js 16.3.3 → 16.3.6 (#5712). 16.3.6 fixes GHSA-vcvr-r3jv-pc5j, a
+  critical remote code execution in `next/og`'s `ImageResponse`. Coven Cave
+  does not use `ImageResponse`, so it was not exposed, but the patch is
+  applied. 16.3.4–16.3.5 are bug-fix backports.
+
+### Added
+- **Coding Desk overhaul** (#5707). The desk fills its window. A row of
+  readable chips shows activity, branch, PR state, diffstat, review progress and
+  age. Opened files stay in tabs (Alt+↓ / Alt+↑ cycle them). The follow-up dock
+  can attach the open file to your ask. The terminal drawer is resizable and
+  remembers its height. **Next unviewed** steps through the files left to
+  review.
+
+### Fixed
+- **Linux AppImage on current Arch** (#5711, from #5698 by @nilhemdot). The
+  AppImage no longer bundles its own `libsystemd` and `libwayland`. Those
+  copies stopped it from loading on current Arch and crashed the web view on
+  launch; it now uses the system's.
+- `pnpm build` always builds for production, so building from a shell that
+  inherited `NODE_ENV=development` (any Cave agent or terminal session) no
+  longer fails on `/_global-error` (#5710).
+- iOS: hidden Settings no longer sits on top of Chats, where taps and VoiceOver
+  could reach its rows (#5709).
+
+### Changed
+- iOS 26: the chat header matches native toolbars. Back and navigation share
+  one glass capsule, Call is a tinted primary action, and the title gets more
+  room (#5713). iOS 18–25 keep today's header.
+
 ## [0.5.4] - 2026-09-29
 
 > Chats open instantly, and reflections get their own shelf.
