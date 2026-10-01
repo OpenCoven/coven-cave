@@ -31,6 +31,7 @@ import {
   toggleCodeRailWidth,
   type CodeRailTab,
   type CodeRailViewedState,
+  codeRailShapeOf,
 } from "@/lib/code-side-rail";
 import type { ChangedFile } from "@/lib/session-changes-api";
 import type { SessionRow } from "@/lib/types";
@@ -64,6 +65,9 @@ export type CodeReviewRailProps = {
   /** The next unviewed file, or null when every file is viewed. */
   nextUnviewed: ChangedFile | null;
   onOpenNextUnviewed: () => void;
+  /** The changes panel's own fetched list, or null while it is not mounted, so
+   *  the room can notice the two snapshots disagreeing (#5720 review). */
+  onPanelFilesChange?: (files: ChangedFile[] | null) => void;
 };
 
 export function CodeReviewRail({
@@ -85,6 +89,7 @@ export function CodeReviewRail({
   onToggleViewed,
   nextUnviewed,
   onOpenNextUnviewed,
+  onPanelFilesChange,
 }: CodeReviewRailProps) {
   const { announce } = useAnnouncer();
   // The AbortController rides along so an unmount mid-drag can tear the window
@@ -119,6 +124,13 @@ export function CodeReviewRail({
     [onWidthChange, roomWidthPx, widthPx],
   );
 
+  // The panel only exists on the Changes tab of an open rail; anywhere else
+  // there is no second snapshot to reconcile.
+  const panelMounted = open && tab === "changes";
+  useEffect(() => {
+    if (!panelMounted) onPanelFilesChange?.(null);
+  }, [onPanelFilesChange, panelMounted]);
+
   // A drag interrupted by an unmount would otherwise leave two window
   // listeners alive holding this component's closure.
   useEffect(() => {
@@ -146,12 +158,7 @@ export function CodeReviewRail({
   const additions = files.reduce((total, file) => total + (file.insertions ?? 0), 0);
   const deletions = files.reduce((total, file) => total + (file.deletions ?? 0), 0);
   const bar = codeRailDiffBar(additions, deletions);
-  const viewedCount = countCodeRailViewed(viewed, files.map((file) => ({
-    path: file.path,
-    status: file.status,
-    additions: file.insertions,
-    deletions: file.deletions,
-  })));
+  const viewedCount = countCodeRailViewed(viewed, files.map(codeRailShapeOf));
 
   if (!open) {
     return (
@@ -311,6 +318,7 @@ export function CodeReviewRail({
               focusNonce={focusNonce}
               viewed={viewed}
               onToggleViewed={onToggleViewed}
+              onFilesChange={onPanelFilesChange}
             />
           </div>
         </>

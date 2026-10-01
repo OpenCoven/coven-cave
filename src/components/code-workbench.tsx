@@ -62,7 +62,6 @@ import {
   CODE_WORKBENCH_STEPS,
   codeRailTabForWorkbenchTab,
   codeSessionActivity,
-  codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
   resolveCodeWorkbenchPanels,
@@ -77,6 +76,8 @@ import {
   toggleCodeRailViewed,
   type CodeRailTab,
   type CodeRailViewedState,
+  codeRailShapeOf,
+  codeChangeSnapshotKey,
 } from "@/lib/code-side-rail";
 import { codeDeskIdentity, codeDeskReviewProgress } from "@/lib/code-desk-header";
 import {
@@ -155,7 +156,6 @@ export function CodeWorkbench({
   onInitialTabHandled?: () => void;
 }) {
   const workRoot = codeSessionWorkRoot(row);
-  const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
   const prRepo = pr?.repo ?? null;
   const prNumber = pr?.number ?? null;
@@ -364,20 +364,36 @@ export function CodeWorkbench({
 
   // ── Review progress (#5705) ────────────────────────────────────────────────
   const toggleViewed = useCallback((file: ChangedFile) => {
-    setViewed((current) =>
-      toggleCodeRailViewed(current, {
-        path: file.path,
-        status: file.status,
-        additions: file.insertions,
-        deletions: file.deletions,
-      }),
-    );
+    setViewed((current) => toggleCodeRailViewed(current, codeRailShapeOf(file)));
   }, []);
   const railFileShapes = useMemo(
-    () => changes.files.map((file) => ({ path: file.path, status: file.status, additions: file.insertions, deletions: file.deletions })),
+    () => changes.files.map(codeRailShapeOf),
     [changes.files],
   );
   const viewedCount = countCodeRailViewed(viewed, railFileShapes);
+
+  // ── One snapshot (#5720 review) ────────────────────────────────────────────
+  // The changes panel keeps its own fetch — it owns the commit, revert and
+  // error states — so it can settle on a newer response than the room's
+  // subscription (or an older one). When the two disagree, ask both to
+  // refetch through the shared `cave:changes-refresh` signal they already
+  // listen for. Once per distinct disagreement: a worktree an agent is
+  // rewriting on every request must not turn this into a fetch loop.
+  const [panelFiles, setPanelFiles] = useState<ChangedFile[] | null>(null);
+  const reconciledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!panelFiles || !changes.ok) return;
+    const roomKey = codeChangeSnapshotKey(railFileShapes);
+    const panelKey = codeChangeSnapshotKey(panelFiles.map(codeRailShapeOf));
+    if (roomKey === panelKey) {
+      reconciledRef.current = null;
+      return;
+    }
+    const pair = `${roomKey}\u0002${panelKey}`;
+    if (reconciledRef.current === pair) return;
+    reconciledRef.current = pair;
+    window.dispatchEvent(new Event("cave:changes-refresh"));
+  }, [changes.ok, panelFiles, railFileShapes]);
   const reviewProgress = codeDeskReviewProgress(viewedCount, changes.files.length);
   const nextUnviewedShape = nextUnviewedCodeFile(railFileShapes, viewed, selectedRelative);
   const nextUnviewed = nextUnviewedShape ? changes.files.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
@@ -515,7 +531,12 @@ export function CodeWorkbench({
               )
             ) : null}
             {identity.diff ? (
-              <span className="code-room__chip" data-testid="code-desk-diffstat" title={diffstat ?? undefined}>
+              <span
+                className="code-room__chip"
+                data-testid="code-desk-diffstat"
+                // The tooltip reads the same figure the chip prints (#5720 review).
+                title={`${identity.diff.additions} added, ${identity.diff.deletions} removed`}
+              >
                 <Icon name="ph:git-diff" width={11} height={11} aria-hidden />
                 <span className="code-rail__add">+{identity.diff.additions}</span>
                 <span className="code-rail__del">&minus;{identity.diff.deletions}</span>
@@ -663,6 +684,7 @@ export function CodeWorkbench({
             onToggleViewed={toggleViewed}
             nextUnviewed={nextUnviewed}
             onOpenNextUnviewed={openNextUnviewed}
+            onPanelFilesChange={setPanelFiles}
           />
         ) : null}
       </div>

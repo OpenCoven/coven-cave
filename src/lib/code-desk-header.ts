@@ -64,6 +64,8 @@ export type CodeDeskLiveChanges = {
   additions: number;
   deletions: number;
   loaded: boolean;
+  /** A request actually succeeded — a failed one also ends loading. */
+  ok: boolean;
   files: readonly unknown[];
 };
 
@@ -72,7 +74,10 @@ export function codeDeskDiff(
   listed: { additions: number; deletions: number } | null | undefined,
   live?: CodeDeskLiveChanges | null,
 ): { additions: number; deletions: number } | null {
-  if (live?.loaded) {
+  // Only a snapshot that actually arrived can speak for the worktree: a failed
+  // or unavailable request also ends loading, with an empty file list that
+  // must not read as clean (#5720 review).
+  if (live?.loaded && live.ok) {
     // A loaded, empty worktree is clean, whatever the list still remembers.
     if (live.files.length === 0) return null;
     if (live.additions > 0 || live.deletions > 0) return { additions: live.additions, deletions: live.deletions };

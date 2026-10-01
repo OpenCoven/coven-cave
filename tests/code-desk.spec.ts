@@ -61,14 +61,22 @@ const OLDER = mkSession({
   },
 });
 
-const CHANGED_FILES = [
-  { path: "src/flux.ts", status: "modified", insertions: 12, deletions: 3 },
-  { path: "src/retry.ts", status: "added", insertions: 5, deletions: 0 },
+const CHANGED_FILES: { path: string; status: string; insertions: number; deletions: number; changeVersion?: string }[] = [
+  { path: "src/flux.ts", status: "modified", insertions: 12, deletions: 3, changeVersion: "100:100:400" },
+  { path: "src/retry.ts", status: "added", insertions: 5, deletions: 0, changeVersion: "100:100:90" },
 ];
 
 type Sent = { prompt?: string; sessionId?: string };
 
-async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
+/** The worktree the changes mock serves. A test can swap `current` to rewrite
+ *  the worktree mid-run, or set it to "fail" to make the status call error. */
+type ChangesFixture = { current: typeof CHANGED_FILES | "fail" };
+
+async function base(
+  page: Page,
+  sessions: unknown[] = [NEWEST, OLDER],
+  worktree: ChangesFixture = { current: CHANGED_FILES },
+) {
   const sends: Sent[] = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -148,7 +156,11 @@ async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
       });
       return;
     }
-    route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, files: CHANGED_FILES } });
+    if (worktree.current === "fail") {
+      route.fulfill({ status: 500, json: { ok: false, error: "git unavailable" } });
+      return;
+    }
+    route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, files: worktree.current } });
   });
   await page.route("**/api/project-tree**", (route) =>
     route.fulfill({
@@ -593,6 +605,56 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     expect(clipped).toBe(false);
     // The Outline action keeps its accessible name even with the word collapsed.
     await expect(desk.getByRole("button", { name: /^Outline, 1 symbol$/ })).toBeVisible();
+  });
+
+  // ── Review fixes (#5720) ───────────────────────────────────────────────────
+
+  test("13. the header follows the panel's refresh at once, and the tooltip reads the same figure", async ({ page }) => {
+    // An idle session's room subscription does not poll, so only the
+    // reconciliation can move the header after the panel refreshes.
+    const worktree: ChangesFixture = { current: CHANGED_FILES };
+    await base(page, [{ ...NEWEST, status: "idle" }, OLDER], worktree);
+    await openDesk(page);
+    const diffstat = page.getByTestId("code-desk-diffstat");
+    await expect(diffstat).toContainText("+17");
+    await expect(diffstat).toHaveAttribute("title", "17 added, 3 removed");
+
+    worktree.current = [
+      ...CHANGED_FILES,
+      { path: "src/new.ts", status: "untracked", insertions: 8, deletions: 0, changeVersion: "300:300:80" },
+    ];
+    await page.getByTestId("code-review-rail").getByRole("button", { name: "Refresh working tree changes" }).click();
+    await expect(page.getByTestId("code-review-rail")).toContainText("new.ts");
+    await expect(diffstat).toContainText("+25", { timeout: 3_000 });
+    await expect(diffstat).toHaveAttribute("title", "25 added, 3 removed");
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 3 viewed");
+  });
+
+  test("14. a rewrite that keeps the line counts clears the file's viewed tick", async ({ page }) => {
+    const worktree: ChangesFixture = { current: CHANGED_FILES };
+    await base(page, [{ ...NEWEST, status: "idle" }, OLDER], worktree);
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("switch", { name: "Mark src/flux.ts viewed" }).click();
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("1 of 2 viewed");
+
+    // Same status, same +12 −3, new bytes on disk.
+    worktree.current = CHANGED_FILES.map((file) =>
+      file.path === "src/flux.ts" ? { ...file, changeVersion: "200:200:401" } : file,
+    );
+    await rail.getByRole("button", { name: "Refresh working tree changes" }).click();
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 2 viewed");
+    await expect(rail.getByRole("switch", { name: "Mark src/flux.ts viewed" })).toBeVisible();
+  });
+
+  test("15. a failed changes request keeps the listed diffstat instead of reading as clean", async ({ page }) => {
+    await base(page, [NEWEST, OLDER], { current: "fail" });
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
+    // The session list says +12 −3; with no snapshot to contradict it, that stands.
+    const diffstat = page.getByTestId("code-desk-diffstat");
+    await expect(diffstat).toContainText("+12");
+    await expect(diffstat).toContainText("−3");
   });
 });
 

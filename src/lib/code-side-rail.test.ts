@@ -14,6 +14,8 @@ const {
   codeRailDiffBar,
   isCodeRailTab,
   nextUnviewedCodeFile,
+  codeRailShapeOf,
+  codeChangeSnapshotKey,
 } = await import("./code-side-rail.ts");
 
 // ── Tab vocabulary ───────────────────────────────────────────────────────────
@@ -114,4 +116,20 @@ console.log("code-side-rail: ok");
   assert.equal(nextUnviewedCodeFile(files, viewed, "a.ts"), null);
   assert.equal(nextUnviewedCodeFile([], {}, null), null);
   assert.equal(nextUnviewedCodeFile(files, {}, "zzz.ts")?.path, "a.ts", "an unknown current path starts from the top");
+}
+
+// ── Honest ticks and one snapshot (#5720 review) ─────────────────────────────
+{
+  const before = codeRailShapeOf({ path: "a.ts", status: "modified", insertions: 1, deletions: 1, changeVersion: "100:100:20" });
+  const rewritten = codeRailShapeOf({ path: "a.ts", status: "modified", insertions: 1, deletions: 1, changeVersion: "200:200:20" });
+  const ticked = toggleCodeRailViewed({}, before);
+  assert.equal(isCodeRailFileViewed(ticked, before), true);
+  assert.equal(isCodeRailFileViewed(ticked, rewritten), false, "a rewrite with the same line counts is a new version");
+  const unstamped = { path: "b.ts", status: "added", additions: 2, deletions: 0 };
+  assert.equal(codeRailFileSignature(unstamped), "added:2:0", "without a stamp the signature is unchanged");
+
+  const a = [before, codeRailShapeOf({ path: "b.ts", status: "added", insertions: 2 })];
+  assert.equal(codeChangeSnapshotKey(a), codeChangeSnapshotKey([...a].reverse()), "order does not matter");
+  assert.notEqual(codeChangeSnapshotKey(a), codeChangeSnapshotKey([rewritten, a[1]]), "a new version is a new snapshot");
+  assert.notEqual(codeChangeSnapshotKey(a), codeChangeSnapshotKey([before]));
 }

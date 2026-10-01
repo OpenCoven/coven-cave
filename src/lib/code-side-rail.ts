@@ -77,26 +77,50 @@ export function isCodeRailWide(widthPx: number, roomWidthPx: number): boolean {
  */
 export type CodeRailViewedState = Record<string, string>;
 
-/** The signature a viewed tick is recorded against. */
-export function codeRailFileSignature(file: {
+/** The shape a viewed tick is recorded against. */
+export type CodeRailFileShape = {
   path: string;
   status?: string | null;
   additions?: number | null;
   deletions?: number | null;
-}): string {
-  return `${file.status ?? ""}:${file.additions ?? 0}:${file.deletions ?? 0}`;
+  /** The server's filesystem stamp. Status and line counts alone let an edit
+   *  that keeps the same counts keep its tick (#5720 review). */
+  version?: string | null;
+};
+
+/** The signature a viewed tick is recorded against. */
+export function codeRailFileSignature(file: CodeRailFileShape): string {
+  const base = `${file.status ?? ""}:${file.additions ?? 0}:${file.deletions ?? 0}`;
+  return file.version ? `${base}:${file.version}` : base;
+}
+
+/** One mapping from a changes-API file to its viewed shape, for every caller. */
+export function codeRailShapeOf(file: {
+  path: string;
+  status?: string | null;
+  insertions?: number | null;
+  deletions?: number | null;
+  changeVersion?: string | null;
+}): CodeRailFileShape {
+  return {
+    path: file.path,
+    status: file.status,
+    additions: file.insertions,
+    deletions: file.deletions,
+    version: file.changeVersion ?? null,
+  };
 }
 
 export function isCodeRailFileViewed(
   viewed: CodeRailViewedState,
-  file: { path: string; status?: string | null; additions?: number | null; deletions?: number | null },
+  file: CodeRailFileShape,
 ): boolean {
   return viewed[file.path] === codeRailFileSignature(file);
 }
 
 export function toggleCodeRailViewed(
   viewed: CodeRailViewedState,
-  file: { path: string; status?: string | null; additions?: number | null; deletions?: number | null },
+  file: CodeRailFileShape,
 ): CodeRailViewedState {
   const next = { ...viewed };
   if (isCodeRailFileViewed(viewed, file)) delete next[file.path];
@@ -106,12 +130,7 @@ export function toggleCodeRailViewed(
 
 export function countCodeRailViewed(
   viewed: CodeRailViewedState,
-  files: readonly {
-    path: string;
-    status?: string | null;
-    additions?: number | null;
-    deletions?: number | null;
-  }[],
+  files: readonly CodeRailFileShape[],
 ): number {
   return files.reduce((total, file) => total + (isCodeRailFileViewed(viewed, file) ? 1 : 0), 0);
 }
@@ -137,9 +156,7 @@ export function codeRailDiffBar(additions: number, deletions: number): {
  * file is viewed or there are none, so the control can disable itself
  * rather than reopen the file you are on.
  */
-export function nextUnviewedCodeFile<
-  T extends { path: string; status?: string | null; additions?: number | null; deletions?: number | null },
->(files: readonly T[], viewed: CodeRailViewedState, currentPath: string | null): T | null {
+export function nextUnviewedCodeFile<T extends CodeRailFileShape>(files: readonly T[], viewed: CodeRailViewedState, currentPath: string | null): T | null {
   if (!files.length) return null;
   const start = currentPath ? files.findIndex((file) => file.path === currentPath) : -1;
   for (let offset = 1; offset <= files.length; offset += 1) {
@@ -147,4 +164,16 @@ export function nextUnviewedCodeFile<
     if (!isCodeRailFileViewed(viewed, candidate)) return candidate;
   }
   return null;
+}
+
+/**
+ * A stable key for a changes snapshot: every file's path and viewed signature
+ * (status, counts, filesystem stamp), order-insensitive. Two lists with the
+ * same key describe the same worktree state (#5720 review).
+ */
+export function codeChangeSnapshotKey(files: readonly CodeRailFileShape[]): string {
+  return files
+    .map((file) => `${file.path}\u0000${codeRailFileSignature(file)}`)
+    .sort()
+    .join("\u0001");
 }
