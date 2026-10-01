@@ -23,7 +23,7 @@ import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { grimoireJournalId, openGrimoireDoc } from "@/lib/grimoire-link";
 import { relativeTime } from "@/lib/relative-time";
 import { countWords, deskSummary, parseTags, readingTimeLabel, type ScribeDraft } from "./scribe-craft";
 import {
@@ -368,7 +368,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"
-                    onClick={() => openGrimoireDoc("journal", day.date)}
+                    onClick={() => openGrimoireDoc("journal", grimoireJournalId(day.date, day.reflectedBy))}
                   >
                     {day.date}
                     <span className="role-surface-memory-excerpt">{day.preview}</span>
