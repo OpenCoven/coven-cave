@@ -29,8 +29,10 @@ assert.match(view, /adjacency/, "the spotlight covers the node's neighborhood, n
 assert.match(view, /nodeRadius\(/, "node size scales with connection count");
 assert.match(view, /baseLabelAlpha/, "labels fade in with zoom");
 assert.match(view, /positionCache/, "layout survives close/reopen (module-level position cache)");
-assert.match(view, /if \(node\.ref\) \{[\s\S]{0,120}onOpen\(node\.ref\)/, "clicking a doc node opens the doc");
-assert.match(view, /setStickyId\(\(prev\) => \(prev === node\.id \? null : node\.id\)\)/, "clicking a tag toggles a sticky spotlight");
+assert.match(view, /if \(node\.ref\) \{[\s\S]{0,120}onOpen\(node\.ref\)/, "opening a doc node goes through onOpen");
+assert.match(view, /onDoubleClick=\{\(e\) => \{[\s\S]{0,200}openNode\(nodeById\.get/, "double-clicking a node opens its doc");
+assert.match(view, /if \(stickyRef\.current !== node\.id\) selectNode\(node\.id\)/, "a single click selects the node and flies to it (traversal, not navigation)");
+assert.match(view, /setStickyId\(\(prev\) => \(prev === node\.id \? null : node\.id\)\)/, "clicking the selected node again clears the spotlight");
 
 // ── Filters + forces card ────────────────────────────────────────────────────
 assert.match(view, /"cave:grimoire:graph-prefs"/, "graph prefs persist to localStorage");
@@ -107,8 +109,9 @@ assert.match(view, /const kbdIdxRef = useRef\(-1\)/, "a keyboard cursor index is
 assert.match(view, /if \(e\.key === "Tab"\) \{/, "Tab drives keyboard node traversal");
 assert.match(view, /if \(next < 0 \|\| next >= list\.length\) \{[\s\S]{0,120}return; \/\/ release focus out of the canvas/, "the cursor releases at the ends (no focus trap)");
 assert.match(view, /centerOnNode\(node\.id\)/, "the focused node is centred in view");
-assert.match(view, /if \(e\.key === "Enter" && kbdIdxRef\.current >= 0\)/, "Enter opens the keyboard-focused node");
-assert.match(view, /const centerOnNode = useCallback\(\(id: string\) => \{[\s\S]{0,260}panX = -sim\.x\[i\] \* view\.k/, "centerOnNode pans so the node sits at the viewport centre");
+assert.match(view, /if \(e\.key === "Enter"\) \{[\s\S]{0,300}else if \(kbdIdxRef\.current >= 0\) \{\s*openNode\(keyboardNodesRef\.current\[kbdIdxRef\.current\]\)/, "Enter opens the keyboard-focused node");
+assert.match(view, /const centerOnNode = useCallback\(\(id: string\) => \{[\s\S]{0,320}panX: -sim\.x\[i\] \* view\.k/, "centerOnNode targets the node at the viewport centre");
+assert.match(view, /tx: sim\.x\[i\], ty: sim\.y\[i\], tz: sim\.z\[i\]/, "in 3D the camera flies its target onto the node");
 assert.match(view, /Tab and Shift\+Tab step through the most-connected documents, Enter opens/, "the canvas label advertises the keyboard node controls");
 
 // ── Wheel zoom must be non-passive (preventDefault) ─────────────────────────
@@ -157,7 +160,7 @@ assert.match(
 );
 assert.match(
   view,
-  /Memory is scoped to \{scopeLabel\}\. Stitches and journal days stay coven-wide\./,
+  /Memory and journal days are scoped to \{scopeLabel\}\. Stitches stay coven-wide\./,
   "the filter card states what the scope does and does not narrow",
 );
 assert.match(
@@ -206,5 +209,18 @@ assert.match(
     `no hook may be called after the empty-state early return (found ${stray?.[0] ?? "none"})`,
   );
 }
+
+// ── 3D constellation + traversal (memories overhaul) ─────────────────────────
+assert.match(view, /createForceSim\(simNodes, simLinks, \{ dims \}\)/, "the sim runs in the chosen projection's dimensions");
+assert.match(view, /dims: 3,\n/, "3D is the default projection");
+assert.match(view, /const depth = cam\.dist \+ z2;/, "3D positions are perspective-projected through an orbit camera");
+assert.match(view, /order\.sort\(\(a, b\) => pd\[b\] - pd\[a\]\)/, "nodes draw far-to-near so closer nodes overlap farther ones");
+assert.match(view, /if \(reducedMotionRef\.current\) \{[\s\S]{0,200}cameraRef\.current = to;/, "reduced motion jumps instead of flying");
+assert.match(view, /dimsRef\.current !== 3 \|\| !driftRef\.current \|\| reducedMotionRef\.current/, "idle drift is 3D-only, user-pausable, and off under reduced motion");
+assert.match(view, /RELATION_GROUPS/, "the focus panel groups the selection's relations by kind");
+assert.match(view, /aria-label="Traversal trail"/, "the traversal trail is a labelled nav");
+assert.match(view, /e\.key === "\]" \|\| e\.key === "\["/, "] and [ step through the selected node's relations");
+assert.match(view, /e\.key === "Backspace"/, "Backspace walks back along the trail");
+assert.doesNotMatch(view, /from "three"|@react-three|force-graph/, "no 3D dependency — the projection is hand-rolled on the 2D canvas");
 
 console.log("grimoire-graph-view.test.ts: ok");
