@@ -493,9 +493,12 @@ struct ChatView: View {
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
         .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
-            if let target = note.object as? ZoomTarget { zoomTarget = target }
+            if let target = note.object as? ZoomTarget {
+                zoomTarget = target
+                CavePerformanceFixture.recordZoomFootprint(.presented)
+            }
         }
-        .fullScreenCover(item: $zoomTarget) { target in
+        .fullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
             ZoomableContentView(target: target)
         }
         .sheet(isPresented: $showSessionPicker) {

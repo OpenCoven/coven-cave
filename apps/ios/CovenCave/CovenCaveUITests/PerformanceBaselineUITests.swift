@@ -59,6 +59,61 @@ final class PerformanceBaselineUITests: XCTestCase {
         }
     }
 
+    /// #5314: repeated inline image zoom/dismiss on one image ("repeat", the
+    /// default) or alternating between two ("alternate"). Run with
+    /// `--image-zoom-fixture`; the app emits `image.zoom.footprint` events for
+    /// residual memory, and each cycle's UTC window is attached for the trace.
+    @MainActor
+    func testImageZoomCycles() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture", "--image-zoom-fixture"]
+        if attachesToRunningApp {
+            XCTAssertTrue(app.state == .runningForeground || app.state == .runningBackground,
+                          "Instruments must launch the zoom fixture before the driver attaches")
+            app.activate()
+        } else {
+            app.launch()
+        }
+        defer { if !attachesToRunningApp { app.terminate() } }
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 60))
+        openDrawer(in: app)
+        let thread = app.buttons["Fixture chat 2"]
+        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        thread.tap()
+        XCTAssertTrue(app.navigationBars["Fixture chat 2"].waitForExistence(timeout: 20))
+        let imageA = app.webViews.images["Zoom fixture image A"].firstMatch
+        let imageB = app.webViews.images["Zoom fixture image B"].firstMatch
+        XCTAssertTrue(imageA.waitForExistence(timeout: 60), "The fixture image must render in WebKit")
+        let alternate = ProcessInfo.processInfo.environment["CAVE_ZOOM_MODE"] == "alternate"
+        let cycles = min(500, max(1, Int(ProcessInfo.processInfo.environment["CAVE_ZOOM_CYCLES"] ?? "100") ?? 100))
+        let close = app.buttons["Close"]
+        // Let the thread's first render and image decode finish before cycle 1.
+        Thread.sleep(forTimeInterval: 3)
+        for index in 1...cycles {
+            let useB = alternate && index.isMultiple(of: 2)
+            let image = useB ? imageB : imageA
+            let start = Date().timeIntervalSince1970
+            // The WebKit accessibility tree is rebuilt while the cover is
+            // dismissed; wait for the image to be reachable again.
+            let reachable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: image)
+            XCTAssertEqual(XCTWaiter.wait(for: [reachable], timeout: 20), .completed, "The image must be tappable on cycle \(index)")
+            image.tap()
+            XCTAssertTrue(close.waitForExistence(timeout: 15), "Zoom must present on cycle \(index)")
+            let presented = Date().timeIntervalSince1970
+            close.tap()
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: close)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 15), .completed, "Zoom must dismiss on cycle \(index)")
+            // The app records its settled footprint one second after dismissal.
+            Thread.sleep(forTimeInterval: 1.5)
+            let end = Date().timeIntervalSince1970
+            let attachment = XCTAttachment(string:
+                "{\"phase\":\"zoom\",\"cycle\":\(index),\"image\":\"\(useB ? "B" : "A")\",\"startUnixSeconds\":\(start),\"presentedUnixSeconds\":\(presented),\"endUnixSeconds\":\(end)}")
+            attachment.name = "zoom-cycle-\(index).json"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     @MainActor
     private func launchRecoveryFixture() -> XCUIApplication {
         let app = XCUIApplication()
