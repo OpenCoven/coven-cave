@@ -1498,6 +1498,7 @@ export const SUITES = {
     "src/app/api/afs/afs-routes.test.ts",
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
+    "scripts/next-build.test.mjs",
     "scripts/dev-app.test.mjs",
     "scripts/dev-app-origin-health.test.mjs",
     "scripts/dev-app-teardown.test.mjs",
