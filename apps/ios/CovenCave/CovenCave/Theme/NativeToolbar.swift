@@ -8,9 +8,15 @@ import UIKit
 /// screen's main action a filled, tinted button. Earlier systems draw plain
 /// glyphs, so these helpers leave iOS 18–25 exactly as it was.
 enum NativeToolbar {
-    /// True when the system renders toolbar items as Liquid Glass.
+    /// True when the system renders toolbar items as Liquid Glass and this
+    /// build can use the iOS 26 toolbar APIs. Release CI still compiles with
+    /// Xcode 16 (iOS 18.5 SDK), where those APIs do not exist; such a build
+    /// keeps today's header everywhere, including on iOS 26 devices, so every
+    /// branch below agrees on one layout.
     static var usesLiquidGlass: Bool {
+#if compiler(>=6.2)
         if #available(iOS 26, *) { return true }
+#endif
         return false
     }
 }
@@ -20,11 +26,15 @@ extension View {
     /// screen's primary action. Earlier systems keep the plain toolbar style.
     @ViewBuilder
     func prominentToolbarAction(tint: Color) -> some View {
+#if compiler(>=6.2)
         if #available(iOS 26, *) {
             buttonStyle(.glassProminent).tint(tint)
         } else {
             self
         }
+#else
+        self
+#endif
     }
 
     /// On iOS 26 a toolbar title shrinks a little before truncating, as native

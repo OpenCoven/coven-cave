@@ -369,6 +369,9 @@ struct ChatView: View {
             // On iOS 26, calling the familiar is the screen's primary action:
             // native toolbars put it last, filled and tinted, in its own
             // capsule apart from the secondary controls (#5695).
+            // Compiled only with the iOS 26 SDK; an Xcode 16 build keeps Call in
+            // the iOS 18–25 slot above (NativeToolbar.usesLiquidGlass is false).
+#if compiler(>=6.2)
             if #available(iOS 26, *), let voiceCallLaunch, app.client != nil {
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -376,6 +379,7 @@ struct ChatView: View {
                         .prominentToolbarAction(tint: chrome.accent)
                 }
             }
+#endif
             // The header stays lean (sim review, cave feedback): Commands lives
             // in the composer's + menu (same sheet), and Markdown export stays
             // on the thread list's flows — neither earns a toolbar slot here.
