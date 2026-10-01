@@ -127,6 +127,9 @@ type DocumentReaderProps<TBlock, TLede> = {
   contentsId?: string;
   className?: string;
   apiRef?: MutableRefObject<DocumentReaderApi | null>;
+  /** Names the scrolling document as a focusable region, so keyboard readers
+   *  can scroll it and hosts can bind reader-scoped shortcuts. */
+  scrollLabel?: string;
   onScrollProgress?: (progress: number) => void;
   onActiveSectionChange?: (section: { id: string; heading: string } | null) => void;
   renderLede: (lede: TLede) => ReactNode;
@@ -152,6 +155,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   contentsId,
   className,
   apiRef,
+  scrollLabel,
   onScrollProgress,
   onActiveSectionChange,
   renderLede,
@@ -367,6 +371,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
           type="button"
           className="document-reader__toc-link rr-toclink focus-ring"
           data-active={activeSection === section.id}
+          data-level={section.level ?? 2}
           aria-current={activeSection === section.id ? "location" : undefined}
           tabIndex={activeSection === section.id ? 0 : -1}
           ref={(node) => {
@@ -426,6 +431,9 @@ export function DocumentReader<TBlock, TLede = TBlock>({
         ref={scrollerRef}
         className="document-reader__scroll rr-col rr-doc"
         onScroll={onScroll}
+        {...(scrollLabel
+          ? { role: "region", "aria-label": scrollLabel, tabIndex: 0 }
+          : {})}
       >
         {/* One sticky control row. It renders in every navigation mode,
             because text size is not a navigation affordance — a reader with

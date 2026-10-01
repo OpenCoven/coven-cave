@@ -2,7 +2,9 @@
 
 import {
   Fragment,
+  createContext,
   createElement,
+  useContext,
   useState,
   type ReactNode,
 } from "react";
@@ -34,8 +36,69 @@ function safeLink(url: string):
   }
 }
 
-function renderSpan(span: TextSpan, key: string): ReactNode {
-  let content: ReactNode = span.text;
+/**
+ * Optional `[[wiki-link]]` handling for hosts that index linkable documents
+ * (the Memories Library). Without a provider, `[[...]]` stays literal text —
+ * every existing reader renders exactly as before.
+ */
+export type ReaderWikiLinks = {
+  /** Whether a link target resolves to a document the host can open. */
+  resolves: (target: string) => boolean;
+  open: (target: string) => void;
+};
+
+export const ReaderWikiLinkContext = createContext<ReaderWikiLinks | null>(null);
+
+// Mirrors `src/lib/wiki-link-parser.ts`: `[[target]]` or `[[target|alias]]`,
+// single-line, no nested brackets.
+const READER_WIKI_LINK_RE = /\[\[([^[\]\n|]+?)(?:\|([^[\]\n]+?))?\]\]/g;
+
+function renderWikiText(text: string, key: string, wiki: ReaderWikiLinks): ReactNode {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(READER_WIKI_LINK_RE)) {
+    const index = match.index ?? 0;
+    const target = (match[1] ?? "").trim();
+    if (!target) continue;
+    const display = match[2]?.trim() || target;
+    if (index > cursor) parts.push(text.slice(cursor, index));
+    const linkKey = `${key}:wiki:${index}`;
+    parts.push(
+      wiki.resolves(target)
+        ? createElement(
+            "button",
+            {
+              key: linkKey,
+              type: "button",
+              className: "document-reader__wikilink focus-ring",
+              title: `Open ${target}`,
+              onClick: () => wiki.open(target),
+            },
+            display,
+          )
+        : createElement(
+            "span",
+            {
+              key: linkKey,
+              className: "document-reader__wikilink",
+              "data-unresolved": "true",
+              title: "No matching Memories doc",
+            },
+            display,
+          ),
+    );
+    cursor = index + match[0].length;
+  }
+  if (parts.length === 0) return text;
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+function renderSpan(span: TextSpan, key: string, wiki: ReaderWikiLinks | null = null): ReactNode {
+  let content: ReactNode =
+    wiki && !span.styles.code && !span.styles.link && span.text.includes("[[")
+      ? renderWikiText(span.text, key, wiki)
+      : span.text;
   if (span.styles.code) content = createElement("code", null, content);
   if (span.styles.bold) content = createElement("strong", null, content);
   if (span.styles.italic) content = createElement("em", null, content);
@@ -48,21 +111,29 @@ function renderSpan(span: TextSpan, key: string): ReactNode {
   return createElement(Fragment, { key }, content);
 }
 
-function renderInline(content: TextSpan[], key: string): ReactNode[] {
-  return content.map((span, index) => renderSpan(span, `${key}:span:${index}`));
+function renderInline(
+  content: TextSpan[],
+  key: string,
+  wiki: ReaderWikiLinks | null = null,
+): ReactNode[] {
+  return content.map((span, index) => renderSpan(span, `${key}:span:${index}`, wiki));
 }
 
 function propsOf(block: Block): Record<string, unknown> {
   return block.props as Record<string, unknown>;
 }
 
-function renderListItem(block: Block, key: string): ReactNode {
+function renderListItem(
+  block: Block,
+  key: string,
+  wiki: ReaderWikiLinks | null = null,
+): ReactNode {
   return createElement(
     "li",
     { key },
-    renderInline(block.content, key),
+    renderInline(block.content, key, wiki),
     block.children.map((child, index) =>
-      renderBlockNode(child, `${key}:child:${index}`)
+      renderBlockNode(child, `${key}:child:${index}`, wiki)
     ),
   );
 }
@@ -155,16 +226,20 @@ export function ReaderTable({
   );
 }
 
-function renderBlockNode(block: Block, key: string): ReactNode {
+function renderBlockNode(
+  block: Block,
+  key: string,
+  wiki: ReaderWikiLinks | null = null,
+): ReactNode {
   const children = block.children.map((child, index) =>
-    renderBlockNode(child, `${key}:child:${index}`)
+    renderBlockNode(child, `${key}:child:${index}`, wiki)
   );
   switch (block.type) {
     case "paragraph":
       return createElement(
         "p",
         { key, className: "document-reader__paragraph" },
-        renderInline(block.content, key),
+        renderInline(block.content, key, wiki),
         children,
       );
     case "heading": {
@@ -175,7 +250,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
       return createElement(
         tag,
         { key, className: "document-reader__heading" },
-        renderInline(block.content, key),
+        renderInline(block.content, key, wiki),
         children,
       );
     }
@@ -184,7 +259,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
         "ul",
         { key, className: "document-reader__list document-reader__list--unordered" },
         block.children.map((child, index) =>
-          renderListItem(child, `${key}:item:${index}`)
+          renderListItem(child, `${key}:item:${index}`, wiki)
         ),
       );
     case "numberedList":
@@ -192,7 +267,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
         "ol",
         { key, className: "document-reader__list document-reader__list--ordered" },
         block.children.map((child, index) =>
-          renderListItem(child, `${key}:item:${index}`)
+          renderListItem(child, `${key}:item:${index}`, wiki)
         ),
       );
     case "checkList":
@@ -211,7 +286,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
               disabled: true,
               readOnly: true,
             }),
-            renderInline(block.content, key),
+            renderInline(block.content, key, wiki),
           ),
           children,
         ),
@@ -229,7 +304,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
       return createElement(
         "blockquote",
         { key, className: "document-reader__blockquote" },
-        renderInline(block.content, key),
+        renderInline(block.content, key, wiki),
         children,
       );
     case "table": {
@@ -266,7 +341,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
           "data-callout":
             typeof calloutType === "string" ? calloutType : "note",
         },
-        renderInline(block.content, key),
+        renderInline(block.content, key, wiki),
         children,
       );
     }
@@ -280,7 +355,8 @@ export function MarkdownReaderBlock({
   block: Block;
   blockKey: string;
 }) {
-  return renderBlockNode(block, blockKey);
+  const wiki = useContext(ReaderWikiLinkContext);
+  return renderBlockNode(block, blockKey, wiki);
 }
 
 export function DocumentReaderMarkdown({

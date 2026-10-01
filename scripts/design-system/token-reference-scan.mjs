@@ -490,8 +490,6 @@ export const BANKED_DYNAMIC_SITES = new Map([
   // Resolves a themed terminal colour by name, falling back to `var(${name})`
   // when getComputedStyle has nothing yet.
   ["src/components/bottom-terminal.tsx", 2],
-  // Per-node dot colour chosen from a token set at render time.
-  ["src/components/grimoire-graph-view.tsx", 1],
   // Appearance settings write the user's chosen palette, font and radius onto
   // <html> by name; the names are the settings keys.
   ["src/components/settings-appearance.tsx", 5],

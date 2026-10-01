@@ -40,6 +40,7 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { DocGraph, DocGraphEdge, DocGraphNode, GraphEdgeType, GraphNodeKind } from "@/lib/grimoire-graph";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
 import type { WikiDocRef } from "@/lib/wiki-link-resolve";
+import { cleanDocTitle } from "@/lib/grimoire-library";
 import {
   ALPHA_MIN,
   createForceSim,
@@ -124,6 +125,15 @@ const NODE_KIND_TOKEN: Record<GraphNodeKind, string> = {
   memory: "--color-warning",
   journal: "--text-secondary",
   tag: "--color-success",
+};
+
+/** Static classes for the HTML legend dots — the same tokens as the canvas
+ *  palette, spelled out so no token name is built at runtime. */
+const NODE_KIND_DOT: Record<GraphNodeKind, string> = {
+  knowledge: "bg-[var(--accent-presence)]",
+  memory: "bg-[var(--color-warning)]",
+  journal: "bg-[var(--text-secondary)]",
+  tag: "bg-[var(--color-success)]",
 };
 
 const NODE_KIND_LABEL: Record<GraphNodeKind, string> = {
@@ -248,12 +258,23 @@ export function GrimoireGraphView({
     }
   }, [prefs]);
 
+  // Research missions write their prompt verbatim into stitch titles, so raw
+  // heading markers and emphasis ("# A ### B", "**Role:**") would otherwise be
+  // drawn as labels and listed in the focus panel. Same cleaner as the Library.
+  const titled = useMemo(
+    () => ({
+      nodes: graph.nodes.map((n) => (n.kind === "tag" ? n : { ...n, title: cleanDocTitle(n.title) || n.title })),
+      edges: graph.edges,
+    }),
+    [graph],
+  );
+
   // ── Filter pipeline: edge types → groups → orphans ─────────────────────────
   const visible = useMemo(() => {
     const keepKind = (k: GraphNodeKind) => prefs.groups[k] !== false;
-    const nodesByKind = graph.nodes.filter((n) => keepKind(n.kind));
+    const nodesByKind = titled.nodes.filter((n) => keepKind(n.kind));
     const nodeIds = new Set(nodesByKind.map((n) => n.id));
-    const edges = graph.edges.filter(
+    const edges = titled.edges.filter(
       (e) => prefs.edgeTypes[e.type] !== false && nodeIds.has(e.source) && nodeIds.has(e.target),
     );
     const degree = new Map<string, number>();
@@ -263,7 +284,7 @@ export function GrimoireGraphView({
     }
     const nodes = prefs.orphans ? nodesByKind : nodesByKind.filter((n) => (degree.get(n.id) ?? 0) > 0);
     return { nodes, edges, degree };
-  }, [graph, prefs.groups, prefs.edgeTypes, prefs.orphans]);
+  }, [titled, prefs.groups, prefs.edgeTypes, prefs.orphans]);
 
   const adjacency = useMemo(() => {
     const adj = new Map<string, Set<string>>();
@@ -1261,7 +1282,7 @@ export function GrimoireGraphView({
     label: string,
     checked: boolean,
     onChange: (next: boolean) => void,
-    dotToken?: string,
+    dotClass?: string,
     count?: number,
     help?: string,
   ) => (
@@ -1275,9 +1296,7 @@ export function GrimoireGraphView({
         onChange={(e) => onChange(e.target.checked)}
         className="focus-ring h-3 w-3 accent-[var(--accent-presence)]"
       />
-      {dotToken ? (
-        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: `var(${dotToken})` }} />
-      ) : null}
+      {dotClass ? <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} /> : null}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count !== undefined ? <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{count}</span> : null}
     </label>
@@ -1298,7 +1317,7 @@ export function GrimoireGraphView({
       }}
       className="focus-ring flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
-      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: `var(${NODE_KIND_TOKEN[node.kind]})` }} />
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${NODE_KIND_DOT[node.kind]}`} />
       <span className="min-w-0 flex-1 truncate">{node.title}</span>
       <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visible.degree.get(node.id) ?? 0}</span>
     </button>
@@ -1387,7 +1406,7 @@ export function GrimoireGraphView({
                 "Knowledge",
                 prefs.groups.knowledge,
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, knowledge: v } })),
-                NODE_KIND_TOKEN.knowledge,
+                NODE_KIND_DOT.knowledge,
                 counts.knowledge,
                 "Curated reference entries from the knowledge vault",
               )}
@@ -1395,7 +1414,7 @@ export function GrimoireGraphView({
                 "Memory",
                 prefs.groups.memory,
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, memory: v } })),
-                NODE_KIND_TOKEN.memory,
+                NODE_KIND_DOT.memory,
                 counts.memory,
                 "Files your familiars and runtimes write as they work",
               )}
@@ -1403,7 +1422,7 @@ export function GrimoireGraphView({
                 "Journal",
                 prefs.groups.journal,
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, journal: v } })),
-                NODE_KIND_TOKEN.journal,
+                NODE_KIND_DOT.journal,
                 counts.journal,
                 "Daily reflections, one per familiar per day",
               )}
@@ -1411,7 +1430,7 @@ export function GrimoireGraphView({
                 "Tags",
                 prefs.groups.tag,
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, tag: v } })),
-                NODE_KIND_TOKEN.tag,
+                NODE_KIND_DOT.tag,
                 counts.tag,
                 "Each tag is its own node, connected to the docs that carry it",
               )}
@@ -1523,7 +1542,7 @@ export function GrimoireGraphView({
           <>
             <div className="border-b border-[var(--border-hairline)] px-3 py-2.5">
               <div className="flex items-center gap-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: `var(${NODE_KIND_TOKEN[selected.kind]})` }} />
+                <span aria-hidden className={`h-2 w-2 rounded-full ${NODE_KIND_DOT[selected.kind]}`} />
                 {NODE_KIND_LABEL[selected.kind]}
                 {selectedOwner ? <span className="normal-case tracking-normal">· {selectedOwner}</span> : null}
                 <button
