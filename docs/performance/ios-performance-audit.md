@@ -438,17 +438,26 @@ window. In both modes the recorder starts the driver only after `xctrace`
 reports that it is recording, and is stopped as soon as the test case ends,
 before `xcodebuild` writes its result bundle.
 
-```bash
-pnpm ios:performance:capture --cold --device <core-device-uuid> \
-  --products /tmp/cave-performance-release/Build/Products --out /tmp/cave-capture-cold
-```
-
 ### Device baseline, 2026-10-01 (#5292)
 
 Signed Release `CovenCavePerformance` build of `main` at `ce0c9c71f` (0.5.5,
 build 2026100108) on an iPhone 16 Pro Max, iOS 27.0 (24A437), portrait, with
 the isolated fixture and instrumentation enabled. Points of Interest only;
 no desktop endpoint is involved (the fixture is offline).
+
+The capture receipt on [#5292](https://github.com/OpenCoven/coven-cave/issues/5292#issuecomment-5941001437)
+records 10 rounds in each mode. The device UUID is shown as the receipt's
+placeholder; the cold command below expands its elided products path to the
+same Release products directory used for the warm command.
+
+```bash
+pnpm ios:performance:capture --device <core-device-uuid> \
+  --products /tmp/cave-dev-evidence-release/Build/Products \
+  --out /tmp/cave-dev-evidence-capture --rounds 10
+node scripts/ios-performance-capture.mjs --cold --device <core-device-uuid> \
+  --products /tmp/cave-dev-evidence-release/Build/Products \
+  --out /tmp/cave-dev-evidence-cold --rounds 10
+```
 
 | span | warm (10 cycles) n · median / p95 / max ms | cold (10 processes) n · median / p95 / max ms |
 | --- | --- | --- |

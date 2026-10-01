@@ -240,6 +240,14 @@ function exportTable(trace, xpath) {
   });
 }
 
+export function isCoveredRound({ phase, lead, spans }) {
+  if (phase === "warm") return lead > 0 && spans.length > 0;
+  if (phase === "cold-app-launch") {
+    return spans.filter((span) => span.span === "drawer.open").length >= 4;
+  }
+  return false;
+}
+
 /** The round's warm window, its span events, and whether the data covers it. */
 function readRound(dir) {
   const trace = path.join(dir, "t.trace");
@@ -272,9 +280,7 @@ function readRound(dir) {
   // A cold process is idle until the driver's first tap, so no span precedes
   // its window. There, coverage means the cycle's first interaction was kept:
   // all four drawer opens of the journey are inside the window.
-  const covered = measuredPhase === "warm"
-    ? lead > 0 && inside.spans.length > 0
-    : inside.spans.filter((span) => span.span === "drawer.open").length >= 4;
+  const covered = isCoveredRound({ phase: measuredPhase, lead, spans: inside.spans });
   return { window, events, lead, inside, covered };
 }
 
