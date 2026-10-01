@@ -28,7 +28,7 @@
  *    quietly eat a keystroke meant for a running shell.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import {
   BottomTerminal,
@@ -87,6 +87,9 @@ export type CodeTerminalWorkspaceProps = {
   onSplit: (paneId: string, direction: "horizontal" | "vertical") => void;
   onClosePane: (paneId: string) => void;
   onToggleBroadcast: () => void;
+  /** Host controls for the pane bar's end — the drawer's height toggle (#5718),
+   *  so the drawer needs no bar of its own above this one. */
+  trailingActions?: ReactNode;
 };
 
 export function CodeTerminalWorkspace({
@@ -100,6 +103,7 @@ export function CodeTerminalWorkspace({
   onSplit,
   onClosePane,
   onToggleBroadcast,
+  trailingActions,
 }: CodeTerminalWorkspaceProps) {
   const { announce } = useAnnouncer();
   const panes = useMemo(() => listTerminalPanes(layout), [layout]);
@@ -480,6 +484,7 @@ export function CodeTerminalWorkspace({
             <Icon name="ph:broadcast" width={12} height={12} />
             Broadcast
           </button>
+          {trailingActions}
         </div>
       </div>
       <div className="code-terminal-workspace__body">

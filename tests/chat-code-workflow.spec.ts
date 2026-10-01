@@ -815,7 +815,7 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
     "aria-expanded",
     "true",
   );
-  await expect(page.getByText("Terminal · this worktree")).toBeVisible();
+  await expect(page.getByRole("separator", { name: "Resize the terminal drawer" })).toBeVisible();
 
   expect(fixture.requestedRoots).toContain(PROJECT_ROOT);
   expect(fixture.requestedRoots).toContain(WORKTREE_ROOT);

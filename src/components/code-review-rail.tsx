@@ -275,10 +275,10 @@ export function CodeReviewRail({
         <>
           {files.length ? (
             <div className="code-rail__summary">
+              {/* Review progress only. "Worktree", the count and the +/−
+                  figures print once, in the changes panel header right below
+                  — printing them here too was the same line twice (#5718). */}
               <div className="code-rail__summary-head">
-                <span className="code-rail__summary-label">worktree</span>
-                <span className="code-rail__summary-count">{files.length}</span>
-                <span className="code-rail__spacer" />
                 <span className="code-rail__summary-viewed">
                   {viewedCount} of {files.length} viewed
                 </span>
@@ -293,15 +293,12 @@ export function CodeReviewRail({
                   <Icon name="ph:arrow-right" width={11} height={11} aria-hidden />
                 </button>
               </div>
-              {/* The bar is decoration over numbers that are already printed —
-                  colour is never the only channel for the diffstat. */}
+              {/* The bar is decoration over numbers the changes panel header
+                  prints directly below — colour is never the only channel for
+                  the diffstat. */}
               <div className="code-rail__bar-track" aria-hidden="true">
                 <span className="code-rail__bar-add" style={{ width: `${bar.addedPct}%` }} />
                 <span className="code-rail__bar-del" style={{ width: `${bar.removedPct}%` }} />
-              </div>
-              <div className="code-rail__summary-stat">
-                <span className="code-rail__add">+{additions}</span>
-                <span className="code-rail__del">&minus;{deletions}</span>
               </div>
             </div>
           ) : null}

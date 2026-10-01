@@ -1,0 +1,14 @@
+/* Project tree (#5718). Imported by project-tree.tsx, not the global facade.
+
+   The selected file row renders through Button/ghost, whose unlayered
+   transparent background beats the Tailwind accent utilities the row passes
+   in — the same cascade problem and cure as `.settings-segment` and
+   `.mode-toggle__option` in primitives.css. The result was a selected row
+   with the accent's dark foreground text on no fill at all: it read as a
+   disabled row the moment the pointer left it. Unlayered + !important wins
+   the state back; the text is the accent foreground, so it needs the fill. */
+.ui-btn[data-tree-row][data-selected="true"],
+.ui-btn[data-tree-row][data-selected="true"]:hover {
+  background: var(--accent-presence) !important;
+  color: var(--accent-presence-foreground) !important;
+}

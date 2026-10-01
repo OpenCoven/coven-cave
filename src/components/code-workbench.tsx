@@ -87,6 +87,7 @@ import {
   type CodeOpenFiles,
 } from "@/lib/code-open-files";
 import type { ChangedFile } from "@/lib/session-changes-api";
+import { codeDeskMemory } from "@/lib/code-desk-memory";
 import {
   CODE_SHORTCUT_STORAGE_KEY,
   codeComboFromEvent,
@@ -170,9 +171,12 @@ export function CodeWorkbench({
   // the first measurement lands.
   const roomRef = useRef<HTMLDivElement | null>(null);
   const measuredWidth = useMeasuredWidth(roomRef);
-  // The whole desk's height bounds the terminal drawer (#5705).
   const deskRef = useRef<HTMLDivElement | null>(null);
-  const deskHeight = useMeasuredHeight(deskRef);
+  // The column body's height bounds the terminal drawer (#5718). The drawer
+  // shares its space only with the columns — measuring the whole desk counted
+  // the header and the composer too, and let the drawer leave the columns so
+  // little height that the review rail painted over the drawer's pane bar.
+  const bodyHeight = useMeasuredHeight(roomRef);
   const isMobile = useIsMobile();
   const roomWidth = measuredWidth ?? (isMobile ? 390 : 1200);
 
@@ -215,24 +219,44 @@ export function CodeWorkbench({
   }, [announce, fitsSplit, step]);
 
   // ── Selected file ──────────────────────────────────────────────────────────
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // Tabs, viewed ticks and the draft are remembered per session (#5718):
+  // CodeView remounts this workbench for every session it shows, so without
+  // the memory a round trip to another session threw the reader's work away.
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    () => codeDeskMemory.read(row.id)?.openFiles.active ?? null,
+  );
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [rangeLabel, setRangeLabel] = useState<string | null>(null);
   // Open-file tabs (#5705): per session, bounded, the viewer's own history.
-  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(emptyCodeOpenFiles);
+  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(
+    () => codeDeskMemory.read(row.id)?.openFiles ?? emptyCodeOpenFiles(),
+  );
   // Review state is per session: carrying one session's ticks into another
-  // would certify files nobody looked at.
-  const [viewed, setViewed] = useState<CodeRailViewedState>({});
+  // would certify files nobody looked at. Restoring a session's OWN ticks is
+  // safe — each is recorded against the file's diffstat, so a file that
+  // changed while you were away reads as unviewed again.
+  const [viewed, setViewed] = useState<CodeRailViewedState>(() => codeDeskMemory.read(row.id)?.viewed ?? {});
   const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
+  // Which session the state above currently belongs to. Writes are skipped
+  // for the one render where `row.id` has moved on but the restore has not
+  // landed yet — otherwise the previous session's tabs would be filed under
+  // the new one.
+  const memoryOwnerRef = useRef(row.id);
   useEffect(() => {
-    setSelectedPath(null);
+    if (memoryOwnerRef.current !== row.id) return;
+    codeDeskMemory.write(row.id, { openFiles, viewed });
+  }, [openFiles, row.id, viewed]);
+  useEffect(() => {
+    const memory = codeDeskMemory.read(row.id);
+    setSelectedPath(memory?.openFiles.active ?? null);
     setFocusLine(null);
     setRangeLabel(null);
     setTreeChangedOnly(false);
     setPrFull(false);
-    setOpenFiles(emptyCodeOpenFiles());
-    setViewed({});
+    setOpenFiles(memory?.openFiles ?? emptyCodeOpenFiles());
+    setViewed(memory?.viewed ?? {});
     setReviewFocus(null);
+    memoryOwnerRef.current = row.id;
   }, [row.id]);
 
   const panels = resolveCodeWorkbenchPanels({
@@ -428,7 +452,7 @@ export function CodeWorkbench({
   }, [cycleTab, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
-  const identity = codeDeskIdentity(row);
+  const identity = codeDeskIdentity(row, changes);
 
   return (
     <div className="code-room" data-testid="code-workbench" ref={deskRef}>
@@ -649,11 +673,14 @@ export function CodeWorkbench({
         running={running}
         open={panels.terminalOpen}
         onOpenChange={onTerminalOpenChange}
-        roomHeightPx={deskHeight}
+        bodyHeightPx={bodyHeight}
       />
 
       <CodeComposer
+        key={row.id}
         row={row}
+        initialDraft={codeDeskMemory.read(row.id)?.draft ?? ""}
+        onDraftChange={(draft) => codeDeskMemory.write(row.id, { draft })}
         onJumpToSession={onJumpToSession}
         contextPath={selectedRelative}
         rangeLabel={rangeLabel}

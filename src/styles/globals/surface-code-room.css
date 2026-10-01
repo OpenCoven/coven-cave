@@ -375,6 +375,10 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+  /* Columns never paint outside their own box: squeezed by a tall terminal
+     drawer, the review rail's content overflowed onto the drawer's pane bar
+     and took its clicks (#5718). Each column scrolls inside itself. */
+  overflow: hidden;
 }
 .code-room__tree {
   display: flex;
@@ -390,6 +394,7 @@
 /* Narrow (drill-in) steps each take the whole room. */
 .code-room__body:not([data-split]) > * { flex: 1; width: auto; min-width: 0; }
 .code-room__viewer {
+  container: code-viewer / inline-size;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -757,8 +762,6 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-.code-rail__summary-label { letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; }
-.code-rail__summary-count,
 .code-rail__summary-viewed { font-variant-numeric: tabular-nums; }
 .code-rail__bar-track {
   display: flex;
@@ -769,13 +772,6 @@
 }
 .code-rail__bar-add { background: var(--color-success); }
 .code-rail__bar-del { background: var(--color-danger); }
-.code-rail__summary-stat {
-  display: flex;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-}
 .code-rail__add { color: var(--color-success); }
 .code-rail__del { color: var(--color-danger); }
 .code-rail__spine {
@@ -819,15 +815,37 @@
 }
 
 /* ── Viewer chrome additions (workbench variant) ── */
+/* Shrink order in the header (#5718): the directory gives way first, the file
+   name and the actions never do. A `flex: none` directory used to squeeze the
+   name to nothing and push Edit / Copy past the edge at medium widths. */
+.workspace-rail__preview[data-variant="workbench"] .workspace-rail__preview-head { min-width: 0; }
+.workspace-rail__preview[data-variant="workbench"] .workspace-rail__preview-name {
+  /* The name is what you are reading: it keeps its full width up to half the
+     header and only truncates past that. */
+  flex: 0 0 auto;
+  max-width: 50%;
+  color: var(--text-primary);
+}
+/* A narrow viewer (a split, a short window beside the session rail) drops the
+   Outline action's word and keeps its icon and count. */
+@container code-viewer (max-width: 30rem) {
+  .workspace-rail__preview[data-variant="workbench"] .workspace-rail__preview-action-label { display: none; }
+}
+.workspace-rail__preview-dir {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .workspace-rail__preview-dir,
 .workspace-rail__preview-chip {
-  flex: none;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
 .workspace-rail__preview-chip {
+  flex: none;
   padding: 0 var(--space-1);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
@@ -922,26 +940,6 @@
   transition: height var(--duration-base) var(--ease-standard);
 }
 .code-term__drawer[aria-hidden="true"] { border-top-color: transparent; }
-.code-term__drawer-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-bottom: 1px solid var(--border-hairline);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-.code-term__drawer-action {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-2xs);
-}
-.code-term__drawer-action:hover { background: var(--bg-hover); color: var(--text-primary); }
 .code-term__drawer-body { display: flex; flex: 1; min-height: 0; }
 .code-term__drawer-body > * { flex: 1; min-width: 0; min-height: 0; }
 @media (prefers-reduced-motion: reduce) {
@@ -1291,8 +1289,15 @@
 .code-composer__suggestions[data-count="2"] { --code-composer-count: 2; }
 .code-composer__suggestions[data-count="3"] { --code-composer-count: 3; }
 .code-composer__suggestions[data-count="4"] { --code-composer-count: 4; }
+/* A narrow dock (a phone, a split) keeps ONE row of two (#5718): two rows of
+   pills cost more height than the source viewer kept, and a single uniform
+   row is still never a 3+1 wrap. The keyboard hint goes too — a dock this
+   narrow is rarely driven from a keyboard, and the send button stays. */
 @container (max-width: 35rem) {
+  .code-composer__suggestions[data-count="3"],
   .code-composer__suggestions[data-count="4"] { --code-composer-count: 2; }
+  .code-composer__suggestion:nth-child(n + 3) { display: none; }
+  .code-composer__hint { display: none; }
 }
 .code-composer__suggestion {
   display: inline-flex;

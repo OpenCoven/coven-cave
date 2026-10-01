@@ -225,8 +225,11 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(pr).toHaveAttribute("data-state", "open");
     await expect(pr).toHaveAttribute("href", "https://github.com/acme/alpha/pull/7");
 
+    // The session list says +12 −3; the live worktree (src/flux.ts +12 −3,
+    // src/retry.ts +5) says +17 −3. The header prints the live figure, the
+    // same one the rail prints (#5718).
     const diffstat = page.getByTestId("code-desk-diffstat");
-    await expect(diffstat).toContainText("+12");
+    await expect(diffstat).toContainText("+17");
     await expect(diffstat).toContainText("−3");
 
     // The retired facts row is gone, not hidden.
@@ -351,7 +354,8 @@ test.describe("Coding Desk overhaul (#5705)", () => {
   });
 
   test("5. the terminal drawer resizes by keyboard and pointer, and remembers its height across reloads", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 1000 });
+    // Tall enough that the column region allows the 460px preset (70% of it).
+    await page.setViewportSize({ width: 1280, height: 1200 });
     await base(page);
     await openDesk(page);
     await page.getByRole("button", { name: "Open the terminal drawer" }).click();
@@ -441,4 +445,154 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(progress).toHaveText("1 of 2 viewed");
     await expect(page.getByTestId("code-review-rail").getByRole("button", { name: "Next unviewed" })).toBeEnabled();
   });
+
+  // ── Pass 2 (#5718) ─────────────────────────────────────────────────────────
+
+  test("7. a session round trip keeps the open tabs, the viewed ticks and the unsent draft", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await tree.getByText("README.md", { exact: true }).click();
+    await page.getByTestId("code-review-rail").getByRole("switch", { name: "Mark src/flux.ts viewed" }).click();
+    const prompt = () => page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" });
+    await prompt().fill("half-written draft");
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("1 of 2 viewed");
+
+    // Away: the other session starts with nothing of this one's.
+    await page.locator("[data-code-session-id='s-old']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/idle/);
+    await expect(page.getByTestId("code-open-file-tabs")).toHaveCount(0);
+    await expect(prompt()).toHaveValue("");
+
+    // And back: everything is where it was left.
+    await page.locator("[data-code-session-id='s-new']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/running/);
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+    await expect(tabs.getByRole("tab", { name: /README\.md/ })).toHaveAttribute("aria-selected", "true");
+    await expect(desk.locator(".workspace-rail__preview-name")).toHaveText("README.md");
+    await expect(prompt()).toHaveValue("half-written draft");
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("1 of 2 viewed");
+
+    // Sending clears the remembered draft too.
+    await page.getByTestId("code-composer").getByRole("button", { name: "Send" }).click();
+    await expect(page.getByTestId("code-composer-reply")).toHaveAttribute("data-phase", "done");
+    await page.locator("[data-code-session-id='s-old']").first().click();
+    await page.locator("[data-code-session-id='s-new']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/running/);
+    await expect(prompt()).toHaveValue("");
+  });
+
+  test("8. the header and the rail print one diffstat, and the rail does not repeat the panel's figures", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await expect(page.getByTestId("code-desk-diffstat")).toContainText("+17");
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail).toContainText("+17");
+    // Progress and the bar stay in the rail summary; the figures print once,
+    // in the changes panel header below it.
+    const summary = rail.locator(".code-rail__summary");
+    await expect(summary).toContainText("0 of 2 viewed");
+    await expect(summary).not.toContainText("+17");
+    await expect(summary).not.toContainText(/worktree/i);
+  });
+
+  test("9. at a medium width the viewer header keeps the name and the actions, with a relative directory", async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await base(page);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("[data-code-session-id='s-new']").first()).toBeVisible({ timeout: 30_000 });
+    if (!(await page.getByTestId("code-workbench").isVisible())) {
+      await page.locator("[data-code-session-id='s-new']").first().click();
+    }
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const viewer = page.locator(".code-room__viewer");
+    await expect(viewer.locator(".workspace-rail__preview-name")).toHaveText("flux.ts");
+    await expect(viewer.locator(".workspace-rail__preview-dir")).toHaveText("src");
+    const fits = await viewer.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const inside = (sel: string) => {
+        const node = el.querySelector(sel);
+        if (!node) return false;
+        const r = node.getBoundingClientRect();
+        return r.width > 0 && r.left >= box.left - 1 && r.right <= box.right + 1;
+      };
+      return {
+        name: inside(".workspace-rail__preview-name"),
+        actions: inside(".workspace-rail__preview-actions"),
+      };
+    });
+    expect(fits).toEqual({ name: true, actions: true });
+    await expect(viewer.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Copy" })).toBeVisible();
+  });
+
+  test("10. the open drawer goes straight from the status strip to the pane bar", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(page.getByRole("separator", { name: "Resize the terminal drawer" })).toBeVisible();
+    await expect(page.getByText("Terminal · this worktree")).toHaveCount(0);
+    const paneBar = page.locator(".code-terminal-workspace__bar");
+    await expect(paneBar.getByRole("button", { name: "Taller" })).toBeVisible();
+    await paneBar.getByRole("button", { name: "Taller" }).click();
+    await expect(paneBar.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+
+    // Even at its tallest, the drawer leaves the columns their share of the
+    // space they split, and nothing in the columns paints over the pane bar —
+    // the bar's own controls still take the click (the regression this caught).
+    const split = await page.evaluate(() => ({
+      body: document.querySelector(".code-room__body")?.getBoundingClientRect().height ?? 0,
+      drawer: document.querySelector('[data-testid="code-terminal-drawer"]')?.getBoundingClientRect().height ?? 0,
+    }));
+    expect(split.body).toBeGreaterThanOrEqual(Math.floor((split.body + split.drawer) * 0.3) - 1);
+    await paneBar.getByRole("button", { name: "Shorter" }).click();
+    await expect(paneBar.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("11. on a phone-width desk the dock keeps one row of suggestions and the source keeps its height", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await base(page);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await page.locator("[data-code-session-id='s-new']").first().click({ timeout: 30_000 });
+    await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
+    const suggestions = page.getByTestId("code-composer-suggestions");
+    await expect(suggestions).toBeVisible();
+    const visible = suggestions.locator(".code-composer__suggestion:visible");
+    await expect(visible).toHaveCount(2);
+    const rows = await visible.evaluateAll((nodes) => new Set(nodes.map((n) => Math.round(n.getBoundingClientRect().top))).size);
+    expect(rows).toBe(1);
+    await expect(page.getByTestId("code-composer").locator(".code-composer__hint")).toBeHidden();
+    // The source viewer is taller than the dock under it.
+    const heights = await page.evaluate(() => ({
+      viewer: document.querySelector(".code-room__viewer")?.getBoundingClientRect().height ?? 0,
+      dock: document.querySelector('[data-testid="code-composer"]')?.getBoundingClientRect().height ?? 0,
+    }));
+    expect(heights.viewer).toBeGreaterThan(heights.dock);
+  });
+
+  test("12. the selected tree row keeps its fill, and a narrow viewer keeps the whole file name", async ({ page }) => {
+    // 1280 wide with the session rail showing leaves the viewer narrow.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await base(page);
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await page.mouse.move(2, 2);
+
+    // Button/ghost's transparent background used to beat the accent fill, so
+    // the selected row showed dark text on nothing once the pointer left.
+    const row = page.getByTestId("code-workbench-tree").locator('[data-tree-row][data-selected="true"]');
+    await expect(row).toHaveCount(1);
+    const bg = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+
+    const name = desk.locator(".code-room__viewer .workspace-rail__preview-name");
+    await expect(name).toHaveText("flux.ts");
+    const clipped = await name.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(clipped).toBe(false);
+    // The Outline action keeps its accessible name even with the word collapsed.
+    await expect(desk.getByRole("button", { name: /^Outline, 1 symbol$/ })).toBeVisible();
+  });
 });
+
