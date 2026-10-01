@@ -1124,6 +1124,11 @@ struct ChatView: View {
             let bubbleDelete: (() -> Void)? = thread.isFlowRun ? nil : { deleteMessage(message) }
             let bubbleReply: ((DisplayMessage) -> Void)? = thread.isFlowRun ? nil : { beginReply($0) }
             let bubbleSuggestion: ((String) -> Void)? = thread.isFlowRun ? nil : { sendSuggestion($0) }
+            // Only group bubbles draw the speaking familiar's avatar, so a
+            // one-to-one transcript never resolves a source it cannot show.
+            let bubbleAvatarSource: CaveImageSource? = thread.isGroup
+                ? bubbleFamiliar.flatMap { app.client?.familiarAvatarSource(for: $0) }
+                : nil
             MessageBubble(message: message,
                           isGroup: thread.isGroup,
                           familiar: bubbleFamiliar,
@@ -1137,7 +1142,7 @@ struct ChatView: View {
                           onRetryDelete: bubbleRetryDelete,
                           operatorName: app.operatorDisplayName,
                           operatorAvatarSource: app.operatorAvatarSource,
-                          familiarAvatarSource: bubbleFamiliar.flatMap { app.client?.familiarAvatarSource(for: $0) },
+                          familiarAvatarSource: bubbleAvatarSource,
                           onContentHeightChange: {
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }

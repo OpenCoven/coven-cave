@@ -16,17 +16,17 @@ assert.ok(start > 0, "CaveClient exposes familiarAvatarSource(for:)");
 const helper = client.slice(start, client.indexOf("struct FamiliarAvatarMutation", start));
 assert.match(
   helper,
-  /func familiarAvatarSource\(for familiar: Familiar\) -> CaveImageSource\?/,
+  /func familiarAvatarSource\(\s*for familiar: Familiar,\s*credential: \(URL\) throws -> String\? = \{ try CaveConnection\.imageCredentials\.credential\(for: \$0\) \}\s*\) -> CaveImageSource\?/,
   "returns an image source, not a bare URL",
 );
 assert.match(
   helper,
-  /CaveConnection\.credentialForRequest\(to: url\)[\s\S]*?\.authenticatedRemoteURL\(url, bearerToken: token\)/,
+  /try credential\(url\)[\s\S]*?\.authenticatedRemoteURL\(url, bearerToken: token\)/,
   "the Cave host's avatar route carries the header credential",
 );
 assert.match(
   helper,
-  /url\.scheme == base\.scheme, url\.host == base\.host, url\.port == base\.port\s*\n\s*else \{ return \.remoteURL\(url\) \}/,
+  /guard let base = connection\.baseURL, Self\.isSameOrigin\(url, base\) else \{ return \.remoteURL\(url\) \}/,
   "a foreign absolute avatar URL never receives the credential",
 );
 assert.doesNotMatch(helper, /coven_access_token|try\?/, "no URL credentials or silent auth downgrade");
@@ -74,7 +74,11 @@ assert.match(bubble, /AvatarView\(familiar: familiar, source: familiarAvatarSour
 assert.match(bubble, /lhs\.familiarAvatarSource == rhs\.familiarAvatarSource/, "credential rotation invalidates the bubble's image source");
 
 const chat = await read("Views/ChatView.swift");
-assert.match(chat, /familiarAvatarSource: bubbleFamiliar\.flatMap \{ app\.client\?\.familiarAvatarSource\(for: \$0\) \}/, "ChatView feeds the bubble");
+assert.match(
+  chat,
+  /let bubbleAvatarSource: CaveImageSource\? = thread\.isGroup\s*\?\s*bubbleFamiliar\.flatMap \{ app\.client\?\.familiarAvatarSource\(for: \$0\) \}\s*:\s*nil[\s\S]*?familiarAvatarSource: bubbleAvatarSource,/,
+  "ChatView resolves the bubble avatar only for group threads, where it renders",
+);
 assert.match(chat, /LiveVoiceCallView\(model: model,\s*avatarSource: app\.client\?\.familiarAvatarSource\(for: model\.familiar\)\)/, "voice call header gets the authenticated avatar");
 
 const voice = await read("Views/Voice/LiveVoiceCallView.swift");
