@@ -197,16 +197,13 @@
   gap: var(--space-2);
 }
 .journal-entry__daynav { display: inline-flex; gap: 4px; }
-.journal-entry__stats { display: flex; gap: 8px; margin-bottom: 18px; }
-.journal-entry__stat {
-  flex: 1;
-  background: var(--bg-panel, var(--bg-base));
-  border: 1px solid var(--border-hairline);
-  border-radius: 9px;
-  padding: var(--space-2) 10px;
+/* The familiar's memory totals — one compact muted line under the heading
+   (they used to be three big tiles that out-weighed the day itself). */
+.journal-entry__meta {
+  margin: calc(var(--space-1) * -1) 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
-.journal-entry__stat b { font-size: 18px; display: block; line-height: 1; }
-.journal-entry__stat span { font-size: 10px; color: var(--text-muted); }
 .journal-entry__head {
   display: flex;
   align-items: center;
@@ -268,7 +265,14 @@
   flex: 1;
   min-width: 0;
 }
-.journal-entry__reflection { line-height: 1.6; color: var(--text-secondary); font-size: 13px; }
+/* The reflection renders through the chat's MarkdownBlock (.cave-md); give it
+   a comfortable reading measure instead of a full-pane line. */
+.journal-entry__reflection {
+  max-width: 68ch;
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  font-size: var(--text-md);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .journal-entry-gen,
@@ -278,12 +282,164 @@
 .journal-entry__by {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: var(--space-4);
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .journal-entry__by b { color: var(--accent-presence); }
+.journal-entry__regen { margin-left: auto; }
+
+/* ── Generation failure ───────────────────────────────────────────────────────
+   The shared ErrorState, framed as an inline banner: what happened, what to
+   do, Retry, and the raw message behind a Details disclosure. */
+.journal-gen-error {
+  align-items: flex-start;
+  text-align: left;
+  border: 1px solid color-mix(in oklch, var(--color-danger) 30%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--color-danger) 6%, transparent);
+}
+.journal-gen-error .ui-error-state-icon { display: none; }
+.journal-gen-error .ui-error-state-subtitle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: none;
+}
+.journal-details { font-size: var(--text-2xs); color: var(--text-muted); }
+.journal-details summary { cursor: pointer; width: fit-content; }
+.journal-details summary:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.journal-details code {
+  display: block;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel, var(--bg-base));
+  font-family: var(--font-mono, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── Automation (daily reflection routine) ────────────────────────────────── */
+.journal-auto {
+  margin-top: var(--space-5);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel, var(--bg-base));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.journal-auto__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.journal-auto__head .journal-entry__sec { margin: 0; }
+.journal-auto__status {
+  font-size: var(--text-2xs);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+}
+.journal-auto__status[data-state="active"] {
+  border-color: color-mix(in oklch, var(--color-success) 45%, transparent);
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+  color: var(--text-primary);
+}
+.journal-auto__status[data-state="paused"] {
+  border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  color: var(--text-primary);
+}
+.journal-auto__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.journal-auto__label { font-size: var(--text-sm); color: var(--text-secondary); }
+.journal-auto__time {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.journal-auto__time:disabled { opacity: 0.6; }
+.journal-auto__run { margin-left: auto; }
+.journal-auto__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.journal-auto__line svg { flex: none; color: var(--color-warning); align-self: center; }
+.journal-auto__line--muted { color: var(--text-muted); }
+.journal-auto__line [data-run-status="failed"] { color: var(--color-danger); }
+.journal-auto__degraded {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.journal-auto__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+/* role="switch" track/knob — mirrors the settings switch, scoped to this
+   surface's stylesheet. The label carries the meaning; color is not the only
+   signal (aria-checked + the status pill + the line below). */
+.journal-auto__switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+}
+.journal-auto__switch:disabled { opacity: 0.6; cursor: progress; }
+.journal-auto__knob {
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transition: transform var(--duration-base) var(--ease-standard), background var(--duration-base) var(--ease-standard);
+}
+.journal-auto__switch.is-on {
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+  background: var(--accent-presence);
+}
+.journal-auto__switch.is-on .journal-auto__knob {
+  transform: translateX(14px);
+  background: var(--accent-presence-foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-auto__switch,
+  .journal-auto__knob { transition: none; }
+}
 
 /* The section labels are real headings now (cave-t1ou) — inherit the label
    styling instead of UA heading defaults. */
@@ -396,6 +552,22 @@
   justify-content: space-between;
   gap: var(--space-2);
 }
+/* Collapsed-by-default disclosure ("Customize the prompt"); the open state is
+   remembered per viewer. */
+.journal-prompt__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.journal-prompt__toggle:hover { color: var(--text-primary); }
 .journal-prompt__reset {
   border: 0;
   background: none;

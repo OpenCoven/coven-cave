@@ -35,6 +35,14 @@ async function invokeAction<T>(
     diagnosticOperation: action,
   });
 
+  // A refused action still answers with its envelope (HTTP 400 + status
+  // "rejected" and a reason, e.g. an rrule the scheduler cannot run). That is
+  // the daemon saying no, not the daemon being unreachable — surface the
+  // reason instead of degrading to "unavailable".
+  const refused = response.data as Partial<CovenAutomationActionResult<T>> | null;
+  if (!response.ok && refused && refused.status === "rejected") {
+    throw new CovenAutomationsUnavailableError(refused.reason ?? "action rejected", false);
+  }
   if (!response.ok || !response.data) {
     const message = response.error ?? "automations daemon unavailable";
     throw new CovenAutomationsUnavailableError(

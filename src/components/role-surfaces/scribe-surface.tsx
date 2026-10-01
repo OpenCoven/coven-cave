@@ -122,14 +122,16 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const loadJournal = useCallback(async () => {
     setJournalError(null);
     try {
-      const res = await fetch("/api/journal", { cache: "no-store" });
+      // This desk belongs to one familiar, so its source material is that
+      // familiar's own reflections, not the whole coven's.
+      const res = await fetch(`/api/journal?familiar=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
       const json = res.ok ? ((await res.json()) as { ok?: boolean; days?: JournalDayWire[] }) : null;
       if (!json?.ok || !Array.isArray(json.days)) throw new Error("bad response");
       setJournalDays(json.days.slice(0, 5));
     } catch {
       setJournalError("Couldn't load recent journal entries.");
     }
-  }, []);
+  }, [familiarId]);
   useEffect(() => {
     void loadJournal();
   }, [loadJournal]);
@@ -362,7 +364,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
           ) : (
             <ul className="role-surface-list" aria-label="Recent journal days">
               {journalDays.map((day) => (
-                <li key={day.date}>
+                <li key={`${day.date}|${day.reflectedBy ?? ""}`}>
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"

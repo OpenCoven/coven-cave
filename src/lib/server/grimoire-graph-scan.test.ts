@@ -81,8 +81,38 @@ assert.match(
 );
 assert.match(
   scan,
-  /journal: \{ scanned: journalScanSet\.length, total: journalDays\.length \}/,
-  "meta reports both the scanned count and the true total for journal",
+  /journal: \{ scanned: journalScanSet\.length, total: journalInScope\.length \}/,
+  "meta reports both the scanned count and the true (scope-relative) total for journal",
+);
+
+// ── Journal nodes carry their owning familiar ────────────────────────────────
+// Journal storage is one entry per familiar per day, so a date alone no longer
+// identifies a doc. A familiar's own entry is `journal:<familiar>:<date>` (ref
+// carries `familiar`), a legacy coven-wide day file stays `journal:<date>`, and
+// every journal doc hands `owner` (its reflectedBy) to the graph so
+// `scopeDocGraph` can scope journal nodes like memory.
+assert.match(
+  scan,
+  /const record = await readJournalEntry\(j\.date, j\.reflectedBy\);/,
+  "each listed entry is read as ITS familiar's entry, not whichever file a date-only read resolves",
+);
+assert.match(
+  scan,
+  /ref: \{ kind: "journal", date: j\.date, \.\.\.\(familiar \? \{ familiar \} : \{\}\) \}/,
+  "a per-familiar entry's ref names its familiar (node id journal:<familiar>:<date>)",
+);
+assert.match(scan, /owner: record\.entry\.reflectedBy,/, "journal docs carry their owner");
+// The journal is scoped before its cap, like memory — an unattributed legacy
+// day stays (no one owns it), matching scopeDocGraph.
+assert.match(
+  scan,
+  /const journalInScope = journalDays\.filter\(\s*\(j\) => !j\.reflectedBy \|\| familiarInScope\(familiarScope, j\.reflectedBy\),?\s*\);/,
+  "journal entries are scoped by owner before the cap",
+);
+assert.match(
+  scan,
+  /const journalScanSet = \[\.\.\.journalInScope\]/,
+  "the journal cap applies to the in-scope entries",
 );
 
 // The resolution index deliberately spans the WHOLE corpus, scanned or not, so

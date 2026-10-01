@@ -44,8 +44,13 @@ const entriesSrc = read("./journal/journal-entries.tsx");
 // ── Scope also gates the detail pane (not just the day rail) ─────────────────
 assert.match(
   entriesSrc,
-  /const dayInScope = !day\?\.entry\.reflectedBy \|\| familiarInScope\(scopeFamiliarIds \?\? EMPTY_SCOPE, day\.entry\.reflectedBy\)/,
-  "an out-of-scope reflection reads as no-entry in the detail pane",
+  /const scope = scopeFamiliarIds \?\? EMPTY_SCOPE;/,
+  "the detail pane reads the same multiselect scope as the rail",
+);
+assert.match(
+  entriesSrc,
+  /const dayInScope = selectionInScope && \(!day\?\.entry\.reflectedBy \|\| familiarInScope\(scope, day\.entry\.reflectedBy\)\)/,
+  "an out-of-scope reflection (or an out-of-scope familiar's day) reads as no-entry in the detail pane",
 );
 assert.match(
   entriesSrc,
@@ -132,9 +137,14 @@ const ghReview = read("./gh-review-actions.tsx");
 assert.doesNotMatch(ghReview, /cave:canvas:layer|mode: "canvas"/, "PR review export no longer jumps to the retired Canvas page");
 assert.match(ghReview, /openArtifactHtml\(artifact\.code\)/, "exported review artifacts open directly in a browser tab");
 
-// ── One-entry-per-day store: no silent cross-familiar overwrite ──────────────
-assert.match(entriesSrc, /const outOfScopeBy =/, "derives the out-of-scope author");
-assert.match(entriesSrc, /if \(outOfScopeBy\) return;/, "generate refuses to overwrite an out-of-scope entry");
-assert.match(entriesSrc, /written by \$\{outOfScopeBy\}/, "the empty state names the actual author instead of inviting an overwrite");
+// ── No silent cross-familiar overwrite ───────────────────────────────────────
+// The store used to keep ONE entry per day, so a scoped surface had to refuse
+// to generate over another familiar's reflection. Storage is now one entry per
+// familiar per day (journal-store.ts): a generation writes only its own
+// familiar's file, and the surface refuses to write for a familiar the scope
+// hides.
+assert.doesNotMatch(entriesSrc, /const outOfScopeBy =/, "the one-entry-per-day overwrite guard is retired with the shared file");
+assert.match(entriesSrc, /if \(!selectionInScope\) return; \/\/ never write for a familiar the scope hides/, "generate refuses to write for an out-of-scope familiar");
+assert.match(entriesSrc, /reflectedBy: familiarId,\s*\n\s*generatedAt:/, "a generation is attributed to the familiar it writes as");
 
 console.log("journal-redirect.test.ts: ok");

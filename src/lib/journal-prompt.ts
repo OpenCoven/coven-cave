@@ -12,11 +12,18 @@
 
 export const JOURNAL_PROMPT_PLACEHOLDERS = ["{familiar}", "{date}", "{context}"] as const;
 
+/** The reflection's tone rules — shared by the in-app Generate prompt and the
+ *  scheduled daily-reflection routine (journal-automation.ts), so both write
+ *  the same kind of entry. */
+export const JOURNAL_TONE_RULES =
+  "Two to four sentences. Warm and concrete, grounded in what actually happened — never invent activity. Plain prose or light markdown.";
+export const JOURNAL_FORMAT_RULES = "No heading, no preamble, no sign-off — return only the reflection text.";
+
 export const DEFAULT_JOURNAL_PROMPT = [
   "You are {familiar}, reflecting on {date} as my familiar.",
   "",
-  "Write a short, first-person reflective journal entry about my day. Two to four sentences. Warm and concrete, grounded in what actually happened — never invent activity. Plain prose or light markdown.",
-  "No heading, no preamble, no sign-off — return only the reflection text.",
+  `Write a short, first-person reflective journal entry about my day. ${JOURNAL_TONE_RULES}`,
+  JOURNAL_FORMAT_RULES,
   "",
   "Here is what happened today:",
   "{context}",

@@ -31,6 +31,18 @@ assert.deepEqual(resolveWikiLinkTarget("notes.md", index), { kind: "memory", pat
 // ── journal: only an existing ISO date ──────────────────────────────────────
 assert.deepEqual(resolveWikiLinkTarget("2026-07-07", index), { kind: "journal", date: "2026-07-07" }, "an existing journal day");
 assert.equal(resolveWikiLinkTarget("2026-01-01", index), null, "an ISO date with no journal entry is unresolved");
+{
+  // Per-familiar entries: a date can exist once per familiar; the first index
+  // entry wins and the ref carries its familiar so it matches the graph node.
+  const perFamiliar = { ...index, journal: [{ date: "2026-07-08", familiar: "astra" }, { date: "2026-07-08", familiar: "nova" }] };
+  assert.deepEqual(
+    resolveWikiLinkTarget("2026-07-08", perFamiliar),
+    { kind: "journal", date: "2026-07-08", familiar: "astra" },
+    "a per-familiar journal day resolves with its familiar",
+  );
+  const legacyFirst = { ...index, journal: [{ date: "2026-07-08", familiar: null }, { date: "2026-07-08", familiar: "astra" }] };
+  assert.deepEqual(resolveWikiLinkTarget("2026-07-08", legacyFirst), { kind: "journal", date: "2026-07-08" }, "a legacy day carries no familiar");
+}
 
 // ── misses ──────────────────────────────────────────────────────────────────
 assert.equal(resolveWikiLinkTarget("does-not-exist", index), null, "unknown target is unresolved");
@@ -49,5 +61,6 @@ assert.equal(docRefKey({ kind: "knowledge", id: "x" }), "knowledge:x");
 assert.equal(docRefKey({ kind: "knowledge", id: "x", collection: "characters" }), "knowledge:characters/x");
 assert.equal(docRefKey({ kind: "memory", path: "a/b.md" }), "memory:a/b.md");
 assert.equal(docRefKey({ kind: "journal", date: "2026-07-07" }), "journal:2026-07-07");
+assert.equal(docRefKey({ kind: "journal", date: "2026-07-07", familiar: "astra" }), "journal:astra:2026-07-07", "a familiar's entry is its own node");
 
 console.log("wiki-link-resolve.test.ts: ok");
