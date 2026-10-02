@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 import { localDaemonTarget } from "./coven-daemon.ts";
 import {
+  daemonLaunchEnv,
   directDaemonLaunchCommand,
   parseDaemonLifecycleInspection,
   startLocalDaemon,
@@ -40,6 +41,11 @@ assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and r
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
 assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
+assert.match(
+  daemonStart,
+  /findService: async \(\) => null,\s*\n\s*\.\.\.options,/,
+  "a test that does not model a service manager never consults (or kicks) the real launchd job",
+);
 
 test("local daemon targets keep their socket path and resolution provenance aligned", () => {
   const previousSocket = process.env.COVEN_SOCKET;
@@ -590,3 +596,188 @@ test("POSIX cleanup escalates an owned process group when the launcher does not 
 });
 
 console.log("daemon-start.test.ts: ok");
+
+
+// ── An OS service owns the daemon (#5730) ─────────────────────────────────────
+// A Cave-launched daemon that wins the serve lock leaves the launchd job
+// crash-looping, and its harness sessions could not sign in. With a service
+// installed, Cave hands every start and restart to it and never spawns.
+
+const SERVICE = { kind: "launchd", label: "com.opencoven.coven-daemon", target: "gui/501/com.opencoven.coven-daemon" };
+
+function serviceHarness({ running = true, kick = { code: 0, stdout: "", stderr: "" }, readyAfter = 2 } = {}) {
+  const calls = { spawn: 0, kick: [], stop: 0 };
+  let probes = 0;
+  return {
+    calls,
+    options: {
+      findService: async () => SERVICE,
+      serviceRunning: async () => running,
+      kickstartService: async (service, options) => {
+        calls.kick.push({ label: service.label, restart: options.restart });
+        return kick;
+      },
+      stopDaemon: async () => { calls.stop += 1; },
+      probe: async () => ({ ok: readyAfter > 0 && ++probes >= readyAfter }),
+      inspectLifecycle: async () => ({ status: "stopped" }),
+      inspectAddress: async () => "free",
+      startTimeoutMs: 40,
+      readinessPollMs: 1,
+      spawnImpl: () => {
+        calls.spawn += 1;
+        return fakeChild();
+      },
+    },
+  };
+}
+
+test("automatic recovery with a launchd service kicks the service and never spawns a daemon of its own", async () => {
+  const { calls, options } = serviceHarness();
+  const result = await startLocalDaemon({ automatic: true, ...options });
+  assert.equal(calls.spawn, 0, "Cave must not race the service for the serve lock");
+  assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: false }]);
+  assert.equal(calls.stop, 0);
+  assert.equal(result.ok, true);
+  assert.equal(result.launchMode, "service");
+});
+
+test("a manual start with a launchd service also goes through the service", async () => {
+  const { calls, options } = serviceHarness();
+  const result = await startLocalDaemon({ ...options });
+  assert.equal(calls.spawn, 0);
+  assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: false }]);
+  assert.equal(result.launchMode, "service");
+});
+
+test("restart hands a displaced daemon back: stop it, then kickstart -k the service", async () => {
+  const { calls, options } = serviceHarness({ running: false });
+  const result = await startLocalDaemon({ restart: true, ...options });
+  assert.equal(calls.stop, 1, "the daemon holding the lock outside the service is stopped first");
+  assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: true }]);
+  assert.equal(calls.spawn, 0);
+  assert.equal(result.ok, true);
+});
+
+test("restart of a healthy service only restarts the service", async () => {
+  const { calls, options } = serviceHarness({ running: true });
+  await startLocalDaemon({ restart: true, ...options });
+  assert.equal(calls.stop, 0, "the service's own instance is restarted by launchd, not stopped behind its back");
+  assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: true }]);
+});
+
+test("a refused kickstart is reported by name, and Cave still does not spawn", async () => {
+  const { calls, options } = serviceHarness({ kick: { code: 113, stdout: "", stderr: "Could not find service" } });
+  const result = await startLocalDaemon({ automatic: true, ...options });
+  assert.equal(calls.spawn, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "spawn_failed");
+  assert.equal(result.launchMode, "service");
+  assert.match(result.error, /com\.opencoven\.coven-daemon/);
+  assert.match(result.error, /Could not find service/);
+});
+
+test("a service that never becomes healthy times out by name instead of falling back to a spawn", async () => {
+  const { calls, options } = serviceHarness({ readyAfter: 0 });
+  const result = await startLocalDaemon({ automatic: true, ...options });
+  assert.equal(calls.spawn, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "readiness_timeout");
+  assert.equal(result.status, 504);
+  assert.match(result.error, /launchctl print gui\/501\/com\.opencoven\.coven-daemon/);
+});
+
+test("a healthy daemon serving while its service is not running is reported as a conflict", async () => {
+  const conflicted = serviceHarness({ running: false, readyAfter: 1 });
+  const result = await startLocalDaemon({ ...conflicted.options });
+  assert.equal(result.ok, true);
+  assert.equal(result.alreadyRunning, true);
+  assert.deepEqual(result.serviceConflict, { label: SERVICE.label });
+  assert.equal(conflicted.calls.kick.length, 0, "detection never restarts anything by itself");
+
+  const owned = serviceHarness({ running: true, readyAfter: 1 });
+  const ownedResult = await startLocalDaemon({ ...owned.options });
+  assert.equal(ownedResult.serviceConflict, undefined, "the service's own daemon is not a conflict");
+
+  const unmanaged = await startLocalDaemon({ probe: async () => ({ ok: true }), findService: async () => null });
+  assert.equal(unmanaged.serviceConflict, undefined);
+});
+
+test("without a service, Cave still launches its own daemon (unchanged)", async () => {
+  const { calls, options } = serviceHarness();
+  const result = await startLocalDaemon({ ...options, findService: async () => null });
+  assert.equal(calls.spawn, 1);
+  assert.equal(calls.kick.length, 0);
+  assert.equal(result.launchMode, "direct");
+});
+
+test("a daemon Cave launches does not inherit the Next server's runtime settings", async () => {
+  let spawnEnv;
+  await startLocalDaemon({
+    restart: true,
+    startTimeoutMs: 20,
+    readinessPollMs: 1,
+    probe: async () => ({ ok: true }),
+    findService: async () => null,
+    spawnEnvironment: () => ({
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/me",
+      COVEN_HOME: "/Users/me/.coven",
+      PORT: "3020",
+      HOSTNAME: "127.0.0.1",
+      NODE_ENV: "production",
+      TURBOPACK: "1",
+      NEXT_DEPLOYMENT_ID: "dpl_123",
+      __NEXT_PRIVATE_ORIGIN: "http://127.0.0.1:3020",
+      npm_lifecycle_event: "start",
+      npm_package_name: "coven-cave",
+      INIT_CWD: "/Applications/CovenCave.app",
+    }),
+    spawnImpl: (_command, _args, options) => {
+      spawnEnv = options.env;
+      return fakeChild();
+    },
+  });
+  for (const key of ["PORT", "HOSTNAME", "NODE_ENV", "TURBOPACK", "NEXT_DEPLOYMENT_ID", "__NEXT_PRIVATE_ORIGIN", "npm_lifecycle_event", "npm_package_name", "INIT_CWD"]) {
+    assert.equal(spawnEnv[key], undefined, `${key} stays with the server`);
+  }
+  assert.equal(spawnEnv.PATH, "/usr/bin:/bin");
+  assert.equal(spawnEnv.HOME, "/Users/me");
+  assert.equal(spawnEnv.COVEN_HOME, "/Users/me/.coven");
+  assert.ok(spawnEnv.COVEN_CAVE_CORRELATION_ID, "Cave's own diagnostic correlation still reaches the daemon");
+});
+
+test("daemonLaunchEnv keeps the user's own npm configuration", () => {
+  const env = daemonLaunchEnv({ NPM_CONFIG_PREFIX: "/Users/me/.npm-global", npm_config_registry: "https://r.example", PATH: "/bin" });
+  assert.equal(env.NPM_CONFIG_PREFIX, "/Users/me/.npm-global", "an exported user setting is not a server runtime var");
+  assert.equal(env.npm_config_registry, undefined, "lowercase npm_config_* is injected by `npm run`/`pnpm start`");
+});
+
+test("the service is asked before Cave's own preflights, which could refuse first", async () => {
+  // A shadowed or missing CLI makes `coven daemon status` unknown, which the
+  // Cave-owned preflight treats as "owner unreachable" — it must not stop
+  // Cave from asking the actual owner to start (review on #5734).
+  const unknownLifecycle = serviceHarness();
+  const result = await startLocalDaemon({ automatic: true, ...unknownLifecycle.options, inspectLifecycle: async () => ({ status: "unknown" }) });
+  assert.equal(result.launchMode, "service");
+  assert.equal(result.ok, true);
+  assert.deepEqual(unknownLifecycle.calls.kick, [{ label: SERVICE.label, restart: false }]);
+
+  // An address the service itself holds while unhealthy is not a reason to
+  // refuse without kicking it.
+  const occupied = serviceHarness();
+  const occupiedResult = await startLocalDaemon({ ...occupied.options, inspectAddress: async () => "occupied" });
+  assert.equal(occupiedResult.launchMode, "service");
+  assert.equal(occupied.calls.kick.length, 1);
+  assert.equal(occupied.calls.spawn, 0);
+});
+
+test("package-manager lifecycle state stays with the server too", () => {
+  const env = daemonLaunchEnv({
+    PATH: "/bin",
+    PNPM_SCRIPT_SRC_DIR: "/Applications/CovenCave.app",
+    npm_execpath: "/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs",
+    npm_command: "run-script",
+    npm_user_agent: "pnpm/10",
+  });
+  assert.deepEqual(Object.keys(env), ["PATH"]);
+});

@@ -466,6 +466,15 @@
   font-size: var(--text-xs);
 }
 
+.settings-daemon-service-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid color-mix(in oklch, var(--color-warning) 35%, transparent);
+  background: var(--color-warning-soft);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
 .settings-daemon-connection-card {
   display: flex;
   flex-direction: column;

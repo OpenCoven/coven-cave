@@ -375,4 +375,10 @@ for (const rel of [
   );
 }
 
+// A daemon serving outside its launchd service is named, with Restart as the
+// hand-back (#5730). It is a status, not an alert: the daemon still works.
+assert.match(daemon, /status\?\.running && status\.serviceConflict && !restarting \?/);
+assert.match(daemon, /className="settings-daemon-service-note" role="status"/);
+assert.match(daemon, /Restart daemon hands it back to the service\./);
+
 console.log("settings-daemon-multihost.test.ts: ok");

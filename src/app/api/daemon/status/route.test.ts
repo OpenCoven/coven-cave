@@ -161,3 +161,8 @@ assert.match(
 );
 
 console.log("daemon status route.test.ts: ok");
+
+// A healthy local daemon that launchd's job does not own is reported, so
+// Settings can offer Restart as the hand-back (#5730).
+assert.match(source, /const serviceConflict = target\.mode === "local"\s*\n\s*\? await daemonServiceConflict\(\{ expected: localDaemonServiceTarget\(\) \}\)/, "only a service for Cave's own home and socket counts");
+assert.match(source, /\.\.\.\(serviceConflict \? \{ serviceConflict \} : \{\}\)/);
