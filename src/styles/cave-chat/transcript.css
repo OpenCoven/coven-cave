@@ -1,3 +1,14 @@
+/* Keep the raised skills picker inside Chat's paint order so portaled
+   readers and workspace dialogs still cover the composer. */
+.cave-chat-linear {
+  isolation: isolate;
+}
+
+.cave-chat-linear .cave-composer-dock {
+  position: relative;
+  z-index: 70;
+}
+
 /* ── Turn rows ──────────────────────────────────────────────────────────── */
 
 .cave-linear-turn {
