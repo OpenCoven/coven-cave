@@ -93,7 +93,6 @@ test("the acceptance summary this gate reads is the one that script emits", () =
         osVersion: "15.5",
         caveVersion: "0.3.6",
         chatVersion: "1.0.0",
-        cliVersion: "1.0.0",
         steps: structuredClone(steps),
       })),
     };

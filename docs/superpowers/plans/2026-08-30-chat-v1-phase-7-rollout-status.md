@@ -1,5 +1,16 @@
 # Chat v1 Phase 7 — Packaging, Compatibility, Publishing, and Rollout: Verified Program Status
 
+> **Decision — 2026-10-02:** Val deferred the seven `cli-*` acceptance steps.
+> The SDK keeps `@opencoven/dev-cli` private
+> ([sdk#37](https://github.com/OpenCoven/sdk/issues/37)), so they cannot run
+> from a published package. They are no longer required for an acceptance
+> record to reach `complete`. The tooling refuses a record that still carries
+> one, and the runbook lists them under *Deferred*
+> ([`release-acceptance.md`](../../workflows/release-acceptance.md#deferred-global-cli-steps)).
+> They return only with a reviewed, published standalone CLI. The twelve
+> desktop journey steps and every other #4781 criterion are unchanged; #4781
+> stays open and blocked on the rows below.
+
 > **Phase 2 update: 2026-09-27.** The [canonical-read gate](../../workflows/chat-v1-phase-2-canonical-reads-gate.md)
 > now passes for its frozen candidate and approved MVP scope. Its authenticated
 > three-platform aggregate supersedes the Windows-failure statements below.
@@ -118,12 +129,13 @@ owner-repo decision, not merely an unpublished package. Until Val either
 commissions the standalone-CLI design or amends this issue and
 `docs/workflows/release-acceptance.md` to defer the seven `cli-*` steps, the
 acceptance record cannot reach `complete` and the rollout gate cannot advance.
+*Resolved 2026-10-02: deferred. See the decision note at the top.*
 
 ### What clears each blocker (imperative, by owner)
 
 1. **OpenCoven/chat** — provision Apple Developer ID + notarization and Windows code-signing secrets in the `release-signing` environment; generate the updater keypair and enable `createUpdaterArtifacts`; land `docs/rollback.md` and `scripts/verify-package.mjs`; push a signed `v0.0.1` (or `-rc.N`) tag and let `release.yml` publish. Fix the `platform-conformance (win32-x64)` job.
 2. **OpenCoven/sdk** — obtain an accepted three-platform protected aggregate (needs the Windows job above), set `conformanceEvidence.aggregateRecord`, obtain the #40 SHIP disposition, flip `publishingEnabled`, and publish the 0.0.1 group through trusted publishing. Add `compatibility/manifest.json`, `docs/pairing.md`, `docs/migration.md`.
-3. **Decision needed (Val):** either publish `@opencoven/dev-cli` so the `cli-*` acceptance steps can run as written, or amend this issue and `docs/workflows/release-acceptance.md` to drop or defer those steps. Until decided, the acceptance record cannot reach `complete`.
+3. ~~**Decision needed (Val):** either publish `@opencoven/dev-cli` so the `cli-*` acceptance steps can run as written, or amend this issue and `docs/workflows/release-acceptance.md` to drop or defer those steps. Until decided, the acceptance record cannot reach `complete`.~~ **Decided 2026-10-02: deferred.** See the decision note at the top.
 4. **OpenCoven/coven** — rename/package `opencoven-coven-client`, add the crate contract test, verify script, docs, and `release-crates.yml`; obtain crates.io authority.
 5. **Cross-repository** — add the scheduled minimum/latest/main canaries and retain outcomes against authenticated identities.
 6. **Then, humans on fresh machines** — execute the journey on macOS, Windows, and Linux from packaged installs with no source checkout; record one `docs/release-acceptance-results/<tag>.json`; stage `maintainer` → `private-beta` → `stable-5` with observed metrics; run the bounded rollback drill; dispose the #5339 hold per target.
