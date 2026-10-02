@@ -235,8 +235,15 @@ assert.match(preview, /const target = pathRef\.current;[\s\S]{0,200}const sendin
 assert.match(preview, /if \(pathRef\.current === target\) \{\s*setFile\(/, "only the file the save was for, if still on screen, takes the saved text");
 // 3. A save names its starting version; a changed file is a conflict.
 assert.match(preview, /expectedVersion: sending\.baseVersion \?\? undefined/, "a save sends the version its edit started from");
-assert.match(preview, /fileEditDrafts\.fail\(target, conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
+assert.match(preview, /fileEditDrafts\.fail\(target, sending\.id, conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
 assert.match(preview, /className="workspace-rail__preview-conflict" role="alert"[\s\S]{0,1200}onClick=\{reloadFromDisk\}[\s\S]{0,400}onClick=\{overwriteDisk\}/, "a conflict offers Reload and Overwrite in its own row");
 assert.match(workbench, /changeVersion=\{selectedChangeVersion\}/, "the open file is read again when its change version moves");
+
+// #5746 review.
+const draftsSrc = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
+assert.match(draftsSrc, /export const fileEditDrafts = createFileEditDraftStore\(\);[\s\S]{0,400}window\.addEventListener\("beforeunload"/, "one unload guard per page, installed with the store, so it outlives the viewer");
+assert.doesNotMatch(preview, /addEventListener\("beforeunload"/, "no per-viewer unload guard that unmounts with the desk");
+assert.match(preview, /title="Discard your changes"[\s\S]{0,200}disabled=\{saving\}/, "Cancel waits for an in-flight save");
+assert.match(preview, /fileEditDrafts\.settle\(target, sending\.id,/, "a save settles only the edit it was sent from");
 
 console.log("code-desk-overhaul pins ok");

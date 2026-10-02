@@ -43,10 +43,12 @@ const B = "/repo/src/b.ts";
   store.update(A, "a1");
   store.begin(B, "b0", "vb0");
   const sent = store.startSave(A);
-  assert.deepEqual(sent, { content: "a1", baseVersion: "va0" });
+  assert.equal(sent.content, "a1");
+  assert.equal(sent.baseVersion, "va0");
+  assert.equal(typeof sent.id, "number");
   assert.equal(store.startSave(A), null, "no second save while one is in flight");
   assert.equal(store.get(A).saving, true);
-  const stillOpen = store.settle(A, "a1", "va1");
+  const stillOpen = store.settle(A, sent.id, "a1", "va1");
   assert.equal(stillOpen, false);
   assert.equal(store.get(A), null, "a clean save closes the draft");
   assert.equal(store.get(B).content, "b0", "the other file's draft is untouched");
@@ -58,9 +60,9 @@ const B = "/repo/src/b.ts";
   const store = createFileEditDraftStore();
   store.begin(A, "a0", "va0");
   store.update(A, "a1");
-  store.startSave(A);
+  const save = store.startSave(A);
   store.update(A, "a1 + more");
-  assert.equal(store.settle(A, "a1", "va1"), true);
+  assert.equal(store.settle(A, save.id, "a1", "va1"), true);
   const draft = store.get(A);
   assert.equal(draft.content, "a1 + more");
   assert.equal(draft.baseContent, "a1");
@@ -74,8 +76,8 @@ const B = "/repo/src/b.ts";
   const store = createFileEditDraftStore();
   store.begin(A, "a0", "va0");
   store.update(A, "mine");
-  store.startSave(A);
-  store.fail(A, FILE_CHANGED_ON_DISK, true);
+  const save = store.startSave(A);
+  store.fail(A, save.id, FILE_CHANGED_ON_DISK, true);
   const draft = store.get(A);
   assert.equal(draft.content, "mine");
   assert.equal(draft.saving, false);
@@ -85,7 +87,29 @@ const B = "/repo/src/b.ts";
   store.acceptDisk(A);
   assert.equal(store.get(A).baseVersion, null);
   assert.equal(store.get(A).conflict, false);
-  assert.deepEqual(store.startSave(A), { content: "mine", baseVersion: null });
+  const again = store.startSave(A);
+  assert.equal(again.content, "mine");
+  assert.equal(again.baseVersion, null);
+}
+
+// A save's result applies only to the edit it was sent from (#5746 review):
+// discard and re-edit the same path mid-save, and the late answer of the old
+// save neither closes nor rebases the new edit.
+{
+  const store = createFileEditDraftStore();
+  store.begin(A, "a0", "va0");
+  store.update(A, "old edit");
+  const oldSave = store.startSave(A);
+  store.discard(A);
+  store.begin(A, "a0", "va0");
+  store.update(A, "new edit");
+  assert.equal(store.settle(A, oldSave.id, "old edit", "va1"), false);
+  assert.equal(store.get(A).content, "new edit");
+  assert.equal(store.get(A).baseContent, "a0");
+  assert.equal(store.get(A).baseVersion, "va0");
+  store.fail(A, oldSave.id, "boom", true);
+  assert.equal(store.get(A).conflict, false, "a stale failure is ignored too");
+  assert.equal(store.get(A).error, null);
 }
 
 // Reading a newer version of the file warns before any save is tried.
@@ -97,6 +121,11 @@ const B = "/repo/src/b.ts";
   store.noteDiskVersion(A, "va1");
   assert.equal(store.get(A).conflict, true);
   assert.equal(store.get(A).error, FILE_CHANGED_ON_DISK);
+  // The file goes back to the bytes the edit started from: the conflict is
+  // over and Save is allowed again (#5746 review).
+  store.noteDiskVersion(A, "va0");
+  assert.equal(store.get(A).conflict, false);
+  assert.equal(store.get(A).error, null);
   // A draft with no known base version cannot be judged, so it is left alone.
   store.begin(B, "b0", null);
   store.noteDiskVersion(B, "vb9");

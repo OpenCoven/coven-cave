@@ -18,6 +18,9 @@
  */
 
 export type FileEditDraft = {
+  /** Identity of this edit. A save's result applies only to the draft it was
+   *  sent from, never to a later edit of the same path (#5746 review). */
+  id: number;
   path: string;
   /** The edited text. */
   content: string;
@@ -44,6 +47,7 @@ export function isDraftDirty(draft: FileEditDraft | null | undefined): boolean {
 export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
   const drafts = new Map<string, FileEditDraft>();
   const listeners = new Set<() => void>();
+  let nextId = 1;
   let dirtyPaths: ReadonlySet<string> = new Set();
 
   const emit = () => {
@@ -86,7 +90,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
       const existing = drafts.get(path);
       if (existing) return existing;
       const draft: FileEditDraft = {
-        path, content, baseContent: content, baseVersion: version, saving: false, error: null, conflict: false,
+        id: nextId++, path, content, baseContent: content, baseVersion: version, saving: false, error: null, conflict: false,
       };
       put(draft);
       return draft;
@@ -100,21 +104,22 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     discard(path: string) {
       if (drafts.delete(path)) emit();
     },
-    /** Mark a save as started. Returns the text being sent, or null when no save may start. */
-    startSave(path: string): { content: string; baseVersion: string | null } | null {
+    /** Mark a save as started. Returns the edit's identity and the text being
+     *  sent, or null when no save may start. */
+    startSave(path: string): { id: number; content: string; baseVersion: string | null } | null {
       const draft = drafts.get(path);
       if (!draft || draft.saving) return null;
       patch(path, { saving: true, error: null });
-      return { content: draft.content, baseVersion: draft.baseVersion };
+      return { id: draft.id, content: draft.content, baseVersion: draft.baseVersion };
     },
     /**
      * A save of `sent` succeeded at `version`. The draft is done unless it was
      * typed into while the save was in flight: then it stays, now based on
      * what reached the disk. Returns whether the draft is still open.
      */
-    settle(path: string, sent: string, version: string | null): boolean {
+    settle(path: string, id: number, sent: string, version: string | null): boolean {
       const draft = drafts.get(path);
-      if (!draft) return false;
+      if (!draft || draft.id !== id) return false;
       if (draft.content === sent) {
         drafts.delete(path);
         emit();
@@ -123,7 +128,8 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
       patch(path, { baseContent: sent, baseVersion: version, saving: false, error: null, conflict: false });
       return true;
     },
-    fail(path: string, error: string, conflict = false) {
+    fail(path: string, id: number, error: string, conflict = false) {
+      if (drafts.get(path)?.id !== id) return;
       patch(path, { saving: false, error, conflict });
     },
     /**
@@ -133,8 +139,13 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     noteDiskVersion(path: string, version: string | null) {
       const draft = drafts.get(path);
       if (!draft || draft.saving || !version || !draft.baseVersion) return;
-      if (version === draft.baseVersion || draft.conflict) return;
-      patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK });
+      if (version === draft.baseVersion) {
+        // Back to the bytes the edit started from: the precondition holds
+        // again, so the conflict is over (#5746 review).
+        if (draft.conflict) patch(path, { conflict: false, error: null });
+        return;
+      }
+      if (!draft.conflict) patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK });
     },
     /** Keep my edit and write it over the newer file (no version precondition). */
     acceptDisk(path: string) {
@@ -150,3 +161,14 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
 export type FileEditDraftStore = ReturnType<typeof createFileEditDraftStore>;
 
 export const fileEditDrafts = createFileEditDraftStore();
+
+// One unload guard for the page, installed with the store rather than by a
+// viewer (#5746 review): drafts outlive the viewer (the Work and GitHub tabs
+// unmount it), so the warning has to as well.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (event) => {
+    if (!fileEditDrafts.hasDirty()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+}

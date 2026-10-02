@@ -214,16 +214,6 @@ export function RailFilePreview({
     return () => { cancelled = true; };
   }, [path, familiarId, projectRoot, reloadNonce, changeVersion]);
 
-  // A reload or a closed window would take every unsaved draft with it.
-  useEffect(() => {
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!fileEditDrafts.hasDirty()) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, []);
 
   // A redacted .env (server refuses writes) isn't editable; every other text
   // file is. Images and error/loading states have no text content to edit.
@@ -278,7 +268,7 @@ export function RailFilePreview({
       const json = (await res.json()) as { ok: boolean; size?: number; version?: string; error?: string; conflict?: boolean };
       if (!res.ok || !json.ok) {
         const conflict = json.conflict === true;
-        fileEditDrafts.fail(target, conflict ? FILE_CHANGED_ON_DISK : json.error ?? `save failed (${res.status})`, conflict);
+        fileEditDrafts.fail(target, sending.id, conflict ? FILE_CHANGED_ON_DISK : json.error ?? `save failed (${res.status})`, conflict);
         announce(
           conflict
             ? `Couldn't save ${label}: it changed on disk since you started editing.`
@@ -287,7 +277,7 @@ export function RailFilePreview({
         );
         return;
       }
-      const stillOpen = fileEditDrafts.settle(target, sending.content, json.version ?? null);
+      const stillOpen = fileEditDrafts.settle(target, sending.id, sending.content, json.version ?? null);
       // Only the file the save was for takes its text, and only if it is
       // still the one on screen; elsewhere it is read fresh on return.
       if (pathRef.current === target) {
@@ -296,7 +286,7 @@ export function RailFilePreview({
       }
       announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);
     } catch (err) {
-      fileEditDrafts.fail(target, String(err));
+      fileEditDrafts.fail(target, sending.id, String(err));
       announce(`Couldn't save ${label}: ${String(err)}`, "assertive");
     }
   }, [familiarId, announce]);
@@ -463,6 +453,9 @@ export function RailFilePreview({
                   type="button"
                   className="focus-ring workspace-rail__preview-action"
                   title="Discard your changes"
+                  // Not mid-save: the request cannot be called back, and its
+                  // answer belongs to this edit (#5746 review).
+                  disabled={saving}
                   onClick={cancelEditing}
                 >
                   Cancel

@@ -1423,6 +1423,8 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.keyboard.type("\n// SAVED-INTO-FLUX");
     await desk.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(() => posts.length).toBe(1);
+    // The request cannot be called back, so the edit cannot be discarded under it.
+    await expect(desk.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
 
     // Move to README.md while the save is held, then let it land.
     await tabs.getByRole("tab", { name: /README\.md/ }).click();
@@ -1531,5 +1533,23 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect(body).toContainText("version two", { timeout: 20_000 });
     await expect(desk.locator(".workspace-rail__preview-name")).toHaveText("flux.ts");
+  });
+
+  test("39. leaving the desk for another tab still warns before a reload drops an unsaved edit", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// DO-NOT-LOSE");
+    // The Work tab unmounts the desk, and the viewer with it.
+    await page.getByRole("tablist", { name: "Code surface" }).getByRole("tab", { name: "Work" }).click();
+    await expect(page.getByTestId("code-workbench")).toHaveCount(0);
+    const dialog = page.waitForEvent("dialog");
+    await page.close({ runBeforeUnload: true });
+    const prompt = await dialog;
+    expect(prompt.type()).toBe("beforeunload");
+    await prompt.dismiss();
   });
 });
