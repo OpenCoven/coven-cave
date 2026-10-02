@@ -162,11 +162,13 @@ assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ backgro
 // Review fixes on #5733.
 const changesHook = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
 const shortcutsDialog = await readFile(new URL("./code-shortcuts-dialog.tsx", import.meta.url), "utf8");
-assert.match(changesHook, /if \(inFlightRoot\.current === root\) \{\s*if \(!opts\?\.shared\) queued\.current = true;\s*return;\s*\}/, "a forced load asked for mid-flight is queued, not dropped");
-assert.match(changesHook, /if \(rootRef\.current === root\) \{\s*setLoaded\(true\);\s*if \(queued\.current\) \{\s*queued\.current = false;\s*void loadRef\.current\(\);/, "the queued load runs once the in-flight one ends, and only for a root that is still current");
+assert.match(changesHook, /const ticket = ledger\.begin\(opts\);\s*if \(!ticket\) return;/, "requests go through the ledger: one in flight, forced asks queued (worktree-changes-ledger.test.ts)");
+assert.match(changesHook, /await fetchChangesSummary\(root, \{ force: !opts\?\.shared \}\);\s*if \(!ledger\.accepts\(ticket\)\) return;/, "an answer from an ended generation is dropped — root alone is not enough after A → B → A");
+assert.match(changesHook, /reload = ledger\.end\(ticket\)\.reload;\s*\}\s*if \(reload\) void loadRef\.current\(\);/, "only the current request's end frees the slot and runs a queued reload");
+assert.match(changesHook, /const view = snapshot\.root === projectRoot \? snapshot : emptySnapshot\(projectRoot\);/, "until the snapshot is this root's, the hook reports an empty, unloaded summary — no stale first render");
+assert.match(changesHook, /useEffect\(\(\) => \{\s*\/\/ A new root is a new generation[^\n]*\n\s*ledger\.newGeneration\(\);/, "every root change starts a new generation");
 assert.match(shortcutsDialog, /disabled=\{!combo \|\| isCapturing \|\| isCodeShortcutRequired\(shortcut\.id\)\}/, "the terminal toggle offers no Unbind");
 assert.match(shortcutsDialog, /const holder = codeRequiredComboHolder\(keymap, capturing, combo\);\s*if \(holder\) \{/, "rebinding another action to the toggle's key is refused, with a reason");
-assert.match(changesHook, /const root = projectRoot;[\s\S]{0,700}const \{ httpOk, json \} = await fetchChangesSummary\(root, \{ force: !opts\?\.shared \}\);\s*if \(rootRef\.current !== root\) return;/, "a response for a root that is no longer current is dropped");
 
 // ── Pass 3 medium fixes (#5729) ─────────────────────────────────────────────
 // The composer's run lives in a per-session store, so a session switch can't

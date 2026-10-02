@@ -965,6 +965,7 @@ export const SUITES = {
     "src/lib/code-terminal-drawer-height.test.ts",
     "src/lib/code-desk-memory.test.ts",
     "src/lib/code-composer-runs.test.ts",
+    "src/lib/worktree-changes-ledger.test.ts",
     "src/lib/github-pr-reader.test.ts",
     "src/lib/code-room-shortcuts.test.ts",
     "src/lib/code-terminal-tree.test.ts",
