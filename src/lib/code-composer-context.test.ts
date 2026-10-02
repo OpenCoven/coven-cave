@@ -4,6 +4,7 @@ import {
   CODE_COMPOSER_MAX_SUGGESTIONS,
   CODE_COMPOSER_STATUS,
   buildCodeFollowUp,
+  codeComposerOutcome,
   codeComposerReplyTail,
   codeComposerSuggestions,
 } from "./code-composer-context.ts";
@@ -39,7 +40,27 @@ test("status words keep one verb through the lifecycle and the tail is a peek", 
     streaming: "Replying…",
     done: "Replied",
     error: "Couldn't reply",
+    stopped: "Stopped",
   });
   assert.equal(codeComposerReplyTail("a\nb\nc\nd\ne\n"), "c\nd\ne");
   assert.equal(codeComposerReplyTail("one"), "one");
+});
+
+test("an outcome names what happened: stopped, failed partway, failed outright, or replied (#5729)", () => {
+  assert.deepEqual(codeComposerOutcome({ text: "", error: "cancelled", stoppedByReader: true }), {
+    phase: "stopped", message: null, restorePrompt: true,
+  }, "stopped before any text: say so, and give the ask back");
+  assert.deepEqual(codeComposerOutcome({ text: "Half an answer", error: "cancelled", stoppedByReader: true }), {
+    phase: "stopped", message: null, restorePrompt: false,
+  }, "stopped partway: keep the partial reply, not an error");
+  assert.deepEqual(codeComposerOutcome({ text: "Partial.", error: "model overloaded", stoppedByReader: false }), {
+    phase: "error", message: "model overloaded", restorePrompt: false,
+  }, "text then an error is a failure, never \"Replied\"");
+  assert.deepEqual(codeComposerOutcome({ text: "", error: "chat bridge 502", stoppedByReader: false }), {
+    phase: "error", message: "chat bridge 502", restorePrompt: true,
+  });
+  assert.deepEqual(codeComposerOutcome({ text: "All done.", error: null, stoppedByReader: false }), {
+    phase: "done", message: null, restorePrompt: false,
+  });
+  assert.equal(codeComposerOutcome({ text: "   ", error: "x", stoppedByReader: false }).restorePrompt, true, "whitespace is no answer");
 });

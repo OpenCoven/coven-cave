@@ -82,7 +82,7 @@ export function buildCodeFollowUp(input: CodeFollowUpInput): string {
   return `Regarding \`${input.contextPath}\`${range ? ` (${range})` : ""}:\n\n${prompt}`;
 }
 
-export type CodeComposerPhaseKind = "idle" | "streaming" | "done" | "error";
+export type CodeComposerPhaseKind = "idle" | "streaming" | "done" | "error" | "stopped";
 
 /** One verb through the lifecycle (design language §10). */
 export const CODE_COMPOSER_STATUS: Record<CodeComposerPhaseKind, string> = {
@@ -90,7 +90,32 @@ export const CODE_COMPOSER_STATUS: Record<CodeComposerPhaseKind, string> = {
   streaming: "Replying…",
   done: "Replied",
   error: "Couldn't reply",
+  stopped: "Stopped",
 };
+
+/**
+ * What a finished run means (#5729). `streamFamiliarText` never throws: it
+ * returns the text it got and an error, and an abort reads as the error
+ * "cancelled". The composer used to call any run with text a success, so a
+ * reply that broke off partway, or one the reader stopped, said "Replied".
+ *
+ * - The reader stopped it: "stopped", whatever arrived, never an error.
+ * - An error, with or without partial text: "error", with the message.
+ * - Otherwise: "done".
+ *
+ * When no text came back the ask was never answered, so the typed prompt is
+ * restored for a retry.
+ */
+export function codeComposerOutcome(input: { text: string; error: string | null; stoppedByReader: boolean }): {
+  phase: "done" | "error" | "stopped";
+  message: string | null;
+  restorePrompt: boolean;
+} {
+  const answered = input.text.trim().length > 0;
+  if (input.stoppedByReader) return { phase: "stopped", message: null, restorePrompt: !answered };
+  if (input.error !== null) return { phase: "error", message: input.error, restorePrompt: !answered };
+  return { phase: "done", message: null, restorePrompt: false };
+}
 
 /** Last few lines of the streamed reply — a peek, not a transcript. */
 export function codeComposerReplyTail(text: string, lines = 3): string {

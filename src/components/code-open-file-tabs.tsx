@@ -8,7 +8,7 @@
  * the tint is never the only channel.
  */
 
-import { useCallback, useRef, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { codeOpenFileLabels } from "@/lib/code-open-files";
 
@@ -23,6 +23,20 @@ export type CodeOpenFileTabsProps = {
 
 export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: CodeOpenFileTabsProps) {
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const stripRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the active tab in view (#5729). Opening a file appends its tab at the
+  // end of a strip that may already scroll, so the newest — active — tab sat
+  // off-screen. Scroll the strip only, never the page.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = active ? tabRefs.current.get(active)?.parentElement : null;
+    if (!strip || !tab) return;
+    const left = tab.offsetLeft - strip.offsetLeft;
+    const right = left + tab.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+  }, [active, paths]);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, path: string) => {
@@ -53,7 +67,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
   const labels = codeOpenFileLabels(paths);
 
   return (
-    <div className="code-tabs" role="tablist" aria-label="Open files" data-testid="code-open-file-tabs">
+    <div ref={stripRef} className="code-tabs" role="tablist" aria-label="Open files" data-testid="code-open-file-tabs">
       {paths.map((path) => {
         const selected = path === active;
         const label = labels.get(path) ?? path;
@@ -74,7 +88,12 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
               onClick={() => onSelect(path)}
               onKeyDown={(event) => onKeyDown(event, path)}
             >
-              <span className="code-tabs__label">{label}</span>
+              {/* Truncated from the START (#5729): long names in one folder
+                  differ at the end, so end-truncation made every tab read the
+                  same. <bdi> keeps a name like ".gitignore" in order. */}
+              <span className="code-tabs__label">
+                <bdi>{label}</bdi>
+              </span>
               {letter ? (
                 <span className="code-tree__status-letter code-tabs__status" data-status={letter} title="Changed in this worktree">
                   {letter}

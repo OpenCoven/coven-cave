@@ -19,20 +19,22 @@
  * what the chip changes.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import {
   CODE_COMPOSER_STATUS,
   buildCodeFollowUp,
+  codeComposerOutcome,
   codeComposerReplyTail,
   codeComposerSuggestions,
 } from "@/lib/code-composer-context";
 import { codeComboChips } from "@/lib/code-shortcuts";
+import { composerRuns } from "@/lib/code-composer-runs";
+import { codeDeskMemory } from "@/lib/code-desk-memory";
 import type { SessionRow } from "@/lib/types";
 
-type Phase = { kind: "idle" } | { kind: "streaming"; runId: string } | { kind: "done" } | { kind: "error"; message: string };
 
 function baseName(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
@@ -66,13 +68,21 @@ export function CodeComposer({
 }: CodeComposerProps) {
   const id = useId();
   const [prompt, setPrompt] = useState(initialDraft);
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [reply, setReply] = useState("");
+  // The run lives in a per-session store, not here (#5729): this composer is
+  // remounted for every session switch, and a run kept in component state was
+  // orphaned by one — Send re-enabled, Stop unreachable, the outcome lost.
+  const sessionId = row.id;
+  const run = useSyncExternalStore(
+    composerRuns.subscribe,
+    () => composerRuns.read(sessionId),
+    () => composerRuns.read(sessionId),
+  );
+  const phase = run.phase;
+  const reply = run.reply;
   const [includeContext, setIncludeContext] = useState(true);
   const [apple, setApple] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const busy = phase.kind === "streaming";
+  const busy = phase === "streaming";
   const fileName = contextPath ? baseName(contextPath) : null;
   const attached = includeContext && Boolean(contextPath);
   const suggestions = useMemo(
@@ -92,6 +102,15 @@ export function CodeComposer({
     onDraftChangeRef.current?.(prompt);
   }, [prompt]);
 
+  // An unanswered ask comes back to the field (a failure or a Stop before any
+  // text) — including one that finished while this session was not on screen.
+  useEffect(() => {
+    if (run.restore === null) return;
+    const restored = run.restore;
+    setPrompt((current) => (current.trim() ? current : restored));
+    composerRuns.ackRestore(sessionId);
+  }, [run.restore, sessionId]);
+
   // A new file in the viewer re-arms the chip: "leave this one out" is a
   // decision about that file, not about every file opened after it.
   useEffect(() => {
@@ -104,83 +123,76 @@ export function CodeComposer({
     if (!outgoing || busy || !row.familiarId) return;
     const runId = `code-composer-${Date.now().toString(36)}`;
     const controller = new AbortController();
-    abortRef.current = controller;
-    setPhase({ kind: "streaming", runId });
-    setReply("");
+    if (!composerRuns.begin(sessionId, runId, controller)) return;
     setPrompt("");
     // No projectRoot rides on the resume: the server derives the cwd from the
     // conversation record (or the daemon's session record), which is where the
     // session actually lives — including `.worktrees/` checkouts. Asserting
     // the worktree root here made the send an explicit unregistered-project
     // request that fails closed (403), the same class #2238 fixed in Chat.
-    let result: Awaited<ReturnType<typeof streamFamiliarText>>;
-    try {
-      result = await streamFamiliarText({
-        familiarId: row.familiarId,
-        sessionId: row.id,
-        prompt: outgoing,
-        runId,
-        signal: controller.signal,
-        onText: setReply,
-      });
-    } catch (err) {
-      // A mid-stream abort (Stop) rejects the reader — keep whatever streamed
-      // so far and only surface non-abort failures (see use-quick-chat.ts).
-      if (abortRef.current === controller) abortRef.current = null;
-      if (controller.signal.aborted) {
-        setPhase({ kind: "done" });
-      } else {
-        setPhase({ kind: "error", message: err instanceof Error ? err.message : "Generation failed." });
-        setPrompt(typed); // let the user retry without retyping
-      }
-      return;
-    }
-    abortRef.current = null;
-    if (controller.signal.aborted) {
-      setPhase({ kind: "done" });
-      return;
-    }
-    if (result.error && !result.text) {
-      setPhase({ kind: "error", message: result.error });
-      setPrompt(typed); // let the user retry without retyping
-      return;
-    }
-    setReply(result.text);
-    setPhase({ kind: "done" });
+    //
+    // From here on, everything goes through the store, never component state:
+    // this composer may be unmounted before the reply ends.
+    const result = await streamFamiliarText({
+      familiarId: row.familiarId,
+      sessionId: row.id,
+      prompt: outgoing,
+      runId,
+      signal: controller.signal,
+      onText: (text) => composerRuns.reply(sessionId, runId, text),
+    });
+    const outcome = codeComposerOutcome({
+      text: result.text,
+      error: result.error,
+      stoppedByReader: composerRuns.wasStopped(sessionId, runId),
+    });
+    const restore = outcome.restorePrompt ? typed : null;
+    // If the composer is gone, its field will start from the session's memory.
+    if (restore && !codeDeskMemory.read(sessionId)?.draft) codeDeskMemory.write(sessionId, { draft: restore });
+    composerRuns.finish(sessionId, runId, {
+      phase: outcome.phase,
+      reply: result.text,
+      message: outcome.message,
+      restore,
+    });
   }
 
-  async function stop() {
-    if (phase.kind !== "streaming") return;
-    // Ask the bridge to stop the run, then drop the stream client-side too.
-    try {
-      await fetch("/api/chat/stop", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId: phase.runId, sessionId: row.id }),
-      });
-    } catch {
-      /* the local abort below still ends the stream */
-    }
-    abortRef.current?.abort();
+  function stop() {
+    // Abort first: the reply must stop now, not after a round trip. Then tell
+    // the bridge, best effort — the local abort already ended the stream.
+    const runId = composerRuns.stop(sessionId);
+    if (!runId) return;
+    void fetch("/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId, sessionId }),
+    }).catch(() => {
+      /* nothing to do: the stream is already closed on this side */
+    });
   }
 
-  const showReply = phase.kind !== "idle" && (reply.length > 0 || phase.kind === "error" || phase.kind === "streaming");
+  const showReply = phase !== "idle" && (reply.length > 0 || phase !== "done");
   const showSuggestions = !prompt.trim() && !busy && suggestions.length > 0;
   const sendChips = codeComboChips("Mod+Enter", apple);
 
   return (
     <section className="code-composer" aria-label="Follow-up" data-testid="code-composer">
       {showReply ? (
-        <div className="code-composer__reply" data-phase={phase.kind} data-testid="code-composer-reply">
+        <div className="code-composer__reply" data-phase={phase} data-testid="code-composer-reply">
           <div className="code-composer__reply-head">
             {/* The status is a WORD beside the mark, never the mark alone. */}
-            <span className="code-composer__status" role="status" data-phase={phase.kind}>
-              {phase.kind === "streaming" ? (
+            <span className="code-composer__status" role="status" data-phase={phase}>
+              {phase === "streaming" ? (
                 <span className="code-composer__status-dot" aria-hidden="true" />
               ) : (
-                <Icon name={phase.kind === "error" ? "ph:warning-circle" : "ph:check"} width={11} height={11} aria-hidden />
+                <Icon
+                  name={phase === "error" ? "ph:warning-circle" : phase === "stopped" ? "ph:x-circle" : "ph:check"}
+                  width={11}
+                  height={11}
+                  aria-hidden
+                />
               )}
-              {CODE_COMPOSER_STATUS[phase.kind]}
+              {CODE_COMPOSER_STATUS[phase]}
             </span>
             <span className="code-composer__spacer" />
             <button
@@ -191,9 +203,9 @@ export function CodeComposer({
               Full thread in Chat
             </button>
           </div>
-          {phase.kind === "error" ? (
+          {phase === "error" && run.message ? (
             <p role="alert" className="code-composer__error">
-              {phase.message}
+              {run.message}
             </p>
           ) : null}
           {reply ? <pre className="code-composer__tail">{codeComposerReplyTail(reply)}</pre> : null}
@@ -273,7 +285,7 @@ export function CodeComposer({
           aria-describedby={`${id}-hint`}
         />
         {busy ? (
-          <Button size="sm" variant="danger-ghost" onClick={() => void stop()}>
+          <Button size="sm" variant="danger-ghost" onClick={stop}>
             Stop
           </Button>
         ) : (
