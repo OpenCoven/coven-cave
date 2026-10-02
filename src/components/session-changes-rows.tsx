@@ -128,12 +128,14 @@ export function FileRow({
             <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0" />
             <StatusChip status={file.status} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                {basename}
+              {/* Truncated from the START (#5729): sibling files with long
+                  names differ at the end, and so do deep folders. */}
+              <span className="block truncate text-left font-mono text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] [direction:rtl]">
+                <bdi className="[direction:ltr] [unicode-bidi:isolate]">{basename}</bdi>
               </span>
               {dirname ? (
-                <span className="block truncate font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]">
-                  {dirname}
+                <span className="block truncate text-left font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)] [direction:rtl]">
+                  <bdi className="[direction:ltr] [unicode-bidi:isolate]">{dirname}</bdi>
                 </span>
               ) : null}
             </span>

@@ -41,23 +41,33 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [ok, setOk] = useState(false);
-  const inFlight = useRef(false);
-  // A load asked for while one is in flight is queued, not dropped (#5729):
-  // the desk's reconciliation asks once per panel snapshot, and a dropped ask
-  // left an idle room stale until something else happened to reload it. One
-  // queued load covers any number of asks made during the same request.
+  // The root a response belongs to (#5729). A session's work root can change
+  // on the same mount — enrichment adds `git.worktreeRoot` on a later poll —
+  // and a single shared in-flight flag let the OLD root's late response land
+  // as the new root's files while the new root's own load was skipped.
+  // Requests are guarded per root, and a response for a root that is no
+  // longer current is dropped.
+  const rootRef = useRef(projectRoot);
+  rootRef.current = projectRoot;
+  const inFlightRoot = useRef<string | null>(null);
+  // A load asked for while one for the same root is in flight is queued, not
+  // dropped (#5729 review): the desk's reconciliation asks once per panel
+  // snapshot, and a dropped ask left an idle room stale. One queued load
+  // covers any number of asks made during the same request.
   const queued = useRef(false);
 
   const load = useCallback(
     async (opts?: { shared?: boolean }) => {
-      if (!projectRoot) return;
-      if (inFlight.current) {
+      const root = projectRoot;
+      if (!root) return;
+      if (inFlightRoot.current === root) {
         if (!opts?.shared) queued.current = true;
         return;
       }
-      inFlight.current = true;
+      inFlightRoot.current = root;
       try {
-        const { httpOk, json } = await fetchChangesSummary(projectRoot, { force: !opts?.shared });
+        const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared });
+        if (rootRef.current !== root) return;
         const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (!httpOk || !payload.ok) return;
         setRepoRoot(payload.repoRoot ?? null);
@@ -70,11 +80,13 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
       } catch {
         /* keep the last known summary — a transient failure is not "clean" */
       } finally {
-        inFlight.current = false;
-        setLoaded(true);
-        if (queued.current) {
-          queued.current = false;
-          void loadRef.current();
+        if (inFlightRoot.current === root) inFlightRoot.current = null;
+        if (rootRef.current === root) {
+          setLoaded(true);
+          if (queued.current) {
+            queued.current = false;
+            void loadRef.current();
+          }
         }
       }
     },
@@ -84,6 +96,11 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   loadRef.current = load;
 
   useEffect(() => {
+    // A new root starts empty: the previous root's files are not this one's,
+    // and neither is a reload queued for it.
+    queued.current = false;
+    setFiles([]);
+    setRepoRoot(null);
     setLoaded(false);
     setOk(false);
     void load();

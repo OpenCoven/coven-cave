@@ -64,7 +64,7 @@ assert.match(composer, /prompt: outgoing,/, "the built text is what rides to /ap
 assert.match(composer, /aria-pressed=\{attached\}/, "the context chip is a toggle with exposed state");
 assert.match(composer, /\{attached \? "attached" : "not attached"\}/, "the chip's state is a word, not only a tint");
 assert.match(composer, /setPrompt\(suggestion\.prompt\);\s*textareaRef\.current\?\.focus\(\);/, "a suggestion seeds the prompt and focuses it — it never sends");
-assert.match(composer, /role="status" data-phase=\{phase\.kind\}[\s\S]{0,400}\{CODE_COMPOSER_STATUS\[phase\.kind\]\}/, "the reply card carries a status word");
+assert.match(composer, /role="status" data-phase=\{phase\}[\s\S]{0,600}\{CODE_COMPOSER_STATUS\[phase\]\}/, "the reply card carries a status word");
 assert.match(composer, /placeholder=\{busy \? "The familiar is working…" : "Ask for follow-up changes…"\}/, "the placeholder is unchanged");
 assert.match(
   workbench,
@@ -162,9 +162,19 @@ assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ backgro
 // Review fixes on #5733.
 const changesHook = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
 const shortcutsDialog = await readFile(new URL("./code-shortcuts-dialog.tsx", import.meta.url), "utf8");
-assert.match(changesHook, /if \(inFlight\.current\) \{\s*if \(!opts\?\.shared\) queued\.current = true;\s*return;\s*\}/, "a forced load asked for mid-flight is queued, not dropped");
-assert.match(changesHook, /if \(queued\.current\) \{\s*queued\.current = false;\s*void loadRef\.current\(\);/, "the queued load runs once the in-flight one ends");
+assert.match(changesHook, /if \(inFlightRoot\.current === root\) \{\s*if \(!opts\?\.shared\) queued\.current = true;\s*return;\s*\}/, "a forced load asked for mid-flight is queued, not dropped");
+assert.match(changesHook, /if \(rootRef\.current === root\) \{\s*setLoaded\(true\);\s*if \(queued\.current\) \{\s*queued\.current = false;\s*void loadRef\.current\(\);/, "the queued load runs once the in-flight one ends, and only for a root that is still current");
 assert.match(shortcutsDialog, /disabled=\{!combo \|\| isCapturing \|\| isCodeShortcutRequired\(shortcut\.id\)\}/, "the terminal toggle offers no Unbind");
 assert.match(shortcutsDialog, /const holder = codeRequiredComboHolder\(keymap, capturing, combo\);\s*if \(holder\) \{/, "rebinding another action to the toggle's key is refused, with a reason");
+assert.match(changesHook, /const root = projectRoot;[\s\S]{0,700}const \{ httpOk, json \} = await fetchChangesSummary\(root, \{ force: !opts\?\.shared \}\);\s*if \(rootRef\.current !== root\) return;/, "a response for a root that is no longer current is dropped");
+
+// ── Pass 3 medium fixes (#5729) ─────────────────────────────────────────────
+// The composer's run lives in a per-session store, so a session switch can't
+// orphan it, and every outcome is named by one pure rule.
+assert.match(composer, /const run = useSyncExternalStore\(\s*composerRuns\.subscribe,/, "the composer reads its run from the per-session store");
+assert.doesNotMatch(composer, /useState<Phase>|abortRef/, "no run state is kept in the component");
+assert.match(composer, /const outcome = codeComposerOutcome\(\{\s*text: result\.text,\s*error: result\.error,\s*stoppedByReader: composerRuns\.wasStopped\(sessionId, runId\),\s*\}\);/, "the outcome comes from the shared rule, error-aware even with partial text");
+assert.match(composer, /const runId = composerRuns\.stop\(sessionId\);\s*if \(!runId\) return;\s*void fetch\("\/api\/chat\/stop"/, "Stop aborts before telling the bridge");
+assert.match(composer, /if \(restore && !codeDeskMemory\.read\(sessionId\)\?\.draft\) codeDeskMemory\.write\(sessionId, \{ draft: restore \}\);/, "an unanswered ask goes back to the session's draft even when the composer is gone");
 
 console.log("code-desk-overhaul pins ok");

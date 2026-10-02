@@ -749,15 +749,28 @@ assert.ok(
   !composerSend.includes("projectRoot"),
   "composer resumes assert NO projectRoot — the server derives the cwd from the conversation record; an explicit worktree root fails closed as unregistered (403, cave-kv8a)",
 );
+// A mid-stream Stop must keep the partial reply and never wedge the streaming
+// phase (cave-kv8a). The guarantee now has two halves (#5729): the stream
+// helper catches its own read failures, aborts included, and returns what
+// arrived; and the composer always finishes the run with that text, as
+// "stopped" when the reader asked for it.
+{
+  const familiarStream = await readFile(new URL("../lib/familiar-stream.ts", import.meta.url), "utf8");
+  assert.match(
+    familiarStream,
+    /try \{\s*while \(true\) \{\s*const \{ value, done \} = await reader\.read\(\);[\s\S]*?\} catch \(err\) \{[\s\S]*?opts\.signal\?\.aborted\s*\?\s*"cancelled"/,
+    "an aborted read is caught inside streamFamiliarText and reported, never thrown at the composer",
+  );
+  assert.match(
+    composer,
+    /stoppedByReader: composerRuns\.wasStopped\(sessionId, runId\),[\s\S]*?composerRuns\.finish\(sessionId, runId, \{\s*phase: outcome\.phase,\s*reply: result\.text,/,
+    "every run finishes with the text that arrived, as stopped when the reader stopped it (cave-kv8a)",
+  );
+}
 assert.match(
   composer,
-  /catch \(err\) \{[\s\S]*?if \(controller\.signal\.aborted\) \{\s*setPhase\(\{ kind: "done" \}\);/,
-  "a mid-stream Stop rejects the reader — the catch keeps the partial reply and lands on done instead of wedging the streaming phase (cave-kv8a)",
-);
-assert.match(
-  composer,
-  /"\/api\/chat\/stop"[\s\S]*?runId: phase\.runId, sessionId: row\.id/,
-  "Stop cancels via /api/chat/stop with the send's runId before dropping the stream",
+  /const runId = composerRuns\.stop\(sessionId\);[\s\S]*?"\/api\/chat\/stop"[\s\S]*?body: JSON\.stringify\(\{ runId, sessionId \}\)/,
+  "Stop drops the stream at once, then cancels the bridge run with the send's runId (#5729: awaiting the bridge first let a closing stream read as a failure)",
 );
 assert.match(
   newSession,
