@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 const {
   CODE_RAIL_DEFAULT_WIDTH_PX,
   CODE_RAIL_MIN_WIDTH_PX,
+  CODE_RAIL_RESERVED_PX,
   clampCodeRailWidth,
   toggleCodeRailWidth,
   isCodeRailWide,
@@ -32,8 +33,15 @@ assert.equal(isCodeRailTab(null), false);
 // A drag is clamped between the minimum readable width and a fraction of the
 // room, so the rail can never take the source's place.
 assert.equal(clampCodeRailWidth(120, 1400), CODE_RAIL_MIN_WIDTH_PX);
-assert.equal(clampCodeRailWidth(1300, 1400), Math.round(1400 * 0.62));
+assert.equal(clampCodeRailWidth(2000, 2400), Math.round(2400 * 0.62));
 assert.equal(clampCodeRailWidth(400, 1400), 400);
+
+// The ceiling also leaves the tree and a minimum-width viewer standing
+// (#5729): 62% of a 1400px room left the source 260px; the reserve holds it at
+// 380px. At the narrowest split the rail cannot grow past its minimum.
+assert.equal(CODE_RAIL_RESERVED_PX, 272 + 380);
+assert.equal(clampCodeRailWidth(1300, 1400), 1400 - CODE_RAIL_RESERVED_PX);
+assert.equal(clampCodeRailWidth(900, 932), CODE_RAIL_MIN_WIDTH_PX);
 
 // When the room itself cannot honour the minimum, the minimum still wins:
 // returning a sub-minimum width would render a diff nobody can read, which is
@@ -52,6 +60,19 @@ assert.equal(clampCodeRailWidth(Number.NaN, 1400), CODE_RAIL_DEFAULT_WIDTH_PX);
   assert.equal(isCodeRailWide(half, 1400), true);
   assert.equal(isCodeRailWide(CODE_RAIL_DEFAULT_WIDTH_PX, 1400), false);
 }
+
+// Where the reserve holds "half" below half the room, the widened rail still
+// reads as widened, and the toggle still comes back.
+{
+  const half = clampCodeRailWidth(600, 1200);
+  assert.equal(half, 1200 - CODE_RAIL_RESERVED_PX);
+  assert.equal(toggleCodeRailWidth(CODE_RAIL_DEFAULT_WIDTH_PX, 1200), half);
+  assert.equal(isCodeRailWide(half, 1200), true);
+  assert.equal(toggleCodeRailWidth(half, 1200), CODE_RAIL_DEFAULT_WIDTH_PX);
+}
+
+// A room too narrow to widen at all never reports a widened rail.
+assert.equal(isCodeRailWide(CODE_RAIL_MIN_WIDTH_PX, 932), false);
 
 // ── Viewed bookkeeping ───────────────────────────────────────────────────────
 

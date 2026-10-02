@@ -44,6 +44,9 @@ export type CodeWorkbenchTreeProps = {
   /** Repo root the change paths are relative to; falls back to the work root. */
   repoRoot: string | null;
   changedOnly: boolean;
+  /** Whether the working-tree summary has loaded, and whether it succeeded.
+   *  A failed request is not "0 changed" (#5729). */
+  changesStatus?: "loading" | "ready" | "unavailable";
   onChangedOnlyChange: (next: boolean) => void;
 };
 
@@ -55,6 +58,7 @@ export function CodeWorkbenchTree({
   changes,
   repoRoot,
   changedOnly,
+  changesStatus = "ready",
   onChangedOnlyChange,
 }: CodeWorkbenchTreeProps) {
   const base = repoRoot || projectRoot;
@@ -79,7 +83,8 @@ export function CodeWorkbenchTree({
   // A filter that hides everything reads as a broken tree, so the toggle is
   // only offered while there is something to filter down to.
   const changedCount = changes.length;
-  const filtering = changedOnly && changedCount > 0;
+  const ready = changesStatus === "ready";
+  const filtering = ready && changedOnly && changedCount > 0;
 
   return (
     <div className="code-tree" data-testid="code-workbench-tree">
@@ -90,18 +95,26 @@ export function CodeWorkbenchTree({
           type="button"
           className="focus-ring code-tree__filter"
           aria-pressed={filtering}
-          disabled={changedCount === 0}
+          disabled={!ready || changedCount === 0}
           title={
-            changedCount === 0
-              ? "No working-tree changes to filter"
-              : filtering
-                ? "Show every file"
-                : "Show only files changed in this worktree"
+            changesStatus === "unavailable"
+              ? "Couldn't load this worktree's changes"
+              : !ready
+                ? "Loading this worktree's changes"
+                : changedCount === 0
+                  ? "No working-tree changes to filter"
+                  : filtering
+                    ? "Show every file"
+                    : "Show only files changed in this worktree"
           }
           onClick={() => onChangedOnlyChange(!changedOnly)}
         >
-          <Icon name="ph:git-diff" width={11} height={11} aria-hidden />
-          {changedCount} changed
+          <Icon name={changesStatus === "unavailable" ? "ph:warning-circle" : "ph:git-diff"} width={11} height={11} aria-hidden />
+          {changesStatus === "unavailable"
+            ? "Changes unavailable"
+            : changesStatus === "loading"
+              ? "Loading changes…"
+              : `${changedCount} changed`}
         </button>
       </div>
       <div className="code-tree__body">

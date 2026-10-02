@@ -36,7 +36,7 @@ assert.doesNotMatch(workbench, /code-room__facts/, "the monospace facts row is r
 // 3. Open-file tabs sit above the viewer and are driven by the pure model.
 assert.match(
   workbench,
-  /<CodeOpenFileTabs[\s\S]*?onClose=\{closeTab\}[\s\S]*?\/>\s*<RailFilePreview/,
+  /<CodeOpenFileTabs[\s\S]*?onClose=\{closeTab\}[\s\S]*?\/>[\s\S]{0,200}?<div\s+className="code-room__viewer-panel"[\s\S]{0,300}?>\s*<RailFilePreview/,
   "the tab strip renders directly above the file viewer",
 );
 assert.match(workbench, /setOpenFiles\(\(current\) => openCodeFile\(current, absolute\)\)/, "opening a path goes through openCodeFile");
@@ -178,5 +178,42 @@ assert.doesNotMatch(composer, /useState<Phase>|abortRef/, "no run state is kept 
 assert.match(composer, /const outcome = codeComposerOutcome\(\{\s*text: result\.text,\s*error: result\.error,\s*stoppedByReader: composerRuns\.wasStopped\(sessionId, runId\),\s*\}\);/, "the outcome comes from the shared rule, error-aware even with partial text");
 assert.match(composer, /const runId = composerRuns\.stop\(sessionId\);\s*if \(!runId\) return;\s*void fetch\("\/api\/chat\/stop"/, "Stop aborts before telling the bridge");
 assert.match(composer, /if \(restore && !codeDeskMemory\.read\(sessionId\)\?\.draft\) codeDeskMemory\.write\(sessionId, \{ draft: restore \}\);/, "an unanswered ask goes back to the session's draft even when the composer is gone");
+
+// ── Pass 3 low fixes (#5729) ────────────────────────────────────────────────
+const workbenchTree = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
+const rowsSrc = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
+// Failure states say what failed and how to recover.
+assert.match(workbench, /changesStatus=\{changes\.loaded \? \(changes\.ok \? "ready" : "unavailable"\) : "loading"\}/, "the tree learns whether the changes request failed");
+assert.match(workbenchTree, /const filtering = ready && changedOnly && changedCount > 0;/, "a failed or loading summary never filters the tree");
+assert.match(workbenchTree, /"Changes unavailable"/, "a failed request is not \"0 changed\"");
+assert.match(preview, /Couldn&rsquo;t open \{name\}<\/p>[\s\S]{0,400}onClick=\{\(\) => setReloadNonce\(\(n\) => n \+ 1\)\}/, "a file that fails to open has a headline and a Retry");
+assert.match(preview, /\}, \[path, familiarId, projectRoot, reloadNonce\]\);/, "Retry refetches the same path");
+assert.match(preview, /onOpenPath\(changedRepoRoot \? `\$\{changedRepoRoot\.replace\(\/\\\/\+\$\/, ""\)\}\/\$\{f\.path\}` : f\.path\)/, "launchpad paths resolve against the git toplevel, not the project");
+assert.match(composer, /showSuggestions = [^;]*row\.familiarId/, "no suggestions for a session that cannot send");
+assert.match(composer, /No familiar is attached to this session/, "a session with no familiar says why Send is off");
+assert.match(panelSrc, /\{actionError\.action\}: \{actionError\.message\}/, "an action error names its action");
+assert.doesNotMatch(panelSrc, /revert: \{actionError/, "no failure is labelled revert unless it was one");
+// Shortcuts: narrow steps follow the rail shortcuts, and the tree passes modified arrows.
+assert.match(workbench, /if \(action === "changes" \|\| action === "pr"\) \{\s*setRailTab\(action\);\s*onReviewOpenChange\(true\);[^}]*?if \(!fitsSplit\) setStep\("review"\);/, "Changes and PR shortcuts bring the narrow Review step forward");
+assert.match(workbench, /else if \(action === "files"\) \{\s*if \(!fitsSplit\) setStep\("files"\);/, "the Files shortcut brings the narrow Files step forward");
+assert.match(treeSrc, /if \(e\.altKey \|\| e\.metaKey \|\| e\.ctrlKey\) return;/, "the tree leaves modified arrows to the desk's shortcuts");
+// Focus survives the common actions.
+assert.match(composer, /readOnly=\{busy\}/, "the composer field stays focusable while a reply streams");
+assert.doesNotMatch(composer, /disabled=\{busy\}/, "disabling the focused field dropped focus on the page");
+assert.match(rowsSrc, /if \(confirmRevert\) \{\s*cancelRef\.current\?\.focus\(\);\s*\} else if \(returnFocusRef\.current\) \{\s*returnFocusRef\.current = false;\s*revertRef\.current\?\.focus\(\);/, "the revert confirm takes focus and Cancel gives it back");
+assert.match(tabs, /onClick=\{\(\) => \{[\s\S]{0,300}const fallback = paths\[index - 1\] \?\? paths\[index \+ 1\] \?\? null;\s*onClose\(path\);\s*if \(fallback\) requestAnimationFrame/, "a clicked close hands focus to the neighbouring tab");
+// Rail sizing.
+assert.match(workbench, /resizable=\{fitsSplit\}/, "the narrow Review step has no resize controls");
+assert.match(reviewRail, /\{resizable \? \(\s*<div\s+role="separator"/, "the grip renders only where resizing changes something");
+// ARIA: panels, roving tab stops, stable toggle names.
+assert.match(reviewRail, /aria-controls=\{tab === id \? panelId : undefined\}\s*tabIndex=\{tab === id \? 0 : -1\}/, "rail tabs rove and name their panel");
+assert.match(reviewRail, /className="code-rail__panel" role="tabpanel" id=\{panelId\} aria-labelledby=\{tabId\(tab\)\}/, "the rail's content is the tabs' panel");
+assert.match(tabs, /aria-controls=\{selected \? panelId : undefined\}/, "open-file tabs name the viewer");
+assert.match(workbench, /role=\{activeTabIndex >= 0 \? "tabpanel" : undefined\}/, "the viewer is the open-file tabs' panel while there are tabs");
+assert.match(workbench, /aria-label=\{`\$\{STEP_LABEL\[id\]\} pane`\}/, "step tabs don't share the code surface's \"Review\" name");
+assert.match(workbench, /tabIndex=\{step === id \? 0 : -1\}/, "step tabs rove");
+assert.match(rowsSrc, /aria-label=\{`Viewed: \$\{file\.path\}`\}/, "the Viewed switch keeps one name");
+assert.match(workspace, /aria-label="Broadcast input"/, "Broadcast keeps one name");
+assert.match(reviewRail, /aria-label="Widen the rail"/, "the widen toggle keeps one name");
 
 console.log("code-desk-overhaul pins ok");

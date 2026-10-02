@@ -1123,3 +1123,26 @@
   color: var(--text-muted);
 }
 
+
+/* File load failure (#5729): a headline, the detail, and Retry. */
+.workspace-rail__preview-error-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.workspace-rail__preview-error-detail {
+  margin: 0;
+  max-width: 48ch;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+.workspace-rail__preview-error-retry {
+  min-height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.workspace-rail__preview-error-retry:hover { background: var(--bg-hover); }

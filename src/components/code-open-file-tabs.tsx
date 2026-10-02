@@ -11,6 +11,13 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { codeOpenFileLabels } from "@/lib/code-open-files";
+import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
+
+/** A tab's element id. The workbench labels the viewer's tabpanel with the
+ *  active tab's id, so both sides derive it here (#5729). */
+export function codeOpenFileTabId(idPrefix: string, index: number): string {
+  return `${idPrefix}-tab-${index}`;
+}
 
 export type CodeOpenFileTabsProps = {
   paths: readonly string[];
@@ -19,9 +26,13 @@ export type CodeOpenFileTabsProps = {
   status: ReadonlyMap<string, string>;
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
+  /** Prefix for the tabs' ids; see `codeOpenFileTabId`. */
+  idPrefix: string;
+  /** The viewer the tabs control. */
+  panelId: string;
 };
 
-export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: CodeOpenFileTabsProps) {
+export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idPrefix, panelId }: CodeOpenFileTabsProps) {
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -42,18 +53,14 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
     (event: KeyboardEvent<HTMLButtonElement>, path: string) => {
       const index = paths.indexOf(path);
       if (index < 0) return;
-      let next: number | null = null;
-      if (event.key === "ArrowRight") next = (index + 1) % paths.length;
-      else if (event.key === "ArrowLeft") next = (index - 1 + paths.length) % paths.length;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = paths.length - 1;
-      else if (event.key === "Delete" || event.key === "Backspace") {
+      if (event.key === "Delete" || event.key === "Backspace") {
         const fallback = paths[index - 1] ?? paths[index + 1] ?? null;
         event.preventDefault();
         onClose(path);
         if (fallback) requestAnimationFrame(() => tabRefs.current.get(fallback)?.focus());
         return;
       }
+      const next = codeTablistKeyTarget(event, index, paths.length);
       if (next === null) return;
       event.preventDefault();
       const target = paths[next];
@@ -68,7 +75,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
 
   return (
     <div ref={stripRef} className="code-tabs" role="tablist" aria-label="Open files" data-testid="code-open-file-tabs">
-      {paths.map((path) => {
+      {paths.map((path, index) => {
         const selected = path === active;
         const label = labels.get(path) ?? path;
         const letter = status.get(path) ?? null;
@@ -81,7 +88,9 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
                 if (node) tabRefs.current.set(path, node);
                 else tabRefs.current.delete(path);
               }}
+              id={codeOpenFileTabId(idPrefix, index)}
               aria-selected={selected}
+              aria-controls={selected ? panelId : undefined}
               tabIndex={selected ? 0 : -1}
               className="focus-ring code-tabs__tab"
               title={path}
@@ -105,7 +114,14 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose }: C
               className="focus-ring code-tabs__close"
               aria-label={`Close ${label}`}
               title={`Close ${label}`}
-              onClick={() => onClose(path)}
+              onClick={() => {
+                // Same as Delete on the tab: the next tab takes focus, so a
+                // keyboard close never drops it on the page (#5729).
+                const index = paths.indexOf(path);
+                const fallback = paths[index - 1] ?? paths[index + 1] ?? null;
+                onClose(path);
+                if (fallback) requestAnimationFrame(() => tabRefs.current.get(fallback)?.focus());
+              }}
             >
               <Icon name="ph:x" width={10} height={10} aria-hidden />
             </button>

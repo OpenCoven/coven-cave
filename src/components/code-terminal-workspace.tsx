@@ -436,13 +436,19 @@ export function CodeTerminalWorkspace({
             type="button"
             className="focus-ring code-terminal-workspace__action"
             aria-pressed={focusMode}
-            aria-label={focusMode ? "Exit focused terminal" : "Focus current terminal"}
+            // A toggle keeps one name; aria-pressed says whether it is on. A
+            // name that flipped with the state read "Exit focused terminal,
+            // pressed" (#5729).
+            aria-label="Focus current terminal"
             title={focusMode ? "Show every terminal" : "Focus the current terminal"}
             disabled={paneCount < 2}
             onClick={toggleFocusMode}
           >
             <Icon name={focusMode ? "ph:arrows-in-simple" : "ph:corners-out"} width={12} height={12} />
-            {focusMode ? "All panes" : "Focus"}
+            {/* One visible word too: the name must contain what is shown, and
+                "All panes" was not in it (#5729). The icon and pressed state
+                say which way it is set. */}
+            Focus
           </button>
           <button
             type="button"
@@ -481,7 +487,7 @@ export function CodeTerminalWorkspace({
             // Broadcast is meaningless with one pane, and enabling it there
             // would leave a pressed toggle that does nothing.
             disabled={paneCount < 2}
-            aria-label={broadcast ? "Turn off broadcast input" : "Turn on broadcast input"}
+            aria-label="Broadcast input"
             title={`Type once, send to every terminal (${CODE_ROOM_SHORTCUT_HINTS["toggle-broadcast"]})`}
             onClick={handleToggleBroadcast}
           >

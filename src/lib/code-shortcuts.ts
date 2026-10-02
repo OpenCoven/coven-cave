@@ -53,7 +53,9 @@ export type CodeFixedShortcutDef = {
  */
 export const CODE_SHORTCUTS: readonly CodeShortcutDef[] = [
   { id: "picker", label: "Switch session", combo: "Mod+P" },
-  { id: "prompt", label: "Focus the follow-up prompt", combo: "Mod+J" },
+  // Not Mod+J (#5729): that is the app's quick chat, whose handler runs first,
+  // so the desk binding never fired and the key left the desk for a new chat.
+  { id: "prompt", label: "Focus the follow-up prompt", combo: "Mod+I" },
   { id: "changes", label: "Changes in the review rail", combo: "Mod+Shift+C" },
   { id: "pr", label: "Pull request in the review rail", combo: "Mod+Shift+R" },
   { id: "files", label: "Focus the file tree", combo: "Mod+Shift+F" },
@@ -64,7 +66,11 @@ export const CODE_SHORTCUTS: readonly CodeShortcutDef[] = [
   // be prevented from a page; Option+Arrow prints no dead key on macOS.
   { id: "next-file", label: "Next open file", combo: "Alt+ArrowDown" },
   { id: "previous-file", label: "Previous open file", combo: "Alt+ArrowUp" },
-  { id: "help", label: "This dialog", combo: "?" },
+  // Unbound by default (#5729). "?" and ⌘/ open the app's shortcuts sheet,
+  // whose handler runs first, so the desk binding never fired; ⌘? is the macOS
+  // Help menu in the browser and in the desktop shell. The header's Shortcuts
+  // button opens this dialog, and any free key can be bound here.
+  { id: "help", label: "This dialog", combo: "" },
 ] as const;
 
 /** Fixed terminal bindings the rebindable set must never collide with. */
@@ -85,10 +91,28 @@ export const CODE_FIXED_QUEUE_SHORTCUTS: readonly CodeFixedShortcutDef[] = [
   { id: "queue-scope", label: "Toggle Reviewable / All local", combo: "Shift+A" },
 ] as const;
 
+/**
+ * App-wide keys whose handler (workspace.tsx) runs before the desk's and
+ * claims them on every surface (#5729). A desk binding on one of these is dead
+ * on arrival, so they are reserved and listed in the dialog.
+ */
+export const CODE_APP_RESERVED_SHORTCUTS: readonly CodeFixedShortcutDef[] = [
+  { id: "app-palette", label: "Command palette", combo: "Mod+K" },
+  { id: "app-quick-chat", label: "Quick chat", combo: "Mod+J" },
+  { id: "app-shortcuts-sheet", label: "App shortcuts sheet", combo: "Mod+/" },
+  { id: "app-shortcuts-sheet-bare", label: "App shortcuts sheet (outside fields)", combo: "?" },
+] as const;
+
+/** The app matches ⌘K and ⌘J on the lowercased key, so Shift does not get
+ *  past it either. Reserved, not listed: they are the same two shortcuts. */
+const CODE_APP_SHIFTED_COMBOS: readonly string[] = ["Mod+Shift+K", "Mod+Shift+J"];
+
 /** Every non-rebindable combo, in the same normalized grammar as storage/events. */
 export const CODE_RESERVED_COMBOS: readonly string[] = [
   ...CODE_FIXED_TERMINAL_SHORTCUTS.map((shortcut) => shortcut.combo),
   ...CODE_FIXED_QUEUE_SHORTCUTS.map((shortcut) => shortcut.combo),
+  ...CODE_APP_RESERVED_SHORTCUTS.map((shortcut) => shortcut.combo),
+  ...CODE_APP_SHIFTED_COMBOS,
 ] as const;
 
 export type CodeKeymap = Partial<Record<CodeShortcutId, string>>;
@@ -148,9 +172,11 @@ export function isCodeReservedCombo(combo: string): boolean {
   return CODE_RESERVED_COMBOS.includes(combo);
 }
 
-export function codeReservedComboOwner(combo: string): "session queue" | "terminal panes" | null {
+export function codeReservedComboOwner(combo: string): "session queue" | "terminal panes" | "app" | null {
   if (CODE_FIXED_QUEUE_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "session queue";
   if (CODE_FIXED_TERMINAL_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "terminal panes";
+  if (CODE_APP_RESERVED_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "app";
+  if (CODE_APP_SHIFTED_COMBOS.includes(combo)) return "app";
   return null;
 }
 

@@ -14,6 +14,8 @@ const {
   isCodeShortcutAllowed,
   isCodeShortcutRequired,
   codeRequiredComboHolder,
+  codeReservedComboOwner,
+  CODE_APP_RESERVED_SHORTCUTS,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -169,6 +171,40 @@ assert.deepEqual(codeComboChips("", true), []);
 for (const reserved of ["/", "J", "K", "Shift+A"]) {
   assert.ok(CODE_RESERVED_COMBOS.includes(reserved), `${reserved} stays reserved by the queue`);
 }
+
+// ── App-wide keys (#5729) ────────────────────────────────────────────────────
+
+// The app's handler runs before the desk's and claims these everywhere, so a
+// desk binding on one is dead on arrival. They are reserved, shifted ⌘K/⌘J
+// included (the app matches the lowercased key), and owned by "app".
+for (const combo of ["?", "Mod+/", "Mod+K", "Mod+J", "Mod+Shift+K", "Mod+Shift+J"]) {
+  assert.ok(CODE_RESERVED_COMBOS.includes(combo), `${combo} belongs to the app`);
+  assert.equal(codeReservedComboOwner(combo), "app", `${combo} names the app as its owner`);
+}
+assert.deepEqual(
+  CODE_APP_RESERVED_SHORTCUTS.map((shortcut) => shortcut.combo),
+  ["Mod+K", "Mod+J", "Mod+/", "?"],
+  "the dialog lists each app shortcut once",
+);
+assert.equal(codeReservedComboOwner("Shift+A"), "session queue");
+assert.equal(codeReservedComboOwner("Mod+P"), null);
+
+// The two defaults that sat on app keys moved: the prompt to ⌘I, and help to
+// unbound (⌘? is the macOS Help menu). The header button still opens the dialog.
+assert.equal(defaultCodeKeymap().prompt, "Mod+I");
+assert.equal(defaultCodeKeymap().help, "");
+assert.deepEqual(bindCodeShortcut(defaultCodeKeymap(), "help", "?"), defaultCodeKeymap(), "? cannot be bound to the desk");
+assert.deepEqual(bindCodeShortcut(defaultCodeKeymap(), "prompt", "Mod+J"), defaultCodeKeymap(), "⌘J cannot be bound to the desk");
+
+// A keymap saved with the old dead defaults loads the new ones rather than
+// keeping a binding that can never fire.
+{
+  const loaded = mergeCodeKeymap({ help: "?", prompt: "Mod+J" });
+  assert.equal(loaded.help, "");
+  assert.equal(loaded.prompt, "Mod+I");
+}
+// A free key the person chose for help survives a reload.
+assert.equal(mergeCodeKeymap({ help: "Mod+Shift+H" }).help, "Mod+Shift+H");
 
 console.log("code-shortcuts: ok");
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The Coding Desk overhaul (#5705): six directions over the per-session
 // workbench under Code → Review.
@@ -199,6 +199,26 @@ async function openDesk(page: Page) {
   await expect(desk).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("code-workbench-tree")).toBeVisible({ timeout: 30_000 });
   return desk;
+}
+
+/** A desk narrower than the three-column split, deep-linked past the session
+ *  list so the step switcher is what shows. */
+async function openNarrowDesk(page: Page) {
+  await page.goto("/?mode=code&session=s-new", { waitUntil: "domcontentloaded" });
+  const steps = page.getByRole("tablist", { name: "Workbench step" });
+  await expect(steps).toBeVisible({ timeout: 30_000 });
+  return steps;
+}
+
+/** The tab names a panel that exists, is a tabpanel, and is labelled by it. */
+async function expectTabControlsPanel(page: Page, tab: Locator) {
+  const panelId = await tab.getAttribute("aria-controls");
+  const tabId = await tab.getAttribute("id");
+  expect(panelId, "the selected tab names its panel").toBeTruthy();
+  expect(tabId, "the tab has an id for its panel to point back at").toBeTruthy();
+  const panel = page.locator(`[id="${panelId}"]`);
+  await expect(panel).toHaveAttribute("role", "tabpanel");
+  await expect(panel).toHaveAttribute("aria-labelledby", tabId!);
 }
 
 test.describe.configure({ mode: "serial" });
@@ -446,11 +466,11 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(rail.locator('button[aria-expanded][title="src/flux.ts"]')).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByTestId("code-composer-context")).toContainText("flux.ts");
 
-    await rail.getByRole("switch", { name: "Mark src/flux.ts viewed" }).click();
+    await rail.getByRole("switch", { name: "Viewed: src/flux.ts" }).click();
     await expect(progress).toHaveText("1 of 2 viewed");
     await next.click();
     await expect(viewerName).toHaveText("retry.ts");
-    await rail.getByRole("switch", { name: "Mark src/retry.ts viewed" }).click();
+    await rail.getByRole("switch", { name: "Viewed: src/retry.ts" }).click();
     await expect(progress).toHaveText("2 of 2 viewed");
     await expect(progress).toHaveAttribute("data-complete", "true");
     await expect(next).toBeDisabled();
@@ -462,7 +482,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
 
     // Unmarking reopens the walk.
     await page.getByRole("button", { name: "Show the review rail" }).click();
-    await page.getByTestId("code-review-rail").getByRole("switch", { name: "Mark src/flux.ts unviewed" }).click();
+    await page.getByTestId("code-review-rail").getByRole("switch", { name: "Viewed: src/flux.ts" }).click();
     await expect(progress).toHaveText("1 of 2 viewed");
     await expect(page.getByTestId("code-review-rail").getByRole("button", { name: "Next unviewed" })).toBeEnabled();
   });
@@ -475,7 +495,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const tree = page.getByTestId("code-workbench-tree");
     await tree.getByText("flux.ts", { exact: true }).click();
     await tree.getByText("README.md", { exact: true }).click();
-    await page.getByTestId("code-review-rail").getByRole("switch", { name: "Mark src/flux.ts viewed" }).click();
+    await page.getByTestId("code-review-rail").getByRole("switch", { name: "Viewed: src/flux.ts" }).click();
     const prompt = () => page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" });
     await prompt().fill("half-written draft");
     await expect(page.getByTestId("code-desk-progress")).toHaveText("1 of 2 viewed");
@@ -644,7 +664,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await base(page, [{ ...NEWEST, status: "idle" }, OLDER], worktree);
     await openDesk(page);
     const rail = page.getByTestId("code-review-rail");
-    await rail.getByRole("switch", { name: "Mark src/flux.ts viewed" }).click();
+    await rail.getByRole("switch", { name: "Viewed: src/flux.ts" }).click();
     await expect(page.getByTestId("code-desk-progress")).toHaveText("1 of 2 viewed");
 
     // Same status, same +12 −3, new bytes on disk.
@@ -653,7 +673,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     );
     await rail.getByRole("button", { name: "Refresh working tree changes" }).click();
     await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 2 viewed");
-    await expect(rail.getByRole("switch", { name: "Mark src/flux.ts viewed" })).toBeVisible();
+    await expect(rail.getByRole("switch", { name: "Viewed: src/flux.ts" })).toBeVisible();
   });
 
   test("15. a failed changes request keeps the listed diffstat instead of reading as clean", async ({ page }) => {
@@ -799,7 +819,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.waitForTimeout(500);
     const beforeReturn = statusRequests;
     await rail.getByRole("tab", { name: /Changes/ }).click();
-    await expect(rail.getByRole("switch", { name: "Mark src/flux.ts viewed" })).toBeVisible();
+    await expect(rail.getByRole("switch", { name: "Viewed: src/flux.ts" })).toBeVisible();
     await page.waitForTimeout(1_500);
     expect(statusRequests - beforeReturn).toBe(1);
   });
@@ -1031,5 +1051,294 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     expect(phone.seen).toBeGreaterThan(4);
     expect(phone.small).toEqual([]);
   });
-});
 
+  // ── Pass 3 low fixes (#5729) ───────────────────────────────────────────────
+
+  test("25. a failed changes request reads as unavailable in the tree, and a file that fails to open offers Retry", async ({ page }) => {
+    await base(page, [NEWEST, OLDER], { current: "fail" });
+    let failNext = true;
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      const name = path.slice(path.lastIndexOf("/") + 1);
+      if (failNext) {
+        failNext = false;
+        return route.fulfill({ json: { ok: false, error: "EACCES: permission denied" } });
+      }
+      return route.fulfill({ json: { ok: true, kind: "text", content: `// ${name} loaded\n`, size: 20 } });
+    });
+    const desk = await openDesk(page);
+    const filter = page.getByTestId("code-workbench-tree").locator(".code-tree__filter");
+    await expect(filter).toHaveText("Changes unavailable");
+    await expect(filter).toBeDisabled();
+    await expect(filter).toHaveAttribute("title", "Couldn't load this worktree's changes");
+
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    const failure = desk.locator(".workspace-rail__preview-error");
+    await expect(failure.locator(".workspace-rail__preview-error-title")).toHaveText(/^Couldn.t open README\.md$/);
+    await expect(failure).toContainText("EACCES: permission denied");
+    await failure.getByRole("button", { name: "Retry" }).click();
+    await expect(failure).toHaveCount(0);
+    await expect(desk.getByText("// README.md loaded")).toBeVisible();
+  });
+
+  test("26. a session with no familiar says why it can't send, and offers Chat", async ({ page }) => {
+    await base(page, [{ ...NEWEST, familiarId: null }, OLDER]);
+    await openDesk(page);
+    const composer = page.getByTestId("code-composer");
+    const note = composer.locator(".code-composer__note");
+    await expect(note).toContainText("No familiar is attached to this session");
+    await expect(note.getByRole("button", { name: "Continue in Chat" })).toBeVisible();
+    const noteId = await note.getAttribute("id");
+    const describedBy = (await composer.getByRole("textbox", { name: "Follow-up" }).getAttribute("aria-describedby")) ?? "";
+    expect(describedBy.split(" ")).toContain(noteId);
+    // Suggestions would only fill a field that cannot send.
+    await expect(page.getByTestId("code-composer-suggestions")).toHaveCount(0);
+  });
+
+  test("27. desk shortcuts stay off the app's keys: the prompt is on Mod+I, help starts unbound, app keys are refused", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await page.keyboard.press("ControlOrMeta+i");
+    await expect(page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" })).toBeFocused();
+
+    await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+    const dialog = page.getByRole("dialog");
+    const helpRow = dialog.locator(".code-keys__row").filter({ hasText: "This dialog" });
+    await expect(helpRow.locator(".code-keys__combo")).toHaveText("unbound");
+    // "?" belongs to the app's sheet, whose handler runs first: refused, with a reason.
+    await helpRow.getByRole("button", { name: "Rebind" }).click();
+    await page.keyboard.press("?");
+    await expect(page.getByText("That shortcut is reserved for the app.")).toBeAttached();
+    await page.keyboard.press("Escape");
+    await expect(helpRow.locator(".code-keys__combo")).toHaveText("unbound");
+    // The app's keys are listed as taken.
+    await expect(dialog.getByText("App-wide — fixed")).toBeVisible();
+    await expect(dialog.locator(".code-keys__row").filter({ hasText: "Quick chat" })).toBeVisible();
+    await expect(dialog.locator(".code-keys__row").filter({ hasText: "Command palette" })).toBeVisible();
+  });
+
+  test("28. on a narrow desk the Changes, PR and Files shortcuts bring their step forward", async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 900 });
+    await base(page);
+    const steps = await openNarrowDesk(page);
+    // Start from Source, then leave focus on the page rather than a tab.
+    await steps.getByRole("tab", { name: "Source pane" }).click();
+    await expect(steps.getByRole("tab", { name: "Source pane" })).toHaveAttribute("aria-selected", "true");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    await page.keyboard.press("ControlOrMeta+Shift+C");
+    await expect(steps.getByRole("tab", { name: "Review pane" })).toHaveAttribute("aria-selected", "true");
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("ControlOrMeta+Shift+R");
+    await expect(rail.getByRole("tab", { name: "Pull request" })).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("ControlOrMeta+Shift+F");
+    await expect(steps.getByRole("tab", { name: "Files pane" })).toHaveAttribute("aria-selected", "true");
+    await expect
+      .poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="code-workbench-tree"]'))))
+      .toBe(true);
+  });
+
+  test("29. the file tree lets Alt+Up and Alt+Down through to the open-file shortcuts", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const viewerName = desk.locator(".workspace-rail__preview-name");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await expect(viewerName).toHaveText("flux.ts");
+    // Focus is in the tree, where a bare arrow moves between rows.
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="code-workbench-tree"]')))).toBe(true);
+    await page.keyboard.press("Alt+ArrowUp");
+    await expect(viewerName).toHaveText("README.md");
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(viewerName).toHaveText("flux.ts");
+  });
+
+  test("30. focus stays put when a revert is cancelled, a tab is closed, or a follow-up is sent", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/chat/send", async (route) => {
+      await held;
+      await route.fulfill({
+        contentType: "text/event-stream",
+        body: [
+          `data: ${JSON.stringify({ kind: "assistant_chunk", text: "Ready." })}`, "",
+          `data: ${JSON.stringify({ kind: "done", sessionId: "s-new" })}`, "", "",
+        ].join("\n"),
+      });
+    });
+    await openDesk(page);
+
+    // The confirm takes focus when it opens, and Cancel gives it back.
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("button", { name: "Revert src/flux.ts" }).click();
+    const cancel = rail.getByRole("group", { name: "Confirm file revert" }).getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(rail.getByRole("button", { name: "Revert src/flux.ts" })).toBeFocused();
+
+    // Closing a tab with its button hands focus to the neighbouring tab.
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await tabs.getByRole("button", { name: "Close flux.ts" }).click();
+    await expect(tabs.getByRole("tab", { name: /README\.md/ })).toBeFocused();
+
+    // Sending keeps the field focused while the reply streams.
+    const prompt = page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" });
+    await prompt.fill("Check the retry path.");
+    await prompt.press("ControlOrMeta+Enter");
+    await expect(prompt).toHaveAttribute("readonly", "");
+    await expect(prompt).toBeFocused();
+    release();
+    await expect(page.getByTestId("code-composer-reply")).toHaveAttribute("data-phase", "done");
+    await expect(prompt).not.toHaveAttribute("readonly", "");
+    await expect(prompt).toBeFocused();
+  });
+
+  test("31. the rail can't starve the viewer, and the narrow Review step has no dead resize controls", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await base(page);
+    await openDesk(page);
+    const grip = page.getByRole("separator", { name: "Resize the review rail" });
+    await grip.focus();
+    for (let i = 0; i < 24; i += 1) await page.keyboard.press("Shift+ArrowLeft");
+    const viewer = await page.locator(".code-room__viewer").evaluate((el) => el.getBoundingClientRect().width);
+    expect(viewer).toBeGreaterThanOrEqual(379);
+
+    // The widen toggle keeps one name; its pressed state says which way it is.
+    const widen = page.getByRole("button", { name: "Widen the rail" });
+    await expect(widen).toHaveAttribute("aria-pressed", "true");
+    await widen.click();
+    await expect(page.getByRole("button", { name: "Widen the rail" })).toHaveAttribute("aria-pressed", "false");
+
+    await page.setViewportSize({ width: 760, height: 900 });
+    const steps = await openNarrowDesk(page);
+    await steps.getByRole("tab", { name: "Review pane" }).click();
+    await expect(page.getByTestId("code-review-rail")).toBeVisible();
+    await expect(page.getByRole("separator", { name: "Resize the review rail" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Widen the rail" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Hide the review rail" })).toBeVisible();
+  });
+
+  test("32. each desk tablist has one tab stop, arrows move it, and each tab names its panel", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const railTabs = rail.getByRole("tablist", { name: "Review surface" });
+    await expect(railTabs.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
+    const changes = railTabs.getByRole("tab", { name: /Changes/ });
+    await expectTabControlsPanel(page, changes);
+    await changes.focus();
+    await page.keyboard.press("ArrowRight");
+    const pr = railTabs.getByRole("tab", { name: "Pull request" });
+    await expect(pr).toBeFocused();
+    await expect(pr).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("End");
+    await expect(railTabs.getByRole("tab", { name: "Filesystem" })).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(changes).toBeFocused();
+    await expect(changes).toHaveAttribute("aria-selected", "true");
+
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await expectTabControlsPanel(page, page.getByTestId("code-open-file-tabs").getByRole("tab", { name: /flux\.ts/ }));
+
+    // Toggles keep one name; the state is in aria-checked / aria-pressed.
+    const viewed = rail.getByRole("switch", { name: "Viewed: src/flux.ts" });
+    await expect(viewed).toHaveAttribute("aria-checked", "false");
+    await viewed.click();
+    await expect(rail.getByRole("switch", { name: "Viewed: src/flux.ts" })).toHaveAttribute("aria-checked", "true");
+
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    const paneBar = page.locator(".code-terminal-workspace__bar");
+    await paneBar.getByRole("button", { name: "Split terminal right" }).click();
+    for (const name of ["Broadcast input", "Focus current terminal"]) {
+      const toggle = paneBar.getByRole("button", { name, exact: true });
+      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await toggle.click();
+      await expect(paneBar.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+    }
+
+    // The narrow steps rove too, and only the shown step's panel is named.
+    await page.setViewportSize({ width: 760, height: 900 });
+    const steps = await openNarrowDesk(page);
+    await expect(steps.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
+    const source = steps.getByRole("tab", { name: "Source pane" });
+    await source.click();
+    await expect(source).toHaveAttribute("tabindex", "0");
+    await expectTabControlsPanel(page, source);
+    await source.focus();
+    await page.keyboard.press("ArrowRight");
+    const review = steps.getByRole("tab", { name: "Review pane" });
+    await expect(review).toBeFocused();
+    await expect(review).toHaveAttribute("aria-selected", "true");
+    await expectTabControlsPanel(page, review);
+    await expect(steps.getByRole("tab", { name: "Files pane" })).not.toHaveAttribute("aria-controls", /.+/);
+  });
+
+  test("33. in a project inside a larger repo, the empty viewer opens changed files at their real path", async ({ page }) => {
+    const sub = mkSession({
+      id: "s-sub",
+      title: "Tune the app package",
+      project_root: "/repo/mono/packages/app",
+      updated_at: NEW_ISO,
+      familiarWorkspace: false,
+      git: { branch: "main", repositoryUrl: "https://github.com/acme/mono", isWorktree: false },
+    });
+    await base(page, [sub]);
+    // Change paths are relative to the git toplevel, two levels above the project.
+    await page.route("**/api/changes**", (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET" || [...url.searchParams.keys()].some((key) => key !== "projectRoot")) {
+        return route.fallback();
+      }
+      return route.fulfill({
+        json: {
+          ok: true,
+          repo: true,
+          repoRoot: "/repo/mono",
+          files: [{ path: "packages/app/src/flux.ts", status: "modified", insertions: 2, deletions: 1 }],
+        },
+      });
+    });
+    const requested: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/project-file")) requested.push(new URL(request.url()).searchParams.get("path") ?? "");
+    });
+    // A plain checkout is not "Reviewable", so pick it from All local.
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await page.getByRole("group", { name: "Session scope" }).getByRole("button", { name: /All local/ }).click({ timeout: 30_000 });
+    await page.locator("[data-code-session-id='s-sub']").first().click();
+    const desk = page.getByTestId("code-workbench");
+    await expect(desk).toBeVisible({ timeout: 30_000 });
+    await desk.locator(".workspace-rail__empty-change").filter({ hasText: "flux.ts" }).click();
+    await expect.poll(() => requested).toContain("/repo/mono/packages/app/src/flux.ts");
+    expect(requested).not.toContain("/repo/mono/packages/app/packages/app/src/flux.ts");
+    // The tab is the changed file, so it carries the tree's letter.
+    await expect(page.getByTestId("code-open-file-tabs").getByRole("tab", { name: /flux\.ts/ }).locator(".code-tabs__status")).toHaveText("M");
+  });
+
+  test("34. a failed checkpoint names the action that failed, not revert", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/changes**", (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && (request.postDataJSON() as { action?: string })?.action === "checkpoint") {
+        return route.fulfill({ status: 500, json: { ok: false, error: "disk full" } });
+      }
+      return route.fallback();
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("button", { name: "Save patch checkpoint" }).click();
+    await expect(rail.getByText("Couldn't save a checkpoint: disk full")).toBeVisible();
+    await expect(rail.getByText(/revert:/)).toHaveCount(0);
+    await rail.getByRole("button", { name: "Dismiss error" }).click();
+    await expect(rail.getByText(/Couldn't save a checkpoint/)).toHaveCount(0);
+  });
+});

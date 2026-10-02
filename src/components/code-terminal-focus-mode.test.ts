@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /aria-label=\{focusMode \? "Exit focused terminal" : "Focus current terminal"\}/,
-  "the toolbar exposes an accessible focus-mode toggle",
+  /aria-pressed=\{focusMode\}[\s\S]{0,300}aria-label="Focus current terminal"/,
+  "the toolbar exposes a focus-mode toggle with one stable name and a pressed state (#5729)",
 );
 assert.match(
   workspace,

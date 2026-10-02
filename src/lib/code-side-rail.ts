@@ -22,6 +22,8 @@
 export const CODE_RAIL_TABS = ["changes", "pr", "filesystem"] as const;
 export type CodeRailTab = (typeof CODE_RAIL_TABS)[number];
 
+import { CODE_ROOM_MIN_VIEWER_WIDTH_PX, CODE_ROOM_TREE_WIDTH_PX } from "./code-surface.ts";
+
 export function isCodeRailTab(value: string | null | undefined): value is CodeRailTab {
   return (CODE_RAIL_TABS as readonly string[]).includes(value ?? "");
 }
@@ -35,8 +37,16 @@ export const CODE_RAIL_DEFAULT_WIDTH_PX = 360;
 /** Closed width — the spine. Wide enough for vertical text plus the diffstat. */
 export const CODE_RAIL_SPINE_WIDTH_PX = 28;
 
+/** What the rail must leave beside it: the fixed tree column and the source
+ *  viewer at its minimum. A fraction of the room alone let a drag starve the
+ *  viewer to 146px at the narrowest split (#5729). */
+export const CODE_RAIL_RESERVED_PX = CODE_ROOM_TREE_WIDTH_PX + CODE_ROOM_MIN_VIEWER_WIDTH_PX;
+
 /**
  * Clamp a dragged width against the room it has to live in.
+ *
+ * The ceiling is the smaller of a fraction of the room and whatever the tree
+ * and a minimum-width viewer leave over.
  *
  * When the room itself is too small to honour the minimum, the minimum wins and
  * the caller's overflow rules take over: silently returning a sub-minimum width
@@ -44,7 +54,10 @@ export const CODE_RAIL_SPINE_WIDTH_PX = 28;
  * minimum exists to prevent.
  */
 export function clampCodeRailWidth(widthPx: number, roomWidthPx: number): number {
-  const max = Math.max(CODE_RAIL_MIN_WIDTH_PX, Math.round(roomWidthPx * CODE_RAIL_MAX_FRACTION));
+  const max = Math.max(
+    CODE_RAIL_MIN_WIDTH_PX,
+    Math.min(Math.round(roomWidthPx * CODE_RAIL_MAX_FRACTION), Math.round(roomWidthPx) - CODE_RAIL_RESERVED_PX),
+  );
   if (!Number.isFinite(widthPx)) return CODE_RAIL_DEFAULT_WIDTH_PX;
   return Math.min(max, Math.max(CODE_RAIL_MIN_WIDTH_PX, Math.round(widthPx)));
 }
@@ -60,9 +73,16 @@ export function toggleCodeRailWidth(widthPx: number, roomWidthPx: number): numbe
   return Math.abs(widthPx - half) <= 2 ? resting : half;
 }
 
-/** Is this rail at (or past) the half-room width? Drives the widen/restore icon. */
+/**
+ * Is this rail at (or past) its widened width? Drives the widen/restore icon.
+ * Measured against the clamped half, which the reserve can hold below half the
+ * room, so a widened rail always reads as widened. A room too narrow to widen
+ * at all is never "wide".
+ */
 export function isCodeRailWide(widthPx: number, roomWidthPx: number): boolean {
-  return widthPx >= Math.round(roomWidthPx / 2) - 2;
+  const half = clampCodeRailWidth(Math.round(roomWidthPx / 2), roomWidthPx);
+  const resting = clampCodeRailWidth(CODE_RAIL_DEFAULT_WIDTH_PX, roomWidthPx);
+  return half > resting && widthPx >= half - 2;
 }
 
 /**

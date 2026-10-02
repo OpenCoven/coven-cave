@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
@@ -102,6 +102,20 @@ export function FileRow({
   // (untracked, or staged-but-never-committed) get delete copy because
   // reverting one deletes it — it has no committed version to restore.
   const [confirmRevert, setConfirmRevert] = useState(false);
+  // Focus follows the confirmation (#5729): the Revert button unmounts when
+  // the confirm opens, and the confirm unmounts on Cancel, so without this
+  // keyboard focus fell to the page each time.
+  const revertRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusRef = useRef(false);
+  useEffect(() => {
+    if (confirmRevert) {
+      cancelRef.current?.focus();
+    } else if (returnFocusRef.current) {
+      returnFocusRef.current = false;
+      revertRef.current?.focus();
+    }
+  }, [confirmRevert]);
   const untracked = file.status === "untracked" || file.status === "added";
   const { basename, dirname } = splitFilePath(file.path);
   const diffCounts =
@@ -152,7 +166,10 @@ export function FileRow({
               aria-checked={viewed}
               onClick={onToggleViewed}
               title={viewed ? `Mark ${file.path} unviewed` : `Mark ${file.path} viewed`}
-              aria-label={viewed ? `Mark ${file.path} unviewed` : `Mark ${file.path} viewed`}
+              // A switch's name names the setting; aria-checked carries the
+              // state. A name that flipped with it read "Mark … unviewed,
+              // switch, on" (#5729).
+              aria-label={`Viewed: ${file.path}`}
               className="focus-ring session-changes__viewed"
               data-on={viewed ? "true" : undefined}
             >
@@ -163,6 +180,7 @@ export function FileRow({
         <td className="px-2 py-1.5 text-right">
           {confirmRevert ? null : (
             <IconButton
+              ref={revertRef}
               icon={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"}
               size="sm"
               danger
@@ -186,8 +204,12 @@ export function FileRow({
                 {untracked ? "Delete file?" : "Revert file?"}
               </span>
               <button
+                ref={cancelRef}
                 type="button"
-                onClick={() => setConfirmRevert(false)}
+                onClick={() => {
+                  returnFocusRef.current = true;
+                  setConfirmRevert(false);
+                }}
                 className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
               >
                 Cancel

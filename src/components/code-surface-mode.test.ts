@@ -437,12 +437,20 @@ assert.match(
 );
 
 // Session switches reset the split tree; carrying another session's panes over
-// would attach terminals to the wrong work root.
+// would attach terminals to the wrong work root. CodeView keys the workbench by
+// session, so the drawer remounts with a fresh layout; the drawer's own
+// [sessionId] reset effect never ran and is gone (#5729).
+assert.match(
+  codeView,
+  /<CodeWorkbench\s+key=\{selected\.id\}/,
+  "the terminal layout resets per session because the workbench is keyed by it",
+);
 assert.match(
   terminalDrawer,
-  /useEffect\(\(\) => \{[\s\S]*?createTerminalLayout\(\);[\s\S]*?\}, \[sessionId\]\);/,
-  "the terminal layout resets per session",
+  /useState<TerminalLayoutNode>\(createTerminalLayout\)/,
+  "each mounted drawer starts from a fresh single-pane layout",
 );
+assert.doesNotMatch(terminalDrawer, /\}, \[sessionId\]\);/, "no dead per-session reset effect");
 
 // The review rail keeps the PR panel code-split — the room opens far more often
 // than the PR tab, and its fetch stack must not ride the first chunk.

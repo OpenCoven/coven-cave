@@ -124,15 +124,6 @@ export function CodeTerminalDrawer({
     [roomHeightPx],
   );
 
-  // The split layout is per-session: switching sessions resets to one pane
-  // rather than carrying another session's splits over.
-  useEffect(() => {
-    const fresh = createTerminalLayout();
-    setLayout(fresh);
-    setFocusedPaneId(resolveFocusedPane(fresh, null));
-    setBroadcast(false);
-  }, [sessionId]);
-
   const handleSplit = useCallback((paneId: string, direction: TerminalSplitDirection) => {
     setLayout((current) => {
       const { layout: next, createdPaneId } = splitTerminalPane(current, paneId, direction);

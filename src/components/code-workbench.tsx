@@ -38,14 +38,15 @@
  *   - the composer knows the open file and the session's state.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { relativeTime } from "@/lib/relative-time";
 import { CodeComposer } from "@/components/code-composer";
-import { CodeOpenFileTabs } from "@/components/code-open-file-tabs";
+import { CodeOpenFileTabs, codeOpenFileTabId } from "@/components/code-open-file-tabs";
+import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
 import { CodeReviewRail } from "@/components/code-review-rail";
 import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
@@ -207,6 +208,16 @@ export function CodeWorkbench({
   const initialTabNeedsMeasuredLayout = initialTab === "files" && measuredWidth === null && typeof ResizeObserver !== "undefined" && !isMobile;
   const [step, setStep] = useState<CodeWorkbenchStep>("source");
   const { announce } = useAnnouncer();
+  // Tab ↔ panel wiring (#5729): the steps, the open files and the viewer each
+  // need ids the other side can point at.
+  const deskId = useId();
+  const stepTabId = (id: CodeWorkbenchStep) => `${deskId}-step-${id}`;
+  const stepPanelId = (id: CodeWorkbenchStep) => `${deskId}-step-panel-${id}`;
+  const stepPanel = (id: CodeWorkbenchStep) =>
+    fitsSplit ? {} : { id: stepPanelId(id), role: "tabpanel" as const, "aria-labelledby": stepTabId(id) };
+  const fileTabPrefix = `${deskId}-file`;
+  const viewerPanelId = `${deskId}-viewer`;
+  const stepTabRefs = useRef(new Map<CodeWorkbenchStep, HTMLButtonElement>());
   const announcedStepRef = useRef<CodeWorkbenchStep | null>(null);
   // Announced from an effect, never from inside a setState updater — React
   // re-invokes updaters while rendering, and writing to the live region there
@@ -354,6 +365,7 @@ export function CodeWorkbench({
     for (const file of changes.files) map.set(absolutePath(changesBase, file.path), STATUS_LETTER[file.status] ?? "M");
     return map;
   }, [changes.files, changesBase]);
+  const activeTabIndex = openFiles.active ? openFiles.paths.indexOf(openFiles.active) : -1;
   const selectedRelative = useMemo(() => {
     if (!selectedPath) return null;
     const base = changesBase.replace(/\/$/, "");
@@ -466,14 +478,21 @@ export function CodeWorkbench({
           requestAnimationFrame(() => deskRef.current?.querySelector<HTMLElement>(".code-term__bar")?.focus());
         }
       }
-      else if (action === "changes") {
-        setRailTab("changes");
+      else if (action === "changes" || action === "pr") {
+        setRailTab(action);
         onReviewOpenChange(true);
-      } else if (action === "pr") {
-        setRailTab("pr");
-        onReviewOpenChange(true);
+        // In the narrow layout the rail is a step; switching tab behind a
+        // hidden step did nothing visible (#5729).
+        if (!fitsSplit) setStep("review");
       } else if (action === "files") {
-        roomRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
+        if (!fitsSplit) setStep("files");
+        // The tree, or the changed-only list when that filter is on, after
+        // the step has rendered.
+        requestAnimationFrame(() => {
+          roomRef.current
+            ?.querySelector<HTMLElement>('[role="tree"], .code-tree__changed-row, .code-tree__filter')
+            ?.focus();
+        });
       } else if (action === "outline") {
         roomRef.current
           ?.querySelector<HTMLElement>('.workspace-rail__preview-action[aria-expanded]')
@@ -490,7 +509,7 @@ export function CodeWorkbench({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cycleTab, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
+  }, [cycleTab, fitsSplit, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
   const identity = codeDeskIdentity(row, changes);
@@ -626,15 +645,35 @@ export function CodeWorkbench({
           full-height file list. */}
       {fitsSplit || prFull ? null : (
         <div role="tablist" aria-label="Workbench step" className="code-room__steps">
-          {CODE_WORKBENCH_STEPS.map((id) => (
+          {CODE_WORKBENCH_STEPS.map((id, index) => (
             <button
               key={id}
+              ref={(node) => {
+                if (node) stepTabRefs.current.set(id, node);
+                else stepTabRefs.current.delete(id);
+              }}
               type="button"
               role="tab"
+              id={stepTabId(id)}
+              // "Review pane", not "Review": the code surface's own tabs
+              // already have a Review, and two same-named tabs on one
+              // screen are indistinguishable by name (#5729).
+              aria-label={`${STEP_LABEL[id]} pane`}
               aria-selected={step === id}
+              // Only the shown step's panel exists to point at.
+              aria-controls={step === id ? stepPanelId(id) : undefined}
+              tabIndex={step === id ? 0 : -1}
               data-selected={step === id ? "true" : undefined}
               className="focus-ring code-room__step"
               onClick={() => setStep(id)}
+              onKeyDown={(event) => {
+                const next = codeTablistKeyTarget(event, index, CODE_WORKBENCH_STEPS.length);
+                if (next === null) return;
+                event.preventDefault();
+                const target = CODE_WORKBENCH_STEPS[next];
+                setStep(target);
+                stepTabRefs.current.get(target)?.focus();
+              }}
             >
               {STEP_LABEL[id]}
             </button>
@@ -647,7 +686,7 @@ export function CodeWorkbench({
           <LazyPrReader repo={prRepo} number={prNumber} onBack={() => setPrFull(false)} />
         ) : null}
         {prFull ? null : fitsSplit || step === "files" ? (
-          <div className="code-room__tree">
+          <div className="code-room__tree" {...stepPanel("files")}>
             <CodeWorkbenchTree
               projectRoot={workRoot}
               familiarId={row.familiarId}
@@ -661,28 +700,40 @@ export function CodeWorkbench({
               changes={changedFiles}
               repoRoot={changes.repoRoot}
               changedOnly={treeChangedOnly}
+              changesStatus={changes.loaded ? (changes.ok ? "ready" : "unavailable") : "loading"}
               onChangedOnlyChange={setTreeChangedOnly}
             />
           </div>
         ) : null}
         {prFull ? null : fitsSplit || step === "source" ? (
-          <div className="code-room__viewer">
+          <div className="code-room__viewer" {...stepPanel("source")}>
             <CodeOpenFileTabs
               paths={openFiles.paths}
               active={openFiles.active}
               status={tabStatus}
               onSelect={selectTab}
               onClose={closeTab}
+              idPrefix={fileTabPrefix}
+              panelId={viewerPanelId}
             />
-            <RailFilePreview
-              path={selectedPath}
-              projectRoot={workRoot}
-              familiarId={row.familiarId}
-              onOpenPath={openPath}
-              variant="workbench"
-              rangeLabel={rangeLabel}
-              initialLine={focusLine}
-            />
+            {/* The open-file tabs' panel. Without tabs there is no tablist to
+                belong to, so it is a plain container then. */}
+            <div
+              className="code-room__viewer-panel"
+              id={viewerPanelId}
+              role={activeTabIndex >= 0 ? "tabpanel" : undefined}
+              aria-labelledby={activeTabIndex >= 0 ? codeOpenFileTabId(fileTabPrefix, activeTabIndex) : undefined}
+            >
+              <RailFilePreview
+                path={selectedPath}
+                projectRoot={workRoot}
+                familiarId={row.familiarId}
+                onOpenPath={openPath}
+                variant="workbench"
+                rangeLabel={rangeLabel}
+                initialLine={focusLine}
+              />
+            </div>
           </div>
         ) : null}
         {prFull ? null : fitsSplit || step === "review" ? (
@@ -701,6 +752,10 @@ export function CodeWorkbench({
             widthPx={fitsSplit ? railWidth : roomWidth}
             onWidthChange={setRailWidth}
             roomWidthPx={roomWidth}
+            // The narrow Review step fills the room: a grip and a widen
+            // control there would change nothing visible (#5729).
+            resizable={fitsSplit}
+            stepPanel={fitsSplit ? undefined : { id: stepPanelId("review"), labelledBy: stepTabId("review") }}
             focusPath={reviewFocus?.path}
             focusNonce={reviewFocus?.nonce}
             onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
