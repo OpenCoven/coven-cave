@@ -1094,9 +1094,35 @@
   padding-inline: var(--space-2);
 }
 
+/* The auxiliary pane has one useful column; the skills list must not compete
+   with the full-chat detail preview for its narrow composer width. */
+.right-chat .cave-composer-popover .skill-preview {
+  display: none;
+}
+
 .right-chat .home-dash__board-inner {
   padding: var(--space-3) 0;
   gap: 0;
+}
+
+/* Existing empty threads use the full-page welcome view. Keep its project and
+   linked-work context, but let the auxiliary pane read as a chat. */
+.right-chat .cave-chat-empty {
+  min-height: 0;
+  padding: var(--space-3);
+}
+
+.right-chat .cave-chat-empty-shell {
+  gap: var(--space-2);
+}
+
+.right-chat .cave-chat-empty-greeting,
+.right-chat .cave-chat-empty-hero,
+.right-chat .cave-chat-empty-familiar,
+.right-chat .cave-chat-empty-prompts,
+.right-chat .cave-chat-empty-task-tile,
+.right-chat .cave-chat-empty-hint {
+  display: none;
 }
 
 .right-chat .home-dash__board-head,

@@ -1214,11 +1214,19 @@ function ShellInner({
           writeNavWidthPref(normalizedWidth);
           setPreferredNavWidth(normalizedWidth);
         }
-        const rightChatWidth = rightChatRef.current?.getSize().inPixels;
+        // The imperative panel size can still describe the previous frame
+        // while onLayoutChanged receives the new layout. Persist the width
+        // represented by this callback instead of a stale panel measurement.
+        const groupWidth = groupElementRef.current?.clientWidth ?? 0;
+        const rightChatShare = layout["right-chat"];
+        const rightChatWidth = typeof rightChatShare === "number"
+          ? (rightChatShare / 100) * groupWidth
+          : undefined;
         if (
           hasRightChat &&
           meta.isUserInteraction &&
-          Number.isFinite(rightChatWidth)
+          Number.isFinite(rightChatWidth) &&
+          groupWidth > 0
         ) {
           const open = rightChatWidth! >= RIGHT_CHAT_MIN_PX;
           setRightChatOpen(open);
@@ -1335,9 +1343,6 @@ function ShellInner({
             collapsible
             collapsedSize={0}
             panelRef={rightChatRef}
-            onResize={(size) => {
-              if ((size.inPixels ?? 0) <= 0) setRightChatOpen(false);
-            }}
           >
             <div id="shell-right-chat-panel" className="shell-right-chat">
               {rightChat}

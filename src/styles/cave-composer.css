@@ -4,6 +4,8 @@
  * (#3264). Import alongside home-composer.css / cave-chat.css. */
 
 .cave-composer-dock {
+  position: relative;
+  z-index: 70;
   border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
   background:
     linear-gradient(to top, var(--bg-base), color-mix(in oklch, var(--bg-base) 82%, transparent));
