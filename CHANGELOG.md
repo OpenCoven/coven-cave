@@ -7,6 +7,44 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-02
+
+> Cave stops starting a second Coven daemon, so harness sessions can sign in again.
+
+Patch release on top of v0.5.6. Headline: when a launchd service owns the
+Coven daemon, Cave hands every start and restart to it instead of racing it
+for the daemon's lock. That race displaced the service and left harness
+sessions unable to sign in.
+
+### Fixed
+- **Daemon auto-start** (#5734). On macOS, when a loaded launchd job runs
+  `coven daemon serve` for Cave's own Coven home and socket, automatic
+  recovery, onboarding and Start use `launchctl kickstart` instead of
+  launching a daemon of Cave's own, and Restart uses `kickstart -k`. Restart
+  also hands a displaced daemon back: it stops the daemon holding the lock,
+  then restarts the service. Settings → Daemon says when the running daemon
+  isn't the one the service runs. A daemon Cave does launch no longer
+  inherits the app server's `PORT`, `HOSTNAME`, `NEXT_*` or package-manager
+  variables.
+- **Spawn environment** (#5736, #5738). The server's `NODE_ENV` no longer
+  reaches the daemon, harnesses, onboarding probes, npm, SSH or user tools.
+  Vault can no longer restore `NODE_ENV`, `INIT_CWD` or `PNPM_SCRIPT_SRC_DIR`
+  into a harness. A harness shell no longer builds with the wrong React or
+  installs without devDependencies.
+- **Coding Desk review findings** (#5733, #5735, #5737).
+  - A handed-off file no longer reopens on every re-render.
+  - A focused terminal no longer traps the keyboard.
+  - The viewer is readable in light mode.
+  - The composer reports a stopped or failed reply honestly.
+  - Failed change lists, file opens and panel actions say what failed and
+    offer Retry where it helps.
+  - Shortcuts that collided with the app's own keys move or start unbound:
+    help starts unbound, and "Focus the follow-up prompt" moves to ⌘I.
+
+### Changed
+- iOS performance capture can measure cold launches (`--cold`), and the
+  2026-10-01 device baseline is recorded (#5724). No app code changes.
+
 ## [0.5.6] - 2026-10-02
 
 > Memories draws its graph again, and iOS shows familiar avatars over Tailscale.
