@@ -11,7 +11,7 @@
 // issue:
 //
 //   - every supported OS appears exactly once,
-//   - every journey step and every global-CLI step is recorded with a result,
+//   - every journey step is recorded with a result,
 //   - the candidate version/tag/commit and artifact digests are well formed,
 //   - no credential-shaped text rides along in the committed evidence.
 //
@@ -40,8 +40,16 @@ export const JOURNEY_STEPS = [
 ];
 
 // Global `opencoven` CLI acceptance, installed from the published package
-// rather than a source checkout.
-export const CLI_STEPS = [
+// rather than a source checkout. Deferred, not required (Val, 2026-10-02,
+// #4781): the SDK keeps `@opencoven/dev-cli` private until its native trust
+// requirements are met and a standalone CLI release has its own reviewed
+// design (OpenCoven/sdk#37). With no published package to install, no record
+// could pass these steps, and a gate nobody can satisfy holds every release
+// without testing anything. A record that carries one is refused rather than
+// ignored, so a result for a step nobody could run is never read as evidence.
+// Restoring them means adding them back to ALL_STEPS, back to the template
+// through it, and `cliVersion` back to the required run fields.
+export const DEFERRED_CLI_STEPS = [
   { id: "cli-install", title: "Install @opencoven/dev-cli globally" },
   { id: "cli-doctor", title: "Run opencoven doctor" },
   { id: "cli-pair", title: "Pair the CLI against Cave" },
@@ -51,7 +59,11 @@ export const CLI_STEPS = [
   { id: "cli-scaffold", title: "Execute every scaffold" },
 ];
 
-export const ALL_STEPS = [...JOURNEY_STEPS, ...CLI_STEPS];
+export const DEFERRED_STEP_IDS = DEFERRED_CLI_STEPS.map((step) => step.id);
+export const DEFERRED_STEP_REASON =
+  "deferred until @opencoven/dev-cli is published (OpenCoven/sdk#37, #4781)";
+
+export const ALL_STEPS = [...JOURNEY_STEPS];
 export const REQUIRED_STEP_IDS = ALL_STEPS.map((step) => step.id);
 
 // `pending` means nobody has attempted the step yet, which is what a fresh
@@ -79,9 +91,9 @@ const SECRET_PATTERNS = [
   { id: "npm-token", pattern: /\bnpm_[A-Za-z0-9]{36}\b/ },
   { id: "private-key", pattern: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/ },
   // The three below are the shapes this record in particular invites. The
-  // journey pairs a client and pairs a CLI, so an operator pasting a `cli-pair`
-  // or `pair-approve` diagnostic is pasting exactly an Authorization header, a
-  // callback url, or a workspace token.
+  // journey pairs a client, so an operator pasting a `pair-approve` diagnostic
+  // is pasting exactly an Authorization header, a callback url, or a workspace
+  // token.
   { id: "slack-token", pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/ },
   { id: "bearer-credential", pattern: /\b[Bb]earer\s+[A-Za-z0-9._~+/-]{20,}={0,2}/ },
   {
@@ -104,7 +116,6 @@ export function blankAcceptanceRecord(version = "0.0.0") {
       osVersion: "",
       caveVersion: "",
       chatVersion: version,
-      cliVersion: version,
       steps: structuredClone(steps),
     })),
   };
@@ -228,7 +239,7 @@ function validateRuns(runs, add) {
     // `"true"`, both of which are non-empty, so a run recording `"osVersion": {}`
     // satisfied "is required" and the whole record validated `complete`. An
     // environment nothing describes is not an environment somebody recorded.
-    for (const field of ["osVersion", "caveVersion", "chatVersion", "cliVersion"]) {
+    for (const field of ["osVersion", "caveVersion", "chatVersion"]) {
       if (!readString(run[field]).trim()) {
         add(`runs[${index}].${field} '${show(run[field])}' is not a recorded version; give it a non-empty string`);
       }
@@ -252,7 +263,11 @@ function validateSteps(run, index, os, add) {
   }
 
   for (const id of Object.keys(steps)) {
-    if (!REQUIRED_STEP_IDS.includes(id)) add(`runs[${index}].steps has unknown step '${id}'`);
+    if (DEFERRED_STEP_IDS.includes(id)) {
+      add(`runs[${index}].steps.${id} is ${DEFERRED_STEP_REASON}; remove it from the record`);
+    } else if (!REQUIRED_STEP_IDS.includes(id)) {
+      add(`runs[${index}].steps has unknown step '${id}'`);
+    }
   }
 
   const failedSteps = [];
@@ -398,6 +413,9 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
 
   if (command === "steps") {
     for (const step of ALL_STEPS) log(`${step.id}\t${step.title}`);
+    // A comment line, so the deferred steps stay visible to an operator without
+    // reading as rows of the journey to anything that splits this on tabs.
+    log(`# not recorded, ${DEFERRED_STEP_REASON}: ${DEFERRED_STEP_IDS.join(", ")}`);
     return 0;
   }
 

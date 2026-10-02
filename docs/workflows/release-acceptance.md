@@ -21,7 +21,7 @@ step, a malformed checksum, or a leaked credential fails loudly instead of
 passing as prose in a release issue.
 
 ```bash
-pnpm release:acceptance steps                 # the journey, in order
+pnpm release:acceptance steps                 # the journey, in order, then the deferred steps as a comment
 pnpm release:acceptance template 1.0.0 > docs/release-acceptance-results/v1.0.0.json
 pnpm release:acceptance validate docs/release-acceptance-results/v1.0.0.json
 ```
@@ -60,10 +60,21 @@ machine with no developer tools and no source checkout.
 | `revoke-pairing` | Revoke the client and return to pairing |
 | `update-migration` | Update Chat and verify preference/keychain/cache migration |
 
-Then the global CLI, installed from the published package rather than a
-checkout:
+### Deferred: global CLI steps
 
-| Step id | What the operator does |
+These steps are **deferred, not required**. Val made that decision on
+2026-10-02, recorded on
+[#4781](https://github.com/OpenCoven/coven-cave/issues/4781).
+
+The steps install the global `opencoven` CLI from its published package. The
+SDK has formally kept `@opencoven/dev-cli` private
+([OpenCoven/sdk#37](https://github.com/OpenCoven/sdk/issues/37)): its native
+trust requirements are unmet, and a standalone CLI release needs its own
+reviewed design. With no published package, no operator can run these steps,
+and a required step that nobody can run would hold every release without
+testing anything.
+
+| Step id | What the operator would do |
 | --- | --- |
 | `cli-install` | Install `@opencoven/dev-cli` globally |
 | `cli-doctor` | Run `opencoven doctor` |
@@ -72,6 +83,16 @@ checkout:
 | `cli-send` | Send a test conversation message |
 | `cli-tail` | Tail that conversation |
 | `cli-scaffold` | Execute every scaffold |
+
+Until they are restored:
+- The template omits these steps and `cliVersion`.
+- `complete` does not depend on them.
+- A record that still carries one of them is refused, with the reason, rather
+  than counted.
+
+Restore them only when a reviewed standalone CLI design has shipped a published
+package. Restoring them is a code change in `scripts/release-acceptance.mjs`
+and this runbook together, not an edit to one record.
 
 ## The evidence record
 
@@ -94,8 +115,8 @@ Every field the validator reads has to be a JSON string — the ones matched
 against a pattern or one of those four words (`os`, `result`,
 `candidate.version`, `candidate.tag`, `candidate.commit`, `artifacts[].name`,
 `artifacts[].sha256`) and equally the ones only required to be non-empty
-(`osVersion`, `caveVersion`, `chatVersion`, `cliVersion`, and the
-`diagnosticId` a `fail` or `blocked` step owes). A value of another type states
+(`osVersion`, `caveVersion`, `chatVersion`, and the `diagnosticId` a `fail`
+or `blocked` step owes). A value of another type states
 nothing and fails its check, rather than being coerced: `["pass"]` reads as
 `"pass"` under coercion, and `{}` reads as `"[object Object]"`, which is
 non-empty — that is how a generated record would validate `complete` with no
@@ -111,7 +132,6 @@ result and no environment recorded anywhere in it.
       "osVersion": "15.5",
       "caveVersion": "0.3.6",
       "chatVersion": "1.0.0",
-      "cliVersion": "1.0.0",
       "steps": {
         "install-cave": { "result": "pass", "diagnosticId": "", "notes": "" }
       }
@@ -122,8 +142,9 @@ result and no environment recorded anywhere in it.
 
 The validator reports three states:
 
-- **`complete`** — all three operating systems present, every step passed, and
-  no structural problem anywhere in the file. This is the only state that
+- **`complete`** — all three operating systems present, every required step
+  passed, no deferred step carried, and no structural problem anywhere in the
+  file. This is the only state that
   unblocks rollout. A malformed digest or a mismatched tag therefore keeps a
   fully passed journey out of `complete`, deliberately: the record is a claim
   about *which bytes* were accepted, and a record that cannot say which bytes

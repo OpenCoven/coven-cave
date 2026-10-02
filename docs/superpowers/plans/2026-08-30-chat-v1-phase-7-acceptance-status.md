@@ -1,5 +1,16 @@
 # Chat v1 Phase 7 — OS acceptance, staged rollout, and rollback drill: verified status + acceptance evidence runbook
 
+> **Decision — 2026-10-02:** Val deferred the seven `cli-*` acceptance steps.
+> The SDK keeps `@opencoven/dev-cli` private
+> ([sdk#37](https://github.com/OpenCoven/sdk/issues/37)), so they cannot run
+> from a published package. They are no longer required for an acceptance
+> record to reach `complete`. The tooling refuses a record that still carries
+> one, and the runbook lists them under *Deferred*
+> ([`release-acceptance.md`](../../workflows/release-acceptance.md#deferred-global-cli-steps)).
+> They return only with a reviewed, published standalone CLI. The twelve
+> desktop journey steps and every other #4781 criterion are unchanged; #4781
+> stays open and blocked on the rows below.
+
 > **Current refresh — 2026-09-21:** re-verified from a darwin-arm64 host.
 > The evidence tooling, the v0.4.2 updater chain, rollback readiness to
 > v0.4.1, and the installed-app Client v1 release smoke all pass; the
@@ -97,6 +108,10 @@ The journey step ids below are the canonical ids `scripts/release-acceptance.mjs
 
 ### 4.2 Global CLI acceptance (`@opencoven/dev-cli` → `opencoven`)
 
+*Deferred 2026-10-02 (see the decision note at the top). The evidence design
+below is kept for when a published CLI restores these steps; nothing in it is
+required today.*
+
 Plan wording (Task 12 step 13): install the CLI, run doctor, inspect Coven sessions, send/tail a test conversation, execute every scaffold. Canonical step ids: `cli-install`, `cli-doctor`, `cli-pair`, `cli-session`, `cli-send`, `cli-tail`, `cli-scaffold`.
 
 Evidence per step (**derived**, consistent with the app-step rule above): the CLI's own stdout captured to a log per step **plus its exit code** — the CLI is the one journey surface where exit codes are first-class evidence; `cli-doctor` additionally captures the doctor report's verdict lines; `cli-pair` records the pairing grant id it created; `cli-send`/`cli-tail` record the message id and prove the tailed output contains it exactly once (this is the duplicate-send canary on the CLI path); `cli-session` records the session ids it listed; `cli-scaffold` records one line per scaffold executed with its exit code. Same four-result semantics and `diagnosticId` requirement as the app steps.
@@ -154,7 +169,7 @@ Evidence the drill itself must leave: the `restore-plan` output, the `make_lates
 | Dependency `cave-j65ie` | Open — Chat v1 signed artifacts and published SDK/CLI packages do not exist |
 | Dependency `cave-as76u` | No mirror card to verify against; plan-derived identification unconfirmed |
 | Acceptance journey (macOS/Windows/Linux) | Not executed — `docs/release-acceptance-results/` holds no record; requires human hosts |
-| Global CLI acceptance | Not executable today — `@opencoven/dev-cli` unpublished |
+| Global CLI acceptance | Not executable today — `@opencoven/dev-cli` unpublished (deferred 2026-10-02; no longer required) |
 | Evidence tooling (Linux) | **Verified working today** (§2 table) |
 | Prior stable + rollback metadata | **Verified today** — v0.3.11 rollback-ready 4/4 platforms; updater chain PASS |
 | Rollout gate | Correctly holds: no candidate exists to gate |

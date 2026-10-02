@@ -10,7 +10,8 @@ import test from "node:test";
 import {
   ACCEPTANCE_OSES,
   ALL_STEPS,
-  CLI_STEPS,
+  DEFERRED_CLI_STEPS,
+  DEFERRED_STEP_IDS,
   JOURNEY_STEPS,
   REQUIRED_STEP_IDS,
   blankAcceptanceRecord,
@@ -39,27 +40,65 @@ function passingRecord(overrides = {}) {
       osVersion: "test",
       caveVersion: "0.3.6",
       chatVersion: "1.0.0",
-      cliVersion: "1.0.0",
       steps: passingSteps(),
     })),
     ...overrides,
   };
 }
 
-test("the journey covers the desktop steps and the global CLI steps exactly once", () => {
-  assert.equal(
-    ALL_STEPS.length,
-    JOURNEY_STEPS.length + CLI_STEPS.length,
-    "ALL_STEPS is the concatenation, so a step added to either list must appear here",
+test("the journey covers the desktop steps exactly once", () => {
+  assert.deepEqual(
+    ALL_STEPS,
+    JOURNEY_STEPS,
+    "the required journey is the twelve desktop steps; a step added to either list must appear in both",
   );
   assert.equal(
     new Set(REQUIRED_STEP_IDS).size,
     REQUIRED_STEP_IDS.length,
     "a duplicated step id would let one recorded result satisfy two obligations",
   );
-  for (const id of ["pair-approve", "revoke-pairing", "update-migration", "cli-doctor", "cli-scaffold"]) {
+  for (const id of ["pair-approve", "revoke-pairing", "update-migration"]) {
     assert.ok(REQUIRED_STEP_IDS.includes(id), `${id} is named in the acceptance criteria and must be recorded`);
   }
+});
+
+test("the global CLI steps are deferred, not silently dropped", () => {
+  // #4781, 2026-10-02: the SDK keeps @opencoven/dev-cli private (sdk#37), so
+  // nobody can install it from a published package. The steps stay named so
+  // restoring them is a deliberate edit, and stay out of the required set so
+  // the gate does not hold every release on a step no one can run.
+  assert.deepEqual(
+    DEFERRED_STEP_IDS,
+    ["cli-install", "cli-doctor", "cli-pair", "cli-session", "cli-send", "cli-tail", "cli-scaffold"],
+    "the seven deferred ids are the ones the runbook lists under Deferred",
+  );
+  assert.deepEqual(DEFERRED_STEP_IDS, DEFERRED_CLI_STEPS.map((step) => step.id));
+  for (const id of DEFERRED_STEP_IDS) {
+    assert.ok(!REQUIRED_STEP_IDS.includes(id), `${id} is deferred and must not be required for complete`);
+  }
+
+  const template = blankAcceptanceRecord("1.0.0");
+  for (const run of template.runs) {
+    assert.ok(!("cliVersion" in run), "the template does not ask for the version of a CLI nobody can install");
+  }
+  assert.equal(
+    validateAcceptanceRecord(passingRecord()).status,
+    "complete",
+    "twelve passed desktop steps on three OSes, with no CLI results and no cliVersion, is a complete record",
+  );
+
+  const carried = passingRecord();
+  carried.runs[0].steps["cli-doctor"] = { result: "pass", diagnosticId: "", notes: "" };
+  const result = validateAcceptanceRecord(carried);
+  assert.notEqual(result.status, "complete", "a result for a step nobody could run is not evidence");
+  assert.ok(
+    result.errors.some((error) => error.includes("cli-doctor") && error.includes("sdk#37")),
+    "the operator is told why the step is refused, not that it is an unknown typo",
+  );
+  assert.ok(
+    !result.errors.some((error) => error.includes("unknown step 'cli-doctor'")),
+    "a deferred step is a known step with a reason, so it does not read as a typo",
+  );
 });
 
 test("a blank record is well formed but never counts as acceptance", () => {
@@ -127,7 +166,7 @@ test("completion requires every operating system to have passed, not merely to h
   // complete in those tests are kept out by a structural error rather than by
   // this clause.
   const record = passingRecord();
-  record.runs[2].steps["cli-tail"] = { result: "pending", diagnosticId: "", notes: "" };
+  record.runs[2].steps["update-migration"] = { result: "pending", diagnosticId: "", notes: "" };
   const validated = validateAcceptanceRecord(record);
   assert.deepEqual(validated.errors, [], "the record is structurally sound; only the journey is unfinished");
   assert.notEqual(
@@ -265,7 +304,7 @@ test("a digest or a commit of the wrong length is not the one that was accepted"
 
 test("credential-shaped text in the evidence is refused", () => {
   const record = passingRecord();
-  record.runs[0].steps["cli-pair"] = {
+  record.runs[0].steps["pair-approve"] = {
     result: "pass",
     notes: "paired with ghp_abcdefghijklmnopqrstuvwxyz0123456789",
   };
@@ -293,7 +332,7 @@ test("the credential shapes this journey invites are caught", () => {
   ];
   for (const [id, note] of cases) {
     const record = passingRecord();
-    record.runs[0].steps["cli-pair"] = { result: "pass", notes: note };
+    record.runs[0].steps["pair-approve"] = { result: "pass", notes: note };
     assert.ok(
       validateAcceptanceRecord(record).errors.some((error) => error.includes(id)),
       `pairing is step four of the journey, so a ${id} is what an operator's own diagnostic paste looks like`,
@@ -385,7 +424,7 @@ test("the environment a run was performed in has to be recorded, not merely pres
   // "[object Object]", `true` became "true", and `0` became "0" — each non-empty,
   // each satisfying "is required", and the record validated `complete` claiming
   // an acceptance run on an OS version nobody wrote down.
-  for (const field of ["osVersion", "caveVersion", "chatVersion", "cliVersion"]) {
+  for (const field of ["osVersion", "caveVersion", "chatVersion"]) {
     for (const value of [{}, true, false, 0, 1, NaN, ["15.5"], { a: 1 }, null, undefined, "   "]) {
       const record = passingRecord();
       record.runs[0][field] = value;
@@ -475,6 +514,18 @@ test("the CLI validates, templates, and reports exit codes", () => {
   );
 
   assert.equal(runCli({ argv: ["template", "1.0.0"], log }), 0, "template emits a starting point");
+
+  const stepLines = [];
+  assert.equal(runCli({ argv: ["steps"], log: (line) => stepLines.push(line) }), 0);
+  assert.deepEqual(
+    stepLines.filter((line) => !line.startsWith("#")).map((line) => line.split("\t")[0]),
+    REQUIRED_STEP_IDS,
+    "the journey rows are exactly the required steps, in order",
+  );
+  assert.ok(
+    stepLines.some((line) => line.startsWith("#") && DEFERRED_STEP_IDS.every((id) => line.includes(id))),
+    "the deferred steps are listed on a comment line, so an operator still sees them",
+  );
   assert.throws(
     () => runCli({ argv: ["validate"], log }),
     /usage/,
