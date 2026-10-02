@@ -406,6 +406,15 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
     await expect(grip).toHaveAttribute("aria-valuenow", "460");
 
+    // Closing never costs height (#5729): the drawer used to re-clamp against
+    // the body measured while open, and came back at 278 here.
+    await page.getByRole("button", { name: "Close the terminal drawer" }).click();
+    await expect(page.getByRole("button", { name: "Open the terminal drawer" })).toBeVisible();
+    await page.waitForTimeout(600);
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(grip).toHaveAttribute("aria-valuenow", "460");
+    await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+
     // Remembered on this device. (A plain reload lands on the workspace's
     // default mode — the ?mode= idiom strips itself — so re-enter the desk.)
     await openDesk(page);
@@ -655,6 +664,124 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const diffstat = page.getByTestId("code-desk-diffstat");
     await expect(diffstat).toContainText("+12");
     await expect(diffstat).toContainText("−3");
+  });
+
+  // ── Pass 3 fixes (#5729) ───────────────────────────────────────────────────
+
+  test("16. a focused terminal hands back its toggle, and focus lands on the bar", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(page.getByRole("separator", { name: "Resize the terminal drawer" })).toBeVisible();
+    // The harness runs no shell, so stand in for xterm's focused helper
+    // textarea inside the drawer — the target every key in a live terminal has.
+    await page.evaluate(() => {
+      const host = document.querySelector(".code-term__drawer-body");
+      const xterm = document.createElement("div");
+      xterm.className = "xterm";
+      const field = document.createElement("textarea");
+      field.className = "xterm-helper-textarea";
+      field.setAttribute("aria-label", "Terminal input");
+      xterm.append(field);
+      host?.append(xterm);
+      field.focus();
+    });
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".xterm")))).toBe(true);
+
+    // Other desk shortcuts still belong to the shell...
+    await page.keyboard.press("ControlOrMeta+p");
+    await expect(page.locator("[data-code-picker-panel]")).toHaveCount(0);
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".xterm")))).toBe(true);
+
+    // ...but the toggle leaves, and focus lands on the bar that reopens it.
+    await page.keyboard.press("ControlOrMeta+Backquote");
+    const bar = page.getByRole("button", { name: "Open the terminal drawer" });
+    await expect(bar).toBeVisible();
+    await expect(bar).toBeFocused();
+
+    // The bar's hint is the bound combo, not a hard-coded ⌃`.
+    const hint = await bar.locator(".code-term__kbd").innerText();
+    expect(hint.endsWith("`")).toBe(true);
+    expect(["⌘`", "Ctrl`"]).toContain(hint);
+  });
+
+  test("17. in light mode the viewer header and a rendered README are readable", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await expect(page.locator(".code-room__viewer .workspace-rail__preview-name")).toHaveText("README.md");
+    await page.evaluate(() => document.documentElement.setAttribute("data-mode", "light"));
+    await page.waitForTimeout(300);
+    const ratios = await page.evaluate(() => {
+      // Canvas round-trip: computed colors arrive as oklch / color-mix.
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = 1;
+      const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+      const rgba = (c: string) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = c;
+        ctx.fillRect(0, 0, 1, 1);
+        return [...ctx.getImageData(0, 0, 1, 1).data];
+      };
+      const lum = ([r, g, b]: number[]) => {
+        const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      const backdrop = (el: Element | null) => {
+        for (; el; el = el.parentElement) {
+          const c = rgba(getComputedStyle(el).backgroundColor);
+          if (c[3] === 255) return c;
+        }
+        return [255, 255, 255, 255];
+      };
+      const ratio = (sel: string) => {
+        const el = document.querySelector(sel);
+        if (!el) return 0;
+        const a = lum(rgba(getComputedStyle(el).color));
+        const b = lum(backdrop(el));
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      return {
+        name: ratio(".code-room__viewer .workspace-rail__preview-name"),
+        chip: ratio(".code-room__viewer .workspace-rail__preview-chip"),
+        prose: ratio(".code-room__viewer .comux-md p, .code-room__viewer .comux-md h1"),
+      };
+    });
+    // It measured 1.08:1 before the fix.
+    expect(ratios.name).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.chip).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.prose).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("18. opening the Changes panel again costs one request, not a round of refetches", async ({ page }) => {
+    // An idle session's room does not poll, so every status request below is
+    // one the desk chose to make.
+    await base(page, [{ ...NEWEST, status: "idle" }, OLDER]);
+    let statusRequests = 0;
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname !== "/api/changes" || request.method() !== "GET") return;
+      if (["branches", "path", "checkpoints"].some((key) => url.searchParams.has(key))) return;
+      statusRequests += 1;
+    });
+    await openDesk(page);
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 2 viewed");
+    await page.waitForTimeout(1_500);
+    const settled = statusRequests;
+    await page.waitForTimeout(1_500);
+    expect(statusRequests).toBe(settled);
+
+    // Away to Pull request and back: the panel remounts and loads once. Its
+    // initial [] used to read as a disagreement and refetch both lists.
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("tab", { name: "Pull request" }).click();
+    await page.waitForTimeout(500);
+    const beforeReturn = statusRequests;
+    await rail.getByRole("tab", { name: /Changes/ }).click();
+    await expect(rail.getByRole("switch", { name: "Mark src/flux.ts viewed" })).toBeVisible();
+    await page.waitForTimeout(1_500);
+    expect(statusRequests - beforeReturn).toBe(1);
   });
 });
 

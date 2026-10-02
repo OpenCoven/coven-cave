@@ -68,6 +68,10 @@ export type CodeTerminalDrawerProps = {
   /** Measured height of the column body the drawer shares its space with;
    *  null until measured. */
   bodyHeightPx?: number | null;
+  /** The bound toggle, as display chips (e.g. ⌘ \`). Empty when unbound. */
+  toggleHint?: readonly string[];
+  /** The toggle's key test, so a focused terminal hands it to the desk. */
+  releaseKey?: (event: KeyboardEvent) => boolean;
 };
 
 export function CodeTerminalDrawer({
@@ -77,6 +81,8 @@ export function CodeTerminalDrawer({
   open,
   onOpenChange,
   bodyHeightPx = null,
+  toggleHint = ["⌃", "`"],
+  releaseKey,
 }: CodeTerminalDrawerProps) {
   const { announce } = useAnnouncer();
   const [heightPx, setHeightPx] = useState(CODE_TERMINAL_DEFAULT_HEIGHT_PX);
@@ -99,9 +105,14 @@ export function CodeTerminalDrawer({
 
   // The room shrank under a remembered height: re-clamp, but do not persist —
   // the preference is still the taller one for the next big window.
+  // Only while open (#5729): on close the region briefly reads as the body
+  // measured WITH the drawer open, and clamping against that shrank the
+  // height every time the drawer closed. The clamp only shrinks, so the lost
+  // height never came back on reopen.
   useEffect(() => {
+    if (!open) return;
     setHeightPx((current) => clampCodeTerminalHeight(current, roomHeightPx));
-  }, [roomHeightPx]);
+  }, [open, roomHeightPx]);
 
   const commitHeight = useCallback(
     (next: number) => {
@@ -246,10 +257,14 @@ export function CodeTerminalDrawer({
           </span>
         ) : null}
         <span className="code-term__spacer" />
-        <span className="code-term__hint">
-          <kbd className="code-term__kbd">⌃`</kbd>
-          {open ? "close" : "open"}
-        </span>
+        {toggleHint.length ? (
+          <span className="code-term__hint">
+            {/* The bound combo, not a hard-coded one — this hint is the
+                advertised way back out of a focused terminal (#5729). */}
+            <kbd className="code-term__kbd">{toggleHint.join("")}</kbd>
+            {open ? "close" : "open"}
+          </span>
+        ) : null}
         <Icon name={open ? "ph:caret-down" : "ph:caret-up"} width={11} height={11} aria-hidden />
       </button>
       <div
@@ -293,6 +308,7 @@ export function CodeTerminalDrawer({
             onSplit={handleSplit}
             onClosePane={handleClosePane}
             onToggleBroadcast={() => setBroadcast((on) => !on)}
+            releaseKey={releaseKey}
             // The height toggle lives in the pane bar: a separate "Terminal ·
             // this worktree" bar above it repeated the status strip and cost
             // the shell a row (#5718).

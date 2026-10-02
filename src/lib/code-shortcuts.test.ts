@@ -11,6 +11,7 @@ const {
   codeComboChips,
   CODE_RESERVED_COMBOS,
   isCodeShortcutTarget,
+  isCodeShortcutAllowed,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -107,6 +108,20 @@ assert.equal(isCodeShortcutTarget(el("DIV", { isContentEditable: true })), false
 // would steal Ctrl+P and Ctrl+C from a running shell.
 assert.equal(isCodeShortcutTarget(el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
 assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
+
+// ...except the drawer's own toggle (#5729). Without it a focused terminal is a
+// keyboard trap: xterm consumes Tab, and the bar's "close" hint went to the shell.
+{
+  const inXterm = el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) });
+  assert.equal(isCodeShortcutAllowed(inXterm, "terminal"), true, "the toggle leaves a focused terminal");
+  for (const action of ["picker", "prompt", "changes", "pr", "files", "outline", "next-file", "previous-file", "help"]) {
+    assert.equal(isCodeShortcutAllowed(inXterm, action), false, `${action} still belongs to the shell`);
+  }
+  // Outside a terminal the old rule holds unchanged.
+  assert.equal(isCodeShortcutAllowed(el("DIV"), "picker"), true);
+  assert.equal(isCodeShortcutAllowed(el("TEXTAREA"), "terminal"), false, "a prose field never yields, not even the toggle");
+  assert.equal(isCodeShortcutAllowed(el("DIV"), null), false, "no bound action, nothing to allow");
+}
 
 // ── Rebinding ────────────────────────────────────────────────────────────────
 

@@ -171,6 +171,10 @@ async function createXterm(
     onRequestFind: () => void;
     /** prefers-reduced-motion at creation time — disables cursor blink. */
     reducedMotion?: boolean;
+    /** A key the HOST owns even while the terminal has focus — xterm skips it
+     *  and the event reaches the page. Without one, a focused terminal holds
+     *  the keyboard: xterm consumes Tab and Shift+Tab (#5729). */
+    releaseKey?: (event: KeyboardEvent) => boolean;
   },
 ): Promise<XtermBundle> {
   const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
@@ -207,6 +211,7 @@ async function createXterm(
   });
   // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
   term.attachCustomKeyEventHandler((e) => {
+    if (handlers.releaseKey?.(e)) return false;
     if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
       e.preventDefault();
       handlers.onRequestFind();
@@ -241,6 +246,7 @@ export function BottomTerminal({
   onUserInput,
   writerRef,
   onHealthChange,
+  releaseKey,
 }: {
   threadId: string;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
@@ -260,7 +266,12 @@ export function BottomTerminal({
   /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
   writerRef?: React.Ref<TerminalWriterHandle>;
   onHealthChange?: (health: TerminalHealth) => void;
+  /** Keys the host handles even while this terminal has focus (its own
+   *  toggle, say). Read live, so a rebinding applies without a remount. */
+  releaseKey?: (event: KeyboardEvent) => boolean;
 }) {
+  const releaseKeyRef = useRef(releaseKey);
+  releaseKeyRef.current = releaseKey;
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
   // them to the shared assertive live region so AT interrupts with the status.
@@ -554,6 +565,7 @@ export function BottomTerminal({
         onResults: (index, count) => setFindInfo({ index, count }),
         onRequestFind: openFind,
         reducedMotion: reducedMotionRef.current,
+        releaseKey: (event) => releaseKeyRef.current?.(event) ?? false,
       });
       termRef.current = term;
       searchRef.current = search;
@@ -760,6 +772,7 @@ export function BottomTerminal({
         onResults: (index, count) => setFindInfo({ index, count }),
         onRequestFind: openFind,
         reducedMotion: reducedMotionRef.current,
+        releaseKey: (event) => releaseKeyRef.current?.(event) ?? false,
       });
       termRef.current = term;
       searchRef.current = search;

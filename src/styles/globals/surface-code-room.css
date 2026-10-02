@@ -404,6 +404,12 @@
 }
 .code-room__viewer > * { flex: 1; min-width: 0; min-height: 0; }
 .code-room__viewer > .code-tabs { flex: none; }
+/* Light mode (#5729): --code-surface is dark in every mode, so the viewer kept
+   a near-black fill while its header, rendered markdown, empty and error
+   states took light-mode ink — 1.08:1 on the file name. The viewer takes the
+   page surface instead; code blocks keep their own dark code chrome
+   (cave-md/code.css), exactly as the chat rail's preview already renders. */
+:root[data-mode="light"] .code-room__viewer { background: var(--bg-base); }
 
 /* ── Narrow step switcher ── */
 .code-room__steps {

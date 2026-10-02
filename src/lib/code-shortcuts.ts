@@ -209,6 +209,22 @@ export function isCodeShortcutTarget(target: EventTarget | null): boolean {
   return tag !== "input" && tag !== "textarea" && tag !== "select";
 }
 
+/**
+ * May this room action act on a keystroke aimed at `target`?
+ *
+ * Everything `isCodeShortcutTarget` allows, plus exactly one key from inside
+ * a focused terminal: the terminal drawer's own toggle (#5729). Every other
+ * key there still belongs to the shell. Without this exception a focused
+ * terminal was a keyboard trap — xterm consumes Tab and Shift+Tab, and the
+ * "close" hint on the drawer bar sent its key to the shell instead.
+ */
+export function isCodeShortcutAllowed(target: EventTarget | null, action: CodeShortcutId | null): boolean {
+  if (!action) return false;
+  if (isCodeShortcutTarget(target)) return true;
+  const el = target as HTMLElement | null;
+  return action === "terminal" && typeof el?.closest === "function" && Boolean(el.closest(".xterm"));
+}
+
 /** Which action a live keypress triggers, or null. Unbound entries never match. */
 export function codeShortcutForCombo(
   keymap: Record<CodeShortcutId, string>,

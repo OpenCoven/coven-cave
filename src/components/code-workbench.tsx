@@ -93,7 +93,8 @@ import {
   CODE_SHORTCUT_STORAGE_KEY,
   codeComboFromEvent,
   codeShortcutForCombo,
-  isCodeShortcutTarget,
+  isCodeShortcutAllowed,
+  codeComboChips,
   defaultCodeKeymap,
   mergeCodeKeymap,
   type CodeShortcutId,
@@ -237,27 +238,15 @@ export function CodeWorkbench({
   // changed while you were away reads as unviewed again.
   const [viewed, setViewed] = useState<CodeRailViewedState>(() => codeDeskMemory.read(row.id)?.viewed ?? {});
   const [reviewFocus, setReviewFocus] = useState<{ path: string; nonce: number } | null>(null);
-  // Which session the state above currently belongs to. Writes are skipped
-  // for the one render where `row.id` has moved on but the restore has not
-  // landed yet — otherwise the previous session's tabs would be filed under
-  // the new one.
-  const memoryOwnerRef = useRef(row.id);
+  // One workbench per session: CodeView keys this component by session id,
+  // so `row.id` is fixed for the life of a mount and the state above is seeded
+  // from that session's memory exactly once (#5729). A `[row.id]` effect that
+  // re-applied the memory used to sit here; it never ran for a real switch,
+  // and under StrictMode's mount, unmount, mount it reset the rail focus a
+  // routed diff open had just set, so the handed-off file arrived collapsed.
   useEffect(() => {
-    if (memoryOwnerRef.current !== row.id) return;
     codeDeskMemory.write(row.id, { openFiles, viewed });
   }, [openFiles, row.id, viewed]);
-  useEffect(() => {
-    const memory = codeDeskMemory.read(row.id);
-    setSelectedPath(memory?.openFiles.active ?? null);
-    setFocusLine(null);
-    setRangeLabel(null);
-    setTreeChangedOnly(false);
-    setPrFull(false);
-    setOpenFiles(memory?.openFiles ?? emptyCodeOpenFiles());
-    setViewed(memory?.viewed ?? {});
-    setReviewFocus(null);
-    memoryOwnerRef.current = row.id;
-  }, [row.id]);
 
   const panels = resolveCodeWorkbenchPanels({
     row,
@@ -334,6 +323,12 @@ export function CodeWorkbench({
 
   useEffect(() => {
     if (!openTarget) return;
+    // Once per routed open (#5729). CodeView keeps the target set until the
+    // reader switches session and passes `onReviewOpenChange` as a fresh arrow
+    // each render, so without this every re-render (a sessions poll, hiding
+    // the rail) replayed the open: the rail could not be hidden, and the
+    // viewer jumped back to the routed file over whatever was open.
+    if (handledOpenNonceRef.current === openTarget.nonce) return;
     handledOpenNonceRef.current = openTarget.nonce;
     if (openTarget.kind === "changes") {
       setRailTab("changes");
@@ -372,28 +367,29 @@ export function CodeWorkbench({
   );
   const viewedCount = countCodeRailViewed(viewed, railFileShapes);
 
-  // ── One snapshot (#5720 review) ────────────────────────────────────────────
+  // ── One snapshot (#5720 review, reworked for #5729) ────────────────────────
   // The changes panel keeps its own fetch — it owns the commit, revert and
-  // error states — so it can settle on a newer response than the room's
-  // subscription (or an older one). When the two disagree, ask both to
-  // refetch through the shared `cave:changes-refresh` signal they already
-  // listen for. Once per distinct disagreement: a worktree an agent is
-  // rewriting on every request must not turn this into a fetch loop.
+  // error states — and the panel is where the reader's own actions land
+  // (revert, commit, Refresh). So the panel leads: each time ITS snapshot
+  // changes and disagrees with the room's, the room refetches once. Nothing
+  // else triggers it, which bounds the work by the panel's own updates.
+  // The first version refetched BOTH on any disagreement: the panel's initial
+  // `[]` forced a round on every mount, a list left behind by an unmounted
+  // panel forced one on every room update, and a worktree under continuous
+  // writes kept producing fresh disagreements.
   const [panelFiles, setPanelFiles] = useState<ChangedFile[] | null>(null);
-  const reconciledRef = useRef<string | null>(null);
+  const panelKey = useMemo(
+    () => (panelFiles ? codeChangeSnapshotKey(panelFiles.map(codeRailShapeOf)) : null),
+    [panelFiles],
+  );
+  const roomKeyRef = useRef("");
+  roomKeyRef.current = codeChangeSnapshotKey(railFileShapes);
+  const refreshRoomRef = useRef(changes.refresh);
+  refreshRoomRef.current = changes.refresh;
   useEffect(() => {
-    if (!panelFiles || !changes.ok) return;
-    const roomKey = codeChangeSnapshotKey(railFileShapes);
-    const panelKey = codeChangeSnapshotKey(panelFiles.map(codeRailShapeOf));
-    if (roomKey === panelKey) {
-      reconciledRef.current = null;
-      return;
-    }
-    const pair = `${roomKey}\u0002${panelKey}`;
-    if (reconciledRef.current === pair) return;
-    reconciledRef.current = pair;
-    window.dispatchEvent(new Event("cave:changes-refresh"));
-  }, [changes.ok, panelFiles, railFileShapes]);
+    if (panelKey === null || panelKey === roomKeyRef.current) return;
+    refreshRoomRef.current();
+  }, [panelKey]);
   const reviewProgress = codeDeskReviewProgress(viewedCount, changes.files.length);
   const nextUnviewedShape = nextUnviewedCodeFile(railFileShapes, viewed, selectedRelative);
   const nextUnviewed = nextUnviewedShape ? changes.files.find((file) => file.path === nextUnviewedShape.path) ?? null : null;
@@ -419,6 +415,21 @@ export function CodeWorkbench({
       /* a corrupt keymap falls back to defaults rather than blocking the room */
     }
   }, []);
+  // The terminal toggle as the desk binds it: the drawer bar's hint and the
+  // key a focused terminal hands back (#5729). Read through a ref so the
+  // terminal never needs re-creating when the binding changes.
+  const [apple, setApple] = useState(false);
+  useEffect(() => {
+    setApple(/Mac|iPhone|iPad|iPod/.test(navigator.platform));
+  }, []);
+  const terminalHint = useMemo(() => codeComboChips(keymap.terminal, apple), [apple, keymap.terminal]);
+  const keymapRef = useRef(keymap);
+  keymapRef.current = keymap;
+  const terminalReleaseKey = useCallback(
+    (event: KeyboardEvent) =>
+      event.type === "keydown" && codeShortcutForCombo(keymapRef.current, codeComboFromEvent(event)) === "terminal",
+    [],
+  );
   const updateKeymap = useCallback((next: Record<CodeShortcutId, string>) => {
     setKeymap(next);
     try {
@@ -433,14 +444,25 @@ export function CodeWorkbench({
       if (event.defaultPrevented) return;
       // Never steal a keystroke from a field — the composer, the picker's
       // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
-      // and Ctrl+C belong to the shell. Both exclusions live in one predicate
-      // so the room and the terminal cannot disagree about who owns a key.
-      if (!isCodeShortcutTarget(event.target)) return;
+      // and Ctrl+C belong to the shell. The one exception is the drawer's own
+      // toggle, which a focused terminal hands back (#5729); both rules live
+      // in one predicate so the room and the terminal cannot disagree.
       const action = codeShortcutForCombo(keymap, codeComboFromEvent(event));
-      if (!action) return;
+      if (!isCodeShortcutAllowed(event.target, action)) return;
       event.preventDefault();
       if (action === "help") setKeysOpen((open) => !open);
-      else if (action === "terminal") onTerminalOpenChange(!panels.terminalOpen);
+      else if (action === "terminal") {
+        const leavingTerminal =
+          panels.terminalOpen &&
+          event.target instanceof Element &&
+          Boolean(event.target.closest(".code-term__drawer"));
+        onTerminalOpenChange(!panels.terminalOpen);
+        // Closing hides the drawer (inert), which would drop focus on the
+        // page; land it on the bar that reopens the drawer instead.
+        if (leavingTerminal) {
+          requestAnimationFrame(() => deskRef.current?.querySelector<HTMLElement>(".code-term__bar")?.focus());
+        }
+      }
       else if (action === "changes") {
         setRailTab("changes");
         onReviewOpenChange(true);
@@ -690,6 +712,8 @@ export function CodeWorkbench({
       </div>
 
       <CodeTerminalDrawer
+        toggleHint={terminalHint}
+        releaseKey={terminalReleaseKey}
         sessionId={row.id}
         projectRoot={workRoot}
         running={running}
