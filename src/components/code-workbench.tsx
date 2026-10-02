@@ -486,13 +486,23 @@ export function CodeWorkbench({
         if (!fitsSplit) setStep("review");
       } else if (action === "files") {
         if (!fitsSplit) setStep("files");
-        // The tree, or the changed-only list when that filter is on, after
-        // the step has rendered.
-        requestAnimationFrame(() => {
-          roomRef.current
-            ?.querySelector<HTMLElement>('[role="tree"], .code-tree__changed-row, .code-tree__filter')
-            ?.focus();
-        });
+        // The tree, or the changed-only list when that filter is on. Looked up
+        // one at a time: a combined selector returns the first match in
+        // document order, which is always the filter button above both
+        // (#5737 review). The tree lists itself only after its first load, and
+        // on a narrow room it mounts with this step, so give it a few frames
+        // before settling on the filter.
+        let frames = 0;
+        const focusTree = () => {
+          const column = roomRef.current?.querySelector<HTMLElement>(".code-room__tree");
+          const target =
+            column?.querySelector<HTMLElement>('[role="tree"]') ??
+            column?.querySelector<HTMLElement>(".code-tree__changed-row");
+          if (target) target.focus();
+          else if (++frames < 30) requestAnimationFrame(focusTree);
+          else column?.querySelector<HTMLElement>(".code-tree__filter")?.focus();
+        };
+        requestAnimationFrame(focusTree);
       } else if (action === "outline") {
         roomRef.current
           ?.querySelector<HTMLElement>('.workspace-rail__preview-action[aria-expanded]')

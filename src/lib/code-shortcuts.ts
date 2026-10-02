@@ -103,16 +103,27 @@ export const CODE_APP_RESERVED_SHORTCUTS: readonly CodeFixedShortcutDef[] = [
   { id: "app-shortcuts-sheet-bare", label: "App shortcuts sheet (outside fields)", combo: "?" },
 ] as const;
 
-/** The app matches ⌘K and ⌘J on the lowercased key, so Shift does not get
- *  past it either. Reserved, not listed: they are the same two shortcuts. */
-const CODE_APP_SHIFTED_COMBOS: readonly string[] = ["Mod+Shift+K", "Mod+Shift+J"];
+/**
+ * Does the app's global handler (workspace.tsx) take this combo before the
+ * desk sees it? It mirrors that handler rather than listing combos (#5737
+ * review): with Mod held it matches the lowercased key, so ⌘K and ⌘J are taken
+ * with any Alt or Shift, and ⌘/ with any Alt. Without Mod it takes "?" outside
+ * fields, Alt included — and outside fields is the only place the desk's own
+ * shortcuts fire.
+ */
+export function isAppClaimedCombo(combo: string): boolean {
+  if (!combo) return false;
+  const parts = combo.split("+");
+  const key = parts[parts.length - 1];
+  if (parts.slice(0, -1).includes("Mod")) return key === "K" || key === "J" || key === "/";
+  return key === "?";
+}
 
 /** Every non-rebindable combo, in the same normalized grammar as storage/events. */
 export const CODE_RESERVED_COMBOS: readonly string[] = [
   ...CODE_FIXED_TERMINAL_SHORTCUTS.map((shortcut) => shortcut.combo),
   ...CODE_FIXED_QUEUE_SHORTCUTS.map((shortcut) => shortcut.combo),
   ...CODE_APP_RESERVED_SHORTCUTS.map((shortcut) => shortcut.combo),
-  ...CODE_APP_SHIFTED_COMBOS,
 ] as const;
 
 export type CodeKeymap = Partial<Record<CodeShortcutId, string>>;
@@ -169,14 +180,13 @@ export function codeRequiredComboHolder(
 }
 
 export function isCodeReservedCombo(combo: string): boolean {
-  return CODE_RESERVED_COMBOS.includes(combo);
+  return CODE_RESERVED_COMBOS.includes(combo) || isAppClaimedCombo(combo);
 }
 
 export function codeReservedComboOwner(combo: string): "session queue" | "terminal panes" | "app" | null {
   if (CODE_FIXED_QUEUE_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "session queue";
   if (CODE_FIXED_TERMINAL_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "terminal panes";
-  if (CODE_APP_RESERVED_SHORTCUTS.some((shortcut) => shortcut.combo === combo)) return "app";
-  if (CODE_APP_SHIFTED_COMBOS.includes(combo)) return "app";
+  if (isAppClaimedCombo(combo)) return "app";
   return null;
 }
 

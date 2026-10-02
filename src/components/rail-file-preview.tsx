@@ -103,10 +103,19 @@ export function RailFilePreview({
   // pane offers the working tree's changed files as one-click opens. Fetched
   // once each time the preview returns to empty — the same status endpoint the
   // changes badge polls, so this adds no new backend surface.
-  const [changed, setChanged] = useState<ChangedFile[]>([]);
-  // Change paths are relative to the git TOPLEVEL, which is not the project
-  // root when the project sits in a subfolder of its repository (#5729).
-  const [changedRepoRoot, setChangedRepoRoot] = useState<string | null>(null);
+  // Tagged with the project root it describes, so a new root never shows (or
+  // opens) the previous root's files while its own request is in flight or
+  // after it fails (#5737 review). Change paths are relative to the git
+  // TOPLEVEL, which is not the project root when the project sits in a
+  // subfolder of its repository (#5729).
+  const [launchpad, setLaunchpad] = useState<{
+    root: string;
+    repoRoot: string | null;
+    files: ChangedFile[];
+  } | null>(null);
+  const current = launchpad && launchpad.root === projectRoot ? launchpad : null;
+  const changed = current?.files ?? [];
+  const changedRepoRoot = current?.repoRoot ?? null;
   useEffect(() => {
     if (path || !projectRoot || !onOpenPath) return;
     let cancelled = false;
@@ -114,9 +123,12 @@ export function RailFilePreview({
       .then(async (res) => {
         const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (cancelled || !json.ok || !Array.isArray(json.files)) return;
-        setChangedRepoRoot(json.repoRoot ?? null);
-        // Deleted files have nothing to preview — opening one would just 404.
-        setChanged(json.files.filter((f) => f.status !== "deleted").slice(0, LAUNCHPAD_CAP));
+        setLaunchpad({
+          root: projectRoot,
+          repoRoot: json.repoRoot ?? null,
+          // Deleted files have nothing to preview — opening one would just 404.
+          files: json.files.filter((f) => f.status !== "deleted").slice(0, LAUNCHPAD_CAP),
+        });
       })
       .catch(() => {
         /* status is a garnish here — the plain hint still renders */

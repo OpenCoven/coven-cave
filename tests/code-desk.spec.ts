@@ -1137,8 +1137,16 @@ test.describe("Coding Desk overhaul (#5705)", () => {
 
     await page.keyboard.press("ControlOrMeta+Shift+F");
     await expect(steps.getByRole("tab", { name: "Files pane" })).toHaveAttribute("aria-selected", "true");
+    // The tree itself, not the filter button above it, even though the tree
+    // mounts with this step and lists itself only after its first load. The
+    // tree hands its focus to a row.
     await expect
-      .poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="code-workbench-tree"]'))))
+      .poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement;
+          return Boolean(active?.matches("[data-tree-row]") && active.closest('[data-testid="code-workbench-tree"] [role="tree"]'));
+        }),
+      )
       .toBe(true);
   });
 
@@ -1247,7 +1255,12 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(changes).toHaveAttribute("aria-selected", "true");
 
     await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
-    await expectTabControlsPanel(page, page.getByTestId("code-open-file-tabs").getByRole("tab", { name: /flux\.ts/ }));
+    const fileTabs = page.getByTestId("code-open-file-tabs");
+    await expectTabControlsPanel(page, fileTabs.getByRole("tab", { name: /flux\.ts/ }));
+    // One tab stop for the strip: close buttons are clicked or reached by
+    // Delete on the tab, which says so.
+    await expect(fileTabs.getByRole("button", { name: "Close flux.ts" })).toHaveAttribute("tabindex", "-1");
+    await expect(fileTabs.getByRole("tab", { name: /flux\.ts/ })).toHaveAttribute("aria-keyshortcuts", "Delete");
 
     // Toggles keep one name; the state is in aria-checked / aria-pressed.
     const viewed = rail.getByRole("switch", { name: "Viewed: src/flux.ts" });

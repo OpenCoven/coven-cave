@@ -216,4 +216,9 @@ assert.match(rowsSrc, /aria-label=\{`Viewed: \$\{file\.path\}`\}/, "the Viewed s
 assert.match(workspace, /aria-label="Broadcast input"/, "Broadcast keeps one name");
 assert.match(reviewRail, /aria-label="Widen the rail"/, "the widen toggle keeps one name");
 
+// #5737 review.
+assert.match(preview, /const current = launchpad && launchpad\.root === projectRoot \? launchpad : null;/, "the launchpad shows only the snapshot for the current root");
+assert.match(workbench, /column\?\.querySelector<HTMLElement>\('\[role="tree"\]'\) \?\?\s*column\?\.querySelector<HTMLElement>\("\.code-tree__changed-row"\);/, "the Files shortcut looks for the tree before the changed list, and the filter only as a last resort");
+assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,300}tabIndex=\{-1\}/, "close buttons are not tab stops");
+
 console.log("code-desk-overhaul pins ok");

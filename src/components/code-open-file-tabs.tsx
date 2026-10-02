@@ -91,6 +91,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
               id={codeOpenFileTabId(idPrefix, index)}
               aria-selected={selected}
               aria-controls={selected ? panelId : undefined}
+              aria-keyshortcuts="Delete"
               tabIndex={selected ? 0 : -1}
               className="focus-ring code-tabs__tab"
               title={path}
@@ -112,6 +113,10 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
             <button
               type="button"
               className="focus-ring code-tabs__close"
+              // Out of the tab order, so the strip is one tab stop (#5737
+              // review). Delete on the focused tab closes it, and the tab
+              // advertises that through aria-keyshortcuts.
+              tabIndex={-1}
               aria-label={`Close ${label}`}
               title={`Close ${label}`}
               onClick={() => {
