@@ -215,7 +215,7 @@ assert.match(
 // the open target directly.
 assert.match(
   codeWorkbench,
-  /if \(openTarget\.path\) setReviewFocus\(\{ path: openTarget\.path, nonce: openTarget\.nonce \}\);/,
+  /const focusPath = openTarget\.path;\s*if \(focusPath\) setReviewFocus\(\(current\) => \(\{ path: focusPath, nonce: \(current\?\.nonce \?\? 0\) \+ 1 \}\)\);/,
   "a routed diff open records the target as the rail's focus",
 );
 assert.match(

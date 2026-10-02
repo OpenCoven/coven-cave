@@ -705,6 +705,26 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     expect(["⌘`", "Ctrl`"]).toContain(hint);
   });
 
+  test("16b. the terminal toggle can be rebound but never left without a key", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+    const dialog = page.getByRole("dialog");
+    const terminalRow = dialog.locator(".code-keys__row").filter({ hasText: "Terminal drawer" });
+    // It is the way out of a focused terminal: no Unbind.
+    await expect(terminalRow.getByRole("button", { name: "Unbind" })).toBeDisabled();
+    const before = (await terminalRow.locator(".code-keys__combo").textContent()) ?? "";
+    expect(before.length).toBeGreaterThan(0);
+
+    // Another action cannot take its key either.
+    const pickerRow = dialog.locator(".code-keys__row").filter({ hasText: "Switch session" });
+    await pickerRow.getByRole("button", { name: "Rebind" }).click();
+    await page.keyboard.press("ControlOrMeta+Backquote");
+    await expect(page.getByText("which always keeps a key")).toBeAttached();
+    await expect(terminalRow.locator(".code-keys__combo")).toHaveText(before);
+    await expect(pickerRow.locator(".code-keys__combo")).not.toHaveText(before);
+  });
+
   test("17. in light mode the viewer header and a rendered README are readable", async ({ page }) => {
     await base(page);
     await openDesk(page);

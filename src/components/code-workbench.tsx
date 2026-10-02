@@ -161,7 +161,7 @@ export function CodeWorkbench({
   const prRepo = pr?.repo ?? null;
   const prNumber = pr?.number ?? null;
   const running = codeSessionActivity(row) === "running";
-  const handledOpenNonceRef = useRef<number | null>(null);
+  const handledOpenRef = useRef<PendingCodeOpen | null>(null);
   const handledInitialTabRef = useRef<CodeWorkbenchTab | null>(null);
 
   // ── Layout state ───────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ export function CodeWorkbench({
     initialTab:
       handledInitialTabRef.current === initialTab ? undefined : initialTab,
     openTarget:
-      openTarget && handledOpenNonceRef.current === openTarget.nonce ? undefined : openTarget,
+      openTarget && handledOpenRef.current === openTarget ? undefined : openTarget,
   });
 
   const openPath = useCallback(
@@ -328,13 +328,16 @@ export function CodeWorkbench({
     // each render, so without this every re-render (a sessions poll, hiding
     // the rail) replayed the open: the rail could not be hidden, and the
     // viewer jumped back to the routed file over whatever was open.
-    if (handledOpenNonceRef.current === openTarget.nonce) return;
-    handledOpenNonceRef.current = openTarget.nonce;
+    // Tracked by identity, not by nonce: producers mint nonces from
+    // Date.now(), so two opens in one millisecond could share one.
+    if (handledOpenRef.current === openTarget) return;
+    handledOpenRef.current = openTarget;
     if (openTarget.kind === "changes") {
       setRailTab("changes");
       onReviewOpenChange(true);
       setStep("review");
-      if (openTarget.path) setReviewFocus({ path: openTarget.path, nonce: openTarget.nonce });
+      const focusPath = openTarget.path;
+      if (focusPath) setReviewFocus((current) => ({ path: focusPath, nonce: (current?.nonce ?? 0) + 1 }));
     } else if (openTarget.path) {
       openPath(openTarget.path);
       setFocusLine(openTarget.line ?? null);

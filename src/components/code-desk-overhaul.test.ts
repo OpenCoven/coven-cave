@@ -138,7 +138,9 @@ const panelSrc = await readFile(new URL("./session-changes-panel.tsx", import.me
 const terminalSrc = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 
 // A routed open applies once per nonce, however often the host re-renders.
-assert.match(workbench, /if \(!openTarget\) return;[\s\S]{0,700}if \(handledOpenNonceRef\.current === openTarget\.nonce\) return;\s*handledOpenNonceRef\.current = openTarget\.nonce;/, "the routed-open effect returns early for a nonce it already handled");
+assert.match(workbench, /if \(!openTarget\) return;[\s\S]{0,900}if \(handledOpenRef\.current === openTarget\) return;\s*handledOpenRef\.current = openTarget;/, "the routed-open effect returns early for a target it already handled — by identity, since Date.now() nonces can collide (#5729)");
+assert.match(workbench, /useRef<PendingCodeOpen \| null>\(null\)/, "the handled open is remembered as an object, not a nonce");
+assert.match(workbench, /setReviewFocus\(\(current\) => \(\{ path: focusPath, nonce: \(current\?\.nonce \?\? 0\) \+ 1 \}\)\)/, "rail focus counts its own requests, so two routed diffs never share a focus nonce");
 
 // A focused terminal hands back exactly the drawer toggle.
 assert.match(shortcuts, /export function isCodeShortcutAllowed\(target: EventTarget \| null, action: CodeShortcutId \| null\): boolean \{[\s\S]{0,300}action === "terminal" && typeof el\?\.closest === "function" && Boolean\(el\.closest\("\.xterm"\)\)/, "only the terminal toggle may act from inside xterm");
@@ -156,5 +158,13 @@ assert.match(panelSrc, /useEffect\(\(\) => \(\) => onFilesChangeRef\.current\?\.
 
 // Light mode: the viewer takes the page surface; code blocks keep their chrome.
 assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ background: var\(--bg-base\); \}/, "the light-mode viewer is not painted with the always-dark code surface");
+
+// Review fixes on #5733.
+const changesHook = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
+const shortcutsDialog = await readFile(new URL("./code-shortcuts-dialog.tsx", import.meta.url), "utf8");
+assert.match(changesHook, /if \(inFlight\.current\) \{\s*if \(!opts\?\.shared\) queued\.current = true;\s*return;\s*\}/, "a forced load asked for mid-flight is queued, not dropped");
+assert.match(changesHook, /if \(queued\.current\) \{\s*queued\.current = false;\s*void loadRef\.current\(\);/, "the queued load runs once the in-flight one ends");
+assert.match(shortcutsDialog, /disabled=\{!combo \|\| isCapturing \|\| isCodeShortcutRequired\(shortcut\.id\)\}/, "the terminal toggle offers no Unbind");
+assert.match(shortcutsDialog, /const holder = codeRequiredComboHolder\(keymap, capturing, combo\);\s*if \(holder\) \{/, "rebinding another action to the toggle's key is refused, with a reason");
 
 console.log("code-desk-overhaul pins ok");

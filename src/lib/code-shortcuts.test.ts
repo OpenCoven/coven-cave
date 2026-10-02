@@ -12,6 +12,8 @@ const {
   CODE_RESERVED_COMBOS,
   isCodeShortcutTarget,
   isCodeShortcutAllowed,
+  isCodeShortcutRequired,
+  codeRequiredComboHolder,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -169,3 +171,21 @@ for (const reserved of ["/", "J", "K", "Shift+A"]) {
 }
 
 console.log("code-shortcuts: ok");
+
+
+// ── The terminal toggle always keeps a key (#5729) ───────────────────────────
+// It is the way out of a focused terminal, so it can move but never vanish.
+{
+  const keymap = defaultCodeKeymap();
+  assert.equal(isCodeShortcutRequired("terminal"), true);
+  assert.equal(isCodeShortcutRequired("picker"), false);
+  assert.deepEqual(bindCodeShortcut(keymap, "terminal", ""), keymap, "unbinding the terminal toggle is refused");
+  assert.deepEqual(bindCodeShortcut(keymap, "picker", keymap.terminal), keymap, "another action cannot take the toggle's key");
+  assert.equal(codeRequiredComboHolder(keymap, "picker", keymap.terminal), "terminal");
+  assert.equal(codeRequiredComboHolder(keymap, "terminal", keymap.terminal), null, "rebinding to its own key is fine");
+  const moved = bindCodeShortcut(keymap, "terminal", "Mod+Shift+T");
+  assert.equal(moved.terminal, "Mod+Shift+T", "it can still be rebound");
+  assert.equal(bindCodeShortcut(moved, "picker", "Mod+\`").picker, "Mod+\`", "its old key is free once it moved");
+  assert.equal(mergeCodeKeymap({ terminal: "" }).terminal, defaultCodeKeymap().terminal, "a saved empty binding loads as the default");
+  assert.equal(bindCodeShortcut(keymap, "picker", "").picker, "", "ordinary actions can still be unbound");
+}
