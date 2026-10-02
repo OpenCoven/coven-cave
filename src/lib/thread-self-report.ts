@@ -164,7 +164,14 @@ Delivery evidence rule:
 - A concrete deliverable is verified only when the transcript contains its
   remote ref, artifact path, receipt, message id, or equivalent checkable proof.
 - If that evidence is absent, describe the work as incomplete or unverified and
-  put the exact remaining proof gap in persistentBlockers.
+  name the exact proof gap in "overallConfidenceReason" or "toolReliability.notes".
+  A clipped transcript establishes only that the receipt is not visible here;
+  it does not prove the remote action did not happen.
+- Missing completion evidence alone is not a persistent blocker. Only report a
+  persistentBlockers entry when a current dependency prevents obtaining the receipt,
+  such as missing credentials, permission, required source, a material decision,
+  or an unavailable facility, and the THREAD ABOVE shows that dependency.
+  If the next receipt-producing action is executable, leave persistentBlockers empty.
 
 Evidence rule for generated or delivered files:
 - A prose claim that an image was shown is not delivery evidence.
