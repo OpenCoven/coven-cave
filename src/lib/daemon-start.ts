@@ -27,15 +27,36 @@ import {
   recordDaemonDiagnosticEvent,
   type DaemonDiagnosticContext,
 } from "./server/daemon-diagnostics.ts";
+import {
+  clearDaemonServiceConflictCache,
+  daemonServiceRunning,
+  findDaemonServiceManager,
+  kickstartDaemonService,
+  type DaemonServiceManager,
+  type LaunchctlResult,
+} from "./daemon-service-manager.ts";
 
 export type DaemonStartResult =
-  | { ok: true; alreadyRunning: true; readinessAttempts: number; elapsedMs: number; launchMode: "none" }
+  | {
+    ok: true;
+    alreadyRunning: true;
+    readinessAttempts: number;
+    elapsedMs: number;
+    launchMode: "none";
+    /**
+     * A daemon is serving while the OS service that should own it is not
+     * running — something else (usually an earlier Cave launch) holds the serve
+     * lock. Restart hands the daemon back to the service (#5730).
+     */
+    serviceConflict?: { label: string };
+  }
   | {
     ok: true;
     alreadyRunning: false;
     readinessAttempts: number;
     elapsedMs: number;
-    launchMode: "shell" | "direct";
+    /** `service`: an OS service manager (launchd) started the daemon. */
+    launchMode: "shell" | "direct" | "service";
     runner: "still-running" | "exited";
     stdout: string;
     stderr: string;
@@ -56,7 +77,7 @@ export type DaemonStartResult =
     status: 409 | 429 | 500 | 504;
     readinessAttempts: number;
     elapsedMs: number;
-    launchMode: "none" | "shell" | "direct";
+    launchMode: "none" | "shell" | "direct" | "service";
     exitCode?: number | null;
     /** Present only when Cave owned a launch that failed its readiness window. */
     cleanup?: DaemonLaunchCleanup;
@@ -226,6 +247,12 @@ type StartLocalDaemonOptions = {
   spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   terminateLaunchTree?: (child: ChildProcess) => Promise<DaemonLaunchCleanup>;
   inspectLifecycle?: () => Promise<DaemonLifecycleInspection>;
+  /** OS service that owns the daemon (launchd), if any. Tests default to none. */
+  findService?: () => Promise<DaemonServiceManager | null>;
+  kickstartService?: (service: DaemonServiceManager, options: { restart: boolean }) => Promise<LaunchctlResult>;
+  serviceRunning?: (service: DaemonServiceManager) => Promise<boolean | null>;
+  /** Stops whatever daemon serves the socket (`coven daemon stop`). */
+  stopDaemon?: () => Promise<void>;
   platform?: NodeJS.Platform;
   diagnostics?: DaemonDiagnosticContext;
 };
@@ -297,6 +324,45 @@ async function inspectDaemonLifecycle(
   }
 }
 
+async function stopLocalDaemon(): Promise<void> {
+  const { command, fixedArgs } = covenLaunchCommand();
+  await execFileAsync(command, [...fixedArgs, "daemon", "stop"], {
+    encoding: "utf8",
+    env: covenWrapperSpawnEnv(harnessSpawnEnv()),
+    timeout: 10_000,
+    windowsHide: true,
+  });
+}
+
+// The Next server's own runtime settings. A daemon launched from Cave used to
+// inherit them wholesale (PORT=3020, NODE_ENV=production, NEXT_DEPLOYMENT_ID,
+// TURBOPACK, npm lifecycle vars), and every harness session it started then
+// inherited them in turn — a dev server an agent starts would bind Cave's port
+// (#5730).
+const SERVER_RUNTIME_ENV_KEYS = new Set([
+  "PORT",
+  "HOSTNAME",
+  "NODE_ENV",
+  "TURBOPACK",
+  "INIT_CWD",
+  "npm_execpath",
+  "npm_node_execpath",
+  "npm_command",
+]);
+const SERVER_RUNTIME_ENV_PREFIXES = ["NEXT_", "__NEXT", "npm_lifecycle_", "npm_package_", "npm_config_"];
+
+/** The daemon's launch environment, minus the Cave server's runtime settings. */
+export function daemonLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (SERVER_RUNTIME_ENV_KEYS.has(key)) continue;
+    if (SERVER_RUNTIME_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
+    out[key] = value;
+  }
+  // Next's type augmentation marks NODE_ENV required; dropping it is the point.
+  return out as NodeJS.ProcessEnv;
+}
+
 /**
  * Process output can contain local paths, npm configuration, and credentials.
  * Keep the bounded, structured launch result useful without turning a failed
@@ -322,6 +388,8 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
     || options.inspectAddress
     || options.launchCommand
     || options.spawnEnvironment
+    || options.findService
+    || options.kickstartService
     || options.platform,
   );
 }
@@ -342,7 +410,13 @@ export function startLocalDaemonOperation(
   if (hasTestSeam(options)) {
     return {
       diagnostics,
-      result: runLocalDaemonStart({ ...options, diagnostics }),
+      // A test that does not model a service manager must never find (and
+      // kick) the real launchd job on the machine running the suite.
+      result: runLocalDaemonStart({
+        findService: async () => null,
+        ...options,
+        diagnostics,
+      }),
     };
   }
   if (activeDaemonStart) return activeDaemonStart;
@@ -458,6 +532,10 @@ async function runLocalDaemonStartCore({
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
   inspectLifecycle,
+  findService = () => findDaemonServiceManager(),
+  kickstartService = (service, options) => kickstartDaemonService(service, options),
+  serviceRunning = (service) => daemonServiceRunning(service),
+  stopDaemon = stopLocalDaemon,
   platform = process.platform,
   diagnostics = createDaemonDiagnosticContext(),
 }: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
@@ -485,6 +563,104 @@ async function runLocalDaemonStartCore({
     return { ok: compatibilityState.current.ok };
   });
   const startedAt = Date.now();
+  // One lookup per start: reading LaunchAgents and asking launchctl is cheap
+  // but not free, and every branch below agrees on the same answer.
+  let serviceLookup: Promise<DaemonServiceManager | null> | null = null;
+  const service = () => (serviceLookup ??= findService().catch(() => null));
+  const alreadyRunning = async (readinessAttempts: number): Promise<DaemonStartResult> => {
+    let serviceConflict: { label: string } | null = null;
+    const owner = await service();
+    if (owner && (await serviceRunning(owner).catch(() => null)) === false) {
+      serviceConflict = { label: owner.label };
+    }
+    return {
+      ok: true,
+      alreadyRunning: true,
+      readinessAttempts,
+      elapsedMs: Date.now() - startedAt,
+      launchMode: "none",
+      ...(serviceConflict ? { serviceConflict } : {}),
+    };
+  };
+  async function startThroughService(owner: DaemonServiceManager): Promise<DaemonStartResult> {
+    const baseAttempts = restart ? 0 : automatic ? 2 : 1;
+    // A restart while the service's job is not running means another daemon
+    // holds the serve lock. Stop it first, or the service's fresh instance just
+    // exits on the lock again. This is how Restart hands a displaced daemon
+    // back to its service.
+    if (restart && (await serviceRunning(owner).catch(() => null)) === false) {
+      await stopDaemon().catch(() => undefined);
+    }
+    // Whatever happens next, the cached "who owns the daemon" reading is stale.
+    clearDaemonServiceConflictCache();
+    const kicked = await kickstartService(owner, { restart }).catch((error: unknown) => ({
+      code: 1,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
+    if (kicked.code !== 0) {
+      return {
+        ok: false,
+        code: "spawn_failed",
+        error: sanitizeDaemonStartDiagnostic(
+          `Cave asked launchd to start Coven's system service (${owner.label}) and it refused: ${kicked.stderr.trim() || kicked.stdout.trim() || `exit ${kicked.code}`}`,
+        ),
+        stdout: sanitizeDaemonStartDiagnostic(kicked.stdout),
+        stderr: sanitizeDaemonStartDiagnostic(kicked.stderr),
+        status: 500,
+        readinessAttempts: baseAttempts,
+        elapsedMs: Date.now() - startedAt,
+        launchMode: "service",
+      };
+    }
+    const readiness = await waitForDaemonReadiness({
+      probe,
+      timeoutMs: startTimeoutMs,
+      pollMs: readinessPollMs,
+      runnerExitGraceMs: startTimeoutMs,
+      // launchctl returns once the job is asked to start; health is the only
+      // authority for the whole deadline.
+      runnerExited: () => true,
+    });
+    if (readiness.ready || (await probe()).ok) {
+      return {
+        ok: true,
+        alreadyRunning: false,
+        readinessAttempts: baseAttempts + readiness.attempts,
+        elapsedMs: Date.now() - startedAt,
+        launchMode: "service",
+        runner: "exited",
+        stdout: sanitizeDaemonStartDiagnostic(kicked.stdout),
+        stderr: sanitizeDaemonStartDiagnostic(kicked.stderr),
+      };
+    }
+    const compatibility = currentCompatibility();
+    if (compatibility && !compatibility.ok) {
+      return {
+        ok: false,
+        code: "runtime_incompatible",
+        error: compatibility.diagnostic,
+        stdout: "",
+        stderr: "",
+        status: 409,
+        readinessAttempts: baseAttempts + readiness.attempts + 1,
+        elapsedMs: Date.now() - startedAt,
+        launchMode: "service",
+      };
+    }
+    return {
+      ok: false,
+      code: "readiness_timeout",
+      error: `Coven's system service (${owner.label}) did not become ready. Check \`launchctl print ${owner.target}\` and the daemon's error log.`,
+      stdout: "",
+      stderr: "",
+      status: 504,
+      readinessAttempts: baseAttempts + readiness.attempts + 1,
+      elapsedMs: Date.now() - startedAt,
+      launchMode: "service",
+    };
+  }
+
   if (!restart) {
     const initialProbe = await probe();
     const compatibility = currentCompatibility();
@@ -502,14 +678,14 @@ async function runLocalDaemonStartCore({
       };
     }
     if (initialProbe.ok) {
-      return { ok: true, alreadyRunning: true, readinessAttempts: 1, elapsedMs: Date.now() - startedAt, launchMode: "none" };
+      return alreadyRunning(1);
     }
   }
 
   if (automatic && !restart) {
     const lifecycle = await (inspectLifecycle ?? (() => inspectDaemonLifecycle(diagnostics, automatic ? "daemon-recovery" : "daemon-start", 1)))();
     if (lifecycle.status === "running") {
-      return { ok: true, alreadyRunning: true, readinessAttempts: 2, elapsedMs: Date.now() - startedAt, launchMode: "none" };
+      return alreadyRunning(2);
     }
     if (lifecycle.status !== "stopped") {
       return {
@@ -551,6 +727,13 @@ async function runLocalDaemonStartCore({
     }
   }
 
+  // An OS service owns the daemon: hand the start to it rather than racing it
+  // for the serve lock with a daemon of Cave's own (#5730).
+  const owner = await service();
+  if (owner) {
+    return startThroughService(owner);
+  }
+
   const launchMode = "direct";
   let launch: ReturnType<NonNullable<StartLocalDaemonOptions["launchCommand"]>>;
   try {
@@ -584,7 +767,7 @@ async function runLocalDaemonStartCore({
     // sessions would inherit them wholesale. Scoped keys flow only through
     // Cave's own per-familiar spawn path (cave-4nu6).
     env: covenWrapperSpawnEnv({
-      ...spawnEnv,
+      ...daemonLaunchEnv(spawnEnv),
       COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
       COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
       COVEN_CAVE_DIAGNOSTIC_OPERATION: automatic ? "daemon-recovery" : "daemon-start",

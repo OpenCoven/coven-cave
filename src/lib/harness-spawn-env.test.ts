@@ -268,8 +268,8 @@ assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer in
 const daemonStartSource = read("./daemon-start.ts");
 assert.match(
   daemonStartSource,
-  /spawnEnvironment = harnessSpawnEnv[\s\S]*?const spawnEnv = spawnEnvironment\(\);[\s\S]*?env: covenWrapperSpawnEnv\(\{\s*\.\.\.spawnEnv,[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
-  "the daemon keeps its scoped environment seam, adds only diagnostics, and opts the Coven wrapper into hidden launch",
+  /spawnEnvironment = harnessSpawnEnv[\s\S]*?const spawnEnv = spawnEnvironment\(\);[\s\S]*?env: covenWrapperSpawnEnv\(\{\s*\.\.\.daemonLaunchEnv\(spawnEnv\),[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
+  "the daemon keeps its scoped environment seam (minus the Next server's runtime settings, #5730), adds only diagnostics, and opts the Coven wrapper into hidden launch",
 );
 assert.doesNotMatch(daemonStartSource, /covenSpawnEnv/);
 
