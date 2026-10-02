@@ -12,7 +12,7 @@ import {
   summarize,
   traceStartSeconds,
 } from "./ios-performance-trace.mjs";
-import { attachPlan, withJsonOutput } from "./ios-performance-capture.mjs";
+import { attachPlan, isCoveredRound, withJsonOutput } from "./ios-performance-capture.mjs";
 
 /**
  * A synthetic `os-signpost-arg` export with the real shape: shared values
@@ -120,6 +120,14 @@ test("coverage lead is negative when the recording lost the start of the window"
   assert.equal(coverageLead(events, { start: 57, end: 100 }), 7);
   assert.equal(coverageLead(events, { start: 45, end: 100 }), -5);
   assert.equal(coverageLead([], { start: 45, end: 100 }), -Infinity);
+});
+
+test("round coverage requires all cold drawer spans and a positive warm lead", () => {
+  const drawerSpans = (count) => Array.from({ length: count }, () => ({ span: "drawer.open" }));
+  assert.equal(isCoveredRound({ phase: "cold-app-launch", lead: -Infinity, spans: drawerSpans(3) }), false);
+  assert.equal(isCoveredRound({ phase: "cold-app-launch", lead: -Infinity, spans: drawerSpans(4) }), true);
+  assert.equal(isCoveredRound({ phase: "warm", lead: 0, spans: [{ span: "drawer.open" }] }), false);
+  assert.equal(isCoveredRound({ phase: "warm", lead: 1, spans: [{ span: "drawer.open" }] }), true);
 });
 
 test("percentiles use the nearest rank and summaries pool every round", () => {
