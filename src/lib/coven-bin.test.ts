@@ -9,6 +9,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, write
 import os from "node:os";
 import path from "node:path";
 import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy, withSearchPath } from "./coven-bin.ts";
+import { scrubInheritedProcessModeEnv } from "./child-spawn-env.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
@@ -289,7 +290,7 @@ assert.match(
 );
 assert.match(
   source,
-  /return withCovenWrapperWindowPolicy\(\s*scrubSidecarInternalEnv\(env\),[\s\S]*process\.platform,[\s\S]*false,[\s\S]*\);/,
+  /return withCovenWrapperWindowPolicy\(\s*scrubSidecarInternalEnv\(scrubInheritedProcessModeEnv\(env\)\),[\s\S]*process\.platform,[\s\S]*false,[\s\S]*\);/,
   "the shared spawn baseline scrubs the wrapper-only Windows signal",
 );
 assert.match(
@@ -1273,5 +1274,86 @@ assert.match(
   /env\.NPM_CONFIG_LOGLEVEL = "error"/,
   "covenSpawnEnv quiets npm warn-level 'Unknown env config' noise in spawned installs",
 );
+
+// #5731: the server's own process mode must not ride into the daemon, the
+// harnesses it starts, or the shells under them. A `pnpm build` from such a
+// shell loaded the development React and failed (#5701) while CI, with
+// NODE_ENV unset, stayed green. The PTY terminal has dropped these keys since
+// #403; the shared spawn baseline must do the same.
+{
+  const scrubbed = scrubInheritedProcessModeEnv({
+    NODE_ENV: "development",
+    INIT_CWD: "/Users/witch/coven-cave",
+    PNPM_SCRIPT_SRC_DIR: "/Users/witch/coven-cave",
+    PATH: "/usr/bin",
+    HOME: "/Users/witch",
+    NODE_EXTRA_CA_CERTS: "/etc/ssl/ca.pem",
+  });
+  assert.deepEqual(
+    scrubbed,
+    { PATH: "/usr/bin", HOME: "/Users/witch", NODE_EXTRA_CA_CERTS: "/etc/ssl/ca.pem" },
+    "scrubInheritedProcessModeEnv drops NODE_ENV and the pnpm lifecycle keys and nothing else",
+  );
+  assert.deepEqual(
+    scrubInheritedProcessModeEnv({ node_env: "development", Path: "C:\\w" }, "win32"),
+    { Path: "C:\\w" },
+    "Windows environments are case-insensitive, so a lower-case spelling is the same variable",
+  );
+  assert.deepEqual(
+    scrubInheritedProcessModeEnv({ node_env: "development" }, "linux"),
+    { node_env: "development" },
+    "on POSIX a variable that merely looks like NODE_ENV is a different variable and survives",
+  );
+}
+assert.match(
+  source,
+  /scrubSidecarInternalEnv\(scrubInheritedProcessModeEnv\(env\)\)/,
+  "the shared spawn baseline drops the server's process mode before the sidecar scrub",
+);
+
+// Measured on the live process env, the way the duplicate-PATH check above is:
+// every environment Cave hands a child goes through the same baseline, so none
+// of them may carry the server's mode whatever this test process was started with.
+{
+  const inherited = ["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"] as const;
+  const previous = Object.fromEntries(inherited.map((key) => [key, process.env[key]]));
+  process.env.NODE_ENV = "development";
+  process.env.INIT_CWD = "/from-pnpm";
+  process.env.PNPM_SCRIPT_SRC_DIR = "/from-pnpm";
+  try {
+    for (const [label, env] of [
+      ["covenSpawnEnv", covenSpawnEnv()],
+      ["caveToolSpawnEnv", caveToolSpawnEnv()],
+      ["covenWrapperSpawnEnv", covenWrapperSpawnEnv()],
+      ["harnessSpawnEnv", harnessSpawnEnv()],
+    ] as const) {
+      for (const key of inherited) {
+        assert.equal(env[key], undefined, `${label} does not hand the child the server's ${key}`);
+      }
+    }
+  } finally {
+    for (const key of inherited) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
+// server.ts cannot import src/ (the packaged sidecar runs it standalone), so
+// the PTY terminal keeps its own copy of the list. Pin the two equal so a key
+// added to one surface cannot silently leave the other one leaking.
+{
+  const serverSource = await readFile(new URL("../../server.ts", import.meta.url), "utf8");
+  const listed = (text: string, pattern: RegExp): string[] => {
+    const body = text.match(pattern)?.[1];
+    assert.ok(body !== undefined, `expected ${pattern} in source`);
+    return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1]).sort();
+  };
+  assert.deepEqual(
+    listed(serverSource, /const PTY_ENV_DROPPED = new Set\(\[([^\]]*)\]\)/),
+    listed(childSpawnEnvSource, /const INHERITED_PROCESS_MODE_ENV_KEYS = \[([^\]]*)\]/),
+    "server.ts PTY_ENV_DROPPED and child-spawn-env INHERITED_PROCESS_MODE_ENV_KEYS stay identical (#5731)",
+  );
+}
 
 console.log("coven-bin.test.ts: ok");

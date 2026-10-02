@@ -20,8 +20,40 @@ const FORBIDDEN_SPAWN_ENV_KEYS = [
 
 const SIDECAR_INTERNAL_ENV_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"] as const;
 
+// The server's own process mode and pnpm's lifecycle keys describe the process
+// that launched Cave, not the user's environment. A child that inherits them
+// runs every Node tool in the server's mode: `next build` from a harness shell
+// picked the development React and failed while CI stayed green (#5701), and
+// `npm install` under `production` skips devDependencies. The PTY terminal has
+// dropped these since #403 (server.ts `PTY_ENV_DROPPED`); the harness/daemon
+// baseline must match it (#5731). Keep the two lists identical — server.ts
+// stays import-free of src/ so the packaged sidecar can run it standalone.
+const INHERITED_PROCESS_MODE_ENV_KEYS = ["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"] as const;
+
 function comparableEnvKey(key: string, platform: NodeJS.Platform): string {
   return platform === "win32" ? key.toUpperCase() : key;
+}
+
+export function isInheritedProcessModeEnvKey(
+  key: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const comparableKey = comparableEnvKey(key, platform);
+  return INHERITED_PROCESS_MODE_ENV_KEYS.some((inherited) => comparableKey === inherited);
+}
+
+/**
+ * Remove the launching process's mode (`NODE_ENV`) and pnpm lifecycle keys from
+ * a spawn env, in place, so a child starts with them unset the way CI does.
+ */
+export function scrubInheritedProcessModeEnv(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  for (const key of Object.keys(env)) {
+    if (isInheritedProcessModeEnvKey(key, platform)) delete env[key];
+  }
+  return env;
 }
 
 export function isForbiddenSpawnEnvKey(
