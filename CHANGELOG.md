@@ -7,6 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-02
+
+> Memories draws its graph again, and iOS shows familiar avatars over Tailscale.
+
+Patch release on top of v0.5.5. Headline: the Memories Relations graph no
+longer renders blank, the journal follows the familiar you are scoped to, and
+iOS loads familiar avatars when connected over Tailscale.
+
+### Fixed
+- **Memories** (#5723). Relations no longer draws an empty canvas: the layout
+  diverged around heavily linked tags and pushed every node off-screen. The
+  journal lists only the scoped familiar's days, and Library opens research
+  findings in a reader instead of an editor. Journaling now runs per familiar
+  as a native Coven routine.
+- **iOS familiar avatars over Tailscale** (#5715). Avatar requests to Cave now
+  carry the access credential, which is sent only to Cave's own origin and
+  never to another host. The credential is resolved once rather than for every
+  chat row.
+- **Coding Desk pass 2** (#5720). Open tabs, viewed files and an unsent draft
+  survive switching sessions; the header and rail show one diffstat; the
+  viewer header no longer clips; the terminal drawer can no longer cover the
+  rail's controls in a short window; and the selected file keeps its highlight.
+
+### Changed
+- CI's end-to-end jobs install browsers in a bounded, retried, cached step, so
+  a slow package mirror no longer cancels them (#5728). Worktree cleanup treats
+  `next-env.d.ts` and `tsconfig.tsbuildinfo` as disposable output (#5727).
+- Documentation: the Threads adapter header names the daemon as the default
+  (#5725), and the license lines in PROVENANCE, PATENTS and CONTRIBUTING are
+  corrected (#5719).
+
 ## [0.5.5] - 2026-10-01
 
 > The Coding Desk grows tabs, and the Linux AppImage runs on current Arch.
