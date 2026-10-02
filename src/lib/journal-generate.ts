@@ -120,3 +120,77 @@ export async function generateReflection(opts: {
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }
+
+export type JournalGenerateErrorCopy = {
+  /** What happened, as a short status line. */
+  headline: string;
+  /** What to do about it. */
+  hint: string;
+  /** The raw message, shown behind a Details disclosure. */
+  detail: string;
+};
+
+/**
+ * Turn a raw generation/persistence failure into copy that says what happened
+ * and what to do. The raw message stays available as `detail` — the mapping
+ * only ever adds context, it never hides the original.
+ */
+export function describeJournalGenerateError(raw: string | null | undefined, familiarName?: string | null): JournalGenerateErrorCopy {
+  const detail = (raw ?? "").trim() || "No error message was returned.";
+  const who = familiarName?.trim() || "The familiar";
+  const m = detail.toLowerCase();
+  const copy = (headline: string, hint: string): JournalGenerateErrorCopy => ({ headline, hint, detail });
+
+  if (/changed while the reflection was being written|\bconflict\b/.test(m)) {
+    return copy(
+      "The entry changed while the reflection was being written",
+      "Cave reloaded the latest version instead of overwriting it. Review it, then generate again if you still want a new one.",
+    );
+  }
+  if (/save the generated reflection|could not save|couldn't save/.test(m)) {
+    return copy(
+      "The reflection was written but couldn't be saved",
+      "Check that Cave can write to ~/.coven/journal, then retry.",
+    );
+  }
+  if (m === "cancelled" || /\baborted\b|\bcancell?ed\b/.test(m)) {
+    return copy("Reflection cancelled", "Generate again when you're ready.");
+  }
+  if (/timed? ?out|timeout|etimedout|deadline|chat bridge 504/.test(m)) {
+    return copy(
+      `${who} took too long to reflect`,
+      "The familiar didn't answer in time. Retry, or try again once it has finished other work.",
+    );
+  }
+  if (/daemon|econnrefused|enoent.*sock|offline|unavailable|not running|chat bridge 50[23]/.test(m)) {
+    return copy(
+      "Couldn't reach the Coven daemon",
+      "Reflections are written through the daemon. Start it (Settings › Daemon), then retry.",
+    );
+  }
+  if (/didn't return a reflection|no reflection was returned|empty (reply|response)/.test(m)) {
+    return copy(`${who} didn't write anything`, "The reply came back empty. Retry to ask again.");
+  }
+  if (/connection dropped|failed to fetch|fetch failed|network|socket hang up|econnreset/.test(m)) {
+    return copy(
+      "The connection dropped mid-reflection",
+      "Check that Cave's server is still running, then retry.",
+    );
+  }
+  if (/familiar reported an error|generation error/.test(m)) {
+    return copy(
+      `${who} couldn't finish the reflection`,
+      "Its runtime reported a failure without details. Retry, or open a chat with the familiar to check that its runtime is working.",
+    );
+  }
+  if (/chat bridge 4\d\d/.test(m)) {
+    return copy(
+      "Cave couldn't start the reflection",
+      "The request was refused. Retry; if it keeps failing, check the familiar's runtime settings.",
+    );
+  }
+  if (/pick a familiar|summon a familiar/.test(m)) {
+    return copy("No familiar to write the reflection", "Summon a familiar first — reflections are written by one.");
+  }
+  return copy("Couldn't generate the reflection", "Retry. If it keeps failing, open Details for the full message.");
+}

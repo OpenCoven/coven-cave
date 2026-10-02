@@ -182,3 +182,36 @@ test("launcherExcerpt strips markdown and clamps on a word edge", () => {
   });
   assert.equal(items[0].excerpt, "Body text here.");
 });
+
+test("stitch titles and excerpts drop leaked markdown and provenance comments", () => {
+  const [item] = buildLauncherItems({
+    knowledge: [
+      {
+        id: "research-x-primary",
+        title: "# The Reflective Familiar ### Grounded self-awareness",
+        tags: [],
+        body: "<!-- research-provenance\nmission: research-x\n-->\n\n# Heading\n\nThe audit found three gaps.",
+      },
+    ],
+    memory: [],
+    journal: [],
+  });
+  assert.equal(item.title, "The Reflective Familiar — Grounded self-awareness");
+  assert.equal(item.excerpt, "The audit found three gaps.");
+});
+
+test("per-familiar journal entries for one day stay distinct", () => {
+  const items = buildLauncherItems({
+    knowledge: [],
+    memory: [],
+    journal: [
+      { date: "2026-09-22", preview: "Nova's day.", modified: iso(1), reflectedBy: "nova", source: "familiar" },
+      { date: "2026-09-22", preview: "Sage's day.", modified: iso(2), reflectedBy: "sage", source: "familiar" },
+      { date: "2026-09-21", preview: "Old shared day.", modified: iso(3), reflectedBy: "sage", source: "legacy" },
+    ],
+  });
+  assert.deepEqual(items.map((item) => item.key), ["journal:nova:2026-09-22", "journal:sage:2026-09-22", "journal:2026-09-21"]);
+  assert.deepEqual(items[0].ref, { kind: "journal", date: "2026-09-22", familiar: "nova" });
+  assert.deepEqual(items[2].ref, { kind: "journal", date: "2026-09-21" }, "a legacy day file has no owner in its identity");
+  assert.equal(searchLauncherItems(items, "sage")[0].key, "journal:sage:2026-09-22", "the reflecting familiar is searchable");
+});

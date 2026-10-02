@@ -12,13 +12,25 @@
  *     silently lose an update).
  * Journal remains a top-level mode rather than a duplicate navigator group.
  *
- * Left: a searchable Library navigator. Right: the shared MdEditor
- * (VISUAL WYSIWYG / MARKDOWN raw) wired to the matching transport.
+ * Left: a searchable Library navigator (research missions fold into one
+ * group each). Right: open documents as tabs. A document opens in the reader
+ * (`grimoire-doc-reader.tsx` — contents rail, reading time, live wiki-links);
+ * Edit / E swaps in the shared MdEditor (VISUAL WYSIWYG / MARKDOWN raw) wired
+ * to the matching transport, and Done / Esc returns to reading.
  *
  * Deep link: `#grimoire:<kind>:<id>` selects a document on entry.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
@@ -27,6 +39,20 @@ import { JournalEntries } from "@/components/journal/journal-entries";
 import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
+import { GrimoireDocReader, JournalDocReader, MemoryDocReader } from "@/components/grimoire-doc-reader";
+import { Button } from "@/components/ui/button";
+import {
+  groupMissionStitches,
+  journalEntryQuery,
+  journalRowFamiliar,
+  missionArtifactLabel,
+  missionIdOf,
+  missionTitleIndex,
+  stitchDisplayTitle,
+  stitchTagView,
+  type StitchNavItem,
+} from "@/lib/grimoire-library";
+import { copyText } from "@/lib/clipboard";
 import type { Familiar } from "@/lib/types";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { parseMdDocument, serializeMdDocument } from "@/lib/md-frontmatter";
@@ -111,10 +137,19 @@ type MemoryEntry = {
   familiarId?: string;
 };
 
-type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
+type JournalSummary = {
+  date: string;
+  preview: string;
+  reflectedBy: string | null;
+  modified: string | null;
+  /** "familiar" = that familiar's own entry; "legacy" = a coven-wide day file. */
+  source?: "familiar" | "legacy";
+};
 
 /** The canonical "All familiars" scope — an empty selection filters nothing. */
 const EMPTY_FAMILIAR_SCOPE: ReadonlySet<string> = new Set<string>();
+/** A stable empty roster, so a bare render keeps callback identities steady. */
+const EMPTY_FAMILIARS: Familiar[] = [];
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -206,7 +241,6 @@ function KnowledgeMdEditor({
   onSaved,
   onCancel,
   onDirtyChange,
-  readerMode = false,
   visualLifecycleQueueRef,
   onDraftChange,
 }: {
@@ -216,7 +250,6 @@ function KnowledgeMdEditor({
   onCancel?: () => void;
   /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
   onDirtyChange?: (dirty: boolean) => void;
-  readerMode?: boolean;
   visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
   onDraftChange?: (raw: string) => void;
 }) {
@@ -253,7 +286,6 @@ function KnowledgeMdEditor({
     <MdEditor
       key={entry ? knowledgeDocKey(entry.id, entry.collection) : "new"}
       value={initial}
-      readerMode={readerMode}
       visualLifecycleQueueRef={visualLifecycleQueueRef}
       sourceLabel="Stitches"
       onSave={save}
@@ -270,16 +302,17 @@ function KnowledgeMdEditor({
 
 function JournalMdEditor({
   date,
+  familiar,
   onSaved,
   onDirtyChange,
-  readerMode = false,
   visualLifecycleQueueRef,
 }: {
   date: string;
+  /** The owning familiar for a per-familiar entry; absent for a legacy day file. */
+  familiar?: string;
   onSaved?: () => void;
   /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
   onDirtyChange?: (dirty: boolean) => void;
-  readerMode?: boolean;
   visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
 }) {
   const dateTimePrefs = useDateTimePrefs();
@@ -298,7 +331,7 @@ function JournalMdEditor({
     modifiedRef.current = null;
     void (async () => {
       try {
-        const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { cache: "no-store" });
+        const res = await fetch(`/api/journal?${journalEntryQuery(date, familiar)}`, { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
         if (!json.ok) setError(json.error ?? "Failed to load journal entry");
@@ -314,7 +347,7 @@ function JournalMdEditor({
       }
     })();
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, familiar]);
 
   const save = useCallback(
     async (raw: string): Promise<MdEditorSaveResult> => {
@@ -326,7 +359,9 @@ function JournalMdEditor({
           body: JSON.stringify({
             date,
             reflection: raw,
-            reflectedBy: state?.reflectedBy ?? null,
+            // The owner decides which file this writes: a familiar's own
+            // entry stays theirs even if it loaded without attribution.
+            reflectedBy: state?.reflectedBy ?? familiar ?? null,
             expectedModified: modifiedRef.current,
           }),
         });
@@ -344,7 +379,7 @@ function JournalMdEditor({
         return { ok: false, error: err instanceof Error ? err.message : "Save failed" };
       }
     },
-    [date, onSaved, state?.reflectedBy],
+    [date, familiar, onSaved, state?.reflectedBy],
   );
 
   if (error) return <ErrorState compact headline="Couldn't load this journal entry" subtitle={error} />;
@@ -359,9 +394,8 @@ function JournalMdEditor({
   }
   return (
     <MdEditor
-      key={date}
+      key={`${familiar ?? ""}:${date}`}
       value={state.reflection}
-      readerMode={readerMode}
       visualLifecycleQueueRef={visualLifecycleQueueRef}
       showHeader={false}
       sourceLabel={`Journal · ${journalDayLabel(date, dateTimePrefs)}`}
@@ -388,38 +422,79 @@ function journalDayLabel(date: string, prefs: DateTimePrefs): string {
 function NavRow({
   selected,
   title,
+  tooltip,
   subtitle,
+  tags,
+  hint,
   meta,
   badge,
+  nested = false,
   onClick,
 }: {
   selected: boolean;
   title: string;
+  /** Full title on hover when the row truncates it. */
+  tooltip?: string;
+  /** A mono path-style line (memory rows). */
   subtitle?: string;
+  /** Human tags, rendered as quiet `#tag` text (stitch rows). */
+  tags?: string[];
+  /** A provenance word in front of the tags, e.g. "Research". */
+  hint?: string;
   meta?: string;
   badge?: ReactNode;
+  /** A child row inside a navigator group (indented, single line). */
+  nested?: boolean;
   onClick: () => void;
 }) {
+  const hasDetail = Boolean(subtitle || tags?.length || hint || meta);
   return (
     <button
       type="button"
       data-rail-item
       onClick={onClick}
+      title={tooltip}
       aria-current={selected ? "true" : undefined}
-      className={`focus-ring-inset w-full rounded-md px-2 py-1.5 text-left transition-colors ${
+      className={`focus-ring-inset w-full rounded-md text-left transition-colors ${nested ? "px-2 py-1" : "px-2 py-1.5"} ${
         selected
           ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
       }`}
     >
       <span className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">{title}</span>
+        <span
+          className={`min-w-0 flex-1 truncate font-medium ${
+            nested
+              ? `text-[length:var(--text-sm)] ${selected ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`
+              : "text-[length:var(--text-sm)] text-[var(--text-primary)]"
+          }`}
+        >
+          {title}
+        </span>
         {badge}
+        {nested && meta ? (
+          <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{meta}</span>
+        ) : null}
       </span>
-      <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-        {subtitle ? <span className="min-w-0 truncate font-mono">{subtitle}</span> : null}
-        {meta ? <span className="shrink-0">{meta}</span> : null}
-      </span>
+      {!nested && hasDetail ? (
+        <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          {hint ? (
+            <span className="inline-flex shrink-0 items-center gap-0.5">
+              <Icon name="ph:flask" width={11} aria-hidden />
+              {hint}
+            </span>
+          ) : null}
+          {subtitle ? <span className="min-w-0 truncate font-mono">{subtitle}</span> : null}
+          {tags?.length ? (
+            <span className="grimoire-nav-tags min-w-0 truncate">
+              {tags.map((tag) => (
+                <span key={tag} className="grimoire-nav-tag">#{tag}</span>
+              ))}
+            </span>
+          ) : null}
+          {meta ? <span className="ml-auto shrink-0">{meta}</span> : null}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -433,6 +508,9 @@ type RailSectionId = "knowledge" | "memory";
 
 const MEMORY_GROUPS_STORAGE_KEY = "cave:grimoire:memory-groups-collapsed";
 const STITCH_GROUPS_STORAGE_KEY = "cave:grimoire:stitch-groups-collapsed";
+/** Research-mission groups start folded; this records the ones a person opened
+ *  (or explicitly closed while reading inside them). */
+const MISSION_GROUPS_STORAGE_KEY = "cave:grimoire:mission-groups-expanded";
 
 function readCollapsedRecord(storageKey: string): Record<string, boolean> {
   if (typeof window === "undefined") return {};
@@ -451,6 +529,10 @@ function readCollapsedMemoryGroups(): Record<string, boolean> {
 
 function readCollapsedStitchGroups(): Record<string, boolean> {
   return readCollapsedRecord(STITCH_GROUPS_STORAGE_KEY);
+}
+
+function readExpandedMissionGroups(): Record<string, boolean> {
+  return readCollapsedRecord(MISSION_GROUPS_STORAGE_KEY);
 }
 
 function readCollapsedSections(): Record<RailSectionId, boolean> {
@@ -570,7 +652,7 @@ function GrimoireDocLinks({
     setJournalMd(null);
     void (async () => {
       try {
-        const res = await fetch(`/api/journal?date=${encodeURIComponent(selection.date)}`, { cache: "no-store" });
+        const res = await fetch(`/api/journal?${journalEntryQuery(selection.date, selection.familiar)}`, { cache: "no-store" });
         const json = await res.json();
         if (!cancelled) setJournalMd(json.ok ? (json.entry?.reflection ?? "") : "");
       } catch {
@@ -735,7 +817,7 @@ function invalidateGrimoireLanding(): void {
 export function GrimoireView({
   view: controlledView,
   onViewChange,
-  familiars = [],
+  familiars = EMPTY_FAMILIARS,
   activeFamiliarId = null,
   scopeFamiliarIds,
 }: {
@@ -788,6 +870,11 @@ export function GrimoireView({
     });
   }, []);
   const confirm = useConfirm();
+  /** A familiar's display name for journal labels (falls back to its id). */
+  const familiarLabel = useCallback(
+    (id: string) => familiars.find((f) => f.id === id)?.display_name ?? id,
+    [familiars],
+  );
   const { announce } = useAnnouncer();
   const setNavigatorCollapsedPreference = useCallback(
     (next: boolean) => {
@@ -826,10 +913,19 @@ export function GrimoireView({
   const evictedRef = useRef<GrimoireSelection | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [readerMode, setReaderMode] = useState(false);
-  const readerTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const readerEditRef = useRef<HTMLButtonElement | null>(null);
-  const restoreReaderFocusRef = useRef(false);
+  // Reader-first documents: every persisted doc opens in the reader, and
+  // editing is an explicit per-tab step (Edit / E) that Done or Esc ends. An
+  // editor holding unsaved changes stays mounted (hidden) while its tab reads,
+  // so a draft survives the trip back to reading.
+  const [editingTabs, setEditingTabs] = useState<Record<string, true>>({});
+  // Bumped after a save so that tab's reader re-reads what was written.
+  const [readerRefresh, setReaderRefresh] = useState<Record<string, number>>({});
+  // Asks one tab's reader to take keyboard focus once it renders.
+  const [readerFocusRequest, setReaderFocusRequest] = useState<{ key: string; n: number } | null>(null);
+  // Focus reading: the active document alone, without the surface chrome.
+  const [focusMode, setFocusMode] = useState(false);
+  const docModeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreDocModeFocusRef = useRef(false);
   // Open tabs + the active one. A #grimoire: deep link wins over the restored
   // active tab and is merged into the restored tab set.
   const [storedSelectionKey, setStoredSelectionKey, preferencesHydrated] = useSurfacePreference(surfacePreferenceSpecs.grimoire.selected);
@@ -985,6 +1081,12 @@ export function GrimoireView({
       delete next[key];
       return next;
     });
+    setEditingTabs((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
     setTabState((prev) => {
       const index = prev.openTabs.findIndex((t) => selectionKey(t) === key);
       if (index < 0) return prev;
@@ -1017,6 +1119,15 @@ export function GrimoireView({
   /** Swap one tab for another in place (e.g. a saved draft gaining its id). */
   const replaceTab = useCallback((fromKey: string, next: GrimoireSelection) => {
     const nextKey = selectionKey(next);
+    // A blank entry's first save keeps writing; a sewn stitch opens to read.
+    setEditingTabs((previous) => {
+      const wasEditing = fromKey === "knowledge-new" || previous[fromKey] === true;
+      if (!wasEditing && !(fromKey in previous)) return previous;
+      const updated = { ...previous };
+      delete updated[fromKey];
+      if (wasEditing) updated[nextKey] = true;
+      return updated;
+    });
     const queue = visualLifecycleQueuesRef.current.get(fromKey);
     if (queue && !visualLifecycleQueuesRef.current.has(nextKey)) {
       visualLifecycleQueuesRef.current.set(nextKey, queue);
@@ -1096,42 +1207,174 @@ export function GrimoireView({
     selection?.kind === "knowledge"
       ? (knowledge ?? []).find((entry) => sameKnowledgeDoc(entry, selection)) ?? null
       : null;
+  // A loaded, persisted document — the reader, Edit/Done, focus reading, and
+  // delete all act on one of these (never on an unsaved draft or the intake).
   const readerEligible =
     view === "docs" &&
     selection !== null &&
     selection.kind !== "knowledge-new" &&
     selection.kind !== "stitch-new" &&
     (selection.kind !== "knowledge" || selectedKnowledgeEntry !== null);
+  const isTabEditing = useCallback(
+    (tab: GrimoireSelection) => tab.kind === "knowledge-new" || editingTabs[selectionKey(tab)] === true,
+    [editingTabs],
+  );
+  const selectedEditing = selection !== null && isTabEditing(selection);
+  const focusEligible = readerEligible && !selectedEditing;
 
+  const requestReaderFocus = useCallback((key: string) => {
+    setReaderFocusRequest((prev) => ({ key, n: (prev?.n ?? 0) + 1 }));
+  }, []);
+
+  // Asks a tab's editor to take keyboard focus once its (lazily loaded)
+  // editing surface mounts, so typing and Esc work straight after Edit / E.
+  const [editorFocusRequest, setEditorFocusRequest] = useState<{ key: string; n: number } | null>(null);
+  const startEditing = useCallback(
+    (key: string) => {
+      setFocusMode(false);
+      setEditingTabs((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+      setEditorFocusRequest((prev) => ({ key, n: (prev?.n ?? 0) + 1 }));
+      announce("Editing", "polite");
+    },
+    [announce],
+  );
   useEffect(() => {
-    if (!readerEligible && readerMode) setReaderMode(false);
-  }, [readerEligible, readerMode]);
+    if (!editorFocusRequest) return;
+    const host = document.querySelector<HTMLElement>(
+      `[data-grimoire-editor="${CSS.escape(editorFocusRequest.key)}"]`,
+    );
+    if (!host) return;
+    const focusSurface = () => {
+      const target = host.querySelector<HTMLElement>(".ProseMirror[contenteditable='true'], .cm-content");
+      if (!target) return false;
+      target.focus({ preventScroll: true });
+      return true;
+    };
+    if (focusSurface()) return;
+    // The visual editor loads lazily; watch for its surface to appear.
+    const observer = new MutationObserver(() => {
+      if (focusSurface()) observer.disconnect();
+    });
+    observer.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ["contenteditable"] });
+    // No surface (a load error): still give Esc a place to land, unless the
+    // person has already moved focus somewhere themselves.
+    const fallback = window.setTimeout(() => {
+      observer.disconnect();
+      if (document.activeElement === document.body) host.focus({ preventScroll: true });
+    }, 3000);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(fallback);
+    };
+  }, [editorFocusRequest]);
 
-  const leaveReader = useCallback(() => {
-    restoreReaderFocusRef.current = true;
-    setReaderMode(false);
+  /** Back to reading. An unsaved draft is kept: its editor stays mounted and
+   *  the reader offers to resume (memory files never autosave). */
+  const stopEditing = useCallback(
+    (key: string) => {
+      setEditingTabs((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      requestReaderFocus(key);
+      announce("Reading", "polite");
+    },
+    [announce, requestReaderFocus],
+  );
+
+  const bumpReader = useCallback((key: string) => {
+    setReaderRefresh((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   }, []);
 
   useEffect(() => {
-    if (readerMode) readerEditRef.current?.focus();
-  }, [readerMode, selectedKey]);
+    if (!focusEligible && focusMode) setFocusMode(false);
+  }, [focusEligible, focusMode]);
+
+  const leaveFocus = useCallback(() => {
+    restoreDocModeFocusRef.current = true;
+    setFocusMode(false);
+  }, []);
+
+  // Entering focus reading (or following a link inside it) hands the keyboard
+  // to the document so arrow keys scroll and E edits.
+  useEffect(() => {
+    if (focusMode && selectedKey) requestReaderFocus(selectedKey);
+  }, [focusMode, requestReaderFocus, selectedKey]);
 
   useEffect(() => {
-    if (readerMode || !restoreReaderFocusRef.current) return;
-    restoreReaderFocusRef.current = false;
-    readerTriggerRef.current?.focus();
-  }, [readerMode]);
+    if (focusMode || !restoreDocModeFocusRef.current) return;
+    restoreDocModeFocusRef.current = false;
+    docModeTriggerRef.current?.focus();
+  }, [focusMode]);
 
   useEffect(() => {
-    if (!readerMode) return;
-    const exitReader = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+    if (!focusMode) return;
+    const exitFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
-      leaveReader();
+      leaveFocus();
     };
-    window.addEventListener("keydown", exitReader);
-    return () => window.removeEventListener("keydown", exitReader);
-  }, [leaveReader, readerMode]);
+    window.addEventListener("keydown", exitFocus);
+    return () => window.removeEventListener("keydown", exitFocus);
+  }, [leaveFocus, focusMode]);
+
+  // Esc with nothing focused (a click on dead space) still ends editing.
+  useEffect(() => {
+    if (!selectedEditing || !selectedKey || selection?.kind === "knowledge-new" || view !== "docs") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.target !== document.body) return;
+      event.preventDefault();
+      stopEditing(selectedKey);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedEditing, selectedKey, selection?.kind, stopEditing, view]);
+
+  /** Esc inside an editor returns to reading — unless the visual editor is
+   *  using Esc itself to dismiss its slash menu or a link/format popover. */
+  const onEditorKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>, tab: GrimoireSelection) => {
+      if (event.key !== "Escape" || event.defaultPrevented || tab.kind === "knowledge-new") return;
+      if (
+        document.querySelector(
+          '.milkdown-slash-menu[data-show="true"], .milkdown-link-edit[data-show="true"], .milkdown-latex-inline-edit[data-show="true"], .milkdown-toolbar[data-show="true"]',
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      stopEditing(selectionKey(tab));
+    },
+    [stopEditing],
+  );
+
+  /** Copy the open document's markdown — the live draft when one is open,
+   *  otherwise what is saved. */
+  const copySelectionMarkdown = useCallback(async () => {
+    if (!selection || selection.kind === "knowledge-new" || selection.kind === "stitch-new") return;
+    const key = selectionKey(selection);
+    let text: string | null = null;
+    try {
+      if (selection.kind === "knowledge") {
+        const entry = (knowledge ?? []).find((e) => sameKnowledgeDoc(e, selection));
+        text = knowledgeDrafts[key] ?? (entry ? knowledgeEntryToRaw(entry) : null);
+      } else {
+        const url =
+          selection.kind === "memory"
+            ? `/api/memory/file?path=${encodeURIComponent(selection.path)}`
+            : `/api/journal?${journalEntryQuery(selection.date, selection.familiar)}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const json = await res.json();
+        if (json.ok) text = selection.kind === "memory" ? json.text ?? "" : json.entry?.reflection ?? "";
+      }
+    } catch {
+      text = null;
+    }
+    const ok = text !== null && (await copyText(text));
+    announce(ok ? "Markdown copied" : "Couldn't copy this document", ok ? "polite" : "assertive");
+  }, [announce, knowledge, knowledgeDrafts, selection]);
 
   // Delete/trash the selected document. Memory files archive to the memory
   // trash (restorable via POST /api/memory/restore); knowledge entries and
@@ -1143,7 +1386,7 @@ export function GrimoireView({
         ? "Move this memory file to the trash?"
         : selection.kind === "knowledge"
           ? "Delete this stitch?"
-          : `Delete the journal reflection for ${journalDayLabel(selection.date, readDateTimePrefs())}?`;
+          : `Delete ${selection.familiar ? `${familiarLabel(selection.familiar)}'s` : "the"} journal reflection for ${journalDayLabel(selection.date, readDateTimePrefs())}?`;
     const body =
       selection.kind === "memory"
         ? "The file moves to the Cave's memory trash and can be restored from there."
@@ -1168,7 +1411,7 @@ export function GrimoireView({
                 }`,
                 { method: "DELETE" },
               )
-            : await fetch(`/api/journal?date=${encodeURIComponent(selection.date)}`, { method: "DELETE" });
+            : await fetch(`/api/journal?${journalEntryQuery(selection.date, selection.familiar)}`, { method: "DELETE" });
       const json = await res.json();
       if (!json.ok) {
         setDeleteError(json.error ?? "Delete failed");
@@ -1203,9 +1446,17 @@ export function GrimoireView({
     [q],
   );
 
+  // Research missions publish several artifacts under one question; the
+  // mission's human title names its navigator group, disambiguates its tabs
+  // ("Findings · …"), and makes every artifact findable by that question.
+  const missionTitles = useMemo(() => missionTitleIndex(knowledge ?? []), [knowledge]);
   const visibleKnowledge = useMemo(
-    () => (knowledge ?? []).filter((e) => matches(e.title, e.id, e.collection, e.tags.join(" "))),
-    [knowledge, matches],
+    () =>
+      (knowledge ?? []).filter((e) => {
+        const missionId = missionIdOf(e.tags);
+        return matches(e.title, e.id, e.collection, e.tags.join(" "), missionId ? missionTitles.get(missionId) : null);
+      }),
+    [knowledge, matches, missionTitles],
   );
   const knowledgeGroups = useMemo(
     () => groupKnowledgeByCollection(visibleKnowledge, collections ?? []),
@@ -1218,6 +1469,19 @@ export function GrimoireView({
       const next = { ...prev, [id]: !(prev[id] ?? false) };
       try {
         window.localStorage.setItem(STITCH_GROUPS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* private mode — session-only */
+      }
+      return next;
+    });
+  }, []);
+  const [expandedMissionGroups, setExpandedMissionGroups] =
+    useState<Record<string, boolean>>(readExpandedMissionGroups);
+  const toggleMissionGroup = useCallback((missionId: string, expanded: boolean) => {
+    setExpandedMissionGroups((prev) => {
+      const next = { ...prev, [missionId]: !expanded };
+      try {
+        window.localStorage.setItem(MISSION_GROUPS_STORAGE_KEY, JSON.stringify(next));
       } catch {
         /* private mode — session-only */
       }
@@ -1326,7 +1590,11 @@ export function GrimoireView({
     () => ({
       knowledge: (knowledge ?? []).map((k) => ({ id: k.id, collection: k.collection, title: k.title })),
       memory: (memory ?? []).map((m) => ({ path: m.fullPath })),
-      journal: (journal ?? []).map((j) => ({ date: j.date })),
+      // A familiar's own entry is part of its identity (`journal:<id>:<date>`).
+      journal: (journal ?? []).map((j) => {
+        const familiar = journalRowFamiliar(j);
+        return { date: j.date, ...(familiar ? { familiar } : {}) };
+      }),
     }),
     [knowledge, memory, journal],
   );
@@ -1391,12 +1659,19 @@ export function GrimoireView({
       if (sel.kind === "knowledge-new") return "New entry";
       if (sel.kind === "stitch-new") return "New stitch";
       if (sel.kind === "knowledge") {
-        return (knowledge ?? []).find((e) => sameKnowledgeDoc(e, sel))?.title ?? knowledgeDocKey(sel.id, sel.collection);
+        const entry = (knowledge ?? []).find((e) => sameKnowledgeDoc(e, sel));
+        return entry ? stitchDisplayTitle(entry, missionTitles) : knowledgeDocKey(sel.id, sel.collection);
       }
       if (sel.kind === "memory") return sel.path.split("/").pop() ?? sel.path;
+      if (sel.familiar) return `${journalDayLabel(sel.date, dateTimePrefs)} · ${familiarLabel(sel.familiar)}`;
       return journalDayLabel(sel.date, dateTimePrefs);
     },
-    [knowledge, dateTimePrefs],
+    [knowledge, dateTimePrefs, familiarLabel, missionTitles],
+  );
+  // The launcher's Continue/Recall rows read the same disambiguated titles.
+  const launcherKnowledge = useMemo(
+    () => (knowledge ?? []).map((entry) => ({ ...entry, title: stitchDisplayTitle(entry, missionTitles) })),
+    [knowledge, missionTitles],
   );
   const readerTitle = selection
     ? selection.kind === "knowledge" && selectedKey && Object.hasOwn(knowledgeDrafts, selectedKey)
@@ -1412,20 +1687,113 @@ export function GrimoireView({
     evictedRef.current = null;
   }, [openTabs, announce, tabTitle]);
 
-  /** Detail editor for one tab. Every open tab stays mounted (hidden when
-   *  inactive) so unsaved drafts survive switching tabs. */
-  const renderTabDetail = (tab: GrimoireSelection) => {
-    const key = selectionKey(tab);
-    const tabReaderMode = readerMode && key === selectedKey;
+  // ── Navigator stitch rows ────────────────────────────────────────────────
+  // Titles are cleaned of leaked markdown, machine tags (mission ids) give way
+  // to a "Research" hint, and a mission's artifacts fold into one group.
+  const renderStitchRow = (
+    entry: GrimoireKnowledgeEntry,
+    child?: { label: string },
+  ) => {
+    const flags = knowledgeEntryFlags(entry);
+    const docKey = knowledgeDocKey(entry.id, entry.collection);
+    const tags = stitchTagView(entry.tags);
+    const title = child?.label ?? stitchDisplayTitle(entry, missionTitles);
+    const updated = entry.modified ? relativeTime(entry.modified) : "";
+    return (
+      <NavRow
+        key={docKey}
+        selected={selectedKey === `knowledge:${docKey}`}
+        title={title}
+        tooltip={child ? stitchDisplayTitle(entry, missionTitles) : title}
+        tags={child ? undefined : tags.tags}
+        hint={!child && tags.research ? "Research" : undefined}
+        meta={[entry.enabled ? "" : "off", updated].filter(Boolean).join(" · ") || undefined}
+        nested={Boolean(child)}
+        badge={
+          flags.length > 0 ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
+              title={`${flags.length} continuity flags`}
+              aria-label={`${flags.length} continuity flags`}
+            >
+              <Icon name="ph:warning-circle" width={11} aria-hidden />
+              <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
+            </span>
+          ) : undefined
+        }
+        onClick={() =>
+          openDoc({ kind: "knowledge", id: entry.id, ...(entry.collection ? { collection: entry.collection } : {}) })
+        }
+      />
+    );
+  };
+
+  const renderMissionGroup = (group: Extract<StitchNavItem<GrimoireKnowledgeEntry>, { kind: "mission" }>) => {
+    const holdsSelection = group.entries.some(
+      ({ entry }) => selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`,
+    );
+    // Folded by default; the group holding the open doc unfolds so its row is
+    // visible, and an active search unfolds everything it matched.
+    const expanded = Boolean(q) || (expandedMissionGroups[group.missionId] ?? holdsSelection);
+    return (
+      <div key={`mission:${group.missionId}`} className="grimoire-nav-mission">
+        <button
+          type="button"
+          data-rail-item
+          aria-expanded={expanded}
+          title={group.title}
+          onClick={() => toggleMissionGroup(group.missionId, expanded)}
+          className={`focus-ring-inset w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-elevated)] ${
+            holdsSelection && !expanded ? "bg-[var(--accent-presence)]/12" : ""
+          }`}
+        >
+          <span className="flex items-center gap-1">
+            <Icon
+              name={expanded ? "ph:caret-down" : "ph:caret-right"}
+              width={9}
+              className="shrink-0 text-[var(--text-muted)]"
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+              {group.title}
+            </span>
+            <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{group.entries.length}</span>
+          </span>
+          <span className="grimoire-nav-mission__meta mt-0.5 flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            <span className="inline-flex shrink-0 items-center gap-0.5">
+              <Icon name="ph:flask" width={11} aria-hidden />
+              Research
+            </span>
+            {group.modified ? <span className="ml-auto shrink-0">{relativeTime(group.modified)}</span> : null}
+          </span>
+        </button>
+        {expanded ? (
+          <div className="grimoire-nav-mission__children">
+            {group.entries.map(({ entry, label }) => renderStitchRow(entry, { label }))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderStitchList = (entries: readonly GrimoireKnowledgeEntry[]) =>
+    groupMissionStitches(entries, missionTitles).map((item) =>
+      item.kind === "entry" ? renderStitchRow(item.entry) : renderMissionGroup(item),
+    );
+
+  /** The editor for one tab. Mounted only while the tab edits, or while it
+   *  holds unsaved changes — then it stays mounted (hidden) so the draft
+   *  survives reading, switching tabs, and coming back. */
+  const renderTabEditor = (tab: GrimoireSelection, key: string) => {
     if (tab.kind === "memory") {
       return (
         <MemoryMdEditor
           key={tab.path}
           path={tab.path}
           sourceLabel={compactPath(tab.path)}
-          readerMode={tabReaderMode}
           visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
-          onCancel={() => closeTab(key)}
+          onCancel={() => stopEditing(key)}
+          onSaved={() => bumpReader(key)}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
@@ -1434,16 +1802,140 @@ export function GrimoireView({
       return (
         <JournalMdEditor
           date={tab.date}
-          readerMode={tabReaderMode}
+          familiar={tab.familiar}
           visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
           onSaved={() => {
             invalidateGrimoireLanding();
             void load(true);
+            bumpReader(key);
           }}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
     }
+    if (tab.kind !== "knowledge" && tab.kind !== "knowledge-new") return null;
+    const entry =
+      tab.kind === "knowledge" ? (knowledge ?? []).find((e) => sameKnowledgeDoc(e, tab)) ?? null : null;
+    return (
+      <KnowledgeMdEditor
+        entry={entry}
+        visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
+        onDraftChange={(raw) => {
+          setKnowledgeDrafts((previous) => (
+            previous[key] === raw ? previous : { ...previous, [key]: raw }
+          ));
+        }}
+        onSaved={(saved) => {
+          replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
+          invalidateGrimoireLanding();
+          void load(true);
+        }}
+        // Cancelling a blank entry abandons it; cancelling an edit returns to reading.
+        onCancel={() => (tab.kind === "knowledge-new" ? closeTab(key) : stopEditing(key))}
+        onDirtyChange={(dirty) => setTabDirty(key, dirty)}
+      />
+    );
+  };
+
+  /** The reader for one persisted tab (active tab only — readers are cheap
+   *  to rebuild, and an inactive tab's scroll position is remembered). */
+  const renderTabReader = (tab: GrimoireSelection, key: string, editorMounted: boolean) => {
+    const focusToken = readerFocusRequest?.key === key ? readerFocusRequest.n : 0;
+    const shared = {
+      docKey: key,
+      docIndex,
+      onOpenDoc: openDoc,
+      onEdit: () => startEditing(key),
+      focusToken,
+      notice: editorMounted ? (
+        <div role="status" className="grimoire-reader-notice">
+          <Icon name="ph:warning-circle" width={12} aria-hidden />
+          <span className="min-w-0 flex-1">This document has unsaved changes.</span>
+          <button type="button" onClick={() => startEditing(key)} className="focus-ring grimoire-reader-notice__action">
+            Resume editing
+          </button>
+        </div>
+      ) : undefined,
+    };
+    if (tab.kind === "memory") {
+      const file = (memory ?? []).find((m) => m.fullPath === tab.path);
+      return (
+        <MemoryDocReader
+          {...shared}
+          path={tab.path}
+          active={key === selectedKey}
+          refreshToken={readerRefresh[key] ?? 0}
+          fallbackTitle={(tab.path.split("/").pop() ?? tab.path).replace(/\.(md|markdown)$/i, "")}
+          kicker={file ? `Memory · ${file.rootLabel}` : "Memory"}
+          meta={[file?.modified ? `Updated ${relativeTime(file.modified)}` : null]}
+        />
+      );
+    }
+    if (tab.kind === "journal") {
+      const row = (journal ?? []).find((j) => j.date === tab.date && journalRowFamiliar(j) === tab.familiar);
+      return (
+        <JournalDocReader
+          {...shared}
+          date={tab.date}
+          familiar={tab.familiar}
+          refreshToken={readerRefresh[key] ?? 0}
+          fallbackTitle={journalDayLabel(tab.date, dateTimePrefs)}
+          kicker={tab.familiar ? `Journal · ${familiarLabel(tab.familiar)}` : "Journal"}
+          meta={[
+            // A legacy day file is attributed, not owned — still say who wrote it.
+            !tab.familiar && row?.reflectedBy ? `Reflected by ${familiarLabel(row.reflectedBy)}` : null,
+            row?.modified ? `Updated ${relativeTime(row.modified)}` : null,
+          ]}
+        />
+      );
+    }
+    if (tab.kind !== "knowledge") return null;
+    if (knowledge === null) {
+      return <GrimoireDocReader {...shared} markdown={null} fallbackTitle={tabTitle(tab)} />;
+    }
+    const entry = knowledge.find((e) => sameKnowledgeDoc(e, tab));
+    if (!entry) {
+      return (
+        <div className="grid h-full min-h-0 place-items-center p-8">
+          <EmptyState
+            icon="ph:file-x"
+            headline="This stitch isn't in the library"
+            subtitle="It may have been deleted or moved. Close the tab, or search the navigator for it."
+            actions={
+              <Button size="sm" onClick={() => closeTab(key)}>
+                Close tab
+              </Button>
+            }
+          />
+        </div>
+      );
+    }
+    const missionId = missionIdOf(entry.tags);
+    const collection = entry.collection
+      ? (collections ?? []).find((c) => c.id === entry.collection)
+      : undefined;
+    const collectionName = collection?.meta?.name;
+    const kicker = missionId
+      ? `Research · ${missionArtifactLabel(entry)}`
+      : entry.collection
+        ? (typeof collectionName === "string" && collectionName.trim()) || entry.collection
+        : "Stitch";
+    return (
+      <GrimoireDocReader
+        {...shared}
+        // While an editor is mounted, read its live draft (it may not be saved yet).
+        markdown={(editorMounted ? knowledgeDrafts[key] : undefined) ?? knowledgeEntryToRaw(entry)}
+        fallbackTitle={stitchDisplayTitle(entry, missionTitles)}
+        kicker={kicker}
+        meta={[entry.modified ? `Updated ${relativeTime(entry.modified)}` : null, entry.enabled ? null : "Off"]}
+      />
+    );
+  };
+
+  /** One tab's detail: the reader by default, the editor while editing.
+   *  Every open tab's panel stays mounted (hidden when inactive). */
+  const renderTabDetail = (tab: GrimoireSelection) => {
+    const key = selectionKey(tab);
     if (tab.kind === "stitch-new") {
       return (
         <StitchIntake
@@ -1458,15 +1950,17 @@ export function GrimoireView({
         />
       );
     }
+    const editing = isTabEditing(tab);
+    const editorMounted = editing || dirtyTabs[key] === true;
     const entry =
       tab.kind === "knowledge" ? (knowledge ?? []).find((e) => sameKnowledgeDoc(e, tab)) ?? null : null;
     const flags = entry ? knowledgeEntryFlags(entry) : [];
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {!tabReaderMode && entry?.pins?.length ? (
+        {entry?.pins?.length ? (
           <StitchProvenance pins={entry.pins} onOpenMemory={(path) => openDoc({ kind: "memory", path })} />
         ) : null}
-        {!tabReaderMode && flags.length > 0 ? (
+        {flags.length > 0 ? (
           <div className="shrink-0 border-y border-[color-mix(in_oklch,var(--color-warning)_34%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             <div className="mb-1 flex items-center gap-1 font-medium text-[var(--color-warning)]">
               <Icon name="ph:warning-circle" width={12} aria-hidden />
@@ -1479,25 +1973,21 @@ export function GrimoireView({
             </ul>
           </div>
         ) : null}
-        <div className="min-h-0 flex-1">
-          <KnowledgeMdEditor
-            entry={entry}
-            readerMode={tabReaderMode}
-            visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
-            onDraftChange={(raw) => {
-              setKnowledgeDrafts((previous) => (
-                previous[key] === raw ? previous : { ...previous, [key]: raw }
-              ));
-            }}
-            onSaved={(saved) => {
-              replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
-              invalidateGrimoireLanding();
-              void load(true);
-            }}
-            onCancel={() => closeTab(key)}
-            onDirtyChange={(dirty) => setTabDirty(key, dirty)}
-          />
-        </div>
+        {!editing && key === selectedKey ? (
+          <div className="min-h-0 flex-1">{renderTabReader(tab, key, editorMounted)}</div>
+        ) : null}
+        {editorMounted ? (
+          <div
+            data-grimoire-editor={key}
+            tabIndex={-1}
+            className={editing ? "min-h-0 flex-1 outline-none" : "hidden"}
+            // Capture phase: the visual editor consumes Esc itself (and marks
+            // it handled), so the surface has to see it first.
+            onKeyDownCapture={editing ? (event) => onEditorKeyDown(event, tab) : undefined}
+          >
+            {renderTabEditor(tab, key)}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -1507,14 +1997,16 @@ export function GrimoireView({
       // No open tabs → Continue / Recall / Weave, driven only by the loaded
       // library, familiar-memory, journal, and relation data.
       <GrimoireLauncher
-        knowledge={knowledge ?? []}
+        knowledge={launcherKnowledge}
         memory={scopedMemory}
         journal={journal ?? []}
         graph={scopedGraph}
         scopeLabel={memoryScopeLabel}
         query={query}
         onQueryChange={setQuery}
-        journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
+        journalTitle={(date, familiar) =>
+          familiar ? `${journalDayLabel(date, dateTimePrefs)} · ${familiarLabel(familiar)}` : journalDayLabel(date, dateTimePrefs)
+        }
         onOpen={openDoc}
         onNewStitch={openStitchNew}
         onBlankEntry={() => openDoc({ kind: "knowledge-new" })}
@@ -1527,7 +2019,7 @@ export function GrimoireView({
           ref={tabStripRef}
           role="tablist"
           aria-label="Open documents"
-          className={readerMode ? "hidden" : "flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1"}
+          className={focusMode ? "hidden" : "flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1"}
         >
           {openTabs.map((tab, i) => {
             const key = selectionKey(tab);
@@ -1614,26 +2106,36 @@ export function GrimoireView({
     );
 
   return (
-    <div className={`grimoire-view flex h-full min-h-0 flex-col @container/grimoire${readerMode ? " grimoire-view--reader" : ""}`}>
+    <div className={`grimoire-view flex h-full min-h-0 flex-col @container/grimoire${focusMode ? " grimoire-view--reader" : ""}`}>
       {/* Compact band: title left, the Library/Journal/
           Relations segmented tabs centered, contextual verbs right (the dashed
           "New stitch" control only makes sense in Library). */}
-      {readerMode && selection ? (
+      {focusMode && selection ? (
         <header className="grimoire-reader-header">
           <h1 className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
             {readerTitle}
           </h1>
           <span className="hidden text-[length:var(--text-2xs)] text-[var(--text-muted)] @min-[480px]/grimoire:inline">
-            Esc to return
+            Esc to exit focus
           </span>
           <button
-            ref={readerEditRef}
             type="button"
-            onClick={leaveReader}
+            onClick={() => {
+              if (selectedKey) startEditing(selectedKey);
+            }}
             className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:pencil-simple" width={11} aria-hidden />
             Edit
+          </button>
+          <button
+            type="button"
+            onClick={leaveFocus}
+            aria-label="Exit focus reading"
+            title="Exit focus reading (Esc)"
+            className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:arrows-in-simple" width={12} aria-hidden />
           </button>
         </header>
       ) : (
@@ -1679,15 +2181,22 @@ export function GrimoireView({
                 containerClassName="surface-compact-search"
               />
             ) : null}
-            {readerEligible ? (
+            {readerEligible && selectedKey ? (
+              // Reading is the default; this one stable control toggles the
+              // open document between reading and editing (E / Esc).
               <button
-                ref={readerTriggerRef}
+                ref={docModeTriggerRef}
                 type="button"
-                onClick={() => setReaderMode(true)}
-                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                onClick={() => (selectedEditing ? stopEditing(selectedKey) : startEditing(selectedKey))}
+                title={selectedEditing ? "Done editing — back to reading (Esc)" : "Edit this document (E)"}
+                className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[length:var(--text-xs)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${
+                  selectedEditing
+                    ? "border-[color-mix(in_oklch,var(--accent-presence)_45%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
+                    : "border-[var(--border-hairline)] text-[var(--text-secondary)]"
+                }`}
               >
-                <Icon name="ph:book-open" width={11} aria-hidden />
-                Reader
+                <Icon name={selectedEditing ? "ph:check" : "ph:pencil-simple"} width={11} aria-hidden />
+                {selectedEditing ? "Done" : "Edit"}
               </button>
             ) : null}
             {view === "docs" ? (
@@ -1720,6 +2229,15 @@ export function GrimoireView({
                   {readerEligible ? (
                     <>
                       <PopoverSeparator />
+                      {focusEligible ? (
+                        <PopoverItem icon="ph:arrows-out-simple" onSelect={() => setFocusMode(true)}>
+                          Focus reading
+                        </PopoverItem>
+                      ) : null}
+                      <PopoverItem icon="ph:copy" onSelect={() => void copySelectionMarkdown()}>
+                        Copy markdown
+                      </PopoverItem>
+                      <PopoverSeparator />
                       <PopoverItem
                         icon="ph:trash"
                         danger
@@ -1738,20 +2256,22 @@ export function GrimoireView({
           </div>
         </header>
       )}
-      <div className={`grimoire-workspace flex min-h-0 flex-1${selection ? " grimoire-workspace--document" : ""}${readerMode ? " grimoire-workspace--reader" : ""}`}>
+      <div className={`grimoire-workspace flex min-h-0 flex-1${selection || view !== "docs" ? " grimoire-workspace--document" : ""}${focusMode ? " grimoire-workspace--reader" : ""}`}>
         <aside
           className={`grimoire-navigator h-full min-h-0 w-full flex-col border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
             navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[264px]"
           } ${
           // On a narrow container the rail and the main pane both go full-width,
-          // so only one may show. Hide the rail when a doc is open OR the graph
-          // is up — otherwise the rail wins the width and the graph is pushed
-          // off-screen (Graph mode was dead on phones). Wide keeps both.
-            readerMode
+          // so only one may show: a narrow open doc hides the rail. Journal and
+          // Relations carry their own rails, so the Library navigator steps
+          // aside at every width and gives them the full surface.
+            focusMode
               ? "grimoire-navigator--reader"
-              : selection || view !== "docs"
-                ? "grimoire-navigator--detail"
-                : ""
+              : view !== "docs"
+                ? "grimoire-navigator--hidden"
+                : selection
+                  ? "grimoire-navigator--detail"
+                  : ""
           }`}
         >
         {/* Title, surface verbs, and the doc search all live in the compact
@@ -1831,31 +2351,7 @@ export function GrimoireView({
                   </p>
                 ) : (
                   <>
-                    {knowledgeGroups.root.map((entry) => {
-                      const flags = knowledgeEntryFlags(entry);
-                      return (
-                        <NavRow
-                          key={knowledgeDocKey(entry.id, entry.collection)}
-                          selected={selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`}
-                          title={entry.title}
-                          subtitle={entry.tags.length ? entry.tags.map((t) => `#${t}`).join(" ") : entry.id}
-                          meta={entry.enabled ? undefined : "off"}
-                          badge={
-                            flags.length > 0 ? (
-                              <span
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
-                                title={`${flags.length} continuity flags`}
-                                aria-label={`${flags.length} continuity flags`}
-                              >
-                                <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
-                              </span>
-                            ) : undefined
-                          }
-                          onClick={() => openDoc({ kind: "knowledge", id: entry.id })}
-                        />
-                      );
-                    })}
+                    {renderStitchList(knowledgeGroups.root)}
                     {knowledgeGroups.collections.map((group) => {
                       const collapsed = !q && (collapsedStitchGroups[group.id] ?? false);
                       return (
@@ -1877,35 +2373,7 @@ export function GrimoireView({
                             </span>
                             <span className="shrink-0 font-normal text-[var(--text-muted)]">{group.entries.length}</span>
                           </button>
-                          {collapsed
-                            ? null
-                            : group.entries.map((entry) => {
-                                const flags = knowledgeEntryFlags(entry);
-                                return (
-                                  <NavRow
-                                    key={knowledgeDocKey(entry.id, entry.collection)}
-                                    selected={selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`}
-                                    title={entry.title}
-                                    subtitle={entry.tags.length ? entry.tags.map((t) => `#${t}`).join(" ") : entry.id}
-                                    meta={entry.enabled ? undefined : "off"}
-                                    badge={
-                                      flags.length > 0 ? (
-                                        <span
-                                          className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
-                                          title={`${flags.length} continuity flags`}
-                                          aria-label={`${flags.length} continuity flags`}
-                                        >
-                                          <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                          <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
-                                        </span>
-                                      ) : undefined
-                                    }
-                                    onClick={() =>
-                                      openDoc({ kind: "knowledge", id: entry.id, collection: entry.collection })
-                                    }
-                                  />
-                                );
-                              })}
+                          {collapsed ? null : renderStitchList(group.entries)}
                         </div>
                       );
                     })}
@@ -2014,7 +2482,7 @@ export function GrimoireView({
           // `standalone`: it's inside the Workspace, so "Run now" and toast
           // actions ride the live event bus.
           <div className="grimoire-journal-tab flex h-full min-h-0 overflow-hidden">
-            <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} />
+            <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} scopeFamiliarIds={scopeFamiliarIds} />
           </div>
         ) : view === "graph" ? (
           <div className="flex h-full min-h-0 flex-col">
@@ -2049,7 +2517,7 @@ export function GrimoireView({
           </div>
         ) : selection ? (
           <div className="flex h-full min-h-0 flex-col">
-            {!readerMode ? (
+            {!focusMode ? (
               <div className="grimoire-mobile-back shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1">
               <button
                 type="button"

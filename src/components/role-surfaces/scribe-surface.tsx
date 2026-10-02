@@ -23,7 +23,7 @@ import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { grimoireJournalId, openGrimoireDoc } from "@/lib/grimoire-link";
 import { relativeTime } from "@/lib/relative-time";
 import { countWords, deskSummary, parseTags, readingTimeLabel, type ScribeDraft } from "./scribe-craft";
 import {
@@ -122,14 +122,16 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const loadJournal = useCallback(async () => {
     setJournalError(null);
     try {
-      const res = await fetch("/api/journal", { cache: "no-store" });
+      // This desk belongs to one familiar, so its source material is that
+      // familiar's own reflections, not the whole coven's.
+      const res = await fetch(`/api/journal?familiar=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
       const json = res.ok ? ((await res.json()) as { ok?: boolean; days?: JournalDayWire[] }) : null;
       if (!json?.ok || !Array.isArray(json.days)) throw new Error("bad response");
       setJournalDays(json.days.slice(0, 5));
     } catch {
       setJournalError("Couldn't load recent journal entries.");
     }
-  }, []);
+  }, [familiarId]);
   useEffect(() => {
     void loadJournal();
   }, [loadJournal]);
@@ -362,11 +364,11 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
           ) : (
             <ul className="role-surface-list" aria-label="Recent journal days">
               {journalDays.map((day) => (
-                <li key={day.date}>
+                <li key={`${day.date}|${day.reflectedBy ?? ""}`}>
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"
-                    onClick={() => openGrimoireDoc("journal", day.date)}
+                    onClick={() => openGrimoireDoc("journal", grimoireJournalId(day.date, day.reflectedBy))}
                   >
                     {day.date}
                     <span className="role-surface-memory-excerpt">{day.preview}</span>

@@ -408,6 +408,32 @@ h6.document-reader__heading {
   overflow-wrap: anywhere;
 }
 
+/* [[wiki-links]] — only rendered when a host provides link resolution. A
+ * resolved link opens its document in place; an unresolved one stays inert
+ * with a dashed underline (the dashed-means-not-yet idiom). */
+.document-reader__wikilink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--document-reader-accent);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--document-reader-accent) 45%, transparent);
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.document-reader__wikilink:hover {
+  text-decoration-color: currentColor;
+}
+
+.document-reader__wikilink[data-unresolved="true"] {
+  color: var(--text-muted);
+  text-decoration-style: dashed;
+  text-decoration-color: var(--border-strong);
+  cursor: help;
+}
+
 .document-reader__column blockquote {
   margin: 0 0 var(--space-5);
   padding-left: var(--space-4);

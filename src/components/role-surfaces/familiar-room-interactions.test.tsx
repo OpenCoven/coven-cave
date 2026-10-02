@@ -284,7 +284,7 @@ describe("active selections control compact inspectors", () => {
   test("Scribe opens Publishing when a new draft becomes active", async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input);
-      if (url === "/api/journal") return response({ ok: true, days: [] });
+      if (url.startsWith("/api/journal?familiar=")) return response({ ok: true, days: [] });
       if (url.startsWith("/api/knowledge?")) return response({ ok: true, entries: [] });
       throw new Error(`unexpected fetch ${url}`);
     });

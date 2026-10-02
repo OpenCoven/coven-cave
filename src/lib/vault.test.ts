@@ -94,6 +94,11 @@ for (const key of [
   "Coven_Vault_File",
   "COVEN_CAVE_AUTH_TOKEN",
   "__NEXT_PRIVATE_INTERNAL",
+  // Process mode, not secrets (#5731).
+  "NODE_ENV",
+  " node_env ",
+  "INIT_CWD",
+  "PNPM_SCRIPT_SRC_DIR",
 ]) {
   assert.equal(
     canMirrorVaultKeyToProcessEnv(key),

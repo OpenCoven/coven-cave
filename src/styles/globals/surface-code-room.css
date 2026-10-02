@@ -404,6 +404,12 @@
 }
 .code-room__viewer > * { flex: 1; min-width: 0; min-height: 0; }
 .code-room__viewer > .code-tabs { flex: none; }
+/* Light mode (#5729): --code-surface is dark in every mode, so the viewer kept
+   a near-black fill while its header, rendered markdown, empty and error
+   states took light-mode ink — 1.08:1 on the file name. The viewer takes the
+   page surface instead; code blocks keep their own dark code chrome
+   (cave-md/code.css), exactly as the chat rail's preview already renders. */
+:root[data-mode="light"] .code-room__viewer { background: var(--bg-base); }
 
 /* ── Narrow step switcher ── */
 .code-room__steps {
@@ -607,7 +613,7 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  height: var(--space-5);
+  height: var(--space-6);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
@@ -737,8 +743,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--space-5);
-  height: var(--space-5);
+  width: var(--space-6);
+  height: var(--space-6);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   background: transparent;
@@ -800,8 +806,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--space-5);
-  height: var(--space-5);
+  width: var(--space-6);
+  height: var(--space-6);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1074,7 +1080,7 @@
   gap: var(--space-1);
   min-width: 0;
   max-width: 100%;
-  height: var(--space-5);
+  height: var(--space-6);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
@@ -1143,14 +1149,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Start truncation: the ellipsis lands on the left, the distinguishing end
+     of the name stays visible (#5729). The <bdi> child keeps LTR order. */
+  direction: rtl;
+  text-align: left;
 }
+.code-tabs__label > bdi { direction: ltr; unicode-bidi: isolate; }
 .code-tabs__close {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--space-5);
-  height: var(--space-5);
+  width: var(--space-6);
+  height: var(--space-6);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
@@ -1358,7 +1369,7 @@
   align-items: center;
   gap: var(--space-1);
   padding: 0 var(--space-2);
-  height: var(--space-5);
+  height: var(--space-6);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1370,4 +1381,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .code-composer__status-dot { animation: none; }
+}
+
+/* ── Target size (#5729) ──
+   Every desk control is at least 24px on both axes (WCAG 2.5.8). The two
+   resize grips stay slim: Taller / Shorter and Widen / Restore are
+   full-size controls for the same function, which 2.5.8 accepts. */
+.code-rail__tab,
+.code-terminal-workspace__action,
+.workspace-rail__preview[data-variant="workbench"] .workspace-rail__preview-action {
+  min-height: var(--space-6);
 }

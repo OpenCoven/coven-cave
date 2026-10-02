@@ -1,10 +1,11 @@
 // Phase 4 read adapters: two paths behind one interface (spec §1).
 //
-// - `fixtures` (daemon-absent): reads fixtures/phase-4/ — the DEFAULT until
-//   threads-986.19 merges PR OpenCoven/coven#382.
-// - `daemon` (daemon-present): coven socket for weave state and decision
-//   forwarding, ~/.coven/coven.sqlite3 for ward_audit, ~/.coven/pending/ for
-//   staged proposals.
+// - `daemon` (daemon-present): the DEFAULT (see "Adapter selection" below).
+//   Coven socket for weave state and decision forwarding,
+//   ~/.coven/coven.sqlite3 for ward_audit, ~/.coven/pending/ for staged
+//   proposals.
+// - `fixtures` (daemon-absent): reads fixtures/phase-4/. Opt in with
+//   COVEN_THREADS_ADAPTER=fixtures for demos, tests, and fixture scenarios.
 //
 // Both are read-only over protected memory. The approve/reject methods are
 // thin daemon-forwarders (§3.7): they carry the principal's decision to the

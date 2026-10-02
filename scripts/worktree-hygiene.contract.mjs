@@ -66,6 +66,17 @@ function details(overrides = {}) {
   };
 }
 
+// Tool output every working worktree gains (#5726) is disposable; a source
+// file that merely shares the extension or sits in a subdirectory is not.
+for (const generated of ["next-env.d.ts", "tsconfig.tsbuildinfo"]) {
+  assert.ok(DISPOSABLE_FILES.includes(generated), `${generated} is declared disposable`);
+  assert.equal(isDisposableRelative(generated), true, `${generated} is disposable at the worktree root`);
+  assert.equal(isDisposableRelative(`./${generated}`), true, `./${generated} normalizes to the root file`);
+}
+assert.equal(isDisposableRelative("src/next-env.d.ts"), false, "only the root next-env.d.ts is generated output");
+assert.equal(isDisposableRelative("packages/app/tsconfig.tsbuildinfo"), false, "only the root build cache is declared");
+assert.equal(isDisposableRelative("src/types.d.ts"), false, "ordinary declaration files are never disposable");
+
 assert.equal(SOFT_TARGETS.attachedWorktrees, 10);
 assert.equal(SOFT_TARGETS.detachedWorktrees, 2);
 assert.equal(SOFT_TARGETS.localBranches, 15);

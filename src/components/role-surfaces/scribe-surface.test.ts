@@ -66,8 +66,12 @@ test("publishing writes real Knowledge Vault entries and republishes in place", 
 
 test("source material comes from real memory and journal, published works from the vault", () => {
   assert.match(surface, /context\.memory\.listEntries\(\)/);
-  assert.match(surface, /fetch\("\/api\/journal"/);
-  assert.match(surface, /openGrimoireDoc\("journal"/);
+  // The desk belongs to one familiar, so it reads that familiar's own days.
+  assert.match(surface, /fetch\(`\/api\/journal\?familiar=\$\{encodeURIComponent\(familiarId\)\}`/);
+  assert.match(surface, /<li key=\{`\$\{day\.date\}\|\$\{day\.reflectedBy \?\? ""\}`\}>/, "rows key by day and familiar");
+  // Rows open the familiar's own entry: a bare date can resolve to another
+  // familiar's entry for the same day (review on #5723).
+  assert.match(surface, /openGrimoireDoc\("journal", grimoireJournalId\(day\.date, day\.reflectedBy\)\)/);
   assert.match(surface, /\/api\/knowledge\?familiarId=\$\{encodeURIComponent\(familiarId\)\}/);
   assert.match(surface, /SurfaceEmpty/);
   assert.match(surface, /useRoleSurfaceState<ScribeState>/);

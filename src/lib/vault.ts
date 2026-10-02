@@ -33,7 +33,7 @@ import {
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { isSidecarInternalEnvKey, scrubSidecarInternalEnv } from "./child-spawn-env.ts";
+import { isInheritedProcessModeEnvKey, isSidecarInternalEnvKey, scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
@@ -127,7 +127,12 @@ const VAULT_PROCESS_ENV_DENYLIST = new Set([
 export function canMirrorVaultKeyToProcessEnv(key: string): boolean {
   return (
     !VAULT_PROCESS_ENV_DENYLIST.has(key.trim().toUpperCase()) &&
-    !isSidecarInternalEnvKey(key)
+    !isSidecarInternalEnvKey(key) &&
+    // NODE_ENV and pnpm's lifecycle keys are a process's mode, not a secret.
+    // Mirrored, a stored value would switch the server's own mode; restored
+    // to a harness, an `environment` entry would read the server's NODE_ENV
+    // and undo the spawn-baseline scrub (#5731).
+    !isInheritedProcessModeEnvKey(key.trim().toUpperCase())
   );
 }
 

@@ -41,6 +41,8 @@ type DaemonStatus = {
   apiVersion?: string;
   workspacePath?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
+  /** launchd's daemon job is not the one serving (#5730). */
+  serviceConflict?: { label: string };
   executors?: Array<{
     url: string;
     healthUrl: string;
@@ -835,6 +837,12 @@ export function DaemonSection({
               {statusFailureLead}
               {status?.target?.url ? ` · ${status.target.url}` : ""}
               {` · ${statusFailureReason}`}
+            </p>
+          ) : null}
+          {status?.running && status.serviceConflict && !restarting ? (
+            <p className="settings-daemon-service-note" role="status">
+              This daemon isn&apos;t the one Coven&apos;s system service ({status.serviceConflict.label}) runs, so the
+              service keeps restarting. Restart daemon hands it back to the service.
             </p>
           ) : null}
           {startError ? <p className="settings-daemon-inline-error" role="alert">{startError}</p> : null}

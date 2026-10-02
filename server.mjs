@@ -8776,8 +8776,19 @@ var FORBIDDEN_SPAWN_ENV_KEYS = [
   "COVEN_VAULT_FILE"
 ];
 var SIDECAR_INTERNAL_ENV_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"];
+var INHERITED_PROCESS_MODE_ENV_KEYS = ["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"];
 function comparableEnvKey(key, platform) {
   return platform === "win32" ? key.toUpperCase() : key;
+}
+function isInheritedProcessModeEnvKey(key, platform = process.platform) {
+  const comparableKey = comparableEnvKey(key, platform);
+  return INHERITED_PROCESS_MODE_ENV_KEYS.some((inherited) => comparableKey === inherited);
+}
+function scrubInheritedProcessModeEnv(env, platform = process.platform) {
+  for (const key of Object.keys(env)) {
+    if (isInheritedProcessModeEnvKey(key, platform)) delete env[key];
+  }
+  return env;
 }
 function isForbiddenSpawnEnvKey(key, platform = process.platform) {
   const comparableKey = comparableEnvKey(key, platform);
@@ -9695,7 +9706,7 @@ function spawnEnv(pathValue, includeManagedNode = true) {
     env.NPM_CONFIG_LOGLEVEL = "error";
   }
   return withCovenWrapperWindowPolicy(
-    scrubSidecarInternalEnv(env),
+    scrubSidecarInternalEnv(scrubInheritedProcessModeEnv(env)),
     process.platform,
     false
   );

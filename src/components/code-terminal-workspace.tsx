@@ -90,6 +90,8 @@ export type CodeTerminalWorkspaceProps = {
   /** Host controls for the pane bar's end — the drawer's height toggle (#5718),
    *  so the drawer needs no bar of its own above this one. */
   trailingActions?: ReactNode;
+  /** Keys the host handles even while a pane has focus (#5729). */
+  releaseKey?: (event: KeyboardEvent) => boolean;
 };
 
 export function CodeTerminalWorkspace({
@@ -104,6 +106,7 @@ export function CodeTerminalWorkspace({
   onClosePane,
   onToggleBroadcast,
   trailingActions,
+  releaseKey,
 }: CodeTerminalWorkspaceProps) {
   const { announce } = useAnnouncer();
   const panes = useMemo(() => listTerminalPanes(layout), [layout]);
@@ -383,6 +386,7 @@ export function CodeTerminalWorkspace({
                 current[paneId] === health ? current : { ...current, [paneId]: health },
               );
             }}
+            releaseKey={releaseKey}
           />
         </div>
       </section>

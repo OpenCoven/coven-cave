@@ -114,7 +114,34 @@ export function mergeCodeKeymap(stored: unknown): Record<CodeShortcutId, string>
     const value = (stored as Record<string, unknown>)[shortcut.id];
     if (typeof value === "string" && !isCodeReservedCombo(value)) map[shortcut.id] = value;
   }
+  // A required action never loads unbound — not even from a keymap saved
+  // before the rule existed (#5729).
+  for (const id of CODE_REQUIRED_SHORTCUTS) {
+    if (!map[id]) map[id] = defaultCodeKeymap()[id];
+  }
   return map;
+}
+
+/**
+ * Actions that can be rebound but never left without a key (#5729). The
+ * terminal toggle is the one way out of a focused terminal: xterm consumes Tab
+ * and Shift+Tab, so unbinding it — or letting another action take its key —
+ * would turn the terminal back into a keyboard trap.
+ */
+export const CODE_REQUIRED_SHORTCUTS: readonly CodeShortcutId[] = ["terminal"];
+
+export function isCodeShortcutRequired(id: CodeShortcutId): boolean {
+  return CODE_REQUIRED_SHORTCUTS.includes(id);
+}
+
+/** The required action already holding `combo`, other than `id`, if any. */
+export function codeRequiredComboHolder(
+  keymap: Record<CodeShortcutId, string>,
+  id: CodeShortcutId,
+  combo: string,
+): CodeShortcutId | null {
+  if (!combo) return null;
+  return CODE_REQUIRED_SHORTCUTS.find((required) => required !== id && keymap[required] === combo) ?? null;
 }
 
 export function isCodeReservedCombo(combo: string): boolean {
@@ -179,6 +206,10 @@ export function bindCodeShortcut(
   combo: string,
 ): Record<CodeShortcutId, string> {
   if (combo && isCodeReservedCombo(combo)) return { ...keymap };
+  // A required action keeps a key: it can't be unbound, and its key can't be
+  // taken by another action (#5729).
+  if (!combo && isCodeShortcutRequired(id)) return { ...keymap };
+  if (codeRequiredComboHolder(keymap, id, combo)) return { ...keymap };
   const next = { ...keymap };
   if (combo) {
     for (const shortcut of CODE_SHORTCUTS) {
@@ -207,6 +238,22 @@ export function isCodeShortcutTarget(target: EventTarget | null): boolean {
   if (el.isContentEditable) return false;
   const tag = el.tagName.toLowerCase();
   return tag !== "input" && tag !== "textarea" && tag !== "select";
+}
+
+/**
+ * May this room action act on a keystroke aimed at `target`?
+ *
+ * Everything `isCodeShortcutTarget` allows, plus exactly one key from inside
+ * a focused terminal: the terminal drawer's own toggle (#5729). Every other
+ * key there still belongs to the shell. Without this exception a focused
+ * terminal was a keyboard trap — xterm consumes Tab and Shift+Tab, and the
+ * "close" hint on the drawer bar sent its key to the shell instead.
+ */
+export function isCodeShortcutAllowed(target: EventTarget | null, action: CodeShortcutId | null): boolean {
+  if (!action) return false;
+  if (isCodeShortcutTarget(target)) return true;
+  const el = target as HTMLElement | null;
+  return action === "terminal" && typeof el?.closest === "function" && Boolean(el.closest(".xterm"));
 }
 
 /** Which action a live keypress triggers, or null. Unbound entries never match. */

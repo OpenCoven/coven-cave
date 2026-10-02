@@ -5,10 +5,13 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 // ── Optimistic-concurrency guard (cave-9f2e) ─────────────────────────────────
-// The journal is one file per date and two surfaces write it (Grimoire autosave
-// + the generate/edit flow). Without a conflict check the second writer silently
-// drops the first. POST accepts an opt-in `expectedModified` baseline and 409s
-// when the file changed underneath, mirroring the memory-file convention.
+// Each (date, familiar) entry is one file and two surfaces write it (Grimoire
+// autosave + the generate/edit flow). Without a conflict check the second writer
+// silently drops the first. POST accepts an opt-in `expectedModified` baseline
+// and 409s when the file changed underneath, mirroring the memory-file
+// convention. The baseline is compared against the SAME file the write replaces
+// — the reflectedBy familiar's entry — so another familiar's entry for the date
+// can never trip (or be clobbered by) the guard.
 assert.match(
   source,
   /const expectedModified = typeof body\.expectedModified === "string" \? body\.expectedModified : null;/,
@@ -16,8 +19,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const current = await readJournalEntry\(date\);/,
-  "POST reads the current entry once to drive the guard + generatedAt preservation",
+  /const current = await readJournalWriteTarget\(date, reflectedBy\);/,
+  "POST reads the (date, familiar) entry it replaces once to drive the guard + generatedAt preservation",
 );
 assert.match(
   source,
@@ -79,6 +82,42 @@ assert.match(
   source,
   /\{ ok: true, date, stats, context, sources \}/,
   "the ?stats=1 response carries the day's sources",
+);
+
+// ── Per-familiar storage (one entry per familiar per day) ────────────────────
+// Two familiars journaling the same day used to overwrite one coven-wide file.
+// Reads, lists, and deletes are now familiar-scoped in the store; the route
+// passes the familiar through instead of post-filtering a coven-wide record.
+assert.match(
+  source,
+  /const record = await readJournalEntry\(date, familiarId\);/,
+  "a familiar-scoped day read resolves that familiar's own entry in the store",
+);
+assert.doesNotMatch(
+  source,
+  /rawRecord\.entry\.reflectedBy !== familiarId/,
+  "the route no longer hides a coven-wide record after reading it",
+);
+assert.match(
+  source,
+  /const days = await listJournalEntries\(familiarId\);/,
+  "the day list narrows to a familiar in the store (rows keyed by date + familiar)",
+);
+assert.match(
+  source,
+  /const familiar = searchParams\.get\("familiar"\) \|\| null;\s*\n\s*if \(familiar !== null && !isJournalFamiliarId\(familiar\)\)/,
+  "DELETE accepts an optional familiar, validated by the shared slug guard",
+);
+assert.match(
+  source,
+  /const deleted = await deleteJournalEntry\(date, familiar\);/,
+  "DELETE removes only that familiar's entry when one is named",
+);
+assert.match(source, /\{ ok: true, date, familiar, deleted \}/, "DELETE echoes the familiar it acted on");
+assert.match(
+  source,
+  /~\/\.coven\/journal\/familiars\/<id>\/<date>\.md/,
+  "the route doc names the per-familiar layout",
 );
 
 console.log("journal route.test.ts: ok");

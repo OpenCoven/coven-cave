@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { grimoireHash, GRIMOIRE_HASH_PREFIX } from "./grimoire-link.ts";
+import { grimoireHash, grimoireJournalId, GRIMOIRE_HASH_PREFIX } from "./grimoire-link.ts";
 
 // ── Pure hash builder ────────────────────────────────────────────────────────
 
@@ -14,6 +14,24 @@ assert.equal(
   "#grimoire:memory:%2FUsers%2Fx%2F.coven%2Fmemory%2Fnotes.md",
   "ids are URL-encoded so paths survive the hash",
 );
+
+// ── Journal ids carry the familiar (entries are per familiar) ────────────────
+assert.equal(grimoireJournalId("2026-10-01", "astra"), "astra:2026-10-01", "a familiar's day is qualified");
+assert.equal(grimoireJournalId("2026-10-01", null), "2026-10-01", "an unattributed day stays a bare date");
+assert.equal(grimoireJournalId("2026-10-01"), "2026-10-01");
+{
+  // Round-trip through the Grimoire's own hash reader, so a link from another
+  // surface lands on the same familiar's entry, not whichever file a date-only
+  // read prefers.
+  const prevWindow = globalThis.window;
+  globalThis.window = { location: { hash: grimoireHash("journal", grimoireJournalId("2026-10-01", "astra")) } };
+  try {
+    const { readGrimoireHash } = await import("../components/grimoire-nav-state.ts");
+    assert.deepEqual(readGrimoireHash(), { kind: "journal", date: "2026-10-01", familiar: "astra" });
+  } finally {
+    globalThis.window = prevWindow;
+  }
+}
 
 // ── Consumers: cross-surface "Open in Grimoire" links (cave-kv3) ─────────────
 

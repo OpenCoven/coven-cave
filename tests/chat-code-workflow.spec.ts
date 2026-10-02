@@ -809,6 +809,16 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
   await expect(authFile).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 });
   await expect(reviewRail).toContainText("return true;");
 
+  // A routed open applies once (#5729). It used to replay on every re-render,
+  // so the reader could not hide the rail it had opened.
+  await page.getByRole("button", { name: "Hide the review rail" }).click();
+  await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show the review rail" })).toBeVisible();
+  await page.waitForTimeout(1_500);
+  await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show the review rail" }).click();
+  await expect(page.getByTestId("code-review-rail")).toBeVisible();
+
   const terminal = page.getByRole("button", { name: "Open the terminal drawer" });
   await terminal.click();
   await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveAttribute(

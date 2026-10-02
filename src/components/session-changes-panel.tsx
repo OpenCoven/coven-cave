@@ -68,8 +68,10 @@ export function SessionChangesInner({
    */
   viewed?: CodeRailViewedState;
   onToggleViewed?: (file: ChangedFile) => void;
-  /** Report the live file list up, so a host can show its own diffstat. */
-  onFilesChange?: (files: ChangedFile[]) => void;
+  /** Report the live file list up so a host can compare snapshots.
+   *  It is `null` until the first successful load and again on unmount: an
+   *  initial `[]` or a failed request is not a snapshot of the worktree. */
+  onFilesChange?: (files: ChangedFile[] | null) => void;
 }) {
   const reviewable = Boolean(viewed && onToggleViewed);
   const [files, setFiles] = useState<ChangedFile[]>([]);
@@ -137,11 +139,18 @@ export function SessionChangesInner({
     }
   }, [projectRoot]);
 
-  // Let a host (the Coding Desk's rail) render its own diffstat header off the
-  // same list this panel is showing, so the two can never disagree.
+  // Let a host (the Coding Desk) compare this panel's snapshot with its own.
+  // Only a SUCCESSFUL load is a snapshot: the initial `[]` before the first
+  // response, or the list left after a failed refresh, would read as a
+  // disagreement and trigger needless refetches (#5729). Unmounting reports
+  // `null` so the host never compares against a list nobody is showing.
+  const onFilesChangeRef = useRef(onFilesChange);
+  onFilesChangeRef.current = onFilesChange;
   useEffect(() => {
-    onFilesChange?.(files);
-  }, [files, onFilesChange]);
+    if (!loaded || error) return;
+    onFilesChangeRef.current?.(files);
+  }, [error, files, loaded]);
+  useEffect(() => () => onFilesChangeRef.current?.(null), []);
 
   const loadCheckpoints = useCallback(async () => {
     try {

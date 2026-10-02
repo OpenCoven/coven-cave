@@ -130,6 +130,29 @@ test("a rejected action surfaces as a non-degraded error", async () => {
   );
 });
 
+test("an HTTP 400 rejection keeps the daemon's reason instead of reading as offline", async () => {
+  // The live daemon answers a refused create with HTTP 400 and its envelope;
+  // this used to collapse into "automations daemon unavailable".
+  const { transport } = transportWith(() => ({
+    ok: false,
+    status: 400,
+    data: {
+      ok: false,
+      accepted: false,
+      action: "coven.automations.create",
+      status: "rejected",
+      reason: "rrule failed validation: rrule key `BYMINUTE` is not supported",
+    },
+  }));
+  await assert.rejects(
+    () => createRoutine({ ...ROUTINE, id: "journal-reflection-astra" }, transport),
+    (err: unknown) =>
+      err instanceof CovenAutomationsUnavailableError &&
+      !err.degraded &&
+      err.message.includes("BYMINUTE"),
+  );
+});
+
 test("runRoutine surfaces failed runs without throwing", async () => {
   const { transport } = transportWith(() =>
     okPayload({ runId: "run-1", status: "failed", error: "routine has no cwd" }),

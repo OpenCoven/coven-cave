@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { createChangesLedger, type ChangesLedger } from "@/lib/worktree-changes-ledger";
 import type { ChangedFile } from "@/lib/session-changes-api";
 
 const POLL_MS = 5000;
@@ -36,41 +37,85 @@ export type WorktreeChanges = {
   refresh: () => void;
 };
 
+type ChangesSnapshot = {
+  /** The root this snapshot describes. */
+  root: string;
+  files: ChangedFile[];
+  repoRoot: string | null;
+  loaded: boolean;
+  ok: boolean;
+};
+
+const NO_FILES: ChangedFile[] = [];
+
+function emptySnapshot(root: string): ChangesSnapshot {
+  return { root, files: NO_FILES, repoRoot: null, loaded: false, ok: false };
+}
+
 export function useWorktreeChanges(projectRoot: string, running: boolean): WorktreeChanges {
-  const [files, setFiles] = useState<ChangedFile[]>([]);
-  const [repoRoot, setRepoRoot] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [ok, setOk] = useState(false);
-  const inFlight = useRef(false);
+  // One snapshot, tagged with the root it describes (#5729 review). Separate
+  // state reset in an effect still returned the previous root's files on the
+  // first render after a root change, and the desk drew them under the new
+  // root. Until the snapshot is this root's, the hook reports an empty,
+  // unloaded summary.
+  const [snapshot, setSnapshot] = useState<ChangesSnapshot>(() => emptySnapshot(projectRoot));
+  const view = snapshot.root === projectRoot ? snapshot : emptySnapshot(projectRoot);
+
+  // A session's work root can change on the same mount — enrichment adds
+  // `git.worktreeRoot` on a later poll. The ledger gives every root a new
+  // generation, and only a request from the current generation may apply its
+  // answer, free the in-flight slot or run a queued reload; a root alone is
+  // not enough after A → B → A (see worktree-changes-ledger.ts).
+  const ledgerRef = useRef<ChangesLedger | null>(null);
+  ledgerRef.current ??= createChangesLedger();
+  const ledger = ledgerRef.current;
 
   const load = useCallback(
     async (opts?: { shared?: boolean }) => {
-      if (!projectRoot || inFlight.current) return;
-      inFlight.current = true;
+      const root = projectRoot;
+      if (!root) return;
+      const ticket = ledger.begin(opts);
+      if (!ticket) return;
+      let reload = false;
       try {
-        const { httpOk, json } = await fetchChangesSummary(projectRoot, { force: !opts?.shared });
+        const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared });
+        if (!ledger.accepts(ticket)) return;
         const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (!httpOk || !payload.ok) return;
-        setRepoRoot(payload.repoRoot ?? null);
-        // Content-guard: an unchanged poll keeps the previous array reference so
-        // the tree and the rail do not re-render every five seconds while an
-        // agent is mid-edit.
         const next = payload.files ?? [];
-        setFiles((prev) => (arrayContentEqual(prev, next) ? prev : next));
-        setOk(true);
+        setSnapshot((prev) => {
+          const base = prev.root === root ? prev : emptySnapshot(root);
+          return {
+            ...base,
+            // Content-guard: an unchanged poll keeps the previous array
+            // reference so the tree and the rail do not re-render every five
+            // seconds while an agent is mid-edit.
+            files: arrayContentEqual(base.files, next) ? base.files : next,
+            repoRoot: payload.repoRoot ?? null,
+            ok: true,
+          };
+        });
       } catch {
         /* keep the last known summary — a transient failure is not "clean" */
       } finally {
-        inFlight.current = false;
-        setLoaded(true);
+        if (ledger.accepts(ticket)) {
+          setSnapshot((prev) =>
+            prev.root === root ? (prev.loaded ? prev : { ...prev, loaded: true }) : { ...emptySnapshot(root), loaded: true },
+          );
+        }
+        reload = ledger.end(ticket).reload;
       }
+      if (reload) void loadRef.current();
     },
-    [projectRoot],
+    [ledger, projectRoot],
   );
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
-    setLoaded(false);
-    setOk(false);
+    // A new root is a new generation: nothing in flight or queued is its.
+    ledger.newGeneration();
+    setSnapshot((prev) => (prev.root === projectRoot ? prev : emptySnapshot(projectRoot)));
     void load();
     const onVisible = () => {
       if (document.visibilityState === "visible") void load();
@@ -82,7 +127,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("cave:changes-refresh", onRefresh);
     };
-  }, [load]);
+  }, [ledger, load, projectRoot]);
 
   useEffect(() => {
     if (!running) return;
@@ -94,10 +139,18 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
 
   let additions = 0;
   let deletions = 0;
-  for (const file of files) {
+  for (const file of view.files) {
     additions += file.insertions ?? 0;
     deletions += file.deletions ?? 0;
   }
 
-  return { files, repoRoot, additions, deletions, loaded, ok, refresh: () => void load() };
+  return {
+    files: view.files,
+    repoRoot: view.repoRoot,
+    additions,
+    deletions,
+    loaded: view.loaded,
+    ok: view.ok,
+    refresh: () => void load(),
+  };
 }

@@ -1820,6 +1820,9 @@ function validateCwd(raw: string | undefined): string | undefined {
 // npm command, and npm/pnpm/yarn invoked there read pnpm's settings as if
 // the user had set them. Strip the package-manager lifecycle namespace —
 // and the server's own NODE_ENV — before handing the env to a user shell.
+// Mirrors scrubInheritedProcessModeEnv in src/lib/child-spawn-env.ts, which
+// applies the same list to the harness/daemon spawn baseline (#5731); a test
+// there pins the two lists equal.
 const PTY_ENV_DROPPED = new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
 // Sidecar-internal namespaces (cave-o01k): the packaged app's serialized Next
 // config breaks builds run from the terminal, and the sidecar auth tokens are

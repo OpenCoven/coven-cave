@@ -58,4 +58,15 @@ import {
   assert.match(ctx, /quiet|nothing/i, "empty day produces a clear line");
 }
 
+// The day pane's memory stats are one compact meta line, zero parts hidden.
+{
+  const { formatJournalMemoryMeta } = await import("./journal.ts");
+  assert.equal(formatJournalMemoryMeta({ covenOrigin: 166, externalRuntimes: 0, runtimeMemory: 0 }), "166 Coven files");
+  assert.equal(
+    formatJournalMemoryMeta({ covenOrigin: 1, externalRuntimes: 2, runtimeMemory: 1 }),
+    "1 Coven file · 2 external runtime files · 1 runtime file",
+  );
+  assert.equal(formatJournalMemoryMeta({ covenOrigin: 0, externalRuntimes: 0, runtimeMemory: 0 }), "No memory files yet");
+}
+
 console.log("journal.test.ts: ok");

@@ -44,6 +44,11 @@ const changes = {
   "an unscanned file in the index": (c) => { c.index.memory.push({ path: "/m/new.md" }); },
   "a knowledge title in the index": (c) => { c.index.knowledge[0].title = "Other"; },
   "a journal day in the index": (c) => { c.index.journal.push({ date: "2026-09-02" }); },
+  // Journal entries are per familiar: the familiar is part of a journal doc's
+  // identity, and the owner feeds journal scoping.
+  "a journal entry's familiar": (c) => { c.docs[2].ref = { kind: "journal", date: "2026-09-01", familiar: "astra" }; },
+  "a doc owner": (c) => { c.docs[2].owner = "nova"; },
+  "a journal familiar in the index": (c) => { c.index.journal[0] = { date: "2026-09-01", familiar: "astra" }; },
 };
 for (const [label, change] of Object.entries(changes)) {
   test(`${label} rebuilds`, () => {

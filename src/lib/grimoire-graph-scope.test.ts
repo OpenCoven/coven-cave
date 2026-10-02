@@ -122,4 +122,22 @@ const owners = buildMemoryOwnerIndex([
   assert.ok(scoped.nodes.some((n) => n.id === "knowledge:stitch-a"), "stitches remain");
 }
 
+// ── Journal days follow their reflecting familiar; unattributed days stay.
+{
+  const base = graph();
+  const withJournal = {
+    nodes: [
+      ...base.nodes,
+      { id: "journal:echo:2026-09-01", ref: { kind: "journal", date: "2026-09-01" }, kind: "journal", title: "2026-09-01", degree: 0, scanned: true, owner: "echo" },
+      { id: "journal:sage:2026-09-01", ref: { kind: "journal", date: "2026-09-01" }, kind: "journal", title: "2026-09-01", degree: 0, scanned: true, owner: "sage" },
+      { id: "journal:2026-08-01", ref: { kind: "journal", date: "2026-08-01" }, kind: "journal", title: "2026-08-01", degree: 0, scanned: true, owner: null },
+    ],
+    edges: base.edges,
+  };
+  const ids = scopeDocGraph(withJournal, new Set(["echo"]), owners).nodes.map((n) => n.id);
+  assert.ok(ids.includes("journal:echo:2026-09-01"), "the scoped familiar's day stays");
+  assert.ok(!ids.includes("journal:sage:2026-09-01"), "another familiar's day is hidden");
+  assert.ok(ids.includes("journal:2026-08-01"), "an unattributed day stays visible");
+}
+
 console.log("grimoire-graph-scope tests passed");

@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import os from "node:os";
 import path from "node:path";
 import {
+  scrubInheritedProcessModeEnv,
   scrubSidecarInternalEnv,
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
@@ -1133,9 +1134,12 @@ function spawnEnv(
   }
   // This is the shared baseline for Coven itself, harnesses, onboarding
   // probes, npm, SSH, and user-selected tools. A wrapper-only control signal
-  // must never ride that generic environment into an unrelated child.
+  // must never ride that generic environment into an unrelated child, and
+  // neither must the server's own NODE_ENV: the daemon, every harness it
+  // starts, and every shell under them otherwise run in Cave's process mode
+  // (#5731). The PTY terminal already drops it; this keeps the two in step.
   return withCovenWrapperWindowPolicy(
-    scrubSidecarInternalEnv(env),
+    scrubSidecarInternalEnv(scrubInheritedProcessModeEnv(env)),
     process.platform,
     false,
   );

@@ -14,6 +14,16 @@ export type GrimoireDocKind = "knowledge" | "memory" | "journal";
 
 export const GRIMOIRE_HASH_PREFIX = "#grimoire:";
 
+/**
+ * The deep-link id of a journal day: `<familiar>:<date>` when the reflecting
+ * familiar is known, else the bare date. Journal entries are per familiar, so
+ * a date alone can resolve to another familiar's entry for that day; a
+ * familiar id still reaches an older coven-wide day that familiar wrote.
+ */
+export function grimoireJournalId(date: string, familiar?: string | null): string {
+  return familiar ? `${familiar}:${date}` : date;
+}
+
 /** The `#grimoire:<kind>:<id>` hash for a document. */
 export function grimoireHash(kind: GrimoireDocKind, id: string): string {
   return `${GRIMOIRE_HASH_PREFIX}${kind}:${encodeURIComponent(id)}`;
