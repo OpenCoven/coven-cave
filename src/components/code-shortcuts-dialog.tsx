@@ -23,6 +23,8 @@ import {
   CODE_FIXED_TERMINAL_SHORTCUTS,
   CODE_SHORTCUTS,
   bindCodeShortcut,
+  codeRequiredComboHolder,
+  isCodeShortcutRequired,
   codeComboChips,
   codeComboFromEvent,
   codeReservedComboOwner,
@@ -64,6 +66,12 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
       const reservedOwner = codeReservedComboOwner(combo);
       if (reservedOwner) {
         announce(`That shortcut is reserved for the ${reservedOwner}.`);
+        return;
+      }
+      const holder = codeRequiredComboHolder(keymap, capturing, combo);
+      if (holder) {
+        const holderLabel = CODE_SHORTCUTS.find((s) => s.id === holder)?.label ?? holder;
+        announce(`That shortcut belongs to ${holderLabel}, which always keeps a key.`);
         return;
       }
       const displaced = CODE_SHORTCUTS.find((s) => s.id !== capturing && keymap[s.id] === combo);
@@ -138,7 +146,10 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
               <button
                 type="button"
                 className="focus-ring code-keys__unbind"
-                disabled={!combo || isCapturing}
+                // The terminal toggle is the way out of a focused terminal, so
+                // it can be rebound but never unbound (#5729).
+                disabled={!combo || isCapturing || isCodeShortcutRequired(shortcut.id)}
+                title={isCodeShortcutRequired(shortcut.id) ? "Always keeps a key: it is the way out of a focused terminal" : undefined}
                 onClick={() => {
                   onChange(bindCodeShortcut(keymap, shortcut.id, ""));
                   announce(`${shortcut.label} unbound.`);

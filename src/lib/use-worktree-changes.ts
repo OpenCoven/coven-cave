@@ -42,10 +42,19 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   const [loaded, setLoaded] = useState(false);
   const [ok, setOk] = useState(false);
   const inFlight = useRef(false);
+  // A load asked for while one is in flight is queued, not dropped (#5729):
+  // the desk's reconciliation asks once per panel snapshot, and a dropped ask
+  // left an idle room stale until something else happened to reload it. One
+  // queued load covers any number of asks made during the same request.
+  const queued = useRef(false);
 
   const load = useCallback(
     async (opts?: { shared?: boolean }) => {
-      if (!projectRoot || inFlight.current) return;
+      if (!projectRoot) return;
+      if (inFlight.current) {
+        if (!opts?.shared) queued.current = true;
+        return;
+      }
       inFlight.current = true;
       try {
         const { httpOk, json } = await fetchChangesSummary(projectRoot, { force: !opts?.shared });
@@ -63,10 +72,16 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
       } finally {
         inFlight.current = false;
         setLoaded(true);
+        if (queued.current) {
+          queued.current = false;
+          void loadRef.current();
+        }
       }
     },
     [projectRoot],
   );
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
     setLoaded(false);

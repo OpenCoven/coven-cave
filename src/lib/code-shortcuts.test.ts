@@ -11,6 +11,9 @@ const {
   codeComboChips,
   CODE_RESERVED_COMBOS,
   isCodeShortcutTarget,
+  isCodeShortcutAllowed,
+  isCodeShortcutRequired,
+  codeRequiredComboHolder,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -108,6 +111,20 @@ assert.equal(isCodeShortcutTarget(el("DIV", { isContentEditable: true })), false
 assert.equal(isCodeShortcutTarget(el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
 assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
 
+// ...except the drawer's own toggle (#5729). Without it a focused terminal is a
+// keyboard trap: xterm consumes Tab, and the bar's "close" hint went to the shell.
+{
+  const inXterm = el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) });
+  assert.equal(isCodeShortcutAllowed(inXterm, "terminal"), true, "the toggle leaves a focused terminal");
+  for (const action of ["picker", "prompt", "changes", "pr", "files", "outline", "next-file", "previous-file", "help"]) {
+    assert.equal(isCodeShortcutAllowed(inXterm, action), false, `${action} still belongs to the shell`);
+  }
+  // Outside a terminal the old rule holds unchanged.
+  assert.equal(isCodeShortcutAllowed(el("DIV"), "picker"), true);
+  assert.equal(isCodeShortcutAllowed(el("TEXTAREA"), "terminal"), false, "a prose field never yields, not even the toggle");
+  assert.equal(isCodeShortcutAllowed(el("DIV"), null), false, "no bound action, nothing to allow");
+}
+
 // ── Rebinding ────────────────────────────────────────────────────────────────
 
 // The frame's stated rule: a duplicate takes the key from the older binding,
@@ -154,3 +171,21 @@ for (const reserved of ["/", "J", "K", "Shift+A"]) {
 }
 
 console.log("code-shortcuts: ok");
+
+
+// ── The terminal toggle always keeps a key (#5729) ───────────────────────────
+// It is the way out of a focused terminal, so it can move but never vanish.
+{
+  const keymap = defaultCodeKeymap();
+  assert.equal(isCodeShortcutRequired("terminal"), true);
+  assert.equal(isCodeShortcutRequired("picker"), false);
+  assert.deepEqual(bindCodeShortcut(keymap, "terminal", ""), keymap, "unbinding the terminal toggle is refused");
+  assert.deepEqual(bindCodeShortcut(keymap, "picker", keymap.terminal), keymap, "another action cannot take the toggle's key");
+  assert.equal(codeRequiredComboHolder(keymap, "picker", keymap.terminal), "terminal");
+  assert.equal(codeRequiredComboHolder(keymap, "terminal", keymap.terminal), null, "rebinding to its own key is fine");
+  const moved = bindCodeShortcut(keymap, "terminal", "Mod+Shift+T");
+  assert.equal(moved.terminal, "Mod+Shift+T", "it can still be rebound");
+  assert.equal(bindCodeShortcut(moved, "picker", "Mod+\`").picker, "Mod+\`", "its old key is free once it moved");
+  assert.equal(mergeCodeKeymap({ terminal: "" }).terminal, defaultCodeKeymap().terminal, "a saved empty binding loads as the default");
+  assert.equal(bindCodeShortcut(keymap, "picker", "").picker, "", "ordinary actions can still be unbound");
+}

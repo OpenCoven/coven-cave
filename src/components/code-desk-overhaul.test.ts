@@ -40,7 +40,7 @@ assert.match(
   "the tab strip renders directly above the file viewer",
 );
 assert.match(workbench, /setOpenFiles\(\(current\) => openCodeFile\(current, absolute\)\)/, "opening a path goes through openCodeFile");
-assert.match(workbench, /setOpenFiles\(memory\?\.openFiles \?\? emptyCodeOpenFiles\(\)\);/, "tabs are per session — restored from that session's memory, or empty");
+assert.match(workbench, /useState<CodeOpenFiles>\(\s*\(\) => codeDeskMemory\.read\(row\.id\)\?\.openFiles \?\? emptyCodeOpenFiles\(\),\s*\)/, "tabs are per session — seeded once from that session's memory, or empty");
 assert.match(
   workbench,
   /const openPath = useCallback\([\s\S]*?setSelectedPath\(absolute\);\s*setFocusLine\(null\);\s*setRangeLabel\(null\);/,
@@ -75,7 +75,7 @@ assert.match(
 // 5. The terminal drawer: resizable, clamped to the room, remembered.
 assert.match(drawer, /role="separator"[\s\S]{0,200}aria-orientation="horizontal"[\s\S]{0,700}onKeyDown=\{onGripKeyDown\}/, "the grip is keyboard-operable");
 assert.match(drawer, /setHeightPx\(readCodeTerminalHeight\(safeStorage\(\)\)\);/, "the remembered height is read after mount");
-assert.match(drawer, /setHeightPx\(\(current\) => clampCodeTerminalHeight\(current, roomHeightPx\)\);/, "a shrinking room re-clamps the drawer");
+assert.match(drawer, /if \(!open\) return;\s*setHeightPx\(\(current\) => clampCodeTerminalHeight\(current, roomHeightPx\)\);\s*\}, \[open, roomHeightPx\]\);/, "the drawer re-clamps only while open, so closing it never shrinks the height (#5729)");
 assert.match(drawer, /writeCodeTerminalHeight\(safeStorage\(\), clamped\);/, "commits persist the clamped height");
 assert.match(drawer, /aria-valuemin=\{clampCodeTerminalHeight\(CODE_TERMINAL_MIN_HEIGHT_PX, roomHeightPx\)\}/, "the accessible minimum respects an undersized room's ceiling");
 assert.match(drawer, /visible=\{open\}/, "the workspace still hides via its keepalive prop, never by unmounting");
@@ -85,12 +85,13 @@ assert.match(roomCss, /\.code-room__body \{[^}]*overflow: hidden;/, "the columns
 
 // 6. Review progress: viewed state is the workbench's, the rail is controlled.
 assert.match(workbench, /const \[viewed, setViewed\] = useState<CodeRailViewedState>\(\(\) => codeDeskMemory\.read\(row\.id\)\?\.viewed \?\? \{\}\);/, "the workbench owns per-file viewed state, seeded from the session's memory");
-assert.match(workbench, /setViewed\(memory\?\.viewed \?\? \{\}\);[\s\S]{0,80}setReviewFocus\(null\);/, "review state is per session — another session's ticks never carry over");
+assert.doesNotMatch(workbench, /\}, \[row\.id\]\);/, "no effect re-applies per-session state: the workbench is keyed per session, and under StrictMode such an effect reset a routed open's rail focus (#5729)");
 assert.doesNotMatch(workbench, /railFiles/, "every progress figure — count, next file, completion tint — reads the room's live changes summary");
 assert.doesNotMatch(reviewRail, /useState<CodeRailViewedState>/, "the rail no longer keeps its own viewed state");
 assert.match(reviewRail, /viewed=\{viewed\}\s*onToggleViewed=\{onToggleViewed\}/, "the changes panel is wired to the lifted state");
 assert.match(reviewRail, /onFilesChange=\{onPanelFilesChange\}/, "the rail reports the panel's own snapshot up so the room can reconcile it");
-assert.match(workbench, /if \(reconciledRef\.current === pair\) return;[\s\S]{0,120}window\.dispatchEvent\(new Event\("cave:changes-refresh"\)\);/, "a disagreement between the room and the panel refetches both, once per distinct disagreement");
+assert.match(workbench, /useEffect\(\(\) => \{\s*if \(panelKey === null \|\| panelKey === roomKeyRef\.current\) return;\s*refreshRoomRef\.current\(\);\s*\}, \[panelKey\]\);/, "the panel leads: only a change in ITS snapshot that disagrees with the room refetches the room, once (#5729)");
+assert.doesNotMatch(workbench, /cave:changes-refresh/, "the desk no longer forces both lists to refetch on a disagreement (#5729)");
 assert.match(workbench, /toggleCodeRailViewed\(current, codeRailShapeOf\(file\)\)/, "viewed ticks are recorded against the file's filesystem stamp too");
 assert.match(reviewRail, /addEventListener\("pointercancel", end/, "a cancelled touch or pen drag releases the rail grip too");
 assert.match(reviewRail, /disabled=\{!nextUnviewed\}/, "Next unviewed disables itself once every file is viewed");
@@ -104,8 +105,7 @@ const workspace = await readFile(new URL("./code-terminal-workspace.tsx", import
 const preview = await readFile(new URL("./rail-file-preview.tsx", import.meta.url), "utf8");
 
 // 1. A session round trip keeps tabs, ticks and the draft.
-assert.match(workbench, /if \(memoryOwnerRef\.current !== row\.id\) return;\s*codeDeskMemory\.write\(row\.id, \{ openFiles, viewed \}\);/, "writes are skipped while state still belongs to the previous session");
-assert.match(workbench, /memoryOwnerRef\.current = row\.id;\s*\}, \[row\.id\]\);/, "ownership moves only after the restore lands");
+assert.match(workbench, /useEffect\(\(\) => \{\s*codeDeskMemory\.write\(row\.id, \{ openFiles, viewed \}\);\s*\}, \[openFiles, row\.id, viewed\]\);/, "tabs and ticks are written to the session's memory as they change");
 assert.match(workbench, /initialDraft=\{codeDeskMemory\.read\(row\.id\)\?\.draft \?\? ""\}[\s\S]{0,120}onDraftChange=\{\(draft\) => codeDeskMemory\.write\(row\.id, \{ draft \}\)\}/, "the composer's draft is remembered per session");
 assert.match(composerSrc, /const \[prompt, setPrompt\] = useState\(initialDraft\);/, "the composer starts from the remembered draft");
 
@@ -131,5 +131,40 @@ const treeSrc = await readFile(new URL("./project-tree.tsx", import.meta.url), "
 const treeCss = await readFile(new URL("../styles/project-tree.css", import.meta.url), "utf8");
 assert.match(treeSrc, /import "@\/styles\/project-tree\.css";/, "the tree imports its own stylesheet");
 assert.match(treeCss, /\.ui-btn\[data-tree-row\]\[data-selected="true"\][\s\S]{0,120}background: var\(--accent-presence\) !important;/, "the selected row's accent fill beats the ghost background");
+
+
+// ── Pass 3 fixes (#5729) ─────────────────────────────────────────────────────
+const panelSrc = await readFile(new URL("./session-changes-panel.tsx", import.meta.url), "utf8");
+const terminalSrc = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
+
+// A routed open applies once per nonce, however often the host re-renders.
+assert.match(workbench, /if \(!openTarget\) return;[\s\S]{0,900}if \(handledOpenRef\.current === openTarget\) return;\s*handledOpenRef\.current = openTarget;/, "the routed-open effect returns early for a target it already handled — by identity, since Date.now() nonces can collide (#5729)");
+assert.match(workbench, /useRef<PendingCodeOpen \| null>\(null\)/, "the handled open is remembered as an object, not a nonce");
+assert.match(workbench, /setReviewFocus\(\(current\) => \(\{ path: focusPath, nonce: \(current\?\.nonce \?\? 0\) \+ 1 \}\)\)/, "rail focus counts its own requests, so two routed diffs never share a focus nonce");
+
+// A focused terminal hands back exactly the drawer toggle.
+assert.match(shortcuts, /export function isCodeShortcutAllowed\(target: EventTarget \| null, action: CodeShortcutId \| null\): boolean \{[\s\S]{0,300}action === "terminal" && typeof el\?\.closest === "function" && Boolean\(el\.closest\("\.xterm"\)\)/, "only the terminal toggle may act from inside xterm");
+assert.match(workbench, /const action = codeShortcutForCombo\(keymap, codeComboFromEvent\(event\)\);\s*if \(!isCodeShortcutAllowed\(event\.target, action\)\) return;/, "the desk asks the shared predicate before acting");
+assert.match(terminalSrc, /term\.attachCustomKeyEventHandler\(\(e\) => \{\s*if \(handlers\.releaseKey\?\.\(e\)\) return false;/, "xterm skips the host-owned key so it reaches the page");
+assert.equal((terminalSrc.match(/releaseKey: \(event\) => releaseKeyRef\.current\?\.\(event\) \?\? false,/g) ?? []).length, 2, "both transports (Tauri and the WebSocket bridge) pass the release key to xterm");
+assert.match(drawer, /releaseKey=\{releaseKey\}/, "the drawer passes the release key to its panes");
+assert.match(workbench, /toggleHint=\{terminalHint\}\s*releaseKey=\{terminalReleaseKey\}/, "the desk hands the drawer its bound toggle as hint and key test");
+assert.doesNotMatch(drawer, /<kbd className="code-term__kbd">⌃`<\/kbd>/, "the drawer hint is no longer hard-coded");
+assert.match(workbench, /if \(leavingTerminal\) \{\s*requestAnimationFrame\(\(\) => deskRef\.current\?\.querySelector<HTMLElement>\("\.code-term__bar"\)\?\.focus\(\)\);/, "closing from inside the terminal lands focus on the drawer bar");
+
+// The panel reports a snapshot only after a successful load, and null on unmount.
+assert.match(panelSrc, /if \(!loaded \|\| error\) return;\s*onFilesChangeRef\.current\?\.\(files\);/, "no initial [] or failed-load list is reported as a snapshot");
+assert.match(panelSrc, /useEffect\(\(\) => \(\) => onFilesChangeRef\.current\?\.\(null\), \[\]\);/, "unmounting clears the reported snapshot");
+
+// Light mode: the viewer takes the page surface; code blocks keep their chrome.
+assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ background: var\(--bg-base\); \}/, "the light-mode viewer is not painted with the always-dark code surface");
+
+// Review fixes on #5733.
+const changesHook = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
+const shortcutsDialog = await readFile(new URL("./code-shortcuts-dialog.tsx", import.meta.url), "utf8");
+assert.match(changesHook, /if \(inFlight\.current\) \{\s*if \(!opts\?\.shared\) queued\.current = true;\s*return;\s*\}/, "a forced load asked for mid-flight is queued, not dropped");
+assert.match(changesHook, /if \(queued\.current\) \{\s*queued\.current = false;\s*void loadRef\.current\(\);/, "the queued load runs once the in-flight one ends");
+assert.match(shortcutsDialog, /disabled=\{!combo \|\| isCapturing \|\| isCodeShortcutRequired\(shortcut\.id\)\}/, "the terminal toggle offers no Unbind");
+assert.match(shortcutsDialog, /const holder = codeRequiredComboHolder\(keymap, capturing, combo\);\s*if \(holder\) \{/, "rebinding another action to the toggle's key is refused, with a reason");
 
 console.log("code-desk-overhaul pins ok");
