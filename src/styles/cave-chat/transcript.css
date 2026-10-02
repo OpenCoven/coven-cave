@@ -1,3 +1,14 @@
+/* Keep the raised skills picker inside Chat's paint order so portaled
+   readers and workspace dialogs still cover the composer. */
+.cave-chat-linear {
+  isolation: isolate;
+}
+
+.cave-chat-linear .cave-composer-dock {
+  position: relative;
+  z-index: 70;
+}
+
 /* ── Turn rows ──────────────────────────────────────────────────────────── */
 
 .cave-linear-turn {
@@ -933,7 +944,7 @@
   .cave-chat-linear .cave-composer-dock {
     position: sticky;
     bottom: 0;
-    z-index: 50;
+    z-index: 70;
     padding: 6px clamp(12px, 3vw, 18px)
             8px
             clamp(12px, 3vw, 18px);
@@ -942,7 +953,8 @@
     border-top-color: color-mix(in oklch, var(--foreground) 10%, transparent);
     box-shadow: 0 -18px 32px var(--bg-base);
     backdrop-filter: blur(18px);
-    contain: layout paint style;
+    /* Paint containment clipped the skills picker above the dock. */
+    contain: layout style;
     transform: translateY(calc(-1 * var(--composer-kb-offset, 0px)));
     transition: transform var(--duration-fast) var(--ease-decelerate);
     will-change: transform;

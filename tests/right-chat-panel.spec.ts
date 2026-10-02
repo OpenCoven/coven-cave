@@ -78,8 +78,11 @@ async function boot(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
-    localStorage.setItem("cave:shell:right-chat-open", "0");
-    localStorage.setItem("cave:shell:right-chat-width", "360");
+    if (!sessionStorage.getItem("cave:e2e:right-chat-pref-seeded")) {
+      localStorage.setItem("cave:shell:right-chat-open", "0");
+      localStorage.setItem("cave:shell:right-chat-width", "360");
+      sessionStorage.setItem("cave:e2e:right-chat-pref-seeded", "1");
+    }
     localStorage.removeItem("cave.shell.widths.v3");
     localStorage.removeItem("cave.shell.widths.v3.right-chat");
     localStorage.removeItem("cave.shell.widths.v3.persistent-list.right-chat");
@@ -159,6 +162,11 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
     after = await outerPanel.boundingBox();
   }
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
+  await expect.poll(async () => {
+    const actual = (await outerPanel.boundingBox())?.width ?? 0;
+    const saved = Number(await page.evaluate(() => localStorage.getItem("cave:shell:right-chat-width")));
+    return Math.abs(actual - saved);
+  }).toBeLessThan(4);
 
   // Chat is a sidebar DESTINATION now, not a section tab — the Home/Chat
   // switcher above the rail is gone (cave-fh9so), so the tablist this used to

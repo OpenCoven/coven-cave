@@ -325,7 +325,7 @@ for (const [name, rule] of [
 // The spacing under the header is declared once, on the shared header itself.
 assert.match(
   railHeaderCss,
-  /\.rail-header \{[\s\S]*?margin-bottom: var\(--space-2\);/,
+  /\.rail-header \{[\s\S]*?margin-bottom: var\(--space-4\);/,
   "the shared header owns the gap beneath it in both rooms",
 );
 

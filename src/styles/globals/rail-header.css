@@ -23,7 +23,7 @@
   /* The header owns the space beneath it in BOTH rooms. Leaving it to each
      container's own column gap is what made the rail shift vertically on the
      Home/Chat toggle. */
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .rail-header__scope {
