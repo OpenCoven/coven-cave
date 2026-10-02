@@ -1167,6 +1167,13 @@
   color: var(--text-muted);
 }
 .code-tabs__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* Unsaved edits (#5745). The dot is decoration; the tab also says it in words. */
+.code-tabs__dirty {
+  flex: none;
+  color: var(--color-warning);
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
 
 /* ── Follow-up dock ── */
 .code-composer {

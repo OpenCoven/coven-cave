@@ -30,9 +30,11 @@ export type CodeOpenFileTabsProps = {
   idPrefix: string;
   /** The viewer the tabs control. */
   panelId: string;
+  /** Files with unsaved edits (#5745). */
+  dirty?: ReadonlySet<string>;
 };
 
-export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idPrefix, panelId }: CodeOpenFileTabsProps) {
+export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idPrefix, panelId, dirty }: CodeOpenFileTabsProps) {
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -107,6 +109,14 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
               {letter ? (
                 <span className="code-tree__status-letter code-tabs__status" data-status={letter} title="Changed in this worktree">
                   {letter}
+                </span>
+              ) : null}
+              {/* Unsaved edits (#5745): a dot you can see, words a screen
+                  reader hears, so leaving a file never hides an open edit. */}
+              {dirty?.has(path) ? (
+                <span className="code-tabs__dirty" data-testid="code-tab-unsaved" title="Unsaved changes">
+                  <span aria-hidden="true">●</span>
+                  <span className="sr-only">, unsaved changes</span>
                 </span>
               ) : null}
             </button>

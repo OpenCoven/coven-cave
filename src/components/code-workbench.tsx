@@ -38,7 +38,7 @@
  *   - the composer knows the open file and the session's state.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { CodeComposer } from "@/components/code-composer";
 import { CodeOpenFileTabs, codeOpenFileTabId } from "@/components/code-open-file-tabs";
 import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
+import { fileEditDrafts } from "@/lib/file-edit-drafts";
 import { CodeReviewRail } from "@/components/code-review-rail";
 import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
@@ -289,6 +290,11 @@ export function CodeWorkbench({
     setRangeLabel(null);
   }, []);
   const closeTab = useCallback((path: string) => {
+    // Closing keeps an unsaved edit (#5745); say so, since the tab that showed
+    // its marker is gone.
+    if (fileEditDrafts.dirtyPaths().has(path)) {
+      announce(`Closed ${path.split("/").pop() ?? path}. Its unsaved changes are kept; open it again to continue.`);
+    }
     setOpenFiles((current) => {
       const next = closeCodeFile(current, path);
       if (next === current) return current;
@@ -299,7 +305,7 @@ export function CodeWorkbench({
       }
       return next;
     });
-  }, []);
+  }, [announce]);
   const cycleTab = useCallback((direction: 1 | -1) => {
     setOpenFiles((current) => {
       const next = cycleCodeFile(current, direction);
@@ -366,6 +372,15 @@ export function CodeWorkbench({
     return map;
   }, [changes.files, changesBase]);
   const activeTabIndex = openFiles.active ? openFiles.paths.indexOf(openFiles.active) : -1;
+  // The open file's version in the live changes list. When the agent rewrites
+  // it (or a revert restores it), the viewer reads it again (#5745).
+  const selectedChangeVersion = useMemo(() => {
+    if (!selectedPath) return null;
+    const hit = changes.files.find((file) => absolutePath(changesBase, file.path) === selectedPath);
+    return hit?.changeVersion ?? null;
+  }, [changes.files, changesBase, selectedPath]);
+  // Files with unsaved edits, for the tab marker.
+  const dirtyPaths = useSyncExternalStore(fileEditDrafts.subscribe, fileEditDrafts.dirtyPaths, fileEditDrafts.dirtyPaths);
   const selectedRelative = useMemo(() => {
     if (!selectedPath) return null;
     const base = changesBase.replace(/\/$/, "");
@@ -725,6 +740,7 @@ export function CodeWorkbench({
               onClose={closeTab}
               idPrefix={fileTabPrefix}
               panelId={viewerPanelId}
+              dirty={dirtyPaths}
             />
             {/* The open-file tabs' panel. Without tabs there is no tablist to
                 belong to, so it is a plain container then. */}
@@ -742,6 +758,7 @@ export function CodeWorkbench({
                 variant="workbench"
                 rangeLabel={rangeLabel}
                 initialLine={focusLine}
+                changeVersion={selectedChangeVersion}
               />
             </div>
           </div>

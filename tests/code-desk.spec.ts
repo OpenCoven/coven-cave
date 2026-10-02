@@ -1354,4 +1354,202 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await rail.getByRole("button", { name: "Dismiss error" }).click();
     await expect(rail.getByText(/Couldn't save a checkpoint/)).toHaveCount(0);
   });
+
+  // ── Pass 4 high fixes (#5745) ──────────────────────────────────────────────
+
+  test("35. an unsaved edit survives a tab switch, Escape and a session round trip, and its tab says so", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const tabs = page.getByTestId("code-open-file-tabs");
+    const editor = desk.locator(".cm-content");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// KEEP-ME");
+    const fluxTab = tabs.getByRole("tab", { name: /flux\.ts/ });
+    await expect(fluxTab.getByTestId("code-tab-unsaved")).toBeVisible();
+    await expect(fluxTab).toHaveAccessibleName(/unsaved changes/);
+
+    // Another tab and back: the edit is where it was left.
+    await tabs.getByRole("tab", { name: /README\.md/ }).click();
+    await expect(desk.locator(".workspace-rail__preview-name")).toHaveText("README.md");
+    await expect(editor).toHaveCount(0);
+    await fluxTab.click();
+    await expect(editor).toContainText("KEEP-ME");
+
+    // Escape leaves the editor for Save; it does not discard.
+    await editor.click();
+    await page.keyboard.press("Escape");
+    await expect(desk.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+    await expect(editor).toContainText("KEEP-ME");
+
+    // A session round trip remounts the desk; the edit comes back with it.
+    await page.locator("[data-code-session-id='s-old']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/idle/);
+    await page.locator("[data-code-session-id='s-new']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/running/);
+    await expect(page.getByTestId("code-workbench").locator(".cm-content")).toContainText("KEEP-ME");
+
+    // Cancel is the one way to throw it away.
+    await page.getByTestId("code-workbench").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByTestId("code-workbench").locator(".cm-content")).toHaveCount(0);
+    await expect(page.getByTestId("code-workbench").locator(".workspace-rail__preview-body")).not.toContainText("KEEP-ME");
+    await expect(page.getByTestId("code-tab-unsaved")).toHaveCount(0);
+  });
+
+  test("36. a save in flight settles the file it was sent for, and keeps what was typed meanwhile", async ({ page }) => {
+    await base(page);
+    const posts: { path?: string; content?: string }[] = [];
+    let release: () => void = () => {};
+    await page.route("**/api/project-file", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posts.push(route.request().postDataJSON());
+      await new Promise<void>((resolve) => (release = resolve));
+      await route.fulfill({ json: { ok: true, size: 80, version: `saved-${posts.length}` } });
+    });
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const tabs = page.getByTestId("code-open-file-tabs");
+    const editor = desk.locator(".cm-content");
+    const body = desk.locator(".workspace-rail__preview-body");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// SAVED-INTO-FLUX");
+    await desk.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    // The request cannot be called back, so the edit cannot be discarded under it.
+    await expect(desk.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+
+    // Move to README.md while the save is held, then let it land.
+    await tabs.getByRole("tab", { name: /README\.md/ }).click();
+    await expect(desk.locator(".workspace-rail__preview-name")).toHaveText("README.md");
+    await expect(body).toContainText("README.md");
+    release();
+    await page.waitForTimeout(400);
+    expect(posts[0].path).toMatch(/\/src\/flux\.ts$/);
+    await expect(body).not.toContainText("SAVED-INTO-FLUX");
+    await expect(desk.getByText("Saved", { exact: true })).toHaveCount(0);
+
+    // Keys typed while a save is in flight stay in the edit.
+    await tabs.getByRole("tab", { name: /flux\.ts/ }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// FIRST");
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect.poll(() => posts.length).toBe(2);
+    await page.keyboard.type("\n// TYPED-WHILE-SAVING");
+    release();
+    await page.waitForTimeout(400);
+    expect(posts[1].content).toContain("FIRST");
+    expect(posts[1].content).not.toContain("TYPED-WHILE-SAVING");
+    await expect(editor).toContainText("TYPED-WHILE-SAVING");
+    await expect(tabs.getByRole("tab", { name: /flux\.ts/ }).getByTestId("code-tab-unsaved")).toBeVisible();
+  });
+
+  test("37. a save names its starting version, and a file changed on disk is a conflict, not an overwrite", async ({ page }) => {
+    await base(page);
+    // A server double with the real version contract: reads return a version,
+    // a save naming an older version is refused with 409.
+    const disk = { text: "// flux.ts\nexport const v = 1;\n", version: 1 };
+    const posts: { content?: string; expectedVersion?: string }[] = [];
+    await page.route("**/api/project-file**", async (route) => {
+      const request = route.request();
+      if (!new URL(request.url()).searchParams.get("path")?.endsWith("flux.ts") && request.method() === "GET") return route.fallback();
+      if (request.method() === "GET") {
+        return route.fulfill({ json: { ok: true, kind: "text", content: disk.text, size: disk.text.length, version: `v${disk.version}` } });
+      }
+      const body = request.postDataJSON() as { content: string; expectedVersion?: string };
+      posts.push(body);
+      if (body.expectedVersion && body.expectedVersion !== `v${disk.version}`) {
+        return route.fulfill({ status: 409, json: { ok: false, error: "file changed on disk", conflict: true, version: `v${disk.version}` } });
+      }
+      disk.text = body.content;
+      disk.version += 1;
+      return route.fulfill({ json: { ok: true, size: disk.text.length, version: `v${disk.version}` } });
+    });
+    const desk = await openDesk(page);
+    const editor = desk.locator(".cm-content");
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// mine");
+
+    // The agent rewrites the file meanwhile.
+    disk.text = "// flux.ts\nexport const v = 2; // the agent's change\n";
+    disk.version += 1;
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0].expectedVersion).toBe("v1");
+    await expect(desk.getByText("This file changed on disk since you started editing.")).toBeVisible();
+    expect(disk.text).toContain("the agent's change");
+    await expect(editor).toContainText("// mine");
+    await expect(desk.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+
+    // Overwrite is a deliberate choice: it writes my edit over the newer file.
+    await desk.getByRole("button", { name: "Overwrite" }).click();
+    await expect.poll(() => posts.length).toBe(2);
+    expect(posts[1].expectedVersion).toBeUndefined();
+    await expect(editor).toHaveCount(0);
+    expect(disk.text).toContain("// mine");
+
+    // Reload is the other: drop my edit and read the file as it is now.
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// mine again");
+    disk.text = "// flux.ts\nexport const v = 3; // the agent again\n";
+    disk.version += 1;
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(desk.getByText("This file changed on disk since you started editing.")).toBeVisible();
+    await desk.getByRole("button", { name: "Reload" }).click();
+    await expect(editor).toHaveCount(0);
+    await expect(desk.locator(".workspace-rail__preview-body")).toContainText("the agent again");
+  });
+
+  test("38. the open file is read again when the agent changes it", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let fluxText = "// flux.ts version one\n";
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (route.request().method() !== "GET" || !path.endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content: fluxText, size: fluxText.length } });
+    });
+    const desk = await openDesk(page);
+    const body = desk.locator(".workspace-rail__preview-body");
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await expect(body).toContainText("version one");
+
+    fluxText = "// flux.ts version two\n";
+    fixture.current = [{ ...CHANGED_FILES[0], insertions: 14, changeVersion: "300:300:700" }, CHANGED_FILES[1]];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(body).toContainText("version two", { timeout: 20_000 });
+    await expect(desk.locator(".workspace-rail__preview-name")).toHaveText("flux.ts");
+  });
+
+  test("39. leaving the desk for another tab still warns before a reload drops an unsaved edit", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// DO-NOT-LOSE");
+    // The Work tab unmounts the desk, and the viewer with it.
+    await page.getByRole("tablist", { name: "Code surface" }).getByRole("tab", { name: "Work" }).click();
+    await expect(page.getByTestId("code-workbench")).toHaveCount(0);
+    const dialog = page.waitForEvent("dialog");
+    await page.close({ runBeforeUnload: true });
+    const prompt = await dialog;
+    expect(prompt.type()).toBe("beforeunload");
+    await prompt.dismiss();
+  });
 });

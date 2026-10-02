@@ -187,7 +187,7 @@ assert.match(workbench, /changesStatus=\{changes\.loaded \? \(changes\.ok \? "re
 assert.match(workbenchTree, /const filtering = ready && changedOnly && changedCount > 0;/, "a failed or loading summary never filters the tree");
 assert.match(workbenchTree, /"Changes unavailable"/, "a failed request is not \"0 changed\"");
 assert.match(preview, /Couldn&rsquo;t open \{name\}<\/p>[\s\S]{0,400}onClick=\{\(\) => setReloadNonce\(\(n\) => n \+ 1\)\}/, "a file that fails to open has a headline and a Retry");
-assert.match(preview, /\}, \[path, familiarId, projectRoot, reloadNonce\]\);/, "Retry refetches the same path");
+assert.match(preview, /\}, \[path, familiarId, projectRoot, reloadNonce, changeVersion\]\);/, "Retry refetches the same path, and a moved change version reads the file again");
 assert.match(preview, /onOpenPath\(changedRepoRoot \? `\$\{changedRepoRoot\.replace\(\/\\\/\+\$\/, ""\)\}\/\$\{f\.path\}` : f\.path\)/, "launchpad paths resolve against the git toplevel, not the project");
 assert.match(composer, /showSuggestions = [^;]*row\.familiarId/, "no suggestions for a session that cannot send");
 assert.match(composer, /No familiar is attached to this session/, "a session with no familiar says why Send is off");
@@ -220,5 +220,30 @@ assert.match(reviewRail, /aria-label="Widen the rail"/, "the widen toggle keeps 
 assert.match(preview, /const current = launchpad && launchpad\.root === projectRoot \? launchpad : null;/, "the launchpad shows only the snapshot for the current root");
 assert.match(workbench, /column\?\.querySelector<HTMLElement>\('\[role="tree"\]'\) \?\?\s*column\?\.querySelector<HTMLElement>\("\.code-tree__changed-row"\);/, "the Files shortcut looks for the tree before the changed list, and the filter only as a last resort");
 assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,300}tabIndex=\{-1\}/, "close buttons are not tab stops");
+
+// ── Pass 4 high fixes (#5745) ────────────────────────────────────────────────
+// 1. The edit lives in the per-path draft store, so leaving a file keeps it.
+assert.match(preview, /const draft = useSyncExternalStore\(\s*fileEditDrafts\.subscribe,\s*\(\) => fileEditDrafts\.get\(path\),/, "the viewer reads its edit from the draft store");
+assert.match(preview, /const editing = Boolean\(draft\);/, "a file with a draft opens in the editor");
+assert.doesNotMatch(preview, /setEditing\(false\)/, "no path change, step switch or remount resets the edit");
+assert.match(preview, /onCancel=\{leaveEditor\}/, "Escape leaves the editor for Save instead of discarding");
+assert.match(preview, /const cancelEditing = useCallback\(\(\) => \{\s*if \(path\) fileEditDrafts\.discard\(path\);/, "Cancel is the one control that discards");
+assert.match(tabs, /dirty\?\.has\(path\) \? \([\s\S]{0,200}data-testid="code-tab-unsaved"[\s\S]{0,200}, unsaved changes/, "a tab with an unsaved edit says so, in sight and in words");
+assert.match(workbench, /dirty=\{dirtyPaths\}/, "the workbench hands the dirty set to the tabs");
+// 2. A save settles the file it was sent for, and keeps keys typed meanwhile.
+assert.match(preview, /const target = pathRef\.current;[\s\S]{0,200}const sending = fileEditDrafts\.startSave\(target\);/, "a save captures the file it is for");
+assert.match(preview, /if \(pathRef\.current === target\) \{\s*setFile\(/, "only the file the save was for, if still on screen, takes the saved text");
+// 3. A save names its starting version; a changed file is a conflict.
+assert.match(preview, /expectedVersion: sending\.baseVersion \?\? undefined/, "a save sends the version its edit started from");
+assert.match(preview, /fileEditDrafts\.fail\(target, sending\.id, conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
+assert.match(preview, /className="workspace-rail__preview-conflict" role="alert"[\s\S]{0,1200}onClick=\{reloadFromDisk\}[\s\S]{0,400}onClick=\{overwriteDisk\}/, "a conflict offers Reload and Overwrite in its own row");
+assert.match(workbench, /changeVersion=\{selectedChangeVersion\}/, "the open file is read again when its change version moves");
+
+// #5746 review.
+const draftsSrc = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
+assert.match(draftsSrc, /export const fileEditDrafts = createFileEditDraftStore\(\);[\s\S]{0,400}window\.addEventListener\("beforeunload"/, "one unload guard per page, installed with the store, so it outlives the viewer");
+assert.doesNotMatch(preview, /addEventListener\("beforeunload"/, "no per-viewer unload guard that unmounts with the desk");
+assert.match(preview, /title="Discard your changes"[\s\S]{0,200}disabled=\{saving\}/, "Cancel waits for an in-flight save");
+assert.match(preview, /fileEditDrafts\.settle\(target, sending\.id,/, "a save settles only the edit it was sent from");
 
 console.log("code-desk-overhaul pins ok");

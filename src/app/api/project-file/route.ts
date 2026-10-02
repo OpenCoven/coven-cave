@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server.js";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
@@ -11,6 +12,16 @@ import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
+
+/**
+ * A text file's version: a digest of its bytes (#5745). Reads return it, and a
+ * save may send the version its edit started from; when the file has changed
+ * since, the save is refused with a conflict instead of overwriting the newer
+ * text. Opaque to clients.
+ */
+export function projectFileVersion(bytes: Buffer | string): string {
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 24);
+}
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB
 
 const TEXT_EXTENSIONS = new Set([
@@ -86,7 +97,7 @@ const IMAGE_EXTENSIONS = new Map([
 
 type ProjectFileResult = {
   body:
-    | { ok: true; kind: "text"; content: string; size: number }
+    | { ok: true; kind: "text"; content: string; size: number; version?: string }
     | { ok: true; kind: "image"; dataUrl: string; mimeType: string; size: number }
     | { ok: false; error: string };
   status: number;
@@ -156,8 +167,11 @@ export function projectFileResult(filePath: string | null): ProjectFileResult {
     };
   }
 
-  const content = fs.readFileSync(resolved, "utf-8");
-  return { status: 200, body: { ok: true, kind: "text", content, size: stat.size } };
+  const bytes = fs.readFileSync(resolved);
+  return {
+    status: 200,
+    body: { ok: true, kind: "text", content: bytes.toString("utf-8"), size: stat.size, version: projectFileVersion(bytes) },
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -181,7 +195,9 @@ export async function GET(req: NextRequest) {
 }
 
 type ProjectFileWriteResult = {
-  body: { ok: true; size: number } | { ok: false; error: string };
+  body:
+    | { ok: true; size: number; version: string }
+    | { ok: false; error: string; conflict?: true; version?: string };
   status: number;
 };
 
@@ -195,12 +211,19 @@ type ProjectFileWriteResult = {
  * un-writable (it's read-redacted), and content is byte-capped at the same
  * MAX_TEXT_SIZE as reads.
  */
-export async function projectFileWrite(filePath: string | null, content: unknown): Promise<ProjectFileWriteResult> {
+export async function projectFileWrite(
+  filePath: string | null,
+  content: unknown,
+  expectedVersion?: unknown,
+): Promise<ProjectFileWriteResult> {
   if (!filePath) {
     return { body: { ok: false, error: "missing path param" }, status: 400 };
   }
   if (typeof content !== "string") {
     return { body: { ok: false, error: "content must be a string" }, status: 400 };
+  }
+  if (expectedVersion !== undefined && expectedVersion !== null && typeof expectedVersion !== "string") {
+    return { body: { ok: false, error: "expectedVersion must be a string" }, status: 400 };
   }
 
   const allowed = resolveAllowedProjectSubpath(filePath);
@@ -240,20 +263,38 @@ export async function projectFileWrite(filePath: string | null, content: unknown
     return { body: { ok: false, error: "not a file" }, status: 400 };
   }
 
+  // Optimistic concurrency (#5745): checked under the repository mutation
+  // lock, so nothing can write between this read and the write below.
+  if (typeof expectedVersion === "string") {
+    let current: string;
+    try {
+      current = projectFileVersion(fs.readFileSync(resolved));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { body: { ok: false, error: message }, status: 500 };
+    }
+    if (current !== expectedVersion) {
+      return {
+        body: { ok: false, error: "file changed on disk", conflict: true, version: current },
+        status: 409,
+      };
+    }
+  }
+
   try {
     fs.writeFileSync(resolved, content, "utf-8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { body: { ok: false, error: message }, status: 500 };
   }
-    return { body: { ok: true, size: byteLength }, status: 200 };
+    return { body: { ok: true, size: byteLength, version: projectFileVersion(content) }, status: 200 };
   });
 }
 
 export async function POST(req: NextRequest) {
-  let payload: { path?: unknown; content?: unknown; familiarId?: unknown };
+  let payload: { path?: unknown; content?: unknown; familiarId?: unknown; expectedVersion?: unknown };
   try {
-    payload = (await req.json()) as { path?: unknown; content?: unknown; familiarId?: unknown };
+    payload = (await req.json()) as { path?: unknown; content?: unknown; familiarId?: unknown; expectedVersion?: unknown };
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
   }
@@ -272,6 +313,6 @@ export async function POST(req: NextRequest) {
     }
     throw error;
   }
-  const result = await projectFileWrite(filePath, payload.content);
+  const result = await projectFileWrite(filePath, payload.content, payload.expectedVersion);
   return NextResponse.json(result.body, { status: result.status });
 }

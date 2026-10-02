@@ -959,6 +959,7 @@ export const SUITES = {
     "src/lib/code-outline.test.ts",
     "src/lib/code-side-rail.test.ts",
     "src/lib/code-tablist-keys.test.ts",
+    "src/lib/file-edit-drafts.test.ts",
     "src/lib/code-shortcuts.test.ts",
     "src/lib/code-desk-header.test.ts",
     "src/lib/code-open-files.test.ts",
