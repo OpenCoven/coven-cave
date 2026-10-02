@@ -393,16 +393,31 @@ try {
     COVEN_CAVE_AUTH_TOKEN: { storage: "environment", scope: ["nova"] },
     __NEXT_PRIVATE_TEST_TOKEN: { storage: "environment", scope: ["nova"] },
     NODE_OPTIONS: { storage: "environment", scope: ["nova"] },
+    // An `environment` entry reads the server's own value: with the server in
+    // development mode it would hand that mode back to the harness (#5731).
+    NODE_ENV: { storage: "environment", scope: ["nova"] },
+    INIT_CWD: { storage: "environment", scope: ["nova"] },
   });
   setLocalEncryptedSecret("COVEN_GENERIC_SECRET", "safe");
-  assert.deepEqual(
-    restoreGrantedVaultEnv({}, loadVaultMap(true), "nova"),
-    {
-      COVEN_GENERIC_ENV: "launcher-generic",
-      COVEN_GENERIC_SECRET: "safe",
-    },
-    "generic granted environment and encrypted keys materialize without runtime-control keys",
-  );
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousInitCwd = process.env.INIT_CWD;
+  process.env.NODE_ENV = "development";
+  process.env.INIT_CWD = "/somewhere/else";
+  try {
+    assert.deepEqual(
+      restoreGrantedVaultEnv({}, loadVaultMap(true), "nova"),
+      {
+        COVEN_GENERIC_ENV: "launcher-generic",
+        COVEN_GENERIC_SECRET: "safe",
+      },
+      "generic granted environment and encrypted keys materialize without runtime-control or process-mode keys",
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousInitCwd === undefined) delete process.env.INIT_CWD;
+    else process.env.INIT_CWD = previousInitCwd;
+  }
   assert.deepEqual(
     restoreGrantedVaultEnv({}, loadVaultMap(true), "sage"),
     {},
