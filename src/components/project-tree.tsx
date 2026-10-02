@@ -320,6 +320,9 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
           tabIndex={0}
           aria-label="File tree"
           onKeyDown={(e) => {
+            // Modified arrows belong to the host (the Coding Desk's Alt+↑/↓
+            // cycles open files), not to tree navigation (#5729).
+            if (e.altKey || e.metaKey || e.ctrlKey) return;
             if (!["ArrowDown", "ArrowUp", "Home", "End", "ArrowRight", "ArrowLeft", "Enter", " "].includes(e.key)) return;
             const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("[data-tree-row]"));
             if (rows.length === 0) return;

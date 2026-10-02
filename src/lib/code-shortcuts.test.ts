@@ -14,6 +14,10 @@ const {
   isCodeShortcutAllowed,
   isCodeShortcutRequired,
   codeRequiredComboHolder,
+  codeReservedComboOwner,
+  CODE_APP_RESERVED_SHORTCUTS,
+  isAppClaimedCombo,
+  isCodeReservedCombo,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -169,6 +173,52 @@ assert.deepEqual(codeComboChips("", true), []);
 for (const reserved of ["/", "J", "K", "Shift+A"]) {
   assert.ok(CODE_RESERVED_COMBOS.includes(reserved), `${reserved} stays reserved by the queue`);
 }
+
+// ── App-wide keys (#5729) ────────────────────────────────────────────────────
+
+// The app's handler runs before the desk's and claims these everywhere, so a
+// desk binding on one is dead on arrival. The rule mirrors that handler: with
+// Mod it matches the lowercased key, so every Alt/Shift variant of ⌘K, ⌘J and
+// ⌘/ is taken; without Mod it takes "?", Alt included (#5737 review).
+for (const combo of [
+  "?", "Alt+?",
+  "Mod+/", "Mod+Alt+/",
+  "Mod+K", "Mod+Shift+K", "Mod+Alt+K", "Mod+Alt+Shift+K",
+  "Mod+J", "Mod+Shift+J", "Mod+Alt+J", "Mod+Alt+Shift+J",
+]) {
+  assert.ok(isAppClaimedCombo(combo), `${combo} is the app's`);
+  assert.ok(isCodeReservedCombo(combo), `${combo} cannot be bound to the desk`);
+  assert.equal(codeReservedComboOwner(combo), "app", `${combo} names the app as its owner`);
+  assert.deepEqual(bindCodeShortcut(defaultCodeKeymap(), "help", combo), defaultCodeKeymap(), `binding ${combo} is refused`);
+}
+// Neighbours the app's handler does not take stay free.
+for (const combo of ["Mod+P", "Mod+I", "Mod+Shift+H", "Mod+?", "Alt+K", "Shift+J", "/", ""]) {
+  assert.equal(isAppClaimedCombo(combo), false, `${combo || "(unbound)"} is not the app's`);
+}
+assert.deepEqual(
+  CODE_APP_RESERVED_SHORTCUTS.map((shortcut) => shortcut.combo),
+  ["Mod+K", "Mod+J", "Mod+/", "?"],
+  "the dialog lists each app shortcut once",
+);
+assert.equal(codeReservedComboOwner("Shift+A"), "session queue");
+assert.equal(codeReservedComboOwner("Mod+P"), null);
+
+// The two defaults that sat on app keys moved: the prompt to ⌘I, and help to
+// unbound (⌘? is the macOS Help menu). The header button still opens the dialog.
+assert.equal(defaultCodeKeymap().prompt, "Mod+I");
+assert.equal(defaultCodeKeymap().help, "");
+assert.deepEqual(bindCodeShortcut(defaultCodeKeymap(), "help", "?"), defaultCodeKeymap(), "? cannot be bound to the desk");
+assert.deepEqual(bindCodeShortcut(defaultCodeKeymap(), "prompt", "Mod+J"), defaultCodeKeymap(), "⌘J cannot be bound to the desk");
+
+// A keymap saved with the old dead defaults loads the new ones rather than
+// keeping a binding that can never fire.
+{
+  const loaded = mergeCodeKeymap({ help: "?", prompt: "Mod+J" });
+  assert.equal(loaded.help, "");
+  assert.equal(loaded.prompt, "Mod+I");
+}
+// A free key the person chose for help survives a reload.
+assert.equal(mergeCodeKeymap({ help: "Mod+Shift+H" }).help, "Mod+Shift+H");
 
 console.log("code-shortcuts: ok");
 

@@ -172,7 +172,7 @@ export function CodeComposer({
   }
 
   const showReply = phase !== "idle" && (reply.length > 0 || phase !== "done");
-  const showSuggestions = !prompt.trim() && !busy && suggestions.length > 0;
+  const showSuggestions = Boolean(row.familiarId) && !prompt.trim() && !busy && suggestions.length > 0;
   const sendChips = codeComboChips("Mod+Enter", apple);
 
   return (
@@ -242,6 +242,21 @@ export function CodeComposer({
         </span>
       </div>
 
+      {!row.familiarId ? (
+        // Say why Send is off (#5729): a disabled control with no reason
+        // reads as broken.
+        <p className="code-composer__note" id={`${id}-no-familiar`}>
+          No familiar is attached to this session, so follow-ups can&rsquo;t be sent from here.
+          <button
+            type="button"
+            className="focus-ring code-composer__link"
+            onClick={() => onJumpToSession(row.id, row.familiarId)}
+          >
+            Continue in Chat
+          </button>
+        </p>
+      ) : null}
+
       {showSuggestions ? (
         <div
           className="code-composer__suggestions"
@@ -281,8 +296,11 @@ export function CodeComposer({
               void send();
             }
           }}
-          disabled={busy}
-          aria-describedby={`${id}-hint`}
+          // Read-only, not disabled, while a reply streams (#5729): disabling
+          // the focused field dropped keyboard focus on the page.
+          readOnly={busy}
+          aria-busy={busy || undefined}
+          aria-describedby={row.familiarId ? `${id}-hint` : `${id}-hint ${id}-no-familiar`}
         />
         {busy ? (
           <Button size="sm" variant="danger-ghost" onClick={stop}>

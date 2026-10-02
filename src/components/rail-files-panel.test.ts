@@ -66,7 +66,11 @@ assert.match(preview, /useAnnouncer/, "announces save success/failure to assisti
 assert.match(preview, /\/api\/changes\?projectRoot=/, "the empty state fetches the working-tree status");
 assert.match(preview, /f\.status !== "deleted"/, "deleted files are excluded — nothing to preview");
 assert.match(preview, /const LAUNCHPAD_CAP = 6/, "the launchpad caps its list");
-assert.match(preview, /onClick=\{\(\) => onOpenPath\(f\.path\)\}/, "each changed file opens in the preview");
+assert.match(
+  preview,
+  /onClick=\{\(\) =>\s*onOpenPath\(changedRepoRoot \? `\$\{changedRepoRoot\.replace\(\/\\\/\+\$\/, ""\)\}\/\$\{f\.path\}` : f\.path\)\s*\}/,
+  "each changed file opens in the preview, at its path under the git toplevel (#5729)",
+);
 assert.match(preview, /if \(path \|\| !projectRoot \|\| !onOpenPath\) return/, "the status fetch only runs for an empty, openable preview");
 
 // Code-file fit: reading a highlighted file lifts SyntaxBlock's chat clamp so

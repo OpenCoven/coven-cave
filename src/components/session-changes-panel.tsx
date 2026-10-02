@@ -80,7 +80,9 @@ export function SessionChangesInner({
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Which action failed, and why (#5729): every failure used to read
+  // "revert: …", including a rejected commit or a failed checkpoint.
+  const [actionError, setActionError] = useState<{ action: string; message: string } | null>(null);
   const [checkpointing, setCheckpointing] = useState(false);
   const [checkpointMessage, setCheckpointMessage] = useState<string | null>(null);
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
@@ -283,7 +285,7 @@ export function SessionChangesInner({
       setCheckpointsOpen(true);
       void loadCheckpoints();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError({ action: "Couldn't save a checkpoint", message: err instanceof Error ? err.message : String(err) });
     } finally {
       setCheckpointing(false);
     }
@@ -300,7 +302,7 @@ export function SessionChangesInner({
         setDiffs({});
         await load();
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err));
+        setActionError({ action: "Couldn't restore the checkpoint", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setBusyCheckpoint(null);
       }
@@ -316,7 +318,7 @@ export function SessionChangesInner({
         await mutateSessionChanges(fetch, projectRoot, "delete-checkpoint", { checkpoint: name });
         await loadCheckpoints();
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err));
+        setActionError({ action: "Couldn't delete the checkpoint", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setBusyCheckpoint(null);
       }
@@ -354,7 +356,7 @@ export function SessionChangesInner({
         }
         await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err));
+        setActionError({ action: "Couldn't revert the file", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setRevertingPath(null);
       }
@@ -382,7 +384,7 @@ export function SessionChangesInner({
       setExpandedPath(null);
       await Promise.all([load(), loadCheckpoints()]);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError({ action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) });
     } finally {
       setCommitting(false);
     }
@@ -405,7 +407,7 @@ export function SessionChangesInner({
       setPrOpen(false);
       setPostCommit(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError({ action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) });
     } finally {
       setCreatingPr(false);
     }
@@ -539,15 +541,15 @@ export function SessionChangesInner({
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
-              <span className="min-w-0 truncate" title={actionError}>
-                revert: {actionError}
+              <span className="min-w-0 truncate" title={`${actionError.action}: ${actionError.message}`}>
+                {actionError.action}: {actionError.message}
               </span>
             </span>
             <IconButton
               icon="ph:x-bold"
               size="xs"
               className="shrink-0"
-              aria-label="Dismiss revert error"
+              aria-label="Dismiss error"
               onClick={() => setActionError(null)}
             />
           </div>
@@ -563,6 +565,11 @@ export function SessionChangesInner({
               tree to review.
             </p>
           </div>
+        ) : error && files.length === 0 ? (
+          // A failed first load has no list to show; the error banner above
+          // carries the reason and Retry. An empty table under it read as
+          // "nothing changed" (#5729).
+          null
         ) : loaded && !error && files.length === 0 ? (
           <div className="px-2 py-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
             <p className="font-medium text-[var(--text-secondary)]">No uncommitted changes.</p>

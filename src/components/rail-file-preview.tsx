@@ -34,6 +34,8 @@ function isMarkdownPath(path: string): boolean {
   return Boolean(ext && MARKDOWN_EXTS.has(ext));
 }
 
+const GENERIC_OPEN_ERROR = "Couldn't open this file.";
+
 function fileName(path: string): string {
   return path.split("/").pop() ?? path;
 }
@@ -86,6 +88,8 @@ export function RailFilePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<Loaded | null>(null);
+  // Bumped by the error state's Retry to refetch the same path.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -99,16 +103,32 @@ export function RailFilePreview({
   // pane offers the working tree's changed files as one-click opens. Fetched
   // once each time the preview returns to empty — the same status endpoint the
   // changes badge polls, so this adds no new backend surface.
-  const [changed, setChanged] = useState<ChangedFile[]>([]);
+  // Tagged with the project root it describes, so a new root never shows (or
+  // opens) the previous root's files while its own request is in flight or
+  // after it fails (#5737 review). Change paths are relative to the git
+  // TOPLEVEL, which is not the project root when the project sits in a
+  // subfolder of its repository (#5729).
+  const [launchpad, setLaunchpad] = useState<{
+    root: string;
+    repoRoot: string | null;
+    files: ChangedFile[];
+  } | null>(null);
+  const current = launchpad && launchpad.root === projectRoot ? launchpad : null;
+  const changed = current?.files ?? [];
+  const changedRepoRoot = current?.repoRoot ?? null;
   useEffect(() => {
     if (path || !projectRoot || !onOpenPath) return;
     let cancelled = false;
     void fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" })
       .then(async (res) => {
-        const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[] };
+        const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (cancelled || !json.ok || !Array.isArray(json.files)) return;
-        // Deleted files have nothing to preview — opening one would just 404.
-        setChanged(json.files.filter((f) => f.status !== "deleted").slice(0, LAUNCHPAD_CAP));
+        setLaunchpad({
+          root: projectRoot,
+          repoRoot: json.repoRoot ?? null,
+          // Deleted files have nothing to preview — opening one would just 404.
+          files: json.files.filter((f) => f.status !== "deleted").slice(0, LAUNCHPAD_CAP),
+        });
       })
       .catch(() => {
         /* status is a garnish here — the plain hint still renders */
@@ -142,7 +162,7 @@ export function RailFilePreview({
         const json = (await res.json()) as ProjectFileBody;
         if (cancelled) return;
         if (!json.ok) {
-          setError(json.error || "Couldn't open this file.");
+          setError(json.error || GENERIC_OPEN_ERROR);
           setLoading(false);
           return;
         }
@@ -153,11 +173,11 @@ export function RailFilePreview({
       })
       .catch(() => {
         if (cancelled) return;
-        setError("Couldn't open this file.");
+        setError(GENERIC_OPEN_ERROR);
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [path, familiarId, projectRoot]);
+  }, [path, familiarId, projectRoot, reloadNonce]);
 
   // A redacted .env (server refuses writes) isn't editable; every other text
   // file is. Images and error/loading states have no text content to edit.
@@ -262,7 +282,9 @@ export function RailFilePreview({
                   <button
                     type="button"
                     className="focus-ring workspace-rail__empty-change"
-                    onClick={() => onOpenPath(f.path)}
+                    onClick={() =>
+                      onOpenPath(changedRepoRoot ? `${changedRepoRoot.replace(/\/+$/, "")}/${f.path}` : f.path)
+                    }
                     title={f.path}
                   >
                     <Icon name="ph:git-diff" width={11} aria-hidden />
@@ -436,7 +458,17 @@ export function RailFilePreview({
         ) : error ? (
           <div className="workspace-rail__preview-error" role="alert">
             <Icon name="ph:warning-circle" width={24} aria-hidden />
-            <p>{error}</p>
+            {/* A headline, the detail, and a way to try again (#5729): a bare
+                server message is not a recovery path. */}
+            <p className="workspace-rail__preview-error-title">Couldn&rsquo;t open {name}</p>
+            {error !== GENERIC_OPEN_ERROR ? <p className="workspace-rail__preview-error-detail">{error}</p> : null}
+            <button
+              type="button"
+              className="focus-ring workspace-rail__preview-error-retry"
+              onClick={() => setReloadNonce((n) => n + 1)}
+            >
+              Retry
+            </button>
           </div>
         ) : editing ? (
           <div className="workspace-rail__preview-editor">

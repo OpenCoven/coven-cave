@@ -19,6 +19,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
+  CODE_APP_RESERVED_SHORTCUTS,
   CODE_FIXED_QUEUE_SHORTCUTS,
   CODE_FIXED_TERMINAL_SHORTCUTS,
   CODE_SHORTCUTS,
@@ -182,6 +183,23 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
       <p className="code-keys__section">Terminal panes — fixed</p>
       <ul className="code-keys">
         {CODE_FIXED_TERMINAL_SHORTCUTS.map((shortcut) => (
+          <li key={shortcut.id} className="code-keys__row">
+            <span className="code-keys__label">{shortcut.label}</span>
+            <span className="code-keys__combo">
+              {codeComboChips(shortcut.combo, apple).map((chip, i) => (
+                <kbd key={`${shortcut.id}-${chip}-${i}`} className="code-keys__kbd">
+                  {chip}
+                </kbd>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {/* The app's own keys run before the desk's on every surface (#5729),
+          so they are listed as taken rather than left to fail silently. */}
+      <p className="code-keys__section">App-wide — fixed</p>
+      <ul className="code-keys">
+        {CODE_APP_RESERVED_SHORTCUTS.map((shortcut) => (
           <li key={shortcut.id} className="code-keys__row">
             <span className="code-keys__label">{shortcut.label}</span>
             <span className="code-keys__combo">

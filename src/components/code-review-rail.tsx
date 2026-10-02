@@ -17,7 +17,7 @@
  * "Next unviewed" can open the file in the viewer AND focus its diff here.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -33,8 +33,18 @@ import {
   type CodeRailViewedState,
   codeRailShapeOf,
 } from "@/lib/code-side-rail";
+import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
 import type { ChangedFile } from "@/lib/session-changes-api";
 import type { SessionRow } from "@/lib/types";
+
+const RAIL_TABS: ReadonlyArray<{ id: CodeRailTab; label: string }> = [
+  { id: "changes", label: "Changes" },
+  { id: "pr", label: "Pull request" },
+  // The agent filesystem delta, which is not the checkout's working tree. The
+  // pane hides itself when the daemon reports afs: false, so the tab can lead
+  // to an empty surface on an older daemon.
+  { id: "filesystem", label: "Filesystem" },
+];
 
 const LazyPr = dynamic(
   () => import("@/components/code-session-pr-panel").then((m) => m.CodeSessionPrPanel),
@@ -54,6 +64,11 @@ export type CodeReviewRailProps = {
   /** Measured width of the room the rail lives in — clamping needs the box, not
    *  the viewport: the Room can sit beside the app sidebar or inside a split. */
   roomWidthPx: number;
+  /** False on the narrow Review step, where the rail fills the room and the
+   *  grip and widen control could change nothing visible (#5729). */
+  resizable?: boolean;
+  /** On the narrow Review step the rail is that step's tabpanel. */
+  stepPanel?: { id: string; labelledBy: string };
   focusPath?: string | null;
   focusNonce?: number;
   /** Open the full-width PR reader. Absent when the session has no PR. */
@@ -81,6 +96,8 @@ export function CodeReviewRail({
   widthPx,
   onWidthChange,
   roomWidthPx,
+  resizable = true,
+  stepPanel,
   focusPath,
   focusNonce,
   onOpenFullPr,
@@ -92,6 +109,10 @@ export function CodeReviewRail({
   onPanelFilesChange,
 }: CodeReviewRailProps) {
   const { announce } = useAnnouncer();
+  const tabIdBase = useId();
+  const tabId = (id: CodeRailTab) => `${tabIdBase}-tab-${id}`;
+  const panelId = `${tabIdBase}-panel`;
+  const tabRefs = useRef(new Map<CodeRailTab, HTMLButtonElement>());
   // The AbortController rides along so an unmount mid-drag can tear the window
   // listeners down — typed rather than cast, so the field is real.
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; controller: AbortController } | null>(null);
@@ -186,60 +207,64 @@ export function CodeReviewRail({
 
   const wide = isCodeRailWide(widthPx, roomWidthPx);
 
+  // One tab stop for the strip; arrows move and select (#5729). Each tab had
+  // its own Tab stop before.
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next = codeTablistKeyTarget(event, index, RAIL_TABS.length);
+    if (next === null) return;
+    event.preventDefault();
+    const target = RAIL_TABS[next].id;
+    onTabChange(target);
+    tabRefs.current.get(target)?.focus();
+  };
+
   return (
     <aside
       className="code-rail"
       style={{ width: widthPx }}
       aria-label="Review — changes and pull request"
       data-testid="code-review-rail"
+      id={stepPanel?.id}
+      role={stepPanel ? "tabpanel" : undefined}
+      aria-labelledby={stepPanel?.labelledBy}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize the review rail"
-        tabIndex={0}
-        className="focus-ring code-rail__grip"
-        onPointerDown={onPointerDown}
-        onDoubleClick={() => onWidthChange(toggleCodeRailWidth(widthPx, roomWidthPx))}
-        onKeyDown={onSeparatorKeyDown}
-        title="Drag to resize · double-click for half width"
-      />
+      {resizable ? (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the review rail"
+          tabIndex={0}
+          className="focus-ring code-rail__grip"
+          onPointerDown={onPointerDown}
+          onDoubleClick={() => onWidthChange(toggleCodeRailWidth(widthPx, roomWidthPx))}
+          onKeyDown={onSeparatorKeyDown}
+          title="Drag to resize · double-click for half width"
+        />
+      ) : null}
       <div className="code-rail__bar">
         <div role="tablist" aria-label="Review surface" className="code-rail__tabs">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "changes"}
-            data-selected={tab === "changes" ? "true" : undefined}
-            className="focus-ring code-rail__tab"
-            onClick={() => onTabChange("changes")}
-          >
-            Changes
-            {files.length ? <span className="code-rail__tab-count">{files.length}</span> : null}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "pr"}
-            data-selected={tab === "pr" ? "true" : undefined}
-            className="focus-ring code-rail__tab"
-            onClick={() => onTabChange("pr")}
-          >
-            Pull request
-          </button>
-          {/* The agent filesystem delta, which is not the checkout's working
-              tree. The pane hides itself when the daemon reports afs: false,
-              so the tab can lead to an empty surface on an older daemon. */}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "filesystem"}
-            data-selected={tab === "filesystem" ? "true" : undefined}
-            className="focus-ring code-rail__tab"
-            onClick={() => onTabChange("filesystem")}
-          >
-            Filesystem
-          </button>
+          {RAIL_TABS.map(({ id, label }, index) => (
+            <button
+              key={id}
+              ref={(node) => {
+                if (node) tabRefs.current.set(id, node);
+                else tabRefs.current.delete(id);
+              }}
+              type="button"
+              role="tab"
+              id={tabId(id)}
+              aria-selected={tab === id}
+              aria-controls={tab === id ? panelId : undefined}
+              tabIndex={tab === id ? 0 : -1}
+              data-selected={tab === id ? "true" : undefined}
+              className="focus-ring code-rail__tab"
+              onClick={() => onTabChange(id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+            >
+              {label}
+              {id === "changes" && files.length ? <span className="code-rail__tab-count">{files.length}</span> : null}
+            </button>
+          ))}
         </div>
         <span className="code-rail__spacer" />
         {/* The rail is a sidebar; a conversation, a commit list and a unified
@@ -249,21 +274,24 @@ export function CodeReviewRail({
             Full PR view
           </button>
         ) : null}
-        <button
-          type="button"
-          className="focus-ring code-rail__action"
-          aria-pressed={wide}
-          aria-label={wide ? "Restore the rail width" : "Widen the rail to half the room"}
-          title={wide ? "Restore the rail width" : "Widen the rail to half the room"}
-          onClick={() => onWidthChange(toggleCodeRailWidth(widthPx, roomWidthPx))}
-        >
-          <Icon
-            name={wide ? "ph:arrows-in-line-horizontal" : "ph:arrows-out-line-horizontal"}
-            width={12}
-            height={12}
-            aria-hidden
-          />
-        </button>
+        {resizable ? (
+          <button
+            type="button"
+            className="focus-ring code-rail__action"
+            aria-pressed={wide}
+            // One name; aria-pressed carries the state (#5729).
+            aria-label="Widen the rail"
+            title={wide ? "Restore the rail width" : "Widen the rail to half the room"}
+            onClick={() => onWidthChange(toggleCodeRailWidth(widthPx, roomWidthPx))}
+          >
+            <Icon
+              name={wide ? "ph:arrows-in-line-horizontal" : "ph:arrows-out-line-horizontal"}
+              width={12}
+              height={12}
+              aria-hidden
+            />
+          </button>
+        ) : null}
         <button
           type="button"
           className="focus-ring code-rail__action"
@@ -278,59 +306,61 @@ export function CodeReviewRail({
         </button>
       </div>
 
-      {tab === "changes" ? (
-        <>
-          {files.length ? (
-            <div className="code-rail__summary">
-              {/* Review progress only. "Worktree", the count and the +/−
-                  figures print once, in the changes panel header right below
-                  — printing them here too was the same line twice (#5718). */}
-              <div className="code-rail__summary-head">
-                <span className="code-rail__summary-viewed">
-                  {viewedCount} of {files.length} viewed
-                </span>
-                <button
-                  type="button"
-                  className="focus-ring code-rail__next"
-                  disabled={!nextUnviewed}
-                  title={nextUnviewed ? `Open ${nextUnviewed.path}` : "Every changed file is viewed"}
-                  onClick={onOpenNextUnviewed}
-                >
-                  Next unviewed
-                  <Icon name="ph:arrow-right" width={11} height={11} aria-hidden />
-                </button>
+      <div className="code-rail__panel" role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
+        {tab === "changes" ? (
+          <>
+            {files.length ? (
+              <div className="code-rail__summary">
+                {/* Review progress only. "Worktree", the count and the +/−
+                    figures print once, in the changes panel header right below
+                    — printing them here too was the same line twice (#5718). */}
+                <div className="code-rail__summary-head">
+                  <span className="code-rail__summary-viewed">
+                    {viewedCount} of {files.length} viewed
+                  </span>
+                  <button
+                    type="button"
+                    className="focus-ring code-rail__next"
+                    disabled={!nextUnviewed}
+                    title={nextUnviewed ? `Open ${nextUnviewed.path}` : "Every changed file is viewed"}
+                    onClick={onOpenNextUnviewed}
+                  >
+                    Next unviewed
+                    <Icon name="ph:arrow-right" width={11} height={11} aria-hidden />
+                  </button>
+                </div>
+                {/* The bar is decoration over numbers the changes panel header
+                    prints directly below — colour is never the only channel for
+                    the diffstat. */}
+                <div className="code-rail__bar-track" aria-hidden="true">
+                  <span className="code-rail__bar-add" style={{ width: `${bar.addedPct}%` }} />
+                  <span className="code-rail__bar-del" style={{ width: `${bar.removedPct}%` }} />
+                </div>
               </div>
-              {/* The bar is decoration over numbers the changes panel header
-                  prints directly below — colour is never the only channel for
-                  the diffstat. */}
-              <div className="code-rail__bar-track" aria-hidden="true">
-                <span className="code-rail__bar-add" style={{ width: `${bar.addedPct}%` }} />
-                <span className="code-rail__bar-del" style={{ width: `${bar.removedPct}%` }} />
-              </div>
+            ) : null}
+            <div className="code-rail__body">
+              <SessionChangesInner
+                key={projectRoot}
+                projectRoot={projectRoot}
+                running={running}
+                focusPath={focusPath}
+                focusNonce={focusNonce}
+                viewed={viewed}
+                onToggleViewed={onToggleViewed}
+                onFilesChange={onPanelFilesChange}
+              />
             </div>
-          ) : null}
+          </>
+        ) : tab === "filesystem" ? (
           <div className="code-rail__body">
-            <SessionChangesInner
-              key={projectRoot}
-              projectRoot={projectRoot}
-              running={running}
-              focusPath={focusPath}
-              focusNonce={focusNonce}
-              viewed={viewed}
-              onToggleViewed={onToggleViewed}
-              onFilesChange={onPanelFilesChange}
-            />
+            <AfsPane key={row.id} sessionId={row.id} />
           </div>
-        </>
-      ) : tab === "filesystem" ? (
-        <div className="code-rail__body">
-          <AfsPane key={row.id} sessionId={row.id} />
-        </div>
-      ) : (
-        <div className="code-rail__body">
-          <LazyPr key={row.id} row={row} />
-        </div>
-      )}
+        ) : (
+          <div className="code-rail__body">
+            <LazyPr key={row.id} row={row} />
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
