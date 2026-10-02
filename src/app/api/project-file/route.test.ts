@@ -74,4 +74,19 @@ assert.match(
   "markdown aliases, logs, diffs, and delimited text files are previewable/editable text extensions",
 );
 
+// Optimistic concurrency (#5745): a text read carries a version of its bytes,
+// and a save that names the version its edit started from is refused with a
+// 409 conflict when the file has changed since, checked under the same
+// repository lock as the write, so nothing can slip in between.
+assert.match(source, /export function projectFileVersion\(bytes: Buffer \| string\): string \{\s*return createHash\("sha256"\)\.update\(bytes\)/, "the version is a digest of the file's bytes");
+assert.match(source, /const bytes = fs\.readFileSync\(resolved\);[\s\S]{0,200}version: projectFileVersion\(bytes\)/, "text reads return the version of the bytes they decoded");
+assert.match(
+  source,
+  /withRepositoryMutation\(allowed\.root[\s\S]*?if \(typeof expectedVersion === "string"\) \{[\s\S]*?projectFileVersion\(fs\.readFileSync\(resolved\)\)[\s\S]*?if \(current !== expectedVersion\)[\s\S]*?conflict: true[\s\S]*?status: 409[\s\S]*?fs\.writeFileSync\(resolved/,
+  "a stale expectedVersion is refused with a 409 conflict before the write, under the lock",
+);
+assert.match(source, /expectedVersion !== undefined && expectedVersion !== null && typeof expectedVersion !== "string"[\s\S]{0,120}status: 400/, "a malformed expectedVersion is a 400");
+assert.match(source, /ok: true, size: byteLength, version: projectFileVersion\(content\)/, "a save returns the new version, so the next save can name it");
+assert.match(source, /await projectFileWrite\(filePath, payload\.content, payload\.expectedVersion\)/, "POST passes the precondition through");
+
 console.log("project-file route.test.ts: ok");

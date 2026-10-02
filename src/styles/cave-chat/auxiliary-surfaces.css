@@ -755,6 +755,23 @@
   color: var(--color-success);
 }
 
+/* A save refused because the file changed on disk (#5745): its own row under
+   the header, so the reason and Reload/Overwrite fit in a narrow viewer. */
+.workspace-rail__preview-conflict {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-warning) 35%, transparent);
+  background: color-mix(in oklab, var(--color-warning) 10%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.workspace-rail__preview-conflict > svg { flex: none; color: var(--color-warning); }
+.workspace-rail__preview-conflict-text { flex: 1 1 16ch; min-width: 0; }
+.workspace-rail__preview-conflict-actions { display: inline-flex; flex: none; gap: var(--space-1); }
 .workspace-rail__preview-saveerr {
   max-width: 32ch;
   overflow: hidden;

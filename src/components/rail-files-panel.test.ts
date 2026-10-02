@@ -57,7 +57,7 @@ assert.match(preview, /import \{ CodeEditor \} from "@\/components\/code-editor"
 assert.match(preview, /const saveEdit = useCallback/, "has a saveEdit callback");
 assert.match(preview, /method: "POST"/, "writes back to the project-file route");
 assert.match(preview, /const editable = file\?\.kind === "text" && !fileName\(path \?\? ""\)\.startsWith\("\.env"\)/, "guards .env and non-text from editing");
-assert.match(preview, /savingRef/, "in-flight guard blocks concurrent saves (Cmd-S vs button)");
+assert.match(preview, /const sending = fileEditDrafts\.startSave\(target\);\s*if \(!sending\) return;/, "in-flight guard blocks concurrent saves (Cmd-S vs button), per file, in the draft store");
 assert.match(preview, /onClick=\{startEditing\}/, "exposes an Edit affordance");
 assert.match(preview, /useAnnouncer/, "announces save success/failure to assistive tech");
 

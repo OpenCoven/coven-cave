@@ -2,7 +2,7 @@
 
 import "@/styles/cave-chat.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Icon } from "@/lib/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
@@ -10,16 +10,17 @@ import { CodeEditor } from "@/components/code-editor";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
+import { FILE_CHANGED_ON_DISK, fileEditDrafts } from "@/lib/file-edit-drafts";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
 type ProjectFileBody =
-  | { ok: true; kind: "text"; content: string; size: number }
+  | { ok: true; kind: "text"; content: string; size: number; version?: string }
   | { ok: true; kind: "image"; dataUrl: string; mimeType: string; size: number }
   | { ok: false; error: string };
 
 type Loaded =
-  | { kind: "text"; content: string; size: number }
+  | { kind: "text"; content: string; size: number; version?: string | null }
   | { kind: "image"; dataUrl: string; mimeType: string; size: number };
 
 type ChangedFile = { path: string; status: string; insertions?: number; deletions?: number };
@@ -55,8 +56,15 @@ function fileName(path: string): string {
  *
  * Text files (except redacted `.env`) are editable: Edit opens the CodeMirror
  * editor, Cmd/Ctrl+S or Save writes back through `POST /api/project-file`, and
- * Escape or Cancel discards. Images, unknown extensions, and `.env` are
- * refused by the server; the Edit affordance mirrors those guards client-side.
+ * Cancel discards. Images, unknown extensions, and `.env` are refused by the
+ * server; the Edit affordance mirrors those guards client-side.
+ *
+ * The edit itself lives in `fileEditDrafts`, keyed by path (#5745), not here:
+ * leaving the file (another tab, another session, a narrow step, the PR
+ * reader) keeps it, and coming back resumes it. Escape leaves the editor for
+ * its Save button rather than discarding. A save names the version its edit
+ * started from, so a file that changed on disk meanwhile is a conflict to
+ * resolve (Overwrite or Reload), never a silent overwrite.
  */
 export function RailFilePreview({
   path,
@@ -66,6 +74,7 @@ export function RailFilePreview({
   variant = "rail",
   rangeLabel,
   initialLine,
+  changeVersion = null,
 }: {
   path: string | null;
   projectRoot: string | null;
@@ -84,6 +93,10 @@ export function RailFilePreview({
   rangeLabel?: string | null;
   /** Line to reveal when the file opens (a chat handoff's start line). */
   initialLine?: number | null;
+  /** The changes list's version of this file. When it moves, the open file
+   *  is read again in place, so the viewer never shows (or edits from) text
+   *  the agent has since rewritten (#5745). */
+  changeVersion?: string | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,10 +104,24 @@ export function RailFilePreview({
   // Bumped by the error state's Retry to refetch the same path.
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // The edit for this file, if any (#5745). It outlives this component.
+  const draft = useSyncExternalStore(
+    fileEditDrafts.subscribe,
+    () => fileEditDrafts.get(path),
+    () => null,
+  );
+  const editing = Boolean(draft);
+  const editValue = draft?.content ?? "";
+  const saving = draft?.saving ?? false;
+  const saveError = draft?.error ?? null;
+  // The file on screen now: a save that lands after the reader moved on must
+  // not write its text into whatever file is showing (#5745).
+  const pathRef = useRef(path);
+  pathRef.current = path;
+  // The path whose text is loaded. Reading the same path again (its version
+  // moved, or Reload) refreshes in place instead of flashing the skeleton.
+  const loadedPathRef = useRef<string | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { announce } = useAnnouncer();
@@ -138,23 +165,24 @@ export function RailFilePreview({
 
   useEffect(() => {
     if (!path) {
+      loadedPathRef.current = null;
       setFile(null);
       setError(null);
       setLoading(false);
-      setEditing(false);
-      setSaveError(null);
       setJustSaved(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setFile(null);
-    // Switching files drops any in-progress edit — the tree selection owns the
-    // decision to move on, so the editor follows it rather than trapping focus.
-    setEditing(false);
-    setSaveError(null);
-    setJustSaved(false);
+    // Switching files no longer drops an edit (#5745): it stays in its draft
+    // and comes back with the file.
+    const refresh = loadedPathRef.current === path;
+    if (!refresh) {
+      loadedPathRef.current = null;
+      setLoading(true);
+      setError(null);
+      setFile(null);
+      setJustSaved(false);
+    }
     const params = new URLSearchParams({ path });
     if (familiarId) params.set("familiarId", familiarId);
     void fetch(`/api/project-file?${params.toString()}`, { cache: "no-store" })
@@ -162,74 +190,131 @@ export function RailFilePreview({
         const json = (await res.json()) as ProjectFileBody;
         if (cancelled) return;
         if (!json.ok) {
-          setError(json.error || GENERIC_OPEN_ERROR);
+          // A failed background refresh keeps the text already on screen.
+          if (!refresh) setError(json.error || GENERIC_OPEN_ERROR);
           setLoading(false);
           return;
         }
-        setFile(json.kind === "image"
-          ? { kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size }
-          : { kind: "text", content: json.content, size: json.size });
+        loadedPathRef.current = path;
+        if (json.kind === "image") {
+          setFile({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
+        } else {
+          setFile({ kind: "text", content: json.content, size: json.size, version: json.version ?? null });
+          // An open edit that started from an older version hears about it
+          // now, before Save is tried.
+          fileEditDrafts.noteDiskVersion(path, json.version ?? null);
+        }
         setLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setError(GENERIC_OPEN_ERROR);
+        if (!refresh) setError(GENERIC_OPEN_ERROR);
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [path, familiarId, projectRoot, reloadNonce]);
+  }, [path, familiarId, projectRoot, reloadNonce, changeVersion]);
+
+  // A reload or a closed window would take every unsaved draft with it.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!fileEditDrafts.hasDirty()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // A redacted .env (server refuses writes) isn't editable; every other text
   // file is. Images and error/loading states have no text content to edit.
   const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env");
 
   const startEditing = useCallback(() => {
-    if (!file || file.kind !== "text") return;
-    setEditValue(file.content);
-    setSaveError(null);
+    if (!path || !file || file.kind !== "text") return;
+    fileEditDrafts.begin(path, file.content, file.version ?? null);
     setJustSaved(false);
-    setEditing(true);
-  }, [file]);
+  }, [file, path]);
 
+  // Cancel discards the edit; it is the only control that does.
   const cancelEditing = useCallback(() => {
-    setEditing(false);
-    setSaveError(null);
-  }, []);
+    if (path) fileEditDrafts.discard(path);
+  }, [path]);
 
-  // Synchronous in-flight guard: Cmd-S in the editor calls saveEdit directly,
-  // bypassing the Save button's disabled={saving}. A ref (not the saving state,
-  // which would be stale in this callback) blocks concurrent POSTs.
-  const savingRef = useRef(false);
+  // Escape leaves the editor for its Save button and keeps the edit (#5745).
+  // Discarding on Escape lost work, and it took the key CodeMirror users press
+  // to get out of the editor, since Tab indents there.
+  const leaveEditor = useCallback(() => {
+    saveButtonRef.current?.focus();
+    announce("Left the editor. Your changes are kept.");
+  }, [announce]);
+
+  const onEditorChange = useCallback(
+    (value: string) => {
+      if (path) fileEditDrafts.update(path, value);
+    },
+    [path],
+  );
+
+  // Single flight per file comes from the store: Cmd-S and the Save button
+  // both go through `startSave`, which refuses while a save is in flight.
+  // Every write below names `target`, the file the save was sent for.
   const saveEdit = useCallback(async () => {
-    if (!path || savingRef.current) return;
-    savingRef.current = true;
-    setSaving(true);
-    setSaveError(null);
+    const target = pathRef.current;
+    if (!target) return;
+    const sending = fileEditDrafts.startSave(target);
+    if (!sending) return;
+    const label = fileName(target);
     try {
       const res = await fetch("/api/project-file", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path, content: editValue, familiarId: familiarId ?? undefined }),
+        body: JSON.stringify({
+          path: target,
+          content: sending.content,
+          familiarId: familiarId ?? undefined,
+          expectedVersion: sending.baseVersion ?? undefined,
+        }),
       });
-      const json = (await res.json()) as { ok: boolean; size?: number; error?: string };
+      const json = (await res.json()) as { ok: boolean; size?: number; version?: string; error?: string; conflict?: boolean };
       if (!res.ok || !json.ok) {
-        setSaveError(json.error ?? `save failed (${res.status})`);
-        announce(`Couldn't save the file: ${json.error ?? res.status}`, "assertive");
+        const conflict = json.conflict === true;
+        fileEditDrafts.fail(target, conflict ? FILE_CHANGED_ON_DISK : json.error ?? `save failed (${res.status})`, conflict);
+        announce(
+          conflict
+            ? `Couldn't save ${label}: it changed on disk since you started editing.`
+            : `Couldn't save ${label}: ${json.error ?? res.status}`,
+          "assertive",
+        );
         return;
       }
-      // Commit the edit into the loaded file so a cancel/reopen shows saved text.
-      setFile({ kind: "text", content: editValue, size: json.size ?? editValue.length });
-      setEditing(false);
-      setJustSaved(true);
-      announce("File saved.");
+      const stillOpen = fileEditDrafts.settle(target, sending.content, json.version ?? null);
+      // Only the file the save was for takes its text, and only if it is
+      // still the one on screen; elsewhere it is read fresh on return.
+      if (pathRef.current === target) {
+        setFile({ kind: "text", content: sending.content, size: json.size ?? sending.content.length, version: json.version ?? null });
+        if (!stillOpen) setJustSaved(true);
+      }
+      announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);
     } catch (err) {
-      setSaveError(String(err));
-      announce(`Couldn't save the file: ${String(err)}`, "assertive");
-    } finally {
-      setSaving(false);
-      savingRef.current = false;
+      fileEditDrafts.fail(target, String(err));
+      announce(`Couldn't save ${label}: ${String(err)}`, "assertive");
     }
-  }, [path, editValue, familiarId, announce]);
+  }, [familiarId, announce]);
+
+  const onEditorSave = useCallback(() => void saveEdit(), [saveEdit]);
+
+  // A conflict is resolved one of two ways: keep my edit and write it over the
+  // newer file, or drop my edit and read the file as it is now.
+  const overwriteDisk = useCallback(() => {
+    if (!path) return;
+    fileEditDrafts.acceptDisk(path);
+    void saveEdit();
+  }, [path, saveEdit]);
+  const reloadFromDisk = useCallback(() => {
+    if (!path) return;
+    fileEditDrafts.discard(path);
+    setReloadNonce((n) => n + 1);
+  }, [path]);
 
   // Auto-clear the "Saved" confirmation a moment after it shows.
   useEffect(() => {
@@ -371,21 +456,23 @@ export function RailFilePreview({
           <div className="workspace-rail__preview-actions">
             {editing ? (
               <>
-                {saveError && (
+                {saveError && !draft?.conflict && (
                   <span className="workspace-rail__preview-saveerr" role="alert" title={saveError}>{saveError}</span>
                 )}
                 <button
                   type="button"
                   className="focus-ring workspace-rail__preview-action"
+                  title="Discard your changes"
                   onClick={cancelEditing}
                 >
                   Cancel
                 </button>
                 <button
+                  ref={saveButtonRef}
                   type="button"
                   className="focus-ring workspace-rail__preview-action workspace-rail__preview-action--primary"
                   onClick={() => void saveEdit()}
-                  disabled={saving}
+                  disabled={saving || draft?.conflict === true}
                 >
                   <Icon name={saving ? "ph:arrow-clockwise" : "ph:floppy-disk-bold"} width={11} className={saving ? "animate-spin" : ""} aria-hidden />
                   {saving ? "Saving…" : "Save"}
@@ -422,6 +509,33 @@ export function RailFilePreview({
           </div>
         )}
       </header>
+      {/* A conflict gets its own row: the reason and both ways out have to fit
+          in a narrow viewer, where the header has no room for them (#5745). */}
+      {draft?.conflict ? (
+        <div className="workspace-rail__preview-conflict" role="alert">
+          <Icon name="ph:warning-circle" width={12} aria-hidden />
+          <span className="workspace-rail__preview-conflict-text">{saveError ?? FILE_CHANGED_ON_DISK}</span>
+          <span className="workspace-rail__preview-conflict-actions">
+            <button
+              type="button"
+              className="focus-ring workspace-rail__preview-action"
+              title="Drop your changes and read the file as it is on disk now"
+              onClick={reloadFromDisk}
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              className="focus-ring workspace-rail__preview-action"
+              title="Keep your changes and write them over the newer file"
+              disabled={saving}
+              onClick={overwriteDisk}
+            >
+              Overwrite
+            </button>
+          </span>
+        </div>
+      ) : null}
       {workbench && outlineOpen && outline.length > 0 && !editing ? (
         <div className="workspace-rail__outline" role="group" aria-label="File outline">
           {outline.map((symbol) => (
@@ -449,7 +563,20 @@ export function RailFilePreview({
             : ""
         }`}
       >
-        {loading ? (
+        {editing ? (
+          // The draft is on hand before the file is read again, so the edit
+          // comes back at once (#5745).
+          <div className="workspace-rail__preview-editor">
+            <CodeEditor
+              key={path}
+              value={editValue}
+              filename={name}
+              onChange={onEditorChange}
+              onSave={onEditorSave}
+              onCancel={leaveEditor}
+            />
+          </div>
+        ) : loading ? (
           <div className="workspace-rail__preview-skeleton" aria-busy="true" aria-label="Loading file">
             {["94%", "82%", "97%", "70%", "88%", "60%"].map((w, i) => (
               <Skeleton key={i} variant="text" width={w} />
@@ -469,16 +596,6 @@ export function RailFilePreview({
             >
               Retry
             </button>
-          </div>
-        ) : editing ? (
-          <div className="workspace-rail__preview-editor">
-            <CodeEditor
-              value={editValue}
-              filename={name}
-              onChange={setEditValue}
-              onSave={() => void saveEdit()}
-              onCancel={cancelEditing}
-            />
           </div>
         ) : file?.kind === "image" ? (
           <div className="workspace-rail__preview-image">
