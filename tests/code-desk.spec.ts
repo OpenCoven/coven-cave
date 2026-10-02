@@ -783,5 +783,233 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.waitForTimeout(1_500);
     expect(statusRequests - beforeReturn).toBe(1);
   });
+
+  // ── Pass 3 medium fixes (#5729) ────────────────────────────────────────────
+
+  const slowSend = (page: Page, ms: number, frames: unknown[]) =>
+    page.route("**/api/chat/send", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      await route
+        .fulfill({ contentType: "text/event-stream", body: frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("") })
+        .catch(() => {});
+    });
+
+  test("19. Stop before any text says Stopped and gives the ask back", async ({ page }) => {
+    await base(page);
+    await slowSend(page, 4_000, [{ kind: "assistant_chunk", text: "Late." }, { kind: "done", sessionId: "s-new" }]);
+    await openDesk(page);
+    const composer = page.getByTestId("code-composer");
+    const prompt = composer.getByRole("textbox", { name: "Follow-up" });
+    await prompt.fill("Rename the flux module");
+    await composer.getByRole("button", { name: "Send" }).click();
+    await expect(composer.getByRole("status")).toHaveText(/Replying…/);
+    await composer.getByRole("button", { name: "Stop" }).click();
+    // It used to vanish without a word and take the typed ask with it.
+    await expect(composer.getByRole("status")).toHaveText(/Stopped/);
+    await expect(prompt).toHaveValue("Rename the flux module");
+    await expect(composer.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  test("20. a reply that fails partway says Couldn't reply and keeps what arrived", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/chat/send", (route) =>
+      route.fulfill({
+        contentType: "text/event-stream",
+        body: [
+          `data: ${JSON.stringify({ kind: "assistant_chunk", text: "Partial answer." })}`, "",
+          `data: ${JSON.stringify({ kind: "error", message: "model overloaded" })}`, "", "",
+        ].join("\n"),
+      }),
+    );
+    await openDesk(page);
+    const composer = page.getByTestId("code-composer");
+    await composer.getByRole("textbox", { name: "Follow-up" }).fill("Summarize");
+    await composer.getByRole("button", { name: "Send" }).click();
+    const reply = page.getByTestId("code-composer-reply");
+    // Text plus an error used to read "Replied".
+    await expect(reply.getByRole("status")).toHaveText(/Couldn't reply/);
+    await expect(reply.getByRole("alert")).toHaveText("model overloaded");
+    await expect(reply).toContainText("Partial answer.");
+    await expect(composer.getByRole("textbox", { name: "Follow-up" })).toHaveValue("", { timeout: 1_000 });
+  });
+
+  test("21. a follow-up in flight survives a session switch, and Stop still works on return", async ({ page }) => {
+    await base(page);
+    await slowSend(page, 6_000, [{ kind: "assistant_chunk", text: "Finished while you were away." }, { kind: "done", sessionId: "s-new" }]);
+    await openDesk(page);
+    const composer = () => page.getByTestId("code-composer");
+    await composer().getByRole("textbox", { name: "Follow-up" }).fill("Long job");
+    await composer().getByRole("button", { name: "Send" }).click();
+    await expect(composer().getByRole("status")).toHaveText(/Replying…/);
+
+    await page.locator("[data-code-session-id='s-old']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/idle/);
+    await expect(composer().getByRole("status")).toHaveCount(0, { timeout: 2_000 });
+
+    await page.locator("[data-code-session-id='s-new']").first().click();
+    await expect(page.getByTestId("code-desk-activity")).toHaveText(/running/);
+    // The run used to be orphaned: idle, Send enabled, Stop unreachable.
+    await expect(composer().getByRole("status")).toHaveText(/Replying…/);
+    await expect(composer().getByRole("button", { name: "Send" })).toHaveCount(0);
+    await composer().getByRole("button", { name: "Stop" }).click();
+    await expect(composer().getByRole("status")).toHaveText(/Stopped/);
+    await expect(composer().getByRole("textbox", { name: "Follow-up" })).toHaveValue("Long job");
+  });
+
+  test("21b. a reply that finishes while the session is off screen is there on return", async ({ page }) => {
+    await base(page);
+    await slowSend(page, 2_500, [{ kind: "assistant_chunk", text: "Finished while you were away." }, { kind: "done", sessionId: "s-new" }]);
+    await openDesk(page);
+    const composer = () => page.getByTestId("code-composer");
+    await composer().getByRole("textbox", { name: "Follow-up" }).fill("Long job");
+    await composer().getByRole("button", { name: "Send" }).click();
+    await page.locator("[data-code-session-id='s-old']").first().click();
+    await page.waitForTimeout(4_000);
+    await page.locator("[data-code-session-id='s-new']").first().click();
+    await expect(composer().getByRole("status")).toHaveText(/Replied/);
+    await expect(page.getByTestId("code-composer-reply")).toContainText("Finished while you were away.");
+  });
+
+  test("22. a late response for the session's old root never lands on its new root", async ({ page }) => {
+    // The first session list predates enrichment: no worktree root yet, so the
+    // room starts on the shared checkout. Events, not timers, force the bug's
+    // exact order: the enriched list is served only once the desk has asked
+    // for the shared checkout, and that answer is held until the desk has
+    // moved on and asked for the worktree.
+    const MAIN_FILES = [{ path: "main-only.ts", status: "modified", insertions: 99, deletions: 9, changeVersion: "1:1:1" }];
+    const newestGit = (NEWEST as unknown as { git: Record<string, unknown> }).git;
+    const early = { ...NEWEST, status: "idle", diff: null, git: { ...newestGit, worktreeRoot: "/repo/alpha", isWorktree: false } };
+    const late = { ...NEWEST, status: "idle", diff: null };
+    await base(page, [late, OLDER]);
+    let askedSharedCheckout = false;
+    let oldAnswerReleased = false;
+    let releaseOldAnswer: () => void = () => {};
+    const worktreeAsked = new Promise<void>((resolve) => (releaseOldAnswer = resolve));
+    await page.route("**/api/sessions/list**", (route) =>
+      route.fulfill({ json: { ok: true, sessions: askedSharedCheckout ? [late, OLDER] : [early, OLDER] } }),
+    );
+    await page.route("**/api/changes**", async (route) => {
+      const url = new URL(route.request().url());
+      if (["branches", "path", "checkpoints"].some((key) => url.searchParams.has(key))) return route.fallback();
+      const root = url.searchParams.get("projectRoot");
+      if (root === "/repo/alpha") {
+        askedSharedCheckout = true;
+        await Promise.race([worktreeAsked, new Promise((resolve) => setTimeout(resolve, 30_000))]);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        oldAnswerReleased = true;
+        return route.fulfill({ json: { ok: true, repo: true, repoRoot: "/repo/alpha", files: MAIN_FILES } }).catch(() => {});
+      }
+      if (root === WORK_ROOT) releaseOldAnswer();
+      return route.fallback();
+    });
+    await openDesk(page);
+    // The race really ran: the shared checkout's slow answer landed after the
+    // desk had moved to the worktree.
+    await expect.poll(() => oldAnswerReleased, { timeout: 30_000 }).toBe(true);
+    await page.waitForTimeout(1_000);
+    await expect(page.getByTestId("code-desk-diffstat")).toContainText("+17");
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 2 viewed");
+    await expect(page.getByTestId("code-review-rail")).not.toContainText("main-only.ts");
+  });
+
+  test("23. long names stay distinguishable in tabs and rail rows, and the active tab stays in view", async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    const many = Array.from({ length: 14 }, (_, i) => ({
+      path: `src/features/really-long-directory-name/component-with-a-very-long-file-name-${i}.tsx`,
+      status: "modified",
+      insertions: i + 1,
+      deletions: 0,
+      changeVersion: `${i}:${i}:1`,
+    }));
+    await base(page, [NEWEST, OLDER], { current: many as typeof CHANGED_FILES });
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("[data-code-session-id='s-new']").first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1_000);
+    if (!(await page.getByTestId("code-workbench").isVisible())) await page.locator("[data-code-session-id='s-new']").first().click();
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByRole("button", { name: /changed/ }).click();
+    const rows = tree.locator(".code-tree__changed-row");
+    for (let i = 0; i < 14; i++) await rows.nth(i).click();
+
+    // Which character sits at the right edge of each truncated label?
+    const tailVisible = (selector: string) =>
+      page.evaluate((sel) => {
+        // Only labels actually on screen: the strip scrolls to its active tab.
+        const onScreen = [...document.querySelectorAll(sel)].filter((label) => {
+          const r = label.getBoundingClientRect();
+          const scroller = label.closest(".code-tabs, .code-rail__body") ?? document.documentElement;
+          const s = scroller.getBoundingClientRect();
+          return r.width > 0 && r.left >= s.left && r.right <= s.right && r.top >= s.top && r.bottom <= s.bottom;
+        });
+        return onScreen.slice(0, 6).map((label) => {
+          const text = label.textContent ?? "";
+          const box = label.getBoundingClientRect();
+          if (label.scrollWidth <= label.clientWidth) return { text, clipped: false, tail: true };
+          const range = document.caretRangeFromPoint(box.right - 3, box.top + box.height / 2);
+          const offset = range ? range.startOffset : -1;
+          return { text, clipped: true, tail: offset >= text.length - 3 };
+        });
+      }, selector);
+    const tabs = await tailVisible(".code-tabs__label");
+    expect(tabs.length).toBeGreaterThan(0);
+    expect(tabs.some((t) => t.clipped)).toBe(true);
+    expect(tabs.every((t) => t.tail)).toBe(true);
+    const railNames = await tailVisible('[data-testid="code-review-rail"] .session-changes-table-row span:has(> bdi)');
+    expect(railNames.length).toBeGreaterThan(0);
+    expect(railNames.every((t) => t.tail)).toBe(true);
+
+    const activeInView = await page.evaluate(() => {
+      const strip = document.querySelector('[data-testid="code-open-file-tabs"]')!;
+      const active = strip.querySelector('[aria-selected="true"]')!.getBoundingClientRect();
+      const box = strip.getBoundingClientRect();
+      return { overflowing: strip.scrollWidth > strip.clientWidth, inView: active.left >= box.left - 1 && active.right <= box.right + 1 };
+    });
+    expect(activeInView).toEqual({ overflowing: true, inView: true });
+  });
+
+  test("24. every desk control is at least 24px, at desktop and phone widths", async ({ page }) => {
+    const SELECTORS = [
+      ".code-tabs__close",
+      '[data-testid="code-review-rail"] .code-rail__action',
+      ".session-changes__viewed",
+      '.code-room__viewer .workspace-rail__preview-action',
+      ".code-rail__next",
+      ".code-tree__filter",
+      ".code-room__chip--link",
+      ".code-rail__tab",
+      ".code-terminal-workspace__action",
+    ];
+    const measure = () =>
+      page.evaluate((selectors) => {
+        const small: string[] = [];
+        let seen = 0;
+        for (const sel of selectors) {
+          for (const el of document.querySelectorAll(sel)) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            seen += 1;
+            if (r.width < 23.5 || r.height < 23.5) small.push(`${sel} ${Math.round(r.width)}x${Math.round(r.height)}`);
+          }
+        }
+        return { seen, small };
+      }, SELECTORS);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await base(page);
+    await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    const desktop = await measure();
+    expect(desktop.seen).toBeGreaterThan(10);
+    expect(desktop.small).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
+    const review = page.getByTestId("code-workbench").getByRole("tab", { name: "Review" });
+    if (await review.isVisible()) await review.click();
+    const phone = await measure();
+    expect(phone.seen).toBeGreaterThan(4);
+    expect(phone.small).toEqual([]);
+  });
 });
 

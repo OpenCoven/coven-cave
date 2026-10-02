@@ -64,7 +64,7 @@ assert.match(composer, /prompt: outgoing,/, "the built text is what rides to /ap
 assert.match(composer, /aria-pressed=\{attached\}/, "the context chip is a toggle with exposed state");
 assert.match(composer, /\{attached \? "attached" : "not attached"\}/, "the chip's state is a word, not only a tint");
 assert.match(composer, /setPrompt\(suggestion\.prompt\);\s*textareaRef\.current\?\.focus\(\);/, "a suggestion seeds the prompt and focuses it — it never sends");
-assert.match(composer, /role="status" data-phase=\{phase\.kind\}[\s\S]{0,400}\{CODE_COMPOSER_STATUS\[phase\.kind\]\}/, "the reply card carries a status word");
+assert.match(composer, /role="status" data-phase=\{phase\}[\s\S]{0,600}\{CODE_COMPOSER_STATUS\[phase\]\}/, "the reply card carries a status word");
 assert.match(composer, /placeholder=\{busy \? "The familiar is working…" : "Ask for follow-up changes…"\}/, "the placeholder is unchanged");
 assert.match(
   workbench,
@@ -156,5 +156,14 @@ assert.match(panelSrc, /useEffect\(\(\) => \(\) => onFilesChangeRef\.current\?\.
 
 // Light mode: the viewer takes the page surface; code blocks keep their chrome.
 assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ background: var\(--bg-base\); \}/, "the light-mode viewer is not painted with the always-dark code surface");
+
+// ── Pass 3 medium fixes (#5729) ─────────────────────────────────────────────
+// The composer's run lives in a per-session store, so a session switch can't
+// orphan it, and every outcome is named by one pure rule.
+assert.match(composer, /const run = useSyncExternalStore\(\s*composerRuns\.subscribe,/, "the composer reads its run from the per-session store");
+assert.doesNotMatch(composer, /useState<Phase>|abortRef/, "no run state is kept in the component");
+assert.match(composer, /const outcome = codeComposerOutcome\(\{\s*text: result\.text,\s*error: result\.error,\s*stoppedByReader: composerRuns\.wasStopped\(sessionId, runId\),\s*\}\);/, "the outcome comes from the shared rule, error-aware even with partial text");
+assert.match(composer, /const runId = composerRuns\.stop\(sessionId\);\s*if \(!runId\) return;\s*void fetch\("\/api\/chat\/stop"/, "Stop aborts before telling the bridge");
+assert.match(composer, /if \(restore && !codeDeskMemory\.read\(sessionId\)\?\.draft\) codeDeskMemory\.write\(sessionId, \{ draft: restore \}\);/, "an unanswered ask goes back to the session's draft even when the composer is gone");
 
 console.log("code-desk-overhaul pins ok");

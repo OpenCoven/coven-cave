@@ -41,14 +41,24 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [ok, setOk] = useState(false);
-  const inFlight = useRef(false);
+  // The root a response belongs to (#5729). A session's work root can change
+  // on the same mount — enrichment adds `git.worktreeRoot` on a later poll —
+  // and a single shared in-flight flag let the OLD root's late response land
+  // as the new root's files while the new root's own load was skipped.
+  // Requests are guarded per root, and a response for a root that is no
+  // longer current is dropped.
+  const rootRef = useRef(projectRoot);
+  rootRef.current = projectRoot;
+  const inFlightRoot = useRef<string | null>(null);
 
   const load = useCallback(
     async (opts?: { shared?: boolean }) => {
-      if (!projectRoot || inFlight.current) return;
-      inFlight.current = true;
+      const root = projectRoot;
+      if (!root || inFlightRoot.current === root) return;
+      inFlightRoot.current = root;
       try {
-        const { httpOk, json } = await fetchChangesSummary(projectRoot, { force: !opts?.shared });
+        const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared });
+        if (rootRef.current !== root) return;
         const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (!httpOk || !payload.ok) return;
         setRepoRoot(payload.repoRoot ?? null);
@@ -61,14 +71,17 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
       } catch {
         /* keep the last known summary — a transient failure is not "clean" */
       } finally {
-        inFlight.current = false;
-        setLoaded(true);
+        if (inFlightRoot.current === root) inFlightRoot.current = null;
+        if (rootRef.current === root) setLoaded(true);
       }
     },
     [projectRoot],
   );
 
   useEffect(() => {
+    // A new root starts empty: the previous root's files are not this one's.
+    setFiles([]);
+    setRepoRoot(null);
     setLoaded(false);
     setOk(false);
     void load();
