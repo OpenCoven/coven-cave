@@ -9,7 +9,9 @@
 // running.
 //
 // The label is not assumed. Neither Coven nor Cave installs this agent, so any
-// loaded LaunchAgent whose program arguments run `coven daemon serve` counts.
+// loaded LaunchAgent (per-user or /Library) whose program arguments run
+// `coven daemon serve` counts — provided it serves the same Coven home and
+// socket Cave targets. A job for another COVEN_HOME owns a different daemon.
 // macOS only for now: Linux and Windows have no service Cave knows to defer to,
 // and every failure here degrades to "no service", which is the old behaviour.
 
@@ -27,10 +29,17 @@ export type DaemonServiceManager = {
 
 export type LaunchctlResult = { code: number; stdout: string; stderr: string };
 
+/** The daemon Cave targets: a service owns it only if it serves these. */
+export type DaemonServiceTarget = { covenHome: string; socket: string };
+
 export type DaemonServiceDependencies = {
+  /** When set, only a job serving this home and socket counts. */
+  expected?: DaemonServiceTarget;
   platform?: NodeJS.Platform;
   home?: string;
   uid?: number;
+  /** LaunchAgent directories, per-user first. */
+  agentDirs?: string[];
   listAgents?: (dir: string) => Promise<string[]>;
   readAgent?: (file: string) => Promise<Buffer>;
   /** `plutil -convert json -o - <file>` parsed; null when unreadable. */
@@ -78,10 +87,43 @@ function plistJson(file: string): Promise<unknown> {
   });
 }
 
+/** The value following `--flag` or inside `--flag=value`, if present. */
+function argValue(args: readonly string[], flag: string): string | null {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag && typeof args[i + 1] === "string") return args[i + 1];
+    if (args[i].startsWith(`${flag}=`)) return args[i].slice(flag.length + 1);
+  }
+  return null;
+}
+
+/**
+ * The Coven home and socket a launchd job's daemon will serve: COVEN_HOME from
+ * the job's environment (else `~/.coven`), and its socket from `--socket`, then
+ * COVEN_SOCKET, then `<home>/coven.sock` — the daemon's own defaults.
+ */
+export function serviceDaemonTarget(record: Record<string, unknown>, userHome: string): DaemonServiceTarget {
+  const env = record.EnvironmentVariables && typeof record.EnvironmentVariables === "object"
+    ? record.EnvironmentVariables as Record<string, unknown>
+    : {};
+  const args = Array.isArray(record.ProgramArguments)
+    ? (record.ProgramArguments as unknown[]).filter((arg): arg is string => typeof arg === "string")
+    : [];
+  const covenHome = typeof env.COVEN_HOME === "string" && env.COVEN_HOME ? env.COVEN_HOME : path.join(userHome, ".coven");
+  const socket = argValue(args, "--socket")
+    ?? (typeof env.COVEN_SOCKET === "string" && env.COVEN_SOCKET ? env.COVEN_SOCKET : path.join(covenHome, "coven.sock"));
+  return { covenHome, socket };
+}
+
+function sameTarget(a: DaemonServiceTarget, b: DaemonServiceTarget): boolean {
+  return path.resolve(a.covenHome) === path.resolve(b.covenHome) && path.resolve(a.socket) === path.resolve(b.socket);
+}
+
 function resolved(deps: DaemonServiceDependencies) {
+  const home = deps.home ?? os.homedir();
   return {
     platform: deps.platform ?? process.platform,
-    home: deps.home ?? os.homedir(),
+    home,
+    agentDirs: deps.agentDirs ?? [path.join(home, "Library", "LaunchAgents"), "/Library/LaunchAgents"],
     uid: deps.uid ?? (typeof process.getuid === "function" ? process.getuid() : -1),
     listAgents: deps.listAgents ?? ((dir: string) => readdir(dir)),
     readAgent: deps.readAgent ?? ((file: string) => readFile(file)),
@@ -100,32 +142,34 @@ export async function findDaemonServiceManager(
 ): Promise<DaemonServiceManager | null> {
   const env = resolved(deps);
   if (env.platform !== "darwin" || env.uid < 0) return null;
-  const dir = path.join(env.home, "Library", "LaunchAgents");
-  let names: string[];
-  try {
-    names = (await env.listAgents(dir)).filter((name) => name.endsWith(".plist")).sort();
-  } catch {
-    return null;
-  }
-  for (const name of names) {
-    const file = path.join(dir, name);
-    // Cheap prefilter before spawning plutil: both XML and binary plists keep
-    // these strings as plain ASCII.
-    let raw: Buffer;
+  for (const dir of env.agentDirs) {
+    let names: string[];
     try {
-      raw = await env.readAgent(file);
+      names = (await env.listAgents(dir)).filter((name) => name.endsWith(".plist")).sort();
     } catch {
       continue;
     }
-    if (!raw.includes("serve") || !raw.includes("coven")) continue;
-    const plist = await env.agentJson(file);
-    if (!plist || typeof plist !== "object") continue;
-    const record = plist as Record<string, unknown>;
-    if (record.Disabled === true || typeof record.Label !== "string" || !record.Label) continue;
-    if (!runsCovenDaemonServe(record.ProgramArguments)) continue;
-    const target = `gui/${env.uid}/${record.Label}`;
-    const loaded = await env.launchctl(["print", target]);
-    if (loaded.code === 0) return { kind: "launchd", label: record.Label, target };
+    for (const name of names) {
+      const file = path.join(dir, name);
+      // Cheap prefilter before spawning plutil: both XML and binary plists keep
+      // these strings as plain ASCII.
+      let raw: Buffer;
+      try {
+        raw = await env.readAgent(file);
+      } catch {
+        continue;
+      }
+      if (!raw.includes("serve") || !raw.includes("coven")) continue;
+      const plist = await env.agentJson(file);
+      if (!plist || typeof plist !== "object") continue;
+      const record = plist as Record<string, unknown>;
+      if (record.Disabled === true || typeof record.Label !== "string" || !record.Label) continue;
+      if (!runsCovenDaemonServe(record.ProgramArguments)) continue;
+      if (deps.expected && !sameTarget(serviceDaemonTarget(record, env.home), deps.expected)) continue;
+      const target = `gui/${env.uid}/${record.Label}`;
+      const loaded = await env.launchctl(["print", target]);
+      if (loaded.code === 0) return { kind: "launchd", label: record.Label, target };
+    }
   }
   return null;
 }
@@ -172,7 +216,7 @@ export async function daemonServiceConflict(
   deps: DaemonServiceDependencies = {},
   now: number = Date.now(),
 ): Promise<{ label: string } | null> {
-  const injected = Object.keys(deps).length > 0;
+  const injected = Object.keys(deps).some((key) => key !== "expected");
   if (!injected && conflictCache && now - conflictCache.at < CONFLICT_TTL_MS) return conflictCache.value;
   const owner = await findDaemonServiceManager(deps).catch(() => null);
   const value = owner && (await daemonServiceRunning(owner, deps).catch(() => null)) === false

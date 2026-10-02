@@ -751,3 +751,33 @@ test("daemonLaunchEnv keeps the user's own npm configuration", () => {
   assert.equal(env.NPM_CONFIG_PREFIX, "/Users/me/.npm-global", "an exported user setting is not a server runtime var");
   assert.equal(env.npm_config_registry, undefined, "lowercase npm_config_* is injected by `npm run`/`pnpm start`");
 });
+
+test("the service is asked before Cave's own preflights, which could refuse first", async () => {
+  // A shadowed or missing CLI makes `coven daemon status` unknown, which the
+  // Cave-owned preflight treats as "owner unreachable" — it must not stop
+  // Cave from asking the actual owner to start (review on #5734).
+  const unknownLifecycle = serviceHarness();
+  const result = await startLocalDaemon({ automatic: true, ...unknownLifecycle.options, inspectLifecycle: async () => ({ status: "unknown" }) });
+  assert.equal(result.launchMode, "service");
+  assert.equal(result.ok, true);
+  assert.deepEqual(unknownLifecycle.calls.kick, [{ label: SERVICE.label, restart: false }]);
+
+  // An address the service itself holds while unhealthy is not a reason to
+  // refuse without kicking it.
+  const occupied = serviceHarness();
+  const occupiedResult = await startLocalDaemon({ ...occupied.options, inspectAddress: async () => "occupied" });
+  assert.equal(occupiedResult.launchMode, "service");
+  assert.equal(occupied.calls.kick.length, 1);
+  assert.equal(occupied.calls.spawn, 0);
+});
+
+test("package-manager lifecycle state stays with the server too", () => {
+  const env = daemonLaunchEnv({
+    PATH: "/bin",
+    PNPM_SCRIPT_SRC_DIR: "/Applications/CovenCave.app",
+    npm_execpath: "/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs",
+    npm_command: "run-script",
+    npm_user_agent: "pnpm/10",
+  });
+  assert.deepEqual(Object.keys(env), ["PATH"]);
+});

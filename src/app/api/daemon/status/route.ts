@@ -26,6 +26,7 @@ import {
 } from "@/lib/server/daemon-diagnostics";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import { daemonServiceConflict } from "@/lib/daemon-service-manager";
+import { localDaemonServiceTarget } from "@/lib/daemon-start";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -190,7 +191,9 @@ export async function GET(request: Request) {
   // A healthy local daemon that is not the one launchd's job runs means
   // something else holds the serve lock (#5730). Settings offers Restart,
   // which hands the daemon back to the service.
-  const serviceConflict = target.mode === "local" ? await daemonServiceConflict() : null;
+  const serviceConflict = target.mode === "local"
+    ? await daemonServiceConflict({ expected: localDaemonServiceTarget() })
+    : null;
   const daemonVersion = typeof health.covenVersion === "string" ? health.covenVersion : undefined;
   const fallbackInstalledVersion =
     !daemonVersion || daemonVersion === "0.0.0"

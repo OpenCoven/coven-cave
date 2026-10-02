@@ -8,6 +8,7 @@ import {
 } from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
+import { covenHomePath } from "./coven-home.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 import {
@@ -33,8 +34,14 @@ import {
   findDaemonServiceManager,
   kickstartDaemonService,
   type DaemonServiceManager,
+  type DaemonServiceTarget,
   type LaunchctlResult,
 } from "./daemon-service-manager.ts";
+
+/** The daemon Cave talks to — a service owns it only if it serves these. */
+export function localDaemonServiceTarget(): DaemonServiceTarget {
+  return { covenHome: covenHomePath(), socket: socketPath() };
+}
 
 export type DaemonStartResult =
   | {
@@ -339,17 +346,18 @@ async function stopLocalDaemon(): Promise<void> {
 // TURBOPACK, npm lifecycle vars), and every harness session it started then
 // inherited them in turn — a dev server an agent starts would bind Cave's port
 // (#5730).
+// Package-manager lifecycle state mirrors server.ts's PTY boundary
+// (NODE_ENV, INIT_CWD, PNPM_SCRIPT_SRC_DIR, the lowercase npm_* namespace);
+// a user's own exported NPM_CONFIG_* stays.
 const SERVER_RUNTIME_ENV_KEYS = new Set([
   "PORT",
   "HOSTNAME",
   "NODE_ENV",
   "TURBOPACK",
   "INIT_CWD",
-  "npm_execpath",
-  "npm_node_execpath",
-  "npm_command",
+  "PNPM_SCRIPT_SRC_DIR",
 ]);
-const SERVER_RUNTIME_ENV_PREFIXES = ["NEXT_", "__NEXT", "npm_lifecycle_", "npm_package_", "npm_config_"];
+const SERVER_RUNTIME_ENV_PREFIXES = ["NEXT_", "__NEXT", "npm_"];
 
 /** The daemon's launch environment, minus the Cave server's runtime settings. */
 export function daemonLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -532,7 +540,7 @@ async function runLocalDaemonStartCore({
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
   inspectLifecycle,
-  findService = () => findDaemonServiceManager(),
+  findService = () => findDaemonServiceManager({ expected: localDaemonServiceTarget() }),
   kickstartService = (service, options) => kickstartDaemonService(service, options),
   serviceRunning = (service) => daemonServiceRunning(service),
   stopDaemon = stopLocalDaemon,
@@ -583,7 +591,7 @@ async function runLocalDaemonStartCore({
     };
   };
   async function startThroughService(owner: DaemonServiceManager): Promise<DaemonStartResult> {
-    const baseAttempts = restart ? 0 : automatic ? 2 : 1;
+    const baseAttempts = restart ? 0 : 1;
     // A restart while the service's job is not running means another daemon
     // holds the serve lock. Stop it first, or the service's fresh instance just
     // exits on the lock again. This is how Restart hands a displaced daemon
@@ -682,6 +690,16 @@ async function runLocalDaemonStartCore({
     }
   }
 
+  // An OS service owns the daemon: hand the start to it rather than racing it
+  // for the serve lock with a daemon of Cave's own (#5730). This comes before
+  // the lifecycle and address preflights: those read Cave's own view (a CLI
+  // that may be shadowed, an address the service itself may hold) and would
+  // otherwise refuse without ever asking the actual owner to start.
+  const owner = await service();
+  if (owner) {
+    return startThroughService(owner);
+  }
+
   if (automatic && !restart) {
     const lifecycle = await (inspectLifecycle ?? (() => inspectDaemonLifecycle(diagnostics, automatic ? "daemon-recovery" : "daemon-start", 1)))();
     if (lifecycle.status === "running") {
@@ -725,13 +743,6 @@ async function runLocalDaemonStartCore({
         launchMode: "none",
       };
     }
-  }
-
-  // An OS service owns the daemon: hand the start to it rather than racing it
-  // for the serve lock with a daemon of Cave's own (#5730).
-  const owner = await service();
-  if (owner) {
-    return startThroughService(owner);
   }
 
   const launchMode = "direct";
