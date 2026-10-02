@@ -185,6 +185,16 @@ describe("buildThreadReflectPrompt", () => {
     assert.match(prompt, /incomplete or unverified/i);
   });
 
+  it("keeps missing delivery receipts out of persistent blockers", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-missing-pr-receipt",
+      transcript: "assistant: The tests passed; I am finishing the commit and PR.",
+    });
+    assert.match(prompt, /Missing completion evidence alone is not a persistent blocker/i);
+    assert.match(prompt, /Only report a\s+persistentBlockers entry when a current dependency prevents obtaining the receipt/i);
+    assert.doesNotMatch(prompt, /put the exact remaining proof gap in persistentBlockers/i);
+  });
+
   it("treats rendered attachment metadata as delivery proof instead of trusting prose", () => {
     const prompt = buildThreadReflectPrompt({
       sessionId: "sess-image",
