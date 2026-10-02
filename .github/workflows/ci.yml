@@ -526,7 +526,7 @@ jobs:
     needs: paths
     if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -564,7 +564,20 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
+
+      # Browser binaries are keyed by the installed Playwright version; the
+      # system packages still install on every runner, but bounded and retried
+      # so a slow apt mirror cannot eat the test budget (#5722).
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-webkit
+      - name: Install Playwright browsers and system packages
+        run: bash scripts/install-playwright-ci.sh chromium webkit
 
       - name: Validate end-to-end behavior
         env:
@@ -602,7 +615,7 @@ jobs:
     needs: paths
     if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
       NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
@@ -637,7 +650,20 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
+
+      # Browser binaries are keyed by the installed Playwright version; the
+      # system packages still install on every runner, but bounded and retried
+      # so a slow apt mirror cannot eat the test budget (#5722).
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-webkit
+      - name: Install Playwright browsers and system packages
+        run: bash scripts/install-playwright-ci.sh chromium webkit
 
       # This is a separate Playwright invocation, so its webServer starts with
       # the explicit public capability instead of sharing a default-off server.

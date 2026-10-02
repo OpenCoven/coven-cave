@@ -93,6 +93,14 @@ test("PR checks cannot silently skip suites after an earlier failure (cave-t8p1a
   );
 });
 
+test("editing E2E's own browser installer runs E2E (#5722)", () => {
+  for (const file of ["scripts/install-playwright-ci.sh", "scripts/install-playwright-ci.test.mjs"]) {
+    assert.equal(classifyCiPaths([file]).e2e, true, `${file} must run E2E validation`);
+  }
+  assert.equal(classifyCiPaths(["scripts/install-playwright-ci.sh.bak"]).e2e, false);
+  assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).e2e, false);
+});
+
 test("Rust-only changes avoid frontend and E2E work", () => {
   assert.deepEqual(classifyCiPaths(["src-tauri/src/main.rs"]), {
     frontend: false,
