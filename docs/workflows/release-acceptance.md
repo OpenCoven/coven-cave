@@ -92,7 +92,9 @@ Until they are restored:
 
 Restore them only when a reviewed standalone CLI design has shipped a published
 package. Restoring them is a code change in `scripts/release-acceptance.mjs`
-and this runbook together, not an edit to one record.
+and this runbook together, not an edit to one record. Move the steps out of
+`DEFERRED_CLI_STEPS` and into `ALL_STEPS`, and make `cliVersion` a required run
+field again. A step left in both lists is still refused as deferred.
 
 ## The evidence record
 

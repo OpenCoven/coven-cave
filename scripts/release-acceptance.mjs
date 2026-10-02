@@ -47,8 +47,10 @@ export const JOURNEY_STEPS = [
 // could pass these steps, and a gate nobody can satisfy holds every release
 // without testing anything. A record that carries one is refused rather than
 // ignored, so a result for a step nobody could run is never read as evidence.
-// Restoring them means adding them back to ALL_STEPS, back to the template
-// through it, and `cliVersion` back to the required run fields.
+// Restoring them means *moving* them out of DEFERRED_CLI_STEPS and into
+// ALL_STEPS (the template follows ALL_STEPS), and adding `cliVersion` back to
+// the required run fields. An id left in both lists is still refused as
+// deferred; the "deferred, not silently dropped" test fails on that overlap.
 export const DEFERRED_CLI_STEPS = [
   { id: "cli-install", title: "Install @opencoven/dev-cli globally" },
   { id: "cli-doctor", title: "Run opencoven doctor" },
