@@ -25,7 +25,7 @@ sessions unable to sign in.
   then restarts the service. Settings → Daemon says when the running daemon
   isn't the one the service runs. A daemon Cave does launch no longer
   inherits the app server's `PORT`, `HOSTNAME`, `NEXT_*` or package-manager
-  variables.
+  lifecycle variables (a user's own exported `NPM_CONFIG_*` is kept).
 - **Spawn environment** (#5736, #5738). The server's `NODE_ENV` no longer
   reaches the daemon, harnesses, onboarding probes, npm, SSH or user tools.
   Vault can no longer restore `NODE_ENV`, `INIT_CWD` or `PNPM_SCRIPT_SRC_DIR`
