@@ -422,4 +422,23 @@ assert.match(preview, /if \(!target \|\| missingOnDiskRef\.current\) return;/, "
 assert.match(preview, /\{draft\?\.conflict && !missingOnDisk \? \(/, "no Reload/Overwrite for a file that's gone");
 assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)\) return;/, "focus is restored only from the page");
 
+// ── Pass 6 low fixes (#5781) ─────────────────────────────────────────────────
+{
+  const terminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
+  const drawerLow6 = await readFile(new URL("./code-terminal-drawer.tsx", import.meta.url), "utf8");
+  const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
+  const inspector = await readFile(new URL("./code-inspector.tsx", import.meta.url), "utf8");
+  const roomCss = await readFile(new URL("../styles/globals/surface-code-room.css", import.meta.url), "utf8");
+  // 32. A terminal that starts takes focus only from nothing or its own host.
+  assert.match(terminal, /function mayTakeStartupFocus\(wrap: HTMLElement \| null\): boolean \{[\s\S]{0,300}current === document\.body\) return true;[\s\S]{0,200}closest\("\[data-terminal-host\]"\)/);
+  assert.equal(terminal.match(/if \(mayTakeStartupFocus\(wrap\)\) term\.focus\(\);/g)?.length, 2, "both transports start by the rule");
+  assert.match(terminal, /if \(first && !mayTakeStartupFocus\(wrapRef\.current\)\) return;/, "the first activation is a start too");
+  assert.match(drawerLow6, /className="code-term" data-open=\{open \? "true" : undefined\} data-terminal-host=""/);
+  // 36. State in words beside the colour.
+  assert.match(prPanel, /<span className="sr-only">\{`, \$\{\(run\.conclusion \?\? run\.status\)\.replace\(\/_\/g, " "\)\}`\}<\/span>/, "a check run says pass or fail");
+  assert.match(prPanel, /title=\{step\.detail\}>[\s\S]{0,200}<span className="sr-only">\{`, \$\{step\.detail\}`\}<\/span>/, "a stage step says its state");
+  assert.match(inspector, /aria-current=\{b\.current \? "true" : undefined\}/);
+  assert.match(roomCss, /@media \(forced-colors: active\) \{\s*\.code-picker__row\[data-active="true"\] \{ outline: 2px solid Highlight;/);
+}
+
 console.log("code-desk-overhaul pins ok");
