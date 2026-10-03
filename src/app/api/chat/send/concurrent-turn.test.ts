@@ -71,10 +71,10 @@ test.after(async () => {
 });
 
 const sessionId = "busy-chat";
-const send = (prompt: string) => POST(new Request("http://localhost/api/chat/send", {
+const send = (prompt: string, overrides: Record<string, unknown> = {}) => POST(new Request("http://localhost/api/chat/send", {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ familiarId: "cody", sessionId, projectRoot: workspace, prompt }),
+  body: JSON.stringify({ familiarId: "cody", sessionId, projectRoot: workspace, prompt, ...overrides }),
 }));
 
 test("a send for a chat with a live run is refused before anything launches", async () => {
@@ -131,4 +131,32 @@ test("a stop-requested run that is still exiting does not block the next turn", 
   } finally {
     unregisterChatRun(ending);
   }
+});
+
+test("simultaneous sends admit only one turn during asynchronous setup", async () => {
+  resetChatStopRegistryForTests();
+  const callsBefore = (await readFile(callsPath, "utf8")).trim().split("\n").filter(Boolean).length;
+  const turnsBefore = (await loadConversation(sessionId))!.turns.length;
+  const responses = await Promise.all([send("First concurrent send"), send("Second concurrent send")]);
+  // Drain even the unexpected second stream so a failed assertion cannot
+  // leave a harness writing into the next test's fixture.
+  await Promise.all(responses.map((response) => response.text()));
+  assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409]);
+  const callsAfter = (await readFile(callsPath, "utf8")).trim().split("\n").filter(Boolean).length;
+  assert.equal(callsAfter, callsBefore + 1, "only the admitted turn launches a harness");
+  assert.equal((await loadConversation(sessionId))!.turns.length, turnsBefore + 2);
+  assert.equal(hasActiveChatRun(sessionId), false, "completion releases admission");
+});
+
+test("a project authorization failure releases admission for a corrected send", async () => {
+  resetChatStopRegistryForTests();
+  const unregistered = path.join(root, "unregistered-project");
+  await mkdir(unregistered, { recursive: true });
+  const refused = await send("Wrong project", { projectRoot: unregistered });
+  assert.equal(refused.status, 400, await refused.clone().text());
+  assert.equal((await refused.json()).code, "project_not_registered");
+  assert.equal(hasActiveChatRun(sessionId), false, "setup failure cannot leave a phantom run");
+  const accepted = await send("Corrected project");
+  assert.equal(accepted.status, 200, await accepted.clone().text());
+  await accepted.text();
 });
