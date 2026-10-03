@@ -34,7 +34,10 @@
  * remote. The strict direct guard also accepts one explicitly named merged
  * GitHub PR whose exact `refs/pull/<number>/head` is freshly authenticated,
  * fetched, and rechecked; this bounded path handles squash-source auto-delete
- * without enumerating a large unrelated ref namespace. Tags count because
+ * without enumerating a large unrelated ref namespace. An explicitly named
+ * remote tag also has a bounded mode that binds its full object OID, validates
+ * the fetched peel, rechecks the advertisement, and proves HEAD ancestry.
+ * Tags count because
  * archiving a branch as a signed, pushed tag preserves its OIDs
  * more durably than a branch does — merging deletes the branch, never the tag.
  * Requiring a branch made the guard block six provably-archived cleanups during
@@ -569,6 +572,49 @@ function strictRetainedByRemoteBranch(target, head, proof) {
   if (ancestry.status !== 0) throw new Error(`git ancestry probe exited ${ancestry.status}`);
 }
 
+function strictExactTagAdvertisement(target, proof, oidWidth, deadline) {
+  const probe = strictGitProbe(
+    ["-C", target, "ls-remote", "--exit-code", "--", proof.remote, proof.ref, `${proof.ref}^{}`],
+    target,
+    deadline,
+  );
+  if (probe.status === 2 && probe.stdout === "") {
+    throw new Error(`remote ${proof.remote} does not advertise exact tag ${proof.ref}`);
+  }
+  if (probe.status !== 0) throw new Error(`exact tag advertisement probe exited ${probe.status}`);
+  const refs = strictRemoteRefs(probe.stdout, proof.remote, target, oidWidth, 1, deadline);
+  if (!refs.length || refs.some((entry) => entry.baseRef !== proof.ref || entry.kind !== "tags")) {
+    throw new Error("remote returned unexpected exact tag refs");
+  }
+  return refs.sort((left, right) => left.ref.localeCompare(right.ref));
+}
+
+function strictRetainedByRemoteTag(target, head, proof) {
+  const deadline = strictRetentionDeadline();
+  if (!strictRemoteNames(target, deadline).includes(proof.remote)) {
+    throw new Error("remote-tag proof remote is not configured");
+  }
+  strictGit(["-C", target, "check-ref-format", proof.ref], target, deadline);
+  const advertised = strictExactTagAdvertisement(target, proof, head.length, deadline);
+  const source = advertised.find((entry) => !entry.peeled);
+  if (source.oid !== proof.oid) throw new Error("advertised remote tag does not match expected OID");
+
+  strictFetchAdvertisedRefs(target, proof.remote, [proof.ref], deadline);
+  const refreshed = strictExactTagAdvertisement(target, proof, head.length, deadline);
+  if (JSON.stringify(refreshed) !== JSON.stringify(advertised)) {
+    throw new Error(`remote ${proof.remote} changed ${proof.ref} during retention proof`);
+  }
+  const commit = strictResolveAdvertisedCommit(
+    target, proof.remote, source, advertised.find((entry) => entry.peeled), deadline,
+  );
+  const ancestry = strictGitProbe(
+    ["-C", target, "merge-base", "--is-ancestor", head, commit], target, deadline,
+  );
+  if (ancestry.stdout !== "") throw new Error("git ancestry probe returned unexpected output");
+  if (ancestry.status === 1) throw new Error("HEAD is not retained by the exact remote tag");
+  if (ancestry.status !== 0) throw new Error(`git ancestry probe exited ${ancestry.status}`);
+}
+
 function strictRetainedOnRemote(target, head) {
   const deadline = strictRetentionDeadline();
   const advertisements = [];
@@ -758,11 +804,18 @@ function runStrictWorktreeRemove(args) {
     args[2] === "--expected-head" &&
     args[4] === "--retained-by-remote-branch" &&
     args[7] === "--expected-remote-oid";
-  if (!basicArgs && !githubPrArgs && !remoteBranchArgs) {
+  const remoteTagArgs =
+    args.length === 9 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head" &&
+    args[4] === "--retained-by-remote-tag" &&
+    args[7] === "--expected-remote-oid";
+  if (!basicArgs && !githubPrArgs && !remoteBranchArgs && !remoteTagArgs) {
     throw new Error(
       "expected --strict-worktree-remove <absolute-path> --expected-head <full-oid> " +
         "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch> | " +
-        "--retained-by-remote-branch <remote> <refs/heads/name> --expected-remote-oid <full-oid>]",
+        "--retained-by-remote-branch <remote> <refs/heads/name> --expected-remote-oid <full-oid> | " +
+        "--retained-by-remote-tag <remote> <refs/tags/name> --expected-remote-oid <full-oid>]",
     );
   }
   const requestedPath = args[1];
@@ -771,6 +824,7 @@ function runStrictWorktreeRemove(args) {
   if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
   let githubProof = null;
   let remoteBranchProof = null;
+  let remoteTagProof = null;
   if (githubPrArgs) {
     const remote = args[5];
     const repo = args[6];
@@ -789,18 +843,21 @@ function runStrictWorktreeRemove(args) {
     const number = Number(numberText);
     if (!Number.isSafeInteger(number)) throw new Error("GitHub PR proof number is out of range");
     githubProof = { remote, repo, number, base };
-  } else if (remoteBranchArgs) {
+  } else if (remoteBranchArgs || remoteTagArgs) {
     const remote = args[5];
     const ref = args[6];
     const oid = args[8];
-    if (!remote || /\s/.test(remote)) throw new Error("remote-branch proof remote is malformed");
-    if (!ref.startsWith("refs/heads/") || Buffer.byteLength(ref, "utf8") > STRICT_MAX_REF_BYTES) {
-      throw new Error("remote-branch proof ref is malformed");
+    const kind = remoteTagArgs ? "tag" : "branch";
+    const prefix = remoteTagArgs ? "refs/tags/" : "refs/heads/";
+    if (!remote || /\s/.test(remote)) throw new Error(`remote-${kind} proof remote is malformed`);
+    if (!ref.startsWith(prefix) || Buffer.byteLength(ref, "utf8") > STRICT_MAX_REF_BYTES) {
+      throw new Error(`remote-${kind} proof ref is malformed`);
     }
     if (!FULL_OID.test(oid) || oid.length !== expectedHead.length) {
-      throw new Error("remote-branch proof OID is malformed");
+      throw new Error(`remote-${kind} proof OID is malformed`);
     }
-    remoteBranchProof = { remote, ref, oid };
+    if (remoteTagArgs) remoteTagProof = { remote, ref, oid };
+    else remoteBranchProof = { remote, ref, oid };
   }
 
   let target;
@@ -836,6 +893,7 @@ function runStrictWorktreeRemove(args) {
 
   if (githubProof) strictRetainedByMergedGithubPr(target, actualHead, githubProof);
   else if (remoteBranchProof) strictRetainedByRemoteBranch(target, actualHead, remoteBranchProof);
+  else if (remoteTagProof) strictRetainedByRemoteTag(target, actualHead, remoteTagProof);
   else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
   strictRecoveryState(target);

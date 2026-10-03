@@ -1164,16 +1164,27 @@ for (const contract of contracts) {
     /const cancelledByUser = (?:args\.)?req\.signal\.aborted;/,
     "/chat/send: a bare transport abort must never be read as a user cancel",
   );
-  const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
   assert.equal(
-    runRegistrations.length,
+    [...sendSource.matchAll(/= registerAdmittedChatRun\(/g)].length,
     3,
-    "/chat/send: all three dispatch paths must register with the stop registry",
+    "/chat/send: every transport binds its admitted run instead of replacing it",
   );
+  assert.match(
+    sendSource,
+    /admission\.handle = tryRegisterChatRun\(\[body\.runId, body\.sessionId\], \{ runId: body\.runId \}\)/,
+    "/chat/send: conversation admission identifies the run before asynchronous setup",
+  );
+  assert.match(
+    sendSource,
+    /function registerAdmittedChatRun[\s\S]*?if \(admission\.handle\) \{\s*addChatRunKeys\(admission\.handle, keys\);\s*setChatRunStopHandler\(admission\.handle, kill\);[\s\S]*?registerChatRun\(keys, kill, options\)/,
+    "/chat/send: transports carry early Stop intent through the original handle",
+  );
+  const runBuffers = [...sendSource.matchAll(/runBuffer = openRunBuffer\([\s\S]*?\n\s*\}, runHandle\);/g)];
+  assert.equal(runBuffers.length, 3, "all transport buffers respect admission ownership");
   assert.equal(
     [...sendSource.matchAll(/\{ runId: (?:args\.body|body)\.runId \}/g)].length,
-    3,
-    "/chat/send: every dispatch registration must identify the runId that can consume an early Stop",
+    4,
+    "/chat/send: early admission and all three transport bindings identify the per-send token",
   );
   assert.match(
     sendSource,

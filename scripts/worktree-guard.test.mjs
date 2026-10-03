@@ -177,6 +177,13 @@ function strictRemoteBranchArgs(wt, head, ref, oid) {
   ];
 }
 
+function strictRemoteTagArgs(wt, head, ref, oid) {
+  return [
+    ...strictArgs(wt, head),
+    "--retained-by-remote-tag", "origin", ref, "--expected-remote-oid", oid,
+  ];
+}
+
 function strictEnv(executable = lsofStub()) {
   return { WT_GUARD_TEST_MODE: "1", WT_GUARD_TEST_LSOF_BIN: executable };
 }
@@ -920,6 +927,93 @@ await test("strict exact remote-branch proof fails closed on OID and ancestry dr
   assert.equal(result.status, 2, "a remote branch that does not retain HEAD is refused");
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /not retained by the exact remote branch/);
+});
+
+await test("strict exact remote-tag proof handles lightweight and annotated tags without scanning", () => {
+  const fixture = repoWithMergedWorktreeAndAdvancedMain();
+  const tip = sh("git", ["--git-dir", fixture.bare, "rev-parse", "refs/heads/main"], fixture.dir).trim();
+  for (let index = 0; index < 257; index += 1) {
+    sh("git", ["--git-dir", fixture.bare, "update-ref", `refs/tags/unrelated-${index}`, tip], fixture.dir);
+  }
+  for (const annotated of [false, true]) {
+    const tag = annotated ? "retention/annotated" : "retention/lightweight";
+    const ref = `refs/tags/${tag}`;
+    sh("git", ["-c", "tag.gpgsign=false", "tag", ...(annotated ? ["-a", "-m", "retention"] : []), tag, tip], fixture.dir);
+    sh("git", ["push", "-q", "origin", ref], fixture.dir);
+    const oid = sh("git", ["rev-parse", ref], fixture.dir).trim();
+    // Remote evidence must stand alone, including when the local tag is absent.
+    sh("git", ["tag", "-d", tag], fixture.dir);
+    const logs = mkdtempSync(path.join(tmpdir(), "wt-guard-tag-proof-"));
+    const callLog = path.join(logs, "git.jsonl");
+    const fetchLog = path.join(logs, "fetch.jsonl");
+    writeFileSync(callLog, "");
+    writeFileSync(fetchLog, "");
+    const before = gitMetadataSnapshot(fixture.dir);
+    const result = runStrict(strictRemoteTagArgs(fixture.wt, fixture.featureHead, ref, oid), fixture.dir, {
+      ...strictEnv(), PATH: gitWrapper({ callLog, fetchLog }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      ok: true, mode: "strict-worktree-remove", path: realpathSync(fixture.wt), head: fixture.featureHead,
+    });
+    const calls = readFileSync(callLog, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    const advertisements = calls.filter((args) => args.includes("ls-remote"));
+    assert.equal(advertisements.length, 2);
+    for (const args of advertisements) {
+      assert.equal(args.includes("--heads"), false);
+      assert.equal(args.includes("--tags"), false);
+      assert.deepEqual(args.slice(-4), ["--", "origin", ref, `${ref}^{}`]);
+    }
+    const fetches = fetchCalls(fetchLog);
+    assert.equal(fetches.length, 1);
+    assert.deepEqual(fetches[0].slice(-3), ["--", "origin", `${ref}:`]);
+    assert.deepEqual(gitMetadataSnapshot(fixture.dir), before, "proof changes no local refs or FETCH_HEAD");
+  }
+});
+
+await test("strict exact remote-tag proof refuses unretained, missing, malformed and drifting sources", () => {
+  const fixture = repoWithWorktree();
+  const head = sh("git", ["-C", fixture.wt, "rev-parse", "HEAD"], fixture.dir).trim();
+  const other = sh("git", ["rev-parse", "main"], fixture.dir).trim();
+  const ref = "refs/tags/retention/exact";
+  sh("git", ["-c", "tag.gpgsign=false", "tag", "-a", "-m", "retention", "retention/exact", head], fixture.dir);
+  sh("git", ["push", "-q", "origin", ref], fixture.dir);
+  const oid = sh("git", ["rev-parse", ref], fixture.dir).trim();
+  const blob = sh("git", ["rev-parse", "main:a.txt"], fixture.dir).trim();
+  sh("git", ["--git-dir", fixture.bare, "update-ref", "refs/tags/blob", blob], fixture.dir);
+  sh("git", ["--git-dir", fixture.bare, "update-ref", "refs/tags/unrelated", other], fixture.dir);
+  const advertisement = `${oid}\t${ref}\n${head}\t${ref}^{}\n`;
+  const cases = [
+    ["wrong expected object", ref, other, {}, /does not match expected OID/],
+    ["missing", "refs/tags/missing", head, {}, /does not advertise exact tag/],
+    ["branch namespace", "refs/heads/main", other, {}, /proof ref is malformed/],
+    ["unrelated commit", "refs/tags/unrelated", other, {}, /not retained by the exact remote tag/],
+    ["blob", "refs/tags/blob", blob, {}, /non-commit retention source/],
+    ["tag object drift", ref, oid, { driftRef: ref, driftOid: other }, /changed .* during retention proof/],
+    ["peeled drift", ref, oid, { driftRef: `${ref}^{}`, driftOid: other }, /changed .* during retention proof/],
+    ["false peel", ref, oid, { lsRemoteOutput: `${oid}\t${ref}\n${other}\t${ref}^{}\n` }, /false peeled target/],
+    ["missing peel", ref, oid, { lsRemoteOutput: `${oid}\t${ref}\n` }, /non-commit retention source/],
+    ["orphan peel", ref, oid, { lsRemoteOutput: `${head}\t${ref}^{}\n` }, /peeled tag without its base/],
+    ["duplicate", ref, oid, { lsRemoteOutput: advertisement + `${oid}\t${ref}\n` }, /malformed refs/],
+    ["unrequested tag", ref, oid, { lsRemoteOutput: `${head}\trefs/tags/different\n` }, /unexpected exact tag refs/],
+    ["ancestry error", ref, oid, { mergeBaseStatus: 128 }, /ancestry probe exited/],
+  ];
+  const before = gitMetadataSnapshot(fixture.dir);
+  for (const [label, requestedRef, expectedOid, options, reason] of cases) {
+    const result = runStrict(strictRemoteTagArgs(fixture.wt, head, requestedRef, expectedOid), fixture.dir, {
+      ...strictEnv(), PATH: gitWrapper(options),
+    });
+    assert.equal(result.status, 2, `${label}: ${result.stderr}`);
+    assert.equal(result.stdout, "", label);
+    assert.match(result.stderr, reason, label);
+    assert.deepEqual(gitMetadataSnapshot(fixture.dir), before, `${label}: no metadata mutation`);
+  }
+  const expired = runStrict(strictRemoteTagArgs(fixture.wt, head, ref, oid), fixture.dir, {
+    ...strictEnv(), WT_GUARD_TEST_RETENTION_TIMEOUT_MS: "0",
+  });
+  assert.equal(expired.status, 2);
+  assert.equal(expired.stdout, "");
+  assert.match(expired.stderr, /aggregate deadline exhausted/);
 });
 
 await test("strict retention fails closed when its aggregate deadline is exhausted", () => {

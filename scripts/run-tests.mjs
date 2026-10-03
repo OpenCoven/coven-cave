@@ -44,6 +44,7 @@ export const SUITES = {
     "src/lib/server/flow-discussion.test.ts",
     "src/app/api/flows/discussion/route.test.ts",
     "src/app/api/chat/send/flow-read-only.test.ts",
+    "src/app/api/chat/send/concurrent-turn.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
     "src/components/code-work-scheduler.test.ts",
     "src/lib/session-list-deletes.test.ts",
@@ -1595,6 +1596,7 @@ export const SUITES = {
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/coven-automations-client.test.ts",
     "src/lib/server/coven-automations-sdk.test.ts",
+    "scripts/coven-automations-release-canary.test.ts",
     "src/lib/server/automation-last-runs.test.ts",
     "src/lib/server/automation-history.test.ts",
     "src/app/api/coven-automations/[id]/events/route.test.ts",
@@ -2193,6 +2195,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/flow-session-reconcile.test.ts",
   "src/app/api/flows/discussion/route.test.ts",
   "src/app/api/chat/send/flow-read-only.test.ts",
+  "src/app/api/chat/send/concurrent-turn.test.ts",
   "src/lib/server/client-v1/read-sources.test.ts",
   // flow-copilot-session.ts and research-mission-runner.ts both reach
   // cave-inbox.ts, which imports "@/lib/inbox-recurrence" as a runtime
