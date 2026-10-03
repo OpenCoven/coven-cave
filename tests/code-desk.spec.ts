@@ -2333,4 +2333,38 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(rail.getByText("Couldn't commit: commit signing failed: no key")).toBeVisible();
     expect(commits).toBe(1);
   });
+
+  test("68. one commit or Create PR at a time: a PR can't be sent while a second commit runs", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const actions: string[] = [];
+    await page.route("**/api/changes", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { action?: string };
+      actions.push(body.action ?? "?");
+      if (body.action === "commit" && actions.filter((a) => a === "commit").length === 2) await held;
+      if (body.action === "commit") return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "a".repeat(40), branch: "feat/flux", onDefaultBranch: false } });
+      return route.fulfill({ json: { ok: true, url: "https://github.com/acme/alpha/pull/8" } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const message = rail.getByRole("textbox", { name: "Commit message" });
+    await message.fill("First");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await rail.getByRole("textbox", { name: "Pull request title" }).fill("First");
+    await rail.getByRole("button", { name: "Cancel", exact: true }).click();
+    // A second commit is in flight: the first commit's PR has to wait for it.
+    await message.fill("Second");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect(rail.getByRole("button", { name: "Committing…" })).toBeDisabled();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await expect(rail.getByRole("button", { name: "Create pull request" })).toBeDisabled();
+    expect(actions).toEqual(["commit", "commit"]);
+    release();
+    // The second commit lands and becomes the one a PR is opened for.
+    await expect(rail.getByRole("button", { name: "Create PR" })).toBeEnabled();
+    await expect(rail.getByRole("textbox", { name: "Pull request title" })).toHaveCount(0);
+  });
 });

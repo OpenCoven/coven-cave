@@ -613,17 +613,18 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /\["clean", "-f", "--", body\.path\]/,
+  // Literal pathspecs since #5756: a bracketed path matched its siblings.
+  /\["--literal-pathspecs", "clean", "-f", "--", body\.path\]/,
   "Untracked revert is scoped to git clean -f -- <one file>",
 );
 assert.match(
   changesRoute,
-  /\["rm", "-f", "--", body\.path\]/,
+  /\["--literal-pathspecs", "rm", "-f", "--", body\.path\]/,
   "Reverting a staged-new file removes it via git rm -f -- <one file>",
 );
 assert.match(
   changesRoute,
-  /\["checkout", "HEAD", "--", body\.path\]/,
+  /\["--literal-pathspecs", "checkout", "HEAD", "--", body\.path\]/,
   "Tracked revert restores against HEAD (git checkout HEAD -- <one file>) so staged edits also revert",
 );
 assert.match(

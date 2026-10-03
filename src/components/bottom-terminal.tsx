@@ -8,8 +8,8 @@ import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
-import { killPtyBridge, PtyWsBridge } from "@/lib/pty-ws-bridge";
-import { terminalThreadStopped } from "@/lib/terminal-thread-stop";
+import { PtyWsBridge } from "@/lib/pty-ws-bridge";
+import { stopTerminalThread, terminalThreadStopped } from "@/lib/terminal-thread-stop";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 
@@ -683,10 +683,11 @@ export function BottomTerminal({
       } else {
         log("pty_start: skipped, already in pty_list");
       }
-      // Closed during pty_start: its stop found no shell yet, so stop the one
-      // just made, or it would run until the window closes (#5756).
+      // Closed during pty_start: the owner's stop found no shell yet, so it
+      // runs again now that there is one, or the shell would run until the
+      // window closes (#5756). Still the owner's stop, not this view's.
       if (terminalThreadStopped(threadId)) {
-        void bridge.invoke("pty_stop", { threadId }).catch(() => {});
+        stopTerminalThread(threadId);
         return;
       }
       if (disposed) return;
@@ -813,8 +814,15 @@ export function BottomTerminal({
 
       const bridge = new PtyWsBridge();
       wsBridgeRef.current = bridge;
-      // Disposing closes a socket that is still connecting, too.
-      own(() => bridge.dispose());
+      let connected = false;
+      own(() => {
+        // A pane closed mid-connect keeps its bridge until the socket settles,
+        // so the kill below can still reach its shell (#5775 review). Any
+        // other teardown closes it now (a still-connecting socket too); the
+        // server keeps that shell for the next attach.
+        if (!connected && terminalThreadStopped(threadId)) return;
+        bridge.dispose();
+      });
 
       const announce = (msg: string) => {
         term.write(msg);
@@ -901,8 +909,12 @@ export function BottomTerminal({
 
       try {
         await bridge.connect(threadId, term.cols, term.rows, projectRootRef.current);
+        connected = true;
       } catch (err) {
-        if (disposed) return; // torn down mid-connect: nothing left to tell
+        if (disposed) {
+          bridge.dispose(); // torn down mid-connect: nothing left to tell
+          return;
+        }
         const detail = err instanceof Error ? err.message : String(err);
         const failMsg = `\r\n\x1b[31mTerminal connection failed: ${detail}\x1b[0m\r\n`;
         term.write(failMsg);
@@ -912,8 +924,12 @@ export function BottomTerminal({
         return;
       }
       // The pane closed while connecting (#5756): the socket is open now, so
-      // the shell can be told to go.
-      if (terminalThreadStopped(threadId)) killPtyBridge(threadId);
+      // the owner's stop can reach the shell this time.
+      if (terminalThreadStopped(threadId)) {
+        stopTerminalThread(threadId);
+        bridge.dispose();
+        return;
+      }
       if (disposed) {
         bridge.dispose();
         term.dispose();

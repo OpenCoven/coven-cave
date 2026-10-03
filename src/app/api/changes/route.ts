@@ -748,32 +748,40 @@ export async function POST(req: NextRequest) {
       let branch = cur;
       let branchCreated = false;
       const rollback = () => rollbackCommitStart(root.repoRoot, start, branchCreated ? branch : null);
-      if (cur === def || cur === "HEAD") {
-        branch = featureBranchName(message, Date.now());
-        await git(root.repoRoot, ["checkout", "-b", branch]);
-        branchCreated = true;
-      }
-      await git(
-        root.repoRoot,
-        targetedPaths
-          ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
-          : verified
-            // Stage exactly the verified files (and a rename's old path), so
-            // a file created after the check is never swept in.
-            ? ["--literal-pathspecs", "add", "-A", "--", ...verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))]
-            : ["add", "-A"],
-      );
-      if (verified) {
-        // Re-stamp what was just staged. Stamps are file metadata, which
-        // staging leaves alone, so any difference is a write that may have
-        // reached the index. Then the index goes back as it was and the
-        // commit is refused rather than committing content nobody saw.
-        const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
-        await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
-        if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
-          await rollback();
-          return staleCommit();
+      // Every step before the commit rolls back on failure too (#5775
+      // review): a failed `git add` used to strand the new branch and any
+      // partial staging. Nothing after a commit that landed is undone.
+      try {
+        if (cur === def || cur === "HEAD") {
+          branch = featureBranchName(message, Date.now());
+          await git(root.repoRoot, ["checkout", "-b", branch]);
+          branchCreated = true;
         }
+        await git(
+          root.repoRoot,
+          targetedPaths
+            ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
+            : verified
+              // Stage exactly the verified files (and a rename's old path), so
+              // a file created after the check is never swept in.
+              ? ["--literal-pathspecs", "add", "-A", "--", ...verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))]
+              : ["add", "-A"],
+        );
+        if (verified) {
+          // Re-stamp what was just staged. Stamps are file metadata, which
+          // staging leaves alone, so any difference is a write that may have
+          // reached the index. Then the index goes back as it was and the
+          // commit is refused rather than committing content nobody saw.
+          const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
+          await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+          if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
+            await rollback();
+            return staleCommit();
+          }
+        }
+      } catch (err) {
+        await rollback();
+        throw err;
       }
       try {
         await gitLong(

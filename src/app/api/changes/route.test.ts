@@ -20,6 +20,8 @@ for (const command of ['"checkout", "HEAD", "--", body.path', '"rm", "-f", "--",
 assert.match(source, /const start = await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\);/);
 assert.match(source, /restamped\.some[\s\S]{0,200}await rollback\(\);\s*return staleCommit\(\);/, "the stale refusal rolls back");
 assert.match(source, /\} catch \(err\) \{\s*\/\/ Nothing staged, no new branch, HEAD where it was\.\s*await rollback\(\);/, "a failed commit rolls back");
+// Every step between capture and commit rolls back on failure (#5775 review).
+assert.match(source, /checkout", "-b", branch\][\s\S]{0,1600}\} catch \(err\) \{\s*await rollback\(\);\s*throw err;\s*\}\s*try \{\s*await gitLong\(/, "a failed add or re-stamp rolls back before the commit is tried");
 // Create PR's refusals because the branch moved are marked stale (#5756).
 assert.equal((source.match(/\{ ok: false, stale: true, error: (?:`the project moved|"the branch changed after the commit)/g) ?? []).length, 2);
 

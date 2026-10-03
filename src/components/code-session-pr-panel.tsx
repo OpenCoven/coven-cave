@@ -32,6 +32,9 @@ const CHECKS_POLL_MS = 30_000;
  *  (#5756): a push after a failure gets new checks on a new head, and until
  *  the panel saw it, review and merge stayed pinned to the old one. */
 const SETTLED_CHECKS_POLL_MS = 60_000;
+/** A checks read that never answers becomes an error, with Retry and the
+ *  settled poll (#5775 review), instead of loading forever. */
+const CHECKS_TIMEOUT_MS = 30_000;
 /** How long a review, merge or resolve may run before the rail lets go
  *  (#5756). Nothing timed these out, so a hung call kept its buttons off for
  *  good. It may still land, so the message says to check first. */
@@ -198,6 +201,7 @@ function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
       try {
         const res = await fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${number}`, {
           cache: "no-store",
+          signal: AbortSignal.timeout(CHECKS_TIMEOUT_MS),
         });
         const data = (await res.json().catch(() => null)) as
           | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[]; sha?: string | null }

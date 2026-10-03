@@ -360,15 +360,17 @@ assert.match(preview, /conflict \? json\.version \?\? null : null,/, "a 409 hand
 assert.match(prPanelSrc, /usePausablePoll\(reread, SETTLED_CHECKS_POLL_MS, \{ enabled: !pending && state\.phase !== "loading" \}\);/, "settled checks are read again");
 assert.match(prPanelSrc, /<ChecksSection state=\{checks\} onRetry=\{recheck\} \/>/, "a failed checks load offers Retry");
 // 6. Create PR only with the commit made here; dismissing the result closes the form.
-assert.match(panelSrc, /if \(!title \|\| !postCommit\) return;/, "Create PR needs the pinned commit");
+assert.match(panelSrc, /if \(!title \|\| !postCommit[^\n]*\) return;/, "Create PR needs the pinned commit");
 assert.match(panelSrc, /onClick=\{\(\) => setOutbound\(\{ postCommit: null, prOpen: false \}\)\}/, "dismissing the commit result closes the PR form");
 assert.match(panelSrc, /err instanceof ChangesRequestError && err\.stale[\s\S]{0,400}postCommit: null, prOpen: false/, "a moved branch ends the attempt");
 // 9. A terminal starts on the drawer's first open; a mid-start teardown disposes what exists.
 assert.match(drawerMed, /const \[started, setStarted\] = useState\(\(\) => open \|\| terminalStarted\(sessionId\)\);/, "no shell until the drawer opens");
 assert.match(drawerMed, /\{started \? \(\s*<CodeTerminalWorkspace/, "the workspace mounts once started");
 assert.equal((terminalMed.match(/else for \(const dispose of made\.splice\(0\)\.reverse\(\)\) dispose\(\);/g) ?? []).length, 2, "both startup paths dispose a partial start");
-assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*void bridge\.invoke\("pty_stop", \{ threadId \}\)/, "a desktop shell started for a closed pane is stopped");
-assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) killPtyBridge\(threadId\);/, "a browser shell connected for a closed pane is killed");
+// Through the owner's stop, re-run once the shell exists: this view never
+// stops a shell on its own (bottom-terminal-ws-bridge.test.ts).
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*return;/, "a desktop shell started for a closed pane is stopped");
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);/, "a browser shell connected for a closed pane is killed");
 // 12. In-flight commit and Create PR live in the store.
 assert.match(panelSrc, /const committing = outbound\.pending === "commit";/);
 assert.match(panelSrc, /const creatingPr = outbound\.pending === "create-pr";/);
@@ -376,5 +378,14 @@ assert.match(panelSrc, /const creatingPr = outbound\.pending === "create-pr";/);
 assert.match(preview, /signal: AbortSignal\.timeout\(SAVE_TIMEOUT_MS\),/, "a save times out");
 assert.match(summaryMed, /signal: AbortSignal\.timeout\(CHANGES_SUMMARY_TIMEOUT_MS\)/, "the change list times out");
 assert.equal((prPanelSrc.match(/signal: AbortSignal\.timeout\(GITHUB_ACTION_TIMEOUT_MS\),/g) ?? []).length, 2, "review, merge and resolve time out");
+
+// #5775 review: a closed pane's bridge outlives a mid-connect teardown so the
+// kill can reach its shell; the checks read times out; one request at a time.
+assert.match(terminalMed, /if \(!connected && terminalThreadStopped\(threadId\)\) return;\s*bridge\.dispose\(\);/, "a closed pane's bridge waits for its socket");
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);\s*return;/, "then kills the shell and lets go");
+assert.match(prPanelSrc, /cache: "no-store",\s*signal: AbortSignal\.timeout\(CHECKS_TIMEOUT_MS\),/, "the checks read times out into an error with Retry");
+assert.match(panelSrc, /const requestPending = outbound\.pending !== null;/);
+assert.match(panelSrc, /if \(!message \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no commit while a request runs");
+assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no Create PR while a request runs");
 
 console.log("code-desk-overhaul pins ok");

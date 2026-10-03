@@ -136,6 +136,9 @@ export function SessionChangesInner({
   const prBody = outbound.prBody;
   const setPrBody = useCallback((next: string) => setOutbound({ prBody: next }), [setOutbound]);
   const creatingPr = outbound.pending === "create-pr";
+  // One request at a time (#5775 review): a Create PR sent while a second
+  // commit ran, or the reverse, overwrote the other's state and its pin.
+  const requestPending = outbound.pending !== null;
   // A commit's or Create PR's failure is kept with the draft (#5756); the
   // panel's own actions report here directly.
   const shownError = actionError ?? outbound.error;
@@ -427,7 +430,7 @@ export function SessionChangesInner({
 
   const commitChanges = useCallback(async () => {
     const message = commitMsg.trim();
-    if (!message) return;
+    if (!message || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
     setOutbound({ pending: "commit", error: null, prUrl: null });
     try {
@@ -461,13 +464,13 @@ export function SessionChangesInner({
       // A refused commit usually means the tree moved: show the new list.
       void load();
     }
-  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, setOutbound]);
+  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
 
   const createPr = useCallback(async () => {
     const title = prTitle.trim();
     // Only ever the commit made here (#5756): the PR is pinned to it, and
     // without it there is nothing reviewed to open a PR for.
-    if (!title || !postCommit) return;
+    if (!title || !postCommit || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
     setOutbound({ pending: "create-pr", error: null });
     try {
@@ -498,7 +501,7 @@ export function SessionChangesInner({
         setOutbound({ pending: null, error });
       }
     }
-  }, [announce, load, postCommit, prTitle, prBody, projectRoot, setOutbound]);
+  }, [announce, load, outboundKey, postCommit, prTitle, prBody, projectRoot, setOutbound]);
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
@@ -859,7 +862,7 @@ export function SessionChangesInner({
                   variant="primary"
                   size="xs"
                   leadingIcon="ph:git-pull-request"
-                  disabled={!prTitle.trim() || creatingPr}
+                  disabled={!prTitle.trim() || requestPending}
                   onClick={() => void createPr()}
                 >
                   {creatingPr ? "Opening…" : "Create pull request"}
@@ -894,7 +897,7 @@ export function SessionChangesInner({
                 variant="primary"
                 size="xs"
                 leadingIcon="ph:git-diff"
-                disabled={!canCommit || !commitMsg.trim() || committing}
+                disabled={!canCommit || !commitMsg.trim() || requestPending}
                 onClick={() => void commitChanges()}
                 title="Stage all changes and commit"
                 className="shrink-0"
