@@ -106,6 +106,9 @@ credentials/
 
 # npm lockfile — project uses pnpm
 package-lock.json
+# ...except the release the Automations canary installs with `npm ci` at its
+# locked integrity (scripts/coven-automations-release-canary.ts).
+!fixtures/coven-automations-release/package-lock.json
 /.superpowers
 /.playwright-mcp
 /.understand-anything

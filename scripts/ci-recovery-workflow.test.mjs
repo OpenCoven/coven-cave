@@ -114,6 +114,7 @@ assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validati
   { name: "app tests", command: "test:app" },
   { name: "API tests", command: "test:api" },
   { name: "mobile tests", command: "test:mobile" },
+  { name: "Automations release canary", command: "canary:automations-release" },
 ]);
 assert.equal(ciWorkflow.jobs["frontend-validation"].strategy["fail-fast"], false);
 assert.equal(
