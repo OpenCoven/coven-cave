@@ -396,7 +396,11 @@ assert.match(docReader, /onScrollProgress=\{onScrollProgress\}/, "the reader dri
 assert.match(docReader, /readerScrollMemory\.set\(docKey, progress\)/, "reading position survives tab switches and edit sessions");
 assert.match(docReader, /LIVE_FOLLOW_INTERVAL_MS/, "an open memory file follows agent writes while it is read");
 assert.match(readerMarkdown, /export const ReaderWikiLinkContext = createContext<ReaderWikiLinks \| null>\(null\)/, "wiki-link handling is opt-in for other readers");
-assert.match(grimoireCss, /--document-reader-prose-measure: var\(--cave-reading-width, 68ch\)/, "the Library reader keeps a ~70-character measure unless the reading width preference says otherwise");
+assert.match(grimoireCss, /--document-reader-prose-measure: var\(--cave-reading-width, 96rem\)/, "the Library reader fills its pane up to max-w-screen-2xl unless a reading width preset narrows it (#5769)");
+assert.match(grimoireCss, /--document-reader-wide-measure: min\(max\(88ch, var\(--document-reader-prose-measure\)\), 100cqw\);/, "tables and code in the Library never render narrower than its prose, nor wider than the pane");
+assert.match(grimoireCss, /\.grimoire-reader \.document-reader__scroll \{\s*container-type: inline-size;/, "100cqw measures the scrolling pane, so the Contents rail is not counted as room for tables and code");
+assert.match(grimoireCss, /\.grimoire-reader \.document-reader__wide-block \{\s*max-width: 100cqw;/, "wide blocks are capped at the pane's content box, which already excludes its gutters");
+assert.match(docReader, /resizeKey="library"/, "every Library document shares one directly resizable width");
 assert.match(grimoireCss, /\.grimoire-reader \.document-reader__list--ordered \{\s*list-style: decimal;/, "numbered lists keep their numbers in the reader");
 assert.match(grimoireCss, /--document-reader-accent: var\(--accent-presence\)/, "the reader's active contents entry and links use the presence accent");
 

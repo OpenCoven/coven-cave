@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type MutableRefObject,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { Icon } from "@/lib/icon";
@@ -66,6 +67,17 @@ import {
   applyReadingWidth,
   type ReadingWidth,
 } from "@/lib/reading-width";
+import { SCREEN_SCALE_EVENT } from "@/lib/screen-magnification";
+import {
+  READER_MEASURE_MAX_PX,
+  READER_MEASURE_MIN_PX,
+  loadReaderMeasure,
+  measureAfterDrag,
+  measureAfterKey,
+  readerMeasureCss,
+  readerMeasureMaxPx,
+  saveReaderMeasure,
+} from "@/lib/reader-measure";
 
 const READING_LABELS = {
   leading: {
@@ -132,6 +144,10 @@ type DocumentReaderProps<TBlock, TLede> = {
   scrollLabel?: string;
   onScrollProgress?: (progress: number) => void;
   onActiveSectionChange?: (section: { id: string; heading: string } | null) => void;
+  /** Opt in to direct resize of the prose measure: a drag handle on the
+   *  column edge whose width is kept per surface under this key and wins over
+   *  the Aa width preset until a preset or reset is chosen (#5769). */
+  resizeKey?: string;
   renderLede: (lede: TLede) => ReactNode;
   renderBlock: (block: TBlock, key: string) => ReactNode;
 };
@@ -158,10 +174,12 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   scrollLabel,
   onScrollProgress,
   onActiveSectionChange,
+  resizeKey,
   renderLede,
   renderBlock,
 }: DocumentReaderProps<TBlock, TLede>) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const columnRef = useRef<HTMLDivElement | null>(null);
   const contentsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const preferencesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tocLinkRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -196,6 +214,114 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       applyReadingSize(next);
     }
   }, [scaleIndex]);
+
+  // Direct measure resize (opt-in via `resizeKey`). `null` means the Aa
+  // width preset (or the surface's CSS default) decides.
+  const [customMeasure, setCustomMeasure] = useState<number | null>(null);
+  const [measureDragging, setMeasureDragging] = useState(false);
+  const [columnWidth, setColumnWidth] = useState<number | null>(null);
+  // 96rem in CSS pixels at the app's root font size, so keyboard and drag
+  // bounds agree with the stylesheet's rem cap.
+  const [measureMax, setMeasureMax] = useState(READER_MEASURE_MAX_PX);
+  const measureDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    available: number;
+  } | null>(null);
+
+  useEffect(() => {
+    setCustomMeasure(resizeKey ? loadReaderMeasure(resizeKey) : null);
+  }, [resizeKey]);
+
+  // Resolve the 96rem cap against the current root font size, and again
+  // whenever screen magnification changes it while this reader is open.
+  // Refreshing the bound never touches the saved width.
+  useEffect(() => {
+    // `window.document`: the `document` prop shadows the global here.
+    if (!resizeKey || typeof window === "undefined" || !window.document) return;
+    const refresh = () =>
+      setMeasureMax(readerMeasureMaxPx(Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize)));
+    refresh();
+    window.addEventListener(SCREEN_SCALE_EVENT, refresh);
+    return () => window.removeEventListener(SCREEN_SCALE_EVENT, refresh);
+  }, [resizeKey]);
+
+  useEffect(() => {
+    const column = columnRef.current;
+    if (!resizeKey || !column || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setColumnWidth(Math.round(entry.contentRect.width));
+    });
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [resizeKey]);
+
+  const commitMeasure = useCallback(
+    (next: number | null) => {
+      setCustomMeasure(next);
+      if (resizeKey) saveReaderMeasure(resizeKey, next);
+    },
+    [resizeKey],
+  );
+
+  /** Width the column could take inside the scroller's gutters. */
+  const availableMeasure = () => {
+    const scroller = scrollerRef.current;
+    // Unmeasurable means "no extra limit": the 96rem cap still applies.
+    if (!scroller || typeof window === "undefined") return Number.POSITIVE_INFINITY;
+    const style = window.getComputedStyle(scroller);
+    const gutters = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+    return Math.max(READER_MEASURE_MIN_PX, scroller.clientWidth - gutters);
+  };
+
+  // The width actually on screen wins over the saved one: a saved width can
+  // exceed the pane after the window narrows or focus reading ends, and
+  // resizing must start from what the person sees.
+  const currentMeasure = () =>
+    columnRef.current?.getBoundingClientRect().width || columnWidth || customMeasure || measureMax;
+
+  const onMeasurePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    measureDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: currentMeasure(),
+      available: availableMeasure(),
+    };
+    setMeasureDragging(true);
+  };
+
+  const onMeasurePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = measureDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setCustomMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available, measureMax));
+  };
+
+  const onMeasurePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = measureDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    measureDragRef.current = null;
+    setMeasureDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    commitMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available, measureMax));
+  };
+
+  const onMeasureKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const next = measureAfterKey(currentMeasure(), event.key, event.shiftKey, availableMeasure(), measureMax);
+    if (next === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    commitMeasure(next);
+  };
+
+  /** Choosing a width preset is an explicit request for that preset. */
+  const applyWidthPreset = (level: ReadingWidth) => {
+    if (resizeKey) commitMeasure(null);
+    applyReadingWidth(level);
+  };
 
   const atSmallest = scaleIndex <= 0;
   const atLargest = scaleIndex >= READER_TEXT_SCALE_STEPS.length - 1;
@@ -327,6 +453,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   };
 
   const resetReadingPreferences = () => {
+    if (resizeKey) commitMeasure(null);
     setScaleIndex(READER_TEXT_SCALE_DEFAULT_INDEX);
     saveScaleIndex(READER_TEXT_SCALE_DEFAULT_INDEX);
     applyReadingSize(READER_TEXT_SCALE_DEFAULT_INDEX);
@@ -398,12 +525,18 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       className={[
         "document-reader",
         `document-reader--${navigation}`,
+        resizeKey ? "document-reader--resizable" : "",
         className ?? "",
       ]
         .filter(Boolean)
         .join(" ")}
       style={
-        { "--reader-text-scale": scaleForIndex(scaleIndex) } as CSSProperties
+        {
+          "--reader-text-scale": scaleForIndex(scaleIndex),
+          ...(customMeasure != null
+            ? { "--document-reader-prose-measure": readerMeasureCss(customMeasure) }
+            : {}),
+        } as CSSProperties
       }
     >
       <div className="document-reader__layout">
@@ -484,7 +617,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
                     A+
                   </button>
                 </div>
-                {preferenceGroup("Width", READING_WIDTH_OPTIONS, reading.width, READING_LABELS.width, applyReadingWidth)}
+                {preferenceGroup("Width", READING_WIDTH_OPTIONS, reading.width, READING_LABELS.width, applyWidthPreset)}
                 {preferenceGroup("Line spacing", READING_LEADING_OPTIONS, reading.leading, READING_LABELS.leading, applyReadingLeading)}
                 {preferenceGroup("Letter spacing", READING_TRACKING_OPTIONS, reading.tracking, READING_LABELS.tracking, applyReadingTracking)}
                 {preferenceGroup("Alignment", READING_ALIGN_OPTIONS, reading.align, READING_LABELS.align, applyReadingAlign)}
@@ -540,7 +673,39 @@ export function DocumentReader<TBlock, TLede = TBlock>({
           ) : null}
         </div>
 
-        <div className="document-reader__column document-reader__prose rr-doc__column">
+        <div ref={columnRef} className="document-reader__column document-reader__prose rr-doc__column">
+          {resizeKey ? (
+            // The whole column edge is a drag target (the track), while the
+            // keyboard separator is a small grip that stays in view as the
+            // document scrolls, so focusing it never scrolls the reader.
+            <div
+              className="document-reader__measure-track"
+              data-dragging={measureDragging ? "" : undefined}
+              title="Drag to resize. Double-click to reset."
+              onPointerDown={onMeasurePointerDown}
+              onPointerMove={onMeasurePointerMove}
+              onPointerUp={onMeasurePointerEnd}
+              onPointerCancel={onMeasurePointerEnd}
+              onDoubleClick={() => commitMeasure(null)}
+            >
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Reading width"
+                aria-valuemin={READER_MEASURE_MIN_PX}
+                aria-valuemax={measureMax}
+                aria-valuenow={Math.min(measureMax, Math.round(columnWidth ?? customMeasure ?? measureMax))}
+                aria-valuetext={
+                  customMeasure == null
+                    ? "Preset width"
+                    : `${Math.min(measureMax, Math.round(columnWidth ?? customMeasure))} pixels`
+                }
+                tabIndex={0}
+                className="document-reader__measure-grip focus-ring"
+                onKeyDown={onMeasureKeyDown}
+              />
+            </div>
+          ) : null}
           {hasBody ? (
             <>
               {kicker ? (
