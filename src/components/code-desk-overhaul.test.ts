@@ -394,7 +394,10 @@ const treeLow5 = await readFile(new URL("./project-tree.tsx", import.meta.url), 
 // 15. A forced load mid-flight is queued, not dropped.
 assert.match(panelSrc, /if \(!opts\?\.shared\) queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
 // 16. Focus has somewhere to go after a confirmed revert.
-assert.match(panelSrc, /requestAnimationFrame\(\(\) => restoreFocusAfterRevert\(file\.path, Math\.max\(0, index\)\)\);/);
+// It waits for the commit that re-enables Revert, not a frame (#5779).
+assert.match(panelSrc, /setRevertingPath\(null\);\s*setRevertFocus\(\{ path: file\.path, index: Math\.max\(0, index\) \}\);/);
+assert.match(panelSrc, /useEffect\(\(\) => \{\s*if \(revertFocus\) restoreFocusAfterRevert\(revertFocus\.path, revertFocus\.index\);\s*\}, \[revertFocus, restoreFocusAfterRevert\]\);/);
+assert.doesNotMatch(panelSrc, /requestAnimationFrame\(\(\) => restoreFocusAfterRevert/, "no frame racing the commit");
 // 17. The picker's highlight is a session, not a position.
 assert.match(pickerLow5, /const active = options\.find\(\(option\) => option\.id === activeId\) \?\? options\[0\] \?\? null;/);
 // 23. A newer read of a folder supersedes an older one; nothing else cancels it.
