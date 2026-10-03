@@ -293,9 +293,9 @@ test("release packages and checksum manifest receive GitHub artifact attestation
     "the final repacked AppImage must be uploaded and re-signed before it is attested",
   );
   assert(
-    buildJob.indexOf("name: Publish validated Windows MSI") <
+    buildJob.indexOf("name: Publish verified signed Windows MSI") <
       buildJob.indexOf("name: Attest Windows MSI"),
-    "the budget-approved MSI must be final before it is attested",
+    "the verified signed MSI must be final before it is attested",
   );
   assert(
     buildJob.indexOf("name: Verify macOS DMG is notarized") <
@@ -312,7 +312,7 @@ test("release packages and checksum manifest receive GitHub artifact attestation
 test("Windows release publication treats an absent release as a recoverable probe result", () => {
   const buildJob = getWorkflowJob("build");
   const publishStep = buildJob.slice(
-    buildJob.indexOf("name: Publish validated Windows MSI"),
+    buildJob.indexOf("name: Publish verified signed Windows MSI"),
     buildJob.indexOf("name: Sign Linux/Windows updater artifact"),
   );
 
@@ -331,6 +331,56 @@ test("Windows release publication treats an absent release as a recoverable prob
     /if \(-not \(Test-GitHubRelease\)\)[\s\S]*if \(\$createExitCode -ne 0\)[\s\S]*if \(-not \(Test-GitHubRelease\)\)/,
     "both initial absence and a losing create race must use the non-terminating probe",
   );
+});
+
+test("Windows MSI must pass signing and Authenticode verification before upload", () => {
+  const buildJob = getWorkflowJob("build");
+  const stepNames = [
+    "Build Windows MSI without publishing",
+    "Measure and enforce Windows MSI budget",
+    "Stage Windows MSI for code signing",
+    "Sign Windows MSI with SSL.com eSigner",
+    "Verify signed Windows MSI",
+    "Publish verified signed Windows MSI",
+    "Sign Linux/Windows updater artifact",
+    "Attest Windows MSI",
+  ];
+  const positions = stepNames.map((name) => buildJob.indexOf(`name: ${name}`));
+  assert.ok(positions.every((position) => position !== -1));
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+
+  const stageStep = buildJob.slice(positions[2], positions[3]);
+  assert.match(stageStep, /!inputs\.windows_diagnostics_only/);
+  assert.match(stageStep, /WINDOWS_SIGNING_CERT_THUMBPRINT -notmatch/);
+  const signStep = buildJob.slice(positions[3], positions[4]);
+  assert.match(signStep, /uses: SSLcom\/esigner-codesign@[0-9a-f]{40}/);
+  assert.match(signStep, /file_path: \$\{WINDOWS_MSI_PATH\}/);
+  assert.match(signStep, /output_path: \$\{WINDOWS_SIGNED_DIR\}/);
+  assert.match(signStep, /secrets\.ES_USERNAME/);
+  assert.match(signStep, /secrets\.ES_PASSWORD/);
+  assert.match(signStep, /secrets\.CREDENTIAL_ID/);
+  assert.match(signStep, /secrets\.ES_TOTP_SECRET/);
+
+  const verifyStep = buildJob.slice(positions[4], positions[5]);
+  assert.match(verifyStep, /Get-AuthenticodeSignature -LiteralPath \$signedMsi\.FullName/);
+  assert.match(verifyStep, /\$signature\.Status -ne 'Valid'/);
+  assert.match(verifyStep, /SignerCertificate\.Thumbprint -ne \$env:WINDOWS_SIGNING_CERT_THUMBPRINT/);
+  assert.match(verifyStep, /TimeStamperCertificate/);
+  assert.match(verifyStep, /windows-msi-budget\.ps1[\s\S]*-MsiPath \$signedMsi\.FullName/);
+  assert.match(verifyStep, /Copy-Item -LiteralPath \$signedMsi\.FullName -Destination \$env:WINDOWS_MSI_PATH/);
+  assert.match(verifyStep, /Get-FileHash -LiteralPath \$env:WINDOWS_MSI_PATH/);
+
+  const publishStep = buildJob.slice(positions[5], positions[6]);
+  assert.match(publishStep, /gh release upload \$env:RELEASE_TAG \$msis\[0\]\.FullName --clobber/);
+  assert.doesNotMatch(
+    buildJob.slice(positions[0], positions[4]),
+    /gh release upload[^\n]*\.msi/,
+    "the unsigned MSI must not reach the release before verification",
+  );
+  for (const step of [signStep, verifyStep, publishStep]) {
+    assert.match(step, /!inputs\.windows_diagnostics_only/);
+    assert.doesNotMatch(step, /continue-on-error/);
+  }
 });
 
 test("sidecar bundle prunes foreign native packages before release bundling", () => {
