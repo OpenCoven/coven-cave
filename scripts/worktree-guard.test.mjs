@@ -1493,6 +1493,142 @@ await test("strict-worktree-remove is a fail-closed direct guard", () => {
 
 console.log("worktree-guard.test.mjs passed");
 
+await test("strict guard accepts committed AUTO_MERGE residue from a completed clean rebase", () => {
+  const fixture = repoWithWorktree();
+  writeFileSync(path.join(fixture.dir, "main-only.txt"), "main advance\n");
+  sh("git", ["add", "main-only.txt"], fixture.dir);
+  sh("git", ["commit", "-q", "-m", "advance main"], fixture.dir);
+  sh("git", ["rebase", "--merge", "main"], fixture.wt);
+  sh("git", ["push", "-q", "origin", "feature-x"], fixture.wt);
+  const head = sh("git", ["rev-parse", "HEAD"], fixture.wt).trim();
+  const tree = sh("git", ["rev-parse", "HEAD^{tree}"], fixture.wt);
+  const admin = sh("git", ["rev-parse", "--absolute-git-dir"], fixture.wt).trim();
+  const residue = path.join(admin, "AUTO_MERGE");
+  assert.equal(readFileSync(residue, "utf8"), tree, "Git left only the committed tree");
+  assert.equal(sh("git", ["status", "--porcelain"], fixture.wt), "");
+  assert.equal(existsSync(path.join(admin, "rebase-merge")), false);
+  const result = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv());
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(residue, "utf8"), tree, "proof does not rewrite recovery state");
+});
+
+for (const state of ["matching", "detached", "other-tree", "commit", "missing", "malformed", "extra-line", "no-newline", "directory", "symlink", "dangling", "lock", "merge", "rebase", "unretained", "dirty"]) {
+  await test(`strict AUTO_MERGE recovery proof: ${state}`, {
+    skip: isWin && ["symlink", "dangling"].includes(state),
+  }, () => {
+    const fixture = repoWithWorktree({ push: state !== "unretained" });
+    const head = sh("git", ["rev-parse", "HEAD"], fixture.wt).trim();
+    const tree = sh("git", ["rev-parse", "HEAD^{tree}"], fixture.wt).trim();
+    const admin = sh("git", ["rev-parse", "--absolute-git-dir"], fixture.wt).trim();
+    const file = path.join(admin, "AUTO_MERGE");
+    if (state === "detached") sh("git", ["checkout", "--detach", head], fixture.wt);
+    if (state === "directory") mkdirSync(file);
+    else if (state === "symlink" || state === "dangling") {
+      const target = path.join(fixture.dir, "recovery-tree");
+      if (state === "symlink") writeFileSync(target, `${tree}\n`);
+      symlinkSync(target, file);
+    } else {
+      const contents = {
+        "other-tree": sh("git", ["rev-parse", "main^{tree}"], fixture.wt),
+        commit: `${head}\n`, missing: `${"0".repeat(40)}\n`, malformed: "ref: HEAD\n",
+        "extra-line": `${tree}\n\n`, "no-newline": tree,
+      };
+      writeFileSync(file, contents[state] ?? `${tree}\n`);
+      if (state === "lock") writeFileSync(`${file}.lock`, "");
+      if (state === "merge") writeFileSync(path.join(admin, "MERGE_HEAD"), `${head}\n`);
+      if (state === "rebase") mkdirSync(path.join(admin, "rebase-merge"));
+      if (state === "dirty") writeFileSync(path.join(fixture.wt, "b.txt"), "uncommitted\n");
+    }
+    const result = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv());
+    assert.equal(result.status, ["matching", "detached"].includes(state) ? 0 : 2, result.stderr);
+    assert.ok(existsSync(fixture.wt), "inspection never removes the candidate");
+  });
+}
+
+for (const replacement of ["regular", "symlink", "rewrite", "disappear", "head"]) {
+  await test(`strict AUTO_MERGE rejects ${replacement} drift during retention`, { skip: isWin && replacement === "symlink" }, () => {
+    const fixture = repoWithWorktree({ push: true });
+    const head = sh("git", ["rev-parse", "HEAD"], fixture.wt).trim();
+    const tree = sh("git", ["rev-parse", "HEAD^{tree}"], fixture.wt);
+    const admin = sh("git", ["rev-parse", "--absolute-git-dir"], fixture.wt).trim();
+    const file = path.join(admin, "AUTO_MERGE");
+    writeFileSync(file, tree);
+    const executable = lsofStub();
+    writeFileSync(executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+const file = ${JSON.stringify(file)}, tree = ${JSON.stringify(tree)};
+const replacement = ${JSON.stringify(replacement)};
+if (replacement === 'head') {
+  require('node:child_process').execFileSync(${JSON.stringify(realGit)}, ['-C', ${JSON.stringify(fixture.wt)}, 'update-ref', 'HEAD', 'main']);
+} else if (replacement === 'rewrite') {
+  fs.writeFileSync(file, tree);
+} else {
+  fs.renameSync(file, file + '.original');
+  if (replacement === 'regular') fs.writeFileSync(file, tree);
+  if (replacement === 'symlink') fs.symlinkSync(file + '.original', file);
+  fs.unlinkSync(file + '.original');
+}
+process.stdout.write('p4242\\ncidle\\nfcwd\\nn/\\n');
+`);
+    const result = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv(executable));
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /recovery state|HEAD does not match/);
+  });
+}
+
+for (const replacement of ["regular", "symlink", "in-place", "after-read"]) {
+  await test(`AUTO_MERGE inspection rejects ${replacement} replacement while reading`, {
+    skip: isWin && replacement === "symlink",
+  }, async () => {
+    const fs = await import("node:fs");
+    const { assertCommittedAutoMerge } = await import("./worktree-auto-merge-state.mjs");
+    const dir = fs.mkdtempSync(path.join(tmpdir(), "auto-merge-replacement-"));
+    const file = path.join(dir, "AUTO_MERGE");
+    const tree = "a".repeat(40);
+    fs.writeFileSync(file, `${tree}\n`);
+    let changed = false;
+    try {
+      assert.throws(() => assertCommittedAutoMerge(file, tree, {
+        ...fs,
+        lstatSync(target, options) {
+          const stat = fs.lstatSync(target, options);
+          if (!changed && ["regular", "symlink"].includes(replacement)) {
+            changed = true;
+            fs.renameSync(file, `${file}.original`);
+            if (replacement === "symlink") fs.symlinkSync(`${file}.original`, file);
+            else fs.writeFileSync(file, `${tree}\n`);
+          }
+          return stat;
+        },
+        readSync(...args) {
+          if (replacement === "in-place") fs.writeFileSync(file, `${"b".repeat(40)}\n`);
+          const count = fs.readSync(...args);
+          if (replacement === "after-read") fs.writeFileSync(file, `${"b".repeat(40)}\n`);
+          return count;
+        },
+      }));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+await test("AUTO_MERGE proof supports full SHA-256 tree IDs without accepting abbreviated IDs", async () => {
+  const fs = await import("node:fs");
+  const { assertCommittedAutoMerge } = await import("./worktree-auto-merge-state.mjs");
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "auto-merge-sha256-"));
+  const file = path.join(dir, "AUTO_MERGE");
+  try {
+    const tree = "a".repeat(64);
+    fs.writeFileSync(file, `${tree}\n`);
+    assert.doesNotThrow(() => assertCommittedAutoMerge(file, tree));
+    fs.writeFileSync(file, "aaaaaaa\n");
+    assert.throws(() => assertCommittedAutoMerge(file, "aaaaaaa"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge", "unknown", "wrong-type", "admin-symlink", "shared-lock"]) {
   await test(`strict MERGE_RR recovery state: ${state}`, {
     skip: isWin && ["symlink", "dangling", "admin-symlink"].includes(state),

@@ -771,6 +771,53 @@ for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "l
   });
 }
 
+for (const state of ["matching", "other-tree", "commit", "missing", "malformed", "lock", "merge", "head-drift"]) {
+  test(`documented AUTO_MERGE admin proof: ${state}`, (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curator-auto-merge-"));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const git = (args, cwd = dir, input) => execFileSync("git", args, { cwd, input, encoding: "utf8" }).trim();
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.name", "fixture"]);
+    git(["config", "user.email", "fixture@example.test"]);
+    git(["config", "commit.gpgsign", "false"]);
+    fs.writeFileSync(path.join(dir, "source"), "retained source\n");
+    git(["add", "source"]);
+    git(["commit", "-q", "-m", "fixture"]);
+    const head = git(["rev-parse", "HEAD"]);
+    const tree = git(["rev-parse", "HEAD^{tree}"]);
+    const wt = path.join(dir, "topic");
+    git(["worktree", "add", "-q", "-b", "topic", wt]);
+    const admin = git(["rev-parse", "--absolute-git-dir"], wt);
+    const emptyTree = git(["hash-object", "-t", "tree", "-w", "--stdin"], dir, "");
+    const contents = {
+      "other-tree": `${emptyTree}\n`, commit: `${head}\n`,
+      missing: `${"0".repeat(40)}\n`, malformed: `${tree}\nextra\n`,
+    };
+    fs.writeFileSync(path.join(admin, "AUTO_MERGE"), contents[state] ?? `${tree}\n`);
+    if (state === "lock") fs.writeFileSync(path.join(admin, "AUTO_MERGE.lock"), "");
+    if (state === "merge") fs.writeFileSync(path.join(admin, "MERGE_HEAD"), `${head}\n`);
+    const start = proof.indexOf("worktree_admin_safe=1");
+    const end = proof.indexOf("\n```", start);
+    assert.ok(start >= 0 && end > start);
+    const result = spawnSync("bash", ["-c", `
+worktree_git_dir=$1
+primary_checkout=$2
+worktree_path=$3
+audited_worktree_head_oid=$4
+oid_width=40
+git_exact() { GIT_NO_REPLACE_OBJECTS=1 git "$@"; }
+oid_is_retained() { git_exact -C "$worktree_path" merge-base --is-ancestor "$1" "$audited_worktree_head_oid"; }
+${proof.slice(proof.indexOf("emit_plain_oids()"), start)}
+for candidate in one; do
+${proof.slice(start, end)}
+printf 'SAFE\\n'
+done`, "admin-proof", admin, fileURLToPath(new URL("..", import.meta.url)), wt,
+    state === "head-drift" ? "0".repeat(40) : head], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), state === "matching" ? "SAFE" : "PRESERVE - worktree admin recovery state");
+  });
+}
+
 test("documented strict retention selection executes exact branch, tag and PR modes", (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "branch-curator-selection-"));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));

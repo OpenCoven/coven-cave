@@ -68,6 +68,7 @@
 import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { assertEmptyRegularRerere } from "./worktree-rerere-state.mjs";
+import { assertCommittedAutoMerge } from "./worktree-auto-merge-state.mjs";
 import path from "node:path";
 import {
   createStrictRetentionDeadline,
@@ -231,9 +232,12 @@ function strictRegisteredWorktree(target) {
   if (!found) throw new Error("target is not an exactly registered worktree");
 }
 
-// MERGE_RR is rerere's pending-path list, not a commit/recovery OID.
-// An empty regular file is harmless residue; it never overrides operation state.
-function strictRecoveryState(target) {
+// Completed operations can leave empty MERGE_RR or AUTO_MERGE equal to the
+// audited commit tree. Neither exception overrides any other recovery state.
+function strictRecoveryState(target, expectedHead) {
+  const head = strictSingleOid(strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]), "HEAD");
+  if (head !== expectedHead) throw new Error("target HEAD does not match expected HEAD");
+  let autoMergeIdentity = null;
   const admin = strictSingleLine(
     strictGit(["-C", target, "rev-parse", "--absolute-git-dir"]),
     "git administrative directory",
@@ -249,6 +253,18 @@ function strictRecoveryState(target) {
       } catch (error) {
         throw new Error(`target has recovery state: ${error}`);
       }
+    } else if (name === "AUTO_MERGE") {
+      const tree = strictSingleOid(
+        strictGit(["-C", target, "rev-parse", "--verify", `${expectedHead}^{tree}`]), "audited tree",
+      );
+      if (strictGit(["-C", target, "cat-file", "-t", tree]) !== "tree\n") {
+        throw new Error("target has recovery state: audited tree is unavailable");
+      }
+      try {
+        autoMergeIdentity = assertCommittedAutoMerge(entry, tree);
+      } catch (error) {
+        throw new Error(`target has recovery state: ${error}`);
+      }
     } else if (["logs", "refs"].includes(name)) {
       if (!stat.isDirectory()) throw new Error(`target has recovery state: non-directory ${name}`);
     } else if (["HEAD", "commondir", "gitdir", "index", "config.worktree",
@@ -258,6 +274,7 @@ function strictRecoveryState(target) {
       throw new Error(`target has recovery state: ${name}`);
     }
   }
+  return autoMergeIdentity;
 }
 
 function strictRemoteNames(target, deadline) {
@@ -868,7 +885,7 @@ function runStrictWorktreeRemove(args) {
   }
   if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
   strictRegisteredWorktree(target);
-  strictRecoveryState(target);
+  const autoMergeIdentity = strictRecoveryState(target, expectedHead);
 
   const actualHead = strictSingleOid(
     strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
@@ -896,7 +913,9 @@ function runStrictWorktreeRemove(args) {
   else if (remoteTagProof) strictRetainedByRemoteTag(target, actualHead, remoteTagProof);
   else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
-  strictRecoveryState(target);
+  if (strictRecoveryState(target, expectedHead) !== autoMergeIdentity) {
+    throw new Error("target has recovery state: AUTO_MERGE changed during retention proof");
+  }
   process.stdout.write(`${JSON.stringify({
     ok: true,
     mode: "strict-worktree-remove",
