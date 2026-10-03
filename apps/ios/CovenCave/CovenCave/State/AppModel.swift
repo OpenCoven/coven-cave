@@ -401,6 +401,9 @@ final class AppModel {
     /// endpoint from `connection.host`, which is why it needs no teardown wired
     /// into `disconnect()`.
     let familiarDashboards = FamiliarDashboardStore()
+    /// Recent model-state answers, so reopening a chat reuses one instead of
+    /// refetching it (#5748). Host-keyed like `familiarDashboards`.
+    let chatModelStates = ChatModelStateCache()
     /// Stamped the moment the state LEAVES `.connected` — the last instant the
     /// desktop was known reachable — so the reconnect pill can say
     /// "last seen 2 min ago" honestly during a drop.
@@ -2169,7 +2172,14 @@ final class AppModel {
 
     var client: CaveClient? {
         guard let connection else { return nil }
-        return CaveClient(connection: connection)
+        return CaveClient(connection: connection, session: clientSession)
+    }
+
+    /// The model-state cache key for the current host, or nil when there is no
+    /// connection to read from.
+    func chatModelStateKey(familiarId: String, sessionId: String?) -> ChatModelStateCache.Key? {
+        guard let host = connection?.host else { return nil }
+        return ChatModelStateCache.Key(host: host, familiarId: familiarId, sessionId: sessionId)
     }
 
     private var coreResourceClient: (any AppModelCoreResourceClient)? {
@@ -2253,6 +2263,10 @@ final class AppModel {
     @ObservationIgnored private let projectContextDefaults: UserDefaults
     @ObservationIgnored private let widgetSnapshotDefaults: UserDefaults?
     @ObservationIgnored private let coreResourceClientFactory: @Sendable (CaveConnection) -> any AppModelCoreResourceClient
+    /// Tests inject a `URLProtocol`-backed session to count what `client`
+    /// sends. Production leaves it nil, which keeps `CaveClient`'s shared
+    /// pooled REST session.
+    @ObservationIgnored private let clientSession: URLSession?
     @ObservationIgnored private let reminderNotificationScheduler: any ReminderNotificationScheduling
     @ObservationIgnored private let baseURLDiscoverer: @Sendable ([URL]) async -> DiscoveryOutcome
     @ObservationIgnored private let threadStore: ThreadSnapshotStore
@@ -2331,6 +2345,7 @@ final class AppModel {
         coreResourceClientFactory: @escaping @Sendable (CaveConnection) -> any AppModelCoreResourceClient = {
             CaveClient(connection: $0)
         },
+        clientSession: URLSession? = nil,
         reminderNotificationScheduler: any ReminderNotificationScheduling = SystemReminderNotificationScheduler(),
         baseURLDiscoverer: @escaping @Sendable ([URL]) async -> DiscoveryOutcome = { candidates in
             await AppModel.discoverBaseURL(candidates)
@@ -2348,6 +2363,7 @@ final class AppModel {
             (try? await threadStore.load()) ?? []
         }
         self.coreResourceClientFactory = coreResourceClientFactory
+        self.clientSession = clientSession
         self.reminderNotificationScheduler = reminderNotificationScheduler
         self.baseURLDiscoverer = baseURLDiscoverer
         connection = loadPersistedConnection && !isPerformanceFixture ? CaveConnection.load(defaults: defaults) : nil

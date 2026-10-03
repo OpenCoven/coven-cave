@@ -478,7 +478,10 @@ struct ChatView: View {
             ChatNotifications.removeDelivered(threadId: thread.id)
         }
         .task(id: modelStateLoadKey) {
-            await loadSessionModelState()
+            // Opening (or reopening) the chat may reuse a model state read in
+            // the last 30 s instead of repeating the request (#5748). Every
+            // other caller fetches fresh.
+            await loadSessionModelState(reusingRecent: true)
         }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce
@@ -1880,6 +1883,9 @@ struct ChatView: View {
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            if let cacheKey = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId) {
+                app.chatModelStates.store(resp, for: cacheKey)
+            }
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
                   rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
@@ -1990,6 +1996,11 @@ struct ChatView: View {
         guard let client = app.client else {
             app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
             return nil
+        }
+        // The change may set the familiar default that every session of this
+        // familiar inherits, so no cached state for it survives the request.
+        if let host = app.connection?.host {
+            app.chatModelStates.invalidate(host: host, familiarId: familiarId)
         }
         let mutation = modelRequests.beginMutation(for: target)
         return modelMutationQueue.enqueue {
@@ -2108,7 +2119,8 @@ struct ChatView: View {
 
     @discardableResult
     private func loadSessionModelState(
-        reconciling expectedTarget: ChatModelRequestTarget? = nil
+        reconciling expectedTarget: ChatModelRequestTarget? = nil,
+        reusingRecent: Bool = false
     ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
         guard !thread.isGroup,
               let familiarId = thread.familiarIds.first else {
@@ -2130,10 +2142,17 @@ struct ChatView: View {
             return (.failed, nil)
         }
         guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
+        let cacheKey = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId)
         do {
-            let response = try await client.chatModelState(
-                familiarId: familiarId,
-                sessionId: sessionId)
+            let response: ChatModelStateResponse
+            if reusingRecent, let cacheKey, let recent = app.chatModelStates.recent(for: cacheKey) {
+                response = recent
+            } else {
+                response = try await client.chatModelState(
+                    familiarId: familiarId,
+                    sessionId: sessionId)
+                if let cacheKey { app.chatModelStates.store(response, for: cacheKey) }
+            }
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
             guard outcome == .applied,
