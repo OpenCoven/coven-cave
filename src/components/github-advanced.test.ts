@@ -95,7 +95,12 @@ assert.match(checksRoute, /export async function GET/, "checks route exposes GET
 assert.match(checksRoute, /\/pulls\/\$\{number\}`/, "checks route resolves the PR head");
 assert.match(checksRoute, /\/commits\/\$\{sha\}\/check-runs/, "checks route reads the head commit's check-runs");
 assert.match(checksRoute, /\/commits\/\$\{sha\}\/status/, "checks route reads the legacy combined status");
-assert.match(checksRoute, /summarizeChecks\(runs as CheckRun\[\], combinedState\)/, "checks route rolls up a single summary");
+assert.match(
+  checksRoute,
+  /const merged = summarizeCheckSignals\(runs as CheckRun\[\], statuses\);[\s\S]{0,200}summarizeChecks\(\[\], combinedState\)/,
+  "checks route rolls up a single summary from runs and statuses together, the combined state only when it has neither (#5781)",
+);
+assert.match(checksRoute, /page <= MAX_RUN_PAGES/, "checks route reads every page of check-runs (#5781)");
 assert.match(checksRoute, /detailsUrl:[\s\S]{0,60}details_url/, "each run carries its logs URL");
 assert.match(checksRoute, /if \(!runsResp\.res\.ok && !statusResp\.res\.ok\)/, "checks route errors when both upstream CI requests fail");
 assert.match(checksRoute, /github error \(\$\{runsResp\.res\.status\}, \$\{statusResp\.res\.status\}\)/, "checks route reports the failed upstream status pair");
