@@ -2887,6 +2887,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const rebind = await names(/^Rebind /);
     const unbind = await names(/^Unbind /);
     expect(rebind.length).toBeGreaterThan(3);
+    expect(unbind.length, "every shortcut's Unbind is named for it").toBe(rebind.length);
     expect(new Set(rebind).size, "every Rebind is distinct").toBe(rebind.length);
     expect(new Set(unbind).size, "every Unbind is distinct").toBe(unbind.length);
     await expect(dialog.getByRole("button", { name: /^Rebind/ }).first()).not.toHaveAttribute("aria-pressed", /.*/);
