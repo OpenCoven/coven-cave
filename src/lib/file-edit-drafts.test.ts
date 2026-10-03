@@ -167,4 +167,122 @@ const B = "/repo/src/b.ts";
   assert.equal(store.settle(A, save.id, save.content, "v2"), false);
 }
 
+// ── Drafts kept in storage (#5756) ─────────────────────────────────────────
+// The desktop app closes, quits and relaunches without an unload prompt, so a
+// memory-only draft was lost. Unsaved drafts are now written to storage, one
+// key per file, and a fresh page brings them back.
+{
+  const { persistFileEditDrafts, FILE_EDIT_DRAFT_STORAGE_PREFIX: PREFIX, FILE_EDIT_DRAFT_STORAGE_MAX_CHARS } =
+    await import("./file-edit-drafts.ts");
+  function fakeStorage(seed = {}) {
+    const map = new Map(Object.entries(seed));
+    return {
+      map,
+      failWrites: false,
+      get length() { return map.size; },
+      key(index) { return [...map.keys()][index] ?? null; },
+      getItem(key) { return map.has(key) ? map.get(key) : null; },
+      setItem(key, value) { if (this.failWrites) throw new Error("QuotaExceededError"); map.set(key, String(value)); },
+      removeItem(key) { map.delete(key); },
+    };
+  }
+  const now = (write) => write();
+
+  // Only unsaved drafts are written; a save or a discard removes them.
+  {
+    const storage = fakeStorage();
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, now);
+    store.begin(A, "one\r\ntwo\r\n", "v1");
+    assert.equal(storage.map.size, 0, "a draft nobody has typed into isn't written");
+    store.update(A, "one\nTWO\n");
+    assert.deepEqual(JSON.parse(storage.getItem(PREFIX + A)), {
+      content: "one\nTWO\n", baseContent: "one\ntwo\n", baseVersion: "v1", eol: "\r\n",
+    });
+    const save = store.startSave(A);
+    store.settle(A, save.id, save.content, "v2");
+    assert.equal(storage.getItem(PREFIX + A), null, "a saved draft is removed");
+    store.begin(B, "b", "v1");
+    store.update(B, "b2");
+    assert.ok(storage.getItem(PREFIX + B));
+    store.discard(B);
+    assert.equal(storage.getItem(PREFIX + B), null, "a discarded draft is removed");
+  }
+
+  // A fresh page brings back what the last one left, as unsaved drafts that
+  // still name the version they started from.
+  {
+    const storage = fakeStorage({
+      [PREFIX + A]: JSON.stringify({ content: "mine", baseContent: "base", baseVersion: "v7", eol: "\n" }),
+      [PREFIX + B]: "{not json",
+      [PREFIX + "/repo/src/c.ts"]: JSON.stringify({ content: "same", baseContent: "same", baseVersion: "v1", eol: "\n" }),
+      [PREFIX + "/repo/src/d.ts"]: JSON.stringify({ content: "x", baseContent: "y", baseVersion: 3, eol: "\n" }),
+      "unrelated:key": "1",
+    });
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, now);
+    const restored = store.get(A);
+    assert.equal(restored.content, "mine");
+    assert.equal(restored.baseVersion, "v7");
+    assert.equal(restored.saving, false);
+    assert.equal(restored.conflict, false);
+    assert.deepEqual([...store.dirtyPaths()], [A], "malformed, clean and mistyped entries are ignored");
+    // The restored draft's version is still checked against the disk.
+    store.noteDiskVersion(A, "v8");
+    assert.equal(store.get(A).conflict, true);
+    assert.equal(storage.getItem("unrelated:key"), "1", "other keys are left alone");
+  }
+
+  // A draft already open wins over a stored one for the same file.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "live", "v1");
+    store.update(A, "live edit");
+    store.restore([{ path: A, content: "stale", baseContent: "live", baseVersion: "v1", eol: "\n" }]);
+    assert.equal(store.get(A).content, "live edit");
+  }
+
+  // Too large, or storage refuses: the draft stays in memory, nothing throws.
+  {
+    const storage = fakeStorage();
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, now);
+    store.begin(A, "a", "v1");
+    store.update(A, "a2");
+    assert.ok(storage.getItem(PREFIX + A));
+    store.update(A, "x".repeat(FILE_EDIT_DRAFT_STORAGE_MAX_CHARS));
+    assert.equal(storage.getItem(PREFIX + A), null, "an oversized draft isn't kept, and its stale copy goes");
+    storage.failWrites = true;
+    store.begin(B, "b", "v1");
+    assert.doesNotThrow(() => store.update(B, "b2"));
+    assert.equal(store.get(B).content, "b2");
+  }
+
+  // Another window's draft for a file this page never wrote is left alone.
+  {
+    const storage = fakeStorage();
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, now);
+    storage.setItem(PREFIX + B, JSON.stringify({ content: "theirs", baseContent: "b", baseVersion: "v1", eol: "\n" }));
+    store.begin(A, "a", "v1");
+    store.update(A, "a2");
+    assert.ok(storage.getItem(PREFIX + B), "this page only removes what it wrote");
+  }
+
+  // Writes are batched until the scheduled flush.
+  {
+    const storage = fakeStorage();
+    const store = createFileEditDraftStore();
+    const queued = [];
+    const persisted = persistFileEditDrafts(store, storage, (write) => queued.push(write));
+    store.begin(A, "a", "v1");
+    store.update(A, "a2");
+    store.update(A, "a3");
+    assert.equal(queued.length, 1, "one write is queued for a burst of changes");
+    assert.equal(storage.map.size, 0);
+    persisted.flush();
+    assert.equal(JSON.parse(storage.getItem(PREFIX + A)).content, "a3");
+  }
+}
+
 console.log("file-edit-drafts: ok");

@@ -527,7 +527,7 @@ assert.match(
 );
 assert.match(
   changesPanel,
-  /mutateSessionChanges\(fetch, projectRoot, "restore-checkpoint", \{ checkpoint: name \}\)/,
+  /mutateSessionChanges<[\s\S]*?>\(\s*fetch,\s*projectRoot,\s*"restore-checkpoint",\s*\{ checkpoint: name \},?\s*\)/,
   "Panel should let the user restore a saved checkpoint",
 );
 assert.match(
@@ -636,14 +636,21 @@ assert.match(
   /"coven-cave", "checkpoints"/,
   "Checkpoint snapshots should be stored under the repository .git directory, not in the worktree",
 );
+// The patch is built in checkpoint-restore.ts since #5756, which the route calls.
+const checkpointModule = await readFile(new URL("../lib/server/checkpoint-restore.ts", import.meta.url), "utf8");
 assert.match(
   changesRoute,
+  /const patch = await buildCheckpointPatch\(repoRoot, \(relPath\) => resolveContainedFile\(repoRoot, relPath\)\)/,
+  "Checkpoints are built by the shared module, with the route's containment check",
+);
+assert.match(
+  checkpointModule,
   /gitDiff\(repoRoot, \["--binary", "HEAD", "--"\]\)/,
   "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD",
 );
 assert.match(
-  changesRoute,
-  /status === "untracked"[\s\S]*?gitDiff\(repoRoot, \["--no-index", "--", DEV_NULL, file\.path\]\)/,
+  checkpointModule,
+  /"ls-files", "--others", "--exclude-standard", "-z"[\s\S]*?gitDiff\(repoRoot, \["--binary", "--no-index", "--", os\.devNull, rel\]\)/,
   "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
 );
 assert.match(
@@ -667,11 +674,19 @@ assert.match(
   /resolveCheckpointPath[\s\S]*?isCheckpointName/,
   "Checkpoint names must be validated (path-traversal guard) before filesystem access",
 );
+// Restore rebuilds the snapshot in a throwaway index and decides per file
+// (#5756): `apply --3way` implied --index and refused any unstaged change.
 assert.match(
   changesRoute,
-  /\["apply", "--3way"[\s\S]*?\]/,
-  "Restore applies the saved patch via git apply --3way",
+  /return restoreCheckpointPatch\(repoRoot, abs, \{[\s\S]*?beforeWrite: \(\) => checkpointChanges\(repoRoot\)/,
+  "Restore goes through the per-file module and checkpoints the state before writing",
 );
+assert.match(
+  checkpointModule,
+  /\["apply", "--cached", "--whitespace=nowarn", patchPath\], env\)/,
+  "The snapshot is rebuilt in the throwaway index, never the real one",
+);
+assert.doesNotMatch(changesRoute, /"--3way"/, "No restore path uses git apply --3way");
 // Reverts must snapshot first so they are recoverable; abort if the snapshot fails.
 assert.match(
   changesRoute,

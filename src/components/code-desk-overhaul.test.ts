@@ -40,7 +40,9 @@ assert.match(
   "the tab strip renders directly above the file viewer",
 );
 assert.match(workbench, /setOpenFiles\(\(current\) => openCodeFile\(current, absolute\)\)/, "opening a path goes through openCodeFile");
-assert.match(workbench, /useState<CodeOpenFiles>\(\s*\(\) => codeDeskMemory\.read\(row\.id\)\?\.openFiles \?\? emptyCodeOpenFiles\(\),\s*\)/, "tabs are per session — seeded once from that session's memory, or empty");
+// Since #5756 the seed also opens a tab for each unsaved draft under the root.
+assert.match(workbench, /const \[initialOpenFiles\] = useState<CodeOpenFiles>\(\(\) =>\s*withDraftTabs\(codeDeskMemory\.read\(row\.id\)\?\.openFiles \?\? emptyCodeOpenFiles\(\),/, "tabs are per session — seeded once from that session's memory, or empty");
+assert.match(workbench, /const \[openFiles, setOpenFiles\] = useState<CodeOpenFiles>\(initialOpenFiles\);/, "the tab strip starts from that seed");
 assert.match(
   workbench,
   /const openPath = useCallback\([\s\S]*?setSelectedPath\(absolute\);\s*setFocusLine\(null\);\s*setRangeLabel\(null\);/,
@@ -241,7 +243,7 @@ assert.match(workbench, /changeVersion=\{`\$\{selectedChangeVersion \?\? ""\}\|\
 
 // #5746 review.
 const draftsSrc = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
-assert.match(draftsSrc, /export const fileEditDrafts = createFileEditDraftStore\(\);[\s\S]{0,400}window\.addEventListener\("beforeunload"/, "one unload guard per page, installed with the store, so it outlives the viewer");
+assert.match(draftsSrc, /export const fileEditDrafts = createFileEditDraftStore\(\);[\s\S]{0,1600}window\.addEventListener\("beforeunload"/, "one unload guard per page, installed with the store, so it outlives the viewer");
 assert.doesNotMatch(preview, /addEventListener\("beforeunload"/, "no per-viewer unload guard that unmounts with the desk");
 assert.match(preview, /title="Discard your changes"[\s\S]{0,200}disabled=\{saving\}/, "Cancel waits for an in-flight save");
 assert.match(preview, /fileEditDrafts\.settle\(target, sending\.id,/, "a save settles only the edit it was sent from");
@@ -331,5 +333,19 @@ assert.match(prPanelSrc, /\} catch \(err\) \{\s*setResolveError\(/, "a resolve t
 // 22. One mount-time read of the change list.
 assert.match(changesHookLow, /void load\(\{ shared: true \}\);\s*const onVisible/, "the desk's hook shares its mount read");
 assert.match(panelSrc, /useEffect\(\(\) => \{\s*void load\(\{ shared: true \}\);/, "the panel shares its mount read");
+
+// ── Pass 5 high fixes (#5756) ────────────────────────────────────────────────
+const changesRouteHigh = await readFile(new URL("../app/api/changes/route.ts", import.meta.url), "utf8");
+// 1. A restore rebuilds the snapshot per file and keeps anything changed since.
+assert.match(changesRouteHigh, /return restoreCheckpointPatch\(repoRoot, abs, \{/, "restore goes through the per-file module");
+assert.match(panelSrc, /const message = checkpointRestoreMessage\(checkpointLabel\(name\), result\);/, "the rail says what came back and what was kept");
+// 2. Unsaved drafts outlive a desktop quit, close or update relaunch.
+assert.match(draftsSrc, /return desktop \? window\.localStorage : window\.sessionStorage;/, "the desktop app keeps drafts across a restart");
+assert.match(draftsSrc, /const persisted = storage \? persistFileEditDrafts\(fileEditDrafts, storage\) : null;/, "the page's drafts are persisted");
+assert.match(draftsSrc, /window\.addEventListener\("pagehide", flush\);/, "pending draft writes flush as the page goes");
+assert.match(workbench, /withDraftTabs\(codeDeskMemory\.read\(row\.id\)\?\.openFiles \?\? emptyCodeOpenFiles\(\), fileEditDrafts\.dirtyPaths\(\), workRoot\)/, "recovered drafts get tabs");
+// 3. Escape always leaves the editor for something that can take focus.
+assert.match(preview, /\[saveButtonRef\.current, reloadButtonRef\.current\]\.find\(\(button\) => button && !button\.disabled\) \?\? headerRef\.current/, "Escape goes to Save, Reload, or the viewer");
+assert.match(preview, /<header ref=\{headerRef\} tabIndex=\{-1\}/, "the viewer header can take focus from script");
 
 console.log("code-desk-overhaul pins ok");

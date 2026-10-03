@@ -87,6 +87,7 @@ import {
   cycleCodeFile,
   emptyCodeOpenFiles,
   openCodeFile,
+  withDraftTabs,
   type CodeOpenFiles,
 } from "@/lib/code-open-files";
 import type { ChangedFile } from "@/lib/session-changes-api";
@@ -282,15 +283,17 @@ export function CodeWorkbench({
   // Tabs, viewed ticks and the draft are remembered per session (#5718):
   // CodeView remounts this workbench for every session it shows, so without
   // the memory a round trip to another session threw the reader's work away.
-  const [selectedPath, setSelectedPath] = useState<string | null>(
-    () => codeDeskMemory.read(row.id)?.openFiles.active ?? null,
+  // Unsaved drafts under this session's root get a tab (#5756): a draft
+  // recovered after a reload or a desktop restart is otherwise invisible,
+  // since the tab memory itself doesn't survive one.
+  const [initialOpenFiles] = useState<CodeOpenFiles>(() =>
+    withDraftTabs(codeDeskMemory.read(row.id)?.openFiles ?? emptyCodeOpenFiles(), fileEditDrafts.dirtyPaths(), workRoot),
   );
+  const [selectedPath, setSelectedPath] = useState<string | null>(initialOpenFiles.active);
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [rangeLabel, setRangeLabel] = useState<string | null>(null);
   // Open-file tabs (#5705): per session, bounded, the viewer's own history.
-  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(
-    () => codeDeskMemory.read(row.id)?.openFiles ?? emptyCodeOpenFiles(),
-  );
+  const [openFiles, setOpenFiles] = useState<CodeOpenFiles>(initialOpenFiles);
   // Review state is per session: carrying one session's ticks into another
   // would certify files nobody looked at. Restoring a session's OWN ticks is
   // safe — each is recorded against the file's diffstat, so a file that

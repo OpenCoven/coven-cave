@@ -10,7 +10,7 @@ import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
-import { checkpointLabel } from "@/lib/session-changes-format";
+import { checkpointLabel, checkpointRestoreMessage, type CheckpointRestoreResult } from "@/lib/session-changes-format";
 import { changesOutbound, EMPTY_CHANGES_OUTBOUND, type ChangesOutbound } from "@/lib/changes-outbound-drafts";
 import {
   fetchSessionCheckpoints,
@@ -346,17 +346,25 @@ export function SessionChangesInner({
       setActionError(null);
       setCheckpointMessage(null);
       try {
-        await mutateSessionChanges(fetch, projectRoot, "restore-checkpoint", { checkpoint: name });
-        setCheckpointMessage(`Restored checkpoint ${checkpointLabel(name)}.`);
+        const result = await mutateSessionChanges<{ ok?: boolean; error?: string } & CheckpointRestoreResult>(
+          fetch,
+          projectRoot,
+          "restore-checkpoint",
+          { checkpoint: name },
+        );
+        const message = checkpointRestoreMessage(checkpointLabel(name), result);
+        setCheckpointMessage(message);
+        announce(message);
         setDiffs({});
-        await load();
+        // A restore that wrote anything saved the state before it first.
+        await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
         setActionError({ action: "Couldn't restore the checkpoint", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setBusyCheckpoint(null);
       }
     },
-    [projectRoot, load],
+    [announce, projectRoot, load, loadCheckpoints],
   );
 
   const deleteCheckpoint = useCallback(

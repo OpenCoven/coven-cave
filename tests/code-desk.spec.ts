@@ -2052,4 +2052,98 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await openDesk(page);
     await expect(page.getByTestId("code-workbench-tree").getByText("new.ts", { exact: true })).toBeVisible({ timeout: 15_000 });
   });
+
+  // ── Pass 5 high fixes (#5756) ──────────────────────────────────────────────
+
+  test("59. restoring a checkpoint says what came back and names what it kept", async ({ page }) => {
+    await base(page);
+    const name = "2026-10-03T01-02-03-000Z.patch";
+    let listReads = 0;
+    const posts: Record<string, unknown>[] = [];
+    await page.route("**/api/changes**", (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === "GET" && url.searchParams.get("checkpoints") === "1") {
+        listReads += 1;
+        return route.fulfill({ json: { ok: true, checkpoints: [{ name, savedAt: "2026-10-03T01:02:03.000Z", bytes: 1200 }] } });
+      }
+      if (request.method() !== "POST") return route.fallback();
+      const body = request.postDataJSON() as Record<string, unknown>;
+      posts.push(body);
+      return route.fulfill({
+        json: { ok: true, checkpoint: name, restored: ["src/flux.ts"], unchanged: [], kept: ["src/retry.ts"], checkpointPath: "/x/.git/coven-cave/checkpoints/after.patch" },
+      });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("button", { name: /Checkpoints/ }).click();
+    await rail.getByRole("button", { name: /^Restore checkpoint / }).click();
+    const before = listReads;
+    await rail.getByRole("group", { name: "Confirm checkpoint restore" }).getByRole("button", { name: /^Confirm restore checkpoint / }).click();
+    await expect(rail.getByText(/Restored 1 file from checkpoint .+\. Kept src\/retry\.ts as it is: changed after the checkpoint\. The state before restoring is saved as a new checkpoint\./)).toBeVisible();
+    expect(posts).toEqual([expect.objectContaining({ action: "restore-checkpoint", checkpoint: name })]);
+    // The restore saved the state before it as a new checkpoint: the list is read again.
+    await expect.poll(() => listReads).toBeGreaterThan(before);
+  });
+
+  test("60. Escape always leaves the editor: to the viewer while saving, to Reload in a conflict", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/project-file**", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") return route.fallback();
+      await held;
+      return route.fulfill({ status: 409, json: { ok: false, error: "file changed on disk", conflict: true, version: "v9" } });
+    });
+    const desk = await openDesk(page);
+    const editor = desk.locator(".cm-content");
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// mine");
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(desk.getByRole("button", { name: "Saving…" })).toBeDisabled();
+    // Save and Cancel are both off while the save is in flight: the viewer
+    // itself takes focus, and Tab moves on from there.
+    await editor.click();
+    await page.keyboard.press("Escape");
+    await expect(desk.locator(".workspace-rail__preview-head")).toBeFocused();
+
+    release();
+    const reload = desk.getByRole("button", { name: "Reload" });
+    await expect(reload).toBeVisible();
+    await editor.click();
+    await page.keyboard.press("Escape");
+    await expect(reload).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(desk.getByRole("button", { name: "Overwrite" })).toBeFocused();
+    await expect(editor).toContainText("// mine");
+  });
+
+  test("61. an unsaved edit survives a reload, and its tab says so", async ({ page }) => {
+    await base(page);
+    page.on("dialog", (dialog) => void dialog.accept());
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// survives");
+    // A fresh page load. The desk drops `mode` from the URL once it opens, so
+    // go back to it by address rather than page.reload().
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    const again = page.getByTestId("code-workbench");
+    await expect(again).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("code-tab-unsaved")).toHaveCount(1);
+    await expect(again.locator(".cm-content")).toContainText("// survives");
+    // Saving clears the kept copy: the next load has nothing to bring back.
+    await again.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByTestId("code-tab-unsaved")).toHaveCount(0);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("code-workbench-tree")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("code-tab-unsaved")).toHaveCount(0);
+  });
 });

@@ -6,6 +6,7 @@ import {
   cycleCodeFile,
   emptyCodeOpenFiles,
   openCodeFile,
+  withDraftTabs,
 } from "./code-open-files.ts";
 
 test("opening appends new tabs in order and re-activates an existing one without reordering", () => {
@@ -64,4 +65,14 @@ test("labels disambiguate same-named files with the shortest distinct parent", (
   const deep = codeOpenFileLabels(["/r/a/x/index.ts", "/r/b/x/index.ts"]);
   assert.equal(deep.get("/r/a/x/index.ts"), "a/x/index.ts");
   assert.equal(deep.get("/r/b/x/index.ts"), "b/x/index.ts");
+});
+
+test("unsaved drafts under the session's root get tabs; the active tab stays (#5756)", () => {
+  const state = openCodeFile(emptyCodeOpenFiles(), "/r/a.ts");
+  const next = withDraftTabs(state, ["/r/b.ts", "/other/c.ts", "/r/a.ts", "/rx/d.ts"], "/r");
+  assert.deepEqual(next.paths, ["/r/a.ts", "/r/b.ts"], "only this root's drafts, once each; /rx is not under /r");
+  assert.equal(next.active, "/r/a.ts");
+  const fresh = withDraftTabs(emptyCodeOpenFiles(), ["/r/b.ts"], "/r/");
+  assert.deepEqual(fresh, { paths: ["/r/b.ts"], active: "/r/b.ts" }, "with no tab open, the recovered draft is shown");
+  assert.equal(withDraftTabs(state, ["/r/b.ts"], null), state, "no root, no change");
 });

@@ -123,6 +123,8 @@ export function RailFilePreview({
   // moved, or Reload) refreshes in place instead of flashing the skeleton.
   const loadedPathRef = useRef<string | null>(null);
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const reloadButtonRef = useRef<HTMLButtonElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { announce } = useAnnouncer();
@@ -235,12 +237,21 @@ export function RailFilePreview({
     if (path) fileEditDrafts.discard(path);
   }, [path]);
 
-  // Escape leaves the editor for its Save button and keeps the edit (#5745).
-  // Discarding on Escape lost work, and it took the key CodeMirror users press
-  // to get out of the editor, since Tab indents there.
+  // Escape leaves the editor and keeps the edit (#5745). Discarding on Escape
+  // lost work, and it took the key CodeMirror users press to get out of the
+  // editor, since Tab indents there. Focus goes to Save when it can act, to
+  // Reload during a conflict, and to the viewer's header while a save is in
+  // flight (#5756): focusing a disabled Save did nothing, and left keyboard
+  // users trapped in the editor exactly when the conflict needed a decision.
   const leaveEditor = useCallback(() => {
-    saveButtonRef.current?.focus();
-    announce("Left the editor. Your changes are kept.");
+    const target =
+      [saveButtonRef.current, reloadButtonRef.current].find((button) => button && !button.disabled) ?? headerRef.current;
+    target?.focus();
+    announce(
+      target === reloadButtonRef.current
+        ? "Left the editor. Your changes are kept. The file changed on disk: reload it or overwrite it."
+        : "Left the editor. Your changes are kept.",
+    );
   }, [announce]);
 
   const onEditorChange = useCallback(
@@ -407,7 +418,9 @@ export function RailFilePreview({
 
   return (
     <div className="workspace-rail__preview" data-variant={variant}>
-      <header className="workspace-rail__preview-head">
+      {/* Focusable from script only: where Escape leaves the editor when no
+          action can take focus (#5756). */}
+      <header ref={headerRef} tabIndex={-1} className="focus-ring-inset workspace-rail__preview-head">
         <Icon
           name={file?.kind === "image" ? "ph:file-image" : isMarkdownPath(path) ? "ph:file-text" : "ph:file-code"}
           width={12}
@@ -520,6 +533,7 @@ export function RailFilePreview({
           <span className="workspace-rail__preview-conflict-text">{saveError ?? FILE_CHANGED_ON_DISK}</span>
           <span className="workspace-rail__preview-conflict-actions">
             <button
+              ref={reloadButtonRef}
               type="button"
               className="focus-ring workspace-rail__preview-action"
               title="Drop your changes and read the file as it is on disk now"
