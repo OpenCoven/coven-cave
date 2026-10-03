@@ -71,6 +71,11 @@ export function ChangesSkeleton() {
 
 // ── File row ──────────────────────────────────────────────────────────────────
 
+/** The grid row key of a file's revert confirmation (#5753 review). */
+export function confirmRowKey(path: string): string {
+  return `${path}\u0000confirm`;
+}
+
 // Memoized with file-taking callbacks (#5745): a Viewed tick at 400 files used
 // to re-render every row, because each row was handed fresh closures.
 export const FileRow = memo(function FileRow({
@@ -83,6 +88,7 @@ export const FileRow = memo(function FileRow({
   viewed,
   onToggleViewed,
   focusCol,
+  confirmFocusCol = null,
 }: {
   file: ChangedFile;
   expanded: boolean;
@@ -100,11 +106,12 @@ export const FileRow = memo(function FileRow({
   /** The grid cell that holds the table's one tab stop, when it is in this
    *  row (#5745); null otherwise. */
   focusCol: number | null;
+  /** The same, when the stop is in this file's revert confirmation row. */
+  confirmFocusCol?: number | null;
 }) {
   const reviewable = typeof viewed === "boolean" && Boolean(onToggleViewed);
   const columns = reviewable ? 4 : 3;
   const revertCol = reviewable ? 2 : 1;
-  const cellTab = (col: number) => (focusCol === col ? 0 : -1);
   // Two-step revert: first click arms an inline Cancel/Revert confirm that
   // replaces the row action; only the explicit confirm commits. "New" files
   // (untracked, or staged-but-never-committed) get delete copy because
@@ -124,6 +131,15 @@ export const FileRow = memo(function FileRow({
       revertRef.current?.focus();
     }
   }, [confirmRevert]);
+  // Exactly one tab stop whether or not the confirmation is open (#5753
+  // review): it replaces the Revert cell, so a stop on either moves across.
+  const cellTab = (col: number) => {
+    if (confirmRevert && col === revertCol) return -1;
+    if (focusCol === col) return 0;
+    return !confirmRevert && confirmFocusCol !== null && col === revertCol ? 0 : -1;
+  };
+  const confirmTab = (col: number) =>
+    confirmRevert && (confirmFocusCol === col || (confirmFocusCol === null && focusCol === revertCol && col === 0)) ? 0 : -1;
   const untracked = file.status === "untracked" || file.status === "added";
   const { basename, dirname } = splitFilePath(file.path);
   const diffCounts =
@@ -210,7 +226,7 @@ export const FileRow = memo(function FileRow({
         </td>
       </tr>
       {confirmRevert ? (
-        <tr className="bg-[color-mix(in_oklch,var(--color-danger)_7%,transparent)]">
+        <tr className="bg-[color-mix(in_oklch,var(--color-danger)_7%,transparent)]" data-grid-row={confirmRowKey(file.path)}>
           <td colSpan={columns} className="px-2 py-1.5">
             <span
               className="flex min-w-0 items-center justify-end gap-1.5"
@@ -223,6 +239,8 @@ export const FileRow = memo(function FileRow({
               <button
                 ref={cancelRef}
                 type="button"
+                data-grid-col={0}
+                tabIndex={confirmTab(0)}
                 onClick={() => {
                   returnFocusRef.current = true;
                   setConfirmRevert(false);
@@ -233,6 +251,8 @@ export const FileRow = memo(function FileRow({
               </button>
               <button
                 type="button"
+                data-grid-col={1}
+                tabIndex={confirmTab(1)}
                 onClick={() => {
                   setConfirmRevert(false);
                   onRevert(file);

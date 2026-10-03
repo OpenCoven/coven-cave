@@ -304,10 +304,15 @@ const treeCssLow = await readFile(new URL("../styles/project-tree.css", import.m
 assert.match(workbenchTreeSrc, /const STRUCTURAL_STATUSES = new Set<FileStatus>\(\["added", "untracked", "deleted", "renamed"\]\);/, "only adds, deletes and renames change the tree's folders");
 assert.match(workbenchTreeSrc, /refreshDirs=\{refreshDirs\}/, "the desk hands the changed folders to the tree");
 assert.match(treeSrc, /setRefetchSignal\(\(prev\) => \(\{ dirs: new Set\(refreshDirs\.dirs\), nonce: prev\.nonce \+ 1 \}\)\);/, "the tree re-reads the folders it is told about");
+assert.match(workbenchTreeSrc, /lastStructureRef\.current = structureKey;\s*if \(previous === structureKey\) return;/, "the first ready list also refreshes the folders it names (#5753 review)");
 // 16. The changes table is a one-stop grid of memoized rows.
 assert.match(panelSrc, /role="grid"\s*aria-label="Changed files"/, "the changes table is a grid");
 assert.match(panelSrc, /onKeyDown=\{onGridKeyDown\}\s*onFocus=\{onGridFocus\}/, "arrow keys move through it and the last cell keeps the stop");
 assert.match(rowsSrcLow, /export const FileRow = memo\(function FileRow\(/, "rows are memoized");
+assert.match(rowsSrcLow, /data-grid-row=\{confirmRowKey\(file\.path\)\}/, "the revert confirmation is a grid row (#5753 review)");
+assert.match(rowsSrcLow, /data-grid-col=\{0\}\s*tabIndex=\{confirmTab\(0\)\}/, "Cancel joins the grid's one tab stop");
+assert.match(rowsSrcLow, /data-grid-col=\{1\}\s*tabIndex=\{confirmTab\(1\)\}/, "Confirm joins the grid's one tab stop");
+assert.match(rowsSrcLow, /if \(confirmRevert && col === revertCol\) return -1;/, "the hidden Revert cell gives up its stop while the confirmation is open");
 assert.match(panelSrc, /onToggle=\{onToggleRow\}\s*onRevert=\{onRevertRow\}/, "rows get stable callbacks");
 assert.match(workbench, /const roomKey = useMemo\(\(\) => codeChangeSnapshotKey\(railFileShapes\), \[railFileShapes\]\);/, "the room key is computed once per list");
 assert.match(reviewRail, /if \(!frame\) frame = requestAnimationFrame\(flush\);/, "the rail drag sets one width per frame");

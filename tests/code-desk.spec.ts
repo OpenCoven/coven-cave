@@ -1883,7 +1883,9 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await base(page);
     await openDesk(page);
     const grid = page.getByTestId("code-review-rail").getByRole("grid", { name: "Changed files" });
-    await expect(grid.locator('[tabindex="0"]')).toHaveCount(1);
+    // Every control Tab can reach, buttons without a tabindex included.
+    const TABBABLE = 'button:not([tabindex="-1"]):not([disabled]), [tabindex]:not([tabindex="-1"]):not(button)';
+    await expect(grid.locator(TABBABLE)).toHaveCount(1);
     const firstRow = grid.locator('tr[data-grid-row="src/flux.ts"]');
     const secondRow = grid.locator('tr[data-grid-row="src/retry.ts"]');
     await firstRow.locator('[data-grid-col="0"]').focus();
@@ -1894,9 +1896,23 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.keyboard.press("ArrowUp");
     await expect(firstRow.getByRole("switch", { name: "Viewed: src/flux.ts" })).toBeFocused();
     // The cell last used keeps the table's only tab stop; Tab leaves the table.
-    await expect(grid.locator('[tabindex="0"]')).toHaveCount(1);
+    await expect(grid.locator(TABBABLE)).toHaveCount(1);
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="grid"]')))).toBe(false);
+
+    // A revert confirmation joins the grid (#5753 review): still one stop, and
+    // arrows reach Confirm from Cancel.
+    await firstRow.getByRole("button", { name: "Revert src/flux.ts" }).click();
+    const confirm = grid.getByRole("group", { name: "Confirm file revert" });
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expect(grid.locator(TABBABLE)).toHaveCount(1);
+    await page.keyboard.press("ArrowRight");
+    await expect(confirm.getByRole("button", { name: "Confirm revert src/flux.ts" })).toBeFocused();
+    await expect(grid.locator(TABBABLE)).toHaveCount(1);
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await expect(firstRow.getByRole("button", { name: "Revert src/flux.ts" })).toBeFocused();
+    await expect(grid.locator(TABBABLE)).toHaveCount(1);
   });
 
   test("52. the picker points to matches in other groups instead of offering a duplicate", async ({ page }) => {
@@ -2006,12 +2022,34 @@ test.describe("Coding Desk overhaul (#5705)", () => {
       const url = new URL(request.url());
       if (url.pathname === "/api/changes" && request.method() === "GET" && [...url.searchParams.keys()].join() === "projectRoot") reads += 1;
     });
+    // At most one read per switch (#5753 review); zero when the shared 4s
+    // window already holds the list. The desk, its panel and the launchpad
+    // used to read it once each.
     for (const id of ["s-old", "s-new", "s-old", "s-new"]) {
+      const before = reads;
       await page.locator(`[data-code-session-id='${id}']`).first().click();
       await expect(page.getByTestId("code-desk-activity")).toHaveText(id === "s-new" ? /running/ : /idle/);
       await page.waitForTimeout(600);
+      expect(reads - before, `reads for the switch to ${id}`).toBeLessThanOrEqual(1);
     }
-    // One read per switch is the target; dev StrictMode can add a second.
-    expect(reads).toBeLessThanOrEqual(8);
+  });
+
+  test("58. a file the tree's first answer missed still appears on the first change list", async ({ page }) => {
+    // The agent created src/new.ts between the tree's load and the first
+    // change list (#5753 review). That first list must refresh the folder.
+    const fixture = {
+      current: [...CHANGED_FILES, { path: "src/new.ts", status: "untracked", insertions: 2, deletions: 0, changeVersion: "6:6:6" }] as typeof CHANGED_FILES | "fail",
+    };
+    await base(page, [NEWEST, OLDER], fixture);
+    const stale = [{ name: "flux.ts", path: `${WORK_ROOT}/src/flux.ts`, isDir: false }];
+    const fresh = [...stale, { name: "new.ts", path: `${WORK_ROOT}/src/new.ts`, isDir: false }];
+    await page.route("**/api/project-tree**", (route) => {
+      const root = new URL(route.request().url()).searchParams.get("root") ?? "";
+      // The folder's own read is current; the root's nested copy is not.
+      if (root === `${WORK_ROOT}/src`) return route.fulfill({ json: { ok: true, entries: fresh } });
+      return route.fulfill({ json: { ok: true, entries: [{ name: "src", path: `${WORK_ROOT}/src`, isDir: true, children: stale }] } });
+    });
+    await openDesk(page);
+    await expect(page.getByTestId("code-workbench-tree").getByText("new.ts", { exact: true })).toBeVisible({ timeout: 15_000 });
   });
 });

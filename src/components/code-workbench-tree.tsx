@@ -90,8 +90,10 @@ export function CodeWorkbenchTree({
   }, [base, changes]);
 
   // Files appearing or disappearing in the live list mean the tree's folders
-  // changed (#5745). The first ready list is the tree as loaded; after that,
-  // every folder above an entry that came or went is read again.
+  // changed (#5745): every folder above an entry that came or went is read
+  // again. The first ready list counts too (#5753 review): the agent can add
+  // or delete a file between the tree's load and that list, and no later poll
+  // would ever differ from it.
   const structureKey = useMemo(
     () =>
       changes
@@ -107,7 +109,7 @@ export function CodeWorkbenchTree({
     if (changesStatus !== "ready") return;
     const previous = lastStructureRef.current;
     lastStructureRef.current = structureKey;
-    if (previous === null || previous === structureKey) return;
+    if (previous === structureKey) return;
     const before = new Set(previous ? previous.split("\n") : []);
     const after = new Set(structureKey ? structureKey.split("\n") : []);
     const moved = [...after].filter((path) => !before.has(path)).concat([...before].filter((path) => !after.has(path)));

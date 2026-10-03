@@ -23,7 +23,7 @@ import {
 import { isCodeRailFileViewed, type CodeRailViewedState,
   codeRailShapeOf,
 } from "@/lib/code-side-rail";
-import { ChangesSkeleton, CheckpointSection, FileRow } from "./session-changes-rows";
+import { ChangesSkeleton, CheckpointSection, FileRow, confirmRowKey } from "./session-changes-rows";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -496,8 +496,11 @@ export function SessionChangesInner({
   // controls a row were 1,200 Tab presses between the rail and the composer.
   // Arrow keys move between rows and cells; the cell last used keeps the stop.
   const [gridCursor, setGridCursor] = useState<{ path: string; col: number } | null>(null);
+  // The cursor names a grid row: a file's row, or its revert confirmation.
   const cursorPath =
-    gridCursor && files.some((file) => file.path === gridCursor.path) ? gridCursor.path : files[0]?.path ?? null;
+    gridCursor && files.some((file) => file.path === gridCursor.path || confirmRowKey(file.path) === gridCursor.path)
+      ? gridCursor.path
+      : files[0]?.path ?? null;
   const cursorCol = gridCursor && cursorPath === gridCursor.path ? gridCursor.col : 0;
   const onGridFocus = useCallback((event: React.FocusEvent<HTMLTableSectionElement>) => {
     const cell = (event.target as HTMLElement).closest<HTMLElement>("[data-grid-col]");
@@ -739,6 +742,7 @@ export function SessionChangesInner({
                     viewed={reviewable ? isCodeRailFileViewed(viewed ?? {}, codeRailShapeOf(file)) : undefined}
                     onToggleViewed={reviewable ? onToggleViewed : undefined}
                     focusCol={file.path === cursorPath ? cursorCol : null}
+                    confirmFocusCol={confirmRowKey(file.path) === cursorPath ? cursorCol : null}
                   />
                 ))}
               </tbody>

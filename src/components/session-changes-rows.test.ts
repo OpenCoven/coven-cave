@@ -5,7 +5,8 @@ import { readFile } from "node:fs/promises";
 const panel = await readFile(new URL("./session-changes-panel.tsx", import.meta.url), "utf8");
 const rows = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
 
-assert.match(panel, /import \{ ChangesSkeleton, CheckpointSection, FileRow \} from "\.\/session-changes-rows"/, "panel delegates change-row presentation to its dedicated module");
+// confirmRowKey joined in the #5753 review: the revert confirmation is a grid row.
+assert.match(panel, /import \{ ChangesSkeleton, CheckpointSection, FileRow(, confirmRowKey)? \} from "\.\/session-changes-rows"/, "panel delegates change-row presentation to its dedicated module");
 // Memoized since #5745 (a Viewed tick re-rendered every row); still a named export.
 assert.match(rows, /export (function FileRow|const FileRow = memo\(function FileRow\()/, "file row presentation has a named public boundary");
 assert.match(rows, /export function CheckpointSection/, "checkpoint presentation has a named public boundary");
