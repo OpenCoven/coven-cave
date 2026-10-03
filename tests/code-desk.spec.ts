@@ -2822,7 +2822,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const before = tick;
     await expect.poll(() => tick, { timeout: 15_000 }).toBeGreaterThan(before + 1);
     expect(await list.evaluate((el) => el.scrollTop), "a poll doesn't snap it back").toBe(bottom);
-    await expect(page.getByRole("option", { name: /Session number 23/ })).toBeInViewport();
+    await expect(list.getByRole("option").last(), "the last session is in reach").toBeInViewport();
   });
 
   test("86. a conflicted file reads as conflicted", async ({ page }) => {
