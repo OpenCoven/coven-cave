@@ -10,15 +10,24 @@ import XCTest
 private final class ModelStateCountingURLProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var counts: [String: Int] = [:]
+    nonisolated(unsafe) private static var modelStateDelay: TimeInterval = 0
 
-    static func reset() {
+    static func reset(modelStateDelay delay: TimeInterval = 0) {
         lock.lock(); defer { lock.unlock() }
         counts = [:]
+        modelStateDelay = delay
     }
 
     static func count(_ path: String) -> Int {
         lock.lock(); defer { lock.unlock() }
         return counts[path] ?? 0
+    }
+
+    /// Every path requested so far, so a test can show a reopen added nothing
+    /// anywhere, not only on the path it was written for.
+    static func allCounts() -> [String: Int] {
+        lock.lock(); defer { lock.unlock() }
+        return counts
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -31,8 +40,19 @@ private final class ModelStateCountingURLProtocol: URLProtocol {
         }
         Self.lock.lock()
         Self.counts[url.path, default: 0] += 1
+        let delay = Self.modelStateDelay
         Self.lock.unlock()
         let isModelState = url.path == "/api/chat/model-state"
+        if isModelState, delay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [self] in
+                respond(url: url, isModelState: true)
+            }
+            return
+        }
+        respond(url: url, isModelState: isModelState)
+    }
+
+    private func respond(url: URL, isModelState: Bool) {
         let body = isModelState
             ? Data(#"{"ok":true,"state":{"familiarId":"nyx","harness":"claude","effectiveModel":"sonnet","source":"session"},"options":[]}"#.utf8)
             : Data(#"{"ok":false}"#.utf8)
@@ -198,11 +218,19 @@ final class ChatModelStateCacheTests: XCTestCase {
         }
         XCTAssertEqual(ModelStateCountingURLProtocol.count(Self.modelStatePath), 1, "the first open fetches")
 
+        // Let anything else the first open started finish, then count every
+        // path: the reopen should add nothing anywhere.
+        try await Task.sleep(for: .milliseconds(500))
+        let beforeReopen = ModelStateCountingURLProtocol.allCounts()
         try await reopen(toggle, window: window)
         try await Task.sleep(for: observationWindow)
         XCTAssertEqual(
             ModelStateCountingURLProtocol.count(Self.modelStatePath), 1,
             "a reopen seconds later reuses the state instead of repeating the request"
+        )
+        XCTAssertEqual(
+            ModelStateCountingURLProtocol.allCounts(), beforeReopen,
+            "a reopen repeats no request for any resource"
         )
 
         // Control: with the cached state gone, the same reopen does fetch, and
@@ -214,6 +242,136 @@ final class ChatModelStateCacheTests: XCTestCase {
             ModelStateCountingURLProtocol.count(Self.modelStatePath) == 2
         }
         XCTAssertEqual(ModelStateCountingURLProtocol.count(Self.modelStatePath), 2)
+    }
+
+    /// Reopening while the first request is still in flight joins it. Without
+    /// the shared in-flight request, the reopened view starts a second one.
+    func testReopeningWhileTheFirstRequestIsInFlightDoesNotRepeatIt() async throws {
+        ModelStateCountingURLProtocol.reset(modelStateDelay: 1.0)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ModelStateCountingURLProtocol.self]
+        let suite = "ChatModelStateCacheTests.inflight.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChatModelStateCacheTests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: storeDirectory)
+            ModelStateCountingURLProtocol.reset()
+        }
+        let app = AppModel(
+            defaults: defaults,
+            restoreLocalState: false,
+            loadPersistedConnection: false,
+            threadStoreURL: storeDirectory.appendingPathComponent("threads.json"),
+            widgetSnapshotDefaults: defaults,
+            clientSession: URLSession(configuration: config)
+        )
+        app.connection = CaveConnection(host: "model-state-inflight.invalid")
+        let thread = ChatThread(title: "Nyx", familiarIds: ["nyx"], sessionIds: ["nyx": "s1"])
+        let toggle = ReopenSwitch()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIHostingController(
+            rootView: ReopenProbe(app: app, thread: thread, toggle: toggle)
+        )
+        window.isHidden = false
+        window.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        try await waitUntil(within: .seconds(5)) {
+            ModelStateCountingURLProtocol.count(Self.modelStatePath) == 1
+        }
+        XCTAssertEqual(ModelStateCountingURLProtocol.count(Self.modelStatePath), 1, "the first open has sent its request")
+        // The answer is held for 1 s. Close and reopen well inside that.
+        try await reopen(toggle, window: window)
+        // Past the held answer, plus the same observation window as above.
+        try await Task.sleep(for: .seconds(3))
+        XCTAssertEqual(
+            ModelStateCountingURLProtocol.count(Self.modelStatePath), 1,
+            "a reopen while the first request is in flight joins it instead of sending another"
+        )
+        XCTAssertNotNil(
+            app.chatModelStates.recent(for: .init(host: "model-state-inflight.invalid", familiarId: "nyx", sessionId: "s1")),
+            "the joined request still completes and is kept, even though the view that started it closed"
+        )
+    }
+
+    func testAReopenJoinsARequestAlreadyInFlight() async throws {
+        let cache = ChatModelStateCache()
+        let key = ChatModelStateCache.Key(host: "a.example", familiarId: "nyx", sessionId: "s1")
+        var fetches = 0
+        // Every fetch parks here until released, so a second fetch, if the
+        // cache wrongly starts one, completes too and the count below fails
+        // instead of the test hanging on a continuation nobody resumes.
+        var parked: [CheckedContinuation<Void, Never>] = []
+        let fetch: @MainActor () async throws -> ChatModelStateResponse = {
+            fetches += 1
+            await withCheckedContinuation { parked.append($0) }
+            return self.response(model: "sonnet")
+        }
+        let first = Task { try await cache.response(for: key, reusingRecent: true, fetch: fetch) }
+        try await waitUntil(within: .seconds(2)) { parked.count == 1 }
+        let second = Task { try await cache.response(for: key, reusingRecent: true, fetch: fetch) }
+        // Give a wrongly started second fetch the chance to park as well.
+        try await waitUntil(within: .milliseconds(300)) { parked.count == 2 }
+        let toRelease = parked
+        parked.removeAll()
+        for continuation in toRelease { continuation.resume() }
+        let answers = try await (first.value, second.value)
+        XCTAssertEqual(fetches, 1, "the second caller joined the first request")
+        XCTAssertEqual(answers.0.state.effectiveModel, answers.1.state.effectiveModel)
+        XCTAssertNotNil(cache.recent(for: key), "the joined answer is kept")
+    }
+
+    func testAnAnswerThatWasInFlightAcrossAnInvalidationIsNotKept() async throws {
+        let cache = ChatModelStateCache()
+        let key = ChatModelStateCache.Key(host: "a.example", familiarId: "nyx", sessionId: "s1")
+        var parked: [CheckedContinuation<Void, Never>] = []
+        let fetch: @MainActor () async throws -> ChatModelStateResponse = {
+            await withCheckedContinuation { parked.append($0) }
+            return self.response(model: "before-the-change")
+        }
+        let pending = Task { try await cache.response(for: key, reusingRecent: true, fetch: fetch) }
+        try await waitUntil(within: .seconds(2)) { parked.count == 1 }
+        cache.invalidate(host: "a.example", familiarId: "nyx")
+        let toRelease = parked
+        parked.removeAll()
+        for continuation in toRelease { continuation.resume() }
+        let answer = try await pending.value
+        XCTAssertEqual(answer.state.effectiveModel, "before-the-change", "the caller that asked still gets an answer")
+        XCTAssertNil(cache.recent(for: key), "an answer that may predate the change is not kept for the next reopen")
+    }
+
+    func testAFreshFetchDoesNotJoinAndItsAnswerIsTheOneKept() async throws {
+        let cache = ChatModelStateCache()
+        let key = ChatModelStateCache.Key(host: "a.example", familiarId: "nyx", sessionId: "s1")
+        cache.store(response(model: "old"), for: key)
+        var fetches = 0
+        let answer = try await cache.response(for: key, reusingRecent: false) {
+            fetches += 1
+            return self.response(model: "new")
+        }
+        XCTAssertEqual(fetches, 1, "a finished reply or a model change always asks the server")
+        XCTAssertEqual(answer.state.effectiveModel, "new")
+        XCTAssertEqual(cache.recent(for: key)?.state.effectiveModel, "new")
+    }
+
+    func testEveryModelChangePathDropsTheFamiliarOnTheCurrentHost() throws {
+        let suite = "ChatModelStateCacheTests.invalidate.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, widgetSnapshotDefaults: defaults)
+        app.connection = CaveConnection(host: "a.example")
+        let key = try XCTUnwrap(app.chatModelStateKey(familiarId: "nyx", sessionId: "s1"))
+        let other = try XCTUnwrap(app.chatModelStateKey(familiarId: "sage", sessionId: "s2"))
+        app.chatModelStates.store(response(model: "sonnet"), for: key)
+        app.chatModelStates.store(response(model: "sonnet"), for: other)
+
+        app.invalidateChatModelStates(familiarId: "nyx")
+
+        XCTAssertNil(app.chatModelStates.recent(for: key))
+        XCTAssertNotNil(app.chatModelStates.recent(for: other))
     }
 
     private func reopen(_ toggle: ReopenSwitch, window: UIWindow) async throws {

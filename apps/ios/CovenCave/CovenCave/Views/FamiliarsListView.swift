@@ -617,8 +617,12 @@ struct FamiliarDetailView: View {
         guard let client = app.client else { return }
         changingModel = true
         let target = modelRequestTarget
+        // Every chat of this familiar that has no model of its own inherits this
+        // default, so a reopened chat must not reuse its old state (#5748).
+        app.invalidateChatModelStates(familiarId: familiar.id)
         let mutation = modelMutationQueue.enqueue {
             defer { self.changingModel = false }
+            defer { self.app.invalidateChatModelStates(familiarId: self.familiar.id) }
             do {
                 let response = try await client.setChatModel(
                     familiarId: familiar.id,

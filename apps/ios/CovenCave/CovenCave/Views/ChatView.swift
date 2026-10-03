@@ -1882,10 +1882,8 @@ struct ChatView: View {
         guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
-            resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
-            if let cacheKey = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId) {
-                app.chatModelStates.store(resp, for: cacheKey)
-            }
+            resp = try await fetchModelState(
+                client: client, familiarId: familiarId, sessionId: sessionId, reusingRecent: false)
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
                   rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
@@ -1999,9 +1997,7 @@ struct ChatView: View {
         }
         // The change may set the familiar default that every session of this
         // familiar inherits, so no cached state for it survives the request.
-        if let host = app.connection?.host {
-            app.chatModelStates.invalidate(host: host, familiarId: familiarId)
-        }
+        app.invalidateChatModelStates(familiarId: familiarId)
         let mutation = modelRequests.beginMutation(for: target)
         return modelMutationQueue.enqueue {
             var mutationFailed = false
@@ -2014,6 +2010,9 @@ struct ChatView: View {
             } catch {
                 mutationFailed = true
             }
+            // A reopen that read while the change was in flight may have kept
+            // the old answer; the reconciliation below fetches the new one.
+            self.app.invalidateChatModelStates(familiarId: familiarId)
             await finishModelMutation(
                 mutation,
                 model: stagedModel,
@@ -2142,17 +2141,12 @@ struct ChatView: View {
             return (.failed, nil)
         }
         guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
-        let cacheKey = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId)
         do {
-            let response: ChatModelStateResponse
-            if reusingRecent, let cacheKey, let recent = app.chatModelStates.recent(for: cacheKey) {
-                response = recent
-            } else {
-                response = try await client.chatModelState(
-                    familiarId: familiarId,
-                    sessionId: sessionId)
-                if let cacheKey { app.chatModelStates.store(response, for: cacheKey) }
-            }
+            let response = try await fetchModelState(
+                client: client,
+                familiarId: familiarId,
+                sessionId: sessionId,
+                reusingRecent: reusingRecent)
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
             guard outcome == .applied,
@@ -2189,6 +2183,25 @@ struct ChatView: View {
             if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             return (.failed, nil)
         }
+    }
+
+    /// Reads model state through the app's shared cache (#5748), so a reopen
+    /// can reuse a recent answer or join a request still in flight. Without a
+    /// host to key it by, this is a plain fetch.
+    private func fetchModelState(
+        client: CaveClient,
+        familiarId: String,
+        sessionId: String?,
+        reusingRecent: Bool
+    ) async throws -> ChatModelStateResponse {
+        let fetch: @MainActor () async throws -> ChatModelStateResponse = {
+            try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+        }
+        guard let key = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId) else {
+            return try await fetch()
+        }
+        return try await app.chatModelStates.response(
+            for: key, reusingRecent: reusingRecent, fetch: fetch)
     }
 
     private func modelSessionId(_ familiarId: String) -> String? {

@@ -293,8 +293,12 @@ struct ChatModelBar: View {
         let selectedSessionId = sessionId
         let target = requestTarget
         busy = true
+        // Keep the shared model-state cache honest for every chat of this
+        // familiar, as the chat and profile pickers do (#5748).
+        app.invalidateChatModelStates(familiarId: familiarId)
         let mutation = modelMutationQueue.enqueue {
             defer { self.busy = false }
+            defer { self.app.invalidateChatModelStates(familiarId: self.familiarId) }
             // Per-chat when the chat has a server session; otherwise change the
             // familiar's default so the choice still sticks for the next message.
             let scope = selectedSessionId != nil ? "session" : "familiar-default"

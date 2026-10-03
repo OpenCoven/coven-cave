@@ -2175,6 +2175,15 @@ final class AppModel {
         return CaveClient(connection: connection, session: clientSession)
     }
 
+    /// Drop cached model state for a familiar on the current host. Every model
+    /// change calls this before its request and again once it settles. Before,
+    /// so a reopen during the request cannot reuse or join the old state. After,
+    /// so a read that raced the request cannot keep the pre-change answer.
+    func invalidateChatModelStates(familiarId: String) {
+        guard let host = connection?.host else { return }
+        chatModelStates.invalidate(host: host, familiarId: familiarId)
+    }
+
     /// The model-state cache key for the current host, or nil when there is no
     /// connection to read from.
     func chatModelStateKey(familiarId: String, sessionId: String?) -> ChatModelStateCache.Key? {
