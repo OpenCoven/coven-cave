@@ -1,6 +1,17 @@
-# Cave starts without configured credentials or password-manager references.
-# Add your own environment variables in Secret Vault. Values entered there are
-# encrypted locally; this file contains only the storage metadata you save.
-# Existing launcher variables and a user-configured .env.local remain usable.
-# Never ship personal provider references as application defaults.
-{}
+# Cave Vault — env var → encrypted secret, external reference, or environment mapping
+#
+# Format:
+#   ENV_VAR_NAME:
+#     storage: "encrypted"
+#   ANOTHER_ENV_VAR:
+#     ref: "op://VaultName/ItemTitle/field"
+#   ENVIRONMENT_OWNED_VAR:
+#     storage: "environment"
+#     description: "human-readable note"
+#     required: false
+#
+# Secrets are NEVER stored here — only storage metadata or secure references.
+# Safe to commit; contains no credentials.
+
+OPENAI_API_KEY:
+  storage: "encrypted"

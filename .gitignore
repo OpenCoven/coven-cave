@@ -151,3 +151,4 @@ __verify-chat-detail.mjs
 # Beads was removed (#5566). Clones that ran it keep local Dolt state under
 # .beads/; keep it out of commits wherever it appears.
 .beads/
+*.lock
