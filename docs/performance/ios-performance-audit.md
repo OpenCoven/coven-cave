@@ -128,6 +128,7 @@ the bound and nothing in CI enforces it; see
 | Chat publication cadence 10-20 updates/second | Pass (upper bound) | The 50 ms coalescer limits publication to at most 20 updates/second; terminal events still flush immediately. |
 | Main-thread attachment decode in row body = 0 | Pass | `MessageBubble.body` no longer calls `UIImage.fromDataUrl`; cache tests prove one downsampled decode per source/size. |
 | Duplicate in-flight fetches for the same bootstrap resource = 0 | Pass | Two concurrent refresh callers share one probe; independent bootstrap resources run once each. |
+| Duplicate request caused solely by view reappearance = 0 | Partial | Pass for reopening a chat. Hosted `ChatView` tests close and reopen a chat, after the first request finishes and while it is still in flight. They count every requested path and assert the reopen adds none. Other appear triggers rest on a source audit, not a counted journey. See [the reappearance audit](#reappearance-audit-2026-10-03-5748). |
 | Idle background polling while scene inactive = 0 | Pass | Scene-keyed tasks guard on `.active`; the surface-load source contract pins this behavior. |
 | Synchronous persistence write on composer keystroke = 0 | Pass | Draft persistence is delayed 250 ms; thread snapshot encoding/writes are debounced and delegated to `ThreadSnapshotStore`. |
 
@@ -497,9 +498,53 @@ fixture tracked in [#5748](https://github.com/OpenCoven/coven-cave/issues/5748).
 | `chat.first-rich-render` | <= 300 ms p95 (new) | 268.8 ms, met |
 | Cold first-in-process render and first switch | Reported only, never mixed with warm | 449 ms and 141.8 ms max |
 | Main-thread hitch during any measured navigation | < 100 ms | Not measured ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
-| Duplicate request caused solely by view reappearance | 0 | Not measured: the fixture is offline ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
+| Duplicate request caused solely by view reappearance | 0 | Partly measured: the chat reopen journey is counted per resource and meets it. Other triggers are source-audited only, and the project picker is a finding. Both are in the reappearance audit below ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
 
 The project switcher and project-selection budgets from #5292's original scope
 are retired with the chat-only shell, and are not rebuilt to be measured. The
 clear-search exception stands until a change targets SwiftUI's `List` diff for
 that transition. Such a change should then propose a budget for it.
+
+### Reappearance audit, 2026-10-03 (#5748)
+
+This covers every request a view sends when it appears or reappears in the current
+shell: `.task`, `.task(id:)`, `.onAppear` and `.refreshable`. Pull-to-refresh is
+excluded, because the person asked for that request.
+
+- **Chats → Settings → Chats: no requests.** Both destinations stay mounted, so
+  no appear handler runs again.
+- **Session list, history and familiars:** each load is guarded by a `loaded` flag,
+  single-flight, or the 30 s `loadSessionsIfStale` window. Reopening a chat
+  returns the existing thread, and history loads only when it has no messages.
+- **Chat model state:** this was the one duplicate. `ChatView` is rebuilt for
+  each thread, so every reopen of a direct chat repeated
+  `GET api/chat/model-state`. A reopen now reuses an answer under 30 s old
+  for the same host, familiar and session (`ChatModelStateCache`). It also
+  joins a request that is still in flight. The cache owns that request, so a
+  chat that closes while waiting does not cancel it. These still fetch fresh
+  and overwrite the cached answer:
+  - a finished reply
+  - `/model`
+  - the check after a model change
+
+  Every model change drops the familiar's cached entries before its request
+  and again once it settles. That covers a change in the chat, on the
+  familiar's profile, and through the model bar. Hosted tests count every
+  requested path across a close and reopen, both after the first answer and
+  while it is in flight.
+- **Finding, deliberately not cached: the project picker.**
+  `ChatProjectPicker` fetches `GET api/projects?familiarId=` each time it
+  appears. It only appears in a chat that has no project yet, and its
+  *Project access* button sends the person away to grant access. Coming back
+  is exactly when a fresh list matters, so a reuse window would show the
+  stale list.
+
+Two related requests repeat for reasons other than a view reappearing:
+- The theme poll (`GET api/theme`) runs when the scene becomes active and
+  every 20 s after.
+- An image or link preview refetches after an eviction or a failed fetch.
+
+**Still open on #5748:**
+- A counted journey for the triggers covered only by the source audit
+  (Chats → Settings → Chats, sessions, history, familiars).
+- The main-thread hitch budget, which needs a device.

@@ -478,7 +478,10 @@ struct ChatView: View {
             ChatNotifications.removeDelivered(threadId: thread.id)
         }
         .task(id: modelStateLoadKey) {
-            await loadSessionModelState()
+            // Opening (or reopening) the chat may reuse a model state read in
+            // the last 30 s instead of repeating the request (#5748). Every
+            // other caller fetches fresh.
+            await loadSessionModelState(reusingRecent: true)
         }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce
@@ -1879,7 +1882,8 @@ struct ChatView: View {
         guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
-            resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            resp = try await fetchModelState(
+                client: client, familiarId: familiarId, sessionId: sessionId, reusingRecent: false)
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
                   rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
@@ -1991,6 +1995,9 @@ struct ChatView: View {
             app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
             return nil
         }
+        // The change may set the familiar default that every session of this
+        // familiar inherits, so no cached state for it survives the request.
+        app.invalidateChatModelStates(familiarId: familiarId)
         let mutation = modelRequests.beginMutation(for: target)
         return modelMutationQueue.enqueue {
             var mutationFailed = false
@@ -2003,6 +2010,9 @@ struct ChatView: View {
             } catch {
                 mutationFailed = true
             }
+            // A reopen that read while the change was in flight may have kept
+            // the old answer; the reconciliation below fetches the new one.
+            self.app.invalidateChatModelStates(familiarId: familiarId)
             await finishModelMutation(
                 mutation,
                 model: stagedModel,
@@ -2108,7 +2118,8 @@ struct ChatView: View {
 
     @discardableResult
     private func loadSessionModelState(
-        reconciling expectedTarget: ChatModelRequestTarget? = nil
+        reconciling expectedTarget: ChatModelRequestTarget? = nil,
+        reusingRecent: Bool = false
     ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
         guard !thread.isGroup,
               let familiarId = thread.familiarIds.first else {
@@ -2131,9 +2142,11 @@ struct ChatView: View {
         }
         guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
         do {
-            let response = try await client.chatModelState(
+            let response = try await fetchModelState(
+                client: client,
                 familiarId: familiarId,
-                sessionId: sessionId)
+                sessionId: sessionId,
+                reusingRecent: reusingRecent)
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
             guard outcome == .applied,
@@ -2170,6 +2183,25 @@ struct ChatView: View {
             if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             return (.failed, nil)
         }
+    }
+
+    /// Reads model state through the app's shared cache (#5748), so a reopen
+    /// can reuse a recent answer or join a request still in flight. Without a
+    /// host to key it by, this is a plain fetch.
+    private func fetchModelState(
+        client: CaveClient,
+        familiarId: String,
+        sessionId: String?,
+        reusingRecent: Bool
+    ) async throws -> ChatModelStateResponse {
+        let fetch: @MainActor () async throws -> ChatModelStateResponse = {
+            try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+        }
+        guard let key = app.chatModelStateKey(familiarId: familiarId, sessionId: sessionId) else {
+            return try await fetch()
+        }
+        return try await app.chatModelStates.response(
+            for: key, reusingRecent: reusingRecent, fetch: fetch)
     }
 
     private func modelSessionId(_ familiarId: String) -> String? {
