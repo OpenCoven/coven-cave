@@ -12,6 +12,7 @@ import {
 } from "react";
 import "@/styles/project-tree.css";
 import { Icon } from "@/lib/icon";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -636,7 +637,7 @@ function TreeRow({
 
         {/* Name */}
         <span className={`min-w-0 flex-1 truncate pl-1 ${isSelected ? "text-[var(--accent-presence-foreground)]" : ""}`}>
-          {entry.name}
+          <HiddenUnicodeText text={entry.name} />
         </span>
 
         {/* Working-tree status (Coding Desk only). The status letter is the

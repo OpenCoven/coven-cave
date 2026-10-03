@@ -17,8 +17,9 @@
  *   - anything else: changed after the checkpoint was taken
  *                                         → kept, and named, never overwritten
  *
- * Checkpoints record their base commit in a first line that `git apply`
- * ignores (it skips everything before the first `diff` header). Older
+ * Checkpoints record their base in a first line that `git apply` ignores (it
+ * skips everything before the first `diff` header): the commit they were
+ * taken on, or the empty tree on a branch with no commits yet (#5781). Older
  * checkpoints without it are rebuilt on the current HEAD.
  */
 
@@ -35,7 +36,8 @@ const MAX_GIT_BUFFER = 64 * 1024 * 1024;
 const BASE_HEADER = "coven-cave checkpoint base ";
 const BASE_HEADER_RE = /^coven-cave checkpoint base ([0-9a-f]{40}|[0-9a-f]{64})\n/;
 
-/** The first line of a checkpoint patch: the commit it was diffed against. */
+/** The first line of a checkpoint patch: the commit (or, before the first
+ *  commit, the empty tree) it was diffed against. */
 export function checkpointBaseHeader(baseOid: string): string {
   return `${BASE_HEADER}${baseOid}\n\n`;
 }
@@ -44,27 +46,44 @@ export function checkpointBaseOf(patch: string): string | null {
   return BASE_HEADER_RE.exec(patch)?.[1] ?? null;
 }
 
-/** `git diff` without repository-configured external diff or textconv. */
+/**
+ * `git diff` in the one shape `git apply` reads back, whatever the user's
+ * config says (#5781): no external diff or textconv, no colour
+ * (`color.ui=always` filled checkpoints with escape codes, so a restore found
+ * no `diff --git` header and reported nothing to restore), the standard
+ * `a/` and `b/` prefixes (`diff.noprefix` left nothing to strip), and
+ * submodules as a commit line.
+ */
+export const PATCH_DIFF_ARGS = [
+  "--no-ext-diff",
+  "--no-textconv",
+  "--no-color",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+  "--submodule=short",
+] as const;
+
 function gitDiff(repoRoot: string, args: string[]) {
-  return git(repoRoot, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
+  return git(repoRoot, ["diff", ...PATCH_DIFF_ARGS, ...args]);
 }
 
 /**
  * The working tree as a checkpoint patch: tracked changes against HEAD, then
- * an add-file diff per untracked file, headed by the commit it is against.
+ * an add-file diff per untracked file, headed by what it is against.
+ *
+ * Before the first commit the base is the empty tree (#5781). Diffing the
+ * working tree against the index instead left staged new files out entirely,
+ * so reverting one deleted it for good, and stored a staged file's later edit
+ * as a diff against the index, which a restore can't rebuild.
  */
 export async function buildCheckpointPatch(
   repoRoot: string,
   contain: (relPath: string) => string | null,
 ): Promise<string> {
-  let patch = "";
-  let base: string | null = null;
-  try {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "HEAD", "--"]));
-    base = (await git(repoRoot, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
-  } catch {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "--"])); // an unborn branch
-  }
+  const base = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    .then(({ stdout }) => stdout.trim())
+    .catch(() => hashText(repoRoot, "", "tree"));
+  let { stdout: patch } = await gitDiff(repoRoot, ["--binary", base, "--"]);
   const { stdout: untracked } = await git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
   for (const rel of splitZ(untracked)) {
     const abs = contain(rel);
@@ -80,7 +99,7 @@ export async function buildCheckpointPatch(
     }
   }
   // `git apply` skips this line; a restore reads it to rebuild on this base.
-  return (base ? checkpointBaseHeader(base) : "") + patch;
+  return checkpointBaseHeader(base) + patch;
 }
 
 export type CheckpointRestoreOutcome = {
@@ -215,10 +234,13 @@ export async function restoreCheckpointPatch(
     .then(({ stdout }) => stdout.trim())
     .catch(() => null);
   const recorded = checkpointBaseOf(patch);
+  // A commit, or the empty tree a checkpoint taken before the first commit
+  // records: both peel to a tree, and every step below takes a tree.
   const recordedExists = recorded
-    ? await git(repoRoot, ["cat-file", "-e", `${recorded}^{commit}`]).then(() => true, () => false)
+    ? await git(repoRoot, ["cat-file", "-e", `${recorded}^{tree}`]).then(() => true, () => false)
     : false;
-  // null: an unborn branch, where the snapshot is all new files.
+  // null: an older, headerless checkpoint on an unborn branch, where the
+  // snapshot is all new files.
   const base = recordedExists ? recorded! : head;
 
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-restore-"));
@@ -231,7 +253,7 @@ export async function restoreCheckpointPatch(
     } catch (err) {
       const detail = (err as { stderr?: string }).stderr?.trim();
       throw new Error(
-        `this checkpoint no longer applies to ${recordedExists ? "the commit it was taken on" : "the current commit"}${detail ? `: ${detail}` : ""}`,
+        `this checkpoint no longer applies to ${recordedExists ? "the state it was taken on" : "the current commit"}${detail ? `: ${detail}` : ""}`,
       );
     }
 

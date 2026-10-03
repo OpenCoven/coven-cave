@@ -18,7 +18,8 @@ import {
 } from "@/lib/canvas-git-delivery";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
-import { buildCheckpointPatch, restoreCheckpointPatch, type CheckpointRestoreOutcome } from "@/lib/server/checkpoint-restore";
+import { buildCheckpointPatch, PATCH_DIFF_ARGS, restoreCheckpointPatch, type CheckpointRestoreOutcome } from "@/lib/server/checkpoint-restore";
+import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
 import { captureCommitStart, rollbackCommitStart } from "@/lib/server/commit-rollback";
 
 export const dynamic = "force-dynamic";
@@ -86,11 +87,12 @@ function gitWithInput(cwd: string, args: string[], input: string): Promise<{ std
   return pending;
 }
 
-/** Run `git diff` without repository-configured command hooks. Paths are
- *  literal (#5756): `app/[id]/page.tsx` is that file, not a glob that also
- *  matches `app/i/page.tsx`. */
+/** Run `git diff` without repository-configured command hooks, and in the
+ *  standard patch shape whatever the user's colour and prefix config (#5781).
+ *  Paths are literal (#5756): `app/[id]/page.tsx` is that file, not a glob
+ *  that also matches `app/i/page.tsx`. */
 function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return git(cwd, ["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", ...args]);
+  return git(cwd, ["--literal-pathspecs", "diff", ...PATCH_DIFF_ARGS, ...args]);
 }
 
 /** Run `git status` without repository-configured fsmonitor commands. */
@@ -728,6 +730,12 @@ export async function POST(req: NextRequest) {
     }
     return withRepositoryMutation(root.repoRoot, async () => {
       try {
+        // Never mid-rebase, merge, cherry-pick, revert or am (#5781): the
+        // commit landed inside the paused operation.
+        const paused = await gitOperationInProgress(root.repoRoot);
+        if (paused) {
+          return NextResponse.json({ ok: false, error: operationInProgressMessage(paused, "commit") }, { status: 409 });
+        }
         // Commit only what was reviewed (#5745): refuse when the working tree
         // no longer matches the list the caller showed. The repository lock is
         // process-local, so an agent can still write between this check and
@@ -870,6 +878,11 @@ export async function POST(req: NextRequest) {
     }
     return withRepositoryMutation(root.repoRoot, async () => {
       try {
+        // A paused operation's branch is half-rewritten (#5781): don't push it.
+        const paused = await gitOperationInProgress(root.repoRoot);
+        if (paused) {
+          return NextResponse.json({ ok: false, error: operationInProgressMessage(paused, "open a pull request") }, { status: 409 });
+        }
         const branch = await currentBranch(root.repoRoot);
       const def = await defaultBranch(root.repoRoot);
       if (branch === def || branch === "HEAD") {

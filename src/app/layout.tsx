@@ -19,6 +19,7 @@ import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { PwaRegister } from "@/components/pwa-register";
+import { FileEditDraftGuard } from "@/components/file-edit-draft-guard";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 import { DevShellRecovery } from "@/components/dev-shell-recovery";
 import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
@@ -107,6 +108,7 @@ export default function RootLayout({
             <RemoteThemeController />
             <TauriTitlebarMarker />
             <PwaRegister />
+            <FileEditDraftGuard />
             <WebVitalsReporter />
             <PerfOverlay />
             {children}

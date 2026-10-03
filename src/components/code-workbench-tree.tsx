@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectTree, type TreeDecoration } from "@/components/project-tree";
 import type { ChangedFile, FileStatus } from "@/lib/session-changes-api";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
 /** Porcelain letters, matching what `git status --short` prints. Shared with
  *  the viewer's open-file tabs (#5705) so both print the same letter. */
@@ -176,8 +178,8 @@ export function CodeWorkbenchTree({
                     <span className="code-tree__status-letter" data-status={STATUS_LETTER[file.status]}>
                       {STATUS_LETTER[file.status]}
                     </span>
-                    <span className="code-tree__changed-path" title={file.path}>
-                      {file.path}
+                    <span className="code-tree__changed-path" title={describeHiddenUnicode(file.path)}>
+                      <HiddenUnicodeText text={file.path} />
                     </span>
                     {file.insertions ? (
                       <span className="code-tree__status-add">+{file.insertions}</span>

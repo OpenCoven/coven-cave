@@ -17,6 +17,8 @@ import {
   codeSessionDiffstat,
 } from "@/lib/code-surface";
 import type { SessionRow } from "@/lib/types";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
 const ACTIVITY_WORD = {
   running: "Running",
@@ -188,7 +190,7 @@ export function CodeSessionRail({
                       <>
                         <span className="flex min-w-0 items-start justify-between gap-2">
                           <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                            {title}
+                            <HiddenUnicodeText text={title} />
                           </span>
                           <span className={`shrink-0 font-mono text-[length:var(--text-2xs)] uppercase tracking-wide ${activityTone}`}>
                             {activityText}
@@ -197,8 +199,8 @@ export function CodeSessionRail({
                         {(branch || diffstat || row.pullRequest || row.updated_at) ? (
                           <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                             {branch ? (
-                              <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={branch}>
-                                {branch}
+                              <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={describeHiddenUnicode(branch)}>
+                                <HiddenUnicodeText text={branch} />
                               </span>
                             ) : null}
                             {diffstat ? (

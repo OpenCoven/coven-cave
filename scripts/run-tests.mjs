@@ -259,6 +259,8 @@ export const SUITES = {
     "src/lib/server/change-file-versions.test.ts",
     "src/lib/server/checkpoint-restore.test.ts",
     "src/lib/server/commit-rollback.test.ts",
+    "src/lib/server/git-operation-in-progress.test.ts",
+    "src/lib/hidden-unicode.test.ts",
     "src/lib/terminal-thread-stop.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
@@ -1972,6 +1974,7 @@ export const SUITES = {
     "src/app/api/memory-trash-excluded.test.ts",
     "src/app/api/salem/pathfinder/route.test.ts",
     "src/app/api/changes/route.test.ts",
+    "src/app/api/changes/route-git-states.test.ts",
     "src/app/api/project-grants/route.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/app/api/flows/runs/route.test.ts",
@@ -2168,6 +2171,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // drives the real changes route against real repositories (#5781)
+  "src/app/api/changes/route-git-states.test.ts",
   // imports the datetime helpers through the @/ alias (#5756)
   "src/lib/session-changes-format.test.ts",
   // imports code-surface through the @/ alias (#5705)
