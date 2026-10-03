@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -770,3 +770,55 @@ for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "l
     assert.equal(result.stdout.trim(), state === "empty" ? "SAFE" : "PRESERVE - worktree admin recovery state");
   });
 }
+
+test("documented strict retention selection executes exact branch, tag and PR modes", (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "branch-curator-selection-"));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const start = proof.indexOf("  strict_guard_retention_args=()");
+  const end = proof.indexOf("  if env -u WT_GUARD_BYPASS", start);
+  assert.ok(start >= 0 && end > start);
+  const selection = proof.slice(start, end);
+  const oid = "a".repeat(40);
+  const select = (values = {}) => execFileSync("bash", ["-c", `
+for candidate in once; do
+${selection}
+  if test "\${#strict_guard_retention_args[@]}" -gt 0; then
+    printf '%s\\0' "\${strict_guard_retention_args[@]}"
+  fi
+done
+`], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      strict_guard_output_file: path.join(fixture, "guard-output"),
+      remote_name: "origin",
+      audited_gh_repo: "OpenCoven/coven-cave",
+      audited_remote_main_branch: "main",
+      audited_merged_pr_number: "",
+      audited_retaining_branch_ref: "",
+      audited_retaining_branch_oid: "",
+      audited_retaining_tag_ref: "",
+      audited_retaining_tag_oid: "",
+      ...values,
+    },
+  });
+  const args = (values) => select(values).split("\0").filter(Boolean);
+  assert.deepEqual(args({}), []);
+  const branch = { audited_retaining_branch_ref: "refs/heads/main", audited_retaining_branch_oid: oid };
+  const tag = { audited_retaining_tag_ref: "refs/tags/retention/example", audited_retaining_tag_oid: oid };
+  const pr = { audited_merged_pr_number: "5474" };
+  assert.deepEqual(args(branch), ["--retained-by-remote-branch", "origin", branch.audited_retaining_branch_ref, "--expected-remote-oid", oid]);
+  assert.deepEqual(args(tag), ["--retained-by-remote-tag", "origin", tag.audited_retaining_tag_ref, "--expected-remote-oid", oid]);
+  assert.deepEqual(args(pr), ["--retained-by-github-pr", "origin", "OpenCoven/coven-cave", "5474", "--expected-base", "main"]);
+  for (const ambiguous of [{ ...branch, ...tag }, { ...branch, ...pr }, { ...tag, ...pr }]) {
+    assert.match(select(ambiguous), /^PRESERVE - ambiguous strict retention proof\n$/);
+  }
+  for (const incomplete of [
+    { audited_retaining_branch_ref: branch.audited_retaining_branch_ref },
+    { audited_retaining_branch_oid: oid },
+    { audited_retaining_tag_ref: tag.audited_retaining_tag_ref },
+    { audited_retaining_tag_oid: oid },
+  ]) {
+    assert.match(select(incomplete), /^PRESERVE - incomplete strict retention proof\n$/);
+  }
+});

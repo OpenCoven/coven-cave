@@ -843,6 +843,16 @@ The strict guard reauthenticates those facts and queries/fetches only the exact
 mode. Any ambiguity leaves the array unset and preserves the candidate rather
 than trying both paths or bypassing the source bound.
 
+Select exactly one freshly audited proof source per candidate. Clear
+`audited_retaining_branch_ref`, `audited_retaining_branch_oid`,
+`audited_retaining_tag_ref`, `audited_retaining_tag_oid`, and
+`audited_merged_pr_number` before auditing the next candidate. For exact branch
+proof, set the branch pair to its full ref and fetched OID. For exact tag proof,
+set the tag pair to its full ref and advertised tag-object OID. For exact PR
+proof, set only the freshly authenticated PR number. The executable selection
+below refuses mixed modes and incomplete pairs; it never falls back from an
+invalid exact proof to a generic scan.
+
 ```bash
 if test -n "$worktree_path"; then
   current_worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse \
@@ -864,7 +874,37 @@ if test -n "$worktree_path"; then
       printf 'PRESERVE - default ref changed before worktree removal\n';
       continue; }
   strict_guard_retention_args=()
-  if test -n "${audited_merged_pr_number:-}"; then
+  strict_guard_retention_modes=0
+  for strict_guard_source in \
+    "${audited_retaining_branch_ref:-}${audited_retaining_branch_oid:-}" \
+    "${audited_retaining_tag_ref:-}${audited_retaining_tag_oid:-}" \
+    "${audited_merged_pr_number:-}"; do
+    if test -n "$strict_guard_source"; then
+      strict_guard_retention_modes=$((strict_guard_retention_modes + 1))
+    fi
+  done
+  test "$strict_guard_retention_modes" -le 1 ||
+    { rm -f -- "$strict_guard_output_file";
+      printf 'PRESERVE - ambiguous strict retention proof\n'; continue; }
+  if test -n "${audited_retaining_branch_ref:-}${audited_retaining_branch_oid:-}"; then
+    test -n "${audited_retaining_branch_ref:-}" &&
+      test -n "${audited_retaining_branch_oid:-}" ||
+      { rm -f -- "$strict_guard_output_file";
+        printf 'PRESERVE - incomplete strict retention proof\n'; continue; }
+    strict_guard_retention_args=(
+      --retained-by-remote-branch "$remote_name" "$audited_retaining_branch_ref"
+      --expected-remote-oid "$audited_retaining_branch_oid"
+    )
+  elif test -n "${audited_retaining_tag_ref:-}${audited_retaining_tag_oid:-}"; then
+    test -n "${audited_retaining_tag_ref:-}" &&
+      test -n "${audited_retaining_tag_oid:-}" ||
+      { rm -f -- "$strict_guard_output_file";
+        printf 'PRESERVE - incomplete strict retention proof\n'; continue; }
+    strict_guard_retention_args=(
+      --retained-by-remote-tag "$remote_name" "$audited_retaining_tag_ref"
+      --expected-remote-oid "$audited_retaining_tag_oid"
+    )
+  elif test -n "${audited_merged_pr_number:-}"; then
     strict_guard_retention_args=(
       --retained-by-github-pr origin "$audited_gh_repo"
       "$audited_merged_pr_number"
