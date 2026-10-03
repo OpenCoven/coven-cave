@@ -5,11 +5,14 @@ import assert from "node:assert/strict";
 
 const {
   registerChatRun,
+  tryRegisterChatRun,
+  setChatRunStopHandler,
   unregisterChatRun,
   requestChatStop,
   requestOrQueueChatStop,
   addChatRunKeys,
   hasActiveChatRun,
+  chatRunBlocksNewTurn,
   markChatRunTransportSettled,
   markChatRunProjectionSettled,
   pendingChatStopCountForTests,
@@ -23,6 +26,26 @@ const {
   await import("./chat-stop-registry.ts");
 
 resetChatStopRegistryForTests();
+
+// Admission itself is live and stoppable, even before a transport exists.
+// A stopped predecessor can bind later without stealing the successor's alias.
+{
+  const first = tryRegisterChatRun(["admission-run", "admission-chat"], { runId: "admission-run" });
+  assert.ok(first);
+  assert.equal(hasActiveChatRun("admission-chat"), true);
+  assert.equal(tryRegisterChatRun(["other-run", "admission-chat"]), null);
+  assert.equal(requestChatStop("admission-chat"), true);
+  const next = tryRegisterChatRun(["next-run", "admission-chat"], { runId: "next-run" });
+  assert.ok(next);
+  let firstKills = 0;
+  setChatRunStopHandler(first, () => { firstKills += 1; });
+  assert.equal(firstKills, 1, "a Stop during setup reaches the attached transport");
+  unregisterChatRun(first);
+  assert.equal(chatRunBlocksNewTurn("admission-chat"), true, "old cleanup preserves the successor");
+  assert.throws(() => setChatRunStopHandler(first, () => {}), /admission has ended/);
+  unregisterChatRun(next);
+  assert.equal(chatRunBlocksNewTurn("admission-chat"), false);
+}
 
 // Deliberate stop: kills through the registration and flags the handle.
 {
@@ -388,6 +411,34 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   assert.equal(pendingChatStopCountForTests(), 0, "settlement leaves no pending intent leak");
   resetChatStopRegistryForTests();
   assert.equal(settledChatRunCountForTests(), 0, "test reset clears tombstones");
+}
+
+// One live turn per conversation: a live run blocks a new send for its
+// conversation until its Stop is requested or its projection settles. A
+// follow-up registration must not make the earlier run unreachable first.
+{
+  resetChatStopRegistryForTests();
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), false, "unknown conversation does not block");
+  let kills = 0;
+  const earlier = registerChatRun(["earlier-run", "busy-chat"], () => {
+    kills += 1;
+  }, { runId: "earlier-run" });
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), true, "a live run blocks a new turn by conversation id");
+  assert.equal(chatRunBlocksNewTurn("earlier-run"), true, "the run id alias reports the same run");
+  assert.equal(chatRunBlocksNewTurn("other-chat"), false, "another conversation is unaffected");
+  assert.equal(requestChatStop("busy-chat"), true, "the earlier run stays reachable by conversation id");
+  assert.equal(kills, 1);
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), false, "a stopping run no longer blocks Stop-then-send");
+  unregisterChatRun(earlier);
+
+  const settling = registerChatRun(["settling-run", "settling-chat"], () => {}, { runId: "settling-run" });
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), true);
+  markChatRunTransportSettled(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), true, "persistence after the child exits still blocks");
+  markChatRunProjectionSettled(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), false, "a projection-settled run (done sent) does not block");
+  unregisterChatRun(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), false, "an unregistered run does not block");
 }
 
 resetChatStopRegistryForTests();
