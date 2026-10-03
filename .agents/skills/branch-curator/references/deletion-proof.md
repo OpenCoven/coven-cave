@@ -707,6 +707,17 @@ Do not delete or rewrite the file to qualify a candidate. The strict guard
 checks this state before retention probes and again before its allow result;
 the complete recovery-OID and unknown-admin proof below remains mandatory.
 
+A completed, non-conflicting rebase can also leave `AUTO_MERGE` equal to the
+committed `HEAD` tree. Allow only a stable, non-symbolic regular file containing
+exactly that audited commit's full tree OID and one newline. Resolve and verify
+the tree object with replacement objects disabled. Nonmatching trees, commit
+OIDs, malformed content, missing objects, unsafe file types, and observed
+replacement or content drift remain protected. The strict guard rechecks the
+audited HEAD and this file's identity before and after retention probes. An
+active operation marker, lock, dirty index/worktree, ownership, recency, or
+retention failure still requires preservation. Never clear `AUTO_MERGE` to
+qualify a candidate; the maintenance lease and fresh proof remain mandatory.
+
 ```bash
 emit_plain_oids() {
   awk -v width="$oid_width" '
@@ -755,6 +766,16 @@ while IFS= read -r -d '' admin_entry; do
       node "$primary_checkout/scripts/worktree-rerere-state.mjs" "$admin_entry" ||
         { worktree_admin_safe=0; break; }
       ;;
+    AUTO_MERGE)
+      current_worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse --verify HEAD) &&
+        test "$current_worktree_head_oid" = "$audited_worktree_head_oid" &&
+        audited_worktree_tree_oid=$(git_exact -C "$worktree_path" rev-parse \
+          --verify "$audited_worktree_head_oid^{tree}") &&
+        test "$(git_exact -C "$worktree_path" cat-file -t "$audited_worktree_tree_oid")" = tree &&
+        node "$primary_checkout/scripts/worktree-auto-merge-state.mjs" \
+          "$admin_entry" "$audited_worktree_tree_oid" ||
+        { worktree_admin_safe=0; break; }
+      ;;
     ORIG_HEAD)
       test -f "$admin_entry" || { worktree_admin_safe=0; break; }
       admin_oids=$(emit_plain_oids "$admin_entry") &&
@@ -765,7 +786,7 @@ while IFS= read -r -d '' admin_entry; do
       admin_oids=$(emit_fetch_oids "$admin_entry") &&
         prove_oid_lines "$admin_oids" || { worktree_admin_safe=0; break; }
       ;;
-    locked|MERGE_HEAD|REBASE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_HEAD|AUTO_MERGE|sequencer|rebase-*)
+    locked|MERGE_HEAD|REBASE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_HEAD|sequencer|rebase-*)
       worktree_admin_safe=0; break
       ;;
     *) worktree_admin_safe=0; break ;;
