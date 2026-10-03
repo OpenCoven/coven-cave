@@ -11,7 +11,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildCheckpointPatch, checkpointBaseOf, restoreCheckpointPatch } from "./checkpoint-restore.ts";
@@ -156,7 +156,20 @@ async function restore(repo, file, beforeWrite = async () => "safety.patch") {
   assert.ok(readFileSync(path.join(repo, "logo.bin")).equals(bytes(7)));
 }
 
-// ── 8. Nothing to do: no safety checkpoint, nothing written ─────────────────
+// ── 8. A mode-only change comes back (#5760 review) ─────────────────────────
+if (process.platform !== "win32") {
+  const { repo, git } = makeRepo({ "run.sh": "echo hi\n" });
+  chmodSync(path.join(repo, "run.sh"), 0o755);
+  const file = await checkpoint(repo);
+  assert.match(readFileSync(file, "utf8"), /new mode 100755/, "the checkpoint records the chmod alone");
+  git("checkout", "HEAD", "--", "run.sh");
+  assert.equal(statSync(path.join(repo, "run.sh")).mode & 0o100, 0);
+  const outcome = await restore(repo, file);
+  assert.deepEqual(outcome.restored, ["run.sh"]);
+  assert.notEqual(statSync(path.join(repo, "run.sh")).mode & 0o100, 0, "the executable bit is back");
+}
+
+// ── 9. Nothing to do: no safety checkpoint, nothing written ─────────────────
 {
   const { repo } = makeRepo({ "a.txt": "a1\n" });
   write(repo, "a.txt", "a2\n");

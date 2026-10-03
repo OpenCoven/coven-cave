@@ -75,4 +75,7 @@ test("unsaved drafts under the session's root get tabs; the active tab stays (#5
   const fresh = withDraftTabs(emptyCodeOpenFiles(), ["/r/b.ts"], "/r/");
   assert.deepEqual(fresh, { paths: ["/r/b.ts"], active: "/r/b.ts" }, "with no tab open, the recovered draft is shown");
   assert.equal(withDraftTabs(state, ["/r/b.ts"], null), state, "no root, no change");
+  // More drafts than the tab limit (#5760 review): every one keeps a tab.
+  const many = Array.from({ length: 15 }, (_, i) => `/r/f${i}.ts`);
+  assert.deepEqual(withDraftTabs(emptyCodeOpenFiles(), many, "/r").paths, many);
 });

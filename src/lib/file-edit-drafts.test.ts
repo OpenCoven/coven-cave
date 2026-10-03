@@ -269,6 +269,25 @@ const B = "/repo/src/b.ts";
     assert.ok(storage.getItem(PREFIX + B), "this page only removes what it wrote");
   }
 
+  // A save that lands while typing continues moves the stored base and its
+  // version too, though the text is unchanged (#5760 review).
+  {
+    const storage = fakeStorage();
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, now);
+    store.begin(A, "one", "v1");
+    store.update(A, "one two");
+    const save = store.startSave(A);
+    store.update(A, "one two three");
+    assert.equal(JSON.parse(storage.getItem(PREFIX + A)).baseVersion, "v1");
+    assert.equal(store.settle(A, save.id, save.content, "v2"), true);
+    assert.deepEqual(JSON.parse(storage.getItem(PREFIX + A)), {
+      content: "one two three", baseContent: "one two", baseVersion: "v2", eol: "\n",
+    });
+    store.acceptDisk(A);
+    assert.equal(JSON.parse(storage.getItem(PREFIX + A)).baseVersion, null, "Overwrite's dropped precondition is kept too");
+  }
+
   // Writes are batched until the scheduled flush.
   {
     const storage = fakeStorage();

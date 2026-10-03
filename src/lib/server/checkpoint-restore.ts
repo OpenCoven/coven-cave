@@ -173,7 +173,8 @@ async function worktreeBlobs(repoRoot: string, paths: string[], contain: Restore
       out.set(rel, `120000:${await hashText(repoRoot, fs.readlinkSync(/* turbopackIgnore: true */ abs))}`);
     } else if (stat.isFile()) {
       regular.push(rel);
-      out.set(rel, `${stat.mode & 0o111 ? "100755" : "100644"}:`);
+      // Git's rule: executable when the owner may execute it.
+      out.set(rel, `${stat.mode & 0o100 ? "100755" : "100644"}:`);
     } else {
       out.set(rel, "other:"); // a directory where the checkpoint has a file
     }
@@ -186,11 +187,17 @@ async function worktreeBlobs(repoRoot: string, paths: string[], contain: Restore
   return out;
 }
 
-/** Same content and kind; the executable bit alone doesn't make an edit. */
-function sameBlob(a: string | undefined, b: string | undefined): boolean {
+/**
+ * Same content and kind, and the same executable bit when the repository
+ * tracks it (#5760 review): a checkpoint can record a `chmod +x` alone.
+ * With `core.fileMode` off (Windows, some filesystems) the bit isn't
+ * reliable on disk, so only content and kind count.
+ */
+function sameBlob(a: string | undefined, b: string | undefined, fileMode: boolean): boolean {
   if (a === undefined || b === undefined) return a === b;
   const [modeA, oidA] = a.split(":");
   const [modeB, oidB] = b.split(":");
+  if (fileMode) return oidA === oidB && modeA === modeB;
   const kind = (mode: string) => (mode === "120000" ? "link" : mode.startsWith("100") ? "file" : mode);
   return oidA === oidB && kind(modeA) === kind(modeB);
 }
@@ -233,6 +240,9 @@ export async function restoreCheckpointPatch(
     const paths = splitZ(stdout);
     if (paths.length === 0) return outcome;
 
+    const fileMode = await git(repoRoot, ["config", "--type=bool", "--get", "core.fileMode"])
+      .then(({ stdout }) => stdout.trim() !== "false", () => process.platform !== "win32");
+    const same = (a: string | undefined, b: string | undefined) => sameBlob(a, b, fileMode);
     const [snapshot, atBase, atHead, current] = await Promise.all([
       blobsAt(repoRoot, paths, { index }),
       blobsAt(repoRoot, paths, { tree: base }),
@@ -245,9 +255,9 @@ export async function restoreCheckpointPatch(
     for (const rel of paths) {
       const wanted = snapshot.get(rel);
       const now = current.get(rel);
-      if (sameBlob(now, wanted)) {
+      if (same(now, wanted)) {
         outcome.unchanged.push(rel);
-      } else if (sameBlob(now, atBase.get(rel)) || (atHead && sameBlob(now, atHead.get(rel)))) {
+      } else if (same(now, atBase.get(rel)) || (atHead && same(now, atHead.get(rel)))) {
         (wanted === undefined ? remove : write).push(rel);
       } else {
         outcome.kept.push(rel);

@@ -243,7 +243,11 @@ export function persistFileEditDrafts(
 
   // What this page last wrote per path, so an unchanged draft isn't rewritten
   // on every keystroke elsewhere, and a saved or discarded one is removed.
-  const written = new Map<string, string>(saved.map((draft) => [draft.path, draft.content]));
+  // The whole entry, not just the text (#5760 review): a save that lands
+  // while typing continues moves the base and its version, text unchanged.
+  const serialize = (draft: SavedFileEditDraft) =>
+    JSON.stringify({ content: draft.content, baseContent: draft.baseContent, baseVersion: draft.baseVersion, eol: draft.eol });
+  const written = new Map<string, string>(saved.map((draft) => [draft.path, serialize(draft)]));
   let pending = false;
   const flush = () => {
     pending = false;
@@ -251,13 +255,11 @@ export function persistFileEditDrafts(
     for (const draft of store.all()) {
       if (!isDraftDirty(draft) || draft.content.length + draft.baseContent.length > FILE_EDIT_DRAFT_STORAGE_MAX_CHARS) continue;
       keep.add(draft.path);
-      if (written.get(draft.path) === draft.content) continue;
-      const entry: Omit<SavedFileEditDraft, "path"> = {
-        content: draft.content, baseContent: draft.baseContent, baseVersion: draft.baseVersion, eol: draft.eol,
-      };
+      const entry = serialize(draft);
+      if (written.get(draft.path) === entry) continue;
       try {
-        storage.setItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path, JSON.stringify(entry));
-        written.set(draft.path, draft.content);
+        storage.setItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path, entry);
+        written.set(draft.path, entry);
       } catch {
         // Over quota, or storage refused: the draft is still held in memory.
         keep.delete(draft.path);
