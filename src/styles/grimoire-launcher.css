@@ -155,45 +155,78 @@
   position: relative;
 }
 
-.document-reader__measure-handle {
+.document-reader__measure-track {
   position: absolute;
   top: 0;
   bottom: 0;
   right: calc(var(--document-reader-column-gutter) * -0.5 - var(--space-2));
   width: calc(var(--space-2) * 2);
-  border-radius: var(--radius-sm);
   cursor: col-resize;
   touch-action: none;
 }
 
-.document-reader__measure-handle::after {
+/* A hairline along the whole edge while the edge is hovered or dragged. */
+.document-reader__measure-track::after {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 2px;
-  border-radius: 1px;
+  width: 1px;
   background: transparent;
   transform: translateX(-50%);
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
-.document-reader__measure-handle:hover::after,
-.document-reader__measure-handle:focus-visible::after,
-.document-reader__measure-handle[data-dragging]::after {
+.document-reader__measure-track:hover::after,
+.document-reader__measure-track[data-dragging]::after {
+  background: var(--document-reader-accent-soft);
+}
+
+/* The grip: always faintly visible so the edge reads as adjustable, sticky so
+ * it stays in view (and keyboard focus never scrolls the reader). */
+.document-reader__measure-grip {
+  position: sticky;
+  top: calc(var(--space-8) * 4);
+  z-index: 1;
+  width: 100%;
+  height: calc(var(--space-8) * 2);
+  border-radius: var(--radius-sm);
+}
+
+.document-reader__measure-grip::before {
+  content: "";
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: 50%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0.45;
+  transform: translateX(-50%);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.document-reader__measure-track:hover .document-reader__measure-grip::before,
+.document-reader__measure-track[data-dragging] .document-reader__measure-grip::before,
+.document-reader__measure-grip:focus-visible::before {
   background: var(--document-reader-accent);
+  opacity: 1;
 }
 
 /* Too narrow to need a measure: the column already fills the pane. */
 @container document-reader (max-width: 40rem) {
-  .document-reader__measure-handle {
+  .document-reader__measure-track {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .document-reader__measure-handle::after {
+  .document-reader__measure-track::after,
+  .document-reader__measure-grip::before {
     transition: none;
   }
 }

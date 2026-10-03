@@ -73,6 +73,8 @@ import {
   loadReaderMeasure,
   measureAfterDrag,
   measureAfterKey,
+  readerMeasureCss,
+  readerMeasureMaxPx,
   saveReaderMeasure,
 } from "@/lib/reader-measure";
 
@@ -217,6 +219,9 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   const [customMeasure, setCustomMeasure] = useState<number | null>(null);
   const [measureDragging, setMeasureDragging] = useState(false);
   const [columnWidth, setColumnWidth] = useState<number | null>(null);
+  // 96rem in CSS pixels at the app's root font size, so keyboard and drag
+  // bounds agree with the stylesheet's rem cap.
+  const [measureMax, setMeasureMax] = useState(READER_MEASURE_MAX_PX);
   const measureDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -226,6 +231,10 @@ export function DocumentReader<TBlock, TLede = TBlock>({
 
   useEffect(() => {
     setCustomMeasure(resizeKey ? loadReaderMeasure(resizeKey) : null);
+    // `window.document`: the `document` prop shadows the global here.
+    if (resizeKey && typeof window !== "undefined" && window.document) {
+      setMeasureMax(readerMeasureMaxPx(Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize)));
+    }
   }, [resizeKey]);
 
   useEffect(() => {
@@ -274,7 +283,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   const onMeasurePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const drag = measureDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    setCustomMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available));
+    setCustomMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available, measureMax));
   };
 
   const onMeasurePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
@@ -283,11 +292,11 @@ export function DocumentReader<TBlock, TLede = TBlock>({
     measureDragRef.current = null;
     setMeasureDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
-    commitMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available));
+    commitMeasure(measureAfterDrag(drag.startWidth, event.clientX - drag.startX, drag.available, measureMax));
   };
 
   const onMeasureKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = measureAfterKey(currentMeasure(), event.key, event.shiftKey, availableMeasure());
+    const next = measureAfterKey(currentMeasure(), event.key, event.shiftKey, availableMeasure(), measureMax);
     if (next === undefined) return;
     event.preventDefault();
     event.stopPropagation();
@@ -511,7 +520,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
         {
           "--reader-text-scale": scaleForIndex(scaleIndex),
           ...(customMeasure != null
-            ? { "--document-reader-prose-measure": `${customMeasure}px` }
+            ? { "--document-reader-prose-measure": readerMeasureCss(customMeasure) }
             : {}),
         } as CSSProperties
       }
@@ -652,29 +661,36 @@ export function DocumentReader<TBlock, TLede = TBlock>({
 
         <div ref={columnRef} className="document-reader__column document-reader__prose rr-doc__column">
           {resizeKey ? (
+            // The whole column edge is a drag target (the track), while the
+            // keyboard separator is a small grip that stays in view as the
+            // document scrolls, so focusing it never scrolls the reader.
             <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Reading width"
-              aria-valuemin={READER_MEASURE_MIN_PX}
-              aria-valuemax={READER_MEASURE_MAX_PX}
-              aria-valuenow={Math.round(customMeasure ?? columnWidth ?? READER_MEASURE_MAX_PX)}
-              aria-valuetext={
-                customMeasure == null
-                  ? "Preset width"
-                  : `${Math.round(customMeasure)} pixels`
-              }
-              tabIndex={0}
-              title="Drag to resize. Double-click or Enter to reset."
-              className="document-reader__measure-handle focus-ring"
+              className="document-reader__measure-track"
               data-dragging={measureDragging ? "" : undefined}
+              title="Drag to resize. Double-click to reset."
               onPointerDown={onMeasurePointerDown}
               onPointerMove={onMeasurePointerMove}
               onPointerUp={onMeasurePointerEnd}
               onPointerCancel={onMeasurePointerEnd}
               onDoubleClick={() => commitMeasure(null)}
-              onKeyDown={onMeasureKeyDown}
-            />
+            >
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Reading width"
+                aria-valuemin={READER_MEASURE_MIN_PX}
+                aria-valuemax={measureMax}
+                aria-valuenow={Math.min(measureMax, Math.round(customMeasure ?? columnWidth ?? measureMax))}
+                aria-valuetext={
+                  customMeasure == null
+                    ? "Preset width"
+                    : `${Math.min(measureMax, Math.round(customMeasure))} pixels`
+                }
+                tabIndex={0}
+                className="document-reader__measure-grip focus-ring"
+                onKeyDown={onMeasureKeyDown}
+              />
+            </div>
           ) : null}
           {hasBody ? (
             <>

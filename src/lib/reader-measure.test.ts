@@ -6,8 +6,11 @@ import {
   READER_MEASURE_MAX_PX,
   READER_MEASURE_MIN_PX,
   READER_MEASURE_STEP_PX,
+  READER_MEASURE_MAX_REM,
   clampReaderMeasure,
   loadReaderMeasure,
+  readerMeasureCss,
+  readerMeasureMaxPx,
   measureAfterDrag,
   measureAfterKey,
   parseStoredReaderMeasure,
@@ -20,6 +23,15 @@ test("the reading measure is capped at max-w-screen-2xl", () => {
   assert.equal(clampReaderMeasure(4000), 1536);
   assert.equal(clampReaderMeasure(10), READER_MEASURE_MIN_PX);
   assert.equal(clampReaderMeasure(900.4), 900);
+});
+
+test("the cap follows the root font size, and the inline value keeps the rem cap", () => {
+  assert.equal(READER_MEASURE_MAX_REM, 96);
+  assert.equal(readerMeasureMaxPx(16), 1536);
+  assert.equal(readerMeasureMaxPx(16.8), 1613, "the app's scaled root font");
+  assert.equal(readerMeasureMaxPx(Number.NaN), 1536);
+  assert.equal(clampReaderMeasure(1600, Number.POSITIVE_INFINITY, 1613), 1600);
+  assert.equal(readerMeasureCss(1176.4), "min(1176px, 96rem)");
 });
 
 test("available space bounds the maximum, never the minimum", () => {
@@ -41,6 +53,8 @@ test("the separator is keyboard operable", () => {
   assert.equal(measureAfterKey(800, "Home", false), READER_MEASURE_MIN_PX);
   assert.equal(measureAfterKey(800, "End", false), READER_MEASURE_MAX_PX);
   assert.equal(measureAfterKey(800, "End", false, 1100), 1100);
+  assert.equal(measureAfterKey(800, "End", false, undefined, 1613), 1613, "End reaches the scaled 96rem cap");
+  assert.equal(measureAfterKey(1613, "ArrowLeft", false, undefined, 1613), 1573, "no jump down to 1536 first");
   assert.equal(measureAfterKey(800, "Enter", false), null, "Enter returns to the preset");
   assert.equal(measureAfterKey(800, "e", false), undefined, "other keys keep their meaning");
 });
@@ -51,7 +65,8 @@ test("stored widths are validated and clamped", () => {
   assert.equal(parseStoredReaderMeasure("wide"), null);
   assert.equal(parseStoredReaderMeasure("NaN"), null);
   assert.equal(parseStoredReaderMeasure("1200"), 1200);
-  assert.equal(parseStoredReaderMeasure("99999"), READER_MEASURE_MAX_PX);
+  assert.equal(parseStoredReaderMeasure("1613"), 1613, "a width saved at a larger root size survives");
+  assert.equal(parseStoredReaderMeasure("99999"), 4096, "absurd values are bounded; CSS still caps at 96rem");
 });
 
 test("widths persist per surface and clear back to the preset", () => {

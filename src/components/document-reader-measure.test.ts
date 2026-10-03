@@ -53,6 +53,13 @@ const handles = (renderer: ReactTestRenderer) =>
 const measure = (renderer: ReactTestRenderer) =>
   readerRoot(renderer).props.style["--document-reader-prose-measure"];
 
+const track = (renderer: ReactTestRenderer) =>
+  renderer.root.find(
+    (node) => node.type === "div" && node.props.className === "document-reader__measure-track",
+  );
+
+const css = (px: number) => `min(${px}px, 96rem)`;
+
 const key = (k: string, shiftKey = false) => ({
   key: k,
   shiftKey,
@@ -81,14 +88,14 @@ test("an opted-in reader exposes a keyboard-operable width separator", async () 
   assert.equal(measure(renderer), undefined, "no custom width until the person resizes");
 
   await act(async () => handle.props.onKeyDown(key("ArrowLeft")));
-  assert.equal(measure(renderer), `${READER_MEASURE_MAX_PX - READER_MEASURE_STEP_PX}px`);
+  assert.equal(measure(renderer), css(READER_MEASURE_MAX_PX - READER_MEASURE_STEP_PX));
   assert.equal(handles(renderer)[0].props["aria-valuetext"], `${READER_MEASURE_MAX_PX - READER_MEASURE_STEP_PX} pixels`);
 
   await act(async () => handles(renderer)[0].props.onKeyDown(key("Home")));
-  assert.equal(measure(renderer), `${READER_MEASURE_MIN_PX}px`);
+  assert.equal(measure(renderer), css(READER_MEASURE_MIN_PX));
 
   await act(async () => handles(renderer)[0].props.onKeyDown(key("End")));
-  assert.equal(measure(renderer), `${READER_MEASURE_MAX_PX}px`, "End widens to the 96rem cap");
+  assert.equal(measure(renderer), css(READER_MEASURE_MAX_PX), "End widens to the 96rem cap");
 
   await act(async () => handles(renderer)[0].props.onKeyDown(key("Enter")));
   assert.equal(measure(renderer), undefined, "Enter hands the width back to the preset");
@@ -114,19 +121,19 @@ test("dragging the column edge resizes a centered column and double-click resets
     preventDefault() {},
   });
 
-  await act(async () => handles(renderer)[0].props.onPointerDown(pointer(500)));
-  assert.equal(handles(renderer)[0].props["data-dragging"], "");
-  await act(async () => handles(renderer)[0].props.onPointerMove(pointer(600)));
-  assert.equal(measure(renderer), `${READER_MEASURE_MIN_PX + 200}px`, "a 100px edge move widens by 200px");
-  await act(async () => handles(renderer)[0].props.onPointerUp(pointer(650)));
-  assert.equal(measure(renderer), `${READER_MEASURE_MIN_PX + 300}px`);
-  assert.equal(handles(renderer)[0].props["data-dragging"], undefined);
+  await act(async () => track(renderer).props.onPointerDown(pointer(500)));
+  assert.equal(track(renderer).props["data-dragging"], "");
+  await act(async () => track(renderer).props.onPointerMove(pointer(600)));
+  assert.equal(measure(renderer), css(READER_MEASURE_MIN_PX + 200), "a 100px edge move widens by 200px");
+  await act(async () => track(renderer).props.onPointerUp(pointer(650)));
+  assert.equal(measure(renderer), css(READER_MEASURE_MIN_PX + 300));
+  assert.equal(track(renderer).props["data-dragging"], undefined);
 
   // A stray move after release does nothing.
-  await act(async () => handles(renderer)[0].props.onPointerMove(pointer(900)));
-  assert.equal(measure(renderer), `${READER_MEASURE_MIN_PX + 300}px`);
+  await act(async () => track(renderer).props.onPointerMove(pointer(900)));
+  assert.equal(measure(renderer), css(READER_MEASURE_MIN_PX + 300));
 
-  await act(async () => handles(renderer)[0].props.onDoubleClick());
+  await act(async () => track(renderer).props.onDoubleClick());
   assert.equal(measure(renderer), undefined);
   await act(async () => renderer.unmount());
 });
@@ -141,15 +148,27 @@ test("choosing a width preset or resetting preferences drops the custom width", 
   assert.match(source, /const resetReadingPreferences = \(\) => \{\s*if \(resizeKey\) commitMeasure\(null\);/);
 });
 
-test("the handle is styled from tokens and steps aside in narrow readers", () => {
-  const css = readFileSync(new URL("../styles/grimoire-launcher.css", import.meta.url), "utf8");
+test("the edge is a full-height drag track with a sticky, always-visible grip", () => {
+  const sheet = readFileSync(new URL("../styles/grimoire-launcher.css", import.meta.url), "utf8");
   const rootCss = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
-  assert.doesNotMatch(rootCss, /document-reader__measure-handle/, "the root-loaded reader sheet stays unchanged");
-  assert.match(css, /\.document-reader--resizable \.document-reader__column\s*\{\s*position: relative;/);
-  assert.match(css, /\.document-reader__measure-handle\s*\{[\s\S]*?cursor: col-resize;[\s\S]*?touch-action: none;/);
+  assert.doesNotMatch(rootCss, /document-reader__measure-/, "the root-loaded reader sheet stays unchanged");
+  assert.match(sheet, /\.document-reader--resizable \.document-reader__column\s*\{\s*position: relative;/);
+  assert.match(sheet, /\.document-reader__measure-track\s*\{[\s\S]*?top: 0;\s*bottom: 0;[\s\S]*?cursor: col-resize;[\s\S]*?touch-action: none;/);
   assert.match(
-    css,
-    /@container document-reader \(max-width: 40rem\)\s*\{\s*\.document-reader__measure-handle\s*\{\s*display: none;/,
+    sheet,
+    /\.document-reader__measure-grip\s*\{\s*position: sticky;/,
+    "a sticky grip stays in view, so keyboard focus never scrolls the document",
   );
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.document-reader__measure-handle::after\s*\{\s*transition: none;/);
+  assert.match(sheet, /\.document-reader__measure-grip:focus-visible::before\s*\{[\s\S]*?opacity: 1;/);
+  assert.match(
+    sheet,
+    /@container document-reader \(max-width: 40rem\)\s*\{\s*\.document-reader__measure-track\s*\{\s*display: none;/,
+  );
+  assert.match(sheet, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.document-reader__measure-track::after,\s*\.document-reader__measure-grip::before\s*\{\s*transition: none;/);
+});
+
+test("a stored width is applied through the 96rem cap", () => {
+  const source = readFileSync(new URL("./document-reader.tsx", import.meta.url), "utf8");
+  assert.match(source, /"--document-reader-prose-measure": readerMeasureCss\(customMeasure\)/);
+  assert.match(source, /readerMeasureMaxPx\(Number\.parseFloat\(window\.getComputedStyle\(window\.document\.documentElement\)\.fontSize\)\)/);
 });
