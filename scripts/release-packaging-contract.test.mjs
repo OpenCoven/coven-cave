@@ -65,6 +65,10 @@ const SIGNING_SECRETS = [
   "APPLE_PASSWORD",
   "TAURI_SIGNING_PRIVATE_KEY",
   "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  "ES_USERNAME",
+  "ES_PASSWORD",
+  "CREDENTIAL_ID",
+  "ES_TOTP_SECRET",
 ];
 
 test("no signing or updater credential is reachable from PR CI", () => {
