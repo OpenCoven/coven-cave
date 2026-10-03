@@ -262,7 +262,8 @@ export function RailFilePreview({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           path: target,
-          content: sending.content,
+          // The file's own line breaks (#5745): a CRLF file stays CRLF.
+          content: sending.body,
           familiarId: familiarId ?? undefined,
           expectedVersion: sending.baseVersion ?? undefined,
         }),
@@ -283,7 +284,7 @@ export function RailFilePreview({
       // Only the file the save was for takes its text, and only if it is
       // still the one on screen; elsewhere it is read fresh on return.
       if (pathRef.current === target) {
-        setFile({ kind: "text", content: sending.content, size: json.size ?? sending.content.length, version: json.version ?? null });
+        setFile({ kind: "text", content: sending.body, size: json.size ?? sending.body.length, version: json.version ?? null });
         if (!stillOpen) setJustSaved(true);
       }
       announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);
