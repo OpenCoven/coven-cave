@@ -565,8 +565,11 @@ test.describe("Coding Desk overhaul (#5705)", () => {
       };
     });
     expect(fits).toEqual({ name: true, actions: true });
-    await expect(viewer.getByRole("button", { name: "Edit" })).toBeVisible();
-    await expect(viewer.getByRole("button", { name: "Copy" })).toBeVisible();
+    // The header's own actions: the highlighted source renders a code block
+    // with its own Copy once Shiki loads (#5779).
+    const actions = viewer.locator(".workspace-rail__preview-actions");
+    await expect(actions.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
   });
 
   test("10. the open drawer goes straight from the status strip to the pane bar", async ({ page }) => {

@@ -410,9 +410,12 @@ export function SessionChangesInner({
   // it's still there (the revert failed), else to the row that took its
   // place, else to the panel's first control. Only when focus fell to the
   // page (#5778 review): a person who moved on meanwhile, in the panel or
-  // anywhere else, keeps their place.
+  // anywhere else, keeps their place. It runs from an effect, after the
+  // commit that re-enables Revert (#5779): a frame queued in `finally` could
+  // fire first, while Revert was still disabled, and the focus call failed.
   const panelRef = useRef<HTMLDivElement | null>(null);
   const gridBodyRef = useRef<HTMLTableSectionElement | null>(null);
+  const [revertFocus, setRevertFocus] = useState<{ path: string; index: number } | null>(null);
   const restoreFocusAfterRevert = useCallback((path: string, index: number) => {
     const panel = panelRef.current;
     const active = document.activeElement;
@@ -425,6 +428,9 @@ export function SessionChangesInner({
       : rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLElement>('[data-grid-col="0"]');
     (target ?? panel.querySelector<HTMLElement>("button:not([disabled])"))?.focus();
   }, []);
+  useEffect(() => {
+    if (revertFocus) restoreFocusAfterRevert(revertFocus.path, revertFocus.index);
+  }, [revertFocus, restoreFocusAfterRevert]);
 
   const revertFile = useCallback(
     async (file: ChangedFile) => {
@@ -460,10 +466,10 @@ export function SessionChangesInner({
         setActionError({ action: "Couldn't revert the file", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setRevertingPath(null);
-        requestAnimationFrame(() => restoreFocusAfterRevert(file.path, Math.max(0, index)));
+        setRevertFocus({ path: file.path, index: Math.max(0, index) });
       }
     },
-    [files, load, loadCheckpoints, projectRoot, restoreFocusAfterRevert],
+    [files, load, loadCheckpoints, projectRoot],
   );
 
   const commitChanges = useCallback(async () => {
