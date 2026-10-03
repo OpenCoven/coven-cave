@@ -67,6 +67,7 @@ import {
   applyReadingWidth,
   type ReadingWidth,
 } from "@/lib/reading-width";
+import { SCREEN_SCALE_EVENT } from "@/lib/screen-magnification";
 import {
   READER_MEASURE_MAX_PX,
   READER_MEASURE_MIN_PX,
@@ -231,10 +232,19 @@ export function DocumentReader<TBlock, TLede = TBlock>({
 
   useEffect(() => {
     setCustomMeasure(resizeKey ? loadReaderMeasure(resizeKey) : null);
+  }, [resizeKey]);
+
+  // Resolve the 96rem cap against the current root font size, and again
+  // whenever screen magnification changes it while this reader is open.
+  // Refreshing the bound never touches the saved width.
+  useEffect(() => {
     // `window.document`: the `document` prop shadows the global here.
-    if (resizeKey && typeof window !== "undefined" && window.document) {
+    if (!resizeKey || typeof window === "undefined" || !window.document) return;
+    const refresh = () =>
       setMeasureMax(readerMeasureMaxPx(Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize)));
-    }
+    refresh();
+    window.addEventListener(SCREEN_SCALE_EVENT, refresh);
+    return () => window.removeEventListener(SCREEN_SCALE_EVENT, refresh);
   }, [resizeKey]);
 
   useEffect(() => {
@@ -258,14 +268,18 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   /** Width the column could take inside the scroller's gutters. */
   const availableMeasure = () => {
     const scroller = scrollerRef.current;
-    if (!scroller || typeof window === "undefined") return READER_MEASURE_MAX_PX;
+    // Unmeasurable means "no extra limit": the 96rem cap still applies.
+    if (!scroller || typeof window === "undefined") return Number.POSITIVE_INFINITY;
     const style = window.getComputedStyle(scroller);
     const gutters = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
     return Math.max(READER_MEASURE_MIN_PX, scroller.clientWidth - gutters);
   };
 
+  // The width actually on screen wins over the saved one: a saved width can
+  // exceed the pane after the window narrows or focus reading ends, and
+  // resizing must start from what the person sees.
   const currentMeasure = () =>
-    customMeasure ?? columnRef.current?.getBoundingClientRect().width ?? columnWidth ?? READER_MEASURE_MAX_PX;
+    columnRef.current?.getBoundingClientRect().width || columnWidth || customMeasure || measureMax;
 
   const onMeasurePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -680,11 +694,11 @@ export function DocumentReader<TBlock, TLede = TBlock>({
                 aria-label="Reading width"
                 aria-valuemin={READER_MEASURE_MIN_PX}
                 aria-valuemax={measureMax}
-                aria-valuenow={Math.min(measureMax, Math.round(customMeasure ?? columnWidth ?? measureMax))}
+                aria-valuenow={Math.min(measureMax, Math.round(columnWidth ?? customMeasure ?? measureMax))}
                 aria-valuetext={
                   customMeasure == null
                     ? "Preset width"
-                    : `${Math.min(measureMax, Math.round(customMeasure))} pixels`
+                    : `${Math.min(measureMax, Math.round(columnWidth ?? customMeasure))} pixels`
                 }
                 tabIndex={0}
                 className="document-reader__measure-grip focus-ring"

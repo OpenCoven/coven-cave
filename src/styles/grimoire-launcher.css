@@ -134,15 +134,23 @@
    * bounded on very wide windows. Aa → Width → Medium/Narrow and the column's
    * drag handle narrow it (#5769). */
   --document-reader-prose-measure: var(--cave-reading-width, 96rem);
-  /* Tables and code break out to at least the shared wide track, and never
-   * render narrower than the prose around them. */
-  --document-reader-wide-measure: min(
-    max(88ch, var(--document-reader-prose-measure)),
-    calc(
-      100cqw - var(--document-reader-column-gutter) -
-        var(--document-reader-column-gutter)
-    )
-  );
+  /* Tables and code break out to at least the shared wide track, never
+   * render narrower than the prose around them, and never wider than the
+   * scrolling pane (see the pane container below). */
+  --document-reader-wide-measure: min(max(88ch, var(--document-reader-prose-measure)), 100cqw);
+}
+
+/* `100cqw` above must measure the scrolling pane, not the whole reader: with
+ * the Contents rail open the reader's own width includes the 13rem rail, and
+ * the pane clips anything wider (overflow-x: hidden). As an inline-size
+ * container the pane's content box already excludes its gutters and any
+ * scrollbar, and it follows the rail collapsing on narrow readers. */
+.grimoire-reader .document-reader__scroll {
+  container-type: inline-size;
+}
+
+.grimoire-reader .document-reader__wide-block {
+  max-width: 100cqw;
 }
 
 /* Direct measure resize (#5769). Only readers given a `resizeKey` render the

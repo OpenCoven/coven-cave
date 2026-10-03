@@ -22,7 +22,7 @@ const doc: DocumentReaderDocument<Block, Block> = {
   sections: [{ id: "s1", heading: "First", level: 2, blocks: [paragraph("Body.")] }],
 };
 
-async function mount(props: Record<string, unknown> = {}) {
+async function mount(props: Record<string, unknown> = {}, options: { columnWidth?: number } = {}) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(
@@ -33,6 +33,16 @@ async function mount(props: Record<string, unknown> = {}) {
         renderBlock: (block, key) => createElement(MarkdownReaderBlock, { block, blockKey: key }),
         ...props,
       }),
+      options.columnWidth == null
+        ? undefined
+        : {
+            // Give the prose column a rendered box, as the browser would.
+            createNodeMock: (element) =>
+              typeof element.props.className === "string" &&
+              element.props.className.includes("document-reader__column")
+                ? { getBoundingClientRect: () => ({ width: options.columnWidth }) }
+                : null,
+          },
     );
   });
   return renderer;
@@ -136,6 +146,54 @@ test("dragging the column edge resizes a centered column and double-click resets
   await act(async () => track(renderer).props.onDoubleClick());
   assert.equal(measure(renderer), undefined);
   await act(async () => renderer.unmount());
+});
+
+test("resizing starts from the rendered column when a saved width no longer fits", async () => {
+  // A wide saved width, then a narrower pane (window narrowed, focus ended):
+  // the column renders at 800px while 1536px is still saved.
+  const renderer = await mount({ resizeKey: "test-surface" }, { columnWidth: 800 });
+  await act(async () => handles(renderer)[0].props.onKeyDown(key("End")));
+  assert.equal(measure(renderer), css(READER_MEASURE_MAX_PX));
+
+  await act(async () => handles(renderer)[0].props.onKeyDown(key("ArrowLeft")));
+  assert.equal(measure(renderer), css(800 - READER_MEASURE_STEP_PX), "the first ArrowLeft visibly narrows the column");
+
+  const target = { setPointerCapture() {}, releasePointerCapture() {} };
+  const pointer = (clientX: number) => ({ button: 0, pointerId: 3, clientX, currentTarget: target, preventDefault() {} });
+  await act(async () => track(renderer).props.onPointerDown(pointer(1000)));
+  await act(async () => track(renderer).props.onPointerUp(pointer(950)));
+  assert.equal(measure(renderer), css(700), "a 50px drag narrows from the 800px on screen, not the saved width");
+  await act(async () => renderer.unmount());
+});
+
+test("the resize bound follows screen magnification without touching the saved width", async () => {
+  const listeners = new Map();
+  let fontPx = 16;
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    addEventListener: (type, fn) => listeners.set(type, fn),
+    removeEventListener: (type) => listeners.delete(type),
+    getComputedStyle: () => ({ fontSize: `${fontPx}px`, paddingLeft: "0px", paddingRight: "0px" }),
+    document: { documentElement: {} },
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  };
+  try {
+    const renderer = await mount({ resizeKey: "test-surface" });
+    assert.equal(handles(renderer)[0].props["aria-valuemax"], 1536);
+    await act(async () => handles(renderer)[0].props.onKeyDown(key("Home")));
+
+    fontPx = 20; // 125% magnification
+    await act(async () => listeners.get("cave:screen-scale-change")());
+    assert.equal(handles(renderer)[0].props["aria-valuemax"], 1920, "96rem at the magnified root");
+    assert.equal(measure(renderer), css(READER_MEASURE_MIN_PX), "the saved width is untouched");
+
+    await act(async () => handles(renderer)[0].props.onKeyDown(key("End")));
+    assert.equal(measure(renderer), css(1920), "End reaches the new cap");
+    await act(async () => renderer.unmount());
+    assert.equal(listeners.has("cave:screen-scale-change"), false, "the listener is removed on unmount");
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });
 
 test("choosing a width preset or resetting preferences drops the custom width", () => {
