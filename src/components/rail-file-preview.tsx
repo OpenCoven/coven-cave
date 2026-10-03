@@ -11,6 +11,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
 import { FILE_CHANGED_ON_DISK, fileEditDrafts } from "@/lib/file-edit-drafts";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
@@ -146,9 +147,11 @@ export function RailFilePreview({
   useEffect(() => {
     if (path || !projectRoot || !onOpenPath) return;
     let cancelled = false;
-    void fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" })
-      .then(async (res) => {
-        const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
+    // Through the shared summary gate (#5745): the desk's own list is read at
+    // the same moment, and one request answers both.
+    void fetchChangesSummary(projectRoot)
+      .then(({ json: raw }) => {
+        const json = raw as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (cancelled || !json.ok || !Array.isArray(json.files)) return;
         setLaunchpad({
           root: projectRoot,
@@ -262,7 +265,8 @@ export function RailFilePreview({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           path: target,
-          content: sending.content,
+          // The file's own line breaks (#5745): a CRLF file stays CRLF.
+          content: sending.body,
           familiarId: familiarId ?? undefined,
           expectedVersion: sending.baseVersion ?? undefined,
         }),
@@ -283,7 +287,7 @@ export function RailFilePreview({
       // Only the file the save was for takes its text, and only if it is
       // still the one on screen; elsewhere it is read fresh on return.
       if (pathRef.current === target) {
-        setFile({ kind: "text", content: sending.content, size: json.size ?? sending.content.length, version: json.version ?? null });
+        setFile({ kind: "text", content: sending.body, size: json.size ?? sending.body.length, version: json.version ?? null });
         if (!stillOpen) setJustSaved(true);
       }
       announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);

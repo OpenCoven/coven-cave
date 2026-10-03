@@ -293,4 +293,43 @@ const terminalTreeSrc = await readFile(new URL("../lib/code-terminal-tree.ts", i
 assert.match(terminalTreeSrc, /const PANE_ID_PREFIX = \(\(\) => \{[\s\S]{0,120}globalThis\.crypto\.getRandomValues\(bytes\);/, "the pane-id prefix comes from crypto.getRandomValues");
 assert.doesNotMatch(terminalTreeSrc, /Math\.random/, "no Math.random in pane ids");
 
+// ── Pass 4 low fixes (#5745) ─────────────────────────────────────────────────
+const workbenchTreeSrc = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
+const rowsSrcLow = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
+const pickerLib = await readFile(new URL("../lib/code-session-picker.ts", import.meta.url), "utf8");
+const draftsLow = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
+const changesHookLow = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
+const treeCssLow = await readFile(new URL("../styles/project-tree.css", import.meta.url), "utf8");
+// 15. The tree re-reads folders whose files came or went.
+assert.match(workbenchTreeSrc, /const STRUCTURAL_STATUSES = new Set<FileStatus>\(\["added", "untracked", "deleted", "renamed"\]\);/, "only adds, deletes and renames change the tree's folders");
+assert.match(workbenchTreeSrc, /refreshDirs=\{refreshDirs\}/, "the desk hands the changed folders to the tree");
+assert.match(treeSrc, /setRefetchSignal\(\(prev\) => \(\{ dirs: new Set\(refreshDirs\.dirs\), nonce: prev\.nonce \+ 1 \}\)\);/, "the tree re-reads the folders it is told about");
+assert.match(workbenchTreeSrc, /lastStructureRef\.current = structureKey;\s*if \(previous === structureKey\) return;/, "the first ready list also refreshes the folders it names (#5753 review)");
+// 16. The changes table is a one-stop grid of memoized rows.
+assert.match(panelSrc, /role="grid"\s*aria-label="Changed files"/, "the changes table is a grid");
+assert.match(panelSrc, /onKeyDown=\{onGridKeyDown\}\s*onFocus=\{onGridFocus\}/, "arrow keys move through it and the last cell keeps the stop");
+assert.match(rowsSrcLow, /export const FileRow = memo\(function FileRow\(/, "rows are memoized");
+assert.match(rowsSrcLow, /data-grid-row=\{confirmRowKey\(file\.path\)\}/, "the revert confirmation is a grid row (#5753 review)");
+assert.match(rowsSrcLow, /data-grid-col=\{0\}\s*tabIndex=\{confirmTab\(0\)\}/, "Cancel joins the grid's one tab stop");
+assert.match(rowsSrcLow, /data-grid-col=\{1\}\s*tabIndex=\{confirmTab\(1\)\}/, "Confirm joins the grid's one tab stop");
+assert.match(rowsSrcLow, /if \(confirmRevert && col === revertCol\) return -1;/, "the hidden Revert cell gives up its stop while the confirmation is open");
+assert.match(panelSrc, /onToggle=\{onToggleRow\}\s*onRevert=\{onRevertRow\}/, "rows get stable callbacks");
+assert.match(workbench, /const roomKey = useMemo\(\(\) => codeChangeSnapshotKey\(railFileShapes\), \[railFileShapes\]\);/, "the room key is computed once per list");
+assert.match(reviewRail, /if \(!frame\) frame = requestAnimationFrame\(flush\);/, "the rail drag sets one width per frame");
+// 17. A match hidden by the group chip is not a miss.
+assert.match(pickerLib, /offersCreate: visible\.length === 0 && query\.trim\(\)\.length > 0,/, "create is offered only when nothing matches anywhere");
+// 18. Forced colours keep the selections.
+assert.match(roomCss, /@media \(forced-colors: active\) \{\s*\[data-code-session-id\]\[aria-current="true"\] \{\s*outline: 2px solid Highlight;/, "the current session keeps an outline in forced colours");
+assert.match(treeCssLow, /@media \(forced-colors: active\) \{\s*\.ui-btn\[data-tree-row\]\[data-selected="true"\] \{\s*outline: 2px solid Highlight;/, "the selected file keeps an outline in forced colours");
+// 19. The terminal bar wraps.
+assert.match(roomCss, /\.code-terminal-workspace__actions \{[^}]*flex-wrap: wrap;/, "the terminal bar's actions wrap on a narrow desk");
+// 20. CRLF files are saved as CRLF.
+assert.match(draftsLow, /const body = draft\.eol === "\\r\\n" \? draft\.content\.replace\(\/\\n\/g, "\\r\\n"\) : draft\.content;/, "a CRLF file is saved back in CRLF");
+assert.match(preview, /content: sending\.body,/, "the viewer sends the file's own line breaks");
+// 21. A failed resolve says so.
+assert.match(prPanelSrc, /\} catch \(err\) \{\s*setResolveError\(/, "a resolve that never reached GitHub is reported");
+// 22. One mount-time read of the change list.
+assert.match(changesHookLow, /void load\(\{ shared: true \}\);\s*const onVisible/, "the desk's hook shares its mount read");
+assert.match(panelSrc, /useEffect\(\(\) => \{\s*void load\(\{ shared: true \}\);/, "the panel shares its mount read");
+
 console.log("code-desk-overhaul pins ok");

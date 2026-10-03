@@ -70,6 +70,12 @@ type Props = {
   onDirSelect?: (path: string) => void;
   /** Paths already picked — folder-picker mode marks them as added. */
   selectedDirs?: Set<string>;
+  /**
+   * Folders a host knows have gained or lost entries (#5745), e.g. the Coding
+   * Desk when the agent creates or deletes files. Each new `nonce` re-reads
+   * the loaded ones in place; the root reloads when it is among them.
+   */
+  refreshDirs?: { dirs: ReadonlySet<string>; nonce: number } | null;
 };
 
 /** Signals affected directories to refetch their children after a move. */
@@ -181,7 +187,7 @@ async function requestMove(from: string, toDir: string, familiarId = ""): Promis
 // ─── Root component ───────────────────────────────────────────────────────────
 
 export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
-  function ProjectTree({ root: rootProp, familiarId = "", decorate, selectedPath, onFileClick, onDirSelect, selectedDirs }, ref) {
+  function ProjectTree({ root: rootProp, familiarId = "", decorate, selectedPath, onFileClick, onDirSelect, selectedDirs, refreshDirs }, ref) {
     const [root, setRoot] = useState<string>("");
     const [entries, setEntries] = useState<TreeEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -234,6 +240,17 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     useEffect(() => { void load(); }, [load]);
 
     useImperativeHandle(ref, () => ({ refresh: () => void load() }), [load]);
+
+    // A host's list of changed folders (#5745): the tree used to load once
+    // and never notice files the agent created or deleted.
+    const loadRef = useRef(load);
+    loadRef.current = load;
+    useEffect(() => {
+      if (!refreshDirs || refreshDirs.dirs.size === 0) return;
+      setRefetchSignal((prev) => ({ dirs: new Set(refreshDirs.dirs), nonce: prev.nonce + 1 }));
+      const top = (rootProp ?? "").replace(/\/+$/, "");
+      if (refreshDirs.dirs.has(top)) void loadRef.current();
+    }, [refreshDirs, rootProp]);
 
     const handleMove = useCallback(async (fromPath: string, toDirPath: string) => {
       if (!fromPath || !toDirPath || fromPath === toDirPath) return;
