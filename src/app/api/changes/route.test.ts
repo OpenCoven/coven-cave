@@ -194,7 +194,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!\(await changedEntry\(root\.repoRoot, filePath\)\)\) return pathNotAllowed\(\);/,
+  /const entry = await changedEntry\(root\.repoRoot, filePath\);\s*if \(!entry\) return pathNotAllowed\(\);\s*return await diffFile\(root\.repoRoot, entry\);/,
   "single-file diff requests should only serve paths present in git status",
 );
 assert.match(

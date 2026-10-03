@@ -439,6 +439,20 @@ assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)
   assert.match(prPanel, /title=\{step\.detail\}>[\s\S]{0,200}<span className="sr-only">\{`, \$\{step\.detail\}`\}<\/span>/, "a stage step says its state");
   assert.match(inspector, /aria-current=\{b\.current \? "true" : undefined\}/);
   assert.match(roomCss, /@media \(forced-colors: active\) \{\s*\.code-picker__row\[data-active="true"\] \{ outline: 2px solid Highlight;/);
+  const previewLow6 = await readFile(new URL("./rail-file-preview.tsx", import.meta.url), "utf8");
+  const rowsLow6 = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
+  const railLow6 = await readFile(new URL("./code-session-rail.tsx", import.meta.url), "utf8");
+  const treeLow6b = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
+  // 33. Each announcement once: the missing file when it happens, a stored
+  // error not again on remount.
+  assert.match(previewLow6, /useEffect\(\(\) => \{\s*if \(missingOnDisk\) announce\("This file is no longer on disk\."\);\s*\}, \[missingOnDisk, announce\]\);/);
+  assert.match(panelSrc, /role=\{shownError !== errorAtMount \? "alert" : undefined\}/);
+  // 34. Graphics with a name are images; a label on a plain span isn't read.
+  assert.match(rowsLow6, /role="img"\s*aria-label=\{meta\.label\}/);
+  assert.equal(railLow6.match(/role="img" aria-label="(running|failed)"/g)?.length, 2);
+  // 37. Start-truncated paths are isolated.
+  assert.match(treeLow6b, /<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]"><HiddenUnicodeText text=\{file\.path\} \/><\/bdi>/);
+  assert.equal(previewLow6.match(/<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]">/g)?.length, 2, "the launchpad's name and folder");
 }
 
 console.log("code-desk-overhaul pins ok");
