@@ -18,6 +18,7 @@ import {
 } from "@/lib/canvas-git-delivery";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
+import { buildCheckpointPatch, restoreCheckpointPatch, type CheckpointRestoreOutcome } from "@/lib/server/checkpoint-restore";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,8 @@ const DEV_NULL = os.devNull;
  * GET  ?projectRoot=<abs>&branches=1       → local branches (current/worktree marked)
  * POST { projectRoot, path, confirmUntracked? } → revert ONE file (auto-checkpoints first)
  * POST { projectRoot, action: "checkpoint" } → save a patch snapshot
- * POST { projectRoot, action: "restore-checkpoint", checkpoint } → git apply a snapshot
+ * POST { projectRoot, action: "restore-checkpoint", checkpoint } → bring back what the
+ *        snapshot holds, file by file, keeping anything changed since (#5756)
  * POST { projectRoot, action: "delete-checkpoint", checkpoint } → remove a snapshot
  * POST { projectRoot, action: "switch-branch", branch } → git switch (chat's branch menu)
  * POST { projectRoot, action: "create-worktree", branch, baseRef? } → .worktrees/<branch>
@@ -570,32 +572,7 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
 async function checkpointChanges(repoRoot: string): Promise<string> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
-  let patch = "";
-  try {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "HEAD", "--"]));
-  } catch {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "--"]));
-  }
-
-  const { stdout: statusOut } = await git(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  for (const file of parsePorcelainZ(statusOut)) {
-    if (file.status === "untracked") {
-      const abs = resolveContainedFile(repoRoot, file.path);
-      if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) continue;
-      try {
-        // Pass the REPO-RELATIVE path (cwd is repoRoot) so the synthesized
-        // add-file diff carries `b/<relpath>` headers that `git apply` can
-        // place back — absolute paths here would make the checkpoint
-        // un-restorable for untracked files.
-        const { stdout } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, file.path]);
-        patch += stdout;
-      } catch (err) {
-        const e = err as { code?: number; stdout?: string };
-        if (e.code === 1 && typeof e.stdout === "string") patch += e.stdout;
-        else throw err;
-      }
-    }
-  }
+  const patch = await buildCheckpointPatch(repoRoot, (relPath) => resolveContainedFile(repoRoot, relPath));
 
   const checkpointDir = await checkpointDirOf(repoRoot);
   fs.mkdirSync(/* turbopackIgnore: true */ checkpointDir, { recursive: true, mode: 0o700 });
@@ -630,12 +607,14 @@ async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
   return metas;
 }
 
-/** Apply a saved checkpoint patch onto the current worktree (3-way so it can
- *  reconstruct the snapshot even if the tree has moved since). */
-async function restoreCheckpoint(repoRoot: string, abs: string): Promise<void> {
-  const patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
-  if (!patch.trim()) return; // empty snapshot — nothing to apply
-  await git(repoRoot, ["apply", "--3way", "--whitespace=nowarn", abs]);
+/** Bring back what a checkpoint holds, file by file (#5756). Files changed
+ *  since it was taken are kept, and the state before restoring is itself
+ *  saved as a checkpoint first, so the restore can be undone too. */
+async function restoreCheckpoint(repoRoot: string, abs: string): Promise<CheckpointRestoreOutcome> {
+  return restoreCheckpointPatch(repoRoot, abs, {
+    contain: (relPath) => resolveContainedFile(repoRoot, relPath),
+    beforeWrite: () => checkpointChanges(repoRoot),
+  });
 }
 
 // ── POST: revert one file / checkpoint changes ───────────────────────────────
@@ -975,8 +954,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, deleted: body.checkpoint });
       }
       return await withRepositoryMutation(root.repoRoot, async () => {
-        await restoreCheckpoint(root.repoRoot, abs);
-        return NextResponse.json({ ok: true, restored: body.checkpoint });
+        const outcome = await restoreCheckpoint(root.repoRoot, abs);
+        return NextResponse.json({
+          ok: true,
+          checkpoint: body.checkpoint,
+          restored: outcome.restored,
+          unchanged: outcome.unchanged,
+          kept: outcome.kept,
+          checkpointPath: outcome.safetyCheckpointPath,
+        });
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

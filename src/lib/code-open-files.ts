@@ -43,6 +43,31 @@ export function openCodeFile(
 }
 
 /**
+ * A tab for every unsaved draft under `root` (#5756), so edits recovered
+ * after a reload or a restart of the desktop app show their unsaved marker
+ * instead of waiting, unseen, in the draft store. Keeps the active tab; with
+ * none, the first recovered draft becomes active. The tab limit doesn't
+ * apply here (#5760 review): it would close earlier recovered drafts' tabs
+ * to make room for later ones, hiding the very edits this surfaces.
+ */
+export function withDraftTabs(
+  state: CodeOpenFiles,
+  dirtyPaths: Iterable<string>,
+  root: string | null | undefined,
+): CodeOpenFiles {
+  if (!root) return state;
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  let next = state;
+  for (const path of dirtyPaths) {
+    if (!path.startsWith(prefix) || next.paths.includes(path)) continue;
+    const active = next.active;
+    next = openCodeFile(next, path, Number.POSITIVE_INFINITY);
+    if (active) next = { ...next, active };
+  }
+  return next;
+}
+
+/**
  * Close `path`. Closing the active tab activates its left neighbour, or the
  * right one when it was first — the file you were reading before, not the
  * newest arrival.

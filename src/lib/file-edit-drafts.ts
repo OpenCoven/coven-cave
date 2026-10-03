@@ -15,6 +15,13 @@
  *
  * Every write names its path, so a save that lands after the reader moved to
  * another file settles the file it was sent for and nothing else.
+ *
+ * Unsaved drafts are also kept in storage (#5756). The desktop app closes,
+ * quits and relaunches for an update without ever running an unload prompt,
+ * so a memory-only draft was simply gone; there it uses localStorage and the
+ * draft comes back on the next launch. A browser tab keeps them in
+ * sessionStorage, which survives a reload or a crash restore, and still warns
+ * before the tab closes.
  */
 
 export type FileEditDraft = {
@@ -44,6 +51,9 @@ export function fileLineBreak(content: string): "\n" | "\r\n" {
   const crlf = content.match(/\r\n/g)?.length ?? 0;
   return breaks > 0 && crlf === breaks ? "\r\n" : "\n";
 }
+
+/** What storage keeps of an unsaved draft (#5756). */
+export type SavedFileEditDraft = Pick<FileEditDraft, "path" | "content" | "baseContent" | "baseVersion" | "eol">;
 
 /** Clean drafts beyond this are dropped, oldest first. Dirty drafts never are. */
 export const FILE_EDIT_DRAFT_LIMIT = 40;
@@ -165,6 +175,20 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     acceptDisk(path: string) {
       patch(path, { baseVersion: null, conflict: false, error: null });
     },
+    /** Every draft, least recently changed first. */
+    all(): FileEditDraft[] {
+      return [...drafts.values()];
+    },
+    /** Bring back drafts kept in storage (#5756). A draft already open wins. */
+    restore(saved: readonly SavedFileEditDraft[]) {
+      let changed = false;
+      for (const entry of saved) {
+        if (drafts.has(entry.path)) continue;
+        drafts.set(entry.path, { ...entry, id: nextId++, saving: false, error: null, conflict: false });
+        changed = true;
+      }
+      if (changed) emit();
+    },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -172,15 +196,123 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
   };
 }
 
+export const FILE_EDIT_DRAFT_STORAGE_PREFIX = "cave.code.edit-draft.v1:";
+/** A draft larger than this (its text plus its base) stays in memory only. */
+export const FILE_EDIT_DRAFT_STORAGE_MAX_CHARS = 1_000_000;
+
+type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
+
+function readSavedDraft(path: string, raw: string | null): SavedFileEditDraft | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<SavedFileEditDraft>;
+    if (
+      typeof value.content !== "string" ||
+      typeof value.baseContent !== "string" ||
+      (value.baseVersion !== null && typeof value.baseVersion !== "string") ||
+      (value.eol !== "\n" && value.eol !== "\r\n") ||
+      value.content === value.baseContent
+    ) {
+      return null;
+    }
+    return { path, content: value.content, baseContent: value.baseContent, baseVersion: value.baseVersion, eol: value.eol };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keep every unsaved draft of `store` in `storage`, one key per file (#5756),
+ * and bring back what an earlier page left there. One key per file, so two
+ * windows sharing localStorage only overwrite each other on the same file.
+ * Writes are batched; call `flush` when the page is about to go away.
+ */
+export function persistFileEditDrafts(
+  store: FileEditDraftStore,
+  storage: DraftStorage,
+  schedule: (write: () => void) => void = (write) => { setTimeout(write, 150); },
+) {
+  const saved: SavedFileEditDraft[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (!key?.startsWith(FILE_EDIT_DRAFT_STORAGE_PREFIX)) continue;
+    const draft = readSavedDraft(key.slice(FILE_EDIT_DRAFT_STORAGE_PREFIX.length), storage.getItem(key));
+    if (draft) saved.push(draft);
+  }
+  store.restore(saved);
+
+  // What this page last wrote per path, so an unchanged draft isn't rewritten
+  // on every keystroke elsewhere, and a saved or discarded one is removed.
+  // The whole entry, not just the text (#5760 review): a save that lands
+  // while typing continues moves the base and its version, text unchanged.
+  const serialize = (draft: SavedFileEditDraft) =>
+    JSON.stringify({ content: draft.content, baseContent: draft.baseContent, baseVersion: draft.baseVersion, eol: draft.eol });
+  const written = new Map<string, string>(saved.map((draft) => [draft.path, serialize(draft)]));
+  let pending = false;
+  const flush = () => {
+    pending = false;
+    const keep = new Set<string>();
+    for (const draft of store.all()) {
+      if (!isDraftDirty(draft) || draft.content.length + draft.baseContent.length > FILE_EDIT_DRAFT_STORAGE_MAX_CHARS) continue;
+      keep.add(draft.path);
+      const entry = serialize(draft);
+      if (written.get(draft.path) === entry) continue;
+      try {
+        storage.setItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path, entry);
+        written.set(draft.path, entry);
+      } catch {
+        // Over quota, or storage refused: the draft is still held in memory.
+        keep.delete(draft.path);
+      }
+    }
+    for (const path of [...written.keys()]) {
+      if (keep.has(path)) continue;
+      try {
+        storage.removeItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + path);
+      } catch {
+        /* nothing more to do */
+      }
+      written.delete(path);
+    }
+  };
+  store.subscribe(() => {
+    if (pending) return;
+    pending = true;
+    schedule(flush);
+  });
+  return { flush };
+}
+
 export type FileEditDraftStore = ReturnType<typeof createFileEditDraftStore>;
 
 export const fileEditDrafts = createFileEditDraftStore();
+
+/** localStorage in the desktop app, where a quit runs no unload prompt;
+ *  sessionStorage in a browser tab, which does (#5756). */
+function draftStorage(): DraftStorage | null {
+  try {
+    // The same test as tauri-platform's isTauri(), inlined to keep this
+    // module free of app imports.
+    const desktop = (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
+    return desktop ? window.localStorage : window.sessionStorage;
+  } catch {
+    return null; // storage blocked: drafts stay memory-only
+  }
+}
 
 // One unload guard for the page, installed with the store rather than by a
 // viewer (#5746 review): drafts outlive the viewer (the Work and GitHub tabs
 // unmount it), so the warning has to as well.
 if (typeof window !== "undefined") {
+  const storage = draftStorage();
+  const persisted = storage ? persistFileEditDrafts(fileEditDrafts, storage) : null;
+  const flush = () => persisted?.flush();
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
+  });
   window.addEventListener("beforeunload", (event) => {
+    flush();
     if (!fileEditDrafts.hasDirty()) return;
     event.preventDefault();
     event.returnValue = "";

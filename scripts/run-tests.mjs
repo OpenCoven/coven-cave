@@ -257,6 +257,7 @@ export const SUITES = {
     "src/lib/open-external.test.ts",
     "src/lib/agents-new-chat.test.ts",
     "src/lib/server/change-file-versions.test.ts",
+    "src/lib/server/checkpoint-restore.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
     "src/lib/opencoven-tools-update-cache.test.ts",
@@ -939,6 +940,7 @@ export const SUITES = {
     "src/components/terminal-key-bar-touch.test.ts",
     "src/components/session-changes-totals.test.ts",
     "src/lib/session-changes-api.test.ts",
+    "src/lib/session-changes-format.test.ts",
     "src/components/session-changes-rows.test.ts",
     "src/components/session-changes-panel.test.ts",
     "src/components/project-tree-keynav.test.ts",
@@ -2160,6 +2162,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports the datetime helpers through the @/ alias (#5756)
+  "src/lib/session-changes-format.test.ts",
   // imports code-surface through the @/ alias (#5705)
   "src/lib/code-desk-header.test.ts",
   // imports caveHome through the @/ alias (#5679)
