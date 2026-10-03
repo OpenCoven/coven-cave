@@ -349,16 +349,21 @@ EOF
 done
 ```
 
-The commit connection omits closed, unmerged drafts. Search all GitHub PRs by
-the canonical head owner and exact branch, then filter every result by canonical
-head repository. GitHub search exposes at most 1,000 results; preserve rather
-than accepting truncated coverage:
+The commit connection omits closed, unmerged drafts. Search all GitHub PRs with
+the documented [`head:BRANCH` search qualifier](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests#search-by-branch-name),
+then filter every result by canonical head repository and the complete branch
+name. This search matches branch prefixes: a similarly named branch or a branch
+in another repository is not the candidate. Do not prepend the head owner;
+`owner:branch` is the separate Pulls REST endpoint's `head` parameter format and
+can produce false negatives in search. Quote the branch as data. GitHub search
+exposes at most 1,000 results; preserve rather than accepting truncated coverage:
 
 ```bash
 test -n "$canonical_origin_repo" ||
   { printf 'PRESERVE - canonical repository unavailable\n'; continue; }
-canonical_origin_owner=${canonical_origin_repo%%/*}
-head_search_query="is:pr head:$canonical_origin_owner:$branch"
+head_search_query=$(jq -nr --arg branch "$branch" \
+  '"is:pr head:" + ($branch | @json)') ||
+  { printf 'PRESERVE - head search query encoding failed\n'; continue; }
 head_search_pages=$(gh api --hostname github.com graphql --paginate --slurp \
   -F searchQuery="$head_search_query" -f query='
     query($searchQuery:String!, $endCursor:String) {
