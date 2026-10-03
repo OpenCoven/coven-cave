@@ -217,6 +217,42 @@ final class ReappearanceJourneyTests: XCTestCase {
         XCTAssertEqual(afterReopen, afterFirstOpen, "reopening new chat repeats no request")
     }
 
+    /// Chat history loads when `openServerSession` first creates the local
+    /// thread for a session, which `FamiliarServerLandingView` does from its
+    /// `.onAppear`. A reappearance finds that thread and returns it without
+    /// loading, so the count holds at one. The stub answers the history path
+    /// with a 404, so the thread stays empty: the reopen still must not
+    /// retry, which is what pins the existing-thread branch rather than the
+    /// empty-thread guard inside the history load.
+    func testReopeningAServerSessionDoesNotReloadItsHistory() async throws {
+        let app = try makeApp()
+        let row = SessionRow(
+            id: "s-history",
+            title: "History",
+            harness: nil,
+            model: nil,
+            runtime: nil,
+            status: nil,
+            familiarId: "nyx",
+            createdAt: nil,
+            updatedAt: nil,
+            archivedAt: nil,
+            projectRoot: nil,
+            origin: nil,
+            generated: false
+        )
+        let historyPath = "/api/chat/conversation/s-history"
+
+        let first = app.openServerSession(row, familiarId: "nyx")
+        let afterFirstOpen = try await settle()
+        XCTAssertEqual(afterFirstOpen[historyPath], 1, "the first open loads the history")
+
+        let second = app.openServerSession(row, familiarId: "nyx")
+        XCTAssertTrue(first === second, "a reappearance returns the thread the first open created")
+        let afterReopen = try await settle()
+        XCTAssertEqual(afterReopen, afterFirstOpen, "reopening the session requests no history, or anything else")
+    }
+
     /// A familiar's chat list appears with `.task { await app.loadSessionsIfStale() }`
     /// (FamiliarThreadsView). Its trigger is that single call, so this counts
     /// the call itself rather than hosting a view that needs a project context,
