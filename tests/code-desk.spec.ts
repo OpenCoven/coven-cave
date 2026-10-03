@@ -815,8 +815,10 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.waitForTimeout(1_500);
     expect(statusRequests).toBe(settled);
 
-    // Away to Pull request and back: the panel remounts and loads once. Its
-    // initial [] used to read as a disagreement and refetch both lists.
+    // Away to Pull request and back: the panel remounts and loads at most once.
+    // Its initial [] used to read as a disagreement and refetch both lists.
+    // Since #5745 a mount within the shared gate's 4s window reuses the read
+    // the desk already made, so this can be zero.
     const rail = page.getByTestId("code-review-rail");
     await rail.getByRole("tab", { name: "Pull request" }).click();
     await page.waitForTimeout(500);
@@ -824,7 +826,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await rail.getByRole("tab", { name: /Changes/ }).click();
     await expect(rail.getByRole("switch", { name: "Viewed: src/flux.ts" })).toBeVisible();
     await page.waitForTimeout(1_500);
-    expect(statusRequests - beforeReturn).toBe(1);
+    expect(statusRequests - beforeReturn).toBeLessThanOrEqual(1);
   });
 
   // ── Pass 3 medium fixes (#5729) ────────────────────────────────────────────

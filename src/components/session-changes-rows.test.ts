@@ -6,7 +6,8 @@ const panel = await readFile(new URL("./session-changes-panel.tsx", import.meta.
 const rows = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
 
 assert.match(panel, /import \{ ChangesSkeleton, CheckpointSection, FileRow \} from "\.\/session-changes-rows"/, "panel delegates change-row presentation to its dedicated module");
-assert.match(rows, /export function FileRow/, "file row presentation has a named public boundary");
+// Memoized since #5745 (a Viewed tick re-rendered every row); still a named export.
+assert.match(rows, /export (function FileRow|const FileRow = memo\(function FileRow\()/, "file row presentation has a named public boundary");
 assert.match(rows, /export function CheckpointSection/, "checkpoint presentation has a named public boundary");
 assert.match(rows, /export function ChangesSkeleton/, "initial loading presentation moves with the file-row table");
 assert.match(rows, /const \[confirmRevert, setConfirmRevert\] = useState\(false\)/, "file revert keeps its two-step confirmation state");

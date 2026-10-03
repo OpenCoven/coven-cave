@@ -496,7 +496,8 @@ assert.match(
 );
 assert.match(
   changesRows,
-  /confirmRevert \?[\s\S]*?Cancel[\s\S]*?onRevert\(\)/,
+  // The row hands its file to a stable callback since #5745 (memoized rows).
+  /confirmRevert \?[\s\S]*?Cancel[\s\S]*?onRevert\(file\)/,
   "Armed revert row offers Cancel and only the explicit confirm commits",
 );
 assert.match(
