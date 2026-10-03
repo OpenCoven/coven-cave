@@ -261,6 +261,7 @@ export const SUITES = {
     "src/lib/server/checkpoint-restore.test.ts",
     "src/lib/server/commit-rollback.test.ts",
     "src/lib/server/git-operation-in-progress.test.ts",
+    "src/lib/server/repository-lock-key.test.ts",
     "src/lib/hidden-unicode.test.ts",
     "src/lib/terminal-thread-stop.test.ts",
     "src/lib/coven-version.test.ts",

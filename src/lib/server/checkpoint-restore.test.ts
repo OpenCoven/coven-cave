@@ -259,4 +259,18 @@ for (const [key, value] of [
   assert.equal(read(repo, "new.txt"), "new\n");
 }
 
+// ── 13. A same-size edit from the second of the last index write (#5781) ───
+// The checkpoint diffs over a copy of the index. A fresh copy's newer time
+// made git trust the cached stat of a file rewritten, at the same size, in
+// the same second as the index was last written, so the edit was missed.
+{
+  const { repo, git } = makeRepo({ "a.txt": "one\n" });
+  git("update-index", "--refresh");
+  write(repo, "a.txt", "two\n");
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const text = readFileSync(await checkpoint(repo), "utf8");
+  assert.match(text, /^-one$/m, "the checkpoint holds the edit");
+  assert.match(text, /^\+two$/m);
+}
+
 console.log("checkpoint-restore: ok");
