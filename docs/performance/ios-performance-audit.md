@@ -128,7 +128,7 @@ the bound and nothing in CI enforces it; see
 | Chat publication cadence 10-20 updates/second | Pass (upper bound) | The 50 ms coalescer limits publication to at most 20 updates/second; terminal events still flush immediately. |
 | Main-thread attachment decode in row body = 0 | Pass | `MessageBubble.body` no longer calls `UIImage.fromDataUrl`; cache tests prove one downsampled decode per source/size. |
 | Duplicate in-flight fetches for the same bootstrap resource = 0 | Pass | Two concurrent refresh callers share one probe; independent bootstrap resources run once each. |
-| Duplicate request caused solely by view reappearance = 0 | Partial | Pass for reopening a chat. Hosted `ChatView` tests close and reopen a chat, after the first request finishes and while it is still in flight. They count every requested path and assert the reopen adds none. Other appear triggers rest on a source audit, not a counted journey. See [the reappearance audit](#reappearance-audit-2026-10-03-5748). |
+| Duplicate request caused solely by view reappearance = 0 | Partial | Counted journeys pass. Every request goes through one counting session, and each journey asserts that reappearing adds none. The journeys: reopening a chat (after its first request and while it is in flight), Chats → Settings → Chats, reopening new chat, and a familiar's chat list inside 30 s. Chat history on row appearance still rests on the source audit. See [the reappearance audit](#reappearance-audit-2026-10-03-5748). |
 | Idle background polling while scene inactive = 0 | Pass | Scene-keyed tasks guard on `.active`; the surface-load source contract pins this behavior. |
 | Synchronous persistence write on composer keystroke = 0 | Pass | Draft persistence is delayed 250 ms; thread snapshot encoding/writes are debounced and delegated to `ThreadSnapshotStore`. |
 
@@ -498,7 +498,7 @@ fixture tracked in [#5748](https://github.com/OpenCoven/coven-cave/issues/5748).
 | `chat.first-rich-render` | <= 300 ms p95 (new) | 268.8 ms, met |
 | Cold first-in-process render and first switch | Reported only, never mixed with warm | 449 ms and 141.8 ms max |
 | Main-thread hitch during any measured navigation | < 100 ms | Not measured ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
-| Duplicate request caused solely by view reappearance | 0 | Partly measured: the chat reopen journey is counted per resource and meets it. Other triggers are source-audited only, and the project picker is a finding. Both are in the reappearance audit below ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
+| Duplicate request caused solely by view reappearance | 0 | Measured and met for the counted journeys. Chat history is source-audited only, and the project picker is a finding. Both are in the reappearance audit below ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
 
 The project switcher and project-selection budgets from #5292's original scope
 are retired with the chat-only shell, and are not rebuilt to be measured. The
@@ -544,7 +544,28 @@ Two related requests repeat for reasons other than a view reappearing:
   every 20 s after.
 - An image or link preview refetches after an eviction or a failed fetch.
 
+**Counted journeys (`ReappearanceJourneyTests`, `ChatModelStateCacheTests`).**
+Each one routes every request, core resources and `app.client` alike, through
+a single counting session. Each waits for the first appearance to settle, then
+reappears and asserts that no path was requested again.
+
+| Journey | What reappears | Result |
+| --- | --- | --- |
+| Reopen a chat | A fresh `ChatView`, after its first request and while it is in flight | No request on any path |
+| Chats → Settings → Chats | `MainShellView` tabs. The theme poll is left out because it runs on a timer | No request |
+| Reopen new chat | A fresh `NewChatView` after access loaded | No request |
+| A familiar's chat list | `loadSessionsIfStale`, the whole trigger of `FamiliarThreadsView`, twice inside 30 s | No request |
+
+Each journey first checks that its load succeeded. A failed load leaves its
+guard open, and the next appearance retrying is correct behavior, not a
+duplicate. Removing new chat's guard, or setting the session list's window to
+zero, makes the matching journey fail.
+
+`FamiliarsListView` also loads on appear, behind a `familiarsLoaded` guard. No
+current screen presents it, so it has no journey.
+
 **Still open on #5748:**
-- A counted journey for the triggers covered only by the source audit
-  (Chats → Settings → Chats, sessions, history, familiars).
+- A counted journey for chat history on row appearance. The source audit
+  shows it guarded: it returns the existing thread and loads only when the
+  thread has no messages.
 - The main-thread hitch budget, which needs a device.

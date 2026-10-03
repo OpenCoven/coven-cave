@@ -28,7 +28,7 @@ extension CaveClient {
         // 4xx bodies are structured `{ ok:false, error }` — return them so
         // callers can show the server's own message (e.g. "enable … in
         // desktop Settings") instead of a generic failure.
-        let (data, response) = try await Self.permissionsSharedSession.data(for: req)
+        let (data, response) = try await (injectedSession ?? Self.permissionsSharedSession).data(for: req)
         if CaveConnection.isManagedDeviceCredential(CaveConnection.accessToken),
            let http = response as? HTTPURLResponse,
            http.statusCode == 401 || http.statusCode == 403 {

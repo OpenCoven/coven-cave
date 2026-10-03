@@ -16,7 +16,10 @@ protocol CaveBootstrapClient: Sendable {
 /// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
-    private let injectedSession: URLSession?
+    /// Internal rather than private so sibling extensions (permissions) honor
+    /// it too: a test that injects a session sees every request this client
+    /// sends. Production never injects one.
+    let injectedSession: URLSession?
     private let idempotentMutationRetryBudget: Duration
     // Internal rather than private so sibling client extensions in other files
     // (e.g. the Familiar dashboard read) encode a familiar id EXACTLY the way
