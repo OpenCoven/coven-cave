@@ -822,9 +822,16 @@ When the audited candidate is retained by one exact remote branch, populate the
 array with `--retained-by-remote-branch`, the audited remote and full branch ref,
 and `--expected-remote-oid` with the freshly fetched exact branch OID. This mode
 queries, fetches, and rechecks only that branch, so a large unrelated remote
-namespace cannot turn exact retention into an unbounded scan. Otherwise, if the
-exact source branch still exists or `HEAD` is an ancestor of an advertised
-branch/tag, leave `strict_guard_retention_args` empty and use the ordinary
+namespace cannot turn exact retention into an unbounded scan. When one exact
+remote tag retains the candidate, use `--retained-by-remote-tag`, the audited
+remote and full `refs/tags/...` ref, and `--expected-remote-oid` with the freshly
+advertised tag-object OID (the commit OID for a lightweight tag). Requery that
+exact tag and its optional peeled advertisement, and fetch only the tag before
+populating the array. The strict guard fetches only the named source, verifies its object
+and peeled commit, proves HEAD ancestry, and refuses advertisement drift.
+A local-only tag never counts, and this mode does not expand deletion authority.
+Otherwise, if the exact source branch still exists or `HEAD` is an ancestor of
+an advertised branch/tag, leave `strict_guard_retention_args` empty and use the ordinary
 bounded proof. If GitHub squash-merged the exact candidate and auto-deleted its
 source branch, populate the array only after a fresh exact PR detail query has
 proved: one numeric PR, `state == closed`, `merged == true`, a valid
