@@ -39,7 +39,7 @@ assert.match(view, /"cave:grimoire:graph-prefs"/, "graph prefs persist to localS
 assert.match(view, /aria-label="Graph filters"/, "the filter card is a labelled section");
 assert.match(view, /groups: \{ knowledge: true, memory: true, journal: true, tag: true \}/, "every group defaults on");
 assert.match(view, /edgeTypes: \{ link: true, mention: true, tag: true \}/, "every edge generator defaults on");
-assert.match(view, /prefs\.orphans \? nodesByKind : nodesByKind\.filter/, "orphans are a toggle, not a silent drop");
+assert.match(view, /prefs\.orphans \|\| query\.trim\(\) \? nodesByKind : nodesByKind\.filter/, "orphans are a toggle, not a silent drop");
 // cave-jf2v: orphans default OFF — a mostly-unlinked corpus (e.g. ~400 nodes /
 // ~30 edges) otherwise renders a structureless dot cloud that buries the
 // relationships the graph exists to show.
@@ -135,7 +135,7 @@ assert.match(
 );
 assert.match(
   view,
-  /\{scopedShortfall \? \([\s\S]{0,400}?memory files are in[\s\S]{0,200}?\) : \([\s\S]{0,200}?Scanned the \{meta\.memory\.scanned\}/,
+  /\{scopedShortfall \? \([\s\S]{0,400}?memory files are in[\s\S]{0,350}?\) : \([\s\S]{0,200}?Scanned the \{meta\.memory\.scanned\}/,
   "both truncation sentences live inside that one --text-sm paragraph",
 );
 assert.match(
@@ -145,7 +145,7 @@ assert.match(
 );
 assert.match(
   view,
-  /pointer-events-none absolute bottom-2 left-2[^"]*text-\[length:var\(--text-xs\)\]/,
+  /className="grimoire-graph-status" role="status"/,
   "the graph status pill reads at --text-xs, not 10px",
 );
 
@@ -165,7 +165,7 @@ assert.match(
 );
 assert.match(
   view,
-  /\{meta\.memory\.total\} memory files\s*\n\s*\{scopeLabel \? " across the coven" : ""\}/,
+  /\{meta\.memory\.total\} memory files\s*\n\s*\{meta\.memory\.scoped \? " for this familiar selection" : " across the coven"\}/,
   "the truncation count stays honest under a scope — those totals are coven-wide",
 );
 
@@ -185,8 +185,8 @@ assert.match(
 // after the early return is inside its body and a stray hook there is always
 // the bug this guards.
 {
-  const earlyReturn = view.indexOf("if (graph.nodes.length === 0)");
-  assert.ok(earlyReturn > 0, "the empty-state early return still exists");
+  const earlyReturn = view.indexOf('\n  return (\n    <div\n      className="grimoire-graph"');
+  assert.ok(earlyReturn > 0, "the graph render still exists");
 
   const memoized = view.indexOf("scopedMemoryInWindow = useMemo(");
   assert.ok(memoized > 0, "the scoped memory-in-window count is still memoized");

@@ -1372,6 +1372,8 @@ export const SUITES = {
     "src/lib/grimoire-library.test.ts",
     "src/lib/knowledge-flags.test.ts",
     "src/components/grimoire-graph-view.test.ts",
+    "src/components/grimoire-graph-interaction.test.tsx",
+    "src/lib/use-grimoire-graph-scan.test.tsx",
     "src/components/stitch-intake.test.ts",
     "src/lib/grimoire-link.test.ts",
     "src/lib/wiki-link-parser.test.ts",
@@ -2575,6 +2577,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/grimoire-graph-interaction.test.tsx",
+  "src/lib/use-grimoire-graph-scan.test.tsx",
   "src/components/voice-call-overlay.behavior.test.tsx",
     "src/components/voice-call-settings.test.tsx",
   "src/lib/use-surface-warmup.behavior.test.tsx",

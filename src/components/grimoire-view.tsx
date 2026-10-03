@@ -38,9 +38,11 @@ import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { JournalEntries } from "@/components/journal/journal-entries";
 import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
+import "@/styles/memory-exploration.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import { GrimoireDocReader, JournalDocReader, MemoryDocReader } from "@/components/grimoire-doc-reader";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import {
   groupMissionStitches,
   journalEntryQuery,
@@ -75,9 +77,9 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/wiki-link-resolve";
-import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
+import { buildDocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
 import { buildMemoryOwnerIndex, scopeDocGraph } from "@/lib/grimoire-graph-scope";
-import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
+import { useGrimoireGraphScan } from "@/lib/use-grimoire-graph-scan";
 import { knowledgeEntryFlags } from "@/lib/knowledge-flags";
 import {
   buildStubPayload,
@@ -166,73 +168,6 @@ function compactPath(path: string): string {
 // localStorage, which doubles as the "recent documents" memory across
 // sessions.
 
-
-// ── Full-corpus graph scan ───────────────────────────────────────────────────
-// GET /api/grimoire/graph builds the doc graph over EVERYTHING the Grimoire
-// lists (knowledge + memory + journal) server-side, so contents never cross
-// the wire — just nodes and edges. Until (or if) it lands, the client-built
-// knowledge graph stands in, so the graph and backlinks always have data.
-
-type GrimoireGraphScan = {
-  scan: { graph: DocGraph; meta: GrimoireGraphMeta } | null;
-  scanning: boolean;
-  scanError: string | null;
-  refreshGraph: () => void;
-};
-
-function useGrimoireGraphScan(familiarScope: ReadonlySet<string>): GrimoireGraphScan {
-  const [state, setState] = useState<Omit<GrimoireGraphScan, "refreshGraph">>({
-    scan: null,
-    scanning: true,
-    scanError: null,
-  });
-  const [scanTick, setScanTick] = useState(0);
-
-  // Key the scan on the scope's VALUE, not the Set's identity. `scopeFamiliarIds`
-  // is a new Set on most parent renders, so depending on it directly would
-  // refetch the whole corpus on every render rather than when the selection
-  // actually changes (cave-z6xvd).
-  const scopeKey = useMemo(() => [...familiarScope].sort().join(","), [familiarScope]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setState((s) => ({ ...s, scanning: true }));
-    void (async () => {
-      try {
-        // Scoping server-side means the cap applies to THIS familiar's files
-        // rather than the coven's, so a scoped view is complete up to the cap
-        // instead of showing its (F/T) slice.
-        const params = scopeKey
-          ? `?${scopeKey.split(",").map((id) => `familiarId=${encodeURIComponent(id)}`).join("&")}`
-          : "";
-        const res = await fetch(`/api/grimoire/graph${params}`, { cache: "no-store", signal: controller.signal });
-        const json = await res.json();
-        if (controller.signal.aborted) return;
-        if (json.ok && Array.isArray(json.nodes) && Array.isArray(json.edges)) {
-          setState({
-            scan: { graph: { nodes: json.nodes, edges: json.edges }, meta: json.meta },
-            scanning: false,
-            scanError: null,
-          });
-        } else {
-          // A failed rescan keeps the previous scan on screen.
-          setState((s) => ({ ...s, scanning: false, scanError: json.error ?? "Graph scan failed" }));
-        }
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setState((s) => ({
-          ...s,
-          scanning: false,
-          scanError: err instanceof Error ? err.message : "Graph scan failed",
-        }));
-      }
-    })();
-    return () => controller.abort();
-  }, [scanTick, scopeKey]);
-
-  const refreshGraph = useCallback(() => setScanTick((t) => t + 1), []);
-  return { ...state, refreshGraph };
-}
 
 // ── Detail editors ───────────────────────────────────────────────────────────
 
@@ -850,9 +785,16 @@ export function GrimoireView({
     },
     [controlledView, onViewChange],
   );
-  const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan(
-    scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE,
+  const [localFamiliarId, setLocalFamiliarId] = useState("");
+  const shellScope = scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE;
+  // A page filter may narrow the shell scope, never silently widen it.
+  const selectedFamiliarId = localFamiliarId && familiars.some((f) => f.id === localFamiliarId) && (shellScope.size === 0 || shellScope.has(localFamiliarId))
+    ? localFamiliarId : "";
+  const memoryScope = useMemo(
+    () => selectedFamiliarId ? new Set([selectedFamiliarId]) : shellScope,
+    [selectedFamiliarId, shellScope],
   );
+  const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan(memoryScope);
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
   );
@@ -1491,7 +1433,6 @@ export function GrimoireView({
   // The shell's familiar multiselect scopes the Memory navigator: an empty
   // selection is "All", otherwise only the selected familiars' own memory
   // files survive (ownerless shared pools are another familiar's business).
-  const memoryScope = scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE;
   const memoryScoped = memoryScope.size > 0;
   /** Who the Memory section is currently narrowed to, for scoped empty copy. */
   const memoryScopeLabel = useMemo(() => {
@@ -1999,7 +1940,7 @@ export function GrimoireView({
       <GrimoireLauncher
         knowledge={launcherKnowledge}
         memory={scopedMemory}
-        journal={journal ?? []}
+        journal={(journal ?? []).filter((day) => !day.reflectedBy || familiarInScope(memoryScope, day.reflectedBy))}
         graph={scopedGraph}
         scopeLabel={memoryScopeLabel}
         query={query}
@@ -2168,10 +2109,25 @@ export function GrimoireView({
             </button>
           </div>
           <div className="surface-compact-actions">
-            {/* The landing owns Recall search. Once a document is open, this
-                compact field edits the same Library query without rendering a
-                second visible search. */}
-            {view === "docs" && openTabs.length > 0 ? (
+            <div className="memories-familiar-filter">
+              <span>Familiar</span>
+              <StandardSelect
+                className="memories-familiar-select"
+                label="Filter memories by familiar"
+                value={selectedFamiliarId}
+                onChange={(familiarId) => {
+                  setLocalFamiliarId(familiarId);
+                  announce(familiarId ? `Showing memories for ${familiarLabel(familiarId)}` : "Showing memories in the current familiar scope", "polite");
+                }}
+                options={[
+                  { value: "", label: shellScope.size ? "Selected familiars" : "All familiars" },
+                  ...familiars.filter((f) => shellScope.size === 0 || shellScope.has(f.id)).map((f) => ({ value: f.id, label: f.display_name || f.id })),
+                ]}
+              />
+            </div>
+            {/* The wide landing owns Recall. Narrow panes show only the
+                navigator, so retain its search even with no document open. */}
+            {view === "docs" ? <div className={openTabs.length > 0 ? "contents" : "memories-mobile-search"}>
               <SearchInput
                 value={query}
                 onValueChange={setQuery}
@@ -2180,7 +2136,7 @@ export function GrimoireView({
                 aria-label="Search grimoire documents"
                 containerClassName="surface-compact-search"
               />
-            ) : null}
+            </div> : null}
             {readerEligible && selectedKey ? (
               // Reading is the default; this one stable control toggles the
               // open document between reading and editing (E / Esc).
@@ -2478,11 +2434,11 @@ export function GrimoireView({
       >
         {view === "journal" ? (
           // Journal tab — the full daily-reflection surface (day rail, generate,
-          // edit/delete with undo), coven-wide (no familiar scope). Not
+          // edit/delete with undo), scoped to the page's familiar selection. Not
           // `standalone`: it's inside the Workspace, so "Run now" and toast
           // actions ride the live event bus.
           <div className="grimoire-journal-tab flex h-full min-h-0 overflow-hidden">
-            <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} scopeFamiliarIds={scopeFamiliarIds} />
+            <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} scopeFamiliarIds={memoryScope} />
           </div>
         ) : view === "graph" ? (
           <div className="flex h-full min-h-0 flex-col">
@@ -2503,11 +2459,15 @@ export function GrimoireView({
             <div className="min-h-0 flex-1">
               <GrimoireGraphView
                 graph={scopedGraph}
+                memoryOwnerByNodeId={memoryOwnerByNodeId}
+                familiars={familiars}
+                ownerLabel={familiarLabel}
+                onRetry={refreshGraph}
                 meta={scan?.meta ?? null}
                 scopeLabel={memoryScopeLabel}
                 scopedMemoryTotal={memoryScoped ? scopedMemory.length : null}
                 scanning={scanning}
-                scanError={scan ? null : scanError}
+                scanError={scanError}
                 onOpen={(ref) => {
                   openDoc(ref);
                   setView("docs");
