@@ -36,6 +36,9 @@ export type SurfacePerson = { id: string; name: string };
 /** Live Cave session state shared with every surface. */
 export type RoleSurfaceRuntimeState = {
   daemonRunning: boolean;
+  /** The last status poll couldn't confirm the daemon either way (#5756).
+   *  `daemonRunning` then still holds the last known answer. */
+  daemonStatusUnknown?: boolean;
   sessions: SessionRow[];
   activeSessionId: string | null;
 };

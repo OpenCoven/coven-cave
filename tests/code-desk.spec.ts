@@ -2367,4 +2367,200 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(rail.getByRole("button", { name: "Create PR" })).toBeEnabled();
     await expect(rail.getByRole("textbox", { name: "Pull request title" })).toHaveCount(0);
   });
+
+  // ── Pass 5 low fixes (#5756) ───────────────────────────────────────────────
+
+  test("69. a change list that fails to load says what failed", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/changes**", (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET" || [...url.searchParams.keys()].join() !== "projectRoot") return route.fallback();
+      return route.fulfill({ status: 500, contentType: "text/html", body: "<html><body>Internal Server Error</body></html>" });
+    });
+    await openDesk(page);
+    await expect(page.getByTestId("code-review-rail").getByText("Couldn't load changes: the server answered 500 without a change list")).toBeVisible();
+  });
+
+  test("70. a refresh asked for mid-load runs after it, so an idle session's list catches up", async ({ page }) => {
+    const idle = mkSession({ ...(NEWEST as Record<string, unknown>), status: "idle" });
+    await base(page, [idle, OLDER]);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let reads = 0;
+    await page.route("**/api/changes**", async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET" || [...url.searchParams.keys()].join() !== "projectRoot") return route.fallback();
+      reads += 1;
+      if (reads === 1) {
+        await held;
+        return route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, files: CHANGED_FILES } });
+      }
+      return route.fulfill({
+        json: { ok: true, repo: true, repoRoot: WORK_ROOT, files: [...CHANGED_FILES, { path: "src/late.ts", status: "untracked", insertions: 1, deletions: 0, changeVersion: "7:7:7" }] },
+      });
+    });
+    await openDesk(page);
+    await expect.poll(() => reads).toBe(1);
+    // A save elsewhere asks for a fresh list while the first read is out.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    release();
+    await expect(page.getByTestId("code-review-rail").locator('tr[data-grid-row="src/late.ts"]')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("71. after a confirmed revert, focus lands on the next row, or back on Revert when it failed", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let failNext = true;
+    await page.route("**/api/changes", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { action?: string };
+      if (body.action !== "revert") return route.fulfill({ status: 409, json: { ok: false, error: "blocked" } });
+      if (failNext) {
+        failNext = false;
+        return route.fulfill({ status: 500, json: { ok: false, error: "revert failed" } });
+      }
+      fixture.current = [CHANGED_FILES[1]];
+      return route.fulfill({ json: { ok: true, reverted: "checkout", checkpointPath: "/x.patch" } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const revert = rail.getByRole("button", { name: "Revert src/flux.ts" });
+    await revert.click();
+    await rail.getByRole("button", { name: "Confirm revert src/flux.ts" }).click();
+    await expect(rail.getByText(/Couldn't revert the file/)).toBeVisible();
+    await expect(revert, "a failed revert gives focus back to its Revert").toBeFocused();
+    await revert.click();
+    await rail.getByRole("button", { name: "Confirm revert src/flux.ts" }).click();
+    await expect(rail.locator('tr[data-grid-row="src/flux.ts"]')).toHaveCount(0);
+    await expect(rail.locator('tr[data-grid-row="src/retry.ts"] [data-grid-col="0"]'), "the row that took its place").toBeFocused();
+  });
+
+  test("72. the picker keeps the highlighted session when a poll re-sorts the list", async ({ page }) => {
+    const third = mkSession({
+      id: "s-third", title: "Polish the dial", status: "idle", project_root: "/repo/alpha", familiarWorkspace: false,
+      updated_at: "2026-06-12T09:00:00.000Z",
+      git: { branch: "feat/dial", repositoryUrl: "https://github.com/acme/alpha", worktreeRoot: "/repo/alpha/.worktrees/dial", isWorktree: true },
+    });
+    const sessions = [NEWEST, OLDER, third];
+    await base(page, sessions);
+    await openDesk(page);
+    await page.keyboard.press("ControlOrMeta+p");
+    const panel = page.locator("[data-code-picker-panel]");
+    const combobox = panel.getByRole("combobox");
+    await expect(combobox).toBeVisible();
+    const options = panel.getByRole("option");
+    await expect(options).toHaveCount(3);
+    const second = await options.nth(1).getAttribute("id");
+    await page.keyboard.press("ArrowDown");
+    await expect(combobox).toHaveAttribute("aria-activedescendant", second!);
+    const highlighted = (await options.nth(1).innerText()).split("\n")[0];
+    // The third session turns newer than the highlighted one; a poll re-sorts.
+    sessions[2] = { ...third, updated_at: "2026-06-12T11:30:00.000Z" };
+    await expect.poll(async () => (await options.nth(1).innerText()).split("\n")[0], { timeout: 15_000 }).not.toBe(highlighted);
+    await expect(combobox, "the highlight followed the session, not the position").toHaveAttribute("aria-activedescendant", second!);
+  });
+
+  test("73. a file deleted on disk says so; an open edit can be copied, not saved", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let gone = false;
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (route.request().method() !== "GET" || !path.endsWith("flux.ts")) return route.fallback();
+      if (gone) return route.fulfill({ status: 404, json: { ok: false, error: "file not found" } });
+      return route.fulfill({ json: { ok: true, kind: "text", content: "// flux.ts\n", size: 11, version: "v1" } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await expect(desk.getByRole("button", { name: "Edit" })).toBeVisible();
+    gone = true;
+    fixture.current = [{ path: "src/flux.ts", status: "deleted", insertions: 0, deletions: 1, changeVersion: "missing" }, CHANGED_FILES[1]];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(desk.getByText("This file is no longer on disk. This is the last version read.")).toBeVisible({ timeout: 15_000 });
+    await expect(desk.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  });
+
+  test("75. the room's header says when the daemon's status is unknown", async ({ page }) => {
+    await base(page);
+    let down = false;
+    await page.route("**/api/daemon/connection**", (route) => {
+      if (!down) return route.fallback();
+      return route.fulfill({ status: 503, json: { ok: false, error: "status service unavailable" } });
+    });
+    await openDesk(page);
+    await expect(page.getByText("workbench live")).toBeVisible();
+    down = true;
+    await expect(page.getByText("workbench status unknown")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("workbench live")).toHaveCount(0);
+  });
+
+  test("76. a slow familiars read shows the room loading, not a dead end", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/familiars**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      return route.fallback();
+    });
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Loading Coding Desk…")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Choose a familiar before entering a room.")).toHaveCount(0);
+    await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("77. ⌘S on the desk saves the open edit, and never opens the browser's Save page", async ({ page }) => {
+    await base(page);
+    let posts = 0;
+    await page.route("**/api/project-file**", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posts += 1;
+      return route.fulfill({ json: { ok: true, size: 10, version: "v2" } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await page.evaluate(() => {
+      const w = window as unknown as { __saveDefault: boolean[] };
+      w.__saveDefault = [];
+      window.addEventListener("keydown", (e) => {
+        if (e.key.toLowerCase() === "s" && (e.metaKey || e.ctrlKey)) setTimeout(() => w.__saveDefault.push(e.defaultPrevented), 0);
+      });
+    });
+    // No edit open: nothing to save, and the browser's dialog stays shut.
+    await desk.locator(".workspace-rail__preview-body").click();
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForTimeout(300);
+    expect(posts).toBe(0);
+    // An edit, then ⌘S from outside the editor.
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// mine");
+    await page.keyboard.press("Escape");
+    await expect(desk.locator(".cm-content")).not.toBeFocused();
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect.poll(() => posts).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __saveDefault: boolean[] }).__saveDefault)).toEqual([true, true]);
+  });
+});
+
+test.describe("Coding Desk on a phone (#5756)", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+
+  test("74. on touch, file rows and the rail's buttons keep the 44px target", async ({ page }) => {
+    await base(page);
+    const steps = await openNarrowDesk(page);
+    await steps.getByRole("tab", { name: "Files" }).click();
+    const row = page.getByTestId("code-workbench-tree").locator("[data-tree-row]").first();
+    await expect(row).toBeVisible();
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await steps.getByRole("tab", { name: "Review" }).click();
+    const rail = page.getByTestId("code-review-rail");
+    for (const name of ["Review changes in a new session", "Commit"]) {
+      const button = rail.getByRole("button", { name, exact: true });
+      await expect(button).toBeVisible();
+      expect((await button.boundingBox())!.height, name).toBeGreaterThanOrEqual(44);
+    }
+  });
 });

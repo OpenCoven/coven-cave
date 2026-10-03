@@ -139,8 +139,12 @@ registerRoleSurface({
       statusIndicators: [
         {
           id: "code.engine",
-          label: context.runtimeState.daemonRunning ? "workbench live" : "workbench offline",
-          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          // Unknown is its own state (#5756): the last known "live" stayed
+          // green while the app's banner said the status couldn't be confirmed.
+          label: context.runtimeState.daemonStatusUnknown
+            ? "workbench status unknown"
+            : context.runtimeState.daemonRunning ? "workbench live" : "workbench offline",
+          tone: context.runtimeState.daemonRunning && !context.runtimeState.daemonStatusUnknown ? "ok" : "warn",
           detail: "Sessions, diffs, and terminals ride the familiar's live daemon",
         },
       ],

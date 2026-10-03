@@ -216,6 +216,7 @@ export const FileRow = memo(function FileRow({
               size="sm"
               danger
               data-grid-col={revertCol}
+              data-revert-control=""
               tabIndex={cellTab(revertCol)}
               onClick={() => setConfirmRevert(true)}
               disabled={reverting}

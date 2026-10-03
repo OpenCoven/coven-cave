@@ -75,7 +75,10 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
   let dirtyPaths: ReadonlySet<string> = new Set();
 
   const emit = () => {
-    dirtyPaths = new Set([...drafts.values()].filter(isDraftDirty).map((draft) => draft.path));
+    // The same set while its members are the same (#5756): a new Set on every
+    // keystroke made each subscriber (the whole desk) re-render as you typed.
+    const next = [...drafts.values()].filter(isDraftDirty).map((draft) => draft.path);
+    if (next.length !== dirtyPaths.size || next.some((path) => !dirtyPaths.has(path))) dirtyPaths = new Set(next);
     for (const listener of listeners) listener();
   };
   const put = (draft: FileEditDraft) => {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import fs, { writeFileSync } from "node:fs";
 import os from "node:os";
@@ -69,6 +69,26 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
+  });
+}
+
+/** Run git with `input` on stdin. Paths go through `--pathspec-from-file=-`
+ *  this way, so a long list can't overrun the OS argument limit (#5756). */
+function gitWithInput(cwd: string, args: string[], input: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => child.kill(), GIT_TIMEOUT_MS * 3);
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (err) => { clearTimeout(timer); reject(err); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(Object.assign(new Error(stderr.trim() || `git exited ${code}`), { stdout, stderr, code }));
+    });
+    child.stdin.end(input);
   });
 }
 
@@ -361,9 +381,14 @@ function sameChangeKeys(a: string[], b: string[]): boolean {
 }
 
 /** Parse a commit's `expectedChanges` into sorted keys, or null when absent. */
-function expectedChangeKeys(raw: unknown): string[] | null | "invalid" {
+/** How many files one desk commit may name; the list rides in the request. */
+const MAX_EXPECTED_CHANGES = 5000;
+
+function expectedChangeKeys(raw: unknown): string[] | null | "invalid" | "too-many" {
   if (raw === undefined) return null;
-  if (!Array.isArray(raw) || raw.length > 5000) return "invalid";
+  if (!Array.isArray(raw)) return "invalid";
+  // Its own answer (#5756): "must list entries" said nothing about the cause.
+  if (raw.length > MAX_EXPECTED_CHANGES) return "too-many";
   const keys: string[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") return "invalid";
@@ -694,6 +719,16 @@ export async function POST(req: NextRequest) {
       }
     }
     const expectedChanges = expectedChangeKeys(body.expectedChanges);
+    if (expectedChanges === "too-many") {
+      const count = Array.isArray(body.expectedChanges) ? body.expectedChanges.length : 0;
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `this commit covers ${count} changed files; the desk commits at most ${MAX_EXPECTED_CHANGES} at once. Commit from a terminal, or in smaller parts`,
+        },
+        { status: 413 },
+      );
+    }
     if (expectedChanges === "invalid") {
       return NextResponse.json({ ok: false, error: "expectedChanges must list {path, changeVersion} entries" }, { status: 400 });
     }
@@ -757,16 +792,21 @@ export async function POST(req: NextRequest) {
           await git(root.repoRoot, ["checkout", "-b", branch]);
           branchCreated = true;
         }
-        await git(
-          root.repoRoot,
-          targetedPaths
-            ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
-            : verified
-              // Stage exactly the verified files (and a rename's old path), so
-              // a file created after the check is never swept in.
-              ? ["--literal-pathspecs", "add", "-A", "--", ...verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))]
-              : ["add", "-A"],
-        );
+        if (targetedPaths) {
+          await git(root.repoRoot, ["--literal-pathspecs", "add", "--", ...targetedPaths]);
+        } else if (verified) {
+          // Stage exactly the verified files (and a rename's old path), so a
+          // file created after the check is never swept in. On stdin: a few
+          // thousand deep paths overran the argument limit (#5756).
+          const paths = verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]));
+          await gitWithInput(
+            root.repoRoot,
+            ["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            paths.join("\0"),
+          );
+        } else {
+          await git(root.repoRoot, ["add", "-A"]);
+        }
         if (verified) {
           // Re-stamp what was just staged. Stamps are file metadata, which
           // staging leaves alone, so any difference is a write that may have

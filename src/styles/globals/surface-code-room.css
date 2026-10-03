@@ -1437,3 +1437,12 @@
     outline-offset: -2px;
   }
 }
+
+/* Touch keeps the 44px interaction contract in the review rail (#5756):
+   Commit and Review rendered 22px tall at phone size, under even WCAG's
+   24px minimum. Desktop density is unchanged. */
+@media (hover: none) and (pointer: coarse) {
+  .code-rail .ui-btn {
+    min-height: var(--touch-target);
+  }
+}

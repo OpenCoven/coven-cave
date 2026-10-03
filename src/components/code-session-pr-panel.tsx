@@ -44,6 +44,9 @@ function githubActionError(err: unknown, fallback: string): string {
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
     return `GitHub didn't answer in ${GITHUB_ACTION_TIMEOUT_MS / 1000} seconds. Check the pull request before trying again.`;
   }
+  // The connection broke: the request may have landed, and a blind retry of
+  // Approve or Comment posts a second review (#5756).
+  if (err instanceof TypeError) return "The connection broke before GitHub answered. Check the pull request before trying again.";
   return err instanceof Error ? err.message : fallback;
 }
 

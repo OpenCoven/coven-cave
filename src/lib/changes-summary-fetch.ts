@@ -67,9 +67,15 @@ async function requestSummary(projectRoot: string): Promise<ChangesSummaryResult
     if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
       throw new Error(`the change list didn't answer in ${CHANGES_SUMMARY_TIMEOUT_MS / 1000} seconds`);
     }
+    // A fetch that never reached the server rejects with "Failed to fetch"
+    // (#5756), which said nothing about what to do.
+    if (err instanceof TypeError) throw new Error("the server couldn't be reached");
     throw err;
   }
-  const json = (await res.json()) as ChangesSummaryResponse;
+  // An error page (an HTML 500, a proxy's 502) is not a change list: say so
+  // rather than surface the JSON parser's "Unexpected token '<'" (#5756).
+  const json = (await res.json().catch(() => null)) as ChangesSummaryResponse | null;
+  if (!json) throw new Error(`the server answered ${res.status} without a change list`);
   return { httpOk: res.ok, status: res.status, json };
 }
 

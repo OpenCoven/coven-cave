@@ -150,8 +150,18 @@ export function SessionChangesInner({
   // running poll and the mount pass shared:true. A mount follows no change of
   // its own, and forcing it made every session switch fetch the same list
   // once for the desk and again for this panel (#5745).
+  //
+  // A forced load that arrives while one is in flight runs right after it
+  // (#5756). Returning dropped the refresh a save, a branch switch or a commit
+  // asked for, and an idle session's list stayed stale, so the next commit
+  // met a spurious "working tree changed".
+  const queuedLoadRef = useRef(false);
+  const loadAgainRef = useRef<() => void>(() => {});
   const load = useCallback(async (opts?: { shared?: boolean }) => {
-    if (inFlightRef.current) return;
+    if (inFlightRef.current) {
+      if (!opts?.shared) queuedLoadRef.current = true;
+      return;
+    }
     inFlightRef.current = true;
     setRefreshing(true);
     try {
@@ -174,8 +184,13 @@ export function SessionChangesInner({
       inFlightRef.current = false;
       setRefreshing(false);
       setLoaded(true);
+      if (queuedLoadRef.current) {
+        queuedLoadRef.current = false;
+        loadAgainRef.current();
+      }
     }
   }, [projectRoot]);
+  loadAgainRef.current = () => void load();
 
   // Let a host (the Coding Desk) compare this panel's snapshot with its own.
   // Only a SUCCESSFUL load is a snapshot: the initial `[]` before the first
@@ -390,8 +405,29 @@ export function SessionChangesInner({
     [projectRoot, loadCheckpoints],
   );
 
+  // Where focus goes once a revert settles (#5756). Confirm unmounts the
+  // focused button, so focus fell to the page: back to the row's Revert when
+  // it's still there (the revert failed), else to the row that took its
+  // place, else to the panel's first control. Only when focus was lost, so a
+  // person who moved on meanwhile keeps their place.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const gridBodyRef = useRef<HTMLTableSectionElement | null>(null);
+  const restoreFocusAfterRevert = useCallback((path: string, index: number) => {
+    const panel = panelRef.current;
+    const active = document.activeElement;
+    if (!panel || (active && active !== document.body && !panel.contains(active))) return;
+    const rows = [...(gridBodyRef.current?.querySelectorAll<HTMLTableRowElement>("tr[data-grid-row]") ?? [])]
+      .filter((row) => !(row.dataset.gridRow ?? "").includes("\u0000"));
+    const same = rows.find((row) => row.dataset.gridRow === path);
+    const target = same
+      ? same.querySelector<HTMLElement>("[data-revert-control]")
+      : rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLElement>('[data-grid-col="0"]');
+    (target ?? panel.querySelector<HTMLElement>("button:not([disabled])"))?.focus();
+  }, []);
+
   const revertFile = useCallback(
     async (file: ChangedFile) => {
+      const index = files.findIndex((entry) => entry.path === file.path);
       setRevertingPath(file.path);
       setActionError(null);
       try {
@@ -423,9 +459,10 @@ export function SessionChangesInner({
         setActionError({ action: "Couldn't revert the file", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setRevertingPath(null);
+        requestAnimationFrame(() => restoreFocusAfterRevert(file.path, Math.max(0, index)));
       }
     },
-    [load, loadCheckpoints, projectRoot],
+    [files, load, loadCheckpoints, projectRoot, restoreFocusAfterRevert],
   );
 
   const commitChanges = useCallback(async () => {
@@ -574,7 +611,7 @@ export function SessionChangesInner({
   }, [repoRoot, projectRoot, files, announce]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={panelRef} className="flex h-full min-h-0 flex-col">
       {/* Header: honest scope copy + refresh */}
       <div className="session-changes-panel__toolbar shrink-0 border-b border-[var(--border-hairline)] px-3 py-2">
         <div className="flex items-start justify-between gap-2">
@@ -647,8 +684,9 @@ export function SessionChangesInner({
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
-              <span className="min-w-0 truncate" title={error}>
-                {error}
+              {/* Says what failed (#5756): a bare "Failed to fetch" didn't. */}
+              <span className="min-w-0 truncate" title={`Couldn't load changes: ${error}`}>
+                Couldn&apos;t load changes: {error}
               </span>
             </span>
             <button
@@ -751,6 +789,7 @@ export function SessionChangesInner({
                 </tr>
               </thead>
               <tbody
+                ref={gridBodyRef}
                 className="divide-y divide-[var(--border-hairline)]"
                 onKeyDown={onGridKeyDown}
                 onFocus={onGridFocus}
@@ -845,15 +884,17 @@ export function SessionChangesInner({
               <input
                 value={prTitle}
                 onChange={(e) => setPrTitle(e.target.value)}
-                placeholder="Pull request title"
+                // An example of intent, not the label again (#5756).
+                placeholder="Title the pull request…"
                 aria-label="Pull request title"
                 className="focus-ring w-full rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)]"
               />
               <textarea
                 value={prBody}
                 onChange={(e) => setPrBody(e.target.value)}
-                placeholder="Description (optional)"
-                aria-label="Pull request description"
+                // Optional belongs to the name, not the placeholder (#5756).
+                placeholder="What changed, and why…"
+                aria-label="Pull request description (optional)"
                 rows={3}
                 className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)]"
               />
@@ -888,7 +929,9 @@ export function SessionChangesInner({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void commitChanges();
                 }}
-                placeholder={canCommit ? "Commit message" : "No changes to commit"}
+                // Intent, not state (#5756): "No changes to commit" was a
+                // status line in the placeholder; the list itself says so.
+                placeholder="Describe the change…"
                 aria-label="Commit message"
                 disabled={!canCommit || committing}
                 className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] disabled:opacity-40"

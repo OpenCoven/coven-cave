@@ -10,7 +10,7 @@ import { CodeEditor } from "@/components/code-editor";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
-import { FILE_CHANGED_ON_DISK, fileEditDrafts } from "@/lib/file-edit-drafts";
+import { FILE_CHANGED_ON_DISK, fileEditDrafts, isDraftDirty } from "@/lib/file-edit-drafts";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
@@ -118,6 +118,10 @@ export function RailFilePreview({
   const [file, setFile] = useState<Loaded | null>(null);
   // Bumped by the error state's Retry to refetch the same path.
   const [reloadNonce, setReloadNonce] = useState(0);
+  // The file was there and a later read found it gone (#5756): deleted by the
+  // agent, or moved by a branch switch. The last text stays on screen, but
+  // nothing pretends the file still exists, and an edit can't be saved to it.
+  const [missingOnDisk, setMissingOnDisk] = useState(false);
 
   // The edit for this file, if any (#5745). It outlives this component.
   const draft = useSyncExternalStore(
@@ -201,6 +205,7 @@ export function RailFilePreview({
       setError(null);
       setFile(null);
       setJustSaved(false);
+      setMissingOnDisk(false);
     }
     const params = new URLSearchParams({ path });
     if (familiarId) params.set("familiarId", familiarId);
@@ -209,12 +214,15 @@ export function RailFilePreview({
         const json = (await res.json()) as ProjectFileBody;
         if (cancelled) return;
         if (!json.ok) {
-          // A failed background refresh keeps the text already on screen.
+          // A failed background refresh keeps the text already on screen,
+          // but a 404 says the file is gone, and that is shown (#5756).
           if (!refresh) setError(json.error || GENERIC_OPEN_ERROR);
+          else if (res.status === 404) setMissingOnDisk(true);
           setLoading(false);
           return;
         }
         loadedPathRef.current = path;
+        setMissingOnDisk(false);
         if (json.kind === "image") {
           setFile({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
         } else {
@@ -241,7 +249,7 @@ export function RailFilePreview({
   // Not UTF-8 means read-only (#5756): the editor would save every byte it
   // can't show as U+FFFD. The server refuses such a save as well.
   const notUtf8 = file?.kind === "text" && file.utf8 === false;
-  const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env") && !notUtf8;
+  const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env") && !notUtf8 && !missingOnDisk;
 
   const startEditing = useCallback(() => {
     if (!path || !file || file.kind !== "text") return;
@@ -340,6 +348,22 @@ export function RailFilePreview({
 
   const onEditorSave = useCallback(() => void saveEdit(), [saveEdit]);
 
+  // ⌘S anywhere on the desk (#5756): outside the editor it used to open the
+  // browser's "Save page" instead. It saves the open edit when there is one,
+  // and otherwise does nothing. The editor's own keymap handles ⌘S inside it.
+  useEffect(() => {
+    if (variant !== "workbench") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      const target = pathRef.current;
+      if (target && isDraftDirty(fileEditDrafts.get(target))) void saveEdit();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [saveEdit, variant]);
+
   // A conflict is resolved one of two ways: keep my edit and write it over the
   // newer file, or drop my edit and read the file as it is now.
   const overwriteDisk = useCallback(() => {
@@ -389,6 +413,16 @@ export function RailFilePreview({
       setTimeout(() => setCopied(false), 1500);
     });
   }, [file]);
+  // The way out for an edit whose file is gone (#5756): there is nowhere to
+  // save it, so it can be taken elsewhere.
+  const copyDraft = useCallback(() => {
+    if (!draft) return;
+    void copyText(draft.content).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [draft]);
 
   if (!path) {
     return (
@@ -514,7 +548,7 @@ export function RailFilePreview({
                   type="button"
                   className="focus-ring workspace-rail__preview-action workspace-rail__preview-action--primary"
                   onClick={() => void saveEdit()}
-                  disabled={saving || draft?.conflict === true}
+                  disabled={saving || draft?.conflict === true || missingOnDisk}
                 >
                   <Icon name={saving ? "ph:arrow-clockwise" : "ph:floppy-disk-bold"} width={11} className={saving ? "animate-spin" : ""} aria-hidden />
                   {saving ? "Saving…" : "Save"}
@@ -561,6 +595,23 @@ export function RailFilePreview({
       </header>
       {/* A conflict gets its own row: the reason and both ways out have to fit
           in a narrow viewer, where the header has no room for them (#5745). */}
+      {missingOnDisk ? (
+        <div className="workspace-rail__preview-conflict" role="status">
+          <Icon name="ph:file-x" width={12} aria-hidden />
+          <span className="workspace-rail__preview-conflict-text">
+            {draft
+              ? "This file is no longer on disk. Your edit is kept: copy it, or Cancel to drop it."
+              : "This file is no longer on disk. This is the last version read."}
+          </span>
+          {draft ? (
+            <span className="workspace-rail__preview-conflict-actions">
+              <button type="button" className="focus-ring workspace-rail__preview-action" onClick={copyDraft}>
+                {copied ? "Copied" : "Copy edit"}
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {draft?.conflict ? (
         <div className="workspace-rail__preview-conflict" role="alert">
           <Icon name="ph:warning-circle" width={12} aria-hidden />

@@ -194,6 +194,7 @@ export function useRoleSurfaceSession(input: {
   sessions: SessionRow[];
   activeSessionId: string | null;
   daemonRunning: boolean;
+  daemonStatusUnknown?: boolean;
   openUrl: (url: string) => void;
   openSession: (sessionId: string, familiarId?: string) => void;
   focusCard: (cardId: string) => void;
@@ -206,6 +207,7 @@ export function useRoleSurfaceSession(input: {
     sessions,
     activeSessionId,
     daemonRunning,
+    daemonStatusUnknown = false,
     openUrl,
     openSession,
     focusCard,
@@ -339,7 +341,7 @@ export function useRoleSurfaceSession(input: {
         activeFamiliar: candidate,
         activePerson: null, // the Cave has no person model yet — honest null
         currentThread,
-        runtimeState: { daemonRunning, sessions: scoped, activeSessionId: currentThread?.id ?? null },
+        runtimeState: { daemonRunning, daemonStatusUnknown, sessions: scoped, activeSessionId: currentThread?.id ?? null },
         memory: createMemoryAccess(candidate.id),
         tools,
         plugins,
@@ -357,6 +359,7 @@ export function useRoleSurfaceSession(input: {
     sessions,
     activeSessionId,
     daemonRunning,
+    daemonStatusUnknown,
     openUrlStable,
     openSessionStable,
     focusCardStable,

@@ -388,4 +388,22 @@ assert.match(panelSrc, /const requestPending = outbound\.pending !== null;/);
 assert.match(panelSrc, /if \(!message \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no commit while a request runs");
 assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no Create PR while a request runs");
 
+// ── Pass 5 low fixes (#5756) ─────────────────────────────────────────────────
+const pickerLow5 = await readFile(new URL("./code-session-picker.tsx", import.meta.url), "utf8");
+const treeLow5 = await readFile(new URL("./project-tree.tsx", import.meta.url), "utf8");
+// 15. A forced load mid-flight is queued, not dropped.
+assert.match(panelSrc, /if \(!opts\?\.shared\) queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
+// 16. Focus has somewhere to go after a confirmed revert.
+assert.match(panelSrc, /requestAnimationFrame\(\(\) => restoreFocusAfterRevert\(file\.path, Math\.max\(0, index\)\)\);/);
+// 17. The picker's highlight is a session, not a position.
+assert.match(pickerLow5, /const active = options\.find\(\(option\) => option\.id === activeId\) \?\? options\[0\] \?\? null;/);
+// 23. A newer read of a folder supersedes an older one; nothing else cancels it.
+assert.match(treeLow5, /const id = \+\+refetchIdRef\.current;[\s\S]{0,200}if \(id !== refetchIdRef\.current\) return;\s*setFetching\(false\);/, "the folder's newest read always clears its spinner");
+assert.doesNotMatch(treeLow5, /After a move, refetch[\s\S]{0,800}return \(\) => \{ cancelled = true; \};/, "an unrelated signal no longer cancels a folder's read");
+// 23. A broken connection may still have posted the review.
+assert.match(prPanelSrc, /if \(err instanceof TypeError\) return "The connection broke before GitHub answered\. Check the pull request before trying again\.";/);
+// 23. Placeholders show intent, not the label or a state.
+assert.match(panelSrc, /placeholder="Describe the change…"/);
+assert.match(panelSrc, /aria-label="Pull request description \(optional\)"/);
+
 console.log("code-desk-overhaul pins ok");
