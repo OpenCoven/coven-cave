@@ -7,6 +7,7 @@ import {
   resetRunBuffersForTest,
   subscribeRunStream,
 } from "./chat-stream-buffer.ts";
+import { registerChatRun, requestChatStop, unregisterChatRun, resetChatStopRegistryForTests } from "./chat-stop-registry.ts";
 import type { StreamEvent } from "@/lib/stream-events";
 
 // Per-run stream buffer (cave-h40l): the send route tees every StreamEvent
@@ -238,4 +239,37 @@ test("recording after finish is a no-op (late child chatter can't grow a dead ri
   const sub = subscribeRunStream("run-late", 0, () => {}, () => {});
   assert.equal(sub!.replay.length, 1, "post-finish records are dropped");
   resetRunBuffersForTest();
+});
+
+
+test("late setup from a stopped predecessor cannot replace the successor stream", () => {
+  resetRunBuffersForTest();
+  resetChatStopRegistryForTests();
+  try {
+    const firstRun = registerChatRun(["run-a", "shared"], () => {}, { runId: "run-a" });
+    assert.equal(requestChatStop("run-a"), true);
+    const secondRun = registerChatRun(["run-b", "shared"], () => {}, { runId: "run-b" });
+    const second = openRunBuffer(["run-b", "shared"], null, secondRun);
+    second.record({ kind: "assistant_chunk", text: "successor" });
+    // Gateway setup for the stopped predecessor completes after B opens its buffer.
+    const first = openRunBuffer(["run-a", "shared"], null, firstRun);
+    first.record({ kind: "assistant_chunk", text: "predecessor" });
+    first.finish();
+    unregisterChatRun(firstRun);
+    const seen: string[] = [];
+    const shared = subscribeRunStream("shared", 0, (event) => seen.push(event.json), () => {});
+    assert.ok(shared && !shared.done, "the conversation still tails the live successor");
+    assert.equal(JSON.parse(shared.replay[0].json).text, "successor");
+    second.record({ kind: "assistant_chunk", text: "still live" });
+    assert.equal(JSON.parse(seen[0]).text, "still live");
+    const predecessor = subscribeRunStream("run-a", 0, () => {}, () => {});
+    assert.ok(predecessor?.done);
+    assert.equal(JSON.parse(predecessor.replay[0].json).text, "predecessor");
+    shared.unsubscribe();
+    second.finish();
+    unregisterChatRun(secondRun);
+  } finally {
+    resetRunBuffersForTest();
+    resetChatStopRegistryForTests();
+  }
 });

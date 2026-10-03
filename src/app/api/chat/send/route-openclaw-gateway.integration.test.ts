@@ -49,6 +49,10 @@ const sockets = new Set();
 const requests = [];
 let connectionCount = 0;
 let subscribedSessionKey;
+let releaseHandshake;
+let handshakeEntered;
+const handshakeGate = new Promise((resolve) => { releaseHandshake = resolve; });
+const handshakeReady = new Promise((resolve) => { handshakeEntered = resolve; });
 
 const hello = (connId) => ({
   type: "hello-ok",
@@ -85,11 +89,15 @@ gateway.on("connection", (socket) => {
     event: "connect.challenge",
     payload: { nonce: `route-test-${connection}` },
   }));
-  socket.on("message", (data) => {
+  socket.on("message", async (data) => {
     const frame = JSON.parse(data.toString());
     if (frame.type !== "req") return;
     requests.push({ connection, method: frame.method, params: frame.params });
     if (frame.method === "connect") {
+      if (connection === 1) {
+        handshakeEntered();
+        await handshakeGate;
+      }
       assert.equal(frame.params.role, "operator");
       assert.deepEqual(frame.params.scopes, ["operator.read", "operator.write"]);
       assert.equal(frame.params.device.id, identity.deviceId);
@@ -298,7 +306,22 @@ try {
     }),
     { openClawGatewayCredentialStore: credentialStore },
   );
-  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(response.status, 200);
+  await handshakeReady;
+  try {
+    const duplicate = await __postChatForTests(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "wren", prompt: "Must not launch during Gateway setup",
+        projectRoot: workspace, sessionId, runId: "duplicate-route-request",
+      }),
+    }), { openClawGatewayCredentialStore: credentialStore });
+    assert.equal(duplicate.status, 409, "admission survives returning the SSE response before Gateway setup completes");
+    assert.equal((await duplicate.json()).code, "chat_run_active");
+  } finally {
+    releaseHandshake();
+  }
   const events = (await response.text())
     .split("\n")
     .filter((line) => line.startsWith("data: "))
@@ -366,6 +389,7 @@ try {
     "the authenticated dispatch subscribes before sending the turn",
   );
 } finally {
+  releaseHandshake();
   restoreEnv();
   await closeGateway();
   await rm(home, { recursive: true, force: true });
