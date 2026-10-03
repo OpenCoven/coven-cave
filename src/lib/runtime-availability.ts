@@ -253,6 +253,23 @@ export function runtimeProcessFailure(
 }
 
 /**
+ * Coven's stream-json `result` frame carries the harness's own failure
+ * reason in `error`: a Codex `turn.failed`/`error` event message, or
+ * "Codex exited with <code>: <stderr tail>". Return only the child-authored
+ * part, for redacted diagnostic capture. The bare "<Runner> exited with
+ * <code>" wrapper is Coven's own text and restates the exit code, so it is
+ * not evidence that the runtime explained its failure.
+ */
+export function covenRelayedRunError(error: unknown): string | null {
+  if (typeof error !== "string") return null;
+  const trimmed = error.trim();
+  if (!trimmed) return null;
+  const wrapper = /^[\w .-]{1,40} exited with (?:-?\d+|an unknown status)(?::\s*([\s\S]*))?$/.exec(trimmed);
+  if (!wrapper) return trimmed;
+  return wrapper[1]?.trim() || null;
+}
+
+/**
  * A persisted, support-shareable account of the launch plan that actually
  * failed. This intentionally describes provenance without serialising local
  * paths, PATH values, prompts, credentials, or child diagnostic output.
