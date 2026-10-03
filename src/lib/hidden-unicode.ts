@@ -48,6 +48,7 @@ export type HiddenUnicodeSegment = { text: string; hidden: false } | { text: str
 /** `text` split into plain runs and single hidden characters, in order. */
 export function splitHiddenUnicode(text: string, kind: HiddenUnicodeKind): HiddenUnicodeSegment[] {
   const pattern = patternFor(kind);
+  pattern.lastIndex = 0;
   const out: HiddenUnicodeSegment[] = [];
   let last = 0;
   for (const match of text.matchAll(pattern)) {
