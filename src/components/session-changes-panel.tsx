@@ -414,6 +414,26 @@ export function SessionChangesInner({
   // commit that re-enables Revert (#5779): a frame queued in `finally` could
   // fire first, while Revert was still disabled, and the focus call failed.
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // Where focus goes once a commit settles, when it fell to the page
+  // (#5781): the result after a commit, which the list emptying would
+  // otherwise disable out from under it, or the message box after a refusal.
+  const commitInputRef = useRef<HTMLInputElement | null>(null);
+  const wasCommittingRef = useRef(false);
+  useEffect(() => {
+    if (committing) {
+      wasCommittingRef.current = true;
+      return;
+    }
+    if (!wasCommittingRef.current) return;
+    wasCommittingRef.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const result = panelRef.current?.querySelector<HTMLElement>("[data-commit-result]");
+    const target = outbound.error || !result
+      ? commitInputRef.current
+      : result.querySelector<HTMLElement>("button:not([disabled])") ?? result;
+    target?.focus();
+  }, [committing, outbound.error]);
   const gridBodyRef = useRef<HTMLTableSectionElement | null>(null);
   const [revertFocus, setRevertFocus] = useState<{ path: string; index: number } | null>(null);
   const restoreFocusAfterRevert = useCallback((path: string, index: number) => {
@@ -854,7 +874,10 @@ export function SessionChangesInner({
           ) : null}
 
           {postCommit ? (
-            <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
+            <div
+              data-commit-result=""
+              tabIndex={-1}
+              className="focus-ring rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
@@ -931,6 +954,7 @@ export function SessionChangesInner({
           {!prOpen ? (
             <div className="flex items-center gap-1.5">
               <input
+                ref={commitInputRef}
                 value={commitMsg}
                 onChange={(e) => setCommitMsg(e.target.value)}
                 onKeyDown={(e) => {
@@ -940,7 +964,11 @@ export function SessionChangesInner({
                 // status line in the placeholder; the list itself says so.
                 placeholder="Describe the change…"
                 aria-label="Commit message"
-                disabled={!canCommit || committing}
+                // Read-only, not disabled, while committing (#5781): disabling
+                // the focused box dropped focus to the page.
+                disabled={!canCommit}
+                readOnly={committing}
+                aria-busy={committing || undefined}
                 className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] disabled:opacity-40"
               />
               <Button

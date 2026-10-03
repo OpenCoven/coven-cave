@@ -87,6 +87,7 @@ import { stripAutoloadingContent } from "@/lib/html-sanitize";
 import { decorateResponseHtml } from "@/lib/response-status-tokens";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { hasHiddenUnicode, revealHiddenUnicodeInHtml } from "@/lib/hidden-unicode";
+import { CODE_COLLAPSED_CLASS } from "@/lib/code-block-collapse";
 import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
@@ -400,27 +401,71 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
   const [html, setHtml] = useState<string | null>(null);
   const containerRef = useWireCopyButtons(html);
   const resolvedLang = lang ?? autoDetectLang(text);
+  // The reader's place in the block, carried across a re-render (#5781).
+  // New text replaces the whole block, its scroller included, so each change
+  // by the agent jumped back to the top and opened a collapsed block. An
+  // owner showing a different document gives it a different key.
+  const viewRef = useRef<{ top: number; left: number; collapsed: boolean; expanded: boolean } | null>(null);
 
   useEffect(() => {
     if (!text) return;
     let cancelled = false;
     void renderCodeBlock(text, resolvedLang).then((h) => {
-      if (!cancelled) setHtml(h);
+      if (cancelled) return;
+      const wrap = containerRef.current?.querySelector<HTMLElement>(".cave-code-wrap");
+      viewRef.current = wrap
+        ? {
+            top: wrap.scrollTop,
+            left: wrap.querySelector("pre")?.scrollLeft ?? 0,
+            collapsed: wrap.classList.contains(CODE_COLLAPSED_CLASS),
+            expanded: wrap.classList.contains("cave-code-wrap--expanded"),
+          }
+        : null;
+      setHtml(h);
     });
     return () => { cancelled = true; };
-  }, [text, resolvedLang]);
+  }, [text, resolvedLang, containerRef]);
+
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    viewRef.current = null;
+    const wrap = containerRef.current?.querySelector<HTMLElement>(".cave-code-wrap");
+    if (!view || !wrap) return;
+    if (view.collapsed) {
+      wrap.classList.add(CODE_COLLAPSED_CLASS);
+      const toggle = wrap.querySelector(".cave-code-collapse-btn");
+      toggle?.setAttribute("aria-expanded", "false");
+      toggle?.setAttribute("aria-label", "Expand code");
+    }
+    if (view.expanded) {
+      wrap.classList.add("cave-code-wrap--expanded");
+      const more = wrap.querySelector(".cave-code-expand-btn");
+      if (more) more.textContent = "Show less";
+    }
+    wrap.scrollTop = view.top;
+    const pre = wrap.querySelector("pre");
+    if (pre) pre.scrollLeft = view.left;
+  }, [html, containerRef]);
 
   // Scroll to and briefly highlight the target line once the highlighted HTML
-  // is in the DOM. data-line anchors are emitted by renderCodeBlock.
+  // is in the DOM. data-line anchors are emitted by renderCodeBlock. A
+  // re-render keeps the mark but not the jump (#5781): only a new line moves
+  // the reader.
+  const scrolledLineRef = useRef<number | null>(null);
   useEffect(() => {
     if (!html) return;
     const container = containerRef.current;
     if (!container) return;
     container.querySelectorAll(".cave-line--active").forEach((el) => el.classList.remove("cave-line--active"));
-    if (!highlightLine) return;
+    if (!highlightLine) {
+      scrolledLineRef.current = null;
+      return;
+    }
     const row = container.querySelector<HTMLElement>(`.cave-line[data-line="${highlightLine}"]`);
     if (!row) return;
     row.classList.add("cave-line--active");
+    if (scrolledLineRef.current === highlightLine) return;
+    scrolledLineRef.current = highlightLine;
     row.scrollIntoView({ block: "center" });
   }, [html, highlightLine, containerRef]);
 

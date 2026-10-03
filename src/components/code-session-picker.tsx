@@ -158,13 +158,17 @@ export function CodeSessionPicker({
     setActiveId(null);
   }, [groupKey, open, query]);
   const active = options.find((option) => option.id === activeId) ?? options[0] ?? null;
+  // Scrolled to only when the highlight moves to another session (#5781):
+  // each sessions poll replaces the row objects, and keying on the row
+  // snapped a list the reader had scrolled back to the top every few seconds.
+  const activeOptionId = active?.id ?? null;
   useEffect(() => {
-    if (!open || !active) return;
-    const id = optionId(active.id);
+    if (!open || !activeOptionId) return;
+    const id = optionId(activeOptionId);
     Array.from(listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])
       .find((option) => option.id === id)
       ?.scrollIntoView?.({ block: "nearest" });
-  }, [active, open, optionId]);
+  }, [activeOptionId, open, optionId]);
 
   const pick = useCallback(
     (id: string) => {

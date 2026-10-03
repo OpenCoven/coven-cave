@@ -263,6 +263,7 @@ export const SUITES = {
     "src/lib/server/git-operation-in-progress.test.ts",
     "src/lib/server/repository-lock-key.test.ts",
     "src/lib/hidden-unicode.test.ts",
+    "src/lib/markdown-doc-links.test.ts",
     "src/lib/terminal-thread-stop.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",

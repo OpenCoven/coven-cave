@@ -8,7 +8,7 @@
  * session runs with the project root as its working directory.
  */
 
-export type ReviewFileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+export type ReviewFileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted";
 
 export type ReviewChangedFile = {
   path: string;

@@ -30,6 +30,7 @@ export const STATUS_LETTER: Record<FileStatus, string> = {
   deleted: "D",
   renamed: "R",
   untracked: "?",
+  conflicted: "C",
 };
 
 /** Join a repo-relative change path onto the root the tree renders absolute. */

@@ -56,8 +56,11 @@ export function fileLineBreak(content: string): "\n" | "\r\n" {
   return breaks > 0 && crlf === breaks ? "\r\n" : "\n";
 }
 
-/** What storage keeps of an unsaved draft (#5756). */
-export type SavedFileEditDraft = Pick<FileEditDraft, "path" | "content" | "baseContent" | "baseVersion" | "eol">;
+/** What storage keeps of an unsaved draft (#5756), and when (#5781). */
+export type SavedFileEditDraft = Pick<FileEditDraft, "path" | "content" | "baseContent" | "baseVersion" | "eol"> & {
+  /** When this edit last changed, ms since the epoch; absent in older entries. */
+  savedAt?: number;
+};
 
 /** Clean drafts beyond this are dropped, oldest first. Dirty drafts never are. */
 export const FILE_EDIT_DRAFT_LIMIT = 40;
@@ -73,6 +76,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
   const listeners = new Set<() => void>();
   let nextId = 1;
   let dirtyPaths: ReadonlySet<string> = new Set();
+  let unbacked: ReadonlySet<string> = new Set();
 
   const emit = () => {
     // The same set while its members are the same (#5756): a new Set on every
@@ -111,6 +115,18 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     },
     hasDirty(): boolean {
       return dirtyPaths.size > 0;
+    },
+    /** Unsaved drafts whose latest text isn't kept in storage (#5781): too
+     *  large, past the storage budget, or refused by the storage. They are
+     *  still held here; a reload or a quit would lose what changed since the
+     *  last copy. Stable between changes. */
+    unbackedPaths(): ReadonlySet<string> {
+      return unbacked;
+    },
+    setUnbacked(paths: ReadonlySet<string>) {
+      if (paths.size === unbacked.size && [...paths].every((path) => unbacked.has(path))) return;
+      unbacked = new Set(paths);
+      emit();
     },
     /** Start editing `path` from `content` (no-op when a draft already exists). */
     begin(path: string, content: string, version: string | null): FileEditDraft {
@@ -199,7 +215,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     /** Bring back drafts kept in storage (#5756). A draft already open wins. */
     restore(saved: readonly SavedFileEditDraft[]) {
       let changed = false;
-      for (const entry of saved) {
+      for (const { savedAt: _savedAt, ...entry } of saved) {
         if (drafts.has(entry.path)) continue;
         drafts.set(entry.path, { ...entry, id: nextId++, saving: false, error: null, conflict: false });
         changed = true;
@@ -216,6 +232,12 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
 export const FILE_EDIT_DRAFT_STORAGE_PREFIX = "cave.code.edit-draft.v1:";
 /** A draft larger than this (its text plus its base) stays in memory only. */
 export const FILE_EDIT_DRAFT_STORAGE_MAX_CHARS = 1_000_000;
+/** All of a page's drafts together (#5781), newest first: WebKit gives an
+ *  origin about 5 MB of localStorage, two bytes a character. */
+export const FILE_EDIT_DRAFT_STORAGE_BUDGET_CHARS = 2_000_000;
+/** A stored draft untouched for this long is dropped (#5781): one for a
+ *  removed worktree or a deleted session can't be reached to discard. */
+export const FILE_EDIT_DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
 
@@ -232,7 +254,15 @@ function readSavedDraft(path: string, raw: string | null): SavedFileEditDraft | 
     ) {
       return null;
     }
-    return { path, content: value.content, baseContent: value.baseContent, baseVersion: value.baseVersion, eol: value.eol };
+    const savedAt = typeof value.savedAt === "number" && Number.isFinite(value.savedAt) ? value.savedAt : undefined;
+    return {
+      path,
+      content: value.content,
+      baseContent: value.baseContent,
+      baseVersion: value.baseVersion,
+      eol: value.eol,
+      ...(savedAt === undefined ? {} : { savedAt }),
+    };
   } catch {
     return null;
   }
@@ -241,56 +271,107 @@ function readSavedDraft(path: string, raw: string | null): SavedFileEditDraft | 
 /**
  * Keep every unsaved draft of `store` in `storage`, one key per file (#5756),
  * and bring back what an earlier page left there. One key per file, so two
- * windows sharing localStorage only overwrite each other on the same file.
+ * windows sharing localStorage only meet on the same file, and there each
+ * writes only what it changed and removes only its own copy (#5781).
  * Writes are batched; call `flush` when the page is about to go away.
  */
 export function persistFileEditDrafts(
   store: FileEditDraftStore,
   storage: DraftStorage,
   schedule: (write: () => void) => void = (write) => { setTimeout(write, 150); },
+  now: () => number = Date.now,
 ) {
   const saved: SavedFileEditDraft[] = [];
+  const expired: string[] = [];
   for (let index = 0; index < storage.length; index++) {
     const key = storage.key(index);
     if (!key?.startsWith(FILE_EDIT_DRAFT_STORAGE_PREFIX)) continue;
     const draft = readSavedDraft(key.slice(FILE_EDIT_DRAFT_STORAGE_PREFIX.length), storage.getItem(key));
-    if (draft) saved.push(draft);
+    if (draft?.savedAt !== undefined && now() - draft.savedAt > FILE_EDIT_DRAFT_MAX_AGE_MS) expired.push(key);
+    else if (draft) saved.push(draft);
+  }
+  for (const key of expired) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      /* nothing more to do */
+    }
   }
   store.restore(saved);
 
-  // What this page last wrote per path, so an unchanged draft isn't rewritten
-  // on every keystroke elsewhere, and a saved or discarded one is removed.
-  // The whole entry, not just the text (#5760 review): a save that lands
-  // while typing continues moves the base and its version, text unchanged.
-  const serialize = (draft: SavedFileEditDraft) =>
+  // What this page last wrote per path (its text, not its time), so an
+  // unchanged draft isn't rewritten on every keystroke elsewhere, and a saved
+  // or discarded one is removed. The whole entry, not just the text (#5760
+  // review): a save that lands while typing continues moves the base and its
+  // version, text unchanged.
+  const contentKey = (draft: Pick<SavedFileEditDraft, "content" | "baseContent" | "baseVersion" | "eol">) =>
     JSON.stringify({ content: draft.content, baseContent: draft.baseContent, baseVersion: draft.baseVersion, eol: draft.eol });
-  const written = new Map<string, string>(saved.map((draft) => [draft.path, serialize(draft)]));
+  const storedKey = (path: string): string | null => {
+    let raw: string | null = null;
+    try {
+      raw = storage.getItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + path);
+    } catch {
+      return null;
+    }
+    const entry = readSavedDraft(path, raw);
+    return entry ? contentKey(entry) : null;
+  };
+  const written = new Map<string, string>(saved.map((draft) => [draft.path, contentKey(draft)]));
+  const changedAt = new Map<string, number>(saved.map((draft) => [draft.path, draft.savedAt ?? now()]));
   let pending = false;
   const flush = () => {
     pending = false;
+    const dirty = store.all().filter(isDraftDirty);
+    for (const draft of dirty) {
+      if (written.get(draft.path) !== contentKey(draft)) changedAt.set(draft.path, now());
+    }
+    // Newest edits first, so the budget keeps the work in progress.
+    dirty.sort((a, b) => (changedAt.get(b.path) ?? 0) - (changedAt.get(a.path) ?? 0));
     const keep = new Set<string>();
-    for (const draft of store.all()) {
-      if (!isDraftDirty(draft) || draft.content.length + draft.baseContent.length > FILE_EDIT_DRAFT_STORAGE_MAX_CHARS) continue;
+    const unbacked = new Set<string>();
+    let budget = FILE_EDIT_DRAFT_STORAGE_BUDGET_CHARS;
+    for (const draft of dirty) {
+      // A dirty draft's stored copy is never removed here: when this version
+      // can't be written, the last good one is better than none (#5781).
       keep.add(draft.path);
-      const entry = serialize(draft);
-      if (written.get(draft.path) === entry) continue;
+      const size = draft.content.length + draft.baseContent.length;
+      if (size > FILE_EDIT_DRAFT_STORAGE_MAX_CHARS || size > budget) {
+        unbacked.add(draft.path);
+        continue;
+      }
+      budget -= size;
+      const entry = contentKey(draft);
+      // Unchanged here since this page last wrote it: rewritten only when
+      // its copy is gone. Another window that saved or discarded the file
+      // removed it, and this page still holds the edit (#5781). A different
+      // copy is another window's newer edit, and is left alone.
+      if (written.get(draft.path) === entry && storedKey(draft.path) !== null) continue;
       try {
-        storage.setItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path, entry);
+        storage.setItem(
+          FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path,
+          JSON.stringify({ ...JSON.parse(entry), savedAt: changedAt.get(draft.path) ?? now() }),
+        );
         written.set(draft.path, entry);
       } catch {
-        // Over quota, or storage refused: the draft is still held in memory.
-        keep.delete(draft.path);
+        // Over quota, or storage refused: held in memory, last copy kept.
+        unbacked.add(draft.path);
       }
     }
     for (const path of [...written.keys()]) {
       if (keep.has(path)) continue;
-      try {
-        storage.removeItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + path);
-      } catch {
-        /* nothing more to do */
+      // Only this page's own copy goes (#5781): another window may still be
+      // editing the file, and its copy is its unsaved work.
+      if (storedKey(path) === written.get(path)) {
+        try {
+          storage.removeItem(FILE_EDIT_DRAFT_STORAGE_PREFIX + path);
+        } catch {
+          /* nothing more to do */
+        }
       }
       written.delete(path);
+      changedAt.delete(path);
     }
+    store.setUnbacked(unbacked);
   };
   store.subscribe(() => {
     if (pending) return;
