@@ -99,7 +99,12 @@ describe("CodeSessionPicker neutral landing trigger", () => {
     const rowsBefore = renderer.root.findAll(
       (node) => node.type === "button" && typeof node.props["data-code-session-id"] === "string",
     );
-    expect(rowsBefore.every((row) => row.props["aria-selected"] === false)).toBe(true);
+    // No session is current, so no row is marked as the current one. The
+    // listbox is driven from the search field (#5745): exactly one option, the
+    // first, is the active one the field points at.
+    expect(rowsBefore.every((row) => row.props["data-selected"] === undefined)).toBe(true);
+    expect(rowsBefore.filter((row) => row.props["aria-selected"] === true)).toHaveLength(1);
+    expect(rowsBefore[0].props["aria-selected"]).toBe(true);
 
     const input = renderer.root.findByProps({ "data-code-session-search": "" });
     await act(async () => input.props.onChange({ target: { value: "Scratch" } }));

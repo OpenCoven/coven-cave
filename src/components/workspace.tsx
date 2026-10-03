@@ -4183,6 +4183,9 @@ export function Workspace() {
   const refreshTasksFromRoom = useCallback(() => {
     void loadGitHubTasks(true);
   }, [loadGitHubTasks]);
+  const refreshSessionsFromRoom = useCallback(() => {
+    void loadSessions();
+  }, [loadSessions]);
   const roleSurfaceFamiliars = useMemo(
     () => scopeIds.size === 0
       ? visibleFamiliars
@@ -4199,6 +4202,7 @@ export function Workspace() {
     openSession: openFamiliarSession,
     focusCard: focusCardFromRoom,
     refreshTasks: refreshTasksFromRoom,
+    refreshSessions: refreshSessionsFromRoom,
   });
 
   // A room can be launched from a deep link while the scope is still All (or

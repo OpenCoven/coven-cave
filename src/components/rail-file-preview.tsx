@@ -212,7 +212,9 @@ export function RailFilePreview({
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [path, familiarId, projectRoot, reloadNonce, changeVersion]);
+    // projectRoot is not read here (#5745): a late work-root change must not
+    // read the file again.
+  }, [path, familiarId, reloadNonce, changeVersion]);
 
 
   // A redacted .env (server refuses writes) isn't editable; every other text
@@ -285,6 +287,10 @@ export function RailFilePreview({
         if (!stillOpen) setJustSaved(true);
       }
       announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);
+      // The save changed the working tree: the changes list, the tree's
+      // letters and the diffstat follow now, not at the next poll, which an
+      // idle session never runs (#5745).
+      window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
     } catch (err) {
       fileEditDrafts.fail(target, sending.id, String(err));
       announce(`Couldn't save ${label}: ${String(err)}`, "assertive");

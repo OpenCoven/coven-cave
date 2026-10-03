@@ -438,19 +438,24 @@ assert.match(
 
 // Session switches reset the split tree; carrying another session's panes over
 // would attach terminals to the wrong work root. CodeView keys the workbench by
-// session, so the drawer remounts with a fresh layout; the drawer's own
-// [sessionId] reset effect never ran and is gone (#5729).
+// session, so the drawer remounts per session; the drawer's own [sessionId]
+// reset effect never ran and is gone (#5729). Each mount starts from that
+// session's own saved layout (#5745), so returning reattaches its panes.
 assert.match(
   codeView,
   /<CodeWorkbench\s+key=\{selected\.id\}/,
-  "the terminal layout resets per session because the workbench is keyed by it",
+  "the terminal layout is per session because the workbench is keyed by it",
 );
 assert.match(
   terminalDrawer,
-  /useState<TerminalLayoutNode>\(createTerminalLayout\)/,
-  "each mounted drawer starts from a fresh single-pane layout",
+  /const \[saved\] = useState\(\(\) => readTerminalLayout\(sessionId\)\);\s*const \[layout, setLayout\] = useState<TerminalLayoutNode>\(saved\.layout\);/,
+  "each mounted drawer starts from its session's saved layout",
 );
-assert.doesNotMatch(terminalDrawer, /\}, \[sessionId\]\);/, "no dead per-session reset effect");
+assert.doesNotMatch(
+  terminalDrawer,
+  /useEffect\(\(\) => \{[^}]*createTerminalLayout\(\);[\s\S]*?\}, \[sessionId\]\);/,
+  "no dead per-session reset effect",
+);
 
 // The review rail keeps the PR panel code-split — the room opens far more often
 // than the PR tab, and its fetch stack must not ride the first chunk.
@@ -567,15 +572,16 @@ assert.match(
   "the reader is dynamic() — it pulls a markdown renderer and a diff highlighter, and the room opens far more often than the full PR view",
 );
 // A reader with no PR to read would render a permanent error. The affordance
-// and the surface are both gated on the session actually having one.
+// is gated on the session actually having one, and the view holds the PR it
+// opened (#5745): a poll that briefly loses the PR must not blank the desk.
 assert.match(
   workbench,
-  /\{prFull && prRepo && prNumber != null \? \(/,
-  "the reader only mounts when the session has a repo AND a number",
+  /\{prFull \? \(\s*<LazyPrReader repo=\{prFull\.repo\} number=\{prFull\.number\}/,
+  "the reader mounts for the repo AND number it was opened with",
 );
 assert.match(
   workbench,
-  /onOpenFullPr=\{prRepo && prNumber != null \? \(\) => setPrFull\(true\) : undefined\}/,
+  /onOpenFullPr=\{prRepo && prNumber != null \? \(\) => openFullPr\(prRepo, prNumber\) : undefined\}/,
   "the Full PR view affordance is absent when there is no PR, rather than opening an error",
 );
 assert.match(
@@ -866,13 +872,18 @@ assert.match(
 );
 assert.match(
   workbench,
-  /<CodeInspector row=\{row\} onChanged=\{onRefresh\} \/>/,
-  "the inspector is a header popover now, and its mutations still re-poll the enriched session list via onRefresh",
+  /<CodeInspector row=\{row\} onChanged=\{onInspectorChanged\} \/>/,
+  "the inspector is a header popover now, and its mutations re-poll the session list and read the open file again (#5745)",
+);
+assert.match(
+  workbench,
+  /const onInspectorChanged = useCallback\(\(\) => \{\s*onRefresh\?\.\(\);/,
+  "the inspector's changes still reach the host's onRefresh",
 );
 assert.match(
   codeView,
-  /onRefresh=\{onTasksRefresh\}/,
-  "code-view threads the workspace's tasks refresh into the workbench",
+  /onRefresh=\{\(\) => \{\s*onSessionsRefresh\?\.\(\);\s*onTasksRefresh\(\);\s*\}\}/,
+  "code-view threads the workspace's sessions and tasks refresh into the workbench (#5745)",
 );
 
 // ── Narrow drill-in (list-first, measured) ───────────────────────────

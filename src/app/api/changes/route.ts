@@ -341,6 +341,30 @@ async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
+/** The working tree as `path\0changeVersion` keys, the same stamps the status
+ *  list carries. A commit can name the list it was reviewed against and be
+ *  refused when the tree has moved since (#5745). */
+async function changeKeys(repoRoot: string): Promise<string[]> {
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+  const files = parsePorcelainZ(stdout);
+  await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
+  return files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`).sort();
+}
+
+/** Parse a commit's `expectedChanges` into sorted keys, or null when absent. */
+function expectedChangeKeys(raw: unknown): string[] | null | "invalid" {
+  if (raw === undefined) return null;
+  if (!Array.isArray(raw) || raw.length > 5000) return "invalid";
+  const keys: string[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") return "invalid";
+    const { path: filePath, changeVersion } = entry as { path?: unknown; changeVersion?: unknown };
+    if (typeof filePath !== "string" || !filePath || typeof changeVersion !== "string") return "invalid";
+    keys.push(`${filePath}\0${changeVersion}`);
+  }
+  return keys.sort();
+}
+
 async function listChanges(repoRoot: string): Promise<NextResponse> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
@@ -623,6 +647,7 @@ export async function POST(req: NextRequest) {
     title?: string;
     prBody?: string;
     paths?: unknown;
+    expectedChanges?: unknown;
     expectedBranch?: string;
     expectedHead?: string;
     requireDefaultBranch?: boolean;
@@ -682,8 +707,27 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "invalid commit path" }, { status: 400 });
       }
     }
+    const expectedChanges = expectedChangeKeys(body.expectedChanges);
+    if (expectedChanges === "invalid") {
+      return NextResponse.json({ ok: false, error: "expectedChanges must list {path, changeVersion} entries" }, { status: 400 });
+    }
     return withRepositoryMutation(root.repoRoot, async () => {
       try {
+        // Commit only what was reviewed (#5745): under the lock, refuse when
+        // the working tree no longer matches the list the caller showed.
+        if (expectedChanges) {
+          const current = await changeKeys(root.repoRoot);
+          if (current.length !== expectedChanges.length || current.some((key, index) => key !== expectedChanges[index])) {
+            return NextResponse.json(
+              {
+                ok: false,
+                stale: true,
+                error: "the working tree changed since you reviewed it; review the new changes, then commit",
+              },
+              { status: 409 },
+            );
+          }
+        }
         const pathArgs = targetedPaths ? ["--", ...targetedPaths] : [];
       const { stdout: statusOut } = await git(
         root.repoRoot,
@@ -786,7 +830,7 @@ export async function POST(req: NextRequest) {
         const { stdout } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
         if (stdout.trim() !== expectedHead) {
           return NextResponse.json(
-            { ok: false, error: "the branch changed after the Canvas commit; review the new commit before opening the PR" },
+            { ok: false, error: "the branch changed after the commit; review the new commit before opening the PR" },
             { status: 409 },
           );
         }

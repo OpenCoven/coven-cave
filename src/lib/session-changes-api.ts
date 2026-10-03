@@ -13,6 +13,9 @@ export type ChangedFile = {
 
 export type DiffState = {
   loading: boolean;
+  /** The file version this diff was read for (`diffSignature`). A cached diff
+   *  whose file has changed since is stale and is read again (#5745). */
+  sig?: string;
   diff?: string;
   truncated?: boolean;
   error?: string;

@@ -113,6 +113,9 @@ export function CodeInspector({ row, onChanged }: { row: SessionRow; onChanged?:
     if (result.ok) {
       setNotice({ kind: "ok", text: `Switched to ${name}.` });
       branches.refresh();
+      // A branch switch rewrites the working tree: every changes view reads
+      // it again now (#5745), as an Undo in chat does.
+      window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
       onChanged?.();
     } else {
       setNotice({ kind: "err", text: result.error ?? "Switch failed." });

@@ -485,16 +485,17 @@ function TreeRow({
     setExpanded(true);
     if (children !== null || revealedRef.current) return;
     revealedRef.current = true;
-    let alive = true;
     setFetching(true);
+    // The answer always lands (#5745). Dropping it when this effect re-ran
+    // (StrictMode's double run in dev, or the selection moving mid-fetch)
+    // left `revealedRef` set, so nothing fetched again, and the folder spun
+    // with no children. Children already loaded by a click are kept.
     void fetchChildren(entry.path, familiarId).then((fetched) => {
-      if (!alive) return;
       setFetching(false);
       if (fetched === null) { setChildError(true); return; }
       setChildError(false);
-      setChildren(fetched);
+      setChildren((current) => current ?? fetched);
     });
-    return () => { alive = false; };
   }, [selectedPath, entry.isDir, entry.path, children, familiarId]);
 
   // After a move, refetch this folder's children if it's affected and loaded.

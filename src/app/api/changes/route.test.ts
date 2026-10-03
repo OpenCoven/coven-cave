@@ -218,4 +218,16 @@ assert.match(
   "the absent-origin catch branch still answers ok:true with a null remoteUrl",
 );
 
+// A commit can name the list it was reviewed against (#5745). Under the
+// repository lock, before anything is staged, the tree's current stamps are
+// compared with it and a mismatch is a 409, so nothing is committed unseen.
+assert.match(source, /async function changeKeys\(repoRoot: string\)[\s\S]{0,400}stampChangedFiles\(files[\s\S]{0,200}\.sort\(\)/, "the precondition reads the same stamps the status list carries");
+assert.match(
+  source,
+  /const expectedChanges = expectedChangeKeys\(body\.expectedChanges\);[\s\S]*?withRepositoryMutation\(root\.repoRoot[\s\S]*?if \(expectedChanges\) \{[\s\S]*?await changeKeys\(root\.repoRoot\)[\s\S]*?stale: true[\s\S]*?status: 409[\s\S]*?"add", "-A"/,
+  "a stale expectedChanges is refused under the lock before anything is staged",
+);
+assert.match(source, /expectedChanges === "invalid"[\s\S]{0,200}status: 400/, "a malformed expectedChanges is a 400");
+assert.doesNotMatch(source, /after the Canvas commit/, "the create-pr head mismatch speaks for every caller, not just Canvas");
+
 console.log("changes route.test.ts: ok");

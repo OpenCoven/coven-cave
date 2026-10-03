@@ -187,7 +187,7 @@ assert.match(workbench, /changesStatus=\{changes\.loaded \? \(changes\.ok \? "re
 assert.match(workbenchTree, /const filtering = ready && changedOnly && changedCount > 0;/, "a failed or loading summary never filters the tree");
 assert.match(workbenchTree, /"Changes unavailable"/, "a failed request is not \"0 changed\"");
 assert.match(preview, /Couldn&rsquo;t open \{name\}<\/p>[\s\S]{0,400}onClick=\{\(\) => setReloadNonce\(\(n\) => n \+ 1\)\}/, "a file that fails to open has a headline and a Retry");
-assert.match(preview, /\}, \[path, familiarId, projectRoot, reloadNonce, changeVersion\]\);/, "Retry refetches the same path, and a moved change version reads the file again");
+assert.match(preview, /\}, \[path, familiarId, reloadNonce, changeVersion\]\);/, "Retry refetches the same path, and a moved change version reads the file again (not a work-root change, #5745)");
 assert.match(preview, /onOpenPath\(changedRepoRoot \? `\$\{changedRepoRoot\.replace\(\/\\\/\+\$\/, ""\)\}\/\$\{f\.path\}` : f\.path\)/, "launchpad paths resolve against the git toplevel, not the project");
 assert.match(composer, /showSuggestions = [^;]*row\.familiarId/, "no suggestions for a session that cannot send");
 assert.match(composer, /No familiar is attached to this session/, "a session with no familiar says why Send is off");
@@ -237,7 +237,7 @@ assert.match(preview, /if \(pathRef\.current === target\) \{\s*setFile\(/, "only
 assert.match(preview, /expectedVersion: sending\.baseVersion \?\? undefined/, "a save sends the version its edit started from");
 assert.match(preview, /fileEditDrafts\.fail\(target, sending\.id, conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
 assert.match(preview, /className="workspace-rail__preview-conflict" role="alert"[\s\S]{0,1200}onClick=\{reloadFromDisk\}[\s\S]{0,400}onClick=\{overwriteDisk\}/, "a conflict offers Reload and Overwrite in its own row");
-assert.match(workbench, /changeVersion=\{selectedChangeVersion\}/, "the open file is read again when its change version moves");
+assert.match(workbench, /changeVersion=\{`\$\{selectedChangeVersion \?\? ""\}\|\$\{viewerRefresh\}`\}/, "the open file is read again when its change version moves, or the inspector changed the branch");
 
 // #5746 review.
 const draftsSrc = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
@@ -245,5 +245,44 @@ assert.match(draftsSrc, /export const fileEditDrafts = createFileEditDraftStore\
 assert.doesNotMatch(preview, /addEventListener\("beforeunload"/, "no per-viewer unload guard that unmounts with the desk");
 assert.match(preview, /title="Discard your changes"[\s\S]{0,200}disabled=\{saving\}/, "Cancel waits for an in-flight save");
 assert.match(preview, /fileEditDrafts\.settle\(target, sending\.id,/, "a save settles only the edit it was sent from");
+
+// ── Pass 4 medium fixes (#5745) ──────────────────────────────────────────────
+const prPanelSrc = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
+const pickerSrc = await readFile(new URL("./code-session-picker.tsx", import.meta.url), "utf8");
+const readerSrc = await readFile(new URL("./github-pr-reader.tsx", import.meta.url), "utf8");
+const inspectorSrc = await readFile(new URL("./code-inspector.tsx", import.meta.url), "utf8");
+const codeViewSrc = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
+// 4. A cached diff shows only for the file version it was read for.
+assert.match(panelSrc, /const diffIsCurrent = useCallback\([\s\S]{0,300}cached\.sig === diffSignature\(file\)/, "a cached diff must match the file's current signature");
+assert.match(panelSrc, /if \(expandedPath !== file\.path && !diffIsCurrent\(file\)\) void fetchDiff/, "re-expanding a changed file reads it again");
+// 5 and 12. Outbound drafts live in a store keyed by session on the desk.
+assert.match(panelSrc, /const outbound = useSyncExternalStore\(\s*changesOutbound\.subscribe,/, "commit and PR drafts come from the outbound store");
+assert.match(reviewRail, /draftKey=\{`session:\$\{row\.id\}`\}/, "the desk keys the drafts by session");
+// 6. Commit and Create PR are pinned to what was reviewed.
+assert.match(panelSrc, /expectedChanges: files\.map\(\(file\) => \(\{ path: file\.path, changeVersion: file\.changeVersion \?\? "" \}\)\)/, "a commit names the list it reviewed");
+assert.match(panelSrc, /expectedHead: postCommit\.headOid[\s\S]{0,120}expectedBranch: postCommit\.branch/, "Create PR names the commit and branch");
+// 7. The rail merges only on passing checks, pinned to their head.
+assert.match(prPanelSrc, /disabled=\{busy != null \|\| mergeBlocked != null\}/, "merge waits for passing checks");
+assert.match(prPanelSrc, /"\/api\/github\/merge", \{ repo, number, method: "squash", headSha \}/, "merge is pinned to the checked head");
+assert.match(prPanelSrc, /\.\.\.\(headSha \? \{ headSha \} : \{\}\),/, "review is pinned to the checked head");
+// 8. Split shells are stopped on close; layouts persist per session.
+assert.match(drawer, /if \(paneId !== PRIMARY_TERMINAL_PANE_ID\) stopTerminalThread\(terminalPaneThreadId\(sessionId, paneId\)\);\s*setLayout/, "closing a pane stops its shell before it unmounts");
+assert.match(drawer, /writeTerminalLayout\(sessionId, \{ layout, focusedPaneId \}\);/, "the layout is saved per session");
+// 9. Saves and inspector actions refresh the desk.
+assert.match(preview, /announce\(stillOpen[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:changes-refresh"\)\);/, "a save refreshes the changes views");
+assert.match(inspectorSrc, /branches\.refresh\(\);[\s\S]{0,300}window\.dispatchEvent\(new CustomEvent\("cave:changes-refresh"\)\);\s*onChanged\?\.\(\);/, "a branch switch refreshes the changes views");
+assert.match(codeViewSrc, /onRefresh=\{\(\) => \{\s*onSessionsRefresh\?\.\(\);\s*onTasksRefresh\(\);\s*\}\}/, "the inspector's refresh re-polls the sessions");
+// 10. The inspector takes focus.
+assert.match(workbench, /const panel = document\.querySelector<HTMLElement>\("\.code-room__inspector"\);[\s\S]{0,300}\(control \?\? panel\)\?\.focus\(\);/, "opening the inspector moves focus into it");
+// 11. Picker combobox and focus; full PR view focus.
+assert.match(pickerSrc, /role="combobox"\s*aria-expanded=\{open\}\s*aria-controls=\{listboxId\}\s*aria-autocomplete="list"\s*aria-activedescendant=/, "the picker's search field is a combobox");
+assert.match(pickerSrc, /if \(\(event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"\) && options\.length > 0\)/, "arrow keys move the active option");
+assert.match(pickerSrc, /if \(id !== selected\?\.id\) focusTriggerAfterPickAt = Date\.now\(\);/, "picking another session asks the new desk's picker for focus");
+assert.match(readerSrc, /const backRef = useRef<HTMLButtonElement \| null>\(null\);\s*useEffect\(\(\) => \{\s*backRef\.current\?\.focus\(\);/, "the PR reader focuses its Back control on mount");
+// 13. The full PR view holds its PR.
+assert.match(workbench, /const \[prFull, setPrFull\] = useState<\{ repo: string; number: number \} \| null>\(null\);/, "the full PR view remembers the PR it opened");
+assert.match(workbench, /\{prFull \? \(\s*<LazyPrReader repo=\{prFull\.repo\} number=\{prFull\.number\}/, "the reader renders from that PR, not the live row");
+// 14. A reveal fetch's answer always lands.
+assert.match(treeSrc, /void fetchChildren\(entry\.path, familiarId\)\.then\(\(fetched\) => \{\s*setFetching\(false\);[\s\S]{0,200}setChildren\(\(current\) => current \?\? fetched\);/, "the reveal never drops its answer");
 
 console.log("code-desk-overhaul pins ok");
