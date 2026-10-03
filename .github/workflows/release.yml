@@ -8,8 +8,8 @@ name: Release
 #     upload an un-notarized DMG: a verification step runs `spctl` after
 #     the build and fails the job if Gatekeeper does not accept it.
 #   - Linux (AppImage) — unsigned.
-#   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
-#     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
+#   - Windows (MSI) — built without publishing, signed with SSL.com eSigner,
+#     Authenticode-verified, then uploaded and attested.
 #   - iOS (IPA) — signed with Apple Distribution assets, validated and uploaded
 #     to App Store Connect, then held until Apple reports processing complete.
 #
@@ -42,6 +42,16 @@ name: Release
 #   APPLE_PASSWORD             app-specific password for APPLE_ID.
 #   APPLE_TEAM_ID              Developer Team ID.
 #
+# Required repository secrets for the Windows MSI job:
+#   ES_USERNAME                SSL.com eSigner account username.
+#   ES_PASSWORD                SSL.com eSigner account password.
+#   CREDENTIAL_ID              eSigner code-signing credential ID.
+#   ES_TOTP_SECRET             eSigner OAuth TOTP secret for automation.
+# Required repository variable:
+#   WINDOWS_SIGNING_CERT_THUMBPRINT
+#                              SHA-1 thumbprint of the expected public code-
+#                              signing certificate (40 hexadecimal digits).
+#
 # Additional required repository secrets for the iOS/TestFlight job:
 #   IOS_DISTRIBUTION_CERTIFICATE_BASE64
 #                                base64-encoded Apple Distribution .p12.
@@ -58,7 +68,8 @@ name: Release
 #
 # The macOS leg intentionally uses scripts/release.sh instead of tauri-action
 # because it assembles + notarizes the DMG in a more reliable way for this
-# repository. Linux and Windows still ship via tauri-action on the tag-push.
+# repository. Linux publishes via tauri-action; Windows uses tauri-action only
+# to build the MSI before the separate signing and verification steps.
 
 on:
   push:
@@ -1448,7 +1459,7 @@ jobs:
           args: ${{ matrix.args }}
 
       # Build without release inputs so tauri-action cannot publish the MSI
-      # before its component/size budget has passed.
+      # before its component/size budget and Authenticode gates have passed.
       - name: Build Windows MSI without publishing
         if: >-
           matrix.family == 'windows' &&
@@ -1472,6 +1483,127 @@ jobs:
             -MsiPath $msis[0].FullName `
             -OutputPath "$env:RUNNER_TEMP\windows-msi-metrics.json"
 
+      # The pinned action otherwise downloads this mutable release asset without
+      # integrity verification. Verify before any eSigner credentials are in scope.
+      - name: Verify Windows signing tool
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "CodeSignTool-v1.3.0-windows.zip"
+          $toolDir = Join-Path $env:RUNNER_TEMP "CodeSignTool-v1.3.0-verified"
+          if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $toolDir)) {
+            throw "Windows signing tool staging path already exists"
+          }
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri "https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.0/CodeSignTool-v1.3.0-windows.zip" `
+            -OutFile $archive
+          # SHA-256 of the upstream Windows v1.3.0 asset, verified 2026-10-03.
+          $expectedHash = "e22094505decbe622afe5b0c27abc618ed2ba179bd94f3450490352399d5ef2a"
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw "CodeSignTool archive SHA-256 mismatch"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolDir
+          foreach ($entry in @("CodeSignTool.bat", "jar/code_sign_tool-1.3.0.jar", "conf/code_sign_tool.properties")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $toolDir $entry) -PathType Leaf)) {
+              throw "Verified CodeSignTool archive is missing $entry"
+            }
+          }
+          "CODESIGNTOOL_PATH=$toolDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Stage Windows MSI for code signing
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        env:
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          CREDENTIAL_ID: ${{ secrets.CREDENTIAL_ID }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          WINDOWS_SIGNING_CERT_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERT_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($name in @("ES_USERNAME", "ES_PASSWORD", "CREDENTIAL_ID", "ES_TOTP_SECRET", "WINDOWS_SIGNING_CERT_THUMBPRINT")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Windows signing configuration is missing $name"
+            }
+          }
+          if ($env:WINDOWS_SIGNING_CERT_THUMBPRINT -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "WINDOWS_SIGNING_CERT_THUMBPRINT must be 40 hexadecimal digits"
+          }
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          }
+          $signedDir = Join-Path $env:RUNNER_TEMP "windows-msi-signed"
+          if (Test-Path -LiteralPath $signedDir) {
+            throw "Signed MSI output directory already exists: $signedDir"
+          }
+          "WINDOWS_MSI_PATH=$($msis[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINDOWS_SIGNED_DIR=$signedDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Sign Windows MSI with SSL.com eSigner
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        uses: SSLcom/esigner-codesign@b7f8ff36fc0de8690fbbab8e5b4421d29802f747
+        with:
+          command: sign
+          username: ${{ secrets.ES_USERNAME }}
+          password: ${{ secrets.ES_PASSWORD }}
+          credential_id: ${{ secrets.CREDENTIAL_ID }}
+          totp_secret: ${{ secrets.ES_TOTP_SECRET }}
+          file_path: ${WINDOWS_MSI_PATH}
+          output_path: ${WINDOWS_SIGNED_DIR}
+          environment_name: PROD
+          clean_logs: true
+
+      - name: Verify signed Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        env:
+          WINDOWS_SIGNING_CERT_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERT_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signedMsis = @(Get-ChildItem -LiteralPath $env:WINDOWS_SIGNED_DIR -Filter *.msi -File)
+          if ($signedMsis.Count -ne 1) {
+            throw "Expected exactly one signed MSI, found $($signedMsis.Count)"
+          }
+          $signedMsi = $signedMsis[0]
+          if ($signedMsi.Name -ne [IO.Path]::GetFileName($env:WINDOWS_MSI_PATH)) {
+            throw "eSigner changed the MSI filename: $($signedMsi.Name)"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $signedMsi.FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "Signed MSI Authenticode status is $($signature.Status): $($signature.StatusMessage)"
+          }
+          if ($null -eq $signature.SignerCertificate -or
+              $signature.SignerCertificate.Thumbprint -ne $env:WINDOWS_SIGNING_CERT_THUMBPRINT) {
+            throw "Signed MSI certificate does not match WINDOWS_SIGNING_CERT_THUMBPRINT"
+          }
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw "Signed MSI has no timestamp certificate"
+          }
+          & .\scripts\windows-msi-budget.ps1 `
+            -MsiPath $signedMsi.FullName `
+            -OutputPath "$env:RUNNER_TEMP\windows-msi-signed-metrics.json"
+          # The updater signature and attestation steps read the bundle path.
+          # Replace its unsigned build only after the signed output passes.
+          Copy-Item -LiteralPath $signedMsi.FullName -Destination $env:WINDOWS_MSI_PATH -Force
+          if ((Get-FileHash -LiteralPath $signedMsi.FullName -Algorithm SHA256).Hash -ne
+              (Get-FileHash -LiteralPath $env:WINDOWS_MSI_PATH -Algorithm SHA256).Hash) {
+            throw "The release MSI differs from the verified signed MSI"
+          }
+
       - name: Retain Windows MSI diagnostics
         if: >-
           always() && matrix.family == 'windows' &&
@@ -1479,11 +1611,13 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-msi-diagnostics-${{ env.RELEASE_VERSION }}
-          path: ${{ runner.temp }}/windows-msi-metrics.json
+          path: |
+            ${{ runner.temp }}/windows-msi-metrics.json
+            ${{ runner.temp }}/windows-msi-signed-metrics.json
           if-no-files-found: warn
           compression-level: 0
 
-      - name: Publish validated Windows MSI
+      - name: Publish verified signed Windows MSI
         if: >-
           matrix.family == 'windows' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
@@ -1494,8 +1628,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
-          if ($msis.Count -ne 1) {
-            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          if ($msis.Count -ne 1 -or $msis[0].FullName -ne $env:WINDOWS_MSI_PATH) {
+            throw "Expected exactly one verified signed MSI at the staged release path"
           }
 
           # Windows PowerShell promotes native stderr to an ErrorRecord. Probe
@@ -1538,7 +1672,7 @@ jobs:
 
           gh release upload $env:RELEASE_TAG $msis[0].FullName --clobber
           if ($LASTEXITCODE -ne 0) {
-            throw "Could not publish budget-approved MSI"
+            throw "Could not publish verified signed MSI"
           }
 
       - name: Sign Linux/Windows updater artifact
