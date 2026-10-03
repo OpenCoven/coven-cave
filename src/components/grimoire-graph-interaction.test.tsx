@@ -7,7 +7,11 @@ import { createForceSim, unpinForceSimNode } from "@/lib/grimoire-force";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { DocGraph } from "@/lib/grimoire-graph";
 
-vi.mock("@/components/ui/popover", () => ({ Popover: ({ open, children }: { open: boolean; children: ReactNode }) => open ? children : null, PopoverBody: ({ children }: { children: ReactNode }) => children }));
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ open, children }: { open: boolean; children: ReactNode }) => open ? children : null,
+  PopoverBody: ({ children }: { children: ReactNode }) => children,
+  PopoverItem: ({ onSelect, children }: { onSelect: () => void; children: ReactNode }) => <button type="button" onClick={onSelect}>{children}</button>,
+}));
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: vi.fn() }) }));
 vi.mock("@/lib/use-prefers-reduced-motion", () => ({ usePrefersReducedMotion: vi.fn(() => true) }));
@@ -61,6 +65,10 @@ function textContent(node: unknown): string {
   return "";
 }
 function button(text: string) { return root!.root.findAllByType("button").find((node: unknown) => textContent(node).trim() === text)!; }
+function chooseOption(label: string, option: string) {
+  act(() => root!.root.findByProps({ "aria-label": label }).props.onClick());
+  act(() => button(option).props.onClick());
+}
 function pointer(type: string, pointerId: number, x: number, y: number) { return { type, pointerId, clientX: x, clientY: y, button: 0, shiftKey: false }; }
 
 beforeEach(() => {
@@ -98,7 +106,7 @@ test("overlapping projected nodes keep one readable label instead of overprintin
 test("2D framing scales with a narrower pane rather than cropping the previous viewport", () => {
   mount();
   act(() => root!.root.findByProps({ "aria-label": "Expand graph filters" }).props.onClick());
-  act(() => root!.root.findAllByType("select")[1].props.onChange({ target: { value: "2" } }));
+  chooseOption("Graph layout", "2D map");
   frame();
   const before = arcs.map((arc) => [...arc]);
   viewport.width = 450;
@@ -116,7 +124,7 @@ test("a 2D selection flight stays continuous and centered when the explorer resi
   vi.spyOn(performance, "now").mockReturnValue(1000);
   mount();
   act(() => root!.root.findByProps({ "aria-label": "Expand graph filters" }).props.onClick());
-  act(() => root!.root.findAllByType("select")[1].props.onChange({ target: { value: "2" } }));
+  chooseOption("Graph layout", "2D map");
   const sim = vi.mocked(createForceSim).mock.results.at(-1)!.value;
   sim.alpha = 0;
   sim.x[0] = 140; sim.y[0] = 80;
@@ -158,7 +166,7 @@ test("familiar colors use inventory ownership and expose named legend entries wi
   mount();
   act(() => root!.root.findByProps({ "aria-label": "Expand graph filters" }).props.onClick());
   const builds = vi.mocked(createForceSim).mock.calls.length;
-  act(() => root!.root.findAllByType("select")[0].props.onChange({ target: { value: "familiar" } }));
+  chooseOption("Graph color coding", "Familiar");
   expect(vi.mocked(createForceSim).mock.calls.length).toBe(builds);
   expect(JSON.stringify(root!.toJSON())).toContain("Familiar colors");
   expect(JSON.stringify(root!.toJSON())).toContain("Nova");

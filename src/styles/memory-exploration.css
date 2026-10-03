@@ -11,7 +11,7 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
-.memories-familiar-filter select {
+.memories-familiar-filter .standard-select-trigger {
   min-width: 0;
   max-width: 12rem;
   min-height: var(--space-8);
@@ -33,10 +33,10 @@
   .grimoire-header .grimoire-tabs { flex: 1; }
   .grimoire-header .surface-compact-actions { flex: 1 0 100%; justify-content: flex-end; }
   .memories-familiar-filter { flex: 1; }
-  .memories-familiar-filter select { width: 100%; max-width: none; }
+  .memories-familiar-filter .standard-select-trigger { width: 100%; max-width: none; }
 }
 @media (pointer: coarse) {
-  .memories-familiar-filter select { min-height: var(--touch-target); font-size: var(--text-lg); }
+  .memories-familiar-filter .standard-select-trigger { min-height: var(--touch-target); font-size: var(--text-lg); }
 }
 
 /* Journal shares the same pane breakpoint; the reader keeps its full measure

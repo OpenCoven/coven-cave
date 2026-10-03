@@ -64,7 +64,7 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
-.grimoire-graph-field select {
+.grimoire-graph-field .standard-select-trigger {
   min-width: 0;
   max-width: 70%;
   background: var(--bg-panel);
@@ -214,10 +214,10 @@
 @media (pointer: coarse) {
   .grimoire-graph button,
   .grimoire-graph-check,
-  .grimoire-graph-settings select,
-  .grimoire-graph select { min-height: var(--touch-target); }
+  .grimoire-graph-settings .standard-select-trigger,
+  .grimoire-graph .standard-select-trigger { min-height: var(--touch-target); }
   .grimoire-graph button { min-width: var(--touch-target); }
   .grimoire-graph input[type="search"],
-  .grimoire-graph-settings select,
-  .grimoire-graph select { font-size: var(--text-lg); }
+  .grimoire-graph-settings .standard-select-trigger,
+  .grimoire-graph .standard-select-trigger { font-size: var(--text-lg); }
 }

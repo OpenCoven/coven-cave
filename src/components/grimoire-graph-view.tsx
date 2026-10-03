@@ -38,6 +38,7 @@ import {
 } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { Popover, PopoverBody } from "@/components/ui/popover";
+import { StandardSelect } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -1521,16 +1522,16 @@ export function GrimoireGraphView({
         <Popover open={prefs.panelOpen} onOpenChange={(panelOpen) => setPrefs((p) => ({ ...p, panelOpen }))} anchorRef={filtersTriggerRef} placement="bottom-start" minWidth={280} ariaLabel="Graph settings">
           <PopoverBody>
           <div id={settingsId} className="grimoire-graph-settings">
-            <label className="grimoire-graph-field">Color by
-              <select className="focus-ring" value={prefs.colorBy} onChange={(e) => setPrefs((p) => ({ ...p, colorBy: e.target.value === "familiar" ? "familiar" : "kind" }))}>
-                <option value="kind">Document type</option><option value="familiar">Familiar</option>
-              </select>
-            </label>
-            <label className="grimoire-graph-field">Layout
-              <select className="focus-ring" value={prefs.dims} onChange={(e) => { needsFitRef.current = true; setPrefs((p) => ({ ...p, dims: e.target.value === "2" ? 2 : 3 })); }}>
-                <option value={3}>3D constellation</option><option value={2}>2D map</option>
-              </select>
-            </label>
+            <div className="grimoire-graph-field"><span>Color by</span>
+              <StandardSelect label="Graph color coding" className="grimoire-graph-select" value={prefs.colorBy}
+                onChange={(colorBy) => setPrefs((p) => ({ ...p, colorBy }))}
+                options={[{ value: "kind", label: "Document type" }, { value: "familiar", label: "Familiar" }]} />
+            </div>
+            <div className="grimoire-graph-field"><span>Layout</span>
+              <StandardSelect label="Graph layout" className="grimoire-graph-select" value={prefs.dims === 2 ? "2" : "3"}
+                onChange={(dims) => { needsFitRef.current = true; setPrefs((p) => ({ ...p, dims: dims === "2" ? 2 : 3 })); }}
+                options={[{ value: "3", label: "3D constellation" }, { value: "2", label: "2D map" }]} />
+            </div>
             {three && !reducedMotion ? checkboxRow("Slow rotation", prefs.drift, (drift) => setPrefs((p) => ({ ...p, drift }))) : null}
             <div>
               <p className="pb-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">

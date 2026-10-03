@@ -42,6 +42,7 @@ import "@/styles/memory-exploration.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import { GrimoireDocReader, JournalDocReader, MemoryDocReader } from "@/components/grimoire-doc-reader";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import {
   groupMissionStitches,
   journalEntryQuery,
@@ -2108,23 +2109,22 @@ export function GrimoireView({
             </button>
           </div>
           <div className="surface-compact-actions">
-            <label className="memories-familiar-filter">
+            <div className="memories-familiar-filter">
               <span>Familiar</span>
-              <select
-                className="focus-ring"
-                aria-label="Filter memories by familiar"
+              <StandardSelect
+                className="memories-familiar-select"
+                label="Filter memories by familiar"
                 value={selectedFamiliarId}
-                onChange={(event) => {
-                  setLocalFamiliarId(event.target.value);
-                  announce(event.target.value ? `Showing memories for ${familiarLabel(event.target.value)}` : "Showing memories in the current familiar scope", "polite");
+                onChange={(familiarId) => {
+                  setLocalFamiliarId(familiarId);
+                  announce(familiarId ? `Showing memories for ${familiarLabel(familiarId)}` : "Showing memories in the current familiar scope", "polite");
                 }}
-              >
-                <option value="">{shellScope.size ? "Selected familiars" : "All familiars"}</option>
-                {familiars.filter((f) => shellScope.size === 0 || shellScope.has(f.id)).map((f) => (
-                  <option key={f.id} value={f.id}>{f.display_name || f.id}</option>
-                ))}
-              </select>
-            </label>
+                options={[
+                  { value: "", label: shellScope.size ? "Selected familiars" : "All familiars" },
+                  ...familiars.filter((f) => shellScope.size === 0 || shellScope.has(f.id)).map((f) => ({ value: f.id, label: f.display_name || f.id })),
+                ]}
+              />
+            </div>
             {/* The wide landing owns Recall. Narrow panes show only the
                 navigator, so retain its search even with no document open. */}
             {view === "docs" ? <div className={openTabs.length > 0 ? "contents" : "memories-mobile-search"}>
