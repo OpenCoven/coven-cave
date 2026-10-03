@@ -552,7 +552,7 @@ reappears and asserts that no path was requested again.
 | Journey | What reappears | Result |
 | --- | --- | --- |
 | Reopen a chat | A fresh `ChatView`, after its first request and while it is in flight | No request on any path |
-| Chats → Settings → Chats | `MainShellView` tabs. The theme poll is left out because it runs on a timer | No request |
+| Chats → Settings → Chats | `MainShellView` tabs. Every path is compared, theme included. The journey finishes well inside the shell's 20 s theme poll | No request |
 | Reopen new chat | A fresh `NewChatView` after access loaded | No request |
 | A familiar's chat list | `loadSessionsIfStale`, the whole trigger of `FamiliarThreadsView`, twice inside 30 s | No request |
 

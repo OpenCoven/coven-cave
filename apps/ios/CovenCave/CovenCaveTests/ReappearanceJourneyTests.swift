@@ -91,10 +91,10 @@ private struct JourneyProbe<Content: View>: View {
 @MainActor
 final class ReappearanceJourneyTests: XCTestCase {
     private static let host = "reappearance-journey.invalid"
-    /// The shell's theme poll is timer-driven (an immediate read when the
-    /// scene becomes active, then every 20 s), not a reappearance, so the tab
-    /// journey leaves that one path out of its comparison.
-    private static let themePath = "/api/theme"
+    /// The shell polls the theme every 20 s, on a timer. The tab journey
+    /// compares every path, theme included, so it must finish before that
+    /// poll could add a request it did not cause.
+    private static let themePollInterval: Duration = .seconds(20)
 
     private var appLockDefaults: UserDefaults?
 
@@ -172,6 +172,8 @@ final class ReappearanceJourneyTests: XCTestCase {
         let app = try makeApp()
         app.selectedTab = .chats
         let lockDefaults = try XCTUnwrap(appLockDefaults)
+        let clock = ContinuousClock()
+        let mountedAt = clock.now
         let window = mount(MainShellView().environment(app).environment(AppLock(defaults: lockDefaults)))
         defer { window.isHidden = true }
 
@@ -187,10 +189,14 @@ final class ReappearanceJourneyTests: XCTestCase {
         window.layoutIfNeeded()
         let afterJourney = try await settle()
 
+        let elapsed = mountedAt.duration(to: clock.now)
+        XCTAssertLessThan(
+            elapsed, Self.themePollInterval - .seconds(2),
+            "the journey ran long enough for the timed theme poll to fire, so a theme request below would not be a reappearance"
+        )
         XCTAssertEqual(
-            afterJourney.filter { $0.key != Self.themePath },
-            afterFirstOpen.filter { $0.key != Self.themePath },
-            "Chats and Settings stay mounted, so switching between them repeats no request"
+            afterJourney, afterFirstOpen,
+            "Chats and Settings stay mounted, so switching between them repeats no request on any path, theme included"
         )
     }
 
