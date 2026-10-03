@@ -185,22 +185,17 @@ assert.match(
 
 assert.match(
   source,
-  /function isChangedFile[\s\S]*?changedFilePaths[\s\S]*?parsePorcelainZ/,
-  "direct diff/revert requests must be authorized against git status, not guessed ignored files",
+  /function changedEntry[\s\S]*?gitStatus\(repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)[\s\S]*?parsePorcelainZ/,
+  "direct diff/revert requests must be authorized against git status from the hardened gitStatus helper (fsmonitor disabled), not guessed ignored files",
 );
 assert.match(
   source,
-  /function changedFilePaths[\s\S]*?gitStatus\(repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)/,
-  "the diff/revert authorization set must come from the hardened gitStatus helper (fsmonitor disabled)",
-);
-assert.match(
-  source,
-  /if \(!\(await isChangedFile\(root\.repoRoot, filePath\)\)\) return pathNotAllowed\(\);/,
+  /if \(!\(await changedEntry\(root\.repoRoot, filePath\)\)\) return pathNotAllowed\(\);/,
   "single-file diff requests should only serve paths present in git status",
 );
 assert.match(
   source,
-  /if \(!\(await isChangedFile\(root\.repoRoot, body\.path\)\)\) return pathNotAllowed\(\);/,
+  /const entry = await changedEntry\(root\.repoRoot, body\.path\);\s*if \(!entry\) return pathNotAllowed\(\);/,
   "revert requests should only operate on paths present in git status",
 );
 

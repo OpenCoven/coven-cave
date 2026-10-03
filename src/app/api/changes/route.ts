@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import fs, { writeFileSync } from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
 import { stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
@@ -18,7 +18,13 @@ import {
 } from "@/lib/canvas-git-delivery";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
-import { buildCheckpointPatch, PATCH_DIFF_ARGS, restoreCheckpointPatch, type CheckpointRestoreOutcome } from "@/lib/server/checkpoint-restore";
+import {
+  CHECKPOINT_MAX_UNTRACKED_BYTES,
+  PATCH_DIFF_ARGS,
+  restoreCheckpointPatch,
+  writeCheckpointPatch,
+  type CheckpointRestoreOutcome,
+} from "@/lib/server/checkpoint-restore";
 import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
 import { captureCommitStart, rollbackCommitStart } from "@/lib/server/commit-rollback";
 
@@ -112,10 +118,18 @@ function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: s
 
 const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
 
-/** Current branch name, or "HEAD" when detached. */
+/** Current branch name, or "HEAD" when detached. Before the first commit
+ *  (#5781), `rev-parse` can't name HEAD, so the symbolic ref does. */
 async function currentBranch(repoRoot: string): Promise<string> {
-  const { stdout } = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  return stdout.trim();
+  try {
+    const { stdout } = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    return stdout.trim();
+  } catch (err) {
+    const { stdout } = await git(repoRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => {
+      throw err;
+    });
+    return stdout.trim();
+  }
 }
 
 /** Linked-worktree name (the checkout dir's basename) when repoRoot is a
@@ -288,38 +302,52 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
 }
 
 /** Containment check: repo-relative path only — reject absolute paths, NUL,
- *  `..` traversal, and anything that resolves outside repoRoot. */
+ *  `..` traversal, and anything that resolves outside repoRoot.
+ *
+ *  The folders on the way are followed through links; the file itself is not
+ *  (#5781). A tracked symlink that points outside the repository is still a
+ *  file inside it, which git diffs, reverts and restores as a link, never
+ *  through it. Following it made its diff and Revert a 403, and any checkpoint
+ *  holding it impossible to restore. A path under a linked folder that leads
+ *  outside is still refused. */
 function resolveContainedFile(repoRoot: string, relPath: string): string | null {
-  if (!relPath || relPath.includes("\0") || path.isAbsolute(relPath)) return null;
-  if (relPath.split(/[\\/]+/).includes("..")) return null;
-  const resolved = path.resolve(repoRoot, relPath);
-  if (resolved === repoRoot) return null;
-  if (!resolved.startsWith(repoRoot + path.sep)) return null;
+  const resolved = lexicallyContained(repoRoot, relPath);
+  if (!resolved) return null;
   try {
-    if (fs.existsSync(resolved)) {
-      const real = fs.realpathSync(resolved);
-      if (real === repoRoot) return null;
-      if (!real.startsWith(repoRoot + path.sep)) return null;
-    }
+    let parent = path.dirname(resolved);
+    while (parent !== repoRoot && !fs.existsSync(parent)) parent = path.dirname(parent);
+    return withinRepo(repoRoot, fs.realpathSync(parent)) ? resolved : null;
   } catch {
     return null;
   }
-  return resolved;
 }
 
-/** Async containment for the polling loop; filesystem checks share its bound. */
-async function resolveContainedFileMetadata(repoRoot: string, relPath: string): Promise<string | null> {
+/** The path inside repoRoot by its spelling alone, or null. */
+function lexicallyContained(repoRoot: string, relPath: string): string | null {
   if (!relPath || relPath.includes("\0") || path.isAbsolute(relPath)) return null;
   if (relPath.split(/[\\/]+/).includes("..")) return null;
   const resolved = path.resolve(repoRoot, relPath);
-  if (!resolved.startsWith(repoRoot + path.sep)) return null;
-  try {
-    const real = await fs.promises.realpath(resolved);
-    return real.startsWith(repoRoot + path.sep) ? resolved : null;
-  } catch (error) {
-    // Missing paths still receive the helper's stable "missing" stamp.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return resolved;
-    throw error;
+  return resolved !== repoRoot && resolved.startsWith(repoRoot + path.sep) ? resolved : null;
+}
+
+function withinRepo(repoRoot: string, real: string): boolean {
+  return real === repoRoot || real.startsWith(repoRoot + path.sep);
+}
+
+/** Async containment for the polling loop; filesystem checks share its bound.
+ *  The same rule: folders followed, the file itself not (#5781). */
+async function resolveContainedFileMetadata(repoRoot: string, relPath: string): Promise<string | null> {
+  const resolved = lexicallyContained(repoRoot, relPath);
+  if (!resolved) return null;
+  let parent = path.dirname(resolved);
+  for (;;) {
+    try {
+      return withinRepo(repoRoot, await fs.promises.realpath(parent)) ? resolved : null;
+    } catch (error) {
+      // Missing paths still receive the helper's stable "missing" stamp.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || parent === repoRoot) throw error;
+      parent = path.dirname(parent);
+    }
   }
 }
 
@@ -351,13 +379,12 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
   }
 }
 
-async function changedFilePaths(repoRoot: string): Promise<Set<string>> {
+/** The file's entry in the change list, or null when it isn't changed. A
+ *  revert reads its status from here (#5781): a rename reverts as a whole,
+ *  and a conflict is refused. */
+async function changedEntry(repoRoot: string, relPath: string): Promise<ChangedFile | null> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
-  return new Set(parsePorcelainZ(stdout).map((file) => file.path));
-}
-
-async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean> {
-  return (await changedFilePaths(repoRoot)).has(relPath);
+  return parsePorcelainZ(stdout).find((file) => file.path === relPath) ?? null;
 }
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
@@ -545,7 +572,7 @@ export async function GET(req: NextRequest) {
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
-    if (!(await isChangedFile(root.repoRoot, filePath))) return pathNotAllowed();
+    if (!(await changedEntry(root.repoRoot, filePath))) return pathNotAllowed();
     return await diffFile(root.repoRoot, filePath, abs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -593,17 +620,33 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
   return abs;
 }
 
-async function checkpointChanges(repoRoot: string): Promise<string> {
+/** The newest checkpoints kept (#5781): every revert writes one, a patch of
+ *  the whole working tree, and none was ever removed. */
+const CHECKPOINTS_KEPT = 50;
+
+async function checkpointChanges(repoRoot: string): Promise<{ path: string; skipped: string[] }> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
-  const patch = await buildCheckpointPatch(repoRoot, (relPath) => resolveContainedFile(repoRoot, relPath));
-
   const checkpointDir = await checkpointDirOf(repoRoot);
   fs.mkdirSync(/* turbopackIgnore: true */ checkpointDir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const checkpointPath = path.join(/* turbopackIgnore: true */ checkpointDir, `${stamp}.patch`);
-  writeFileSync(checkpointPath, patch, { mode: 0o600 });
-  return checkpointPath;
+  try {
+    const { skipped } = await writeCheckpointPatch(repoRoot, (relPath) => resolveContainedFile(repoRoot, relPath), checkpointPath);
+    pruneCheckpoints(checkpointDir);
+    return { path: checkpointPath, skipped };
+  } catch (err) {
+    fs.rmSync(/* turbopackIgnore: true */ checkpointPath, { force: true }); // never a half-written undo
+    throw err;
+  }
+}
+
+/** Drop all but the newest checkpoints. Names are stamps, so they sort by age. */
+function pruneCheckpoints(dir: string): void {
+  const names = fs.readdirSync(/* turbopackIgnore: true */ dir).filter(isCheckpointName).sort();
+  for (const name of names.slice(0, Math.max(0, names.length - CHECKPOINTS_KEPT))) {
+    fs.rmSync(/* turbopackIgnore: true */ path.join(dir, name), { force: true });
+  }
 }
 
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
@@ -637,7 +680,7 @@ async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
 async function restoreCheckpoint(repoRoot: string, abs: string): Promise<CheckpointRestoreOutcome> {
   return restoreCheckpointPatch(repoRoot, abs, {
     contain: (relPath) => resolveContainedFile(repoRoot, relPath),
-    beforeWrite: () => checkpointChanges(repoRoot),
+    beforeWrite: async () => (await checkpointChanges(repoRoot)).path,
   });
 }
 
@@ -680,8 +723,8 @@ export async function POST(req: NextRequest) {
   }
   if (action === "checkpoint") {
     try {
-      const checkpointPath = await checkpointChanges(root.repoRoot);
-      return NextResponse.json({ ok: true, checkpointPath });
+      const { path: checkpointPath, skipped } = await checkpointChanges(root.repoRoot);
+      return NextResponse.json({ ok: true, checkpointPath, skipped });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
@@ -789,7 +832,9 @@ export async function POST(req: NextRequest) {
       // review): a failed `git add` used to strand the new branch and any
       // partial staging. Nothing after a commit that landed is undone.
       try {
-        if (cur === def || cur === "HEAD") {
+        // The first commit stays on its branch (#5781): there is no history
+        // to keep clean, and a feature branch would have no base for a PR.
+        if ((cur === def || cur === "HEAD") && start.oid) {
           branch = featureBranchName(message, Date.now());
           await git(root.repoRoot, ["checkout", "-b", branch]);
           branchCreated = true;
@@ -1040,18 +1085,37 @@ export async function POST(req: NextRequest) {
   }
   const abs = resolveContainedFile(root.repoRoot, body.path);
   if (!abs) return pathNotAllowed();
-  if (!(await isChangedFile(root.repoRoot, body.path))) return pathNotAllowed();
+  const entry = await changedEntry(root.repoRoot, body.path);
+  if (!entry) return pathNotAllowed();
+  const from = entry.renamedFrom && resolveContainedFile(root.repoRoot, entry.renamedFrom) ? entry.renamedFrom : undefined;
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
     // means "match HEAD": files in HEAD are restored (covers staged edits and
     // deletions); files NOT in HEAD are new, so reverting deletes them and is
     // gated behind an explicit confirmation.
-    const [inHead, tracked] = await Promise.all([
+    const [inHead, tracked, fromInHead] = await Promise.all([
       existsInHead(root.repoRoot, body.path),
       isTracked(root.repoRoot, body.path),
+      from ? existsInHead(root.repoRoot, from) : Promise.resolve(false),
     ]);
-    const plan = planRevert({ inHead, tracked, confirmDelete: body.confirmUntracked === true });
+    const plan = planRevert({
+      inHead,
+      tracked,
+      confirmDelete: body.confirmUntracked === true,
+      entry: { status: entry.status, renamedFrom: from, copied: entry.copied },
+      fromInHead,
+    });
+
+    if (plan.action === "conflicted") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "this file has a merge conflict; resolve it, or stop the operation that left it, in a terminal before reverting",
+        },
+        { status: 409 },
+      );
+    }
 
     if (plan.action === "confirm-required") {
       return NextResponse.json(
@@ -1064,12 +1128,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // An untracked file too large to checkpoint can't be deleted from here
+    // (#5781): its undo couldn't bring it back.
+    if (plan.action === "clean") {
+      const size = fs.lstatSync(/* turbopackIgnore: true */ abs, { throwIfNoEntry: false })?.size ?? 0;
+      if (size > CHECKPOINT_MAX_UNTRACKED_BYTES) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `this untracked file is ${Math.round(size / (1024 * 1024))} MB, too large for the checkpoint a revert takes first; delete it in a terminal if you mean to`,
+          },
+          { status: 413 },
+        );
+      }
+    }
+
     // Reverts are destructive (discard edits / delete files). Snapshot the whole
     // working tree first so the action is recoverable; if the safety snapshot
     // fails, abort rather than destroy without a backup.
     let checkpointPath: string;
     try {
-      checkpointPath = await checkpointChanges(root.repoRoot);
+      checkpointPath = (await checkpointChanges(root.repoRoot)).path;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json(
@@ -1087,6 +1166,11 @@ export async function POST(req: NextRequest) {
         // glob, and reverted them too.
         await git(root.repoRoot, ["--literal-pathspecs", "checkout", "HEAD", "--", body.path]);
         return NextResponse.json({ ok: true, reverted: "checkout", path: body.path, checkpointPath });
+      case "unrename":
+        // The original back in index and worktree, then the new path gone.
+        await git(root.repoRoot, ["--literal-pathspecs", "checkout", "HEAD", "--", plan.from]);
+        await git(root.repoRoot, ["--literal-pathspecs", "rm", "-f", "--", body.path]);
+        return NextResponse.json({ ok: true, reverted: "unrename", path: body.path, renamedFrom: plan.from, checkpointPath });
       case "rm":
         // Staged new file: it never existed at HEAD, so reverting removes it
         // from both index and worktree.

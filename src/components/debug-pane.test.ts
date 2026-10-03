@@ -588,8 +588,8 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /function resolveContainedFile[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?includes\("\.\."\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)[\s\S]*?fs\.realpathSync\(resolved\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)/,
-  "File paths must pass a resolve + prefix containment check (no absolute paths, no ..)",
+  /function resolveContainedFile[\s\S]*?lexicallyContained\(repoRoot, relPath\)[\s\S]*?fs\.realpathSync\(parent\)[\s\S]*?function lexicallyContained[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?includes\("\.\."\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)/,
+  "File paths must pass a resolve + prefix containment check (no absolute paths, no ..), with the folders on the way followed through links (#5781)",
 );
 assert.match(
   changesRoute,
@@ -641,18 +641,18 @@ assert.match(
 const checkpointModule = await readFile(new URL("../lib/server/checkpoint-restore.ts", import.meta.url), "utf8");
 assert.match(
   changesRoute,
-  /const patch = await buildCheckpointPatch\(repoRoot, \(relPath\) => resolveContainedFile\(repoRoot, relPath\)\)/,
-  "Checkpoints are built by the shared module, with the route's containment check",
+  /await writeCheckpointPatch\(repoRoot, \(relPath\) => resolveContainedFile\(repoRoot, relPath\), checkpointPath\)/,
+  "Checkpoints are written by the shared module, with the route's containment check",
 );
 assert.match(
   checkpointModule,
-  /"rev-parse", "--verify", "--quiet", "HEAD\^\{commit\}"\][\s\S]{0,120}\.catch\(\(\) => hashText\(repoRoot, "", "tree"\)\);\s*let \{ stdout: patch \} = await gitDiff\(repoRoot, \["--binary", base, "--"\]\)/,
-  "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD, or the empty tree before the first commit (#5781)",
+  /"rev-parse", "--verify", "--quiet", "HEAD\^\{commit\}"\][\s\S]{0,120}\.catch\(\(\) => hashText\(repoRoot, "", "tree"\)\);[\s\S]*?\["diff", \.\.\.PATCH_DIFF_ARGS, "--binary", base, "--"\], env, fd\)/,
+  "Checkpoint snapshots should capture binary-safe diffs versus HEAD, or the empty tree before the first commit (#5781), streamed to the file",
 );
 assert.match(
   checkpointModule,
-  /"ls-files", "--others", "--exclude-standard", "-z"[\s\S]*?gitDiff\(repoRoot, \["--binary", "--no-index", "--", os\.devNull, rel\]\)/,
-  "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
+  /"ls-files", "--others", "--exclude-standard", "-z"[\s\S]*?\["--literal-pathspecs", "add", "--intent-to-add", "--pathspec-from-file=-", "--pathspec-file-nul"\][\s\S]*?GIT_INDEX_FILE: index/,
+  "Untracked files join the checkpoint as intent-to-add entries in a throwaway index (#5781), with repo-relative paths so the snapshot can be git apply'd back",
 );
 assert.match(
   changesRoute,
@@ -660,9 +660,9 @@ assert.match(
   "The null device must be resolved per-platform (os.devNull), not hardcoded to /dev/null",
 );
 assert.match(
-  changesRoute,
-  /writeFileSync\(checkpointPath, patch/,
-  "Checkpoint snapshots should persist the generated patch without changing the working tree",
+  checkpointModule,
+  /fs\.writeFileSync\(\/\* turbopackIgnore: true \*\/ dest, header, \{ mode: 0o600 \}\)/,
+  "Checkpoint snapshots persist the generated patch, private to the user, without changing the working tree",
 );
 // Finished-checkpoint surface: restore + delete actions and a name guard.
 assert.match(
@@ -679,7 +679,7 @@ assert.match(
 // (#5756): `apply --3way` implied --index and refused any unstaged change.
 assert.match(
   changesRoute,
-  /return restoreCheckpointPatch\(repoRoot, abs, \{[\s\S]*?beforeWrite: \(\) => checkpointChanges\(repoRoot\)/,
+  /return restoreCheckpointPatch\(repoRoot, abs, \{[\s\S]*?beforeWrite: async \(\) => \(await checkpointChanges\(repoRoot\)\)\.path/,
   "Restore goes through the per-file module and checkpoints the state before writing",
 );
 assert.match(
