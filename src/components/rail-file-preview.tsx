@@ -122,6 +122,10 @@ export function RailFilePreview({
   // agent, or moved by a branch switch. The last text stays on screen, but
   // nothing pretends the file still exists, and an edit can't be saved to it.
   const [missingOnDisk, setMissingOnDisk] = useState(false);
+  // Read by saveEdit, which every save path goes through (#5778 review):
+  // ⌘S and the editor's keymap reached it with the Save button disabled.
+  const missingOnDiskRef = useRef(false);
+  missingOnDiskRef.current = missingOnDisk;
 
   // The edit for this file, if any (#5745). It outlives this component.
   const draft = useSyncExternalStore(
@@ -291,7 +295,7 @@ export function RailFilePreview({
   // Every write below names `target`, the file the save was sent for.
   const saveEdit = useCallback(async () => {
     const target = pathRef.current;
-    if (!target) return;
+    if (!target || missingOnDiskRef.current) return;
     const sending = fileEditDrafts.startSave(target);
     if (!sending) return;
     const label = fileName(target);
@@ -612,7 +616,9 @@ export function RailFilePreview({
           ) : null}
         </div>
       ) : null}
-      {draft?.conflict ? (
+      {/* Not beside the missing-file row (#5778 review): there is no disk
+          version to reload or overwrite. */}
+      {draft?.conflict && !missingOnDisk ? (
         <div className="workspace-rail__preview-conflict" role="alert">
           <Icon name="ph:warning-circle" width={12} aria-hidden />
           <span className="workspace-rail__preview-conflict-text">{saveError ?? FILE_CHANGED_ON_DISK}</span>

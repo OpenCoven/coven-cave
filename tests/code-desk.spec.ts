@@ -2411,6 +2411,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
     await base(page, [NEWEST, OLDER], fixture);
     let failNext = true;
+    let holdNext: Promise<void> | null = null;
     await page.route("**/api/changes", (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       const body = route.request().postDataJSON() as { action?: string };
@@ -2419,6 +2420,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
         failNext = false;
         return route.fulfill({ status: 500, json: { ok: false, error: "revert failed" } });
       }
+      if (holdNext) return holdNext.then(() => route.fulfill({ json: { ok: true, reverted: "clean", checkpointPath: "/y.patch" } }));
       fixture.current = [CHANGED_FILES[1]];
       return route.fulfill({ json: { ok: true, reverted: "checkout", checkpointPath: "/x.patch" } });
     });
@@ -2433,6 +2435,18 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await rail.getByRole("button", { name: "Confirm revert src/flux.ts" }).click();
     await expect(rail.locator('tr[data-grid-row="src/flux.ts"]')).toHaveCount(0);
     await expect(rail.locator('tr[data-grid-row="src/retry.ts"] [data-grid-col="0"]'), "the row that took its place").toBeFocused();
+
+    // Moving on while a revert runs keeps your place (#5778 review), even
+    // inside the panel.
+    let release!: () => void;
+    holdNext = new Promise<void>((resolve) => { release = resolve; });
+    await rail.getByRole("button", { name: "Delete untracked file src/retry.ts" }).click();
+    await rail.getByRole("button", { name: "Confirm delete src/retry.ts" }).click();
+    const message = rail.getByRole("textbox", { name: "Commit message" });
+    await message.click();
+    release();
+    await page.waitForTimeout(800);
+    await expect(message).toBeFocused();
   });
 
   test("72. the picker keeps the highlighted session when a poll re-sorts the list", async ({ page }) => {
@@ -2478,6 +2492,37 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect(desk.getByText("This file is no longer on disk. This is the last version read.")).toBeVisible({ timeout: 15_000 });
     await expect(desk.getByRole("button", { name: "Edit" })).toHaveCount(0);
+
+    // The file comes back: a good read clears the notice.
+    gone = false;
+    fixture.current = CHANGED_FILES;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(desk.getByRole("button", { name: "Edit" })).toBeVisible({ timeout: 15_000 });
+
+    // With an edit open, the notice offers Copy edit, and no save path writes
+    // (#5778 review): not the button, and not ⌘S from the editor.
+    let posts = 0;
+    await page.route("**/api/project-file**", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posts += 1;
+      return route.fulfill({ status: 404, json: { ok: false, error: "file not found" } });
+    });
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// precious");
+    gone = true;
+    fixture.current = [{ path: "src/flux.ts", status: "deleted", insertions: 0, deletions: 1, changeVersion: "missing-2" }, CHANGED_FILES[1]];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(desk.getByText("This file is no longer on disk. Your edit is kept: copy it, or Cancel to drop it.")).toBeVisible({ timeout: 15_000 });
+    await expect(desk.getByRole("button", { name: "Copy edit" })).toBeVisible();
+    await expect(desk.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(desk.getByRole("button", { name: "Overwrite" })).toHaveCount(0);
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForTimeout(500);
+    expect(posts, "nothing is written to a file that isn't there").toBe(0);
+    await expect(desk.locator(".cm-content")).toContainText("// precious");
   });
 
   test("75. the room's header says when the daemon's status is unknown", async ({ page }) => {

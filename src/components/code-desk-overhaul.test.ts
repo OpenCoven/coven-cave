@@ -406,4 +406,10 @@ assert.match(prPanelSrc, /if \(err instanceof TypeError\) return "The connection
 assert.match(panelSrc, /placeholder="Describe the change…"/);
 assert.match(panelSrc, /aria-label="Pull request description \(optional\)"/);
 
+// #5778 review: no save path reaches a missing file, no conflict row beside
+// it, and focus is restored only when it fell to the page.
+assert.match(preview, /if \(!target \|\| missingOnDiskRef\.current\) return;/, "saveEdit refuses a missing file, whichever path calls it");
+assert.match(preview, /\{draft\?\.conflict && !missingOnDisk \? \(/, "no Reload/Overwrite for a file that's gone");
+assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)\) return;/, "focus is restored only from the page");
+
 console.log("code-desk-overhaul pins ok");

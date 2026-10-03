@@ -408,14 +408,15 @@ export function SessionChangesInner({
   // Where focus goes once a revert settles (#5756). Confirm unmounts the
   // focused button, so focus fell to the page: back to the row's Revert when
   // it's still there (the revert failed), else to the row that took its
-  // place, else to the panel's first control. Only when focus was lost, so a
-  // person who moved on meanwhile keeps their place.
+  // place, else to the panel's first control. Only when focus fell to the
+  // page (#5778 review): a person who moved on meanwhile, in the panel or
+  // anywhere else, keeps their place.
   const panelRef = useRef<HTMLDivElement | null>(null);
   const gridBodyRef = useRef<HTMLTableSectionElement | null>(null);
   const restoreFocusAfterRevert = useCallback((path: string, index: number) => {
     const panel = panelRef.current;
     const active = document.activeElement;
-    if (!panel || (active && active !== document.body && !panel.contains(active))) return;
+    if (!panel || (active && active !== document.body)) return;
     const rows = [...(gridBodyRef.current?.querySelectorAll<HTMLTableRowElement>("tr[data-grid-row]") ?? [])]
       .filter((row) => !(row.dataset.gridRow ?? "").includes("\u0000"));
     const same = rows.find((row) => row.dataset.gridRow === path);
