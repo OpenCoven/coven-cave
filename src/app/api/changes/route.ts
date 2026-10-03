@@ -512,10 +512,10 @@ async function diffFile(repoRoot: string, entry: ChangedFile): Promise<NextRespo
     // A rename names both its paths, so it reads as a rename with its edit,
     // not a whole new file (#5781).
     const paths = entry.renamedFrom && !entry.copied ? [entry.renamedFrom, relPath] : [relPath];
+    // Against the worktree, which is what the desk commits: a `git rm`'d
+    // file shows its deletion, where the old tracked check sent it down the
+    // untracked path and read it as empty (#5781).
     ({ stdout: diff } = await gitDiff(repoRoot, ["-M", base, "--", ...paths]));
-    // A `git rm`'d file is in neither the index nor the worktree, which a
-    // worktree diff can't see; the index diff can (#5781).
-    if (!diff.trim()) ({ stdout: diff } = await gitDiff(repoRoot, ["-M", "--cached", base, "--", ...paths]));
   } else {
     // Untracked: synthesize an all-additions diff, by its repo-relative path
     // (cwd is the repo), so the headers don't carry the absolute one (#5781).
