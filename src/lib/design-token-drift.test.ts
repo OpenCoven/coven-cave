@@ -255,6 +255,10 @@ BASELINES.offScaleSpacingPx = 1511; // -1: banked — the Memories overhaul (#57
 // recounted per time window at render time, so the stylesheet holds the track
 // and the two tints and cannot hold the ratio.
 BASELINES.inlineTsxStyles = 285; // -1: banked — the Relations graph's kind dots moved from runtime `var(${token})` styles to static classes (#5721); main measured 286 at 170a52afb.
+// +1 (#5771): GraphColorDot shares each familiar's editable color across the
+// explorer, selected document and legend. This is runtime data, matching the
+// canvas via familiarAccent; static type colors still use existing tokens.
+BASELINES.inlineTsxStyles = 286;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

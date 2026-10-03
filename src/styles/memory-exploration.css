@@ -1,0 +1,71 @@
+/* Page-level scope follows the same contract in Library, Journal and Relations. */
+.memories-mobile-search { display: none; }
+@container grimoire (max-width: 879px) {
+  .memories-mobile-search { display: contents; }
+}
+.memories-familiar-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.memories-familiar-filter select {
+  min-width: 0;
+  max-width: 12rem;
+  min-height: var(--space-8);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+@container grimoire (max-width: 1040px) {
+  .grimoire-header { grid-template-columns: auto minmax(0, 1fr); }
+  .grimoire-header .surface-compact-title { display: none; }
+  .grimoire-header .surface-compact-actions { min-width: 0; flex-wrap: wrap; }
+  .memories-familiar-filter > span { display: none; }
+}
+@container grimoire (max-width: 760px) {
+  .grimoire-header { display: flex; flex-wrap: wrap; height: auto; gap: var(--space-2); padding: var(--space-2); }
+  .grimoire-header .grimoire-tabs { flex: 1; }
+  .grimoire-header .surface-compact-actions { flex: 1 0 100%; justify-content: flex-end; }
+  .memories-familiar-filter { flex: 1; }
+  .memories-familiar-filter select { width: 100%; max-width: none; }
+}
+@media (pointer: coarse) {
+  .memories-familiar-filter select { min-height: var(--touch-target); font-size: var(--text-lg); }
+}
+
+/* Journal shares the same pane breakpoint; the reader keeps its full measure
+   when the entry rail would otherwise consume the entire phone width. */
+@container grimoire (max-width: 680px) {
+  .grimoire-journal-tab .journal-list { flex-direction: column; }
+  .grimoire-journal-tab .journal-list__rail {
+    width: 100%;
+    flex: 0 1 auto;
+    max-height: 40%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .grimoire-journal-tab .journal-list__rail[data-collapsed="true"] {
+    width: 100%;
+    flex-basis: auto;
+    padding: var(--space-1) var(--space-2);
+  }
+  .grimoire-journal-tab .journal-list__rail[data-collapsed="true"] .journal-list__rail-toggle { align-self: flex-end; }
+  .grimoire-journal-tab .journal-detail { min-height: 0; padding: var(--space-3); }
+}
+@media (pointer: coarse) {
+  .grimoire-view .grimoire-tab,
+  .grimoire-view .journal-day,
+  .grimoire-view .journal-list__rail-toggle { min-height: var(--touch-target); }
+  .grimoire-view .journal-list__filter { font-size: var(--text-lg); }
+}
+
+@container grimoire (max-width: 760px) {
+  .grimoire-header .surface-compact-search { display: flex; flex: 1; min-width: 8rem; }
+  .memories-familiar-filter { min-width: 8rem; }
+}

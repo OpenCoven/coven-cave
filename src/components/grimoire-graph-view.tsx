@@ -8,8 +8,8 @@
 // Two projections share one physics model (`lib/grimoire-force.ts`):
 //   3D (default) — the layout lives in a volume and a perspective camera orbits
 //                  it. Drag to orbit, shift-drag to pan, scroll to dolly. Depth
-//                  reads through size, fog and draw order; the camera drifts
-//                  slowly while idle so the structure reads as a shape.
+//                  reads through size, fog and draw order; optional idle
+//                  rotation helps the structure read as a shape.
 //   2D           — the original flat, Obsidian-style pan/zoom canvas.
 //
 // Traversal is the point of the view, so a click SELECTS rather than opens: the
@@ -24,9 +24,12 @@
 // and idle drift, and renders still. Positions and the camera are cached
 // module-level so reopening the graph resumes where you left it.
 
+import "@/styles/grimoire-graph.css";
+
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -34,12 +37,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { Popover, PopoverBody } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { DocGraph, DocGraphEdge, DocGraphNode, GraphEdgeType, GraphNodeKind } from "@/lib/grimoire-graph";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
 import type { WikiDocRef } from "@/lib/wiki-link-resolve";
+import { familiarAccent } from "@/lib/familiar-color";
 import { cleanDocTitle } from "@/lib/grimoire-library";
 import {
   ALPHA_MIN,
@@ -73,6 +78,7 @@ type GraphPrefs = {
   dims: 2 | 3;
   /** Slow idle camera drift in 3D. */
   drift: boolean;
+  colorBy: "kind" | "familiar";
 };
 
 const DEFAULT_PREFS: GraphPrefs = {
@@ -89,7 +95,8 @@ const DEFAULT_PREFS: GraphPrefs = {
   // Filters start folded: the search box stays visible, the rest is one click.
   panelOpen: false,
   dims: 3,
-  drift: true,
+  drift: false,
+  colorBy: "kind",
 };
 
 function readPrefs(): GraphPrefs {
@@ -102,6 +109,9 @@ function readPrefs(): GraphPrefs {
       ...DEFAULT_PREFS,
       ...parsed,
       dims: parsed?.dims === 2 ? 2 : 3,
+      colorBy: parsed?.colorBy === "familiar" ? "familiar" : "kind",
+      repel: Number.isFinite(parsed?.repel) ? Math.max(0.25, Math.min(3, parsed.repel)) : DEFAULT_PREFS.repel,
+      linkDistance: Number.isFinite(parsed?.linkDistance) ? Math.max(40, Math.min(240, parsed.linkDistance)) : DEFAULT_PREFS.linkDistance,
       groups: { ...DEFAULT_PREFS.groups, ...(parsed?.groups ?? {}) },
       edgeTypes: { ...DEFAULT_PREFS.edgeTypes, ...(parsed?.edgeTypes ?? {}) },
     };
@@ -117,6 +127,7 @@ const positionCache = new Map<string, { x: number; y: number; z: number }>();
 let savedView: { panX: number; panY: number; k: number } | null = null;
 type Camera = { yaw: number; pitch: number; dist: number; tx: number; ty: number; tz: number };
 let savedCamera: Camera | null = null;
+let savedGraphKey: string | null = null;
 
 // ── Visual constants ─────────────────────────────────────────────────────────
 
@@ -129,6 +140,11 @@ const NODE_KIND_TOKEN: Record<GraphNodeKind, string> = {
 
 /** Static classes for the HTML legend dots — the same tokens as the canvas
  *  palette, spelled out so no token name is built at runtime. */
+const NODE_KIND_COLOR: Record<GraphNodeKind, string> = {
+  knowledge: "var(--accent-presence)", memory: "var(--color-warning)",
+  journal: "var(--text-secondary)", tag: "var(--color-success)",
+};
+
 const NODE_KIND_DOT: Record<GraphNodeKind, string> = {
   knowledge: "bg-[var(--accent-presence)]",
   memory: "bg-[var(--color-warning)]",
@@ -206,6 +222,11 @@ const RELATION_GROUPS: { key: string; label: string; icon: IconName; match: (r: 
 
 // ── The view ─────────────────────────────────────────────────────────────────
 
+function GraphColorDot({ color }: { color: string }) {
+  // Familiar colors are editable data; the same value colors the canvas.
+  return <span aria-hidden className="grimoire-graph-dot" style={{ background: color }} />;
+}
+
 export function GrimoireGraphView({
   graph,
   meta,
@@ -214,6 +235,9 @@ export function GrimoireGraphView({
   scanning,
   scanError,
   ownerLabel,
+  memoryOwnerByNodeId,
+  familiars = [],
+  onRetry,
   onOpen,
 }: {
   /** The graph to render — full-corpus scan when available, else the
@@ -223,11 +247,7 @@ export function GrimoireGraphView({
   /** Who the shell's familiar multiselect has narrowed memory to, if anyone —
    *  the graph arrives already scoped, this only makes that visible. */
   scopeLabel?: string | null;
-  /** How many memory files the active scope owns IN TOTAL, straight off the
-   *  same inventory the Memory rail counts. The scan cap is applied coven-wide
-   *  BEFORE scoping, so this is the number the rail shows and the graph cannot
-   *  match; without it the notice can only talk about coven-wide totals and
-   *  leaves the rail's figure unexplained (cave-ed4s3). Null in All scope. */
+  /** The active scope's inventory total, for reconciling scan coverage. */
   scopedMemoryTotal?: number | null;
   /** True while the full-corpus scan is still in flight. */
   scanning?: boolean;
@@ -235,8 +255,12 @@ export function GrimoireGraphView({
   scanError?: string | null;
   /** Display name for a node's owning familiar (journal days carry one). */
   ownerLabel?: (familiarId: string) => string | null;
+  memoryOwnerByNodeId?: ReadonlyMap<string, string | null>;
+  familiars?: readonly { id: string; color?: string | null; display_name?: string }[];
+  onRetry?: () => void;
   onOpen: (ref: WikiDocRef) => void;
 }) {
+  const settingsId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const announcer = useAnnouncer();
@@ -244,6 +268,14 @@ export function GrimoireGraphView({
 
   const [prefs, setPrefs] = useState<GraphPrefs>(readPrefs);
   const [query, setQuery] = useState("");
+  const [explorerOpen, setExplorerOpen] = useState(false);
+  const [gestureMode, setGestureMode] = useState<"orbit" | "pan">("orbit");
+  const gestureModeRef = useRef(gestureMode);
+  gestureModeRef.current = gestureMode;
+  const [resultLimit, setResultLimit] = useState(40);
+  const [relationLimit, setRelationLimit] = useState(40);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const filtersTriggerRef = useRef<HTMLButtonElement>(null);
   // The selected node: spotlighted, centred, and described by the focus panel.
   // Hover lives in a ref — it changes every mousemove and must not re-render.
   const [stickyId, setStickyId] = useState<string | null>(null);
@@ -263,11 +295,22 @@ export function GrimoireGraphView({
   // drawn as labels and listed in the focus panel. Same cleaner as the Library.
   const titled = useMemo(
     () => ({
-      nodes: graph.nodes.map((n) => (n.kind === "tag" ? n : { ...n, title: cleanDocTitle(n.title) || n.title })),
+      nodes: graph.nodes.map((n) => ({
+        ...n,
+        title: n.kind === "tag" ? n.title : cleanDocTitle(n.title) || n.title,
+        owner: n.kind === "memory" ? memoryOwnerByNodeId?.get(n.id) ?? null : n.owner,
+      })),
       edges: graph.edges,
     }),
-    [graph],
+    [graph, memoryOwnerByNodeId],
   );
+
+  const ownerColors = useMemo(() => new Map(
+    titled.nodes.filter((n) => n.owner).map((n) => [n.owner!, familiarAccent(familiars.find((f) => f.id === n.owner)?.color, n.owner!)]),
+  ), [titled.nodes, familiars]);
+  const nodeColor = useCallback((node: DocGraphNode) => prefs.colorBy === "familiar"
+    ? node.owner ? ownerColors.get(node.owner) ?? "var(--text-secondary)" : "var(--text-muted)"
+    : NODE_KIND_COLOR[node.kind], [ownerColors, prefs.colorBy]);
 
   // ── Filter pipeline: edge types → groups → orphans ─────────────────────────
   const visible = useMemo(() => {
@@ -282,9 +325,9 @@ export function GrimoireGraphView({
       degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
       degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
     }
-    const nodes = prefs.orphans ? nodesByKind : nodesByKind.filter((n) => (degree.get(n.id) ?? 0) > 0);
+    const nodes = prefs.orphans || query.trim() ? nodesByKind : nodesByKind.filter((n) => (degree.get(n.id) ?? 0) > 0);
     return { nodes, edges, degree };
-  }, [titled, prefs.groups, prefs.edgeTypes, prefs.orphans]);
+  }, [titled, prefs.groups, prefs.edgeTypes, prefs.orphans, Boolean(query.trim())]);
 
   const adjacency = useMemo(() => {
     const adj = new Map<string, Set<string>>();
@@ -320,6 +363,7 @@ export function GrimoireGraphView({
   // A selection the filters removed is no longer selectable.
   useEffect(() => {
     if (stickyId && !nodeById.has(stickyId)) setStickyId(null);
+    setTrail((prev) => prev.filter((id) => nodeById.has(id)));
   }, [nodeById, stickyId]);
 
   // The selected node's relations, grouped for the focus panel.
@@ -379,6 +423,9 @@ export function GrimoireGraphView({
   useEffect(() => { kbdIdxRef.current = -1; }, [keyboardNodes]);
   const paletteRef = useRef<Palette | null>(null);
   const frameRef = useRef<number | null>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; x: number; y: number } | null>(null);
+  const multiTouchRef = useRef(false);
   const needsFitRef = useRef(prefs.dims === 3 ? savedCamera === null : savedView === null);
   const dragRef = useRef<{
     pointerId: number;
@@ -480,6 +527,13 @@ export function GrimoireGraphView({
     const palette = paletteRef.current ?? readPalette(canvas);
     paletteRef.current = palette;
 
+    const cs = getComputedStyle(canvas);
+    const colors = new Map<string, string>();
+    const renderColor = (node: DocGraphNode) => {
+      const raw = nodeColor(node);
+      if (!colors.has(raw)) colors.set(raw, raw.replace(/var\((--[\w-]+)\)/g, (_, token) => cs.getPropertyValue(token).trim()));
+      return colors.get(raw)!;
+    };
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
@@ -493,7 +547,8 @@ export function GrimoireGraphView({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const focus = hoverRef.current ?? stickyRef.current;
+    const candidateFocus = hoverRef.current ?? stickyRef.current;
+    const focus = candidateFocus && nodeById.has(candidateFocus) ? candidateFocus : null;
     const neighborhood = focus ? adjacency.get(focus) : null;
     const inFocus = (id: string) => (!focus ? true : id === focus || (neighborhood?.has(id) ?? false));
     const matches = queryMatches;
@@ -515,7 +570,7 @@ export function GrimoireGraphView({
         const baseAlpha = e.type === "link" ? 0.45 : e.type === "tag" ? 0.22 : 0.3;
         const depth = three ? (depthAlpha(a) + depthAlpha(b)) / 2 : 1;
         ctx.globalAlpha = (lit ? (focus || matches ? Math.min(1, baseAlpha + 0.3) : baseAlpha) : DIM_ALPHA * 0.6) * depth;
-        ctx.strokeStyle = e.type === "tag" ? palette.tag : lit && focus ? palette[nodeById.get(focus)?.kind ?? "knowledge"] : palette.edge;
+        ctx.strokeStyle = e.type === "tag" ? palette.tag : lit && focus ? renderColor(nodeById.get(focus)!) : palette.edge;
         ctx.lineWidth = (e.type === "link" ? edgeWidth : edgeWidth * 0.8) * (lit && focus ? 1.4 : 1);
         ctx.setLineDash(e.type === "mention" ? [4, 4] : []);
         ctx.beginPath();
@@ -545,17 +600,17 @@ export function GrimoireGraphView({
       const isFocus = n.id === focus || n.id === stickyRef.current;
       ctx.globalAlpha = (lit ? 1 : DIM_ALPHA) * depth;
       if (isFocus) {
-        ctx.shadowColor = palette[n.kind];
+        ctx.shadowColor = renderColor(n);
         ctx.shadowBlur = 18;
       }
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       if (n.kind === "tag") {
-        ctx.strokeStyle = palette.tag;
+        ctx.strokeStyle = renderColor(n);
         ctx.lineWidth = 1.4;
         ctx.stroke();
       } else {
-        ctx.fillStyle = palette[n.kind];
+        ctx.fillStyle = renderColor(n);
         ctx.fill();
         // A soft specular dot gives each node a little volume in 3D.
         if (three && r > 3 && lit) {
@@ -571,7 +626,7 @@ export function GrimoireGraphView({
         ctx.globalAlpha = 0.45;
         ctx.beginPath();
         ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
-        ctx.strokeStyle = palette[n.kind];
+        ctx.strokeStyle = renderColor(n);
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -599,7 +654,12 @@ export function GrimoireGraphView({
     ctx.font = `11px ${getComputedStyle(canvas).fontFamily || "sans-serif"}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    for (const i of order) {
+    const labelBoxes: { left: number; top: number; right: number; bottom: number }[] = [];
+    // Reserve readable space for the selection, hover and strongest hubs first.
+    // Depth ordering still applies to the nodes, but labels must not overprint.
+    const labelPriority = (i: number) => sim.ids[i] === selectedId ? Infinity
+      : sim.ids[i] === hoverRef.current ? Number.MAX_SAFE_INTEGER : visible.degree.get(sim.ids[i]) ?? 0;
+    for (const i of [...order].sort((a, b) => labelPriority(b) - labelPriority(a))) {
       const n = nodeById.get(sim.ids[i]);
       if (!n) continue;
       if (!emphasized(n.id)) continue;
@@ -615,6 +675,10 @@ export function GrimoireGraphView({
       const label = n.title.length > 28 ? `${n.title.slice(0, 27)}…` : n.title;
       const sx = px[i];
       const sy = py[i] + r + 3;
+      const halfWidth = ctx.measureText(label).width / 2 + 4;
+      const box = { left: sx - halfWidth, right: sx + halfWidth, top: sy - 2, bottom: sy + 15 };
+      if (labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
+      labelBoxes.push(box);
       ctx.globalAlpha = alpha * 0.85;
       ctx.strokeStyle = palette.halo;
       ctx.lineWidth = 3;
@@ -624,7 +688,7 @@ export function GrimoireGraphView({
       ctx.fillText(label, sx, sy);
     }
     ctx.globalAlpha = 1;
-  }, [adjacency, nodeById, project, queryMatches, visible]);
+  }, [adjacency, nodeById, nodeColor, project, queryMatches, visible]);
 
   /** Advance a camera flight; true while one is in progress. */
   const stepFlight = useCallback((now: number) => {
@@ -662,6 +726,8 @@ export function GrimoireGraphView({
     return true;
   }, []);
 
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
   const lastFrameRef = useRef(0);
   const scheduleFrame = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -679,7 +745,7 @@ export function GrimoireGraphView({
       if (stepFlight(now)) more = true;
       // The page may be hidden (rAF pauses) — drift only resumes with frames.
       if (stepDrift(now, dt)) more = true;
-      draw();
+      drawRef.current();
       if (more) {
         frameRef.current = requestAnimationFrame(frame);
       } else {
@@ -687,7 +753,9 @@ export function GrimoireGraphView({
       }
     };
     frameRef.current = requestAnimationFrame(frame);
-  }, [draw, stepDrift, stepFlight]);
+  }, [stepDrift, stepFlight]);
+
+  useEffect(() => { scheduleFrame(); }, [draw, scheduleFrame]);
 
   const noteInput = useCallback(() => {
     lastInputRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -698,9 +766,11 @@ export function GrimoireGraphView({
     const sim = simRef.current;
     const canvas = canvasRef.current;
     if (!sim || !canvas || sim.count === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.width / dpr;
-    const height = canvas.height / dpr;
+    // The first fit runs before the canvas sizing effect. Read the actual
+    // stage so 2D does not fit against the canvas's default 300x150 bitmap.
+    const rect = containerRef.current?.getBoundingClientRect();
+    const width = Math.max(1, rect?.width ?? canvas.clientWidth);
+    const height = Math.max(1, rect?.height ?? canvas.clientHeight);
     flightRef.current = null;
     if (sim.dims === 3) {
       let cx = 0;
@@ -714,14 +784,13 @@ export function GrimoireGraphView({
       cx /= sim.count;
       cy /= sim.count;
       cz /= sim.count;
-      // Fit the 90th-percentile radius so a few far stragglers don't shrink
-      // the whole constellation to a speck.
+      // Fit every node: the recovery control must not leave stragglers offscreen.
       const radii: number[] = [];
       for (let i = 0; i < sim.count; i++) {
         radii.push(Math.hypot(sim.x[i] - cx, sim.y[i] - cy, sim.z[i] - cz));
       }
       radii.sort((a, b) => a - b);
-      const radius = Math.max(60, radii[Math.floor(radii.length * 0.9)] ?? 60);
+      const radius = Math.max(60, radii[radii.length - 1] ?? 60);
       const focal = Math.min(width, height) * FOCAL_SHARE;
       const dist = radius + (radius * focal) / (Math.min(width, height) * 0.44);
       cameraRef.current = { ...cameraRef.current, tx: cx, ty: cy, tz: cz, dist };
@@ -788,8 +857,14 @@ export function GrimoireGraphView({
   /** Select a node: spotlight it, fly to it, and extend the trail. */
   const selectNode = useCallback(
     (id: string | null, { record = true }: { record?: boolean } = {}) => {
+      hoverRef.current = null;
+      kbdIdxRef.current = -1;
       setStickyId(id);
+      setRelationLimit(40);
       if (id) {
+        setExplorerOpen(true);
+        const node = nodeById.get(id);
+        if (node) announcer.announce(`Selected ${node.title}. ${visible.degree.get(id) ?? 0} connections.`, "polite");
         if (record) {
           setTrail((prev) => (prev[prev.length - 1] === id ? prev : [...prev.filter((p) => p !== id), id].slice(-TRAIL_LIMIT)));
         }
@@ -798,7 +873,7 @@ export function GrimoireGraphView({
         scheduleFrame();
       }
     },
-    [centerOnNode, scheduleFrame],
+    [announcer, centerOnNode, nodeById, scheduleFrame, visible.degree],
   );
 
   const openNode = useCallback(
@@ -813,19 +888,22 @@ export function GrimoireGraphView({
   );
 
   const goBack = useCallback(() => {
-    if (trail.length < 2) return;
-    const next = trail.slice(0, -1);
+    const valid = trail.filter((id) => nodeById.has(id));
+    if (valid.length < 2) return;
+    const next = valid.slice(0, -1);
     const target = next[next.length - 1];
     setTrail(next);
-    setStickyId(target);
-    centerOnNode(target);
-  }, [centerOnNode, trail]);
+    selectNode(target, { record: false });
+  }, [nodeById, selectNode, trail]);
 
   // (Re)build the sim whenever the visible graph or projection changes;
   // carried-over nodes keep their positions, new ones join on the seed spiral.
   useEffect(() => {
     snapshotPositions();
     const dims = prefs.dims;
+    const graphKey = `${dims}:${visible.nodes.map((node) => node.id).join("\u0000")}`;
+    if (graphKey !== savedGraphKey) needsFitRef.current = true;
+    savedGraphKey = graphKey;
     let seedIndex = 0;
     const simNodes = visible.nodes.map((n) => {
       const cached = positionCache.get(`${dims}:${n.id}`);
@@ -877,6 +955,14 @@ export function GrimoireGraphView({
     scheduleFrame();
   }, [prefs.repel, prefs.linkDistance, scheduleFrame]);
 
+  useEffect(() => {
+    if (reducedMotion) {
+      flightRef.current = null;
+      if (simRef.current) settleForceSim(simRef.current, paramsRef.current);
+      scheduleFrame();
+    }
+  }, [reducedMotion, scheduleFrame]);
+
   // Turning drift back on restarts the loop.
   useEffect(() => {
     if (prefs.drift) scheduleFrame();
@@ -887,8 +973,21 @@ export function GrimoireGraphView({
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
+    let previousSize: { width: number; height: number } | null = null;
     const resize = () => {
       const rect = container.getBoundingClientRect();
+      // Preserve the relative framing when a pane or explorer changes size.
+      // Perspective already scales with its viewport; 2D needs this explicitly.
+      if (dimsRef.current === 2 && previousSize && rect.width > 0 && rect.height > 0) {
+        const view = viewRef.current;
+        const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.k * Math.min(rect.width / previousSize.width, rect.height / previousSize.height)));
+        const scale = nextZoom / view.k;
+        view.panX *= scale;
+        view.panY *= scale;
+        view.k = nextZoom;
+        savedView = { ...view };
+      }
+      if (rect.width > 0 && rect.height > 0) previousSize = { width: rect.width, height: rect.height };
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
@@ -905,7 +1004,7 @@ export function GrimoireGraphView({
     });
     mo.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "data-theme", "style"],
+      attributeFilter: ["class", "data-theme", "data-mode", "style"],
     });
     return () => {
       ro.disconnect();
@@ -957,6 +1056,60 @@ export function GrimoireGraphView({
     [nodeById, visible.degree],
   );
 
+  const zoomBy = useCallback(
+    (factor: number, clientX?: number, clientY?: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      noteInput();
+      flightRef.current = null;
+      if (dimsRef.current === 3) {
+        // Dolly toward the target; the camera never passes through it.
+        const cam = cameraRef.current;
+        cam.dist = Math.max(NEAR_PLANE * 6, Math.min(20000, cam.dist / factor));
+        savedCamera = { ...cam };
+        scheduleFrame();
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const px = clientX === undefined ? rect.width / 2 : clientX - rect.left;
+      const py = clientY === undefined ? rect.height / 2 : clientY - rect.top;
+      const view = viewRef.current;
+      const k = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.k * factor));
+      const scale = k / view.k;
+      // Keep the world point under the cursor stationary.
+      view.panX = px - rect.width / 2 - (px - rect.width / 2 - view.panX) * scale;
+      view.panY = py - rect.height / 2 - (py - rect.height / 2 - view.panY) * scale;
+      view.k = k;
+      savedView = { ...view };
+      scheduleFrame();
+    },
+    [noteInput, scheduleFrame],
+  );
+
+  const panBy = useCallback((dx: number, dy: number) => {
+    flightRef.current = null;
+    if (dimsRef.current === 3) {
+      const canvas = canvasRef.current;
+      const short = canvas ? Math.max(1, Math.min(canvas.clientWidth, canvas.clientHeight)) : 600;
+      const w = screenDeltaToWorld(dx, dy, short * FOCAL_SHARE / cameraRef.current.dist);
+      cameraRef.current.tx -= w.x;
+      cameraRef.current.ty -= w.y;
+      cameraRef.current.tz -= w.z;
+      savedCamera = { ...cameraRef.current };
+    } else {
+      viewRef.current.panX += dx;
+      viewRef.current.panY += dy;
+      savedView = { ...viewRef.current };
+    }
+    scheduleFrame();
+  }, [scheduleFrame, screenDeltaToWorld]);
+
+  const pointerPair = () => {
+    const points = [...pointersRef.current.values()];
+    if (points.length < 2) return null;
+    return { distance: Math.max(1, Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)), x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+  };
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -964,11 +1117,21 @@ export function GrimoireGraphView({
       noteInput();
       flightRef.current = null;
       canvas.setPointerCapture(e.pointerId);
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointersRef.current.size > 1) {
+        const drag = dragRef.current;
+        if (drag?.mode === "node" && simRef.current) unpinForceSimNode(simRef.current, drag.nodeIndex);
+        dragRef.current = null;
+        multiTouchRef.current = true;
+        pinchRef.current = pointerPair();
+        return;
+      }
+      multiTouchRef.current = false;
       const nodeIndex = hitTest(e.clientX, e.clientY);
-      const panGesture = dimsRef.current === 2 || e.shiftKey || e.button === 2 || e.button === 1;
+      const panGesture = dimsRef.current === 2 || gestureModeRef.current === "pan" || e.shiftKey || e.button === 2 || e.button === 1;
       dragRef.current = {
         pointerId: e.pointerId,
-        mode: nodeIndex >= 0 ? "node" : panGesture ? "pan" : "orbit",
+        mode: nodeIndex >= 0 && !e.shiftKey && e.button === 0 && gestureModeRef.current !== "pan" ? "node" : panGesture ? "pan" : "orbit",
         nodeIndex,
         startX: e.clientX,
         startY: e.clientY,
@@ -983,6 +1146,19 @@ export function GrimoireGraphView({
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLCanvasElement>) => {
       const sim = simRef.current;
+      if (pointersRef.current.has(e.pointerId)) {
+        pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const pair = pointerPair();
+        if (pair && pinchRef.current) {
+          noteInput();
+          const previous = pinchRef.current;
+          zoomBy(pair.distance / previous.distance, pair.x, pair.y);
+          panBy(pair.x - previous.x, pair.y - previous.y);
+          pinchRef.current = pair;
+          return;
+        }
+        if (multiTouchRef.current) return;
+      }
       const drag = dragRef.current;
       if (drag && sim && drag.pointerId === e.pointerId) {
         noteInput();
@@ -1039,15 +1215,28 @@ export function GrimoireGraphView({
         scheduleFrame();
       }
     },
-    [hitTest, noteInput, scheduleFrame, screenDeltaToWorld, toWorld],
+    [hitTest, noteInput, panBy, scheduleFrame, screenDeltaToWorld, toWorld, zoomBy],
   );
 
   const onPointerUp = useCallback(
     (e: ReactPointerEvent<HTMLCanvasElement>) => {
       const sim = simRef.current;
       const drag = dragRef.current;
+      pointersRef.current.delete(e.pointerId);
+      if (canvasRef.current?.hasPointerCapture(e.pointerId)) canvasRef.current.releasePointerCapture(e.pointerId);
+      pinchRef.current = pointerPair();
+      if (multiTouchRef.current) {
+        if (pointersRef.current.size === 0) multiTouchRef.current = false;
+        return;
+      }
+      if (drag?.pointerId !== e.pointerId) return;
       dragRef.current = null;
       if (!drag || !sim) return;
+      if (e.type !== "pointerup") {
+        if (drag.mode === "node") unpinForceSimNode(sim, drag.nodeIndex);
+        scheduleFrame();
+        return;
+      }
       if (drag.mode === "node" && drag.moved) {
         unpinForceSimNode(sim, drag.nodeIndex);
         if (!reducedMotionRef.current) reheatForceSim(sim, 0.2);
@@ -1071,35 +1260,6 @@ export function GrimoireGraphView({
       if (stickyRef.current !== node.id) selectNode(node.id);
     },
     [hitTest, nodeById, scheduleFrame, selectNode],
-  );
-
-  const zoomBy = useCallback(
-    (factor: number, clientX?: number, clientY?: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      noteInput();
-      if (dimsRef.current === 3) {
-        // Dolly toward the target; the camera never passes through it.
-        const cam = cameraRef.current;
-        cam.dist = Math.max(NEAR_PLANE * 6, Math.min(20000, cam.dist / factor));
-        savedCamera = { ...cam };
-        scheduleFrame();
-        return;
-      }
-      const rect = canvas.getBoundingClientRect();
-      const px = clientX === undefined ? rect.width / 2 : clientX - rect.left;
-      const py = clientY === undefined ? rect.height / 2 : clientY - rect.top;
-      const view = viewRef.current;
-      const k = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.k * factor));
-      const scale = k / view.k;
-      // Keep the world point under the cursor stationary.
-      view.panX = px - rect.width / 2 - (px - rect.width / 2 - view.panX) * scale;
-      view.panY = py - rect.height / 2 - (py - rect.height / 2 - view.panY) * scale;
-      view.k = k;
-      savedView = { ...view };
-      scheduleFrame();
-    },
-    [noteInput, scheduleFrame],
   );
 
   // Wheel must be non-passive to preventDefault (page scroll).
@@ -1146,6 +1306,9 @@ export function GrimoireGraphView({
         kbdIdxRef.current = next;
         const node = list[next];
         setStickyId(node.id);
+        setExplorerOpen(true);
+        setRelationLimit(40);
+        setTrail((prev) => [...prev.filter((id) => id !== node.id), node.id].slice(-TRAIL_LIMIT));
         centerOnNode(node.id);
         announcer.announce(
           `${node.title}, ${next + 1} of ${list.length}${node.ref ? ", press Enter to open" : ""}`,
@@ -1183,6 +1346,8 @@ export function GrimoireGraphView({
       }
       const three = dimsRef.current === 3;
       const pan = (dx: number, dy: number) => {
+        flightRef.current = null;
+        if (e.shiftKey || gestureModeRef.current === "pan") { panBy(dx, dy); return; }
         if (three) {
           const cam = cameraRef.current;
           cam.yaw -= dx * 0.004;
@@ -1202,37 +1367,19 @@ export function GrimoireGraphView({
       else if (e.key === "+" || e.key === "=") zoomBy(1.25);
       else if (e.key === "-" || e.key === "_") zoomBy(0.8);
       else if (e.key === "0") fitView();
-      else if (e.key === "Escape" && (stickyRef.current || hoverRef.current || kbdIdxRef.current >= 0)) {
+      else if (e.key === "Escape") {
         hoverRef.current = null;
-        kbdIdxRef.current = -1;
+        kbdIdxRef.current = -2; // the next Tab leaves the canvas immediately
         setStickyId(null);
         scheduleFrame();
       } else return;
       e.preventDefault();
     },
-    [announcer, centerOnNode, fitView, goBack, nodeById, noteInput, openNode, scheduleFrame, selectNode, stepNeighbor, zoomBy],
+    [announcer, centerOnNode, fitView, goBack, nodeById, noteInput, openNode, panBy, scheduleFrame, selectNode, stepNeighbor, zoomBy],
   );
 
-  // How many of the scope's memory files were actually READ. The scan cap is
-  // applied coven-wide BEFORE familiar scoping, so a scoped view is not "this
-  // familiar's memory graph" — it is their slice of the coven's most recent N
-  // files. `meta.memory.scanned` is coven-wide and cannot answer this, so the
-  // count comes off the nodes themselves (cave-ed4s3).
-  //
-  // `scanned` is load-bearing, not defensive: the resolution index spans the
-  // WHOLE corpus while the scan is capped, so a [[link]] into an out-of-window
-  // memory file still resolves and lands as a leaf node with no body. Counting
-  // raw memory nodes would mix files that were read with files merely pointed
-  // at and overcount the window — the exact class of false claim this notice
-  // exists to stop making.
-  //
-  // This MUST stay above the empty-state early return below. It lived under it
-  // and only ran when the graph had nodes, so an empty graph rendered one hook
-  // fewer and React threw "Rendered more hooks than during the previous render"
-  // the moment the graph filled or emptied — which a scope change does routinely
-  // (cave-qxq4l). Nothing in CI catches this: eslint.config.mjs is a
-  // design-system-only gate that stubs react-hooks to a no-op, so
-  // rules-of-hooks never runs.
+  // Count only documents actually read: link-target leaves are not scan
+  // coverage. The server reports scope-relative totals in meta.memory.
   const scopedMemoryInWindow = useMemo(
     () =>
       scopeLabel
@@ -1240,27 +1387,6 @@ export function GrimoireGraphView({
         : 0,
     [graph, scopeLabel],
   );
-
-  // ── Empty state — only when there is genuinely nothing to draw ─────────────
-  if (graph.nodes.length === 0) {
-    return (
-      <div className="grid h-full min-h-0 place-items-center p-8">
-        <EmptyState
-          icon="ph:graph"
-          headline={
-            scanning ? "Weaving the graph…" : scopeLabel ? `No relations for ${scopeLabel}` : "Nothing to graph yet"
-          }
-          subtitle={
-            scanning
-              ? "Scanning your knowledge, memory, and journal for connections."
-              : scopeLabel
-                ? "Nothing in this scope has anything to weave together. Widen the familiar selection to see the whole coven's relations."
-                : "Create a knowledge entry, memory file, or journal day and it appears here — [[wiki-links]], tags, and mentions weave them together."
-          }
-        />
-      </div>
-    );
-  }
 
   const summary = `${visible.nodes.length} of ${graph.nodes.length} nodes, ${visible.edges.length} connections shown`;
   const memoryTruncated = meta ? meta.memory.scanned < meta.memory.total : false;
@@ -1275,7 +1401,9 @@ export function GrimoireGraphView({
   const three = prefs.dims === 3;
   const selected = stickyId ? nodeById.get(stickyId) ?? null : null;
   const selectedOwner = selected?.owner ? ownerLabel?.(selected.owner) ?? selected.owner : null;
-  const hubs = keyboardNodes.slice(0, 6);
+  const searchResults = [...visible.nodes].filter((n) => !queryMatches || queryMatches.has(n.id))
+    .sort((a, b) => (visible.degree.get(b.id) ?? 0) - (visible.degree.get(a.id) ?? 0) || a.title.localeCompare(b.title));
+  const hubs = searchResults.slice(0, resultLimit);
   const trailNodes = trail.map((id) => nodeById.get(id)).filter((n): n is DocGraphNode => Boolean(n));
 
   const checkboxRow = (
@@ -1288,7 +1416,7 @@ export function GrimoireGraphView({
   ) => (
     <label
       title={help}
-      className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
+      className="grimoire-graph-check flex cursor-pointer items-center gap-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
     >
       <input
         type="checkbox"
@@ -1315,55 +1443,34 @@ export function GrimoireGraphView({
         hoverRef.current = null;
         scheduleFrame();
       }}
-      className="focus-ring flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      className="grimoire-graph-node focus-ring flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
     >
-      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${NODE_KIND_DOT[node.kind]}`} />
-      <span className="min-w-0 flex-1 truncate">{node.title}</span>
+      <GraphColorDot color={nodeColor(node)} />
+      <span className="grimoire-graph-node__body">
+        <span>{node.title}</span>
+        <small>{NODE_KIND_LABEL[node.kind]} · {node.owner ? ownerLabel?.(node.owner) ?? node.owner : "Shared"}</small>
+      </span>
       <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visible.degree.get(node.id) ?? 0}</span>
     </button>
   );
 
   return (
     <div
-      ref={containerRef}
-      className="grimoire-graph relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_center,var(--bg-raised)_0%,var(--bg-base)_72%)]"
+      className="grimoire-graph"
+      data-explorer={explorerOpen}
     >
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label={`Document graph: ${summary}. Tab and Shift+Tab step through the most-connected documents, Enter opens the focused one; ${three ? "arrow keys orbit" : "arrow keys pan"}, plus and minus zoom, 0 fits the view; with a document selected, ] and [ step through its relations and Backspace goes back.`}
-        tabIndex={0}
-        className="focus-ring absolute inset-0 h-full w-full cursor-grab touch-none"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onContextMenu={(e) => e.preventDefault()}
-        onPointerLeave={() => {
-          if (hoverRef.current) {
-            hoverRef.current = null;
-            scheduleFrame();
-          }
-        }}
-        onKeyDown={onKeyDown}
-        onDoubleClick={(e) => {
-          const sim = simRef.current;
-          const idx = hitTest(e.clientX, e.clientY);
-          if (sim && idx >= 0) openNode(nodeById.get(sim.ids[idx]));
-          else fitView();
-        }}
-      />
-
       {/* Search + filter / forces card (Obsidian's graph settings). */}
       <section
         aria-label="Graph filters"
-        className="absolute left-2 top-2 w-60 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 shadow-sm backdrop-blur"
+        className="grimoire-graph-toolbar"
       >
-        <div className="flex items-center gap-1.5 px-2 py-1.5">
+        <div className="grimoire-graph-search">
           <Icon name="ph:magnifying-glass" width={12} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
           <input
+            ref={searchRef}
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setResultLimit(40); setStickyId(null); setExplorerOpen(true); }}
             onKeyDown={(e) => {
               if (e.key === "Escape" && query) {
                 e.stopPropagation();
@@ -1376,13 +1483,16 @@ export function GrimoireGraphView({
                 selectNode(best);
               }
             }}
-            placeholder="Find a node…"
+            placeholder="Search documents…"
             aria-label="Highlight graph nodes"
             className="focus-ring min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           <button
             type="button"
+            ref={filtersTriggerRef}
             aria-expanded={prefs.panelOpen}
+            aria-controls={settingsId}
+            aria-haspopup="dialog"
             aria-label={prefs.panelOpen ? "Collapse graph filters" : "Expand graph filters"}
             title="Filters and forces"
             onClick={() => setPrefs((p) => ({ ...p, panelOpen: !p.panelOpen }))}
@@ -1391,13 +1501,28 @@ export function GrimoireGraphView({
             <Icon name="ph:sliders-horizontal" width={12} aria-hidden />
           </button>
         </div>
+        <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" aria-expanded={explorerOpen} onClick={() => setExplorerOpen((v) => !v)}>
+          <Icon name="ph:list" width={14} aria-hidden /> {explorerOpen ? "Hide explorer" : "Explore"}
+        </button>
         {queryMatches ? (
           <p className="border-t border-[var(--border-hairline)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {queryMatches.size === 0 ? "No matching nodes" : `${queryMatches.size} match${queryMatches.size === 1 ? "" : "es"} · Enter to fly to the best connected`}
           </p>
         ) : null}
-        {prefs.panelOpen ? (
-          <div className="max-h-[60vh] space-y-2.5 overflow-y-auto border-t border-[var(--border-hairline)] px-2.5 py-2">
+        <Popover open={prefs.panelOpen} onOpenChange={(panelOpen) => setPrefs((p) => ({ ...p, panelOpen }))} anchorRef={filtersTriggerRef} placement="bottom-start" minWidth={280} ariaLabel="Graph settings">
+          <PopoverBody>
+          <div id={settingsId} className="grimoire-graph-settings">
+            <label className="grimoire-graph-field">Color by
+              <select className="focus-ring" value={prefs.colorBy} onChange={(e) => setPrefs((p) => ({ ...p, colorBy: e.target.value === "familiar" ? "familiar" : "kind" }))}>
+                <option value="kind">Document type</option><option value="familiar">Familiar</option>
+              </select>
+            </label>
+            <label className="grimoire-graph-field">Layout
+              <select className="focus-ring" value={prefs.dims} onChange={(e) => { needsFitRef.current = true; setPrefs((p) => ({ ...p, dims: e.target.value === "2" ? 2 : 3 })); }}>
+                <option value={3}>3D constellation</option><option value={2}>2D map</option>
+              </select>
+            </label>
+            {three && !reducedMotion ? checkboxRow("Slow rotation", prefs.drift, (drift) => setPrefs((p) => ({ ...p, drift }))) : null}
             <div>
               <p className="pb-0.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Groups
@@ -1514,42 +1639,78 @@ export function GrimoireGraphView({
                   <>
                     {scopedMemoryInWindow} of {scopeLabel}&rsquo;s {scopedMemoryTotal} memory files are in
                     the scanned window — the {meta.memory.scanned} most recent of {meta.memory.total}{" "}
-                    across the coven.
+                    {meta.memory.scoped ? "for this familiar selection" : "across the coven"}.
                   </>
                 ) : (
                   <>
                     Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files
-                    {scopeLabel ? " across the coven" : ""}.
+                    {meta.memory.scoped ? " for this familiar selection" : " across the coven"}.
                   </>
                 )}
               </p>
             ) : null}
             {scanError ? (
               <p className="text-[length:var(--text-sm)] leading-snug text-[var(--color-warning)]">
-                Full scan unavailable — showing knowledge-vault connections only.
+                Full scan unavailable — showing available connections. Use Retry below.
               </p>
             ) : null}
           </div>
-        ) : null}
+          </PopoverBody>
+        </Popover>
       </section>
 
+      <div ref={containerRef} className="grimoire-graph-stage">
+      <canvas
+        ref={canvasRef}
+        role="img"
+        aria-label={`Document graph: ${summary}. Tab and Shift+Tab step through the most-connected documents, Enter opens the focused one; ${three ? "arrow keys orbit" : "arrow keys pan"}, plus and minus zoom, 0 fits the view; with a document selected, ] and [ step through its relations and Backspace goes back. Escape clears the selection; the next Tab leaves the canvas.`}
+        tabIndex={0}
+        className="focus-ring absolute inset-0 h-full w-full cursor-grab touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onLostPointerCapture={onPointerUp}
+        onContextMenu={(e) => e.preventDefault()}
+        onPointerLeave={() => {
+          if (hoverRef.current) {
+            hoverRef.current = null;
+            scheduleFrame();
+          }
+        }}
+        onKeyDown={onKeyDown}
+        onDoubleClick={(e) => {
+          const sim = simRef.current;
+          const idx = hitTest(e.clientX, e.clientY);
+          if (sim && idx >= 0) openNode(nodeById.get(sim.ids[idx]));
+          else fitView();
+        }}
+      />
+
+      {visible.nodes.length === 0 ? <div className="grimoire-graph-empty">
+        <EmptyState icon="ph:graph" headline={scanning ? "Loading connections…" : graph.nodes.length ? "No documents in this view" : scopeLabel ? `No relations for ${scopeLabel}` : "Nothing to graph yet"}
+          subtitle={graph.nodes.length ? "Show unconnected documents or reset the filters to explore this collection." : "Choose another familiar or add a memory, stitch, or journal entry."}
+          actions={graph.nodes.length ? <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" onClick={() => { setQuery(""); setPrefs((p) => ({ ...p, groups: DEFAULT_PREFS.groups, edgeTypes: DEFAULT_PREFS.edgeTypes, orphans: true })); }}>Show all documents</button> : undefined} />
+      </div> : null}
+      </div>
+
       {/* Focus panel: the selected node and its relations, one click to fly on. */}
-      <section
+      {explorerOpen ? <section
         aria-label={selected ? `Selected: ${selected.title}` : "Explore the graph"}
-        className="absolute right-2 top-2 flex max-h-[calc(100%-11rem)] w-72 flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 shadow-sm backdrop-blur"
+        className="grimoire-graph-explorer"
       >
         {selected ? (
           <>
             <div className="border-b border-[var(--border-hairline)] px-3 py-2.5">
               <div className="flex items-center gap-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                <span aria-hidden className={`h-2 w-2 rounded-full ${NODE_KIND_DOT[selected.kind]}`} />
+                <GraphColorDot color={nodeColor(selected)} />
                 {NODE_KIND_LABEL[selected.kind]}
                 {selectedOwner ? <span className="normal-case tracking-normal">· {selectedOwner}</span> : null}
                 <button
                   type="button"
                   aria-label="Clear selection"
                   title="Clear selection (Esc)"
-                  onClick={() => selectNode(null)}
+                  onClick={() => { selectNode(null); searchRef.current?.focus(); }}
                   className="focus-ring ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
                   <Icon name="ph:x" width={11} aria-hidden />
@@ -1593,9 +1754,9 @@ export function GrimoireGraphView({
                       {group.label}
                       <span className="ml-auto font-normal">{rows.length}</span>
                     </p>
-                    {rows.slice(0, 40).map((r) => nodeButton(r.node, () => selectNode(r.node.id), `:${group.key}`))}
-                    {rows.length > 40 ? (
-                      <p className="px-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">and {rows.length - 40} more</p>
+                    {rows.slice(0, relationLimit).map((r) => nodeButton(r.node, () => selectNode(r.node.id), `:${group.key}`))}
+                    {rows.length > relationLimit ? (
+                      <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" onClick={() => setRelationLimit((n) => n + 40)}>Show more connections ({rows.length - relationLimit})</button>
                     ) : null}
                   </div>
                 );
@@ -1612,7 +1773,7 @@ export function GrimoireGraphView({
                   <span key={n.id} className="flex min-w-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => selectNode(n.id, { record: false })}
+                      onClick={() => { setTrail((prev) => prev.slice(0, prev.indexOf(n.id) + 1)); selectNode(n.id, { record: false }); }}
                       aria-current={n.id === stickyId ? "true" : undefined}
                       className="focus-ring max-w-[7rem] truncate rounded px-1 hover:text-[var(--text-primary)] aria-[current=true]:text-[var(--text-primary)]"
                     >
@@ -1625,62 +1786,46 @@ export function GrimoireGraphView({
             ) : null}
           </>
         ) : (
-          <div className="px-2 py-2">
+          <div className="grimoire-graph-results">
             <p className="px-1 pb-1 text-[length:var(--text-sm)] leading-snug text-[var(--text-secondary)]">
-              Select any node to fly to it and walk its connections. Start from a hub:
+              {query.trim() ? `${searchResults.length} matching documents` : "Choose a document to follow its connections."}
             </p>
             {hubs.map((n) => nodeButton(n, () => selectNode(n.id)))}
+            {searchResults.length > resultLimit ? <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" onClick={() => setResultLimit((n) => n + 40)}>Show more documents</button> : null}
+            {query.trim() && !searchResults.length ? <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" onClick={() => setQuery("")}>Clear search</button> : null}
           </div>
         )}
-      </section>
+      </section> : null}
 
-      {/* Projection / drift / zoom / fit controls. */}
-      <div className="absolute bottom-2 right-2 flex flex-col gap-1">
-        {(
-          [
-            {
-              label: three ? "Switch to flat 2D layout" : "Switch to 3D layout",
-              icon: three ? "ph:graph" : "ph:cube",
-              act: () => {
-                needsFitRef.current = true;
-                setPrefs((p) => ({ ...p, dims: p.dims === 3 ? 2 : 3 }));
-              },
-              pressed: undefined,
-            },
-            ...(three && !reducedMotion
-              ? [
-                  {
-                    label: prefs.drift ? "Pause idle drift" : "Resume idle drift",
-                    icon: prefs.drift ? "ph:pause" : "ph:play",
-                    act: () => setPrefs((p) => ({ ...p, drift: !p.drift })),
-                    pressed: prefs.drift,
-                  },
-                ]
-              : []),
-            { label: "Zoom in", icon: "ph:plus", act: () => zoomBy(1.25), pressed: undefined },
-            { label: "Zoom out", icon: "ph:minus", act: () => zoomBy(0.8), pressed: undefined },
-            { label: "Fit graph to view", icon: "ph:arrows-in-simple", act: () => fitView(), pressed: undefined },
-          ] as { label: string; icon: IconName; act: () => void; pressed: boolean | undefined }[]
-        ).map((b) => (
-          <button
-            key={b.label}
-            type="button"
-            aria-label={b.label}
-            aria-pressed={b.pressed}
-            title={b.label}
-            onClick={b.act}
-            className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 text-[var(--text-secondary)] backdrop-blur hover:text-[var(--text-primary)]"
-          >
-            <Icon name={b.icon} width={12} aria-hidden />
-          </button>
-        ))}
+      <div className="grimoire-graph-navigation" aria-label="Graph navigation">
+        <div role="group" aria-label="Drag mode" className="grimoire-graph-modes">
+          {three ? <button type="button" className="focus-ring" aria-pressed={gestureMode === "orbit"} onClick={() => setGestureMode("orbit")}>Orbit</button> : null}
+          <button type="button" className="focus-ring" aria-pressed={!three || gestureMode === "pan"} onClick={() => setGestureMode("pan")}>Pan</button>
+        </div>
+        <button type="button" className="focus-ring" aria-label="Zoom out" onClick={() => zoomBy(0.8)}><Icon name="ph:minus" width={14} aria-hidden /></button>
+        <button type="button" className="focus-ring" aria-label="Zoom in" onClick={() => zoomBy(1.25)}><Icon name="ph:plus" width={14} aria-hidden /></button>
+        <button type="button" className="focus-ring" onClick={() => { selectNode(null); fitView(); }} title="Fit graph to view (0)">Fit all</button>
       </div>
 
+      <div className="grimoire-graph-legend" aria-label={prefs.colorBy === "kind" ? "Document type colors" : "Familiar colors"}>
+        <span>Color · {prefs.colorBy === "kind" ? "Type" : "Familiar"}</span>
+        {prefs.colorBy === "kind" ? (Object.keys(NODE_KIND_LABEL) as GraphNodeKind[]).map((kind) => (
+          <span key={kind}><i aria-hidden className={`grimoire-graph-dot ${NODE_KIND_DOT[kind]}`} />{NODE_KIND_LABEL[kind]}</span>
+        )) : <>
+          {[...ownerColors].map(([owner, color]) => <span key={owner}><GraphColorDot color={color} />{ownerLabel?.(owner) ?? owner}</span>)}
+          <span><i aria-hidden className="grimoire-graph-dot bg-[var(--text-muted)]" />Shared</span>
+        </>}
+      </div>
+      {scanError ? <div className="grimoire-graph-notice" role="alert">
+        <span>Couldn't refresh all connections. Showing the available documents.</span>
+        {onRetry ? <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm focus-ring" onClick={onRetry}>Retry</button> : null}
+      </div> : null}
       {/* Status line. */}
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)] backdrop-blur">
+      <div className="grimoire-graph-status" role="status">
         {summary}
         {scanning ? " · scanning…" : ""}
-        {three ? " · drag to orbit, shift-drag to pan" : ""}
+        {memoryTruncated && meta ? ` · ${meta.memory.scanned} of ${meta.memory.total} memory files scanned${meta.memory.scoped ? " in this familiar selection" : ""}` : ""}
+        {three && gestureMode === "orbit" ? " · Drag to orbit · Shift-drag to pan · Pinch to zoom" : " · Drag to pan · Pinch to zoom"}
       </div>
     </div>
   );

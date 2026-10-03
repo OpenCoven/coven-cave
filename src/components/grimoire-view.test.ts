@@ -6,6 +6,7 @@ const view = [
   await readFile(new URL("./grimoire-view.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./grimoire-nav-state.ts", import.meta.url), "utf8"),
 ].join("\n");
+const scanHook = await readFile(new URL("../lib/use-grimoire-graph-scan.ts", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
@@ -13,6 +14,7 @@ const navigation = await readFile(new URL("../lib/workspace-navigation.ts", impo
 const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 const grimoireCss = await readFile(new URL("../styles/grimoire-launcher.css", import.meta.url), "utf8");
+const explorationCss = await readFile(new URL("../styles/memory-exploration.css", import.meta.url), "utf8");
 const docReader = await readFile(new URL("./grimoire-doc-reader.tsx", import.meta.url), "utf8");
 const readerMarkdown = await readFile(new URL("./document-reader-markdown.tsx", import.meta.url), "utf8");
 
@@ -58,13 +60,18 @@ assert.match(warmupRegistry, /defineResource\("grimoire:knowledge",[^\n]+"\/api\
 assert.match(warmupRegistry, /defineResource\("memory:list",[^\n]+"\/api\/memory"/, "memory cache loads memory files");
 assert.match(warmupRegistry, /defineResource\("grimoire:journal",[^\n]+"\/api\/journal"/, "journal cache loads journal days");
 assert.match(view, /aria-label="Search grimoire documents"/, "doc search is labelled");
+assert.match(view, /openTabs\.length > 0 \? "contents" : "memories-mobile-search"/, "the narrow navigator retains search before any document is opened");
+assert.match(explorationCss, /@container grimoire \(max-width: 879px\)\s*\{\s*\.memories-mobile-search \{ display: contents;/, "navigator search is exposed where the wide Recall landing is hidden");
+assert.match(view, /shellScope\.size === 0 \|\| shellScope\.has\(localFamiliarId\)/, "local familiar filtering cannot widen the shell scope");
+assert.match(view, /<JournalEntries[^>]+scopeFamiliarIds=\{memoryScope\}/, "Journal shares the Library and Relations familiar filter");
+assert.match(explorationCss, /\.grimoire-journal-tab \.journal-list \{ flex-direction: column;/, "narrow Journal panes stack the entry rail above the reader");
 // cave-zqhr: the doc search moved OUT of the navigator rail into the compact
 // header beside the Library/Journal/Relations tabs. It must be the shared
 // SearchInput in the actions cluster, and the rail must not grow a second
 // input back.
 assert.match(
   view,
-  /surface-compact-actions[\s\S]{0,700}<SearchInput\s[\s\S]{0,300}containerClassName="surface-compact-search"/,
+  /surface-compact-actions[\s\S]{0,2300}<SearchInput\s[\s\S]{0,300}containerClassName="surface-compact-search"/,
   "the doc search is a shared SearchInput in the header actions cluster, not in the rail",
 );
 assert.doesNotMatch(
@@ -154,7 +161,7 @@ assert.match(
 assert.match(view, /scopeFamiliarIds\?: ReadonlySet<string>/, "GrimoireView accepts the familiar scope");
 assert.match(
   view,
-  /const memoryScope = scopeFamiliarIds \?\? EMPTY_FAMILIAR_SCOPE/,
+  /const shellScope = scopeFamiliarIds \?\? EMPTY_FAMILIAR_SCOPE/,
   "an absent scope falls back to the canonical empty (All) selection",
 );
 assert.match(
@@ -190,7 +197,7 @@ assert.match(
 assert.match(view, /graph=\{scopedGraph\}/, "the launcher's graph stats reflect the scope, like its memory stats");
 assert.match(
   view,
-  /<GrimoireGraphView\s*\n\s*graph=\{scopedGraph\}[\s\S]{0,160}scopeLabel=\{memoryScopeLabel\}/,
+  /<GrimoireGraphView\s*\n\s*graph=\{scopedGraph\}[\s\S]{0,400}scopeLabel=\{memoryScopeLabel\}/,
   "the Relations canvas renders the scoped graph and is told who it is scoped to",
 );
 // Backlinks and [[wiki-link]] resolution stay on the UNSCOPED graph: a
@@ -455,17 +462,17 @@ assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : 
 assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the fallback graph via the graph lib");
 assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the canvas graph is lazy-loaded (dynamic import)");
 assert.match(view, /ssr: false/, "the graph view is client-only (no SSR)");
-assert.match(view, /fetch\(`\/api\/grimoire\/graph\$\{params\}`/, "the graph comes from the server scan");
+assert.match(scanHook, /fetch\(`\/api\/grimoire\/graph\$\{params\}`/, "the graph comes from the server scan");
 // cave-z6xvd: the familiar scope rides the request so the scan's cap applies to
 // the scoped set. Scoping only on the client meant a familiar saw their (F/T)
 // slice of the coven's most-recent N, never all of their own files.
 assert.match(
-  view,
+  scanHook,
   /familiarId=\$\{encodeURIComponent\(id\)\}/,
   "the scan request carries the familiar scope",
 );
 assert.match(
-  view,
+  scanHook,
   /\}, \[scanTick, scopeKey\]\)/,
   "the scan refetches when the scope changes, keyed by value so a new Set identity alone does not",
 );
@@ -481,13 +488,13 @@ assert.match(
 );
 assert.match(
   view,
-  /view === "graph" \? \([\s\S]{0,1200}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
+  /view === "graph" \? \([\s\S]{0,1200}<GrimoireGraphView[\s\S]{0,750}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
   "the graph replaces the detail pane and opens the clicked doc",
 );
 // Journal tab renders the full daily-reflection surface inside Grimoire (cave).
 assert.match(
   view,
-  /view === "journal" \? \([\s\S]{0,600}<JournalEntries familiars=\{familiars\} activeFamiliarId=\{activeFamiliarId\} scopeFamiliarIds=\{scopeFamiliarIds\}/,
+  /view === "journal" \? \([\s\S]{0,600}<JournalEntries familiars=\{familiars\} activeFamiliarId=\{activeFamiliarId\} scopeFamiliarIds=\{memoryScope\}/,
   "the Journal tab mounts the JournalEntries surface, scoped by the shell's familiar multiselect",
 );
 assert.match(
@@ -496,7 +503,7 @@ assert.match(
   "grimoire-view imports the shared journal surface",
 );
 assert.match(view, /scanning=\{scanning\}/, "the graph view knows a scan is in flight");
-assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is only surfaced when there is no scan to show");
+assert.match(view, /scanError=\{scanError\}/, "a failed refresh stays visible even while previous connections remain on screen");
 
 // ── Graph reachable on narrow / mobile (cave-quct) ───────────────────────────
 // On a narrow container the rail and main pane both go full-width, so the rail
