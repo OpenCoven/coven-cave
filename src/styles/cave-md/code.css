@@ -124,6 +124,11 @@
   min-height: 28px;
   backdrop-filter: blur(4px);
 }
+/* A block under an owner that already offers its actions (#5781): the desk
+   viewer's header has Copy, so the block's own was a second one. */
+.cave-syntax-block--bare .cave-code-header {
+  display: none;
+}
 
 /* Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
    were dropped from the code header — the language label + filename + Copy

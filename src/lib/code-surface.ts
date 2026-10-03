@@ -280,7 +280,7 @@ export function resolveCodeWorkbenchPanels({
  * (cave-9q24).
  */
 export function codeSessionWorkRoot(row: SessionRow): string {
-  return row.git?.worktreeRoot || row.project_root;
+  return row.git?.worktreeRoot || row.project_root || "";
 }
 
 export type CodeSessionActivity = "running" | "error" | "idle";

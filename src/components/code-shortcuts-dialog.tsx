@@ -139,7 +139,9 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
               <button
                 type="button"
                 className="focus-ring code-keys__rebind"
-                aria-pressed={isCapturing}
+                // Named for its shortcut (#5781): ten buttons all read "Rebind".
+                // The label says what it does, so it isn't also a pressed toggle.
+                aria-label={`${isCapturing ? "Cancel rebinding" : "Rebind"} ${shortcut.label}`}
                 onClick={() => setCapturing(isCapturing ? null : shortcut.id)}
               >
                 {isCapturing ? "Cancel" : "Rebind"}
@@ -147,6 +149,7 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
               <button
                 type="button"
                 className="focus-ring code-keys__unbind"
+                aria-label={`Unbind ${shortcut.label}`}
                 // The terminal toggle is the way out of a focused terminal, so
                 // it can be rebound but never unbound (#5729).
                 disabled={!combo || isCapturing || isCodeShortcutRequired(shortcut.id)}

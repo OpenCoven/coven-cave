@@ -42,6 +42,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { relativeTime } from "@/lib/relative-time";
 import { CodeComposer } from "@/components/code-composer";
@@ -415,6 +416,24 @@ export function CodeWorkbench({
   }, [onReviewOpenChange, openPath, openTarget]);
 
   const changes = useWorktreeChanges(workRoot, running);
+  // One notice for a session with no folder, or one gone from disk (#5781),
+  // instead of the tree, the rail and the header each failing on their own,
+  // with Retry buttons that could never work.
+  const rootNotice: { icon: "ph:folder" | "ph:warning"; headline: string; subtitle: string; retry: boolean } | null = !workRoot.trim()
+    ? {
+        icon: "ph:folder",
+        headline: "This session has no project folder",
+        subtitle: "There are no files or changes to review here.",
+        retry: false,
+      }
+    : changes.missingRoot
+      ? {
+          icon: "ph:warning",
+          headline: "This session's folder is no longer on disk",
+          subtitle: workRoot,
+          retry: true,
+        }
+      : null;
   // The tree and the tabs resolve change paths against the same base.
   const changesBase = changes.repoRoot || workRoot;
   const tabStatus = useMemo(() => {
@@ -590,6 +609,21 @@ export function CodeWorkbench({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [cycleTab, fitsSplit, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
+  // ⌘S with the viewer away (#5781): the narrow Files and Review steps and
+  // the full PR view unmount it, and ⌘S opened the browser's Save page even
+  // with an edit open. It never does now. Where the viewer is, it saves.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.defaultPrevented) return;
+      if (deskRef.current?.querySelector(".code-room__viewer")) return; // the viewer's own handler saves
+      event.preventDefault();
+      if (fileEditDrafts.hasDirty()) announce("Open the edited file to save it.");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [announce]);
+
   const changedFiles = useMemo(() => changes.files, [changes.files]);
   const identity = codeDeskIdentity(row, changes);
 
@@ -761,6 +795,17 @@ export function CodeWorkbench({
       )}
 
       <div className="code-room__body" ref={roomRef} data-split={fitsSplit ? "true" : undefined}>
+        {rootNotice ? (
+          <EmptyState
+            icon={rootNotice.icon}
+            headline={rootNotice.headline}
+            subtitle={rootNotice.subtitle}
+            actions={rootNotice.retry ? (
+              <Button variant="secondary" size="xs" onClick={changes.refresh}>Check again</Button>
+            ) : undefined}
+          />
+        ) : (
+        <>
         {prFull ? (
           <LazyPrReader repo={prFull.repo} number={prFull.number} onBack={closeFullPr} />
         ) : null}
@@ -848,6 +893,8 @@ export function CodeWorkbench({
             onPanelFilesChange={setPanelFiles}
           />
         ) : null}
+        </>
+        )}
       </div>
 
       <CodeTerminalDrawer

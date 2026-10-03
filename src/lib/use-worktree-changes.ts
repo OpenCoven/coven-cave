@@ -33,6 +33,8 @@ export type WorktreeChanges = {
   /** At least one request for this root succeeded. `loaded` is also true after
    *  a failed first request, which must not read as a clean worktree. */
   ok: boolean;
+  /** The work root is no longer on disk (#5781). */
+  missingRoot: boolean;
   /** Refetch now, bypassing the microcache (used after a mutation). */
   refresh: () => void;
 };
@@ -44,12 +46,13 @@ type ChangesSnapshot = {
   repoRoot: string | null;
   loaded: boolean;
   ok: boolean;
+  missingRoot: boolean;
 };
 
 const NO_FILES: ChangedFile[] = [];
 
 function emptySnapshot(root: string): ChangesSnapshot {
-  return { root, files: NO_FILES, repoRoot: null, loaded: false, ok: false };
+  return { root, files: NO_FILES, repoRoot: null, loaded: false, ok: false, missingRoot: false };
 }
 
 export function useWorktreeChanges(projectRoot: string, running: boolean): WorktreeChanges {
@@ -80,8 +83,13 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
       try {
         const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared });
         if (!ledger.accepts(ticket)) return;
-        const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
-        if (!httpOk || !payload.ok) return;
+        const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null; missingRoot?: boolean };
+        if (!httpOk || !payload.ok) {
+          if (payload.missingRoot === true) {
+            setSnapshot((prev) => ({ ...(prev.root === root ? prev : emptySnapshot(root)), missingRoot: true }));
+          }
+          return;
+        }
         const next = payload.files ?? [];
         setSnapshot((prev) => {
           const base = prev.root === root ? prev : emptySnapshot(root);
@@ -93,6 +101,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
             files: arrayContentEqual(base.files, next) ? base.files : next,
             repoRoot: payload.repoRoot ?? null,
             ok: true,
+            missingRoot: false,
           };
         });
       } catch {
@@ -153,6 +162,7 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
     deletions,
     loaded: view.loaded,
     ok: view.ok,
+    missingRoot: view.missingRoot,
     refresh: () => void load(),
   };
 }

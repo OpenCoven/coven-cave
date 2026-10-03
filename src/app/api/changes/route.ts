@@ -250,7 +250,7 @@ function stderrOf(err: unknown): string {
 
 type RootResolution =
   | { ok: true; repoRoot: string }
-  | { ok: false; status: number; error: string; notARepo?: boolean };
+  | { ok: false; status: number; error: string; notARepo?: boolean; missingRoot?: boolean };
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
  *  Resolves to the repo toplevel so status paths line up with diff/revert. */
@@ -280,7 +280,7 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     real = fs.realpathSync(path.resolve(allowedRoot));
     stat = fs.statSync(real);
   } catch {
-    return { ok: false, status: 404, error: "projectRoot does not exist" };
+    return { ok: false, status: 404, error: "projectRoot does not exist", missingRoot: true };
   }
   if (!stat.isDirectory()) {
     return { ok: false, status: 400, error: "projectRoot is not a directory" };
@@ -556,7 +556,12 @@ export async function GET(req: NextRequest) {
       // Clear, non-error state the panel can render distinctly.
       return NextResponse.json({ ok: true, repo: false, error: root.error });
     }
-    return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
+    // Said outright (#5781): a session whose folder is gone gets one notice,
+    // not a retry in each of the tree, the rail and the header.
+    return NextResponse.json(
+      { ok: false, error: root.error, ...(root.missingRoot ? { missingRoot: true } : {}) },
+      { status: root.status },
+    );
   }
 
   try {

@@ -4,7 +4,7 @@
 // wireCopyButtons, the same path that wires the (shipped) Copy button.
 
 type ClassListLike = { toggle(token: string): boolean };
-type WrapLike = { classList: ClassListLike };
+type WrapLike = { classList: ClassListLike; getAttribute?(name: string): string | null };
 type BtnLike = { setAttribute(name: string, value: string): void };
 
 export const CODE_COLLAPSED_CLASS = "cave-code-wrap--collapsed";
@@ -16,6 +16,8 @@ export const CODE_COLLAPSED_CLASS = "cave-code-wrap--collapsed";
 export function toggleCodeBlockCollapse(wrap: WrapLike, btn: BtnLike): boolean {
   const collapsed = wrap.classList.toggle(CODE_COLLAPSED_CLASS);
   btn.setAttribute("aria-expanded", String(!collapsed));
-  btn.setAttribute("aria-label", collapsed ? "Expand code" : "Collapse code");
+  // A labelled block keeps its name through the toggle (#5781).
+  const label = wrap.getAttribute?.("data-code-label") || "code";
+  btn.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${label}`);
   return collapsed;
 }

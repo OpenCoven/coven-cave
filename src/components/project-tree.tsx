@@ -163,7 +163,8 @@ async function fetchChildren(dirPath: string, familiarId = "", depth: 0 | 1 = 0)
     const params = new URLSearchParams({ root: dirPath, depth: String(depth), familiarId });
     const res = await fetch(
       `/api/project-tree?${params.toString()}`,
-      { cache: "no-store" },
+      // A read that never answers is a failed one, with Retry (#5781).
+      { cache: "no-store", signal: AbortSignal.timeout(30_000) },
     );
     const json = (await res.json()) as {
       ok: boolean;

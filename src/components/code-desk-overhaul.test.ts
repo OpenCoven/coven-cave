@@ -54,7 +54,11 @@ assert.match(
   "routed opens apply their own focus and range after openPath clears stale context",
 );
 assert.match(tabs, /role="tablist" aria-label="Open files"/, "the strip is a real tablist");
-assert.match(tabs, /aria-label=\{`Close \$\{label\}`\}/, "each close control names its file");
+// Delete on the tab closes it, and says so; the close button is the pointer's
+// way, out of the tablist's accessibility tree (#5781), its tooltip naming
+// the file.
+assert.match(tabs, /aria-keyshortcuts="Delete"/, "the tab advertises Delete to close");
+assert.match(tabs, /aria-hidden="true"\s*title=\{`Close \$\{describeHiddenUnicode\(label\)\}`\}/, "each close control names its file to the pointer");
 assert.match(shortcuts, /\{ id: "next-file", label: "Next open file", combo: "Alt\+ArrowDown" \}/, "next-file is rebindable and defaults off the browser's tab-switch keys");
 assert.match(shortcuts, /\{ id: "previous-file", label: "Previous open file", combo: "Alt\+ArrowUp" \}/, "previous-file is rebindable");
 assert.match(workbench, /action === "next-file"[\s\S]{0,60}cycleTab\(1\)/, "the room wires next-file to the tab model");
@@ -222,7 +226,7 @@ assert.match(reviewRail, /aria-label="Widen the rail"/, "the widen toggle keeps 
 // #5737 review.
 assert.match(preview, /const current = launchpad && launchpad\.root === projectRoot \? launchpad : null;/, "the launchpad shows only the snapshot for the current root");
 assert.match(workbench, /column\?\.querySelector<HTMLElement>\('\[role="tree"\]'\) \?\?\s*column\?\.querySelector<HTMLElement>\("\.code-tree__changed-row"\);/, "the Files shortcut looks for the tree before the changed list, and the filter only as a last resort");
-assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,300}tabIndex=\{-1\}/, "close buttons are not tab stops");
+assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,600}tabIndex=\{-1\}/, "close buttons are not tab stops");
 
 // ── Pass 4 high fixes (#5745) ────────────────────────────────────────────────
 // 1. The edit lives in the per-path draft store, so leaving a file keeps it.
@@ -392,7 +396,10 @@ assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(
 const pickerLow5 = await readFile(new URL("./code-session-picker.tsx", import.meta.url), "utf8");
 const treeLow5 = await readFile(new URL("./project-tree.tsx", import.meta.url), "utf8");
 // 15. A forced load mid-flight is queued, not dropped.
-assert.match(panelSrc, /if \(!opts\?\.shared\) queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
+assert.match(panelSrc, /if \(opts\?\.shared\) return;\s*queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
+// …and waits for the run it queued (#5781).
+assert.match(panelSrc, /return queuedRunRef\.current\.promise;/);
+assert.match(panelSrc, /void loadAgainRef\.current\(\)\.finally\(\(\) => queued\?\.resolve\(\)\);/);
 // 16. Focus has somewhere to go after a confirmed revert.
 // It waits for the commit that re-enables Revert, not a frame (#5779).
 assert.match(panelSrc, /setRevertingPath\(null\);\s*setRevertFocus\(\{ path: file\.path, index: Math\.max\(0, index\) \}\);/);

@@ -170,6 +170,11 @@ export function RailFilePreview({
   const [justSaved, setJustSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { announce } = useAnnouncer();
+  // Said when it happens (#5781): the row is inserted fresh, and a new
+  // role="status" often isn't read at all.
+  useEffect(() => {
+    if (missingOnDisk) announce("This file is no longer on disk.");
+  }, [missingOnDisk, announce]);
 
   // Empty-state launchpad: with nothing selected, the (otherwise dead) main
   // pane offers the working tree's changed files as one-click opens. Fetched
@@ -233,7 +238,8 @@ export function RailFilePreview({
     }
     const params = new URLSearchParams({ path });
     if (familiarId) params.set("familiarId", familiarId);
-    void fetch(`/api/project-file?${params.toString()}`, { cache: "no-store" })
+    // A read that never answers becomes the error state, with Retry (#5781).
+    void fetch(`/api/project-file?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) })
       .then(async (res) => {
         const json = (await res.json()) as ProjectFileBody;
         if (cancelled) return;
@@ -254,9 +260,16 @@ export function RailFilePreview({
           setFile({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
         } else {
           setFile({ kind: "text", content: json.content, size: json.size, version: json.version ?? null, utf8: json.utf8 });
+          // A save that landed after its time ran out reads as the disk
+          // holding the edit exactly (#5781). That isn't someone else's
+          // change, and calling it a conflict made Reload drop what was
+          // typed since. The edit is the file now: nothing is lost.
+          const open = fileEditDrafts.get(path);
+          const asSaved = open ? (open.eol === "\r\n" ? open.content.replace(/\n/g, "\r\n") : open.content) : null;
+          if (open && isDraftDirty(open) && !open.saving && asSaved === json.content) fileEditDrafts.discard(path);
           // An open edit that started from an older version hears about it
           // now, before Save is tried.
-          fileEditDrafts.noteDiskVersion(path, json.version ?? null);
+          else fileEditDrafts.noteDiskVersion(path, json.version ?? null);
         }
         setLoading(false);
       })
@@ -346,12 +359,8 @@ export function RailFilePreview({
           // The disk's version, so Overwrite writes over exactly that (#5756).
           conflict ? json.version ?? null : null,
         );
-        announce(
-          conflict
-            ? `Couldn't save ${label}: it changed on disk since you started editing.`
-            : `Couldn't save ${label}: ${json.error ?? res.status}`,
-          "assertive",
-        );
+        // Once (#5781): a conflict is said by its own alert row.
+        if (!conflict) announce(`Couldn't save ${label}: ${json.error ?? res.status}`, "assertive");
         return;
       }
       const stillOpen = fileEditDrafts.settle(target, sending.id, sending.content, json.version ?? null);
@@ -471,12 +480,18 @@ export function RailFilePreview({
                     onClick={() =>
                       onOpenPath(changedRepoRoot ? `${changedRepoRoot.replace(/\/+$/, "")}/${f.path}` : f.path)
                     }
-                    title={f.path}
+                    title={describeHiddenUnicode(f.path)}
                   >
                     <Icon name="ph:git-diff" width={11} aria-hidden />
-                    <span className="workspace-rail__empty-change-name">{fileName(f.path)}</span>
+                    {/* Isolated (#5781): a start-truncated name like
+                        "(auth)/login" read "auth)/login)" without it. */}
+                    <span className="workspace-rail__empty-change-name">
+                      <bdi className="[direction:ltr] [unicode-bidi:isolate]"><HiddenUnicodeText text={fileName(f.path)} /></bdi>
+                    </span>
                     <span className="workspace-rail__empty-change-dir">
-                      {f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ""}
+                      <bdi className="[direction:ltr] [unicode-bidi:isolate]">
+                        <HiddenUnicodeText text={f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ""} />
+                      </bdi>
                     </span>
                     {typeof f.insertions === "number" || typeof f.deletions === "number" ? (
                       <span className="workspace-rail__empty-change-stat">
@@ -562,9 +577,6 @@ export function RailFilePreview({
           <div className="workspace-rail__preview-actions">
             {editing ? (
               <>
-                {saveError && !draft?.conflict && (
-                  <span className="workspace-rail__preview-saveerr" role="alert" title={saveError}>{saveError}</span>
-                )}
                 <button
                   type="button"
                   className="focus-ring workspace-rail__preview-action"
@@ -627,10 +639,19 @@ export function RailFilePreview({
           </div>
         )}
       </header>
+      {/* A failed save gets its own row too (#5781): in the header it was cut
+          to 32 characters, and "…saving again checks" never showed. Not
+          announced here: the save announces it, with the file's name. */}
+      {editing && saveError && !draft?.conflict && !missingOnDisk ? (
+        <div className="workspace-rail__preview-conflict" data-testid="save-error">
+          <Icon name="ph:warning-circle" width={12} aria-hidden />
+          <span className="workspace-rail__preview-conflict-text">{saveError}</span>
+        </div>
+      ) : null}
       {/* A conflict gets its own row: the reason and both ways out have to fit
           in a narrow viewer, where the header has no room for them (#5745). */}
       {missingOnDisk ? (
-        <div className="workspace-rail__preview-conflict" role="status">
+        <div className="workspace-rail__preview-conflict">
           <Icon name="ph:file-x" width={12} aria-hidden />
           <span className="workspace-rail__preview-conflict-text">
             {draft
@@ -759,6 +780,7 @@ export function RailFilePreview({
         ) : file?.kind === "text" ? (
           <SyntaxBlock
             key={path}
+            bare
             text={file.content}
             lang={path.split(".").pop()}
             className="leading-relaxed"

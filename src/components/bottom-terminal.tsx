@@ -238,6 +238,20 @@ export type TerminalWriterHandle = {
   write: (data: string) => void;
 };
 
+/**
+ * Whether a terminal that starts may take focus (#5781): when nothing else
+ * has it, or it's already in the terminal's own host (the Coding Desk's
+ * drawer and its bar). A shell attaching a moment after the desk came back
+ * took focus from the session picker or the composer, and keystrokes went
+ * to the shell.
+ */
+function mayTakeStartupFocus(wrap: HTMLElement | null): boolean {
+  const current = typeof document === "undefined" ? null : document.activeElement;
+  if (!current || current === document.body) return true;
+  const host = wrap?.closest("[data-terminal-host]") ?? wrap;
+  return Boolean(host?.contains(current));
+}
+
 export function BottomTerminal({
   threadId,
   active = true,
@@ -485,9 +499,15 @@ export function BottomTerminal({
   }, [visible, flushMirror]);
 
   // Re-fit + refocus whenever this terminal becomes the active (focused) pane.
+  // Its first activation is its start, which takes focus only by the startup
+  // rule (#5781); a pane the user switches to later always does.
+  const activatedRef = useRef(false);
   useEffect(() => {
     if (active) {
+      const first = !activatedRef.current;
+      activatedRef.current = true;
       const id = requestAnimationFrame(() => {
+        if (first && !mayTakeStartupFocus(wrapRef.current)) return;
         fitRef.current?.();
         termRef.current?.focus();
       });
@@ -695,7 +715,7 @@ export function BottomTerminal({
         setReady(true);
         setHealth("healthy");
       }
-      term.focus();
+      if (mayTakeStartupFocus(wrap)) term.focus();
 
       healthTimer = setInterval(() => {
         // visibleRef covers the terminal pane; document.hidden covers the whole
@@ -995,7 +1015,7 @@ export function BottomTerminal({
         doResize();
         term.focus();
       };
-      term.focus();
+      if (mayTakeStartupFocus(wrap)) term.focus();
 
       cleanup = () => {
         ro.disconnect();

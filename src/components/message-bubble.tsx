@@ -164,10 +164,14 @@ function renderCodeBlockFrame({
   isDiff,
   diffLines,
   block,
+  label,
 }: {
   code: string;
   lang: string;
   filename?: string;
+  /** Names the block's buttons for what it holds (#5781): a list of patches
+   *  read as one "Copy" and one "Collapse code" after another. */
+  label?: string;
   highlighted: string;
   isDiff: boolean;
   diffLines: DiffLine[] | null;
@@ -263,12 +267,13 @@ function renderCodeBlockFrame({
   // long code dump can be tucked away; blocks render expanded by default. The
   // line count hints at size while collapsed.
   const lineCount = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
-  const collapseBtn = `<button type="button" class="cave-code-collapse-btn" aria-label="Collapse code" aria-expanded="true"><svg class="cave-code-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+  const named = label ? ` ${escHtml(label)}` : "";
+  const collapseBtn = `<button type="button" class="cave-code-collapse-btn" aria-label="Collapse${named || " code"}" aria-expanded="true"><svg class="cave-code-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
   const linesHtml = lineCount > 1 ? `<span class="cave-code-lines" aria-hidden="true">${lineCount} lines</span>` : "";
   // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
   // back out of the rendered DOM at click time instead of carrying a second
   // copy of every block's source in an attribute.
-  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${provHtml}${filenameHtml}${staleHtml}${linesHtml}${readHtml}${compareHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${provHtml}${filenameHtml}${staleHtml}${linesHtml}${readHtml}${compareHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted"${named ? ` aria-label="Copy${named}"` : ""}>Copy</button></div>`;
   const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
     ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
     : "";
@@ -281,6 +286,7 @@ function renderCodeBlockFrame({
     `data-code-provenance="${escHtml(block.provenance)}"`,
     `data-code-lang="${escHtml(block.lang)}"`,
     block.path ? `data-code-path="${escHtml(block.path)}"` : "",
+    label ? `data-code-label="${escHtml(label)}"` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -291,7 +297,7 @@ function renderCodeBlockFrame({
 async function renderCodeBlock(
   source: string,
   info: string,
-  { highlightCode = true }: { highlightCode?: boolean } = {},
+  { highlightCode = true, label }: { highlightCode?: boolean; label?: string } = {},
 ): Promise<string> {
   // A byte-order mark opening a file is ordinary, not a hidden character to
   // flag (#5781); it isn't drawn either way.
@@ -343,6 +349,7 @@ async function renderCodeBlock(
     isDiff,
     diffLines,
     block,
+    label,
   });
 }
 
@@ -390,6 +397,11 @@ type SyntaxBlockProps = {
   /** 1-based line to scroll to and highlight once rendered (e.g. a search
    *  match). Re-running with the same value re-scrolls. */
   highlightLine?: number;
+  /** Names the block's own Copy and Collapse buttons, e.g. for a file (#5781). */
+  label?: string;
+  /** Without the block's own header, under an owner that already offers its
+   *  actions (#5781): the desk viewer had two "Copy" buttons. */
+  bare?: boolean;
 };
 
 /**
@@ -397,7 +409,7 @@ type SyntaxBlockProps = {
  * inspector pane. Uses the same Shiki singleton as MessageBubble, so the
  * highlighter is only initialised once per session.
  */
-export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBlockProps) {
+export function SyntaxBlock({ text, lang, className, highlightLine, label, bare = false }: SyntaxBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
   const containerRef = useWireCopyButtons(html);
   const resolvedLang = lang ?? autoDetectLang(text);
@@ -408,9 +420,13 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
   const viewRef = useRef<{ top: number; left: number; collapsed: boolean; expanded: boolean } | null>(null);
 
   useEffect(() => {
-    if (!text) return;
+    // An emptied file shows as empty, not as its old text (#5781).
+    if (!text) {
+      setHtml(null);
+      return;
+    }
     let cancelled = false;
-    void renderCodeBlock(text, resolvedLang).then((h) => {
+    void renderCodeBlock(text, resolvedLang, { label }).then((h) => {
       if (cancelled) return;
       const wrap = containerRef.current?.querySelector<HTMLElement>(".cave-code-wrap");
       viewRef.current = wrap
@@ -424,7 +440,7 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
       setHtml(h);
     });
     return () => { cancelled = true; };
-  }, [text, resolvedLang, containerRef]);
+  }, [text, resolvedLang, label, containerRef]);
 
   useLayoutEffect(() => {
     const view = viewRef.current;
@@ -493,7 +509,7 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
       {hiddenNote}
       <div
         ref={containerRef}
-        className={`cave-syntax-block text-[length:var(--text-sm)] ${className ?? ""}`}
+        className={`cave-syntax-block${bare ? " cave-syntax-block--bare" : ""} text-[length:var(--text-sm)] ${className ?? ""}`}
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
@@ -526,7 +542,11 @@ export function MarkdownBlock({
   const containerRef = useWireCopyButtons(html, onOpenUrl, null, null, resolveOpenUrl);
 
   useEffect(() => {
-    if (!text) return;
+    // An emptied file shows as empty, not as its old text (#5781).
+    if (!text) {
+      setHtml(null);
+      return;
+    }
     let cancelled = false;
     mdToHtml(text, { stripLayoutHtml, suppressRemoteMedia })
       .then((h) => { if (!cancelled) setHtml(h); })

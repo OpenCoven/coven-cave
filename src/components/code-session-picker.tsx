@@ -297,8 +297,9 @@ export function CodeSessionPicker({
           ) : null}
           <div ref={listRef} className="code-picker__list" role="listbox" id={listboxId} aria-label="Sessions">
             {result.groups.map((group) => (
-              <div key={group.key || "unknown"} className="code-picker__group">
-                <div className="code-picker__group-head">
+              // A listbox owns options and groups of them (#5781).
+              <div key={group.key || "unknown"} className="code-picker__group" role="group" aria-label={group.label}>
+                <div className="code-picker__group-head" aria-hidden="true">
                   <span className="code-picker__group-label">{group.label}</span>
                   <span className="code-picker__group-count">{group.sessions.length}</span>
                 </div>
@@ -314,6 +315,10 @@ export function CodeSessionPicker({
                 ))}
               </div>
             ))}
+          </div>
+          {/* Outside the listbox (#5781): it may own only options, and these
+              are a message and buttons. */}
+          <div className="code-picker__after">
             {result.offersCreate ? (
               <div className="code-picker__empty">
                 <p className="code-picker__empty-text">

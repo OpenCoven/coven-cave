@@ -317,10 +317,10 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.keyboard.press("Escape");
 
     // Closing the active tab lands on its neighbour; closing the last empties the strip.
-    await tabs.getByRole("button", { name: "Close flux.ts" }).click();
+    await tabs.locator('.code-tabs__close[title="Close flux.ts"]').click();
     await expect(tabs.getByRole("tab")).toHaveCount(1);
     await expect(viewerName).toHaveText("README.md");
-    await tabs.getByRole("button", { name: "Close README.md" }).click();
+    await tabs.locator('.code-tabs__close[title="Close README.md"]').click();
     await expect(page.getByTestId("code-open-file-tabs")).toHaveCount(0);
   });
 
@@ -423,7 +423,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const taller = page.getByRole("button", { name: "Taller" });
     await expect(taller).toHaveAttribute("aria-pressed", "false");
     await taller.click();
-    await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(taller, "one name, the state in aria-pressed (#5781)").toHaveAttribute("aria-pressed", "true");
     await expect(grip).toHaveAttribute("aria-valuenow", "460");
 
     // Closing never costs height (#5729): the drawer used to re-clamp against
@@ -433,7 +433,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.waitForTimeout(600);
     await page.getByRole("button", { name: "Open the terminal drawer" }).click();
     await expect(grip).toHaveAttribute("aria-valuenow", "460");
-    await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "true");
 
     // Remembered on this device. (A plain reload lands on the workspace's
     // default mode — the ?mode= idiom strips itself — so re-enter the desk.)
@@ -581,7 +581,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const paneBar = page.locator(".code-terminal-workspace__bar");
     await expect(paneBar.getByRole("button", { name: "Taller" })).toBeVisible();
     await paneBar.getByRole("button", { name: "Taller" }).click();
-    await expect(paneBar.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(paneBar.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "true");
 
     // Even at its tallest, the drawer leaves the columns their share of the
     // space they split, and nothing in the columns paints over the pane bar —
@@ -591,7 +591,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
       drawer: document.querySelector('[data-testid="code-terminal-drawer"]')?.getBoundingClientRect().height ?? 0,
     }));
     expect(split.body).toBeGreaterThanOrEqual(Math.floor((split.body + split.drawer) * 0.3) - 1);
-    await paneBar.getByRole("button", { name: "Shorter" }).click();
+    await paneBar.getByRole("button", { name: "Taller" }).click();
     await expect(paneBar.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -1203,7 +1203,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await tree.getByText("README.md", { exact: true }).click();
     await tree.getByText("flux.ts", { exact: true }).click();
     const tabs = page.getByTestId("code-open-file-tabs");
-    await tabs.getByRole("button", { name: "Close flux.ts" }).click();
+    await tabs.locator('.code-tabs__close[title="Close flux.ts"]').click();
     await expect(tabs.getByRole("tab", { name: /README\.md/ })).toBeFocused();
 
     // Sending keeps the field focused while the reply streams.
@@ -1267,7 +1267,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expectTabControlsPanel(page, fileTabs.getByRole("tab", { name: /flux\.ts/ }));
     // One tab stop for the strip: close buttons are clicked or reached by
     // Delete on the tab, which says so.
-    await expect(fileTabs.getByRole("button", { name: "Close flux.ts" })).toHaveAttribute("tabindex", "-1");
+    await expect(fileTabs.locator('.code-tabs__close[title="Close flux.ts"]')).toHaveAttribute("tabindex", "-1");
     await expect(fileTabs.getByRole("tab", { name: /flux\.ts/ })).toHaveAttribute("aria-keyshortcuts", "Delete");
 
     // Toggles keep one name; the state is in aria-checked / aria-pressed.

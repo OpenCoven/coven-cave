@@ -54,10 +54,10 @@ function PrChip({ pr }: { pr: NonNullable<SessionRow["pullRequest"]> }) {
 function ActivityDot({ row }: { row: SessionRow }) {
   const activity = codeSessionActivity(row);
   if (activity === "running") {
-    return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-presence)]" aria-label="running" />;
+    return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-presence)]" role="img" aria-label="running" />;
   }
   if (activity === "error") {
-    return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-danger)]" aria-label="failed" />;
+    return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-danger)]" role="img" aria-label="failed" />;
   }
   return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--border-hairline)]" aria-hidden />;
 }
