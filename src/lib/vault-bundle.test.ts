@@ -28,7 +28,7 @@ const shippedMap = fileURLToPath(new URL("../../vault.yaml", import.meta.url));
 const envKeys = [
   "COVEN_CAVE_BUNDLE", "COVEN_HOME", "COVEN_CAVE_HOME", "COVEN_VAULT_FILE",
   "COVEN_CAVE_ENV_FILE", "COVEN_CAVE_LOCAL_VAULT_FILE", "COVEN_CAVE_LOCAL_VAULT_KEY_FILE",
-  "CAVE_SETUP_TEST_KEY", "CAVE_SETUP_ENV_KEY", "CAVE_SETUP_FILE_KEY",
+  "CAVE_SETUP_TEST_KEY", "CAVE_SETUP_ENV_KEY", "CAVE_SETUP_FILE_KEY", "OPENAI_API_KEY",
 ];
 let previousEnv: Record<string, string | undefined>;
 let root: string;
@@ -80,13 +80,20 @@ test("fresh packaged startup never adopts or resolves app-shipped references", (
   assert.equal(readFileSync(join(bundle, "vault.yaml"), "utf8"), bundled);
 });
 
-test("the checked-in map also starts empty for source installs", () => {
+test("the source map seeds only an unconfigured encrypted slot", () => {
   delete process.env.COVEN_CAVE_BUNDLE;
   process.env.COVEN_VAULT_FILE = shippedMap;
-  assert.deepEqual(loadVaultMap(true), {});
-  assert.deepEqual(loadVaultMapForMutation(), {});
-  assert.deepEqual(getVaultMetadataStatuses(), []);
-  assert.deepEqual(calls, []);
+  const expectedMap = { OPENAI_API_KEY: { storage: "encrypted" } };
+  assert.deepEqual(loadVaultMap(true), expectedMap);
+  assert.deepEqual(loadVaultMapForMutation(), expectedMap);
+  assert.deepEqual(getVaultMetadataStatuses(), [{
+    key: "OPENAI_API_KEY", ref: null, description: null,
+    storage: "encrypted", required: false,
+    status: "unresolved", hasValue: false,
+    error: "encrypted local secret is missing",
+  }]);
+  assert.equal(resolveSecret("OPENAI_API_KEY"), undefined);
+  assert.deepEqual(calls, [], "an empty encrypted slot must not invoke a password manager");
 });
 
 test("saved user references survive restart and metadata inspection does not resolve them", () => {
