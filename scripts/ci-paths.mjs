@@ -3,8 +3,10 @@
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
+// The pinned Coven release is the Automations release canary's input: bumping
+// it must run that frontend validation lane (#5217).
 const FRONTEND_PATH =
-  /^(?:src\/|public\/|schemas\/research\/|server\.(?:mjs|ts)$|scripts\/|tests\/|package\.json$|pnpm-lock\.yaml$|next\.config|playwright\.config|tsconfig|eslint\.config|postcss\.config|\.github\/workflows\/)/;
+  /^(?:src\/|public\/|schemas\/research\/|server\.(?:mjs|ts)$|scripts\/|tests\/|fixtures\/coven-automations-release\/|package\.json$|pnpm-lock\.yaml$|next\.config|playwright\.config|tsconfig|eslint\.config|postcss\.config|\.github\/workflows\/)/;
 // Rust validation includes the doctest job and its contract test. Workflow
 // changes must exercise that job too; otherwise a broken command can merge
 // while only the frontend path-aware lanes run.

@@ -101,6 +101,17 @@ test("editing E2E's own browser installer runs E2E (#5722)", () => {
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).e2e, false);
 });
 
+test("bumping the pinned Coven release runs the Automations release canary lane (#5217)", () => {
+  assert.deepEqual(
+    classifyCiPaths([
+      "fixtures/coven-automations-release/package.json",
+      "fixtures/coven-automations-release/package-lock.json",
+    ]),
+    { frontend: true, rust: false, e2e: false, ios: false, docs: false },
+  );
+  assert.equal(classifyCiPaths(["fixtures/phase-4/weaves.json"]).frontend, false);
+});
+
 test("Rust-only changes avoid frontend and E2E work", () => {
   assert.deepEqual(classifyCiPaths(["src-tauri/src/main.rs"]), {
     frontend: false,
