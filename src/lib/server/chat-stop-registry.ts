@@ -38,6 +38,7 @@ export type ChatRunHandle = {
 
 const active = new Map<string, ChatRunEntry>();
 const activeByRunId = new Map<string, ChatRunEntry>();
+let entriesByHandle = new WeakMap<ChatRunHandle, ChatRunEntry>();
 // The send route can remain detached for ten minutes. Keep early runId Stops
 // beyond that maximum setup/detach budget, then recover abandoned capacity.
 // Never evict an unexpired Stop the route already acknowledged as queued.
@@ -99,6 +100,7 @@ export function registerChatRun(
     keys: [],
   };
   const entry: ChatRunEntry = { handle, kill };
+  entriesByHandle.set(handle, entry);
   if (handle.runId) {
     activeByRunId.set(handle.runId, entry);
     settledRunIds.delete(handle.runId);
@@ -120,8 +122,32 @@ export function registerChatRun(
   return handle;
 }
 
+/** Atomically admit a turn before asynchronous setup can launch a transport. */
+export function tryRegisterChatRun(
+  keys: Array<string | null | undefined>,
+  options: RegisterChatRunOptions = {},
+): ChatRunHandle | null {
+  if (keys.some((key) => key && chatRunBlocksNewTurn(key))) return null;
+  return registerChatRun(keys, () => {}, options);
+}
+
+/** Attach the transport to its admitted run, carrying any Stop from setup. */
+export function setChatRunStopHandler(handle: ChatRunHandle, kill: () => void): void {
+  const entry = entriesByHandle.get(handle);
+  if (!entry || !handle.projectionActive) throw new Error("Chat run admission has ended");
+  entry.kill = kill;
+  if (handle.stopRequested) {
+    try {
+      kill();
+    } catch {
+      /* child already gone */
+    }
+  }
+}
+
 /** Drop a run from the registry (child exited or request settled). */
 export function unregisterChatRun(handle: ChatRunHandle): void {
+  entriesByHandle.delete(handle);
   const projectionWasActive = handle.projectionActive;
   let changed = false;
   if (handle.runId && activeByRunId.get(handle.runId)?.handle === handle) {
@@ -176,6 +202,30 @@ export function addChatRunKeys(
 export function hasActiveChatRun(key: string): boolean {
   const entry = active.get(key);
   return Boolean(entry && entry.handle.projectionActive);
+}
+
+/**
+ * True when a live run under the conversation key must block a NEW turn for
+ * that conversation. A second send would launch another harness on the same
+ * native session and, by re-registering the key, hide the earlier run from
+ * Stop and the sessions list while its child keeps working. A run whose Stop
+ * was already requested is ending, so Stop-then-send still works.
+ */
+export function chatRunBlocksNewTurn(key: string): boolean {
+  const entry = active.get(key);
+  return Boolean(entry && entry.handle.projectionActive && !entry.handle.stopRequested);
+}
+
+/** Stable identity for an earlier turn refused by admission. Legacy runs
+ * without a per-send token cannot safely offer a delayed Stop action. */
+export function blockingChatRunId(key: string): string | null {
+  return chatRunBlocksNewTurn(key) ? active.get(key)?.handle.runId ?? null : null;
+}
+
+/** Only the admitted owner may publish a buffer under a shared alias. A
+ * stopped predecessor can finish setup after its successor already started. */
+export function chatRunOwnsKey(handle: ChatRunHandle, key: string): boolean {
+  return handle.projectionActive && active.get(key)?.handle === handle;
 }
 
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
@@ -238,6 +288,7 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
   const hadActiveRuns = active.size > 0;
   active.clear();
   activeByRunId.clear();
+  entriesByHandle = new WeakMap();
   pendingStops.clear();
   settledRunIds.clear();
   registryNow = options.now ?? (() => Date.now());

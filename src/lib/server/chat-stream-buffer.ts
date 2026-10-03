@@ -9,6 +9,7 @@
 // (same exposure as chat-stop-registry and the PTY scrollback ring in
 // server.ts).
 
+import { chatRunOwnsKey, type ChatRunHandle } from "./chat-stop-registry.ts";
 import type { RunBufferStatus } from "@/lib/chat-stream-health";
 import type { StreamEvent } from "@/lib/stream-events";
 
@@ -60,11 +61,13 @@ export type RunBufferHandle = {
 /**
  * Open a buffer for a starting run, reachable under every non-empty key
  * (runId, conversation id). Replaces any stale entry under the same keys —
- * a follow-up turn in the same conversation owns the key from then on.
+ * a follow-up turn in the same conversation owns the key from then on. With
+ * an admission owner, delayed setup cannot reclaim a successor's alias.
  */
 export function openRunBuffer(
   keys: Array<string | null | undefined>,
   hooks: RunStreamHooks | null = null,
+  owner?: ChatRunHandle,
 ): RunBufferHandle {
   const buffer: RunBuffer = {
     keys: [],
@@ -79,7 +82,7 @@ export function openRunBuffer(
     reapTimer: null,
   };
   for (const key of keys) {
-    if (!key) continue;
+    if (!key || (owner && !chatRunOwnsKey(owner, key))) continue;
     // A finished predecessor can still be reachable through another key
     // (normally its unique run id). Keep its reap timer armed: the callback
     // already checks map identity, so it will remove only predecessor
