@@ -302,6 +302,15 @@ const B = "/repo/src/b.ts";
     assert.doesNotThrow(() => store.update(B, "b2"));
     assert.equal(store.get(B).content, "b2");
     assert.deepEqual([...store.unbackedPaths()].sort(), [A, B].sort(), "a refused write is not backed up either");
+    // A draft kept once, whose next write is refused, keeps that copy.
+    const C = "/repo/src/c.ts";
+    storage.failWrites = false;
+    store.begin(C, "c", "v1");
+    store.update(C, "c2");
+    storage.failWrites = true;
+    store.update(C, "c3");
+    assert.equal(entryOf(storage.getItem(PREFIX + C)).content, "c2", "the last good copy survives a refused write");
+    assert.ok(store.unbackedPaths().has(C));
   }
 
   // Another window's draft for a file this page never wrote is left alone.

@@ -2663,6 +2663,174 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     });
     await expect.poll(warns, { timeout: 15_000 }).toBe(true);
   });
+
+  test("80. a link in a rendered README stays in the app: a project file opens here, a web link opens like other links", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (!path.endsWith("/README.md")) return route.fallback();
+      const content = "# Title\n\nSee [the source](src/flux.ts), [mail us](mailto:a@b.c) or [the site](https://example.com/x).\n";
+      return route.fulfill({ json: { ok: true, kind: "text", content, size: content.length } });
+    });
+    await page.route("https://example.com/**", (route) => route.fulfill({ contentType: "text/html", body: "EXTERNAL" }));
+    const desk = await openDesk(page);
+    await page.evaluate(() => {
+      const w = window as unknown as { __opened: string[] };
+      w.__opened = [];
+      window.addEventListener("cave:open-url-in-browser", (event) => w.__opened.push((event as CustomEvent<{ url: string }>).detail.url));
+    });
+    const viewer = desk.locator(".code-room__viewer");
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await viewer.getByRole("link", { name: "mail us" }).click();
+    await expect(viewer.getByRole("link", { name: "the source" }), "a link to nowhere in the app does nothing").toBeVisible();
+    await viewer.getByRole("link", { name: "the source" }).click();
+    await expect(viewer.locator(".workspace-rail__preview-name"), "a project file opens in the desk").toHaveText("flux.ts");
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await viewer.getByRole("link", { name: "the site" }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual(["https://example.com/x"]);
+    expect(new URL(page.url()).hostname, "the app was never replaced").toBe("127.0.0.1");
+  });
+
+  test("81. coming back to an edit whose file is gone says so and turns Save off", async ({ page }) => {
+    await base(page);
+    let gone = false;
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (route.request().method() === "GET" && gone && path.endsWith("flux.ts")) {
+        return route.fulfill({ status: 404, json: { ok: false, error: "file not found" } });
+      }
+      return route.fallback();
+    });
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.type("// draft");
+    await tree.getByText("README.md", { exact: true }).click();
+    await expect(desk.locator(".code-room__viewer .workspace-rail__preview-name")).toHaveText("README.md");
+    gone = true;
+    await page.getByTestId("code-open-file-tabs").getByRole("tab", { name: /flux\.ts/ }).click();
+    const viewer = desk.locator(".code-room__viewer");
+    await expect(viewer.getByText(/no longer on disk/i)).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(viewer.getByRole("button", { name: "Copy edit" })).toBeVisible();
+  });
+
+  test("82. a file the agent is editing keeps the reader's place", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let content = Array.from({ length: 400 }, (_, i) => `export const line${i} = ${i};`).join("\n");
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (route.request().method() !== "GET" || !path.endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content, size: content.length } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const wrap = desk.locator(".code-room__viewer .cave-code-wrap");
+    await expect(wrap).toBeVisible();
+    await wrap.evaluate((el) => { el.scrollTop = 2000; });
+    content = content.replace("export const line200 = 200;", "export const line200 = 2000;");
+    fixture.current = [{ ...CHANGED_FILES[0], insertions: 13, changeVersion: "200:200:401" }, CHANGED_FILES[1]];
+    await expect(desk.locator(".code-room__viewer").getByText("line200 = 2000")).toBeVisible({ timeout: 20_000 });
+    expect(await wrap.evaluate((el) => el.scrollTop), "still where the reader was").toBeGreaterThan(1500);
+  });
+
+  test("83. saving or committing from the keyboard keeps focus on the desk", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/project-file", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      return route.fulfill({ json: { ok: true, size: 80, version: "saved-1" } });
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/changes", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await held;
+      return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "abc1234def", branch: "feat/flux", branchCreated: false, onDefaultBranch: false, defaultBranch: "main" } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.type("// x");
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(desk.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+    await expect(desk.locator(".workspace-rail__preview-actions").getByRole("button", { name: "Edit", exact: true }), "focus goes to Edit").toBeFocused();
+    const rail = page.getByTestId("code-review-rail");
+    const message = rail.getByRole("textbox", { name: "Commit message" });
+    await message.fill("probe commit");
+    await message.press("ControlOrMeta+Enter");
+    await expect(rail.getByRole("button", { name: "Committing…" })).toBeVisible();
+    await expect(message, "the box keeps focus while the commit runs").toBeFocused();
+    release();
+    await expect(rail.locator("[data-commit-result]")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.activeElement !== document.body), { message: "and focus doesn't fall to the page" }).toBe(true);
+  });
+
+  test("84. the focused tree row is the treeitem, with its state", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/project-tree**", (route) => {
+      const root = new URL(route.request().url()).searchParams.get("root") ?? "";
+      if (root.endsWith("/src")) {
+        return route.fulfill({ json: { ok: true, entries: [{ name: "flux.ts", path: `${WORK_ROOT}/src/flux.ts`, isDir: false }] } });
+      }
+      return route.fulfill({ json: { ok: true, entries: [{ name: "src", path: `${WORK_ROOT}/src`, isDir: true }, { name: "README.md", path: `${WORK_ROOT}/README.md`, isDir: false }] } });
+    });
+    await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const src = tree.getByRole("treeitem", { name: /^src/ });
+    await src.focus();
+    await expect(src, "focus is on the treeitem itself").toBeFocused();
+    // The desk may have opened it already: it holds a changed file.
+    if ((await src.getAttribute("aria-expanded")) === "true") await page.keyboard.press("ArrowLeft");
+    await expect(src).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("ArrowRight");
+    await expect(src, "the focused element says it opened").toHaveAttribute("aria-expanded", "true");
+    await expect(src).toBeFocused();
+    const child = tree.getByRole("treeitem", { name: /^flux\.ts/ });
+    await expect(child).toHaveAttribute("aria-level", "2");
+    // Every treeitem's nearest ancestor with a role is the tree.
+    const parents = await tree.locator("[role=treeitem]").evaluateAll((items) =>
+      items.map((item) => {
+        let node = item.parentElement;
+        while (node && (!node.getAttribute("role") || node.getAttribute("role") === "none")) node = node.parentElement;
+        return node?.getAttribute("role");
+      }),
+    );
+    expect(new Set(parents)).toEqual(new Set(["tree"]));
+  });
+
+  test("85. with many sessions, the picker's list scrolls, and a poll leaves it where it is", async ({ page }) => {
+    const many = Array.from({ length: 24 }, (_, i) => mkSession({ ...OLDER, id: `s-${i}`, title: `Session number ${i}`, updated_at: `2026-06-1${i % 9}T10:00:00.000Z` }));
+    let tick = 0;
+    await base(page, [NEWEST, ...many]);
+    await page.route("**/api/sessions/list**", (route) => {
+      tick++;
+      return route.fulfill({ json: { ok: true, sessions: [{ ...NEWEST, updated_at: new Date(Date.parse(NEW_ISO) + tick * 1000).toISOString() }, ...many] } });
+    });
+    await openDesk(page);
+    await page.locator(".code-picker__trigger").first().click();
+    const list = page.locator(".code-picker__list");
+    await expect(list).toBeVisible();
+    const box = await list.evaluate((el) => ({ scrollable: el.scrollHeight > el.clientHeight, bottom: el.getBoundingClientRect().bottom }));
+    expect(box.scrollable, "the list is the scroller").toBe(true);
+    expect(box.bottom, "and fits on screen").toBeLessThanOrEqual(page.viewportSize()!.height);
+    await list.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    const bottom = await list.evaluate((el) => el.scrollTop);
+    const before = tick;
+    await expect.poll(() => tick, { timeout: 15_000 }).toBeGreaterThan(before + 1);
+    expect(await list.evaluate((el) => el.scrollTop), "a poll doesn't snap it back").toBe(bottom);
+    await expect(page.getByRole("option", { name: /Session number 23/ })).toBeInViewport();
+  });
+
+  test("86. a conflicted file reads as conflicted", async ({ page }) => {
+    await base(page, [NEWEST, OLDER], { current: [{ path: "src/flux.ts", status: "conflicted", insertions: 2, deletions: 1, changeVersion: "1:1:1" }] as typeof CHANGED_FILES });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail.locator('tr[data-grid-row="src/flux.ts"]').getByLabel("conflicted")).toHaveText("C");
+  });
 });
 
 test.describe("Coding Desk on a phone (#5756)", () => {
