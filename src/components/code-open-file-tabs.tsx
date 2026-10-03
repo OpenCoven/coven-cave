@@ -127,9 +127,11 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
               className="focus-ring code-tabs__close"
               // Out of the tab order, so the strip is one tab stop (#5737
               // review). Delete on the focused tab closes it, and the tab
-              // advertises that through aria-keyshortcuts.
+              // advertises that through aria-keyshortcuts. Out of the
+              // accessibility tree too (#5781): a tablist may own only tabs,
+              // so it's the pointer's way to close.
               tabIndex={-1}
-              aria-label={`Close ${label}`}
+              aria-hidden="true"
               title={`Close ${describeHiddenUnicode(label)}`}
               onClick={() => {
                 // Same as Delete on the tab: the next tab takes focus, so a

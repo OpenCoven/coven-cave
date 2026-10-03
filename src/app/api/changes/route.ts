@@ -106,8 +106,10 @@ function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stder
   return git(cwd, ["-c", "core.fsmonitor=false", "status", ...args]);
 }
 
-/** Network git (push) and `gh` can take longer than the read-only 10s budget. */
-const NET_TIMEOUT_MS = 60_000;
+/** Network git (push), `gh` and a commit's hooks can take longer than the
+ *  read-only 10s budget. Tests shorten it (`COVEN_CAVE_GIT_LONG_TIMEOUT_MS`)
+ *  to drive a hook past it. */
+const NET_TIMEOUT_MS = Number(process.env.COVEN_CAVE_GIT_LONG_TIMEOUT_MS) || 60_000;
 function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("git", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
 }
@@ -248,7 +250,7 @@ function stderrOf(err: unknown): string {
 
 type RootResolution =
   | { ok: true; repoRoot: string }
-  | { ok: false; status: number; error: string; notARepo?: boolean };
+  | { ok: false; status: number; error: string; notARepo?: boolean; missingRoot?: boolean };
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
  *  Resolves to the repo toplevel so status paths line up with diff/revert. */
@@ -278,7 +280,7 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     real = fs.realpathSync(path.resolve(allowedRoot));
     stat = fs.statSync(real);
   } catch {
-    return { ok: false, status: 404, error: "projectRoot does not exist" };
+    return { ok: false, status: 404, error: "projectRoot does not exist", missingRoot: true };
   }
   if (!stat.isDirectory()) {
     return { ok: false, status: 400, error: "projectRoot is not a directory" };
@@ -384,7 +386,10 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
  *  and a conflict is refused. */
 async function changedEntry(repoRoot: string, relPath: string): Promise<ChangedFile | null> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
-  return parsePorcelainZ(stdout).find((file) => file.path === relPath) ?? null;
+  // Either Unicode form names the file (#5781): the tree reads names as the
+  // disk stores them (NFD on macOS), while git reports them precomposed.
+  const wanted = relPath.normalize("NFC");
+  return parsePorcelainZ(stdout).find((file) => file.path.normalize("NFC") === wanted) ?? null;
 }
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
@@ -495,21 +500,29 @@ async function branchPr(repoRoot: string): Promise<NextResponse> {
   return NextResponse.json({ ok: true, branch, pr: null });
 }
 
-async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {
+async function diffFile(repoRoot: string, entry: ChangedFile): Promise<NextResponse> {
+  const relPath = entry.path;
   let diff = "";
-  if (await isTracked(repoRoot, relPath)) {
-    try {
-      // Diff vs HEAD so staged edits show up too (status lists them).
-      ({ stdout: diff } = await gitDiff(repoRoot, ["HEAD", "--", relPath]));
-    } catch {
-      // No HEAD yet (unborn branch) — fall back to worktree-vs-index.
-      ({ stdout: diff } = await gitDiff(repoRoot, ["--", relPath]));
-    }
+  if (entry.status !== "untracked") {
+    // Against HEAD so staged edits show up too, or before the first commit
+    // the empty tree (#5781): the index alone left a staged file's start out.
+    const base = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+      .then(({ stdout }) => stdout.trim())
+      .catch(async () => (await gitWithInput(repoRoot, ["hash-object", "-t", "tree", "--stdin"], "")).stdout.trim());
+    // A rename names both its paths, so it reads as a rename with its edit,
+    // not a whole new file (#5781).
+    const paths = entry.renamedFrom && !entry.copied ? [entry.renamedFrom, relPath] : [relPath];
+    // Against the worktree, which is what the desk commits: a `git rm`'d
+    // file shows its deletion, where the old tracked check sent it down the
+    // untracked path and read it as empty (#5781).
+    ({ stdout: diff } = await gitDiff(repoRoot, ["-M", base, "--", ...paths]));
   } else {
-    // Untracked: synthesize an all-additions diff. --no-index exits 1 when
-    // the files differ, which execFile reports as an error — recover stdout.
+    // Untracked: synthesize an all-additions diff, by its repo-relative path
+    // (cwd is the repo), so the headers don't carry the absolute one (#5781).
+    // --no-index exits 1 when the files differ, which execFile reports as an
+    // error — recover stdout.
     try {
-      ({ stdout: diff } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, absPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, relPath]));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };
       if (e.code === 1 && typeof e.stdout === "string") diff = e.stdout;
@@ -543,7 +556,12 @@ export async function GET(req: NextRequest) {
       // Clear, non-error state the panel can render distinctly.
       return NextResponse.json({ ok: true, repo: false, error: root.error });
     }
-    return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
+    // Said outright (#5781): a session whose folder is gone gets one notice,
+    // not a retry in each of the tree, the rail and the header.
+    return NextResponse.json(
+      { ok: false, error: root.error, ...(root.missingRoot ? { missingRoot: true } : {}) },
+      { status: root.status },
+    );
   }
 
   try {
@@ -572,8 +590,9 @@ export async function GET(req: NextRequest) {
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
-    if (!(await changedEntry(root.repoRoot, filePath))) return pathNotAllowed();
-    return await diffFile(root.repoRoot, filePath, abs);
+    const entry = await changedEntry(root.repoRoot, filePath);
+    if (!entry) return pathNotAllowed();
+    return await diffFile(root.repoRoot, entry);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
@@ -804,11 +823,13 @@ export async function POST(req: NextRequest) {
           if (!sameChangeKeys(snapshot.keys, expectedChanges)) return staleCommit();
         }
         const pathArgs = targetedPaths ? ["--", ...targetedPaths] : [];
+      // Untracked files count whatever `status.showUntrackedFiles` says
+      // (#5781): with it set to "no", a list of new files read as clean.
       const { stdout: statusOut } = await git(
         root.repoRoot,
         targetedPaths
-          ? ["--literal-pathspecs", "status", "--porcelain", ...pathArgs]
-          : ["status", "--porcelain"],
+          ? ["--literal-pathspecs", "-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=all", ...pathArgs]
+          : ["-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=all"],
       );
       if (!statusOut.trim()) {
         return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
@@ -846,6 +867,12 @@ export async function POST(req: NextRequest) {
           // file created after the check is never swept in. On stdin: a few
           // thousand deep paths overran the argument limit (#5756).
           const paths = verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]));
+          // An empty list would read as no pathspec, and `add -A` would
+          // stage everything (#5781).
+          if (paths.length === 0) {
+            await rollback();
+            return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
+          }
           await gitWithInput(
             root.repoRoot,
             ["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
@@ -870,6 +897,7 @@ export async function POST(req: NextRequest) {
         await rollback();
         throw err;
       }
+      let warning: string | undefined;
       try {
         await gitLong(
           root.repoRoot,
@@ -878,14 +906,33 @@ export async function POST(req: NextRequest) {
             : ["commit", "-S", "-m", message],
         );
       } catch (err) {
-        // Nothing staged, no new branch, HEAD where it was.
-        await rollback();
-        const detail = stderrOf(err);
-        const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
-        return NextResponse.json(
-          { ok: false, error: signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}` },
-          { status: 500 },
-        );
+        const timedOut = (err as { killed?: boolean }).killed === true;
+        // A commit that landed is a commit (#5781): a post-commit hook that
+        // outran the time limit was reported as a failure, and the rollback
+        // then reset the index under the new commit, so its own files read
+        // as deleted and untracked.
+        const head = await git(root.repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+          .then(({ stdout }) => stdout.trim(), () => null);
+        if (head && head !== start.oid) {
+          warning = timedOut
+            ? `the commit landed, but a hook after it was still running after ${NET_TIMEOUT_MS / 1000} seconds`
+            : `the commit landed, but git reported: ${stderrOf(err)}`;
+        } else {
+          // Nothing staged, no new branch, HEAD where it was.
+          await rollback();
+          if (timedOut) {
+            return NextResponse.json(
+              { ok: false, error: `the commit didn't finish within ${NET_TIMEOUT_MS / 1000} seconds, so nothing was committed; a commit hook may be slow` },
+              { status: 504 },
+            );
+          }
+          const detail = stderrOf(err);
+          const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
+          return NextResponse.json(
+            { ok: false, error: signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}` },
+            { status: 500 },
+          );
+        }
       }
       const { stdout: sha } = await git(root.repoRoot, ["rev-parse", "--short", "HEAD"]);
       const { stdout: headOid } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
@@ -897,6 +944,7 @@ export async function POST(req: NextRequest) {
         branchCreated,
         onDefaultBranch: branch === def,
         defaultBranch: def,
+        ...(warning ? { warning } : {}),
       });
       } catch (err) {
         return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });

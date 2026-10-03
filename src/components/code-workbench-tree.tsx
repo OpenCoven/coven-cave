@@ -83,7 +83,10 @@ export function CodeWorkbenchTree({
   const byAbsolutePath = useMemo(() => {
     const map = new Map<string, TreeDecoration>();
     for (const file of changes) {
-      map.set(absolutePath(base, file.path), {
+      // Keyed in one Unicode form (#5781): the tree lists names as the disk
+      // stores them (NFD on macOS), git reports them precomposed, and an
+      // accented name lost its letter and fell out of "changed only".
+      map.set(absolutePath(base, file.path).normalize("NFC"), {
         status: STATUS_LETTER[file.status] ?? "M",
         additions: file.insertions ?? 0,
         deletions: file.deletions ?? 0,
@@ -121,7 +124,7 @@ export function CodeWorkbenchTree({
   }, [base, changesStatus, structureKey]);
 
   const decorate = useCallback(
-    (path: string) => byAbsolutePath.get(path) ?? null,
+    (path: string) => byAbsolutePath.get(path.normalize("NFC")) ?? null,
     [byAbsolutePath],
   );
 
@@ -180,7 +183,9 @@ export function CodeWorkbenchTree({
                       {STATUS_LETTER[file.status]}
                     </span>
                     <span className="code-tree__changed-path" title={describeHiddenUnicode(file.path)}>
-                      <HiddenUnicodeText text={file.path} />
+                      {/* Isolated (#5781): truncated from the start, ".gitignore"
+                          read "gitignore." without it. */}
+                      <bdi className="[direction:ltr] [unicode-bidi:isolate]"><HiddenUnicodeText text={file.path} /></bdi>
                     </span>
                     {file.insertions ? (
                       <span className="code-tree__status-add">+{file.insertions}</span>

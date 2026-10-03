@@ -229,7 +229,9 @@ export function CodeTerminalDrawer({
   const maxHeightPx = clampCodeTerminalHeight(Number.MAX_SAFE_INTEGER, roomHeightPx);
 
   return (
-    <div className="code-term" data-open={open ? "true" : undefined}>
+    // The terminal's host (#5781): focus on the drawer's bar or in the drawer
+    // lets a shell that starts take it; focus anywhere else is kept.
+    <div className="code-term" data-open={open ? "true" : undefined} data-terminal-host="">
       <button
         type="button"
         className="focus-ring code-term__bar"
@@ -326,11 +328,14 @@ export function CodeTerminalDrawer({
               <button
                 type="button"
                 className="focus-ring code-terminal-workspace__action"
+                // One name, and the state in aria-pressed (#5781): the label
+                // also flipped to "Shorter", so a pressed "Shorter" read as two
+                // states at once. The caret and the pressed style show it.
                 aria-pressed={tall}
                 onClick={() => commitHeight(toggleCodeTerminalHeight(heightPx, roomHeightPx))}
               >
                 <Icon name={tall ? "ph:caret-down" : "ph:caret-up"} width={12} height={12} aria-hidden />
-                {tall ? "Shorter" : "Taller"}
+                Taller
               </button>
             }
           />

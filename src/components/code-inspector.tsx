@@ -171,6 +171,7 @@ export function CodeInspector({ row, onChanged }: { row: SessionRow; onChanged?:
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   }`}
                   disabled={b.current || busyBranch != null}
+                  aria-current={b.current ? "true" : undefined}
                   onClick={() => void switchBranch(b.name)}
                   title={b.current ? `${b.name} (checked out here)` : `Switch to ${b.name}`}
                 >
@@ -178,6 +179,8 @@ export function CodeInspector({ row, onChanged }: { row: SessionRow; onChanged?:
                   <span className="min-w-0 flex-1 truncate font-mono">{b.name}</span>
                   {busyBranch === b.name ? <span className="shrink-0">…</span> : null}
                   {b.current ? <span aria-hidden className="shrink-0 text-[var(--color-success)]">✓</span> : null}
+                  {/* Said, not only ticked (#5781). */}
+                  {b.current ? <span className="sr-only">, checked out here</span> : null}
                   {b.worktree ? (
                     <span
                       className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]"

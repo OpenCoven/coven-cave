@@ -779,15 +779,6 @@
 .workspace-rail__preview-conflict > svg { flex: none; color: var(--color-warning); }
 .workspace-rail__preview-conflict-text { flex: 1 1 16ch; min-width: 0; }
 .workspace-rail__preview-conflict-actions { display: inline-flex; flex: none; gap: var(--space-1); }
-.workspace-rail__preview-saveerr {
-  max-width: 32ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-2xs);
-  font-family: var(--font-sans, inherit);
-  color: var(--color-danger);
-}
 
 .workspace-rail__preview-body {
   flex: 1 1 auto;

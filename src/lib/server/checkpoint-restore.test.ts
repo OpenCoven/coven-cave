@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildCheckpointPatch, checkpointBaseOf, restoreCheckpointPatch } from "./checkpoint-restore.ts";
+import { buildCheckpointPatch, checkpointBaseOf, pathChunks, restoreCheckpointPatch } from "./checkpoint-restore.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "checkpoint-restore-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
@@ -271,6 +271,27 @@ for (const [key, value] of [
   const text = readFileSync(await checkpoint(repo), "utf8");
   assert.match(text, /^-one$/m, "the checkpoint holds the edit");
   assert.match(text, /^\+two$/m);
+}
+
+// ── 14. Thousands of long paths restore, past the argument limit (#5781) ───
+// Restore put every path on argv: about 10,000 files failed with E2BIG.
+{
+  const deep = ["a", "b", "c"].map((letter) => letter.repeat(200)).join("/");
+  const files = {};
+  for (let i = 0; i < 3000; i++) files[`${deep}/f-${i}-${"x".repeat(150)}.txt`] = `${i}\n`;
+  const { repo, git } = makeRepo(files);
+  for (const rel of Object.keys(files)) write(repo, rel, "edited\n");
+  const file = await checkpoint(repo);
+  git("checkout", "HEAD", "--", ".");
+  const outcome = await restore(repo, file);
+  assert.equal(outcome.restored.length, 3000, "every one comes back");
+  assert.equal(read(repo, Object.keys(files)[2999]), "edited\n");
+}
+{
+  const chunks = pathChunks(["a".repeat(60), "b".repeat(60), "c".repeat(60)], 130);
+  assert.deepEqual(chunks.map((chunk) => chunk.length), [2, 1], "chunks stay under their byte budget");
+  assert.deepEqual(pathChunks(["x".repeat(500)], 100), [["x".repeat(500)]], "a path longer than the budget still goes, alone");
+  assert.deepEqual(pathChunks([]), []);
 }
 
 console.log("checkpoint-restore: ok");

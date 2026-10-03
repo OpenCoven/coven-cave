@@ -83,7 +83,10 @@ export async function GET(req: NextRequest) {
       { status: 403 },
     );
   }
-  const depth = Math.min(Math.max(parseInt(depthStr ?? "1", 10) || 1, 0), 4);
+  // 0 is a real depth (#5781): `|| 1` turned it into 1, so a folder's read
+  // also listed every subfolder's contents, which nothing used.
+  const parsedDepth = Number.parseInt(depthStr ?? "1", 10);
+  const depth = Math.min(Math.max(Number.isNaN(parsedDepth) ? 1 : parsedDepth, 0), 4);
   const entries = readTree(allowedRoot, depth);
   return NextResponse.json({ ok: true, entries });
 }

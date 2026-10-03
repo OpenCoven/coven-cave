@@ -128,7 +128,7 @@ assert.match(
 );
 assert.match(
   projectTreeClient,
-  /new URLSearchParams\(\{ root: dirPath, depth: "1", familiarId \}\)/,
+  /new URLSearchParams\(\{ root: dirPath, depth: String\(depth\), familiarId \}\)/,
   "ProjectTree fetches should include familiarId",
 );
 assert.match(

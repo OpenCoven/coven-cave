@@ -54,7 +54,11 @@ assert.match(
   "routed opens apply their own focus and range after openPath clears stale context",
 );
 assert.match(tabs, /role="tablist" aria-label="Open files"/, "the strip is a real tablist");
-assert.match(tabs, /aria-label=\{`Close \$\{label\}`\}/, "each close control names its file");
+// Delete on the tab closes it, and says so; the close button is the pointer's
+// way, out of the tablist's accessibility tree (#5781), its tooltip naming
+// the file.
+assert.match(tabs, /aria-keyshortcuts="Delete"/, "the tab advertises Delete to close");
+assert.match(tabs, /aria-hidden="true"\s*title=\{`Close \$\{describeHiddenUnicode\(label\)\}`\}/, "each close control names its file to the pointer");
 assert.match(shortcuts, /\{ id: "next-file", label: "Next open file", combo: "Alt\+ArrowDown" \}/, "next-file is rebindable and defaults off the browser's tab-switch keys");
 assert.match(shortcuts, /\{ id: "previous-file", label: "Previous open file", combo: "Alt\+ArrowUp" \}/, "previous-file is rebindable");
 assert.match(workbench, /action === "next-file"[\s\S]{0,60}cycleTab\(1\)/, "the room wires next-file to the tab model");
@@ -222,7 +226,7 @@ assert.match(reviewRail, /aria-label="Widen the rail"/, "the widen toggle keeps 
 // #5737 review.
 assert.match(preview, /const current = launchpad && launchpad\.root === projectRoot \? launchpad : null;/, "the launchpad shows only the snapshot for the current root");
 assert.match(workbench, /column\?\.querySelector<HTMLElement>\('\[role="tree"\]'\) \?\?\s*column\?\.querySelector<HTMLElement>\("\.code-tree__changed-row"\);/, "the Files shortcut looks for the tree before the changed list, and the filter only as a last resort");
-assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,300}tabIndex=\{-1\}/, "close buttons are not tab stops");
+assert.match(tabs, /className="focus-ring code-tabs__close"[\s\S]{0,600}tabIndex=\{-1\}/, "close buttons are not tab stops");
 
 // ── Pass 4 high fixes (#5745) ────────────────────────────────────────────────
 // 1. The edit lives in the per-path draft store, so leaving a file keeps it.
@@ -392,7 +396,10 @@ assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(
 const pickerLow5 = await readFile(new URL("./code-session-picker.tsx", import.meta.url), "utf8");
 const treeLow5 = await readFile(new URL("./project-tree.tsx", import.meta.url), "utf8");
 // 15. A forced load mid-flight is queued, not dropped.
-assert.match(panelSrc, /if \(!opts\?\.shared\) queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
+assert.match(panelSrc, /if \(opts\?\.shared\) return;\s*queuedLoadRef\.current = true;/, "a forced load arriving mid-flight is queued");
+// …and waits for the run it queued (#5781).
+assert.match(panelSrc, /return queuedRunRef\.current\.promise;/);
+assert.match(panelSrc, /void loadAgainRef\.current\(\)\.finally\(\(\) => queued\?\.resolve\(\)\);/);
 // 16. Focus has somewhere to go after a confirmed revert.
 // It waits for the commit that re-enables Revert, not a frame (#5779).
 assert.match(panelSrc, /setRevertingPath\(null\);\s*setRevertFocus\(\{ path: file\.path, index: Math\.max\(0, index\) \}\);/);
@@ -414,5 +421,38 @@ assert.match(panelSrc, /aria-label="Pull request description \(optional\)"/);
 assert.match(preview, /if \(!target \|\| missingOnDiskRef\.current\) return;/, "saveEdit refuses a missing file, whichever path calls it");
 assert.match(preview, /\{draft\?\.conflict && !missingOnDisk \? \(/, "no Reload/Overwrite for a file that's gone");
 assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)\) return;/, "focus is restored only from the page");
+
+// ── Pass 6 low fixes (#5781) ─────────────────────────────────────────────────
+{
+  const terminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
+  const drawerLow6 = await readFile(new URL("./code-terminal-drawer.tsx", import.meta.url), "utf8");
+  const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
+  const inspector = await readFile(new URL("./code-inspector.tsx", import.meta.url), "utf8");
+  const roomCss = await readFile(new URL("../styles/globals/surface-code-room.css", import.meta.url), "utf8");
+  // 32. A terminal that starts takes focus only from nothing or its own host.
+  assert.match(terminal, /function mayTakeStartupFocus\(wrap: HTMLElement \| null\): boolean \{[\s\S]{0,300}current === document\.body\) return true;[\s\S]{0,200}closest\("\[data-terminal-host\]"\)/);
+  assert.equal(terminal.match(/if \(mayTakeStartupFocus\(wrap\)\) term\.focus\(\);/g)?.length, 2, "both transports start by the rule");
+  assert.match(terminal, /if \(first && !mayTakeStartupFocus\(wrapRef\.current\)\) return;/, "the first activation is a start too");
+  assert.match(drawerLow6, /className="code-term" data-open=\{open \? "true" : undefined\} data-terminal-host=""/);
+  // 36. State in words beside the colour.
+  assert.match(prPanel, /<span className="sr-only">\{`, \$\{\(run\.conclusion \?\? run\.status\)\.replace\(\/_\/g, " "\)\}`\}<\/span>/, "a check run says pass or fail");
+  assert.match(prPanel, /title=\{step\.detail\}>[\s\S]{0,200}<span className="sr-only">\{`, \$\{step\.detail\}`\}<\/span>/, "a stage step says its state");
+  assert.match(inspector, /aria-current=\{b\.current \? "true" : undefined\}/);
+  assert.match(roomCss, /@media \(forced-colors: active\) \{\s*\.code-picker__row\[data-active="true"\] \{ outline: 2px solid Highlight;/);
+  const previewLow6 = await readFile(new URL("./rail-file-preview.tsx", import.meta.url), "utf8");
+  const rowsLow6 = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
+  const railLow6 = await readFile(new URL("./code-session-rail.tsx", import.meta.url), "utf8");
+  const treeLow6b = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
+  // 33. Each announcement once: the missing file when it happens, a stored
+  // error not again on remount.
+  assert.match(previewLow6, /useEffect\(\(\) => \{\s*if \(missingOnDisk\) announce\("This file is no longer on disk\."\);\s*\}, \[missingOnDisk, announce\]\);/);
+  assert.match(panelSrc, /role=\{shownError !== errorAtMount \? "alert" : undefined\}/);
+  // 34. Graphics with a name are images; a label on a plain span isn't read.
+  assert.match(rowsLow6, /role="img"\s*aria-label=\{meta\.label\}/);
+  assert.equal(railLow6.match(/role="img" aria-label="(running|failed)"/g)?.length, 2);
+  // 37. Start-truncated paths are isolated.
+  assert.match(treeLow6b, /<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]"><HiddenUnicodeText text=\{file\.path\} \/><\/bdi>/);
+  assert.equal(previewLow6.match(/<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]">/g)?.length, 2, "the launchpad's name and folder");
+}
 
 console.log("code-desk-overhaul pins ok");

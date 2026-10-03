@@ -76,16 +76,37 @@ export async function fetchSessionFileDiff(
 }
 
 /** Post a mutation to the changes route and consistently surface route errors. */
+/** How long a changes action may go unanswered (#5781), above the server's
+ *  own limits: a commit or a pull request runs hooks and a push, and the rest
+ *  write a checkpoint first. The request lives in a module store, so one that
+ *  never answered (after a sleep, say) kept Commit and Create PR off until a
+ *  reload. */
+export const CHANGES_ACTION_TIMEOUT_MS: Readonly<Record<string, number>> = { commit: 180_000, "create-pr": 180_000 };
+export const CHANGES_DEFAULT_ACTION_TIMEOUT_MS = 150_000;
+
 export async function mutateSessionChanges<T extends ChangesResponse>(
   fetchImpl: ChangesFetch,
   projectRoot: string,
   action: string,
   body: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetchImpl("/api/changes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectRoot, action, ...body }),
-  });
-  return readChangesJson<T>(res);
+  const limit = CHANGES_ACTION_TIMEOUT_MS[action] ?? CHANGES_DEFAULT_ACTION_TIMEOUT_MS;
+  try {
+    const res = await fetchImpl("/api/changes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectRoot, action, ...body }),
+      signal: AbortSignal.timeout(limit),
+    });
+    return await readChangesJson<T>(res);
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new ChangesRequestError(
+        `no answer in ${limit / 1000} seconds. It may have happened anyway: check the changes before trying again`,
+        0,
+        false,
+      );
+    }
+    throw err;
+  }
 }

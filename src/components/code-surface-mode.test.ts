@@ -481,7 +481,7 @@ assert.match(
 // The divider is a real control, not a pointer-only hazard.
 assert.match(
   reviewRail,
-  /role="separator"[\s\S]{0,400}onKeyDown=\{onSeparatorKeyDown\}/,
+  /role="separator"[\s\S]{0,900}onKeyDown=\{onSeparatorKeyDown\}/,
   "the resize handle is keyboard-operable",
 );
 

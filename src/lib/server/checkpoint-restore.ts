@@ -254,6 +254,30 @@ function splitZ(stdout: string): string[] {
   return stdout.split("\0").filter((part) => part.length > 0);
 }
 
+/**
+ * Paths in groups small enough for one command line (#5781): restore put
+ * every changed path on argv, and about 10,000 of them failed with E2BIG.
+ * 128 KB is Linux's limit for a single argument and well under every OS's
+ * total.
+ */
+export function pathChunks(paths: readonly string[], maxBytes = 128 * 1024): string[][] {
+  const out: string[][] = [];
+  let current: string[] = [];
+  let size = 0;
+  for (const rel of paths) {
+    const bytes = Buffer.byteLength(rel) + 1;
+    if (current.length > 0 && size + bytes > maxBytes) {
+      out.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(rel);
+    size += bytes;
+  }
+  if (current.length > 0) out.push(current);
+  return out;
+}
+
 /** `<mode> <type|oid…>\t<path>` records from ls-tree / ls-files -s, by path. */
 async function blobsAt(
   repoRoot: string,
@@ -264,18 +288,22 @@ async function blobsAt(
   if (paths.length === 0) return out;
   if ("tree" in source) {
     if (source.tree === null) return out; // an unborn branch has no files
-    const { stdout } = await git(repoRoot, ["--literal-pathspecs", "ls-tree", "-z", source.tree, "--", ...paths]);
-    for (const record of splitZ(stdout)) {
-      const tab = record.indexOf("\t");
-      const [mode, , oid] = record.slice(0, tab).split(" ");
-      out.set(record.slice(tab + 1), `${mode}:${oid}`);
+    for (const chunk of pathChunks(paths)) {
+      const { stdout } = await git(repoRoot, ["--literal-pathspecs", "ls-tree", "-z", source.tree, "--", ...chunk]);
+      for (const record of splitZ(stdout)) {
+        const tab = record.indexOf("\t");
+        const [mode, , oid] = record.slice(0, tab).split(" ");
+        out.set(record.slice(tab + 1), `${mode}:${oid}`);
+      }
     }
   } else {
-    const { stdout } = await git(repoRoot, ["--literal-pathspecs", "ls-files", "-s", "-z", "--", ...paths], { GIT_INDEX_FILE: source.index });
-    for (const record of splitZ(stdout)) {
-      const tab = record.indexOf("\t");
-      const [mode, oid] = record.slice(0, tab).split(" ");
-      out.set(record.slice(tab + 1), `${mode}:${oid}`);
+    for (const chunk of pathChunks(paths)) {
+      const { stdout } = await git(repoRoot, ["--literal-pathspecs", "ls-files", "-s", "-z", "--", ...chunk], { GIT_INDEX_FILE: source.index });
+      for (const record of splitZ(stdout)) {
+        const tab = record.indexOf("\t");
+        const [mode, oid] = record.slice(0, tab).split(" ");
+        out.set(record.slice(tab + 1), `${mode}:${oid}`);
+      }
     }
   }
   return out;
@@ -304,10 +332,10 @@ async function worktreeBlobs(repoRoot: string, paths: string[], contain: Restore
       out.set(rel, "other:"); // a directory where the checkpoint has a file
     }
   }
-  if (regular.length > 0) {
-    const { stdout } = await git(repoRoot, ["hash-object", "--", ...regular]);
+  for (const chunk of pathChunks(regular)) {
+    const { stdout } = await git(repoRoot, ["hash-object", "--", ...chunk]);
     const oids = stdout.trim().split("\n");
-    regular.forEach((rel, index) => out.set(rel, `${out.get(rel)}${oids[index]}`));
+    chunk.forEach((rel, index) => out.set(rel, `${out.get(rel)}${oids[index]}`));
   }
   return out;
 }
@@ -397,7 +425,8 @@ export async function restoreCheckpointPatch(
     if (write.length > 0) {
       // From the throwaway index: right content, mode and symlinks, and the
       // real index never learns about it.
-      await git(repoRoot, ["checkout-index", "-f", "--", ...write], env);
+      // On stdin, past the argument limit (#5781).
+      await gitWithInput(repoRoot, ["checkout-index", "-f", "-z", "--stdin"], write.join("\0"), env);
     }
     for (const rel of remove) {
       const abs = options.contain(rel);

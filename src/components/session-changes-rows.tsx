@@ -23,6 +23,8 @@ function StatusChip({ status }: { status: FileStatus }) {
   return (
     <span
       title={meta.label}
+      // A graphic with a name (#5781): a label on a plain span isn't read.
+      role="img"
       aria-label={meta.label}
       className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[length:var(--text-2xs)] font-semibold"
       style={{
@@ -287,7 +289,7 @@ export const FileRow = memo(function FileRow({
           ) : (
             <>
               <div className="max-h-80 overflow-auto">
-                <SyntaxBlock text={diffState.diff} lang="diff" className="text-[length:var(--text-xs)]" />
+                <SyntaxBlock text={diffState.diff} lang="diff" className="text-[length:var(--text-xs)]" label={file.path} />
               </div>
               {diffState.truncated ? (
                 <div className="pt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
