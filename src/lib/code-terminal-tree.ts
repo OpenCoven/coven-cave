@@ -229,7 +229,13 @@ export function resolveFocusedPane(node: TerminalLayoutNode, focusedPaneId: stri
 // Pane ids name PTY threads (`cave.code.<session>.<pane>`), so they must never
 // repeat across page loads (#5745): a counter that restarted at 1 after a
 // reload gave a new split the previous load's orphaned shell and scrollback.
-const PANE_ID_PREFIX = `pane-${Math.random().toString(36).slice(2, 8)}`;
+// From the platform's CSPRNG (#5751 review): the id names a shell thread, so
+// it is drawn the way any identifier that reaches a PTY should be.
+const PANE_ID_PREFIX = (() => {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  return `pane-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+})();
 let paneCounter = 0;
 function defaultPaneId(): string {
   paneCounter += 1;

@@ -288,4 +288,9 @@ assert.match(workbench, /\{prFull \? \(\s*<LazyPrReader repo=\{prFull\.repo\} nu
 // 14. A reveal fetch's answer always lands.
 assert.match(treeSrc, /void fetchChildren\(entry\.path, familiarId\)\.then\(\(fetched\) => \{\s*setFetching\(false\);[\s\S]{0,200}setChildren\(\(current\) => current \?\? fetched\);/, "the reveal never drops its answer");
 
+// Pane ids name PTY threads: drawn from the CSPRNG, never Math.random (#5751 review).
+const terminalTreeSrc = await readFile(new URL("../lib/code-terminal-tree.ts", import.meta.url), "utf8");
+assert.match(terminalTreeSrc, /const PANE_ID_PREFIX = \(\(\) => \{[\s\S]{0,120}globalThis\.crypto\.getRandomValues\(bytes\);/, "the pane-id prefix comes from crypto.getRandomValues");
+assert.doesNotMatch(terminalTreeSrc, /Math\.random/, "no Math.random in pane ids");
+
 console.log("code-desk-overhaul pins ok");
