@@ -1844,22 +1844,29 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
     await base(page, [NEWEST, OLDER], fixture);
     let srcChildren = [{ name: "flux.ts", path: `${WORK_ROOT}/src/flux.ts`, isDir: false }];
-    let rootChildren = [
-      { name: "src", path: `${WORK_ROOT}/src`, isDir: true },
-      { name: "README.md", path: `${WORK_ROOT}/README.md`, isDir: false },
-    ];
+    let readme = true;
+    // As the real route answers at depth 1: a top-level folder carries its
+    // children, and starts open.
     await page.route("**/api/project-tree**", (route) => {
       const root = new URL(route.request().url()).searchParams.get("root") ?? "";
-      return route.fulfill({ json: { ok: true, entries: root === `${WORK_ROOT}/src` ? srcChildren : rootChildren } });
+      if (root === `${WORK_ROOT}/src`) return route.fulfill({ json: { ok: true, entries: srcChildren } });
+      return route.fulfill({
+        json: {
+          ok: true,
+          entries: [
+            { name: "src", path: `${WORK_ROOT}/src`, isDir: true, children: srcChildren },
+            ...(readme ? [{ name: "README.md", path: `${WORK_ROOT}/README.md`, isDir: false }] : []),
+          ],
+        },
+      });
     });
     await openDesk(page);
     const tree = page.getByTestId("code-workbench-tree");
-    await tree.getByText("src", { exact: true }).click();
     await expect(tree.getByText("flux.ts", { exact: true })).toBeVisible();
 
     // The agent creates src/new.ts and deletes README.md.
     srcChildren = [...srcChildren, { name: "new.ts", path: `${WORK_ROOT}/src/new.ts`, isDir: false }];
-    rootChildren = rootChildren.filter((entry) => entry.name !== "README.md");
+    readme = false;
     fixture.current = [
       ...CHANGED_FILES,
       { path: "src/new.ts", status: "untracked", insertions: 3, deletions: 0, changeVersion: "5:5:5" },
