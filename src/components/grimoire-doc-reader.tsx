@@ -227,6 +227,8 @@ export function GrimoireDocReader({
             </>
           }
           collapsibleSections={false}
+          // One remembered width for every Library document (#5769).
+          resizeKey="library"
           scrollLabel="Document reader"
           onScrollProgress={onScrollProgress}
           renderLede={(block) => <MarkdownReaderBlock block={block} blockKey="grimoire-lede" />}

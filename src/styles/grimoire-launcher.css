@@ -130,8 +130,72 @@
    * set --accent to a surface tone, which made those disappear. */
   --document-reader-accent: var(--accent-presence);
   --document-reader-accent-soft: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  /* 68ch of the reader's base font lands near 70 characters of body text. */
-  --document-reader-prose-measure: var(--cave-reading-width, 68ch);
+  /* Full width by default, capped at max-w-screen-2xl (96rem) so lines stay
+   * bounded on very wide windows. Aa → Width → Medium/Narrow and the column's
+   * drag handle narrow it (#5769). */
+  --document-reader-prose-measure: var(--cave-reading-width, 96rem);
+  /* Tables and code break out to at least the shared wide track, and never
+   * render narrower than the prose around them. */
+  --document-reader-wide-measure: min(
+    max(88ch, var(--document-reader-prose-measure)),
+    calc(
+      100cqw - var(--document-reader-column-gutter) -
+        var(--document-reader-column-gutter)
+    )
+  );
+}
+
+/* Direct measure resize (#5769). Only readers given a `resizeKey` render the
+ * handle, and the Library is the only one today, so its styles live in the
+ * Library's own sheet rather than the root-loaded document-reader.css. Move
+ * them with the next opt-in. The handle sits in the right gutter, centred on
+ * the column edge, and spans the whole column so it is reachable wherever the
+ * person has scrolled. */
+.document-reader--resizable .document-reader__column {
+  position: relative;
+}
+
+.document-reader__measure-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--document-reader-column-gutter) * -0.5 - var(--space-2));
+  width: calc(var(--space-2) * 2);
+  border-radius: var(--radius-sm);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.document-reader__measure-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.document-reader__measure-handle:hover::after,
+.document-reader__measure-handle:focus-visible::after,
+.document-reader__measure-handle[data-dragging]::after {
+  background: var(--document-reader-accent);
+}
+
+/* Too narrow to need a measure: the column already fills the pane. */
+@container document-reader (max-width: 40rem) {
+  .document-reader__measure-handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .document-reader__measure-handle::after {
+    transition: none;
+  }
 }
 
 /* The app's reset strips list markers; numbered findings need their numbers. */
