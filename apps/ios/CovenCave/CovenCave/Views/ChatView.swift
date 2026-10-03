@@ -499,8 +499,9 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
             if let target = note.object as? ZoomTarget { zoomTarget = target }
         }
-        .fullScreenCover(item: $zoomTarget) { target in
+        .fullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
             ZoomableContentView(target: target)
+                .onAppear { CavePerformanceFixture.recordZoomFootprint(.presented) }
         }
         .sheet(isPresented: $showSessionPicker) {
             if let familiarId = thread.familiarIds.first,
