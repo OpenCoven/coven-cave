@@ -12,3 +12,12 @@
   background: var(--accent-presence) !important;
   color: var(--accent-presence-foreground) !important;
 }
+
+/* Forced colours drop the selected row's fill, and every row draws the same
+   border there (#5745): an outline in the system highlight marks the file. */
+@media (forced-colors: active) {
+  .ui-btn[data-tree-row][data-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

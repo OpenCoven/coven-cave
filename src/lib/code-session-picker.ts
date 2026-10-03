@@ -53,9 +53,14 @@ export type CodeSessionPickerResult = {
   /**
    * True when a non-empty query matched nothing. The caller offers to start a
    * session named after the query — the frame's Enter affordance. An empty
-   * query that matches nothing is just an empty workspace, not a miss.
+   * query that matches nothing is just an empty workspace, not a miss. Only
+   * a query that matches nothing in ANY group is a miss (#5745): one hidden by
+   * the chosen group chip is not a reason to start a duplicate session.
    */
   offersCreate: boolean;
+  /** Matches the chosen group chip hides. More than zero while the selected
+   *  group shows none means "look in the other groups", not "create". */
+  hiddenByGroup: number;
 };
 
 function projectLabel(root: string): string {
@@ -116,7 +121,14 @@ export function codeSessionPickerResult(
   }
 
   const count = groups.reduce((total, group) => total + group.sessions.length, 0);
-  return { groups, chips, count, offersCreate: count === 0 && query.trim().length > 0 };
+  const hiddenByGroup = visible.length - count;
+  return {
+    groups,
+    chips,
+    count,
+    offersCreate: visible.length === 0 && query.trim().length > 0,
+    hiddenByGroup,
+  };
 }
 
 /** Short state word under a picker row — the frame's `running` / `failed` / `idle`. */

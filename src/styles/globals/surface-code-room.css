@@ -21,6 +21,7 @@
 .code-terminal-workspace__bar {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
@@ -33,6 +34,11 @@
 }
 .code-terminal-workspace__actions {
   display: flex;
+  /* Wrap rather than run off a narrow desk (#5745): at 320px the drawer's
+     last control sat past the edge of the screen. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
   align-items: center;
   gap: var(--space-1);
 }
@@ -1422,3 +1428,12 @@
    preview exactly as it did as the viewer's own child. */
 .code-room__viewer-panel { display: flex; flex-direction: column; }
 .code-room__viewer-panel > * { flex: 1; min-width: 0; min-height: 0; }
+
+/* Forced colours drop the fill that marks the current session (#5745); an
+   outline in the system highlight keeps it findable. */
+@media (forced-colors: active) {
+  [data-code-session-id][aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

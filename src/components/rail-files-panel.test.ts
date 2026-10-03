@@ -63,7 +63,7 @@ assert.match(preview, /useAnnouncer/, "announces save success/failure to assisti
 
 // Empty-state launchpad: the main pane offers changed files as one-click
 // opens instead of sitting dead until the tree is used.
-assert.match(preview, /\/api\/changes\?projectRoot=/, "the empty state fetches the working-tree status");
+assert.match(preview, /void fetchChangesSummary\(projectRoot\)/, "the empty state reads the working-tree status through the shared summary gate (#5745)");
 assert.match(preview, /f\.status !== "deleted"/, "deleted files are excluded — nothing to preview");
 assert.match(preview, /const LAUNCHPAD_CAP = 6/, "the launchpad caps its list");
 assert.match(

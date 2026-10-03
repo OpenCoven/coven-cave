@@ -11,6 +11,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
 import { FILE_CHANGED_ON_DISK, fileEditDrafts } from "@/lib/file-edit-drafts";
+import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
@@ -146,9 +147,11 @@ export function RailFilePreview({
   useEffect(() => {
     if (path || !projectRoot || !onOpenPath) return;
     let cancelled = false;
-    void fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" })
-      .then(async (res) => {
-        const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
+    // Through the shared summary gate (#5745): the desk's own list is read at
+    // the same moment, and one request answers both.
+    void fetchChangesSummary(projectRoot)
+      .then(({ json: raw }) => {
+        const json = raw as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null };
         if (cancelled || !json.ok || !Array.isArray(json.files)) return;
         setLaunchpad({
           root: projectRoot,
