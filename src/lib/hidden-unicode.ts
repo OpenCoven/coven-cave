@@ -19,13 +19,16 @@
 const FORMAT = "\\u00ad\\u061c\\u180e\\u200b\\u200e\\u200f\\u2028-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff\\ufff9-\\ufffb";
 
 /** In a name, every control character counts, newline and tab included. */
-const NAME_HIDDEN = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${FORMAT}]`, "g");
+const NAME_HIDDEN = `[\\u0000-\\u001f\\u007f-\\u009f${FORMAT}]`;
 /** In code, tab and line breaks are ordinary. */
-const CODE_HIDDEN = new RegExp(`[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f${FORMAT}]`, "g");
+const CODE_HIDDEN = `[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f${FORMAT}]`;
 
 export type HiddenUnicodeKind = "name" | "code";
 
-const patternFor = (kind: HiddenUnicodeKind) => (kind === "name" ? NAME_HIDDEN : CODE_HIDDEN);
+/** A fresh pattern per call (#5785 review): a shared global regex kept its
+ *  `lastIndex` after a test, and `matchAll` starts from it, so a split right
+ *  after a check skipped the first hidden character. */
+const patternFor = (kind: HiddenUnicodeKind, flags = "g") => new RegExp(kind === "name" ? NAME_HIDDEN : CODE_HIDDEN, flags);
 
 /** `U+202E` for a hidden character. */
 export function codePointLabel(char: string): string {
@@ -35,8 +38,7 @@ export function codePointLabel(char: string): string {
 /** Whether `text` holds a character the reader can't see. A byte-order mark
  *  at the very start of a file is ordinary and doesn't count. */
 export function hasHiddenUnicode(text: string, kind: HiddenUnicodeKind): boolean {
-  const pattern = patternFor(kind);
-  pattern.lastIndex = 0;
+  const pattern = patternFor(kind, "");
   const body = kind === "code" && text.startsWith("﻿") ? text.slice(1) : text;
   return pattern.test(body);
 }
@@ -61,9 +63,7 @@ export function splitHiddenUnicode(text: string, kind: HiddenUnicodeKind): Hidde
 /** `text` with each hidden character replaced by its code point in angle
  *  brackets, for a tooltip or other plain-text attribute. */
 export function describeHiddenUnicode(text: string, kind: HiddenUnicodeKind = "name"): string {
-  const pattern = patternFor(kind);
-  pattern.lastIndex = 0;
-  return text.replace(pattern, (char) => `⟨${codePointLabel(char)}⟩`);
+  return text.replace(patternFor(kind), (char) => `⟨${codePointLabel(char)}⟩`);
 }
 
 /** The markup for one hidden character: the character itself, isolated, with
@@ -79,6 +79,5 @@ function hiddenCharHtml(char: string): string {
  * would land inside the attribute value.
  */
 export function revealHiddenUnicodeInHtml(html: string): string {
-  CODE_HIDDEN.lastIndex = 0;
-  return html.replace(CODE_HIDDEN, hiddenCharHtml);
+  return html.replace(patternFor("code"), hiddenCharHtml);
 }

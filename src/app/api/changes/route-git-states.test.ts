@@ -44,7 +44,8 @@ let count = 0;
 function repo({ commit = true } = {}) {
   const dir = path.join(workspace, `repo-${count++}`);
   mkdirSync(dir);
-  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  // No editor: `rebase --continue` keeps the pick's message.
+  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, GIT_EDITOR: "true" } });
   git("init", "-q", "-b", "main");
   writeFileSync(path.join(dir, "f.txt"), "base\n");
   if (commit) {

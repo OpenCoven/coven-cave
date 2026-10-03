@@ -19,7 +19,7 @@ let count = 0;
 function conflictingRepo() {
   const repo = path.join(scratch, `repo-${count++}`);
   mkdirSync(repo);
-  const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, GIT_EDITOR: "true" } });
   const gitFails = (...args) => assert.throws(() => git(...args), undefined, `git ${args.join(" ")} stops on the conflict`);
   git("init", "-q", "-b", "main");
   git("config", "user.email", "test@example.com");

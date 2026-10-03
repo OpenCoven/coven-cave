@@ -175,7 +175,7 @@ export function CodeSessionRail({
                     aria-current={selected ? "true" : undefined}
                     data-code-session-id={row.id}
                     aria-label={open ? undefined : `Open ${title} in ${group.label}, ${ACTIVITY_A11Y[activity]}`}
-                    title={open ? undefined : title}
+                    title={open ? undefined : describeHiddenUnicode(title)}
                     className={
                       open
                         ? `focus-ring-inset flex w-full flex-col gap-0.5 px-3 py-1.5 text-left ${

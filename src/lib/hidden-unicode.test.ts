@@ -43,7 +43,15 @@ assert.equal(hasHiddenUnicode("bell\u0007", "code"), true);
 assert.equal(hasHiddenUnicode("﻿const a = 1;", "code"), false);
 assert.equal(hasHiddenUnicode("const a﻿ = 1;", "code"), true);
 
-// The pattern is global: repeated calls don't carry `lastIndex` between them.
+// No state carries between calls (#5785 review): a check, then a split of the
+// same text, as SyntaxBlock's fallback does, still finds the first character.
+const trojan = "/*‮ } ⁦if (isAdmin)⁩ */";
+assert.equal(hasHiddenUnicode(trojan, "code"), true);
+assert.deepEqual(
+  splitHiddenUnicode(trojan, "code").filter((segment) => segment.hidden).map((segment) => segment.hidden && segment.label),
+  ["U+202E", "U+2066", "U+2069"],
+);
+assert.equal(describeHiddenUnicode(trojan, "code"), "/*⟨U+202E⟩ } ⟨U+2066⟩if (isAdmin)⟨U+2069⟩ */");
 for (let i = 0; i < 3; i++) assert.equal(hasHiddenUnicode("a‮b", "name"), true);
 
 // In HTML, only text changes: each character keeps its place inside an
