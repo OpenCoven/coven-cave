@@ -10,6 +10,7 @@ const {
   requestOrQueueChatStop,
   addChatRunKeys,
   hasActiveChatRun,
+  chatRunBlocksNewTurn,
   markChatRunTransportSettled,
   markChatRunProjectionSettled,
   pendingChatStopCountForTests,
@@ -388,6 +389,34 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   assert.equal(pendingChatStopCountForTests(), 0, "settlement leaves no pending intent leak");
   resetChatStopRegistryForTests();
   assert.equal(settledChatRunCountForTests(), 0, "test reset clears tombstones");
+}
+
+// One live turn per conversation: a live run blocks a new send for its
+// conversation until its Stop is requested or its projection settles. A
+// follow-up registration must not make the earlier run unreachable first.
+{
+  resetChatStopRegistryForTests();
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), false, "unknown conversation does not block");
+  let kills = 0;
+  const earlier = registerChatRun(["earlier-run", "busy-chat"], () => {
+    kills += 1;
+  }, { runId: "earlier-run" });
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), true, "a live run blocks a new turn by conversation id");
+  assert.equal(chatRunBlocksNewTurn("earlier-run"), true, "the run id alias reports the same run");
+  assert.equal(chatRunBlocksNewTurn("other-chat"), false, "another conversation is unaffected");
+  assert.equal(requestChatStop("busy-chat"), true, "the earlier run stays reachable by conversation id");
+  assert.equal(kills, 1);
+  assert.equal(chatRunBlocksNewTurn("busy-chat"), false, "a stopping run no longer blocks Stop-then-send");
+  unregisterChatRun(earlier);
+
+  const settling = registerChatRun(["settling-run", "settling-chat"], () => {}, { runId: "settling-run" });
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), true);
+  markChatRunTransportSettled(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), true, "persistence after the child exits still blocks");
+  markChatRunProjectionSettled(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), false, "a projection-settled run (done sent) does not block");
+  unregisterChatRun(settling);
+  assert.equal(chatRunBlocksNewTurn("settling-chat"), false, "an unregistered run does not block");
 }
 
 resetChatStopRegistryForTests();

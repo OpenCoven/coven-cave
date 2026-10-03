@@ -365,3 +365,22 @@ assert.match(
   "the chat empty-state picker receives the throwing creator",
 );
 assert.match(source, /\{overflowAddProject\.addError \? \(/, "the chat overflow picker renders add-project failures");
+
+// 409 chat_run_active: the server refused a second live turn for this chat.
+// The strip offers to stop the earlier run (by conversation id, only for the
+// chat on screen) and keeps the message for Retry.
+assert.match(
+  source,
+  /res\.status === 409 && \/chat_run_active\/\.test\(message\) && liveGeneration\.sessionId[\s\S]*?setEarlierRunSessionId\(liveGeneration\.sessionId\)/,
+  "a chat_run_active refusal records which chat still has an earlier run",
+);
+assert.match(
+  source,
+  /const stopEarlierRun = async \(\) => \{[\s\S]*?fetch\("\/api\/chat\/stop"[\s\S]*?body: JSON\.stringify\(\{ sessionId \}\)/,
+  "stopping the earlier run targets it by conversation id",
+);
+assert.match(
+  source,
+  /onStopEarlierRun=\{\s*earlierRunSessionId && earlierRunSessionId === sessionId/,
+  "the stop action is offered only for the chat that was refused",
+);
