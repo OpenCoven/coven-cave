@@ -8,9 +8,20 @@ assert.match(source, /await stampChangedFiles\(files, \(filePath\) => resolveCon
 
 assert.match(
   source,
-  /function gitDiff[\s\S]*\["diff", "--no-ext-diff", "--no-textconv", \.\.\.args\]/,
-  "git diff calls must disable external diff helpers and textconv filters",
+  /function gitDiff[\s\S]*\["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", \.\.\.args\]/,
+  "git diff calls must disable external diff helpers and textconv filters, and read paths literally (#5756)",
 );
+// Revert and the tracked check read paths literally (#5756): a bracketed
+// path was a glob that also matched, and reverted, its siblings.
+for (const command of ['"checkout", "HEAD", "--", body.path', '"rm", "-f", "--", body.path', '"clean", "-f", "--", body.path', '"ls-files", "--error-unmatch", "--", relPath']) {
+  assert.ok(source.includes(`["--literal-pathspecs", ${command}]`), `literal pathspecs for ${command}`);
+}
+// A refused or failed commit rolls back staging and any branch it made (#5756).
+assert.match(source, /const start = await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\);/);
+assert.match(source, /restamped\.some[\s\S]{0,200}await rollback\(\);\s*return staleCommit\(\);/, "the stale refusal rolls back");
+assert.match(source, /\} catch \(err\) \{\s*\/\/ Nothing staged, no new branch, HEAD where it was\.\s*await rollback\(\);/, "a failed commit rolls back");
+// Create PR's refusals because the branch moved are marked stale (#5756).
+assert.equal((source.match(/\{ ok: false, stale: true, error: (?:`the project moved|"the branch changed after the commit)/g) ?? []).length, 2);
 
 assert.doesNotMatch(
   source,
@@ -234,7 +245,8 @@ assert.match(source, /const \{ stdout: indexTree \} = await git\(root\.repoRoot,
 assert.match(source, /\["--literal-pathspecs", "add", "-A", "--", \.\.\.verified\.files\.flatMap/, "staging is limited to the verified files and their rename sources");
 assert.match(
   source,
-  /if \(verified\) \{[\s\S]*?stampChangedFiles\(restamped[\s\S]*?changeVersion !== verified\.files\[index\]\.changeVersion[\s\S]*?\["read-tree", verified\.indexTree\][\s\S]*?return staleCommit\(\);[\s\S]*?gitLong\(/,
+  // The index captured as verified.indexTree comes back through rollback() (#5756).
+  /if \(verified\) \{[\s\S]*?stampChangedFiles\(restamped[\s\S]*?changeVersion !== verified\.files\[index\]\.changeVersion[\s\S]*?await rollback\(\);\s*return staleCommit\(\);[\s\S]*?gitLong\(/,
   "a write that reached the index after the check restores it and refuses, before any commit",
 );
 assert.match(source, /expectedChanges === "invalid"[\s\S]{0,200}status: 400/, "a malformed expectedChanges is a 400");

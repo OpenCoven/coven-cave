@@ -7,6 +7,11 @@
  * message vanished, and so did Create PR after a commit, leaving the desk with
  * no way to open the PR it had just committed for.
  *
+ * A commit or a Create PR in flight, and its failure, live here too (#5756):
+ * kept in the panel, they were lost when the rail changed tab mid-request, so
+ * Commit came back enabled while the first commit was still running, and a
+ * failure that landed after the tab change was never shown.
+ *
  * Entries are keyed by the host's choice: the Coding Desk keys by session, so
  * a late git enrichment that moves the panel to another root keeps the draft;
  * other hosts key by project root.
@@ -27,6 +32,10 @@ export type ChangesOutbound = {
   prTitle: string;
   prBody: string;
   prUrl: string | null;
+  /** The request in flight, if any. */
+  pending: "commit" | "create-pr" | null;
+  /** Why the last commit or Create PR failed. */
+  error: { action: string; message: string } | null;
 };
 
 export const EMPTY_CHANGES_OUTBOUND: ChangesOutbound = Object.freeze({
@@ -36,6 +45,8 @@ export const EMPTY_CHANGES_OUTBOUND: ChangesOutbound = Object.freeze({
   prTitle: "",
   prBody: "",
   prUrl: null,
+  pending: null,
+  error: null,
 }) as ChangesOutbound;
 
 export const CHANGES_OUTBOUND_LIMIT = 24;
@@ -47,7 +58,8 @@ export function createChangesOutboundStore(limit = CHANGES_OUTBOUND_LIMIT) {
     for (const listener of listeners) listener();
   };
   const isEmpty = (entry: ChangesOutbound) =>
-    !entry.commitMessage && !entry.postCommit && !entry.prOpen && !entry.prTitle && !entry.prBody && !entry.prUrl;
+    !entry.commitMessage && !entry.postCommit && !entry.prOpen && !entry.prTitle && !entry.prBody && !entry.prUrl &&
+    !entry.pending && !entry.error;
 
   return {
     get(key: string | null | undefined): ChangesOutbound {
@@ -61,10 +73,10 @@ export function createChangesOutboundStore(limit = CHANGES_OUTBOUND_LIMIT) {
         return;
       }
       entries.set(key, next);
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value;
-        if (oldest === undefined) break;
-        entries.delete(oldest);
+      // Oldest first, but never an entry with a request still in flight.
+      for (const [oldKey, entry] of entries) {
+        if (entries.size <= limit) break;
+        if (!entry.pending) entries.delete(oldKey);
       }
       emit();
     },

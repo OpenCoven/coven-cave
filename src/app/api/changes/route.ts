@@ -19,6 +19,7 @@ import {
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 import { buildCheckpointPatch, restoreCheckpointPatch, type CheckpointRestoreOutcome } from "@/lib/server/checkpoint-restore";
+import { captureCommitStart, rollbackCommitStart } from "@/lib/server/commit-rollback";
 
 export const dynamic = "force-dynamic";
 
@@ -71,9 +72,11 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
   });
 }
 
-/** Run `git diff` without repository-configured command hooks. */
+/** Run `git diff` without repository-configured command hooks. Paths are
+ *  literal (#5756): `app/[id]/page.tsx` is that file, not a glob that also
+ *  matches `app/i/page.tsx`. */
 function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return git(cwd, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
+  return git(cwd, ["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", ...args]);
 }
 
 /** Run `git status` without repository-configured fsmonitor commands. */
@@ -314,7 +317,7 @@ function pathNotAllowed(): NextResponse {
 
 async function isTracked(repoRoot: string, relPath: string): Promise<boolean> {
   try {
-    await git(repoRoot, ["ls-files", "--error-unmatch", "--", relPath]);
+    await git(repoRoot, ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", relPath]);
     return true;
   } catch {
     return false;
@@ -738,8 +741,13 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
+      // Where things stood, so a refused or failed commit leaves no trace
+      // (#5756): it used to leave the files staged, and strand a new branch,
+      // checked out when HEAD had been detached.
+      const start = await captureCommitStart(root.repoRoot, cur, verified?.indexTree);
       let branch = cur;
       let branchCreated = false;
+      const rollback = () => rollbackCommitStart(root.repoRoot, start, branchCreated ? branch : null);
       if (cur === def || cur === "HEAD") {
         branch = featureBranchName(message, Date.now());
         await git(root.repoRoot, ["checkout", "-b", branch]);
@@ -763,8 +771,7 @@ export async function POST(req: NextRequest) {
         const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
         await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
         if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
-          await git(root.repoRoot, ["read-tree", verified.indexTree]);
-          if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+          await rollback();
           return staleCommit();
         }
       }
@@ -776,8 +783,8 @@ export async function POST(req: NextRequest) {
             : ["commit", "-S", "-m", message],
         );
       } catch (err) {
-        // Roll back the just-created branch so a failed commit doesn't strand it.
-        if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+        // Nothing staged, no new branch, HEAD where it was.
+        await rollback();
         const detail = stderrOf(err);
         const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
         return NextResponse.json(
@@ -831,7 +838,7 @@ export async function POST(req: NextRequest) {
       }
       if (expectedBranch && branch !== expectedBranch) {
         return NextResponse.json(
-          { ok: false, error: `the project moved to ${branch}; switch back to ${expectedBranch} before opening the PR` },
+          { ok: false, stale: true, error: `the project moved to ${branch}; switch back to ${expectedBranch} before opening the PR` },
           { status: 409 },
         );
       }
@@ -839,7 +846,7 @@ export async function POST(req: NextRequest) {
         const { stdout } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
         if (stdout.trim() !== expectedHead) {
           return NextResponse.json(
-            { ok: false, error: "the branch changed after the commit; review the new commit before opening the PR" },
+            { ok: false, stale: true, error: "the branch changed after the commit; review the new commit before opening the PR" },
             { status: 409 },
           );
         }
@@ -1021,15 +1028,17 @@ export async function POST(req: NextRequest) {
         // `checkout HEAD --` updates index AND worktree, so staged edits and
         // staged/unstaged deletions all revert to the committed version —
         // matching the HEAD-relative diff the panel renders.
-        await git(root.repoRoot, ["checkout", "HEAD", "--", body.path]);
+        // Literal (#5756): a bracketed path also matched its siblings as a
+        // glob, and reverted them too.
+        await git(root.repoRoot, ["--literal-pathspecs", "checkout", "HEAD", "--", body.path]);
         return NextResponse.json({ ok: true, reverted: "checkout", path: body.path, checkpointPath });
       case "rm":
         // Staged new file: it never existed at HEAD, so reverting removes it
         // from both index and worktree.
-        await git(root.repoRoot, ["rm", "-f", "--", body.path]);
+        await git(root.repoRoot, ["--literal-pathspecs", "rm", "-f", "--", body.path]);
         return NextResponse.json({ ok: true, reverted: "rm", path: body.path, checkpointPath });
       case "clean":
-        await git(root.repoRoot, ["clean", "-f", "--", body.path]);
+        await git(root.repoRoot, ["--literal-pathspecs", "clean", "-f", "--", body.path]);
         return NextResponse.json({ ok: true, reverted: "clean", path: body.path, checkpointPath });
     }
   } catch (err) {

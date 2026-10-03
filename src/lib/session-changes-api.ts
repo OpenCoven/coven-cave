@@ -36,9 +36,22 @@ function changesUrl(projectRoot: string, params: Record<string, string> = {}) {
   return `/api/changes?${search}`;
 }
 
+/** A refused changes request. `stale` marks a refusal because the tree or
+ *  the branch moved since it was reviewed (#5756). */
+export class ChangesRequestError extends Error {
+  readonly status: number;
+  readonly stale: boolean;
+  constructor(message: string, status: number, stale: boolean) {
+    super(message);
+    this.name = "ChangesRequestError";
+    this.status = status;
+    this.stale = stale;
+  }
+}
+
 async function readChangesJson<T extends ChangesResponse>(res: Awaited<ReturnType<ChangesFetch>>): Promise<T> {
-  const json = (await res.json().catch(() => ({}))) as T;
-  if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+  const json = (await res.json().catch(() => ({}))) as T & { stale?: unknown };
+  if (!res.ok || !json.ok) throw new ChangesRequestError(json.error ?? `http ${res.status}`, res.status, json.stale === true);
   return json;
 }
 

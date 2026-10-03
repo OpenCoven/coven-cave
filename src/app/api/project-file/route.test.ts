@@ -89,4 +89,16 @@ assert.match(source, /expectedVersion !== undefined && expectedVersion !== null 
 assert.match(source, /ok: true, size: byteLength, version: projectFileVersion\(content\)/, "a save returns the new version, so the next save can name it");
 assert.match(source, /await projectFileWrite\(filePath, payload\.content, payload\.expectedVersion\)/, "POST passes the precondition through");
 
+
+// A file that isn't UTF-8 is read-only (#5756): decoding replaced every invalid
+// byte with U+FFFD, and the version hashed the raw bytes, so a save of a
+// Latin-1 file passed its precondition and rewrote the file.
+assert.match(source, /export function isUtf8RoundTrip\(bytes: Buffer\): boolean \{\s*return Buffer\.from\(bytes\.toString\("utf-8"\), "utf-8"\)\.equals\(bytes\);/);
+assert.match(source, /utf8: isUtf8RoundTrip\(bytes\),/, "reads say whether the file is UTF-8");
+assert.match(
+  source,
+  /if \(!isUtf8RoundTrip\(fs\.readFileSync\(resolved\)\)\) return \{ body: \{ ok: false, error: NOT_UTF8_ERROR \}, status: 422 \};[\s\S]*?Optimistic concurrency/,
+  "a save over a non-UTF-8 file is refused under the lock, before the version check, so Overwrite can't skip it",
+);
+
 console.log("project-file route.test.ts: ok");

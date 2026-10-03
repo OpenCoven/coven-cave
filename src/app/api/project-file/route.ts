@@ -22,6 +22,18 @@ const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 export function projectFileVersion(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 24);
 }
+
+/**
+ * Whether the bytes read back unchanged through UTF-8 (#5756). The editor
+ * works in UTF-8 text, so a Latin-1 `.properties` or `.ini` file came back
+ * with every invalid byte replaced by U+FFFD after a one-line edit. Such a
+ * file is shown, but not edited.
+ */
+export function isUtf8RoundTrip(bytes: Buffer): boolean {
+  return Buffer.from(bytes.toString("utf-8"), "utf-8").equals(bytes);
+}
+
+const NOT_UTF8_ERROR = "this file isn't UTF-8 text; saving it here would change bytes the editor can't show";
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB
 
 const TEXT_EXTENSIONS = new Set([
@@ -97,7 +109,7 @@ const IMAGE_EXTENSIONS = new Map([
 
 type ProjectFileResult = {
   body:
-    | { ok: true; kind: "text"; content: string; size: number; version?: string }
+    | { ok: true; kind: "text"; content: string; size: number; version?: string; utf8?: boolean }
     | { ok: true; kind: "image"; dataUrl: string; mimeType: string; size: number }
     | { ok: false; error: string };
   status: number;
@@ -170,7 +182,15 @@ export function projectFileResult(filePath: string | null): ProjectFileResult {
   const bytes = fs.readFileSync(resolved);
   return {
     status: 200,
-    body: { ok: true, kind: "text", content: bytes.toString("utf-8"), size: stat.size, version: projectFileVersion(bytes) },
+    body: {
+      ok: true,
+      kind: "text",
+      content: bytes.toString("utf-8"),
+      size: stat.size,
+      version: projectFileVersion(bytes),
+      // Read-only in the editor when it isn't UTF-8 (#5756).
+      utf8: isUtf8RoundTrip(bytes),
+    },
   };
 }
 
@@ -261,6 +281,15 @@ export async function projectFileWrite(
   }
   if (!stat.isFile()) {
     return { body: { ok: false, error: "not a file" }, status: 400 };
+  }
+
+  // Never write UTF-8 over a file that isn't (#5756), whatever the client
+  // thinks: this holds under the lock, so Overwrite can't slip past it.
+  try {
+    if (!isUtf8RoundTrip(fs.readFileSync(resolved))) return { body: { ok: false, error: NOT_UTF8_ERROR }, status: 422 };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { body: { ok: false, error: message }, status: 500 };
   }
 
   // Optimistic concurrency (#5745): checked under the repository mutation

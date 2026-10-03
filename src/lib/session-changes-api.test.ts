@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ChangesRequestError,
   fetchSessionCheckpoints,
   fetchSessionFileDiff,
   mutateSessionChanges,
@@ -31,4 +32,16 @@ test("session changes API keeps query paths and mutation payloads stable", async
 test("session changes API surfaces route error messages", async () => {
   const failed: ChangesFetch = async () => responding({ ok: false, error: "no repository" }, false, 409);
   await assert.rejects(() => fetchSessionCheckpoints(failed, "/project"), /no repository/);
+});
+
+test("a refusal because the branch moved is marked stale (#5756)", async () => {
+  const stale: ChangesFetch = async () => responding({ ok: false, stale: true, error: "the branch changed after the commit" }, false, 409);
+  const error = await mutateSessionChanges(stale, "/project", "create-pr", {}).catch((err) => err);
+  assert.ok(error instanceof ChangesRequestError);
+  assert.equal(error.stale, true);
+  assert.equal(error.status, 409);
+  assert.match(error.message, /branch changed/);
+  const plain: ChangesFetch = async () => responding({ ok: false, error: "push failed" }, false, 502);
+  const other = await mutateSessionChanges(plain, "/project", "create-pr", {}).catch((err) => err);
+  assert.equal(other.stale, false);
 });

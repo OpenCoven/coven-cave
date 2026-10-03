@@ -48,16 +48,27 @@ export type ChangesSummaryResult = {
 };
 
 const TTL_MS = 4000;
+/** A status read that never answers would hold every subscriber's one
+ *  in-flight slot, freezing the list until a reload (#5756). */
+export const CHANGES_SUMMARY_TIMEOUT_MS = 30_000;
 
 // staleServeMs === ttlMs disables the serve-stale window: within the TTL the
 // cached response is shared, past it the next caller blocks on a fresh fetch.
 const cache = createSwrCache<ChangesSummaryResult>({ ttlMs: TTL_MS, staleServeMs: TTL_MS });
 
 async function requestSummary(projectRoot: string): Promise<ChangesSummaryResult> {
-  const res = await fetch(
-    `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
-    { cache: "no-store" },
-  );
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
+      { cache: "no-store", signal: AbortSignal.timeout(CHANGES_SUMMARY_TIMEOUT_MS) },
+    );
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(`the change list didn't answer in ${CHANGES_SUMMARY_TIMEOUT_MS / 1000} seconds`);
+    }
+    throw err;
+  }
   const json = (await res.json()) as ChangesSummaryResponse;
   return { httpOk: res.ok, status: res.status, json };
 }

@@ -48,4 +48,22 @@ const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND } = await import("./c
   assert.equal(store.get("c").commitMessage, "c");
 }
 
+// A commit or Create PR in flight, and its failure, outlive the panel (#5756).
+{
+  const store = createChangesOutboundStore(2);
+  store.patch("a", { pending: "commit" });
+  assert.equal(store.get("a").pending, "commit", "an in-flight request alone keeps the entry");
+  store.patch("a", { pending: null, error: { action: "Couldn't commit", message: "signing failed" } });
+  assert.deepEqual(store.get("a").error, { action: "Couldn't commit", message: "signing failed" });
+  store.patch("a", { error: null });
+  assert.equal(store.get("a"), EMPTY_CHANGES_OUTBOUND, "an entry with nothing left in it goes");
+
+  // The oldest entry is evicted first, but never one with a request in flight.
+  store.patch("busy", { pending: "create-pr" });
+  store.patch("b", { commitMessage: "b" });
+  store.patch("c", { commitMessage: "c" });
+  assert.equal(store.get("busy").pending, "create-pr", "an in-flight entry isn't evicted");
+  assert.equal(store.get("b"), EMPTY_CHANGES_OUTBOUND);
+}
+
 console.log("changes-outbound-drafts: ok");

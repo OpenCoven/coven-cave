@@ -258,6 +258,8 @@ export const SUITES = {
     "src/lib/agents-new-chat.test.ts",
     "src/lib/server/change-file-versions.test.ts",
     "src/lib/server/checkpoint-restore.test.ts",
+    "src/lib/server/commit-rollback.test.ts",
+    "src/lib/terminal-thread-stop.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
     "src/lib/opencoven-tools-update-cache.test.ts",

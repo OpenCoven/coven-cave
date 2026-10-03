@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 
 const tree = await import("./code-terminal-tree.ts");
-const { readTerminalLayout, writeTerminalLayout } = await import("./code-terminal-layouts.ts");
+const { readTerminalLayout, writeTerminalLayout, terminalStarted, markTerminalStarted } = await import("./code-terminal-layouts.ts");
 const { createTerminalLayout, splitTerminalPane, isTerminalLayoutNode, PRIMARY_TERMINAL_PANE_ID, MAX_TERMINAL_PANES } = tree;
 
 const memoryStorage = () => {
@@ -63,5 +63,11 @@ const memoryStorage = () => {
   writeTerminalLayout("single", { layout: createTerminalLayout(), focusedPaneId: PRIMARY_TERMINAL_PANE_ID }, storage);
   assert.equal(storage.getItem("cave.code.terminal-layout.single"), null);
 }
+
+// A session's shell starts on the drawer's first open, not on the visit (#5756).
+assert.equal(terminalStarted("visited"), false);
+markTerminalStarted("visited");
+assert.equal(terminalStarted("visited"), true);
+assert.equal(terminalStarted("another"), false, "per session");
 
 console.log("code-terminal-layouts: ok");

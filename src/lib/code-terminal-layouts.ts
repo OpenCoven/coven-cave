@@ -18,6 +18,21 @@ export type SavedTerminalLayout = { layout: TerminalLayoutNode; focusedPaneId: s
 
 const STORAGE_PREFIX = "cave.code.terminal-layout.";
 const memory = new Map<string, SavedTerminalLayout>();
+const started = new Set<string>();
+
+/**
+ * Whether this page has opened the session's terminal drawer (#5756). The
+ * drawer starts its shell on first open and keeps it running while closed;
+ * starting one for every session visited, drawer opened or not, put a shell
+ * and a socket behind each, and a quick switch stranded the start.
+ */
+export function terminalStarted(sessionId: string): boolean {
+  return started.has(sessionId);
+}
+
+export function markTerminalStarted(sessionId: string): void {
+  started.add(sessionId);
+}
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 

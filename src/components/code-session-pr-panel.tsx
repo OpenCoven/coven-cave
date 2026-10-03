@@ -28,6 +28,21 @@ import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 const STAGE_POLL_MS = 60_000;
 const CHECKS_POLL_MS = 30_000;
+/** Checks that passed, failed or couldn't load are read again at this pace
+ *  (#5756): a push after a failure gets new checks on a new head, and until
+ *  the panel saw it, review and merge stayed pinned to the old one. */
+const SETTLED_CHECKS_POLL_MS = 60_000;
+/** How long a review, merge or resolve may run before the rail lets go
+ *  (#5756). Nothing timed these out, so a hung call kept its buttons off for
+ *  good. It may still land, so the message says to check first. */
+const GITHUB_ACTION_TIMEOUT_MS = 90_000;
+
+function githubActionError(err: unknown, fallback: string): string {
+  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    return `GitHub didn't answer in ${GITHUB_ACTION_TIMEOUT_MS / 1000} seconds. Check the pull request before trying again.`;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
 
 function isTrustedPrAttribution(
   attribution: SessionPullRequestContext["attribution"] | undefined,
@@ -173,7 +188,7 @@ type ChecksState =
   | { phase: "ready"; rollup: CheckSummary; runs: CheckRunDetail[]; sha: string | null }
   | { phase: "error" };
 
-function usePrChecks(repo: string, number: number): ChecksState {
+function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
   const [state, setState] = useState<ChecksState>({ phase: "loading" });
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -203,8 +218,10 @@ function usePrChecks(repo: string, number: number): ChecksState {
     };
   }, [repo, number, tick]);
   const pending = state.phase === "ready" && state.rollup === "pending";
-  usePausablePoll(() => setTick((t) => t + 1), CHECKS_POLL_MS, { enabled: pending });
-  return state;
+  const reread = useCallback(() => setTick((t) => t + 1), []);
+  usePausablePoll(reread, CHECKS_POLL_MS, { enabled: pending });
+  usePausablePoll(reread, SETTLED_CHECKS_POLL_MS, { enabled: !pending && state.phase !== "loading" });
+  return [state, reread];
 }
 
 function checkGlyph(run: CheckRunDetail): { glyph: string; cls: string } {
@@ -215,7 +232,7 @@ function checkGlyph(run: CheckRunDetail): { glyph: string; cls: string } {
   return { glyph: "✕", cls: "text-[var(--color-danger)]" };
 }
 
-function ChecksSection({ state }: { state: ChecksState }) {
+function ChecksSection({ state, onRetry }: { state: ChecksState; onRetry: () => void }) {
   return (
     <section aria-label="Checks">
       <h3 className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -232,7 +249,13 @@ function ChecksSection({ state }: { state: ChecksState }) {
       {state.phase === "loading" ? (
         <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading checks…</p>
       ) : state.phase === "error" ? (
-        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Couldn’t load checks.</p>
+        <p className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          Couldn’t load checks.
+          {/* Not a dead end (#5756): review and merge wait on these checks. */}
+          <button type="button" className="focus-ring underline" onClick={onRetry}>
+            Retry
+          </button>
+        </p>
       ) : state.runs.length === 0 ? (
         <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No check runs reported.</p>
       ) : (
@@ -346,12 +369,13 @@ function ThreadsSection({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ threadId: thread.id, resolved: !thread.isResolved }),
+        signal: AbortSignal.timeout(GITHUB_ACTION_TIMEOUT_MS),
       });
       const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && json?.ok) state.refresh();
       else setResolveError(json?.error ?? `GitHub answered ${res.status}.`);
     } catch (err) {
-      setResolveError(err instanceof Error ? err.message : "The request didn't reach GitHub.");
+      setResolveError(githubActionError(err, "The request didn't reach GitHub."));
     } finally {
       setBusyThread(null);
     }
@@ -436,6 +460,7 @@ function ActionsSection({
   prState,
   checks,
   onActed,
+  onRecheck,
 }: {
   repo: string;
   number: number;
@@ -445,6 +470,8 @@ function ActionsSection({
    *  (#5745). */
   checks: ChecksState;
   onActed: () => void;
+  /** Read the checks again: after a refusal, the head has likely moved. */
+  onRecheck: () => void;
 }) {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState<null | "approve" | "comment" | "merge">(null);
@@ -482,19 +509,20 @@ function ActionsSection({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(GITHUB_ACTION_TIMEOUT_MS),
       });
       const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !json?.ok) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : "network error" };
+      return { ok: false, error: githubActionError(err, "network error") };
     }
   }
 
   async function review(event: "APPROVE" | "COMMENT") {
+    if (!headSha) return;
     setBusy(event === "APPROVE" ? "approve" : "comment");
     setNotice(null);
-    if (!headSha) return;
     const result = await post("/api/github/review", {
       repo,
       number,
@@ -509,6 +537,8 @@ function ActionsSection({
       setNotice({ kind: "ok", text: event === "APPROVE" ? "Approved." : "Comment posted." });
     } else {
       setNotice({ kind: "err", text: result.error ?? "Review failed." });
+      // A refusal usually means the head moved (#5756): show the new one.
+      onRecheck();
     }
   }
 
@@ -530,6 +560,7 @@ function ActionsSection({
       onActed();
     } else {
       setNotice({ kind: "err", text: result.error ?? "Merge failed." });
+      onRecheck();
     }
   }
 
@@ -614,13 +645,13 @@ function PrReviewBlock({
   trustedForActions: boolean;
   onActed: () => void;
 }) {
-  const checks = usePrChecks(repo, number);
+  const [checks, recheck] = usePrChecks(repo, number);
   return (
     <>
-      <ChecksSection state={checks} />
+      <ChecksSection state={checks} onRetry={recheck} />
       <ThreadsSection repo={repo} number={number} allowResolve={trustedForActions} />
       {trustedForActions ? (
-        <ActionsSection repo={repo} number={number} prState={prState} checks={checks} onActed={onActed} />
+        <ActionsSection repo={repo} number={number} prState={prState} checks={checks} onActed={onActed} onRecheck={recheck} />
       ) : null}
     </>
   );

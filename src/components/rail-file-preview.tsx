@@ -16,15 +16,29 @@ import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
 type ProjectFileBody =
-  | { ok: true; kind: "text"; content: string; size: number; version?: string }
+  | { ok: true; kind: "text"; content: string; size: number; version?: string; utf8?: boolean }
   | { ok: true; kind: "image"; dataUrl: string; mimeType: string; size: number }
   | { ok: false; error: string };
 
 type Loaded =
-  | { kind: "text"; content: string; size: number; version?: string | null }
+  | { kind: "text"; content: string; size: number; version?: string | null; utf8?: boolean }
   | { kind: "image"; dataUrl: string; mimeType: string; size: number };
 
 type ChangedFile = { path: string; status: string; insertions?: number; deletions?: number };
+
+/** A save that hasn't answered by now lets go (#5756): with Save and Cancel
+ *  both off while it runs, a hung request held the editor until a reload. */
+const SAVE_TIMEOUT_MS = 60_000;
+
+/** Why a save never got an answer, in words rather than an exception name. */
+function saveFailureReason(err: unknown): string {
+  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    return `no answer in ${SAVE_TIMEOUT_MS / 1000} seconds. It may have been written anyway; saving again checks`;
+  }
+  if (err instanceof TypeError) return "the server couldn't be reached";
+  if (err instanceof SyntaxError) return "the server's answer wasn't readable";
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** How many changed files the empty-state launchpad lists. */
 const LAUNCHPAD_CAP = 6;
@@ -204,7 +218,7 @@ export function RailFilePreview({
         if (json.kind === "image") {
           setFile({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
         } else {
-          setFile({ kind: "text", content: json.content, size: json.size, version: json.version ?? null });
+          setFile({ kind: "text", content: json.content, size: json.size, version: json.version ?? null, utf8: json.utf8 });
           // An open edit that started from an older version hears about it
           // now, before Save is tried.
           fileEditDrafts.noteDiskVersion(path, json.version ?? null);
@@ -224,7 +238,10 @@ export function RailFilePreview({
 
   // A redacted .env (server refuses writes) isn't editable; every other text
   // file is. Images and error/loading states have no text content to edit.
-  const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env");
+  // Not UTF-8 means read-only (#5756): the editor would save every byte it
+  // can't show as U+FFFD. The server refuses such a save as well.
+  const notUtf8 = file?.kind === "text" && file.utf8 === false;
+  const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env") && !notUtf8;
 
   const startEditing = useCallback(() => {
     if (!path || !file || file.kind !== "text") return;
@@ -281,11 +298,19 @@ export function RailFilePreview({
           familiarId: familiarId ?? undefined,
           expectedVersion: sending.baseVersion ?? undefined,
         }),
+        signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
       });
-      const json = (await res.json()) as { ok: boolean; size?: number; version?: string; error?: string; conflict?: boolean };
+      const json = (await res.json()) as { ok: boolean; size?: number; version?: string | null; error?: string; conflict?: boolean };
       if (!res.ok || !json.ok) {
         const conflict = json.conflict === true;
-        fileEditDrafts.fail(target, sending.id, conflict ? FILE_CHANGED_ON_DISK : json.error ?? `save failed (${res.status})`, conflict);
+        fileEditDrafts.fail(
+          target,
+          sending.id,
+          conflict ? FILE_CHANGED_ON_DISK : json.error ?? `save failed (${res.status})`,
+          conflict,
+          // The disk's version, so Overwrite writes over exactly that (#5756).
+          conflict ? json.version ?? null : null,
+        );
         announce(
           conflict
             ? `Couldn't save ${label}: it changed on disk since you started editing.`
@@ -307,8 +332,9 @@ export function RailFilePreview({
       // idle session never runs (#5745).
       window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
     } catch (err) {
-      fileEditDrafts.fail(target, sending.id, String(err));
-      announce(`Couldn't save ${label}: ${String(err)}`, "assertive");
+      const reason = saveFailureReason(err);
+      fileEditDrafts.fail(target, sending.id, `Couldn't save: ${reason}.`);
+      announce(`Couldn't save ${label}: ${reason}.`, "assertive");
     }
   }, [familiarId, announce]);
 
@@ -500,6 +526,14 @@ export function RailFilePreview({
                   <span className="workspace-rail__preview-saved">
                     <Icon name="ph:check" width={11} aria-hidden />
                     Saved
+                  </span>
+                )}
+                {notUtf8 && (
+                  <span
+                    className="workspace-rail__preview-readonly"
+                    title="This file isn't UTF-8 text. Editing it here would change bytes the editor can't show."
+                  >
+                    Read-only: not UTF-8
                   </span>
                 )}
                 {editable && (

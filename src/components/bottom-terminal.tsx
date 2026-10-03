@@ -8,7 +8,8 @@ import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
-import { PtyWsBridge } from "@/lib/pty-ws-bridge";
+import { killPtyBridge, PtyWsBridge } from "@/lib/pty-ws-bridge";
+import { terminalThreadStopped } from "@/lib/terminal-thread-stop";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 
@@ -531,6 +532,14 @@ export function BottomTerminal({
     let disposed = false;
     let cleanup: (() => void) | null = null;
     let healthTimer: ReturnType<typeof setInterval> | null = null;
+    // What startup has made so far (#5756). An unmount mid-start used to find
+    // `cleanup` still unset and dispose nothing: the xterm, kept by its
+    // listeners, held the whole detached desk alive, one per session switch.
+    const made: Array<() => void> = [];
+    const own = (dispose: () => void) => {
+      if (disposed) dispose();
+      else made.push(dispose);
+    };
 
     void (async () => {
      try {
@@ -567,6 +576,8 @@ export function BottomTerminal({
         reducedMotion: reducedMotionRef.current,
         releaseKey: (event) => releaseKeyRef.current?.(event) ?? false,
       });
+      own(() => term.dispose());
+      if (disposed) return;
       termRef.current = term;
       searchRef.current = search;
       log("xterm opened", { cols: term.cols, rows: term.rows });
@@ -615,6 +626,9 @@ export function BottomTerminal({
         term.write(exitMsg);
         pushToMirror(new TextEncoder().encode(exitMsg));
       });
+      own(unlistenData);
+      own(unlistenExit);
+      if (disposed) return;
       log("pty:data + pty:exit listeners registered");
 
       // Pipe user input back to the PTY.
@@ -637,7 +651,10 @@ export function BottomTerminal({
         // key bar reaches sibling panes as a Ctrl-C rather than a literal "c".
         onUserInputRef.current?.(out);
       });
+      own(() => onDataDispose.dispose());
 
+      // The pane closed while this was starting (#5756): start nothing.
+      if (terminalThreadStopped(threadId)) return;
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
@@ -666,6 +683,13 @@ export function BottomTerminal({
       } else {
         log("pty_start: skipped, already in pty_list");
       }
+      // Closed during pty_start: its stop found no shell yet, so stop the one
+      // just made, or it would run until the window closes (#5756).
+      if (terminalThreadStopped(threadId)) {
+        void bridge.invoke("pty_stop", { threadId }).catch(() => {});
+        return;
+      }
+      if (disposed) return;
       if (!disposed) {
         setReady(true);
         setHealth("healthy");
@@ -734,6 +758,7 @@ export function BottomTerminal({
         // thread id — the chat code rail stops `cave.rail.<id>` shells on
         // session switch (chat-surface.tsx, cave-c3yt).
       };
+      made.length = 0; // `cleanup` disposes everything from here on
 
       if (disposed) cleanup();
      } catch (err) {
@@ -750,7 +775,8 @@ export function BottomTerminal({
 
     return () => {
       disposed = true;
-      cleanup?.();
+      if (cleanup) cleanup();
+      else for (const dispose of made.splice(0).reverse()) dispose();
     };
   }, [threadId, platform, openFind, retryNonce]);
 
@@ -765,6 +791,12 @@ export function BottomTerminal({
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
+    // What startup has made so far (#5756): see the desktop effect above.
+    const made: Array<() => void> = [];
+    const own = (dispose: () => void) => {
+      if (disposed) dispose();
+      else made.push(dispose);
+    };
 
     void (async () => {
      try {
@@ -774,11 +806,15 @@ export function BottomTerminal({
         reducedMotion: reducedMotionRef.current,
         releaseKey: (event) => releaseKeyRef.current?.(event) ?? false,
       });
+      own(() => term.dispose());
+      if (disposed) return;
       termRef.current = term;
       searchRef.current = search;
 
       const bridge = new PtyWsBridge();
       wsBridgeRef.current = bridge;
+      // Disposing closes a socket that is still connecting, too.
+      own(() => bridge.dispose());
 
       const announce = (msg: string) => {
         term.write(msg);
@@ -866,6 +902,7 @@ export function BottomTerminal({
       try {
         await bridge.connect(threadId, term.cols, term.rows, projectRootRef.current);
       } catch (err) {
+        if (disposed) return; // torn down mid-connect: nothing left to tell
         const detail = err instanceof Error ? err.message : String(err);
         const failMsg = `\r\n\x1b[31mTerminal connection failed: ${detail}\x1b[0m\r\n`;
         term.write(failMsg);
@@ -874,6 +911,9 @@ export function BottomTerminal({
         if (!disposed) setHealth("failed");
         return;
       }
+      // The pane closed while connecting (#5756): the socket is open now, so
+      // the shell can be told to go.
+      if (terminalThreadStopped(threadId)) killPtyBridge(threadId);
       if (disposed) {
         bridge.dispose();
         term.dispose();
@@ -961,6 +1001,7 @@ export function BottomTerminal({
         bridge.dispose();
         term.dispose();
       };
+      made.length = 0; // `cleanup` disposes everything from here on
 
       if (disposed) cleanup();
      } catch (err) {
@@ -974,7 +1015,8 @@ export function BottomTerminal({
 
     return () => {
       disposed = true;
-      cleanup?.();
+      if (cleanup) cleanup();
+      else for (const dispose of made.splice(0).reverse()) dispose();
     };
   }, [threadId, platform, pushToMirror, openFind, retryNonce]);
 
