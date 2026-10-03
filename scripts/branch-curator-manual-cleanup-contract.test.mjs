@@ -37,6 +37,89 @@ const evals = JSON.parse(
   read(".agents/skills/branch-curator/evals/evals.json"),
 ).evals;
 
+function runDocumentedHeadSearch({
+  branch = "fix/retirement-proof",
+  prs = [],
+  pages,
+  status = 0,
+} = {}) {
+  const start = proof.indexOf('test -n "$canonical_origin_repo" ||');
+  const end = proof.indexOf("\n```", start);
+  assert.ok(start >= 0 && end > start, "missing documented outbound head search");
+  const fakeSearch = `
+const query = process.env.SEARCH_QUERY;
+const prefix = "is:pr head:";
+if (!query.startsWith(prefix)) process.exit(97);
+const raw = query.slice(prefix.length);
+const head = raw.startsWith('"') ? JSON.parse(raw) : raw;
+// GitHub search matches a branch prefix; owner:branch belongs to the Pulls
+// endpoint's head filter. The live #5789 reproduction returned no search hit
+// for the owner-prefixed form and one hit for the branch-only form.
+const nodes = JSON.parse(process.env.SEARCH_PRS).filter(pr =>
+  pr.headRefName.toLowerCase().startsWith(head.toLowerCase()));
+const pages = process.env.SEARCH_PAGES === "null"
+  ? [{data: {search: {issueCount: nodes.length, nodes,
+      pageInfo: {hasNextPage: false}}}}]
+  : JSON.parse(process.env.SEARCH_PAGES);
+process.stdout.write(JSON.stringify(pages));
+`;
+  return spawnSync("bash", ["-c", `
+canonical_origin_repo=OpenCoven/coven-cave
+branch=$1
+gh() {
+  test "$SEARCH_STATUS" -eq 0 || return "$SEARCH_STATUS"
+  local arg search_query=''
+  for arg in "$@"; do
+    case "$arg" in searchQuery=*) search_query=\${arg#searchQuery=} ;; esac
+  done
+  SEARCH_QUERY="$search_query" node --input-type=module -e "$FAKE_SEARCH"
+}
+for candidate in once; do
+${proof.slice(start, end)}
+  printf 'CLEAR\\n'
+done
+`, "head-search", branch], {
+    encoding: "utf8",
+    timeout: 10_000,
+    env: {
+      ...process.env,
+      GH_REPO: "unrelated/quiet",
+      SEARCH_PRS: JSON.stringify(prs),
+      SEARCH_PAGES: JSON.stringify(pages ?? null),
+      SEARCH_STATUS: String(status),
+      FAKE_SEARCH: fakeSearch,
+    },
+  });
+}
+
+const outboundDraft = {
+  state: "CLOSED",
+  isDraft: true,
+  headRefName: "fix/retirement-proof",
+  headRefOid: "a".repeat(40),
+  headRepository: {nameWithOwner: "OpenCoven/coven-cave"},
+  baseRepository: {nameWithOwner: "upstream/coven-cave"},
+};
+
+for (const [name, input, expected] of [
+  ["closed draft on the exact outbound head", {prs: [outboundDraft]}, "PRESERVE - exact outbound PR head is live"],
+  ["open exact head", {prs: [{...outboundDraft, state: "OPEN", isDraft: false}]}, "PRESERVE - exact outbound PR head is live"],
+  ["canonical repository casing", {prs: [{...outboundDraft, headRepository: {nameWithOwner: "opencoven/COVEN-CAVE"}}]}, "PRESERVE - exact outbound PR head is live"],
+  ["quoted branch name", {branch: 'fix/quote"suffix', prs: [{...outboundDraft, headRefName: 'fix/quote"suffix'}]}, "PRESERVE - exact outbound PR head is live"],
+  ["other repository with the same branch", {prs: [{...outboundDraft, headRepository: {nameWithOwner: "other/coven-cave"}}]}, "CLEAR"],
+  ["prefix-only branch match", {prs: [{...outboundDraft, headRefName: "fix/retirement-proof-current"}]}, "CLEAR"],
+  ["merged non-draft history", {prs: [{...outboundDraft, state: "MERGED", isDraft: false}]}, "CLEAR"],
+  ["failed search", {status: 1}, "PRESERVE - exact-head PR search failed"],
+  ["incomplete result pages", {pages: [{data: {search: {issueCount: 1, nodes: [], pageInfo: {hasNextPage: false}}}}]}, "PRESERVE - exact-head PR parse failed"],
+  ["search ceiling", {pages: [{data: {search: {issueCount: 1001, nodes: [], pageInfo: {hasNextPage: false}}}}]}, "PRESERVE - exact-head PR parse failed"],
+]) {
+  test(`documented outbound head search: ${name}`, () => {
+    const result = runDocumentedHeadSearch(input);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), expected, result.stderr);
+  });
+}
+
 function runDocumentedReflogParser(contents) {
   const functionMatch = proof.match(/emit_reflog_records\(\) \{[\s\S]*?\n\}/);
   assert.ok(functionMatch, "missing documented emit_reflog_records function");
