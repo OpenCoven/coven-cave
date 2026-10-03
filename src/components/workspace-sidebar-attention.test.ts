@@ -78,11 +78,15 @@ assert.match(
   /\{project \? \(\s*<span className="cnav__thread-proj" title=\{project\.name\}>\s*<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm" \/>\s*<\/span>\s*\) : null\}\s*\{project \? <span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span> : null\}/,
   "flat ThreadRow rows should keep one persistent sr-only project context outside the collapsible project tile",
 );
-const threadAttentionCueCallSites = sidebar.match(/<ThreadAttentionCue label=\{attentionLabel\} \/>/g) ?? [];
+assert.match(
+  sidebar,
+  /function ThreadSummary\([\s\S]*?<ThreadAttentionCue label=\{attentionLabel\} \/>/,
+  "the shared row summary renders the visible attention cue",
+);
 assert.equal(
-  threadAttentionCueCallSites.length,
+  (sidebar.match(/<ThreadSummary session=\{session\}/g) ?? []).length,
   2,
-  "both ThreadRow and PinnedThreadRow should render the visible attention cue through the shared ThreadAttentionCue component",
+  "ThreadRow and PinnedThreadRow render the same attention and metadata summary",
 );
 assert.doesNotMatch(
   sidebar,
