@@ -152,10 +152,15 @@ function fileIcon(name: string): FileIcon {
 
 /** Fetch a directory's immediate children. Returns the (sorted) entries, or
  *  null when the request fails — so callers can tell a load error apart from a
- *  genuinely empty directory and offer a retry. */
-async function fetchChildren(dirPath: string, familiarId = ""): Promise<TreeEntry[] | null> {
+ *  genuinely empty directory and offer a retry.
+ *
+ *  `depth` 1 also brings each subfolder's entries: the root's folders open
+ *  at once, so the root reads them along. A folder read on opening needs
+ *  only its own (#5781): it read every subfolder's contents too, which
+ *  nothing used, 3,000 entries for one big data folder. */
+async function fetchChildren(dirPath: string, familiarId = "", depth: 0 | 1 = 0): Promise<TreeEntry[] | null> {
   try {
-    const params = new URLSearchParams({ root: dirPath, depth: "1", familiarId });
+    const params = new URLSearchParams({ root: dirPath, depth: String(depth), familiarId });
     const res = await fetch(
       `/api/project-tree?${params.toString()}`,
       { cache: "no-store" },
@@ -230,7 +235,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
       const isRefresh = loadedKeyRef.current === key;
       if (!isRefresh) setLoading(true);
       if (r) {
-        const tree = await fetchChildren(r, familiarId);
+        const tree = await fetchChildren(r, familiarId, 1);
         if (!mountedRef.current) return;
         setRoot(r);
         if (tree === null) {

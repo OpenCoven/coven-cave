@@ -22,6 +22,8 @@ process.env.COVEN_CAVE_HOME = path.join(scratch, "coven-home", "cave");
 process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(scratch, "no-projects.json");
 process.env.GIT_CONFIG_GLOBAL = path.join(scratch, "gitconfig");
 process.env.GIT_CONFIG_NOSYSTEM = "1";
+// A commit's time limit, short enough to drive a hook past it (#5781).
+process.env.COVEN_CAVE_GIT_LONG_TIMEOUT_MS = "3000";
 // The route always signs (`commit -S`), so commits here sign with a
 // throwaway SSH key; nothing else in the tests signs.
 const signingKey = path.join(scratch, "signing-key");
@@ -286,6 +288,85 @@ const listed = async (dir) => (await get({ projectRoot: dir })).json.files.map((
   const kept = readdirSync(dirOf(last)).filter((name) => name.endsWith(".patch")).sort();
   assert.equal(kept.length, 50);
   assert.equal(kept.at(-1), path.basename(last), "the newest stays");
+}
+
+const hook = (dir, name, body) => {
+  writeFileSync(path.join(dir, ".git", "hooks", name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+};
+
+// ── 13. A commit whose post-commit hook outruns the limit landed (#5781) ────
+// It was reported as failed, and the rollback reset the index under the new
+// commit, so its own files read as deleted and untracked.
+{
+  const { dir, git } = repo();
+  hook(dir, "post-commit", "sleep 6");
+  writeFileSync(path.join(dir, "f.txt"), "edited\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "slow hook after" });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.match(commit.json.warning, /^the commit landed, but a hook after it was still running after 3 seconds$/);
+  assert.equal(git("log", "-1", "--format=%s").trim(), "slow hook after");
+  assert.equal(git("status", "--porcelain"), "", "the index matches the new commit");
+}
+
+// ── 14. A commit whose pre-commit hook outruns the limit says so (#5781) ────
+{
+  const { dir, git } = repo();
+  hook(dir, "pre-commit", "sleep 6");
+  writeFileSync(path.join(dir, "f.txt"), "edited\n");
+  const head = git("rev-parse", "HEAD");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "slow hook before" });
+  assert.equal(commit.status, 504, JSON.stringify(commit.json));
+  assert.match(commit.json.error, /didn't finish within 3 seconds, so nothing was committed; a commit hook may be slow/);
+  assert.equal(git("rev-parse", "HEAD"), head);
+  assert.equal(git("status", "--porcelain"), " M f.txt\n", "nothing left staged");
+}
+
+// ── 15. `status.showUntrackedFiles=no` doesn't hide new files (#5781) ───────
+{
+  const { dir, git } = repo();
+  git("config", "status.showUntrackedFiles", "no");
+  writeFileSync(path.join(dir, "new.txt"), "new\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "add new" });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.match(git("show", "--name-only", "--format=", "HEAD"), /^new\.txt$/m);
+}
+
+// ── 16. A name in either Unicode form finds its file (#5781) ────────────────
+{
+  const { dir, git } = repo();
+  const nfd = "cafe\u0301.txt";
+  writeFileSync(path.join(dir, nfd), "one\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "cafe");
+  writeFileSync(path.join(dir, nfd), "two\n");
+  for (const name of [nfd, nfd.normalize("NFC")]) {
+    const diff = await get({ projectRoot: dir, path: name });
+    assert.equal(diff.status, 200, `${JSON.stringify(name)}: ${JSON.stringify(diff.json)}`);
+    assert.match(diff.json.diff, /^\+two$/m);
+  }
+}
+
+// ── 17. Diffs for a removed file, a rename and a new file (#5781) ───────────
+{
+  const { dir, git } = repo();
+  writeFileSync(path.join(dir, "gone.txt"), "bye\n");
+  writeFileSync(path.join(dir, "old.txt"), "one\ntwo\nthree\nfour\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "more");
+  git("rm", "-q", "gone.txt");
+  git("mv", "old.txt", "new.txt");
+  writeFileSync(path.join(dir, "new.txt"), "one\ntwo\nthree\nFOUR\n");
+  writeFileSync(path.join(dir, "fresh.txt"), "fresh\n");
+  const removed = await get({ projectRoot: dir, path: "gone.txt" });
+  assert.match(removed.json.diff, /^deleted file mode/m, "a git rm'd file shows its deletion");
+  assert.match(removed.json.diff, /^-bye$/m);
+  const renamed = await get({ projectRoot: dir, path: "new.txt" });
+  assert.match(renamed.json.diff, /^rename from old\.txt$/m, "a rename reads as one");
+  assert.match(renamed.json.diff, /^-four$/m);
+  assert.doesNotMatch(renamed.json.diff, /^\+one$/m, "not as a whole new file");
+  const fresh = await get({ projectRoot: dir, path: "fresh.txt" });
+  assert.match(fresh.json.diff, /^\+\+\+ b\/fresh\.txt$/m);
+  assert.ok(!fresh.json.diff.includes(scratch), "no absolute path in the headers");
 }
 
 console.log("changes route git states: ok");

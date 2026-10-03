@@ -38,4 +38,14 @@ assert.doesNotMatch(
   "tree controls should use radius tokens instead of hard-coded radii",
 );
 
+
+// A folder's read is its own entries (#5781): `|| 1` made depth 0 impossible,
+// so every read also listed each subfolder's contents. The root still reads
+// one level down, since its folders open at once.
+{
+  const route = readFileSync(new URL("../app/api/project-tree/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const depth = Math\.min\(Math\.max\(Number\.isNaN\(parsedDepth\) \? 1 : parsedDepth, 0\), 4\);/, "depth 0 is a real depth");
+  assert.match(t, /async function fetchChildren\(dirPath: string, familiarId = "", depth: 0 \| 1 = 0\)/, "a folder reads its own entries by default");
+  assert.match(t, /await fetchChildren\(r, familiarId, 1\)/, "the root reads one level down");
+}
 console.log("project-tree-keynav.test.ts passed");
