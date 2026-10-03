@@ -18,6 +18,22 @@ assert.deepEqual(markdownLinkTarget("my%20notes.md", file, root), { kind: "file"
 for (const href of ["../../../etc/passwd", "../../outside.md", "javascript:alert(1)", "mailto:a@b.c", "data:text/html,x", "//evil.example/x", "%E0%A4%A", "", "   "]) {
   assert.deepEqual(markdownLinkTarget(href, file, root), { kind: "none" }, href);
 }
+// Windows (#5787 review): a native file path with a drive and backslashes,
+// beside a forward-slash project root, resolves and comes back native.
+{
+  const winFile = "C:\\repo\\app\\docs\\README.md";
+  const winRoot = "C:/repo/app";
+  assert.deepEqual(markdownLinkTarget("guide.md", winFile, winRoot), { kind: "file", path: "C:\\repo\\app\\docs\\guide.md" });
+  assert.deepEqual(markdownLinkTarget("../src/index.ts", winFile, winRoot), { kind: "file", path: "C:\\repo\\app\\src\\index.ts" });
+  assert.deepEqual(markdownLinkTarget("/CONTRIBUTING.md", winFile, winRoot), { kind: "file", path: "C:\\repo\\app\\CONTRIBUTING.md" });
+  assert.deepEqual(markdownLinkTarget("guide.md", winFile, "c:/repo/app"), { kind: "file", path: "C:\\repo\\app\\docs\\guide.md" }, "the drive letter's case doesn't matter");
+  for (const href of ["../../outside.md", "../../../../etc/hosts"]) {
+    assert.deepEqual(markdownLinkTarget(href, winFile, winRoot), { kind: "none" }, href);
+  }
+}
+// A root that is a prefix of a sibling folder's name doesn't contain it.
+assert.deepEqual(markdownLinkTarget("../../app-other/x.md", file, root), { kind: "none" });
+
 // Without a document (a PR description), only web links and fragments.
 assert.deepEqual(markdownLinkTarget("docs/x.md"), { kind: "none" });
 assert.deepEqual(markdownLinkTarget("https://github.com/a/b"), { kind: "external", url: "https://github.com/a/b" });

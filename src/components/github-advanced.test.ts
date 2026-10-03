@@ -97,9 +97,10 @@ assert.match(checksRoute, /\/commits\/\$\{sha\}\/check-runs/, "checks route read
 assert.match(checksRoute, /\/commits\/\$\{sha\}\/status/, "checks route reads the legacy combined status");
 assert.match(
   checksRoute,
-  /const merged = summarizeCheckSignals\(runs as CheckRun\[\], statuses\);[\s\S]{0,200}summarizeChecks\(\[\], combinedState\)/,
-  "checks route rolls up a single summary from runs and statuses together, the combined state only when it has neither (#5781)",
+  /const merged = summarizeCheckSignals\(runs as CheckRun\[\], statusCount > 0 \? combinedState : null\);[\s\S]{0,200}summarizeChecks\(\[\], combinedState\)/,
+  "checks route rolls up a single summary from runs and every status context together, the combined state alone only when it has neither (#5781)",
 );
+assert.match(checksRoute, /\(runsIncomplete \|\| !statusResp\.res\.ok\) && signal === "passing" \? "pending"/, "a side that couldn't be read can't claim passing (#5787 review)");
 assert.match(checksRoute, /page <= MAX_RUN_PAGES/, "checks route reads every page of check-runs (#5781)");
 assert.match(checksRoute, /detailsUrl:[\s\S]{0,60}details_url/, "each run carries its logs URL");
 assert.match(checksRoute, /if \(!runsResp\.res\.ok && !statusResp\.res\.ok\)/, "checks route errors when both upstream CI requests fail");

@@ -335,12 +335,15 @@ export function persistFileEditDrafts(
       // can't be written, the last good one is better than none (#5781).
       keep.add(draft.path);
       const size = draft.content.length + draft.baseContent.length;
+      const entry = contentKey(draft);
       if (size > FILE_EDIT_DRAFT_STORAGE_MAX_CHARS || size > budget) {
-        unbacked.add(draft.path);
+        // Nothing new is written past the budget. A copy that already holds
+        // this text still backs it up (#5787 review), so only a draft whose
+        // latest text isn't stored reads as not backed up.
+        if (written.get(draft.path) !== entry || storedKey(draft.path) !== entry) unbacked.add(draft.path);
         continue;
       }
       budget -= size;
-      const entry = contentKey(draft);
       // Unchanged here since this page last wrote it: rewritten only when
       // its copy is gone. Another window that saved or discarded the file
       // removed it, and this page still holds the edit (#5781). A different

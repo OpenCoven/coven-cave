@@ -2825,6 +2825,18 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(list.getByRole("option").last(), "the last session is in reach").toBeInViewport();
   });
 
+  test("87. a checkpoint that left a file out says which", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/changes", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      return route.fulfill({ json: { ok: true, checkpointPath: "/x.patch", skipped: ["data/big.bin"] } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("button", { name: "Save patch checkpoint" }).click();
+    await expect(rail.getByText(/Checkpoint saved, without one untracked file too large to keep: data\/big\.bin\./)).toBeVisible();
+  });
+
   test("86. a conflicted file reads as conflicted", async ({ page }) => {
     await base(page, [NEWEST, OLDER], { current: [{ path: "src/flux.ts", status: "conflicted", insertions: 2, deletions: 1, changeVersion: "1:1:1" }] as typeof CHANGED_FILES });
     await openDesk(page);

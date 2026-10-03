@@ -41,22 +41,39 @@ export function markdownLinkTarget(
   } catch {
     return { kind: "none" };
   }
-  const root = projectRoot ? trimSlashes(projectRoot) : null;
-  const base = decoded.startsWith("/") && root ? root : filePath.slice(0, filePath.lastIndexOf("/"));
+  // Windows paths (#5787 review): the tree hands over native paths, with
+  // backslashes and a drive, while project roots use forward slashes. Work in
+  // forward slashes and give the path back the way the file's own came.
+  const file = forward(filePath);
+  const root = projectRoot ? trimSlashes(forward(projectRoot)) : null;
+  const base = decoded.startsWith("/") && root ? root : file.slice(0, file.lastIndexOf("/"));
   const resolved = normalize(`${base}/${decoded.replace(/^\/+/, "")}`);
   if (!resolved) return { kind: "none" };
-  if (root && resolved !== root && !resolved.startsWith(`${root}/`)) return { kind: "none" };
-  return { kind: "file", path: resolved };
+  if (root && !within(resolved, root)) return { kind: "none" };
+  return { kind: "file", path: filePath.includes("\\") ? resolved.replace(/\//g, "\\") : resolved };
+}
+
+function forward(value: string): string {
+  return value.replace(/\\/g, "/");
 }
 
 function trimSlashes(value: string): string {
   return value.replace(/\/+$/, "") || "/";
 }
 
-/** `/a/b/../c/./d` → `/a/c/d`; null when `..` climbs past the top. */
+/** Inside `root`. Under a Windows drive, without case, as its filesystem reads. */
+function within(path: string, root: string): boolean {
+  const drive = /^[a-z]:\//i.test(root);
+  const [p, r] = drive ? [path.toLowerCase(), root.toLowerCase()] : [path, root];
+  return p === r || p.startsWith(r.endsWith("/") ? r : `${r}/`);
+}
+
+/** `/a/b/../c/./d` → `/a/c/d`, and `C:/a/../b` → `C:/b`; null when `..`
+ *  climbs past the top. */
 function normalize(absolute: string): string | null {
+  const drive = /^[a-z]:(?=\/)/i.exec(absolute)?.[0] ?? "";
   const out: string[] = [];
-  for (const part of absolute.split("/")) {
+  for (const part of absolute.slice(drive.length).split("/")) {
     if (!part || part === ".") continue;
     if (part === "..") {
       if (out.length === 0) return null;
@@ -65,7 +82,7 @@ function normalize(absolute: string): string | null {
       out.push(part);
     }
   }
-  return `/${out.join("/")}`;
+  return `${drive}/${out.join("/")}`;
 }
 
 /**

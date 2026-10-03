@@ -155,10 +155,14 @@ async function load(req: Request): Promise<Response> {
       targetUrl: str(s.target_url),
     }));
 
-    const merged = summarizeCheckSignals(runs as CheckRun[], statuses);
+    // GitHub's verdict over every status context, when there is one
+    // (#5787 review): the list above is only the first page of them.
+    const statusCount = Number((statusResp.data as { total_count?: unknown } | null)?.total_count ?? statuses.length) || 0;
+    const merged = summarizeCheckSignals(runs as CheckRun[], statusCount > 0 ? combinedState : null);
     // No runs and no statuses: the combined state is the only signal left.
-    const signal = runs.length === 0 && statuses.length === 0 ? summarizeChecks([], combinedState) : merged;
-    const rollup = runsIncomplete && signal === "passing" ? "pending" : signal;
+    const signal = runs.length === 0 && statusCount === 0 ? summarizeChecks([], combinedState) : merged;
+    // A side that couldn't be read can't let the gate claim passing.
+    const rollup = (runsIncomplete || !statusResp.res.ok) && signal === "passing" ? "pending" : signal;
 
     return NextResponse.json({
       ok: true,

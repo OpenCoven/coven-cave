@@ -141,17 +141,16 @@ console.log("github-checks: ok");
 {
   const pass = { status: "completed", conclusion: "success" };
   // One passing run beside a failing Vercel/Codecov status used to read passing.
-  assert.equal(summarizeCheckSignals([pass], [{ state: "failure" }]), "failing");
-  assert.equal(summarizeCheckSignals([pass], [{ state: "error" }]), "failing");
-  assert.equal(summarizeCheckSignals([pass], [{ state: "success" }, { state: "pending" }]), "pending");
-  assert.equal(summarizeCheckSignals([pass], [{ state: "success" }]), "passing");
-  // No statuses: the runs decide, even though GitHub's combined state for a
-  // commit without statuses is "pending".
-  assert.equal(summarizeCheckSignals([pass], []), "passing");
+  assert.equal(summarizeCheckSignals([pass], "failure"), "failing");
+  assert.equal(summarizeCheckSignals([pass], "error"), "failing");
+  assert.equal(summarizeCheckSignals([pass], "pending"), "pending");
+  assert.equal(summarizeCheckSignals([pass], "success"), "passing");
+  // No statuses (null): the runs decide, though GitHub would say "pending".
+  assert.equal(summarizeCheckSignals([pass], null), "passing");
   // A failing run outranks a passing status, and a running one holds it.
-  assert.equal(summarizeCheckSignals([{ status: "completed", conclusion: "failure" }], [{ state: "success" }]), "failing");
-  assert.equal(summarizeCheckSignals([{ status: "in_progress", conclusion: null }], [{ state: "success" }]), "pending");
+  assert.equal(summarizeCheckSignals([{ status: "completed", conclusion: "failure" }], "success"), "failing");
+  assert.equal(summarizeCheckSignals([{ status: "in_progress", conclusion: null }], "success"), "pending");
   // Statuses alone, or nothing at all.
-  assert.equal(summarizeCheckSignals([], [{ state: "success" }]), "passing");
-  assert.equal(summarizeCheckSignals([], []), null);
+  assert.equal(summarizeCheckSignals([], "success"), "passing");
+  assert.equal(summarizeCheckSignals([], null), null);
 }

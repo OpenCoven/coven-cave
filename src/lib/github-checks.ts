@@ -73,23 +73,20 @@ export function summarizeChecks(
  * when there are no check runs, so one passing run beside a failing Vercel,
  * Codecov or Jenkins status read as passing and enabled Merge.
  *
- * `statuses` is the latest status per context. It is empty when the commit
- * has none, and only then is the combined state ignored: GitHub reports
- * "pending" for a commit without statuses, which would hold every
- * check-runs-only repository at pending forever.
+ * `combinedState` is GitHub's verdict over every status context, read past
+ * the first page of contexts (#5787 review). Pass it only when the commit has
+ * at least one status: GitHub reports "pending" for a commit without any,
+ * which would hold every check-runs-only repository at pending forever.
  */
-export function summarizeCheckSignals(
-  checkRuns: CheckRun[],
-  statuses: ReadonlyArray<{ state?: string | null }>,
-): CheckSummary {
+export function summarizeCheckSignals(checkRuns: CheckRun[], combinedState: string | null): CheckSummary {
   const runs = checkRuns.length > 0 ? summarizeChecks(checkRuns) : null;
-  const legacy: CheckSummary = statuses.length === 0
+  const legacy: CheckSummary = combinedState === null
     ? null
-    : statuses.some((status) => status.state === "failure" || status.state === "error")
+    : combinedState === "failure" || combinedState === "error"
       ? "failing"
-      : statuses.some((status) => status.state !== "success")
-        ? "pending"
-        : "passing";
+      : combinedState === "success"
+        ? "passing"
+        : "pending";
   for (const summary of ["failing", "pending", "passing"] as const) {
     if (runs === summary || legacy === summary) return summary;
   }

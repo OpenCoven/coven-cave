@@ -347,12 +347,20 @@ export function SessionChangesInner({
     setActionError(null);
     setCheckpointMessage(null);
     try {
-      await mutateSessionChanges<{
+      const json = await mutateSessionChanges<{
         ok?: boolean;
         checkpointPath?: string;
+        skipped?: string[];
         error?: string;
       }>(fetch, projectRoot, "checkpoint");
-      setCheckpointMessage("Checkpoint saved.");
+      // Say what it left out (#5787 review): an untracked file over 50 MB isn't
+      // in the checkpoint, and "saved" alone read as a complete backup.
+      const skipped = Array.isArray(json.skipped) ? json.skipped : [];
+      const message = skipped.length > 0
+        ? `Checkpoint saved, without ${skipped.length === 1 ? "one untracked file" : `${skipped.length} untracked files`} too large to keep: ${skipped.join(", ")}.`
+        : "Checkpoint saved.";
+      setCheckpointMessage(message);
+      if (skipped.length > 0) announce(message);
       setCheckpointsOpen(true);
       void loadCheckpoints();
     } catch (err) {
@@ -360,7 +368,7 @@ export function SessionChangesInner({
     } finally {
       setCheckpointing(false);
     }
-  }, [projectRoot, loadCheckpoints]);
+  }, [projectRoot, loadCheckpoints, announce]);
 
   const restoreCheckpoint = useCallback(
     async (name: string) => {

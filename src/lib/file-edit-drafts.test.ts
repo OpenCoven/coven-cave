@@ -434,27 +434,40 @@ const B = "/repo/src/b.ts";
     assert.equal(store.get(B).content, "edited", "a recent one is");
   }
 
-  // Past the total budget, the newest edits are written and the oldest isn't.
+  // Past the total budget nothing new is written, newest edits first, and a
+  // copy that already holds a draft's text still counts as its backup.
   {
     let clock = 1_000;
     const storage = shared();
     const store = createFileEditDraftStore();
-    persistFileEditDrafts(store, storage, sync, () => clock);
-    const big = (letter) => letter.repeat(Math.floor(BUDGET / 3));
+    let pending = null;
+    const later = (write) => { pending = write; };
+    const persist = persistFileEditDrafts(store, storage, later, () => clock);
+    const flush = () => { const write = pending; pending = null; write?.(); };
+    const third = (letter) => letter.repeat(Math.floor(BUDGET / 3));
     const paths = ["/repo/1.ts", "/repo/2.ts", "/repo/3.ts", "/repo/4.ts"];
     for (const [index, path] of paths.entries()) {
       clock += 1_000;
       store.begin(path, "", "v1");
-      store.update(path, big(String(index)));
+      store.update(path, third(String(index)));
+      flush();
     }
     assert.deepEqual(paths.map((path) => content(storage, path) !== null), [true, true, true, true], "each fit when it was written");
+    assert.equal(store.unbackedPaths().size, 0, "the oldest is past the budget, but its copy holds its text");
+    // Three drafts grow past the budget in one flush: the two newest are
+    // written, and the third keeps its last good copy, not backed up.
     clock += 1_000;
-    store.update(paths[0], big("z")); // the oldest edit changes again, now newest
-    assert.ok(store.unbackedPaths().size >= 1, "something no longer fits");
-    assert.equal(content(storage, paths[0]), big("z"), "the newest edit is written");
-    assert.ok(!store.unbackedPaths().has(paths[0]));
-    assert.ok(store.unbackedPaths().has(paths[1]), "the least recently changed is the one left out");
-    assert.equal(content(storage, paths[1]), big("1"), "with its last good copy kept");
+    const grown = (letter) => letter.repeat(Math.floor(BUDGET * 0.45));
+    store.update(paths[1], grown("a"));
+    store.update(paths[2], grown("b"));
+    store.update(paths[3], grown("c"));
+    flush();
+    const written = [paths[1], paths[2], paths[3]].filter((path) => content(storage, path)?.length === Math.floor(BUDGET * 0.45));
+    assert.equal(written.length, 2, "only what fits is written");
+    const left = [paths[1], paths[2], paths[3]].find((path) => !written.includes(path));
+    assert.ok(store.unbackedPaths().has(left), "the one left out reads as not backed up");
+    assert.equal(content(storage, left).length, Math.floor(BUDGET / 3), "with its last good copy kept");
+    persist.flush();
   }
 }
 
