@@ -12,6 +12,8 @@ import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
 import { FILE_CHANGED_ON_DISK, fileEditDrafts, isDraftDirty } from "@/lib/file-edit-drafts";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { handleMarkdownLinkClick } from "@/lib/markdown-doc-links";
+import { openExternalUrl } from "@/lib/open-external";
 import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
@@ -135,6 +137,12 @@ export function RailFilePreview({
     () => fileEditDrafts.get(path),
     () => null,
   );
+  // Whether this edit's latest text is kept for a reload (#5781).
+  const unbacked = useSyncExternalStore(
+    fileEditDrafts.subscribe,
+    () => (path ? fileEditDrafts.unbackedPaths().has(path) : false),
+    () => false,
+  );
   const editing = Boolean(draft);
   const editValue = draft?.content ?? "";
   const saving = draft?.saving ?? false;
@@ -149,6 +157,16 @@ export function RailFilePreview({
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const reloadButtonRef = useRef<HTMLButtonElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const editButtonRef = useRef<HTMLButtonElement | null>(null);
+  // A save that closes the editor gives focus to Edit (#5781): the editor and
+  // Save unmount with the draft, and focus fell to the page.
+  const [focusAfterSave, setFocusAfterSave] = useState(0);
+  useEffect(() => {
+    if (focusAfterSave === 0) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return; // they moved on meanwhile
+    (editButtonRef.current ?? headerRef.current)?.focus();
+  }, [focusAfterSave]);
   const [justSaved, setJustSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { announce } = useAnnouncer();
@@ -221,9 +239,12 @@ export function RailFilePreview({
         if (cancelled) return;
         if (!json.ok) {
           // A failed background refresh keeps the text already on screen,
-          // but a 404 says the file is gone, and that is shown (#5756).
-          if (!refresh) setError(json.error || GENERIC_OPEN_ERROR);
-          else if (res.status === 404) setMissingOnDisk(true);
+          // but a 404 says the file is gone, and that is shown (#5756). So
+          // does coming back to an edit whose file went meanwhile (#5781):
+          // the editor shows the draft, so the error would sit unseen
+          // behind it while Save stayed on.
+          if (res.status === 404 && (refresh || fileEditDrafts.get(path))) setMissingOnDisk(true);
+          else if (!refresh) setError(json.error || GENERIC_OPEN_ERROR);
           setLoading(false);
           return;
         }
@@ -338,7 +359,10 @@ export function RailFilePreview({
       // still the one on screen; elsewhere it is read fresh on return.
       if (pathRef.current === target) {
         setFile({ kind: "text", content: sending.body, size: json.size ?? sending.body.length, version: json.version ?? null });
-        if (!stillOpen) setJustSaved(true);
+        if (!stillOpen) {
+          setJustSaved(true);
+          setFocusAfterSave((count) => count + 1);
+        }
       }
       announce(stillOpen ? `Saved ${label}. What you typed while it saved is not saved yet.` : `Saved ${label}.`);
       // The save changed the working tree: the changes list, the tree's
@@ -510,8 +534,11 @@ export function RailFilePreview({
               </span>
             ) : null}
             {editing ? (
-              <span className="workspace-rail__preview-chip workspace-rail__preview-chip--warn">
-                editing · unsaved
+              <span
+                className="workspace-rail__preview-chip workspace-rail__preview-chip--warn"
+                title={unbacked ? "This edit is too large to keep for a reload, or storage refused it. Save it, or copy it out, before closing." : undefined}
+              >
+                {unbacked ? "editing · unsaved · not backed up" : "editing · unsaved"}
               </span>
             ) : null}
             {outline.length > 0 && !editing ? (
@@ -578,6 +605,7 @@ export function RailFilePreview({
                 )}
                 {editable && (
                   <button
+                    ref={editButtonRef}
                     type="button"
                     className="focus-ring workspace-rail__preview-action"
                     onClick={startEditing}
@@ -718,9 +746,19 @@ export function RailFilePreview({
         ) : file?.kind === "text" && isMarkdownPath(path) ? (
           // No 72ch clamp here — the rail preview is a pane, not a transcript
           // column; clamping left a dead band to the right of wide panes.
-          <MarkdownBlock text={file.content} className="comux-md" />
+          // Links stay in the app (#5781): a project file opens here, a web
+          // link opens the way the app opens external links.
+          <div
+            className="contents"
+            onClickCapture={(event) =>
+              handleMarkdownLinkClick(event, { filePath: path, projectRoot, openExternal: openExternalUrl, openFile: onOpenPath })
+            }
+          >
+            <MarkdownBlock text={file.content} className="comux-md" />
+          </div>
         ) : file?.kind === "text" ? (
           <SyntaxBlock
+            key={path}
             text={file.content}
             lang={path.split(".").pop()}
             className="leading-relaxed"

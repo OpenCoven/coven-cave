@@ -14,6 +14,8 @@ const STATUS_META: Record<FileStatus, { letter: string; label: string; color: st
   deleted: { letter: "D", label: "deleted", color: "var(--color-danger)" },
   renamed: { letter: "R", label: "renamed", color: "var(--text-secondary)" },
   untracked: { letter: "U", label: "untracked", color: "var(--text-muted)" },
+  // Unmerged mid-merge, -rebase or -pick (#5781); resolved in a terminal.
+  conflicted: { letter: "C", label: "conflicted", color: "var(--color-danger)" },
 };
 
 function StatusChip({ status }: { status: FileStatus }) {

@@ -8,6 +8,12 @@ import { readFile } from "node:fs/promises";
 // server during verification.
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+// The save takes the repository lock under the git toplevel (#5781), the key
+// the changes route's commit, revert and restore use, not the project root.
+assert.match(
+  source,
+  /const lockKey = await repositoryLockKey\(path\.join\(allowed\.root, allowed\.relativePath\), allowed\.root\);\s*return withRepositoryMutation\(lockKey,/,
+);
 
 assert.match(source, /export async function POST\(/, "route must export a POST handler for writes");
 
@@ -23,7 +29,7 @@ assert.match(
 // the target as path.join(root, relativePath).
 assert.match(
   source,
-  /const allowed = resolveAllowedProjectSubpath\(filePath\);[\s\S]*?if \(!allowed\)[\s\S]*?path not allowed[\s\S]*?withRepositoryMutation\(allowed\.root[\s\S]*?const resolved = path\.join\(allowed\.root, allowed\.relativePath\);[\s\S]*?fs\.writeFileSync\(resolved/,
+  /const allowed = resolveAllowedProjectSubpath\(filePath\);[\s\S]*?if \(!allowed\)[\s\S]*?path not allowed[\s\S]*?withRepositoryMutation\(lockKey[\s\S]*?const resolved = path\.join\(allowed\.root, allowed\.relativePath\);[\s\S]*?fs\.writeFileSync\(resolved/,
   "writes must rebuild the path from validated root + relativePath, like reads",
 );
 
@@ -82,7 +88,7 @@ assert.match(source, /export function projectFileVersion\(bytes: Buffer \| strin
 assert.match(source, /const bytes = fs\.readFileSync\(resolved\);[\s\S]{0,200}version: projectFileVersion\(bytes\)/, "text reads return the version of the bytes they decoded");
 assert.match(
   source,
-  /withRepositoryMutation\(allowed\.root[\s\S]*?if \(typeof expectedVersion === "string"\) \{[\s\S]*?projectFileVersion\(fs\.readFileSync\(resolved\)\)[\s\S]*?if \(current !== expectedVersion\)[\s\S]*?conflict: true[\s\S]*?status: 409[\s\S]*?fs\.writeFileSync\(resolved/,
+  /withRepositoryMutation\(lockKey[\s\S]*?if \(typeof expectedVersion === "string"\) \{[\s\S]*?projectFileVersion\(fs\.readFileSync\(resolved\)\)[\s\S]*?if \(current !== expectedVersion\)[\s\S]*?conflict: true[\s\S]*?status: 409[\s\S]*?fs\.writeFileSync\(resolved/,
   "a stale expectedVersion is refused with a 409 conflict before the write, under the lock",
 );
 assert.match(source, /expectedVersion !== undefined && expectedVersion !== null && typeof expectedVersion !== "string"[\s\S]{0,120}status: 400/, "a malformed expectedVersion is a 400");

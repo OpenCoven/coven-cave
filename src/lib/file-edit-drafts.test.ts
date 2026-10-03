@@ -1,6 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
+/** A stored entry without its time, which must be a number (#5781). */
+function entryOf(raw) {
+  const { savedAt, ...entry } = JSON.parse(raw);
+  assert.equal(typeof savedAt, "number", "each stored draft records when it changed");
+  return entry;
+}
+
 const { createFileEditDraftStore, isDraftDirty, FILE_CHANGED_ON_DISK } = await import("./file-edit-drafts.ts");
 
 const A = "/repo/src/a.ts";
@@ -231,7 +238,7 @@ const B = "/repo/src/b.ts";
     store.begin(A, "one\r\ntwo\r\n", "v1");
     assert.equal(storage.map.size, 0, "a draft nobody has typed into isn't written");
     store.update(A, "one\nTWO\n");
-    assert.deepEqual(JSON.parse(storage.getItem(PREFIX + A)), {
+    assert.deepEqual(entryOf(storage.getItem(PREFIX + A)), {
       content: "one\nTWO\n", baseContent: "one\ntwo\n", baseVersion: "v1", eol: "\r\n",
     });
     const save = store.startSave(A);
@@ -286,11 +293,24 @@ const B = "/repo/src/b.ts";
     store.update(A, "a2");
     assert.ok(storage.getItem(PREFIX + A));
     store.update(A, "x".repeat(FILE_EDIT_DRAFT_STORAGE_MAX_CHARS));
-    assert.equal(storage.getItem(PREFIX + A), null, "an oversized draft isn't kept, and its stale copy goes");
+    // The last good copy stays (#5781): it used to be deleted, leaving the
+    // edit in memory alone. The store says the latest text isn't backed up.
+    assert.equal(entryOf(storage.getItem(PREFIX + A)).content, "a2", "an oversized draft keeps its last good copy");
+    assert.deepEqual([...store.unbackedPaths()], [A]);
     storage.failWrites = true;
     store.begin(B, "b", "v1");
     assert.doesNotThrow(() => store.update(B, "b2"));
     assert.equal(store.get(B).content, "b2");
+    assert.deepEqual([...store.unbackedPaths()].sort(), [A, B].sort(), "a refused write is not backed up either");
+    // A draft kept once, whose next write is refused, keeps that copy.
+    const C = "/repo/src/c.ts";
+    storage.failWrites = false;
+    store.begin(C, "c", "v1");
+    store.update(C, "c2");
+    storage.failWrites = true;
+    store.update(C, "c3");
+    assert.equal(entryOf(storage.getItem(PREFIX + C)).content, "c2", "the last good copy survives a refused write");
+    assert.ok(store.unbackedPaths().has(C));
   }
 
   // Another window's draft for a file this page never wrote is left alone.
@@ -316,7 +336,7 @@ const B = "/repo/src/b.ts";
     store.update(A, "one two three");
     assert.equal(JSON.parse(storage.getItem(PREFIX + A)).baseVersion, "v1");
     assert.equal(store.settle(A, save.id, save.content, "v2"), true);
-    assert.deepEqual(JSON.parse(storage.getItem(PREFIX + A)), {
+    assert.deepEqual(entryOf(storage.getItem(PREFIX + A)), {
       content: "one two three", baseContent: "one two", baseVersion: "v2", eol: "\n",
     });
     store.acceptDisk(A);
@@ -336,6 +356,118 @@ const B = "/repo/src/b.ts";
     assert.equal(storage.map.size, 0);
     persisted.flush();
     assert.equal(JSON.parse(storage.getItem(PREFIX + A)).content, "a3");
+  }
+}
+
+// ── Two windows, budgets and expiry (#5781) ────────────────────────────────
+{
+  const {
+    persistFileEditDrafts,
+    FILE_EDIT_DRAFT_STORAGE_PREFIX: PREFIX,
+    FILE_EDIT_DRAFT_STORAGE_BUDGET_CHARS: BUDGET,
+    FILE_EDIT_DRAFT_MAX_AGE_MS: MAX_AGE,
+  } = await import("./file-edit-drafts.ts");
+  const shared = (seed = {}) => {
+    const map = new Map(Object.entries(seed));
+    return {
+      map,
+      get length() { return map.size; },
+      key(index) { return [...map.keys()][index] ?? null; },
+      getItem(key) { return map.has(key) ? map.get(key) : null; },
+      setItem(key, value) { map.set(key, String(value)); },
+      removeItem(key) { map.delete(key); },
+    };
+  };
+  const sync = (write) => write();
+  const content = (storage, path) => {
+    const raw = storage.getItem(PREFIX + path);
+    return raw === null ? null : JSON.parse(raw).content;
+  };
+
+  // Window B's Cancel no longer deletes window A's newer edit, and A's copy
+  // comes back if anything removes it while A still holds the edit.
+  {
+    const storage = shared();
+    const a = createFileEditDraftStore();
+    const persistA = persistFileEditDrafts(a, storage, sync);
+    a.begin(A, "x", "v1");
+    a.update(A, "e1");
+    const b = createFileEditDraftStore();
+    persistFileEditDrafts(b, storage, sync); // B opens, and restores A's e1
+    assert.equal(b.get(A).content, "e1");
+    a.update(A, "e2");
+    b.discard(A); // B presses Cancel on its restored copy
+    assert.equal(content(storage, A), "e2", "B removes only its own copy, never A's newer edit");
+    storage.removeItem(PREFIX + A); // something else drops it while A holds the edit
+    persistA.flush(); // A quits
+    assert.equal(content(storage, A), "e2", "A writes its edit back");
+  }
+
+  // Each window writes only what it changed: B's untouched, restored copy
+  // never overwrites A's newer edit.
+  {
+    const storage = shared();
+    const a = createFileEditDraftStore();
+    persistFileEditDrafts(a, storage, sync);
+    a.begin(A, "x", "v1");
+    a.update(A, "e1");
+    const b = createFileEditDraftStore();
+    const persistB = persistFileEditDrafts(b, storage, sync);
+    a.update(A, "e2");
+    b.begin(B, "y", "v1");
+    b.update(B, "y2"); // B edits another file, so B flushes
+    persistB.flush();
+    assert.equal(content(storage, A), "e2");
+    b.update(A, "b's own edit"); // but B's own change to the file is written
+    assert.equal(content(storage, A), "b's own edit");
+  }
+
+  // A draft left untouched for 14 days is dropped on the next start.
+  {
+    let clock = 1_000_000_000_000;
+    const entry = (savedAt) => JSON.stringify({ content: "edited", baseContent: "base", baseVersion: "v1", eol: "\n", savedAt });
+    const storage = shared({ [PREFIX + A]: entry(clock - MAX_AGE - 1), [PREFIX + B]: entry(clock - MAX_AGE + 60_000) });
+    const store = createFileEditDraftStore();
+    persistFileEditDrafts(store, storage, sync, () => clock);
+    assert.equal(store.get(A), null, "the old one isn't restored");
+    assert.equal(storage.getItem(PREFIX + A), null, "and its key is gone");
+    assert.equal(store.get(B).content, "edited", "a recent one is");
+  }
+
+  // Past the total budget nothing new is written, newest edits first, and a
+  // copy that already holds a draft's text still counts as its backup.
+  {
+    let clock = 1_000;
+    const storage = shared();
+    const store = createFileEditDraftStore();
+    let pending = null;
+    const later = (write) => { pending = write; };
+    const persist = persistFileEditDrafts(store, storage, later, () => clock);
+    const flush = () => { const write = pending; pending = null; write?.(); };
+    const third = (letter) => letter.repeat(Math.floor(BUDGET / 3));
+    const paths = ["/repo/1.ts", "/repo/2.ts", "/repo/3.ts", "/repo/4.ts"];
+    for (const [index, path] of paths.entries()) {
+      clock += 1_000;
+      store.begin(path, "", "v1");
+      store.update(path, third(String(index)));
+      flush();
+    }
+    assert.deepEqual(paths.map((path) => content(storage, path) !== null), [true, true, true, true], "each fit when it was written");
+    assert.equal(store.unbackedPaths().size, 0, "the oldest is past the budget, but its copy holds its text");
+    // Three drafts grow past the budget in one flush: the two newest are
+    // written, and the third keeps its last good copy, not backed up.
+    clock += 1_000;
+    const grown = (letter) => letter.repeat(Math.floor(BUDGET * 0.45));
+    store.update(paths[1], grown("a"));
+    store.update(paths[2], grown("b"));
+    store.update(paths[3], grown("c"));
+    flush();
+    const written = [paths[1], paths[2], paths[3]].filter((path) => content(storage, path)?.length === Math.floor(BUDGET * 0.45));
+    assert.equal(written.length, 2, "only what fits is written");
+    const left = [paths[1], paths[2], paths[3]].find((path) => !written.includes(path));
+    assert.ok(store.unbackedPaths().has(left), "the one left out reads as not backed up");
+    assert.equal(content(storage, left).length, Math.floor(BUDGET / 3), "with its last good copy kept");
+    persist.flush();
   }
 }
 

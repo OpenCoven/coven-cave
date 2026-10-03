@@ -102,4 +102,38 @@ const { statusOf, parsePorcelainZ, parseNumstatZ, planRevert, isCheckpointName }
   assert.equal(isCheckpointName(""), false);
 }
 
+// ── #5781: conflicts, worktree renames, copies ──────────────────────────────
+{
+  // Every unmerged pair is a conflict, not modified, added or deleted.
+  for (const [x, y] of [["U", "U"], ["A", "A"], ["D", "D"], ["A", "U"], ["U", "A"], ["D", "U"], ["U", "D"]]) {
+    assert.equal(statusOf(x, y), "conflicted", `${x}${y}`);
+  }
+  // A worktree rename (` R`, after `git add -N`) consumes its original path:
+  // it used to be read as an entry of its own, a phantom "cd.txt".
+  assert.deepEqual(parsePorcelainZ(" R moved.txt\0ab cd.txt\0 M other.txt\0"), [
+    { path: "moved.txt", status: "renamed", renamedFrom: "ab cd.txt" },
+    { path: "other.txt", status: "modified" },
+  ]);
+  // A copy keeps its original, and says so.
+  assert.deepEqual(parsePorcelainZ("C  dup.txt\0src.txt\0M  src.txt\0"), [
+    { path: "dup.txt", status: "renamed", renamedFrom: "src.txt", copied: true },
+    { path: "src.txt", status: "modified" },
+  ]);
+  assert.deepEqual(parsePorcelainZ("RM new.txt\0old.txt\0"), [{ path: "new.txt", status: "renamed", renamedFrom: "old.txt" }]);
+}
+{
+  const renamed = { status: "renamed", renamedFrom: "old.txt" };
+  // A rename reverts as a whole, with no "new file" confirmation.
+  assert.deepEqual(planRevert({ inHead: false, tracked: true, confirmDelete: false, entry: renamed, fromInHead: true }), { action: "unrename", from: "old.txt" });
+  assert.deepEqual(planRevert({ inHead: false, tracked: true, confirmDelete: true, entry: renamed, fromInHead: true }), { action: "unrename", from: "old.txt" });
+  // An original that was never committed falls back to the new-file rule.
+  assert.deepEqual(planRevert({ inHead: false, tracked: true, confirmDelete: false, entry: renamed, fromInHead: false }), { action: "confirm-required" });
+  // A copy's original is still there: only the copy goes.
+  assert.deepEqual(planRevert({ inHead: false, tracked: true, confirmDelete: false, entry: { ...renamed, copied: true }, fromInHead: true }), { action: "rm" });
+  // A conflict is refused whatever else is true.
+  for (const inHead of [true, false]) {
+    assert.deepEqual(planRevert({ inHead, tracked: true, confirmDelete: true, entry: { status: "conflicted" } }), { action: "conflicted" });
+  }
+}
+
 console.log("git-changes.test.ts: all assertions passed");

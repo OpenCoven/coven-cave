@@ -67,6 +67,32 @@ export function summarizeChecks(
   }
 }
 
+/**
+ * The rollup behind the PR tab's merge gate (#5781): check runs and legacy
+ * commit statuses together. `summarizeChecks` reads the combined status only
+ * when there are no check runs, so one passing run beside a failing Vercel,
+ * Codecov or Jenkins status read as passing and enabled Merge.
+ *
+ * `combinedState` is GitHub's verdict over every status context, read past
+ * the first page of contexts (#5787 review). Pass it only when the commit has
+ * at least one status: GitHub reports "pending" for a commit without any,
+ * which would hold every check-runs-only repository at pending forever.
+ */
+export function summarizeCheckSignals(checkRuns: CheckRun[], combinedState: string | null): CheckSummary {
+  const runs = checkRuns.length > 0 ? summarizeChecks(checkRuns) : null;
+  const legacy: CheckSummary = combinedState === null
+    ? null
+    : combinedState === "failure" || combinedState === "error"
+      ? "failing"
+      : combinedState === "success"
+        ? "passing"
+        : "pending";
+  for (const summary of ["failing", "pending", "passing"] as const) {
+    if (runs === summary || legacy === summary) return summary;
+  }
+  return null;
+}
+
 /** Per-bucket counts for a compact checks strip (chat GitHub cards, W1b). */
 export type CheckCounts = { passed: number; failed: number; pending: number; total: number };
 

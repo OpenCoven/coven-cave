@@ -29,6 +29,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
+import { handleMarkdownLinkClick } from "@/lib/markdown-doc-links";
 import { relativeTime } from "@/lib/relative-time";
 import { openExternalUrl } from "@/lib/open-external";
 import { pullRequestReviewWorkItem } from "@/lib/review-landing";
@@ -348,7 +349,11 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
                         opened this{detail.detail.createdAt ? ` · ${relativeTime(detail.detail.createdAt)}` : ""}
                       </span>
                     </header>
-                    <div className="pr-reader__card-body">
+                    <div
+                      className="pr-reader__card-body"
+                      // Links stay in the app (#5781); a relative one does nothing.
+                      onClickCapture={(event) => handleMarkdownLinkClick(event, { openExternal: openExternalUrl })}
+                    >
                       <MarkdownBlock text={detail.detail.body} />
                     </div>
                   </article>

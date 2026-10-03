@@ -1,9 +1,11 @@
-export type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+export type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted";
 
 export type ChangedFile = {
   path: string;
   status: FileStatus;
   renamedFrom?: string;
+  /** A copy rather than a rename: the original path is still there. */
+  copied?: true;
   insertions?: number;
   deletions?: number;
   /** Filesystem stamp (mtime:ctime:size) the server attaches on each poll, so

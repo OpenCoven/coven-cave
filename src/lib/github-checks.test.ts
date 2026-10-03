@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { summarizeChecks } from "./github-checks.ts";
+import { summarizeCheckSignals, summarizeChecks } from "./github-checks.ts";
 
 // ── Check-runs (GitHub Actions) take precedence over the legacy status ───────
 
@@ -135,4 +135,22 @@ console.log("github-checks: ok");
   for (const c of ["success", "neutral", "skipped", "cancelled", "stale", null, undefined, ""]) {
     assert.equal(isFailConclusion(c), false, String(c));
   }
+}
+
+// ── The merge gate's rollup: check runs and commit statuses together (#5781) ─
+{
+  const pass = { status: "completed", conclusion: "success" };
+  // One passing run beside a failing Vercel/Codecov status used to read passing.
+  assert.equal(summarizeCheckSignals([pass], "failure"), "failing");
+  assert.equal(summarizeCheckSignals([pass], "error"), "failing");
+  assert.equal(summarizeCheckSignals([pass], "pending"), "pending");
+  assert.equal(summarizeCheckSignals([pass], "success"), "passing");
+  // No statuses (null): the runs decide, though GitHub would say "pending".
+  assert.equal(summarizeCheckSignals([pass], null), "passing");
+  // A failing run outranks a passing status, and a running one holds it.
+  assert.equal(summarizeCheckSignals([{ status: "completed", conclusion: "failure" }], "success"), "failing");
+  assert.equal(summarizeCheckSignals([{ status: "in_progress", conclusion: null }], "success"), "pending");
+  // Statuses alone, or nothing at all.
+  assert.equal(summarizeCheckSignals([], "success"), "passing");
+  assert.equal(summarizeCheckSignals([], null), null);
 }

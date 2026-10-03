@@ -10,6 +10,7 @@ import {
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
+import { repositoryLockKey } from "@/lib/server/repository-lock-key";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 
@@ -250,7 +251,9 @@ export async function projectFileWrite(
   if (!allowed) {
     return { body: { ok: false, error: "path not allowed" }, status: 403 };
   }
-  return withRepositoryMutation(allowed.root, async () => {
+  // The same key as the changes route's commit, revert and restore (#5781).
+  const lockKey = await repositoryLockKey(path.join(allowed.root, allowed.relativePath), allowed.root);
+  return withRepositoryMutation(lockKey, async () => {
     const resolved = path.join(allowed.root, allowed.relativePath);
 
   const ext = path.extname(resolved).toLowerCase();

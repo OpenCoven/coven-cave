@@ -3,6 +3,7 @@
 import {
   createContext,
   forwardRef,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -205,6 +206,17 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     // Drag-and-drop move is enabled in browse mode (not folder-picker mode).
     const dndEnabled = onDirSelect == null;
 
+    // Handlers the rows keep across renders (#5781): an owner's fresh
+    // arrow on every render made every memoized row render again.
+    const onFileClickRef = useRef(onFileClick);
+    onFileClickRef.current = onFileClick;
+    const onDirSelectRef = useRef(onDirSelect);
+    onDirSelectRef.current = onDirSelect;
+    const stableFileClick = useCallback((path: string) => onFileClickRef.current?.(path), []);
+    const stableDirSelect = useCallback((path: string) => onDirSelectRef.current?.(path), []);
+    const rowFileClick = onFileClick ? stableFileClick : undefined;
+    const rowDirSelect = onDirSelect ? stableDirSelect : undefined;
+
     useEffect(() => {
       mountedRef.current = true;
       return () => { mountedRef.current = false; };
@@ -400,8 +412,8 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
               root={root}
               selectedPath={selectedPath}
               familiarId={familiarId}
-              onFileClick={onFileClick}
-              onDirSelect={onDirSelect}
+              onFileClick={rowFileClick}
+              onDirSelect={rowDirSelect}
               selectedDirs={selectedDirs}
               dndEnabled={dndEnabled}
               onMove={handleMove}
@@ -416,7 +428,26 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 
 // ─── TreeRow ──────────────────────────────────────────────────────────────────
 
-function TreeRow({
+type TreeRowProps = Parameters<typeof TreeRowView>[0];
+
+/**
+ * A row renders again only when its own props change, or when the selection
+ * moves to, from or through it (#5781). Selecting a file used to render every
+ * row: about 1.3 s of main-thread work in a 5,000-entry folder.
+ */
+function sameTreeRow(prev: TreeRowProps, next: TreeRowProps): boolean {
+  for (const key of Object.keys(next) as (keyof TreeRowProps)[]) {
+    if (key !== "selectedPath" && prev[key] !== next[key]) return false;
+  }
+  if (prev.selectedPath === next.selectedPath) return true;
+  const touches = (selected: string | null | undefined) =>
+    selected != null && (selected === next.entry.path || selected.startsWith(`${next.entry.path}/`));
+  return !touches(prev.selectedPath) && !touches(next.selectedPath);
+}
+
+const TreeRow = memo(TreeRowView, sameTreeRow);
+
+function TreeRowView({
   entry,
   depth,
   index,
@@ -537,20 +568,24 @@ function TreeRow({
   }, [refetchSignal]);
 
   return (
-    <div
-      role="treeitem"
-      aria-expanded={entry.isDir ? expanded : undefined}
-      aria-selected={isSelected || undefined}
-      aria-level={depth + 1}
-      aria-posinset={index + 1}
-      aria-setsize={siblingCount}
-    >
+    // The row is the treeitem (#5781): focus lands on it, so it carries the
+    // tree's states. They sat on this wrapper, so arrowing through folders
+    // read "src, button" with no expanded state, and a nested treeitem's
+    // parent was another treeitem, which axe flags. Level, position and set
+    // size give the structure, as a flattened tree may.
+    <div role="none">
       {/* Row */}
       <Button
         variant="ghost"
         size="xs"
         tabIndex={-1}
         data-tree-row=""
+        role="treeitem"
+        aria-expanded={entry.isDir ? expanded : undefined}
+        aria-selected={isSelected || undefined}
+        aria-level={depth + 1}
+        aria-posinset={index + 1}
+        aria-setsize={siblingCount}
         data-tree-depth={depth}
         data-selected={isSelected ? "true" : undefined}
         onClick={handleClick}

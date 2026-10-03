@@ -457,7 +457,11 @@
 }
 .code-picker__trigger:hover { background: var(--bg-hover); }
 .code-picker__trigger-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-picker__panel { display: flex; flex-direction: column; min-height: 0; padding: var(--space-1); }
+.code-picker__panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; padding: var(--space-1); }
+/* The popover caps its height, so the panel and its list shrink to fit and
+   the list scrolls (#5781): with more sessions than fit, the rest were
+   clipped, out of reach of the pointer and the wheel. */
+.ui-popover:has(> .code-picker__panel) { display: flex; flex-direction: column; }
 .code-picker__search {
   display: flex;
   flex: none;
@@ -689,7 +693,9 @@
   color: var(--color-success);
 }
 .project-tree__status-letter[data-status="D"],
-.code-tree__status-letter[data-status="D"] {
+.code-tree__status-letter[data-status="D"],
+.project-tree__status-letter[data-status="C"],
+.code-tree__status-letter[data-status="C"] {
   background: color-mix(in oklab, var(--color-danger) 16%, transparent);
   color: var(--color-danger);
 }

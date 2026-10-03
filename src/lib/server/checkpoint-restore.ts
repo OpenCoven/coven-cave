@@ -31,6 +31,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
+/** Writing a checkpoint streams, so a large tree is bounded by time only. */
+const CHECKPOINT_TIMEOUT_MS = 120_000;
 const MAX_GIT_BUFFER = 64 * 1024 * 1024;
 
 const BASE_HEADER = "coven-cave checkpoint base ";
@@ -63,43 +65,147 @@ export const PATCH_DIFF_ARGS = [
   "--submodule=short",
 ] as const;
 
-function gitDiff(repoRoot: string, args: string[]) {
-  return git(repoRoot, ["diff", ...PATCH_DIFF_ARGS, ...args]);
-}
+/** An untracked file larger than this is left out of a checkpoint (#5781):
+ *  one 52 MB binary overran the patch buffer and failed every revert. */
+export const CHECKPOINT_MAX_UNTRACKED_BYTES = 50 * 1024 * 1024;
+
+const SKIPPED_HEADER = "coven-cave checkpoint skipped ";
+
+export type CheckpointWrite = {
+  /** Untracked files too large to keep, left out of the checkpoint. */
+  skipped: string[];
+};
 
 /**
- * The working tree as a checkpoint patch: tracked changes against HEAD, then
- * an add-file diff per untracked file, headed by what it is against.
+ * Write the working tree as a checkpoint patch to `dest`: every change
+ * against HEAD, untracked files included as new files, headed by what it is
+ * against.
  *
  * Before the first commit the base is the empty tree (#5781). Diffing the
  * working tree against the index instead left staged new files out entirely,
  * so reverting one deleted it for good, and stored a staged file's later edit
  * as a diff against the index, which a restore can't rebuild.
+ *
+ * One `git diff` writes it, streamed to the file (#5781): untracked files are
+ * added to a throwaway copy of the index as intent-to-add, so they diff as
+ * new files beside the tracked changes. It used to run one process per
+ * untracked file (seconds for a few hundred, under the repository lock) and
+ * hold the whole patch in a 64 MB buffer.
  */
+export async function writeCheckpointPatch(
+  repoRoot: string,
+  contain: (relPath: string) => string | null,
+  dest: string,
+): Promise<CheckpointWrite> {
+  const base = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    .then(({ stdout }) => stdout.trim())
+    .catch(() => hashText(repoRoot, "", "tree"));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-checkpoint-"));
+  try {
+    const index = path.join(scratch, "index");
+    const realIndex = path.resolve(repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
+    if (fs.existsSync(/* turbopackIgnore: true */ realIndex)) {
+      // The copy keeps the index's own time, a second early: git trusts an
+      // entry's cached stat only when the file is older than the index, and
+      // a fresh copy's newer time made a same-size edit from the same second
+      // as the last index write look unchanged, so the checkpoint missed it.
+      const { atime, mtimeMs } = fs.statSync(/* turbopackIgnore: true */ realIndex);
+      fs.copyFileSync(/* turbopackIgnore: true */ realIndex, index);
+      fs.utimesSync(index, atime, new Date(mtimeMs - 1000));
+    }
+    const env = { GIT_INDEX_FILE: index };
+
+    const { stdout: untracked } = await git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    const added: string[] = [];
+    const skipped: string[] = [];
+    for (const rel of splitZ(untracked)) {
+      const abs = contain(rel);
+      if (!abs) continue;
+      let size: number;
+      try {
+        size = fs.lstatSync(/* turbopackIgnore: true */ abs).size;
+      } catch {
+        continue; // gone since the listing
+      }
+      (size > CHECKPOINT_MAX_UNTRACKED_BYTES ? skipped : added).push(rel);
+    }
+    if (added.length > 0) {
+      await gitWithInput(
+        repoRoot,
+        ["--literal-pathspecs", "add", "--intent-to-add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+        added.join("\0"),
+        env,
+      );
+    }
+
+    // `git apply` skips these lines; a restore reads the base to rebuild on.
+    const header = checkpointBaseHeader(base) + skipped.map((rel) => `${SKIPPED_HEADER}${JSON.stringify(rel)}\n`).join("");
+    fs.writeFileSync(/* turbopackIgnore: true */ dest, header, { mode: 0o600 });
+    const fd = fs.openSync(/* turbopackIgnore: true */ dest, "a");
+    try {
+      await gitToFile(repoRoot, ["diff", ...PATCH_DIFF_ARGS, "--binary", base, "--"], env, fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return { skipped };
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** The working tree as a checkpoint patch, in memory. */
 export async function buildCheckpointPatch(
   repoRoot: string,
   contain: (relPath: string) => string | null,
 ): Promise<string> {
-  const base = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
-    .then(({ stdout }) => stdout.trim())
-    .catch(() => hashText(repoRoot, "", "tree"));
-  let { stdout: patch } = await gitDiff(repoRoot, ["--binary", base, "--"]);
-  const { stdout: untracked } = await git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
-  for (const rel of splitZ(untracked)) {
-    const abs = contain(rel);
-    if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) continue;
-    try {
-      // Repo-relative (cwd is the repo), so the add-file diff carries
-      // `b/<relpath>` headers that `git apply` can place back.
-      patch += (await gitDiff(repoRoot, ["--binary", "--no-index", "--", os.devNull, rel])).stdout;
-    } catch (err) {
-      const e = err as { code?: number; stdout?: string };
-      if (e.code === 1 && typeof e.stdout === "string") patch += e.stdout;
-      else throw err;
-    }
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-checkpoint-"));
+  try {
+    const dest = path.join(scratch, "checkpoint.patch");
+    await writeCheckpointPatch(repoRoot, contain, dest);
+    return fs.readFileSync(dest, "utf8");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
-  // `git apply` skips this line; a restore reads it to rebuild on this base.
-  return checkpointBaseHeader(base) + patch;
+}
+
+/** Untracked files a checkpoint left out for their size. */
+export function checkpointSkippedOf(patch: string): string[] {
+  const firstDiff = patch.search(/^diff --git /m);
+  const head = firstDiff < 0 ? patch : patch.slice(0, firstDiff);
+  return [...head.matchAll(/^coven-cave checkpoint skipped (".*")$/gm)].map((match) => JSON.parse(match[1]) as string);
+}
+
+/** `git` with `input` on stdin. */
+function gitWithInput(repoRoot: string, args: string[], input: string, env?: Record<string, string>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd: repoRoot, windowsHide: true, env: env ? { ...process.env, ...env } : process.env });
+    let err = "";
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `git ${args.join(" ")} exited ${code}`))));
+    child.stdin.end(input);
+  });
+}
+
+/** `git` with its output written straight to the open file `fd`. */
+function gitToFile(repoRoot: string, args: string[], env: Record<string, string>, fd: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, {
+      cwd: repoRoot,
+      windowsHide: true,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", fd, "pipe"],
+    });
+    let err = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), CHECKPOINT_TIMEOUT_MS);
+    child.stderr?.on("data", (chunk) => { err += chunk; });
+    child.on("error", (error) => { clearTimeout(timer); reject(error); });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(err.trim() || (signal ? `git diff took longer than ${CHECKPOINT_TIMEOUT_MS / 1000} seconds` : `git diff exited ${code}`)));
+    });
+  });
 }
 
 export type CheckpointRestoreOutcome = {

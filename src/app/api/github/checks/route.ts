@@ -17,7 +17,10 @@ import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
-import { summarizeChecks, type CheckRun } from "@/lib/github-checks";
+import { summarizeCheckSignals, summarizeChecks, type CheckRun } from "@/lib/github-checks";
+
+/** Pages of 100 check runs read for one head: a thousand runs. */
+const MAX_RUN_PAGES = 10;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -114,6 +117,18 @@ async function load(req: Request): Promise<Response> {
     const rawRuns = ((runsResp.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
       Record<string, unknown>
     >;
+    // Every page of runs (#5781): a large matrix put a failing run past the
+    // first 100, where the merge gate never read it. A page that can't be
+    // read leaves the rollup unable to claim passing.
+    const totalRuns = Number((runsResp.data as { total_count?: unknown } | null)?.total_count ?? rawRuns.length) || 0;
+    let runsIncomplete = !runsResp.res.ok;
+    for (let page = 2; runsResp.res.ok && rawRuns.length < totalRuns && page <= MAX_RUN_PAGES; page++) {
+      const next = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`, token);
+      const more = ((next.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<Record<string, unknown>>;
+      if (!next.res.ok || more.length === 0) break;
+      rawRuns.push(...more);
+    }
+    if (rawRuns.length < totalRuns) runsIncomplete = true;
     const runs: CheckRunDetail[] = rawRuns.map((r) => {
       const app = r.app as Record<string, unknown> | undefined;
       return {
@@ -140,7 +155,14 @@ async function load(req: Request): Promise<Response> {
       targetUrl: str(s.target_url),
     }));
 
-    const rollup = summarizeChecks(runs as CheckRun[], combinedState);
+    // GitHub's verdict over every status context, when there is one
+    // (#5787 review): the list above is only the first page of them.
+    const statusCount = Number((statusResp.data as { total_count?: unknown } | null)?.total_count ?? statuses.length) || 0;
+    const merged = summarizeCheckSignals(runs as CheckRun[], statusCount > 0 ? combinedState : null);
+    // No runs and no statuses: the combined state is the only signal left.
+    const signal = runs.length === 0 && statusCount === 0 ? summarizeChecks([], combinedState) : merged;
+    // A side that couldn't be read can't let the gate claim passing.
+    const rollup = (runsIncomplete || !statusResp.res.ok) && signal === "passing" ? "pending" : signal;
 
     return NextResponse.json({
       ok: true,
