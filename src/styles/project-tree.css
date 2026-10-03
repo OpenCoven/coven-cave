@@ -21,3 +21,11 @@
     outline-offset: -2px;
   }
 }
+
+/* File rows are 22px for desktop density; touch gets the 44px interaction
+   contract instead (#5756). */
+@media (hover: none) and (pointer: coarse) {
+  .ui-btn[data-tree-row] {
+    min-height: var(--touch-target);
+  }
+}

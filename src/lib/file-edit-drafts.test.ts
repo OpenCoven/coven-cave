@@ -34,6 +34,15 @@ const B = "/repo/src/b.ts";
   store.begin(A, "x", "v1");
   store.update(A, "y");
   assert.equal(store.dirtyPaths(), store.dirtyPaths());
+  // Typing more doesn't change which files are dirty, so the set stays the
+  // same object and the desk doesn't re-render per keystroke (#5756).
+  const before = store.dirtyPaths();
+  store.update(A, "yz");
+  store.update(A, "yzw");
+  assert.equal(store.dirtyPaths(), before);
+  store.update(A, "x");
+  assert.notEqual(store.dirtyPaths(), before, "a change in membership is a new set");
+  assert.equal(store.dirtyPaths().size, 0);
 }
 
 // A save is single-flight per file and settles only the file it was sent for.

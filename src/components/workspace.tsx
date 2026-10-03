@@ -4198,6 +4198,7 @@ export function Workspace() {
     sessions,
     activeSessionId: activeChatSessionId,
     daemonRunning,
+    daemonStatusUnknown: daemonStatusUnavailable !== null,
     openUrl: openUrlInAppBrowser,
     openSession: openFamiliarSession,
     focusCard: focusCardFromRoom,
@@ -4429,6 +4430,7 @@ export function Workspace() {
         context={roleSurfaceSession.context}
         visibleSurfaces={roleSurfaceSession.visibleSurfaces}
         rolesLoaded={roleSurfaceSession.rolesLoaded}
+        contextPending={!familiarsLoaded}
         onLeave={() => setMode("home")}
       />
     ) : mode === "agents" ? (

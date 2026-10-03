@@ -63,12 +63,15 @@ export function RoleSurfaceHost({
   context,
   visibleSurfaces,
   rolesLoaded,
+  contextPending = false,
   onLeave,
 }: {
   surfaceId: string;
   context: RoleSurfaceContext | null;
   visibleSurfaces: readonly RoleSurface[];
   rolesLoaded: boolean;
+  /** The familiars that give the room its context are still loading. */
+  contextPending?: boolean;
   /** Navigate away when the room isn't available (wrong familiar, unknown id). */
   onLeave: () => void;
 }) {
@@ -115,6 +118,16 @@ export function RoleSurfaceHost({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [available]);
+
+  // Still loading, not missing (#5756): a slow familiars read showed "Choose a
+  // familiar" with a way out, though a familiar was already active.
+  if (!context && contextPending) {
+    return (
+      <div className="role-surface-unavailable" role="status" aria-busy="true">
+        <p>Loading {surface?.title ?? "the room"}…</p>
+      </div>
+    );
+  }
 
   if (!context) {
     return (

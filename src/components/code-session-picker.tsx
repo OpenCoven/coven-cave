@@ -118,7 +118,10 @@ export function CodeSessionPicker({
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const listboxId = useId();
   const optionId = useCallback((sessionId: string) => `${listboxId}-option-${sessionId}`, [listboxId]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  // The active option by session, not by position (#5756): each sessions
+  // poll re-sorts the queue, so an index moved the highlight under the user
+  // and Enter could open a different session from the one highlighted.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // The pick that remounted the desk asked for the new trigger to take focus.
@@ -151,9 +154,9 @@ export function CodeSessionPicker({
   const options = useMemo(() => result.groups.flatMap((group) => group.sessions), [result]);
   // A new search or filter starts from the top match.
   useEffect(() => {
-    setActiveIndex(0);
+    setActiveId(null);
   }, [groupKey, open, query]);
-  const active = options[Math.min(activeIndex, Math.max(0, options.length - 1))] ?? null;
+  const active = options.find((option) => option.id === activeId) ?? options[0] ?? null;
   useEffect(() => {
     if (!open || !active) return;
     const id = optionId(active.id);
@@ -185,7 +188,8 @@ export function CodeSessionPicker({
       if ((event.key === "ArrowDown" || event.key === "ArrowUp") && options.length > 0) {
         event.preventDefault();
         const step = event.key === "ArrowDown" ? 1 : -1;
-        setActiveIndex((index) => (Math.min(index, options.length - 1) + step + options.length) % options.length);
+        const from = Math.max(0, options.findIndex((option) => option.id === active?.id));
+        setActiveId(options[(from + step + options.length) % options.length].id);
         return;
       }
       if (event.key !== "Enter") return;
@@ -196,7 +200,7 @@ export function CodeSessionPicker({
       }
       if (active) pick(active.id);
     },
-    [active, create, options.length, pick, result.offersCreate],
+    [active, create, options, pick, result.offersCreate],
   );
 
   const chipButton = (chip: CodeSessionPickerChip) => {

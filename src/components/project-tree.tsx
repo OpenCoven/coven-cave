@@ -516,18 +516,21 @@ function TreeRow({
   }, [selectedPath, entry.isDir, entry.path, children, familiarId]);
 
   // After a move, refetch this folder's children if it's affected and loaded.
+  // The newest read wins, and only a newer read of this folder supersedes one
+  // (#5756): a later signal that didn't name this folder used to cancel the
+  // answer in flight, leaving the folder stale and its spinner on for good.
+  const refetchIdRef = useRef(0);
   useEffect(() => {
     if (!entry.isDir || !refetchSignal.dirs.has(entry.path) || children === null) return;
-    let cancelled = false;
+    const id = ++refetchIdRef.current;
     setFetching(true);
     void fetchChildren(entry.path, familiarId).then((fetched) => {
-      if (cancelled) return;
+      if (id !== refetchIdRef.current) return;
       setFetching(false);
       if (fetched === null) { setChildError(true); return; }
       setChildError(false);
       setChildren(fetched);
     });
-    return () => { cancelled = true; };
     // Re-run only when a new move signal arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refetchSignal]);

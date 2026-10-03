@@ -22,6 +22,11 @@ assert.match(source, /restamped\.some[\s\S]{0,200}await rollback\(\);\s*return s
 assert.match(source, /\} catch \(err\) \{\s*\/\/ Nothing staged, no new branch, HEAD where it was\.\s*await rollback\(\);/, "a failed commit rolls back");
 // Every step between capture and commit rolls back on failure (#5775 review).
 assert.match(source, /checkout", "-b", branch\][\s\S]{0,1600}\} catch \(err\) \{\s*await rollback\(\);\s*throw err;\s*\}\s*try \{\s*await gitLong\(/, "a failed add or re-stamp rolls back before the commit is tried");
+// More than the desk can name in one commit gets its own 413 (#5756), and the
+// verified paths are staged through stdin, past the OS argument limit.
+assert.match(source, /if \(raw\.length > MAX_EXPECTED_CHANGES\) return "too-many";/);
+assert.match(source, /expectedChanges === "too-many"[\s\S]{0,400}status: 413/);
+assert.match(source, /\["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"\],\s*paths\.join\("\\0"\)/);
 // Create PR's refusals because the branch moved are marked stale (#5756).
 assert.equal((source.match(/\{ ok: false, stale: true, error: (?:`the project moved|"the branch changed after the commit)/g) ?? []).length, 2);
 
@@ -244,7 +249,7 @@ assert.match(
 // staging (#5751 review). Only the verified files are staged, they are
 // re-stamped after staging, and a moved stamp restores the index and refuses.
 assert.match(source, /const \{ stdout: indexTree \} = await git\(root\.repoRoot, \["write-tree"\]\);/, "the index is captured before staging");
-assert.match(source, /\["--literal-pathspecs", "add", "-A", "--", \.\.\.verified\.files\.flatMap/, "staging is limited to the verified files and their rename sources");
+assert.match(source, /const paths = verified\.files\.flatMap\(\(file\) => \(file\.renamedFrom \? \[file\.path, file\.renamedFrom\] : \[file\.path\]\)\);/, "staging is limited to the verified files and their rename sources");
 assert.match(
   source,
   // The index captured as verified.indexTree comes back through rollback() (#5756).
