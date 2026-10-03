@@ -750,6 +750,9 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await openDesk(page);
     await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
     await expect(page.locator(".code-room__viewer .workspace-rail__preview-name")).toHaveText("README.md");
+    // Measure the README once it has rendered; the header shows its name
+    // before the body arrives.
+    await expect(page.locator(".code-room__viewer .comux-md p, .code-room__viewer .comux-md h1").first()).toBeVisible();
     await page.evaluate(() => document.documentElement.setAttribute("data-mode", "light"));
     await page.waitForTimeout(300);
     const ratios = await page.evaluate(() => {
@@ -1582,6 +1585,13 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(rail).toContainText("DIFF-V2");
     await expect(rail).not.toContainText("DIFF-V1");
     expect(diffGets.length).toBeGreaterThan(before);
+
+    // A rewrite that keeps the line counts still refreshes the open diff:
+    // only the change stamp moves (#5751 review).
+    diffVersion = 3;
+    fixture.current = [{ ...CHANGED_FILES[0], insertions: 20, changeVersion: "300:300:500" }, CHANGED_FILES[1]];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(rail).toContainText("DIFF-V3", { timeout: 15_000 });
   });
 
   test("41. a half-typed commit message and Create PR survive the rail switching tabs", async ({ page }) => {
@@ -1648,6 +1658,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await base(page, [live, OLDER]);
     const head = "b".repeat(40);
     let rollup: "failing" | "passing" = "failing";
+    let checksDown = true;
     const posts: { path: string; body: Record<string, unknown> }[] = [];
     await page.route("**/api/queue/**", (route) => route.fulfill({ json: { ok: true, items: [], prs: [], issues: [] } }));
     await page.route("**/api/github/**", (route) => {
@@ -1657,6 +1668,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
         return route.fulfill({ json: { ok: true } });
       }
       if (url.pathname.endsWith("/checks")) {
+        if (checksDown) return route.fulfill({ status: 502, json: { ok: false, error: "GitHub is unavailable" } });
         return route.fulfill({ json: { ok: true, authed: true, sha: head, rollup, runs: [{ name: "ci", status: "completed", conclusion: rollup === "failing" ? "failure" : "success" }], statuses: [] } });
       }
       return route.fulfill({ json: { ok: true, authed: true, canResolve: true, issueComments: [], reviewThreads: [], reviews: [] } });
@@ -1664,8 +1676,18 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await openDesk(page);
     const rail = page.getByTestId("code-review-rail");
     await rail.getByRole("tab", { name: "Pull request" }).click();
+    // No checks, no head: a review would land on whatever commit is current.
+    await expect(rail.getByText("Review and merge are off: the checks couldn't be loaded.")).toBeVisible();
+    await expect(rail.getByRole("button", { name: "Approve" })).toBeDisabled();
+    await expect(rail.getByRole("button", { name: "Squash merge" })).toBeDisabled();
+
+    checksDown = false;
+    await rail.getByRole("tab", { name: /Changes/ }).click();
+    await rail.getByRole("tab", { name: "Pull request" }).click();
     await expect(rail.getByRole("button", { name: "Squash merge" })).toBeDisabled();
     await expect(rail.getByText("Merge is off: checks are failing.")).toBeVisible();
+    // Failing checks don't stop a review of the head they ran on.
+    await expect(rail.getByRole("button", { name: "Approve" })).toBeEnabled();
 
     // The checks pass; the panel reads them again when it mounts.
     rollup = "passing";

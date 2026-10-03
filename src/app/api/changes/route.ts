@@ -7,7 +7,7 @@ import { stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
-import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert, type ChangedFile } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { branchPrCache } from "@/lib/branch-pr-context";
@@ -341,14 +341,18 @@ async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
-/** The working tree as `path\0changeVersion` keys, the same stamps the status
- *  list carries. A commit can name the list it was reviewed against and be
- *  refused when the tree has moved since (#5745). */
-async function changeKeys(repoRoot: string): Promise<string[]> {
+/** The working tree as the status list sees it, with `path\0changeVersion`
+ *  keys from the same stamps. A commit can name the list it was reviewed
+ *  against and be refused when the tree has moved since (#5745). */
+async function changeSnapshot(repoRoot: string): Promise<{ files: ChangedFile[]; keys: string[] }> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
   await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
-  return files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`).sort();
+  return { files, keys: files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`).sort() };
+}
+
+function sameChangeKeys(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
 /** Parse a commit's `expectedChanges` into sorted keys, or null when absent. */
@@ -713,20 +717,29 @@ export async function POST(req: NextRequest) {
     }
     return withRepositoryMutation(root.repoRoot, async () => {
       try {
-        // Commit only what was reviewed (#5745): under the lock, refuse when
-        // the working tree no longer matches the list the caller showed.
-        if (expectedChanges) {
-          const current = await changeKeys(root.repoRoot);
-          if (current.length !== expectedChanges.length || current.some((key, index) => key !== expectedChanges[index])) {
-            return NextResponse.json(
-              {
-                ok: false,
-                stale: true,
-                error: "the working tree changed since you reviewed it; review the new changes, then commit",
-              },
-              { status: 409 },
-            );
-          }
+        // Commit only what was reviewed (#5745): refuse when the working tree
+        // no longer matches the list the caller showed. The repository lock is
+        // process-local, so an agent can still write between this check and
+        // staging; `verified` closes that window below.
+        const staleCommit = () =>
+          NextResponse.json(
+            {
+              ok: false,
+              stale: true,
+              error: "the working tree changed since you reviewed it; review the new changes, then commit",
+            },
+            { status: 409 },
+          );
+        let verified: { files: ChangedFile[]; indexTree: string } | null = null;
+        if (expectedChanges && !targetedPaths) {
+          const snapshot = await changeSnapshot(root.repoRoot);
+          if (!sameChangeKeys(snapshot.keys, expectedChanges)) return staleCommit();
+          // The index as it stands, to restore if the staged snapshot moves.
+          const { stdout: indexTree } = await git(root.repoRoot, ["write-tree"]);
+          verified = { files: snapshot.files, indexTree: indexTree.trim() };
+        } else if (expectedChanges) {
+          const snapshot = await changeSnapshot(root.repoRoot);
+          if (!sameChangeKeys(snapshot.keys, expectedChanges)) return staleCommit();
         }
         const pathArgs = targetedPaths ? ["--", ...targetedPaths] : [];
       const { stdout: statusOut } = await git(
@@ -757,8 +770,25 @@ export async function POST(req: NextRequest) {
         root.repoRoot,
         targetedPaths
           ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
-          : ["add", "-A"],
+          : verified
+            // Stage exactly the verified files (and a rename's old path), so
+            // a file created after the check is never swept in.
+            ? ["--literal-pathspecs", "add", "-A", "--", ...verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))]
+            : ["add", "-A"],
       );
+      if (verified) {
+        // Re-stamp what was just staged. Stamps are file metadata, which
+        // staging leaves alone, so any difference is a write that may have
+        // reached the index. Then the index goes back as it was and the
+        // commit is refused rather than committing content nobody saw.
+        const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
+        await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+        if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
+          await git(root.repoRoot, ["read-tree", verified.indexTree]);
+          if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+          return staleCommit();
+        }
+      }
       try {
         await gitLong(
           root.repoRoot,

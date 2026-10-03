@@ -264,7 +264,10 @@ assert.match(panelSrc, /expectedHead: postCommit\.headOid[\s\S]{0,120}expectedBr
 // 7. The rail merges only on passing checks, pinned to their head.
 assert.match(prPanelSrc, /disabled=\{busy != null \|\| mergeBlocked != null\}/, "merge waits for passing checks");
 assert.match(prPanelSrc, /"\/api\/github\/merge", \{ repo, number, method: "squash", headSha \}/, "merge is pinned to the checked head");
-assert.match(prPanelSrc, /\.\.\.\(headSha \? \{ headSha \} : \{\}\),/, "review is pinned to the checked head");
+assert.match(prPanelSrc, /if \(!headSha\) return;\s*const result = await post\("\/api\/github\/review", \{[\s\S]{0,200}headSha,\s*\}\);/, "review is always pinned to the checked head");
+assert.match(prPanelSrc, /disabled=\{busy != null \|\| headBlocked != null\}/, "Approve waits for the checked head (#5751 review)");
+assert.match(panelSrc, /const request = \(diffRequestsRef\.current\.get\(filePath\) \?\? 0\) \+ 1;[\s\S]{0,400}if \(diffRequestsRef\.current\.get\(filePath\) !== request\) return;/, "only the newest diff read for a path lands (#5751 review)");
+assert.match(panelSrc, /const filesSig = files\.map\(\(f\) => `\$\{f\.path\}:\$\{diffSignature\(f\)\}`\)\.join\("\|"\);/, "the expanded diff refreshes on the full version stamp");
 // 8. Split shells are stopped on close; layouts persist per session.
 assert.match(drawer, /if \(paneId !== PRIMARY_TERMINAL_PANE_ID\) stopTerminalThread\(terminalPaneThreadId\(sessionId, paneId\)\);\s*setLayout/, "closing a pane stops its shell before it unmounts");
 assert.match(drawer, /writeTerminalLayout\(sessionId, \{ layout, focusedPaneId \}\);/, "the layout is saved per session");

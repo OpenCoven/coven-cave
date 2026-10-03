@@ -228,19 +228,26 @@ export function SessionChangesInner({
     return () => window.removeEventListener("cave:changes-refresh", onRefresh);
   }, [load, loadCheckpoints]);
 
+  const diffRequestsRef = useRef(new Map<string, number>());
   const fetchDiff = useCallback(
     // `silent` re-fetches without flashing the "Loading diff…" state or wiping
     // the visible diff on error — used by the poll refresh so an open diff for
     // an actively-changing file stays current instead of going stale.
     async (filePath: string, silent = false, sig?: string) => {
+      // Reads of one path can answer out of order; only the newest may land
+      // (#5751 review), or an older diff overwrites a newer one for good.
+      const request = (diffRequestsRef.current.get(filePath) ?? 0) + 1;
+      diffRequestsRef.current.set(filePath, request);
       if (!silent) setDiffs((prev) => ({ ...prev, [filePath]: { loading: true } }));
       try {
         const json = await fetchSessionFileDiff(fetch, projectRoot, filePath);
+        if (diffRequestsRef.current.get(filePath) !== request) return;
         setDiffs((prev) => ({
           ...prev,
           [filePath]: { loading: false, diff: json.diff, truncated: json.truncated, sig },
         }));
       } catch (err) {
+        if (diffRequestsRef.current.get(filePath) !== request) return;
         if (silent) return; // keep the last good diff on a background refresh
         setDiffs((prev) => ({
           ...prev,
@@ -254,7 +261,9 @@ export function SessionChangesInner({
   // #4: when the file list refreshes (poll/visibility), re-fetch the currently
   // expanded file's diff so it doesn't show a frozen snapshot. Keyed on a
   // signature of the list so it only fires when something actually changed.
-  const filesSig = files.map((f) => `${f.path}:${f.insertions ?? 0}:${f.deletions ?? 0}`).join("|");
+  // The full version stamp, not just the counts (#5751 review): a rewrite that
+  // keeps the line counts must still refresh the expanded diff.
+  const filesSig = files.map((f) => `${f.path}:${diffSignature(f)}`).join("|");
   // Aggregate +/- across all changed files for the header summary.
   const totalInsertions = files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
   const totalDeletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);

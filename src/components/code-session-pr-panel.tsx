@@ -440,14 +440,23 @@ function ActionsSection({
   const [confirmMerge, setConfirmMerge] = useState(false);
   const mergeable = (prState ?? "open").toLowerCase() === "open";
   const headSha = checks.phase === "ready" ? checks.sha : null;
-  const mergeBlocked =
+  // Review and merge both act on the head the checks above ran on, so both
+  // wait for it (#5751 review): an unpinned review lands on whatever commit
+  // is current, not the one whose checks were shown.
+  const headBlocked =
     checks.phase === "loading"
-      ? "Merge waits for the checks to load."
+      ? "Review and merge wait for the checks to load."
       : checks.phase === "error"
-        ? "Merge is off: the checks couldn't be loaded."
+        ? "Review and merge are off: the checks couldn't be loaded."
         : !checks.sha
-          ? "Merge is off: the pull request's head is unknown."
-          : checks.rollup === "failing"
+          ? "Review and merge are off: the pull request's head is unknown."
+          : null;
+  const mergeBlocked =
+    headBlocked
+      ? headBlocked
+      : checks.phase !== "ready"
+        ? "Merge waits for the checks to load."
+        : checks.rollup === "failing"
             ? "Merge is off: checks are failing."
             : checks.rollup === "pending"
               ? "Merge waits for the running checks."
@@ -473,13 +482,14 @@ function ActionsSection({
   async function review(event: "APPROVE" | "COMMENT") {
     setBusy(event === "APPROVE" ? "approve" : "comment");
     setNotice(null);
+    if (!headSha) return;
     const result = await post("/api/github/review", {
       repo,
       number,
       event,
       body: comment.trim(),
       // The head the checks above are for; GitHub reviews that commit.
-      ...(headSha ? { headSha } : {}),
+      headSha,
     });
     setBusy(null);
     if (result.ok) {
@@ -525,10 +535,20 @@ function ActionsSection({
         aria-label="Review comment"
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={busy != null || !comment.trim()} onClick={() => review("COMMENT")}>
+        <Button
+          size="sm"
+          disabled={busy != null || !comment.trim() || headBlocked != null}
+          aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
+          onClick={() => review("COMMENT")}
+        >
           {busy === "comment" ? "Posting…" : "Comment"}
         </Button>
-        <Button size="sm" disabled={busy != null} onClick={() => review("APPROVE")}>
+        <Button
+          size="sm"
+          disabled={busy != null || headBlocked != null}
+          aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
+          onClick={() => review("APPROVE")}
+        >
           {busy === "approve" ? "Approving…" : "Approve"}
         </Button>
         <span className="ml-auto" />
@@ -548,7 +568,7 @@ function ActionsSection({
           </Button>
         ) : null}
       </div>
-      {mergeable && mergeBlocked ? (
+      {(mergeable && mergeBlocked) || headBlocked ? (
         <p id="code-pr-merge-blocked" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {mergeBlocked}
         </p>

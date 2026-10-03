@@ -221,11 +221,21 @@ assert.match(
 // A commit can name the list it was reviewed against (#5745). Under the
 // repository lock, before anything is staged, the tree's current stamps are
 // compared with it and a mismatch is a 409, so nothing is committed unseen.
-assert.match(source, /async function changeKeys\(repoRoot: string\)[\s\S]{0,400}stampChangedFiles\(files[\s\S]{0,200}\.sort\(\)/, "the precondition reads the same stamps the status list carries");
+assert.match(source, /async function changeSnapshot\(repoRoot: string\)[\s\S]{0,400}stampChangedFiles\(files[\s\S]{0,300}\.sort\(\)/, "the precondition reads the same stamps the status list carries");
 assert.match(
   source,
-  /const expectedChanges = expectedChangeKeys\(body\.expectedChanges\);[\s\S]*?withRepositoryMutation\(root\.repoRoot[\s\S]*?if \(expectedChanges\) \{[\s\S]*?await changeKeys\(root\.repoRoot\)[\s\S]*?stale: true[\s\S]*?status: 409[\s\S]*?"add", "-A"/,
+  /const expectedChanges = expectedChangeKeys\(body\.expectedChanges\);[\s\S]*?withRepositoryMutation\(root\.repoRoot[\s\S]*?if \(expectedChanges && !targetedPaths\) \{\s*const snapshot = await changeSnapshot\(root\.repoRoot\);\s*if \(!sameChangeKeys\(snapshot\.keys, expectedChanges\)\) return staleCommit\(\);/,
   "a stale expectedChanges is refused under the lock before anything is staged",
+);
+// The lock is process-local, so an agent can write between the check and
+// staging (#5751 review). Only the verified files are staged, they are
+// re-stamped after staging, and a moved stamp restores the index and refuses.
+assert.match(source, /const \{ stdout: indexTree \} = await git\(root\.repoRoot, \["write-tree"\]\);/, "the index is captured before staging");
+assert.match(source, /\["--literal-pathspecs", "add", "-A", "--", \.\.\.verified\.files\.flatMap/, "staging is limited to the verified files and their rename sources");
+assert.match(
+  source,
+  /if \(verified\) \{[\s\S]*?stampChangedFiles\(restamped[\s\S]*?changeVersion !== verified\.files\[index\]\.changeVersion[\s\S]*?\["read-tree", verified\.indexTree\][\s\S]*?return staleCommit\(\);[\s\S]*?gitLong\(/,
+  "a write that reached the index after the check restores it and refuses, before any commit",
 );
 assert.match(source, /expectedChanges === "invalid"[\s\S]{0,200}status: 400/, "a malformed expectedChanges is a 400");
 assert.doesNotMatch(source, /after the Canvas commit/, "the create-pr head mismatch speaks for every caller, not just Canvas");
