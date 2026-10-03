@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs, { writeFileSync } from "node:fs";
 import os from "node:os";
@@ -73,23 +73,17 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
 }
 
 /** Run git with `input` on stdin. Paths go through `--pathspec-from-file=-`
- *  this way, so a long list can't overrun the OS argument limit (#5756). */
+ *  this way, so a long list can't overrun the OS argument limit (#5756).
+ *  Still execFile with an argument array: the promise carries its child. */
 function gitWithInput(cwd: string, args: string[], input: string): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { cwd, windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => child.kill(), GIT_TIMEOUT_MS * 3);
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (err) => { clearTimeout(timer); reject(err); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(Object.assign(new Error(stderr.trim() || `git exited ${code}`), { stdout, stderr, code }));
-    });
-    child.stdin.end(input);
+  const pending = execFileAsync("git", args, {
+    windowsHide: true,
+    cwd,
+    timeout: GIT_TIMEOUT_MS * 3,
+    maxBuffer: MAX_GIT_BUFFER,
   });
+  pending.child.stdin?.end(input);
+  return pending;
 }
 
 /** Run `git diff` without repository-configured command hooks. Paths are
