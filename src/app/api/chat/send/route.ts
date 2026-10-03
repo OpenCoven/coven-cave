@@ -3815,6 +3815,25 @@ async function postChat(
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
         }
       };
+      // Coven's relayed harness failure (`error` on a result frame) can carry
+      // a stderr tail with local paths or credentials. Its raw text feeds the
+      // failure classifiers only. The renderable tail, which the empty-response
+      // diagnostic copies into persisted assistant text (an SSH run, or a
+      // result error followed by exit 0), gets a fixed line instead.
+      const relayedErrTail: string[] = [];
+      const RELAYED_ERROR_WITHHELD =
+        "The runtime reported an error; its details were withheld to protect local data.";
+      const recordRelayedError = (text: string) => {
+        for (const part of text.split(/\r?\n/)) {
+          const trimmed = part.trim();
+          if (!trimmed) continue;
+          relayedErrTail.push(trimmed);
+          if (relayedErrTail.length > STDOUT_ERR_KEEP) relayedErrTail.shift();
+        }
+        if (!stdoutErrTail.includes(RELAYED_ERROR_WITHHELD)) {
+          recordStdoutErrorTail(RELAYED_ERROR_WITHHELD, true);
+        }
+      };
 
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
@@ -4696,16 +4715,16 @@ async function postChat(
               // turn.failed message or its stderr tail) rather than on its
               // stderr. Dropping it reported every relayed Codex failure as
               // "the runtime did not emit an error message" and hid model and
-              // adapter evidence from the classifiers below. Capture it into
-              // the same redacted tail as stdout errors; Claude output stays
-              // excluded, matching the stderr rule.
+              // adapter evidence from the classifiers below. The raw reason
+              // goes to the classifiers only; chat sees a fixed line. Claude
+              // output stays excluded, matching the stderr rule.
               const relayedError = ev.is_error === true && binding.harness !== "claude"
                 ? covenRelayedRunError(ev.error)
                 : null;
               if (relayedError) {
                 const cleaned = resolveBackspaces(stripAnsi(relayedError));
                 captureCodexAdapterFailure(cleaned);
-                recordStdoutErrorTail(cleaned, true);
+                recordRelayedError(cleaned);
               }
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
@@ -5743,6 +5762,7 @@ async function postChat(
         copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
+        relayedErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -5803,6 +5823,7 @@ async function postChat(
         copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
+        relayedErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -5849,7 +5870,7 @@ async function postChat(
       // direct-runner failure diagnostics instead.
       if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !codexDirect && !assistantText.trim()) {
         const adapterFailure = codexAdapterFailure
-          ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
+          ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"));
         if (adapterFailure) {
           launchFailure = { code: adapterFailure.code, message: adapterFailure.message };
           result.is_error = true;
@@ -6088,7 +6109,7 @@ async function postChat(
       // confirmed — that IS downstream acceptance.
       else if (localRuntimePlan?.runner === "coven" && forwardModel) {
         const rejected = result.is_error === true && modelRejectionInError(
-          [...stderrTail, ...stdoutErrTail].join("\n"),
+          [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
         );
         const confirmed = !result.is_error && confirmedModel != null;
         const application = modelApplicationForHarness(
@@ -6116,7 +6137,7 @@ async function postChat(
           modelApplicationFromRun({
             confirmedModel,
             isError: result.is_error === true,
-            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+            errorText: [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
           }),
         );
         if (!result.is_error) responseMetadata.confirmedModel = confirmedModel;

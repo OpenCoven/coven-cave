@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'result-error', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -65,6 +65,7 @@ const shim = [
   // and writes nothing to stderr. These match its real stream-json shape.
   "  const resultErrors = {",
   "    'result-error': \"Codex ran out of room in the model's context window at /private/fixture/secret\",",
+  "    'result-error-exit-0': 'Codex failed reading /private/fixture/secret with ' + ['ghp', '1234567890abcdefghijklmnopqrstuv'].join('_'),",
   "    'result-bare-exit': 'Codex exited with 1',",
   "    'result-model-rejected': \"Codex exited with 1: The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.\",",
   "  };",
@@ -75,7 +76,7 @@ const shim = [
   "      { type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 1, session_id: session, harness_session_id: null, error: resultErrors[process.env.COVEN_TEST_MODE] },",
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
-  "    process.exit(1);",
+  "    process.exit(process.env.COVEN_TEST_MODE === 'result-error-exit-0' ? 0 : 1);",
   "  }",
   "  if (process.env.COVEN_TEST_MODE === 'cancel') {",
   "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
@@ -406,6 +407,17 @@ try {
     assert.doesNotMatch(body, /\/private\/fixture|context window/i, "the relayed reason is never rendered");
     assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
     assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
+  }
+  {
+    // A relayed error that exits 0 (as an SSH run also does) skips the
+    // process-failure path and reaches the empty-response diagnostic, which
+    // copies the renderable tail into persisted assistant text. Only the
+    // fixed withheld line may get there, never the relayed payload.
+    const { body, events } = await postResultFailure("result-error-exit-0", "relayed failure, exit 0");
+    assert.equal(events.find((event) => event.kind === "error")?.code, undefined, "exit 0 is not a process failure");
+    assert.doesNotMatch(body, /\/private\/fixture|ghp_|failed reading/i, "the relayed reason is never rendered or persisted");
+    assert.match(body, /details were withheld to protect local data/, "chat says Codex reported an error without repeating it");
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
   }
   {
     // Coven's bare wrapper restates the exit code; it is not Codex output.
