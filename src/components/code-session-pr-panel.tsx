@@ -334,17 +334,24 @@ function ThreadsSection({
 }) {
   const state = usePrThreads(repo, number);
   const [busyThread, setBusyThread] = useState<string | null>(null);
+  // A failed resolve says so (#5745): a network error used to escape as an
+  // unhandled rejection, and a refused one changed nothing on screen.
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   async function toggleResolved(thread: ReviewThreadDetail) {
     setBusyThread(thread.id);
+    setResolveError(null);
     try {
       const res = await fetch("/api/github/resolve-thread", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ threadId: thread.id, resolved: !thread.isResolved }),
       });
-      const json = await res.json().catch(() => null);
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && json?.ok) state.refresh();
+      else setResolveError(json?.error ?? `GitHub answered ${res.status}.`);
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : "The request didn't reach GitHub.");
     } finally {
       setBusyThread(null);
     }
@@ -360,6 +367,11 @@ function ThreadsSection({
 
   return (
     <section aria-label="Review threads">
+      {resolveError ? (
+        <p role="alert" className="mb-1 text-[length:var(--text-xs)] text-[var(--color-danger)]">
+          Couldn&rsquo;t update the thread: {resolveError}
+        </p>
+      ) : null}
       <h3 className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
         Review threads
         <span className="ml-2 font-normal normal-case tracking-normal">

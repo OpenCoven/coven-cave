@@ -145,4 +145,26 @@ const B = "/repo/src/b.ts";
   assert.ok(store.get("/f/4"), "the newest draft stays");
 }
 
+// A CRLF file is edited in "\n" (what the editor holds) and saved as CRLF,
+// so one changed line is one changed line on disk (#5745). Mixed files keep
+// the editor's "\n", as before.
+{
+  const { fileLineBreak } = await import("./file-edit-drafts.ts");
+  assert.equal(fileLineBreak("a\r\nb\r\n"), "\r\n");
+  assert.equal(fileLineBreak("a\nb\n"), "\n");
+  assert.equal(fileLineBreak("a\r\nb\n"), "\n", "mixed endings are not guessed at");
+  assert.equal(fileLineBreak("single line"), "\n");
+  const store = createFileEditDraftStore();
+  store.begin(A, "one\r\ntwo\r\n", "v1");
+  const draft = store.get(A);
+  assert.equal(draft.content, "one\ntwo\n", "the editor sees plain newlines");
+  assert.equal(draft.eol, "\r\n");
+  assert.equal(isDraftDirty(draft), false, "normalizing is not an edit");
+  store.update(A, "one\nTWO\n");
+  const save = store.startSave(A);
+  assert.equal(save.body, "one\r\nTWO\r\n", "saved back with the file's CRLF");
+  assert.equal(save.content, "one\nTWO\n");
+  assert.equal(store.settle(A, save.id, save.content, "v2"), false);
+}
+
 console.log("file-edit-drafts: ok");

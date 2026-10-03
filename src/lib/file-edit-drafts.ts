@@ -33,7 +33,17 @@ export type FileEditDraft = {
   error: string | null;
   /** The file changed on disk since `baseVersion`. */
   conflict: boolean;
+  /** The file's line break. The editor works in "\n"; a file whose every
+   *  break is CRLF is saved back as CRLF, not rewritten line by line (#5745). */
+  eol: "\n" | "\r\n";
 };
+
+/** CRLF only when every line break is: a mixed file keeps the editor's "\n". */
+export function fileLineBreak(content: string): "\n" | "\r\n" {
+  const breaks = content.match(/\n/g)?.length ?? 0;
+  const crlf = content.match(/\r\n/g)?.length ?? 0;
+  return breaks > 0 && crlf === breaks ? "\r\n" : "\n";
+}
 
 /** Clean drafts beyond this are dropped, oldest first. Dirty drafts never are. */
 export const FILE_EDIT_DRAFT_LIMIT = 40;
@@ -89,8 +99,10 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     begin(path: string, content: string, version: string | null): FileEditDraft {
       const existing = drafts.get(path);
       if (existing) return existing;
+      const eol = fileLineBreak(content);
+      const text = eol === "\r\n" ? content.replace(/\r\n/g, "\n") : content;
       const draft: FileEditDraft = {
-        id: nextId++, path, content, baseContent: content, baseVersion: version, saving: false, error: null, conflict: false,
+        id: nextId++, path, content: text, baseContent: text, baseVersion: version, saving: false, error: null, conflict: false, eol,
       };
       put(draft);
       return draft;
@@ -104,13 +116,15 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     discard(path: string) {
       if (drafts.delete(path)) emit();
     },
-    /** Mark a save as started. Returns the edit's identity and the text being
-     *  sent, or null when no save may start. */
-    startSave(path: string): { id: number; content: string; baseVersion: string | null } | null {
+    /** Mark a save as started. Returns the edit's identity, the edited text
+     *  (`content`, for `settle`), the bytes to write (`body`, in the file's own
+     *  line break), or null when no save may start. */
+    startSave(path: string): { id: number; content: string; body: string; baseVersion: string | null } | null {
       const draft = drafts.get(path);
       if (!draft || draft.saving) return null;
       patch(path, { saving: true, error: null });
-      return { id: draft.id, content: draft.content, baseVersion: draft.baseVersion };
+      const body = draft.eol === "\r\n" ? draft.content.replace(/\n/g, "\r\n") : draft.content;
+      return { id: draft.id, content: draft.content, body, baseVersion: draft.baseVersion };
     },
     /**
      * A save of `sent` succeeded at `version`. The draft is done unless it was
