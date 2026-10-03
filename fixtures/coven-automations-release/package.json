@@ -1,0 +1,9 @@
+{
+  "name": "coven-cave-automations-release-canary",
+  "private": true,
+  "description": "Pins the released Coven CLI that scripts/coven-automations-release-canary.ts drives.",
+  "license": "MIT",
+  "dependencies": {
+    "@opencoven/cli": "0.4.8"
+  }
+}

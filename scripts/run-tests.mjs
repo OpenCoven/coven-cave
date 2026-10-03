@@ -1593,6 +1593,7 @@ export const SUITES = {
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/coven-automations-client.test.ts",
     "src/lib/server/coven-automations-sdk.test.ts",
+    "scripts/coven-automations-release-canary.test.ts",
     "src/lib/server/automation-last-runs.test.ts",
     "src/lib/server/automation-history.test.ts",
     "src/app/api/coven-automations/[id]/events/route.test.ts",
