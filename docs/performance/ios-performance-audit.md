@@ -483,8 +483,10 @@ destination switch takes 103.9–141.8 ms; the second of each is near warm cost.
 
 Val ratified these on 2026-10-02, from the device baseline above. They are
 warm p95 values unless the row says otherwise. Cold and warm distributions stay
-separate. None of these is enforced in CI; each is re-measured with the capture
-driver above.
+separate. None of these is enforced in CI. The span budgets are re-measured
+with the capture driver above. That driver cannot yet measure the hitch and
+duplicate-request rows, which need the Hitches capture and network-backed
+fixture tracked in [#5748](https://github.com/OpenCoven/coven-cave/issues/5748).
 
 | Interaction | Budget | Measured at baseline |
 | --- | --- | --- |
