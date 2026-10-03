@@ -216,6 +216,18 @@ export function chatRunBlocksNewTurn(key: string): boolean {
   return Boolean(entry && entry.handle.projectionActive && !entry.handle.stopRequested);
 }
 
+/** Stable identity for an earlier turn refused by admission. Legacy runs
+ * without a per-send token cannot safely offer a delayed Stop action. */
+export function blockingChatRunId(key: string): string | null {
+  return chatRunBlocksNewTurn(key) ? active.get(key)?.handle.runId ?? null : null;
+}
+
+/** Only the admitted owner may publish a buffer under a shared alias. A
+ * stopped predecessor can finish setup after its successor already started. */
+export function chatRunOwnsKey(handle: ChatRunHandle, key: string): boolean {
+  return handle.projectionActive && active.get(key)?.handle === handle;
+}
+
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
  *  Returns false when nothing is in flight under the key. */
 export function requestChatStop(key: string): boolean {

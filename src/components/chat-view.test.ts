@@ -368,7 +368,7 @@ assert.match(
 assert.match(source, /\{overflowAddProject\.addError \? \(/, "the chat overflow picker renders add-project failures");
 
 // 409 chat_run_active: the server refused a second live turn for this chat.
-// The strip offers to stop the earlier run (by conversation id, only for the
+// The strip offers to stop the earlier run (by immutable run id, only for the
 // chat on screen) and keeps the message for Retry.
 assert.match(
   source,
@@ -377,12 +377,12 @@ assert.match(
 );
 assert.match(
   source,
-  /const stopEarlierRun = async \(\) => \{[\s\S]*?fetch\("\/api\/chat\/stop"[\s\S]*?body: JSON\.stringify\(\{ sessionId \}\)/,
-  "stopping the earlier run targets it by conversation id",
+  /const stopEarlierRun = async \(\) => \{[\s\S]*?fetch\("\/api\/chat\/stop"[\s\S]*?body: JSON\.stringify\(\{ runId \}\)/,
+  "stopping the earlier run targets its immutable run id",
 );
 assert.match(
   source,
-  /onStopEarlierRun=\{\s*earlierRunSessionId && earlierRunSessionId === sessionId/,
+  /onStopEarlierRun=\{\s*earlierRunSessionId && earlierRunSessionId === sessionId && earlierRunId/,
   "the stop action is offered only for the chat that was refused",
 );
 
@@ -392,18 +392,24 @@ assert.match(
 const stopHandlerSource = source.match(/const stopEarlierRun = async \(\) => \{[\s\S]*?\n  \};/)?.[0];
 assert.ok(stopHandlerSource);
 function stopFixture(fetchResponse: Promise<Response>) {
-  const state = { earlier: "chat-a", error: "earlier turn still running", announcements: [] as string[] };
+  const state = { earlier: "chat-a", runId: "run-a", requests: [] as Record<string, string>[], error: "earlier turn still running", announcements: [] as string[] };
   const currentSessionRef = { current: "chat-a" };
+  const earlierRunErrorVersionRef = { current: 0 };
   const stop = new Function(
     "fetch", "earlierRunSessionId", "currentSessionRef", "setEarlierRunSessionId", "setError", "announce",
+    "earlierRunId", "setEarlierRunId", "earlierRunErrorVersionRef",
     `${stripTypeScriptTypes(stopHandlerSource)}; return stopEarlierRun;`,
   )(
-    async () => fetchResponse, state.earlier, currentSessionRef,
+    async (_url: string, init: RequestInit) => {
+      state.requests.push(JSON.parse(String(init.body)));
+      return fetchResponse;
+    }, state.earlier, currentSessionRef,
     (value: string | null) => { state.earlier = value; },
     (value: string) => { state.error = value; },
     (value: string) => { state.announcements.push(value); },
+    state.runId, (value: string | null) => { state.runId = value; }, earlierRunErrorVersionRef,
   );
-  return { state, currentSessionRef, stop };
+  return { state, currentSessionRef, earlierRunErrorVersionRef, stop };
 }
 for (const response of [
   Response.json({ error: "unavailable" }, { status: 500 }),
@@ -434,3 +440,55 @@ for (const fails of [false, true]) {
   assert.equal(fixture.state.error, "Chat B error", "late Stop completion cannot overwrite another chat");
   assert.deepEqual(fixture.state.announcements, []);
 }
+
+for (const fails of [false, true]) {
+  for (const supersedingAction of ["send", "dismiss"]) {
+    let resolve!: (value: Response) => void;
+    const fixture = stopFixture(new Promise<Response>((done) => { resolve = done; }));
+    const stopping = fixture.stop();
+    assert.deepEqual(fixture.state.requests, [{ runId: "run-a" }]);
+    fixture.earlierRunErrorVersionRef.current += 1;
+    fixture.state.earlier = null;
+    fixture.state.error = supersedingAction === "send" ? "Newer send error" : null;
+    const expectedError = fixture.state.error;
+    resolve(Response.json(fails ? { error: "unavailable" } : { stopped: true }, { status: fails ? 500 : 200 }));
+    await stopping;
+    assert.equal(fixture.state.error, expectedError, `late Stop cannot overwrite ${supersedingAction}`);
+    assert.equal(fixture.state.earlier, null, "late failure cannot restore a superseded Stop action");
+    assert.deepEqual(fixture.state.announcements, []);
+  }
+}
+const queuedStop = stopFixture(Promise.resolve(Response.json({ stopped: false, queued: true })));
+await queuedStop.stop();
+assert.match(queuedStop.state.error, /Stop requested/);
+assert.doesNotMatch(queuedStop.state.error, /already ended/);
+
+// Deliver the UI request only after the old turn naturally settles and a new
+// turn starts in the SAME conversation. Its immutable token cannot kill B.
+const { registerChatRun, unregisterChatRun, requestOrQueueChatStop, requestChatStop, resetChatStopRegistryForTests } =
+  await import("../lib/server/chat-stop-registry.ts");
+resetChatStopRegistryForTests();
+try {
+  const oldRun = registerChatRun(["run-a", "chat-a"], () => {}, { runId: "run-a" });
+  let deliver!: (value: Response) => void;
+  const fixture = stopFixture(new Promise<Response>((done) => { deliver = done; }));
+  const stopping = fixture.stop();
+  unregisterChatRun(oldRun);
+  let successorStops = 0;
+  const successor = registerChatRun(["run-b", "chat-a"], () => { successorStops += 1; }, { runId: "run-b" });
+  const request = fixture.state.requests[0];
+  const outcome = request.runId ? requestOrQueueChatStop(request.runId) : requestChatStop(request.sessionId);
+  deliver(Response.json({ stopped: outcome === "stopped" || outcome === true, queued: outcome === "queued" }));
+  await stopping;
+  assert.equal(successorStops, 0, "delayed Stop delivery never cancels the successor");
+  assert.equal(successor.stopRequested, false);
+} finally {
+  resetChatStopRegistryForTests();
+}
+
+assert.match(source, /setEarlierRunSessionId\(null\);\s*setEarlierRunId\(null\);\s*earlierRunErrorVersionRef\.current \+= 1;\s*const initialLiveSessionId/,
+  "a new send invalidates pending earlier-run Stop completions");
+assert.match(source, /onDismiss=\{\(\) => \{[\s\S]*?setEarlierRunId\(null\);\s*earlierRunErrorVersionRef\.current \+= 1;/,
+  "dismissing the error invalidates pending Stop completions");
+assert.match(source, /if \(isThreadSwitch\) \{\s*earlierRunErrorVersionRef\.current \+= 1;/,
+  "switching away and back cannot restore an old Stop completion");

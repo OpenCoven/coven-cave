@@ -160,6 +160,7 @@ import {
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
   tryRegisterChatRun,
+  blockingChatRunId,
   setChatRunStopHandler,
   markChatRunProjectionSettled,
   markChatRunTransportSettled,
@@ -1315,7 +1316,7 @@ function openClawChatResponse(args: {
           detach: () => {
             if (args.req.signal.aborted) armDetachKill();
           },
-        });
+        }, runHandle);
         const onAbort = () => armDetachKill();
         args.req.signal.addEventListener("abort", onAbort, { once: true });
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
@@ -1558,7 +1559,7 @@ function openClawChatResponse(args: {
         detach: () => {
           if (args.req.signal.aborted) armDetachKill();
         },
-      });
+      }, runHandle);
       const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -2071,6 +2072,7 @@ async function postAdmittedChat(
     return Response.json({
       ok: false,
       code: "chat_run_active",
+      blockingRunId: blockingChatRunId(body.sessionId),
       error: "This chat is still running an earlier turn. Wait for it to finish, or stop it, then send again.",
     }, { status: 409 });
   }
@@ -5009,7 +5011,7 @@ async function postAdmittedChat(
         detach: () => {
           if (req.signal.aborted) armDetachKill();
         },
-      });
+      }, runHandle);
 
       const runHermesApiAttempt = async (apiPrompt: string): Promise<void> => {
         // This is an opt-in local/API-server transport. Hermes quiet CLI output

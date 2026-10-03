@@ -2532,6 +2532,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
   const [earlierRunSessionId, setEarlierRunSessionId] = useState<string | null>(null);
+  const [earlierRunId, setEarlierRunId] = useState<string | null>(null);
+  const earlierRunErrorVersionRef = useRef(0);
   // 400 project_root_required: the chat has no root anywhere (analytics-opened
   // daemon thread with no recorded cwd + familiar without a workspace). The
   // error strip renders an inline project picker that retries the send in the
@@ -4287,6 +4289,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      earlierRunErrorVersionRef.current += 1;
       // Clearing display ownership on any thread switch means an in-flight
       // generation from the previous view can no longer adopt.
       displayedCreationRunIdRef.current = null;
@@ -5592,6 +5595,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootMissing(false);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
+    setEarlierRunId(null);
+    earlierRunErrorVersionRef.current += 1;
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     const runId = crypto.randomUUID();
@@ -5830,6 +5835,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         signal: controller.signal,
       });
       if (!res.ok) {
+        const refusal = res.status === 409
+          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown } | null
+          : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
         setLastFailedSend(request);
@@ -5874,8 +5882,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // launched; the message is kept for Retry once the earlier run ends.
         if (res.status === 409 && /chat_run_active/.test(message) && liveGeneration.sessionId) {
           setEarlierRunSessionId(liveGeneration.sessionId);
-          surfacedMessage =
-            "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry.";
+          const blockingRunId = typeof refusal?.blockingRunId === "string" && refusal.blockingRunId.trim()
+            ? refusal.blockingRunId : null;
+          setEarlierRunId(blockingRunId);
+          surfacedMessage = blockingRunId
+            ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
+            : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -6124,27 +6136,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // blocks a new turn, so Retry can send the preserved message.
   const stopEarlierRun = async () => {
     const sessionId = earlierRunSessionId;
-    if (!sessionId) return;
+    const runId = earlierRunId;
+    if (!sessionId || !runId) return;
+    const errorVersion = ++earlierRunErrorVersionRef.current;
     setEarlierRunSessionId(null);
+    setEarlierRunId(null);
     try {
       const res = await fetch("/api/chat/stop", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ runId }),
       });
-      const json = (await res.json().catch(() => null)) as { stopped?: unknown } | null;
+      const json = (await res.json().catch(() => null)) as { stopped?: unknown; queued?: unknown } | null;
       if (!res.ok || typeof json?.stopped !== "boolean") {
         throw new Error("Stop was not confirmed");
       }
-      if (currentSessionRef.current !== sessionId) return;
+      if (currentSessionRef.current !== sessionId || earlierRunErrorVersionRef.current !== errorVersion) return;
       const outcome = json?.stopped === true
         ? "Stopped the earlier turn. Retry to send your message."
-        : "The earlier turn has already ended. Retry to send your message.";
+        : json.queued === true
+          ? "Stop requested for the earlier turn. Retry to send your message."
+          : "The earlier turn has already ended. Retry to send your message.";
       setError(outcome);
       announce(outcome, "polite");
     } catch {
-      if (currentSessionRef.current !== sessionId) return;
+      if (currentSessionRef.current !== sessionId || earlierRunErrorVersionRef.current !== errorVersion) return;
       setEarlierRunSessionId(sessionId);
+      setEarlierRunId(runId);
       const outcome = "Couldn’t confirm that the earlier turn stopped. Try again in a moment.";
       setError(outcome);
       announce(outcome, "polite");
@@ -8831,7 +8849,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : undefined
           }
           onStopEarlierRun={
-            earlierRunSessionId && earlierRunSessionId === sessionId
+            earlierRunSessionId && earlierRunSessionId === sessionId && earlierRunId
               ? () => void stopEarlierRun()
               : undefined
           }
@@ -8842,6 +8860,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setProjectRootMissing(false);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
+            setEarlierRunId(null);
+            earlierRunErrorVersionRef.current += 1;
           }}
         />
       ) : null}

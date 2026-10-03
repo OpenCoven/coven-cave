@@ -96,6 +96,7 @@ test("a send for a chat with a live run is refused before anything launches", as
     assert.equal(refused.status, 409, await refused.clone().text());
     const body = await refused.json();
     assert.equal(body.code, "chat_run_active");
+    assert.equal(body.blockingRunId, "earlier-run", "Stop must identify the refused run, never a successor");
     assert.equal(body.ok, false);
     assert.equal(await readFile(callsPath, "utf8"), callsBefore, "no harness was launched");
     assert.equal((await loadConversation(sessionId))?.turns.length, 1, "the transcript is unchanged");
@@ -159,4 +160,17 @@ test("a project authorization failure releases admission for a corrected send", 
   const accepted = await send("Corrected project");
   assert.equal(accepted.status, 200, await accepted.clone().text());
   await accepted.text();
+});
+
+
+test("a legacy run without a per-send token cannot offer an unsafe session-scoped Stop", async () => {
+  resetChatStopRegistryForTests();
+  const earlier = registerChatRun([sessionId], () => {});
+  try {
+    const refused = await send("Wait for the legacy run");
+    assert.equal(refused.status, 409);
+    assert.equal((await refused.json()).blockingRunId, null);
+  } finally {
+    unregisterChatRun(earlier);
+  }
 });
