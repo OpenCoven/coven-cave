@@ -4,12 +4,13 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GrimoireGraphView } from "./grimoire-graph-view";
 import { createForceSim, unpinForceSimNode } from "@/lib/grimoire-force";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { DocGraph } from "@/lib/grimoire-graph";
 
 vi.mock("@/components/ui/popover", () => ({ Popover: ({ open, children }: { open: boolean; children: ReactNode }) => open ? children : null, PopoverBody: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: vi.fn() }) }));
-vi.mock("@/lib/use-prefers-reduced-motion", () => ({ usePrefersReducedMotion: () => true }));
+vi.mock("@/lib/use-prefers-reduced-motion", () => ({ usePrefersReducedMotion: vi.fn(() => true) }));
 vi.mock("@/lib/grimoire-force", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/grimoire-force")>();
   return { ...actual, createForceSim: vi.fn(actual.createForceSim), unpinForceSimNode: vi.fn(actual.unpinForceSimNode) };
@@ -24,7 +25,7 @@ const graph: DocGraph = {
   edges: [{ id: "ab", source: "a", target: "b", type: "link" }],
 };
 let root: ReactTestRenderer | undefined;
-let nextFrame: (() => void) | undefined;
+let nextFrame: ((time: number) => void) | undefined;
 let arcs: number[][];
 let labels: string[];
 let resizeObserver: (() => void) | undefined;
@@ -44,7 +45,7 @@ const canvas = {
   hasPointerCapture: (id: number) => capture.has(id),
   releasePointerCapture: (id: number) => capture.delete(id),
 };
-function frame() { arcs = []; labels = []; const draw = nextFrame; nextFrame = undefined; act(() => draw?.()); }
+function frame(time = 1000) { arcs = []; labels = []; const draw = nextFrame; nextFrame = undefined; act(() => draw?.(time)); }
 function mount(data = graph) {
   act(() => {
     const element = <GrimoireGraphView graph={data} onOpen={vi.fn()} memoryOwnerByNodeId={new Map([["a", "nova"], ["c", "sage"]])} ownerLabel={(id) => id === "nova" ? "Nova" : "Sage"} />;
@@ -64,6 +65,7 @@ function pointer(type: string, pointerId: number, x: number, y: number) { return
 
 beforeEach(() => {
   arcs = []; labels = []; capture.clear(); vi.clearAllMocks();
+  vi.mocked(usePrefersReducedMotion).mockReturnValue(true);
   viewport.width = 900; viewport.height = 600;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { devicePixelRatio: 1, localStorage: { getItem: () => null, setItem: vi.fn() } });
@@ -71,10 +73,10 @@ beforeEach(() => {
   vi.stubGlobal("getComputedStyle", () => ({ fontFamily: "sans-serif", getPropertyValue: () => "rgb(100, 110, 120)" }));
   vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resizeObserver = callback; } observe() {} disconnect() {} });
   vi.stubGlobal("MutationObserver", class { observe() {} disconnect() {} });
-  vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => { nextFrame = () => callback(1000); return 1; });
+  vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => { nextFrame = callback; return 1; });
   vi.stubGlobal("cancelAnimationFrame", () => { nextFrame = undefined; });
 });
-afterEach(() => { act(() => root?.unmount()); root = undefined; vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root?.unmount()); root = undefined; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 test("empty-to-populated transition keeps a live, sized canvas and paints nodes", () => {
   mount({ nodes: [], edges: [] });
@@ -107,6 +109,36 @@ test("2D framing scales with a narrower pane rather than cropping the previous v
     expect(arcs[i][0] - 225).toBeCloseTo((before[i][0] - 450) / 2);
     expect(arcs[i][1] - 300).toBeCloseTo((before[i][1] - 300) / 2);
   }
+});
+
+test("a 2D selection flight stays continuous and centered when the explorer resizes the canvas", () => {
+  vi.mocked(usePrefersReducedMotion).mockReturnValue(false);
+  vi.spyOn(performance, "now").mockReturnValue(1000);
+  mount();
+  act(() => root!.root.findByProps({ "aria-label": "Expand graph filters" }).props.onClick());
+  act(() => root!.root.findAllByType("select")[1].props.onChange({ target: { value: "2" } }));
+  const sim = vi.mocked(createForceSim).mock.results.at(-1)!.value;
+  sim.alpha = 0;
+  sim.x[0] = 140; sim.y[0] = 80;
+  sim.x[1] = -120; sim.y[1] = -50;
+  act(() => button("Fit all").props.onClick());
+  frame();
+  const [x, y] = arcs[0];
+  act(() => {
+    canvasProps().onPointerDown(pointer("pointerdown", 1, x, y));
+    canvasProps().onPointerUp(pointer("pointerup", 1, x, y));
+  });
+  expect(button("Hide explorer")).toBeDefined();
+  frame(1200);
+  const before = [...arcs[0]];
+  viewport.width = 450;
+  act(() => resizeObserver?.());
+  frame(1200);
+  expect(arcs[0][0] - 225).toBeCloseTo((before[0] - 450) / 2);
+  expect(arcs[0][1] - 300).toBeCloseTo((before[1] - 300) / 2);
+  frame(1700);
+  expect(arcs[0][0]).toBeCloseTo(225);
+  expect(arcs[0][1]).toBeCloseTo(300);
 });
 
 test("search reaches disconnected files and updates matches without reheating the layout for each keystroke", () => {

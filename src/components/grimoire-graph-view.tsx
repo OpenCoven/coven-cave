@@ -985,6 +985,15 @@ export function GrimoireGraphView({
         view.panX *= scale;
         view.panY *= scale;
         view.k = nextZoom;
+        // Selection can open the explorer mid-flight. Keep its interpolation
+        // in the resized coordinates so the next frame preserves the target.
+        const flight = flightRef.current;
+        if (flight) {
+          for (const endpoint of [flight.from2d, flight.to2d]) {
+            endpoint.panX *= scale;
+            endpoint.panY *= scale;
+          }
+        }
         savedView = { ...view };
       }
       if (rect.width > 0 && rect.height > 0) previousSize = { width: rect.width, height: rect.height };
