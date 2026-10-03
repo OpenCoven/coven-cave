@@ -178,6 +178,18 @@ export function hasActiveChatRun(key: string): boolean {
   return Boolean(entry && entry.handle.projectionActive);
 }
 
+/**
+ * True when a live run under the conversation key must block a NEW turn for
+ * that conversation. A second send would launch another harness on the same
+ * native session and, by re-registering the key, hide the earlier run from
+ * Stop and the sessions list while its child keeps working. A run whose Stop
+ * was already requested is ending, so Stop-then-send still works.
+ */
+export function chatRunBlocksNewTurn(key: string): boolean {
+  const entry = active.get(key);
+  return Boolean(entry && entry.handle.projectionActive && !entry.handle.stopRequested);
+}
+
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
  *  Returns false when nothing is in flight under the key. */
 export function requestChatStop(key: string): boolean {
