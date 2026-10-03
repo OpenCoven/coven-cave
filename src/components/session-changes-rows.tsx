@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
@@ -71,7 +71,9 @@ export function ChangesSkeleton() {
 
 // ── File row ──────────────────────────────────────────────────────────────────
 
-export function FileRow({
+// Memoized with file-taking callbacks (#5745): a Viewed tick at 400 files used
+// to re-render every row, because each row was handed fresh closures.
+export const FileRow = memo(function FileRow({
   file,
   expanded,
   diffState,
@@ -80,23 +82,29 @@ export function FileRow({
   onRevert,
   viewed,
   onToggleViewed,
+  focusCol,
 }: {
   file: ChangedFile;
   expanded: boolean;
   diffState: DiffState | undefined;
   reverting: boolean;
-  onToggle: () => void;
-  onRevert: () => void;
+  onToggle: (file: ChangedFile) => void;
+  onRevert: (file: ChangedFile) => void;
   /**
    * Review bookkeeping for the Coding Desk's rail (cave-0rcku). Undefined
    * everywhere else, which keeps the column — and the row's shape — exactly as
    * it was for the chat panel.
    */
   viewed?: boolean;
-  onToggleViewed?: () => void;
+  onToggleViewed?: (file: ChangedFile) => void;
+  /** The grid cell that holds the table's one tab stop, when it is in this
+   *  row (#5745); null otherwise. */
+  focusCol: number | null;
 }) {
   const reviewable = typeof viewed === "boolean" && Boolean(onToggleViewed);
   const columns = reviewable ? 4 : 3;
+  const revertCol = reviewable ? 2 : 1;
+  const cellTab = (col: number) => (focusCol === col ? 0 : -1);
   // Two-step revert: first click arms an inline Cancel/Revert confirm that
   // replaces the row action; only the explicit confirm commits. "New" files
   // (untracked, or staged-but-never-committed) get delete copy because
@@ -130,12 +138,17 @@ export function FileRow({
 
   return (
     <>
-      <tr className="session-changes-table-row group align-middle transition-colors hover:bg-[var(--bg-hover)]">
+      <tr
+        className="session-changes-table-row group align-middle transition-colors hover:bg-[var(--bg-hover)]"
+        data-grid-row={file.path}
+      >
         <td className="min-w-0 overflow-hidden px-2 py-1.5">
           <button
             type="button"
             className="focus-ring flex w-full min-w-0 items-center gap-2 rounded text-left text-[length:var(--text-xs)]"
-            onClick={onToggle}
+            data-grid-col={0}
+            tabIndex={cellTab(0)}
+            onClick={() => onToggle(file)}
             aria-expanded={expanded}
             title={file.renamedFrom ? `${file.renamedFrom} → ${file.path}` : file.path}
           >
@@ -164,7 +177,9 @@ export function FileRow({
               type="button"
               role="switch"
               aria-checked={viewed}
-              onClick={onToggleViewed}
+              data-grid-col={1}
+              tabIndex={cellTab(1)}
+              onClick={() => onToggleViewed?.(file)}
               title={viewed ? `Mark ${file.path} unviewed` : `Mark ${file.path} viewed`}
               // A switch's name names the setting; aria-checked carries the
               // state. A name that flipped with it read "Mark … unviewed,
@@ -184,6 +199,8 @@ export function FileRow({
               icon={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"}
               size="sm"
               danger
+              data-grid-col={revertCol}
+              tabIndex={cellTab(revertCol)}
               onClick={() => setConfirmRevert(true)}
               disabled={reverting}
               title={untracked ? `Delete ${file.path}` : `Revert ${file.path}`}
@@ -218,7 +235,7 @@ export function FileRow({
                 type="button"
                 onClick={() => {
                   setConfirmRevert(false);
-                  onRevert();
+                  onRevert(file);
                 }}
                 disabled={reverting}
                 aria-label={untracked ? `Confirm delete ${file.path}` : `Confirm revert ${file.path}`}
@@ -259,7 +276,7 @@ export function FileRow({
       ) : null}
     </>
   );
-}
+});
 
 // ── Checkpoints ────────────────────────────────────────────────────────────────
 

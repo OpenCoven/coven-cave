@@ -116,7 +116,9 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
     // A new root is a new generation: nothing in flight or queued is its.
     ledger.newGeneration();
     setSnapshot((prev) => (prev.root === projectRoot ? prev : emptySnapshot(projectRoot)));
-    void load();
+    // Shared on mount (#5745): the changes panel and the viewer's launchpad
+    // read the same list at the same moment, and one request answers all.
+    void load({ shared: true });
     const onVisible = () => {
       if (document.visibilityState === "visible") void load();
     };

@@ -1837,4 +1837,172 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(tree.getByText("x.ts", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(tree.locator(".animate-spin")).toHaveCount(0);
   });
+
+  // ── Pass 4 low fixes (#5745) ───────────────────────────────────────────────
+
+  test("50. the tree shows files the agent creates and drops ones it deletes", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let srcChildren = [{ name: "flux.ts", path: `${WORK_ROOT}/src/flux.ts`, isDir: false }];
+    let rootChildren = [
+      { name: "src", path: `${WORK_ROOT}/src`, isDir: true },
+      { name: "README.md", path: `${WORK_ROOT}/README.md`, isDir: false },
+    ];
+    await page.route("**/api/project-tree**", (route) => {
+      const root = new URL(route.request().url()).searchParams.get("root") ?? "";
+      return route.fulfill({ json: { ok: true, entries: root === `${WORK_ROOT}/src` ? srcChildren : rootChildren } });
+    });
+    await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("src", { exact: true }).click();
+    await expect(tree.getByText("flux.ts", { exact: true })).toBeVisible();
+
+    // The agent creates src/new.ts and deletes README.md.
+    srcChildren = [...srcChildren, { name: "new.ts", path: `${WORK_ROOT}/src/new.ts`, isDir: false }];
+    rootChildren = rootChildren.filter((entry) => entry.name !== "README.md");
+    fixture.current = [
+      ...CHANGED_FILES,
+      { path: "src/new.ts", status: "untracked", insertions: 3, deletions: 0, changeVersion: "5:5:5" },
+      { path: "README.md", status: "deleted", insertions: 0, deletions: 4, changeVersion: "missing" },
+    ];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(tree.getByText("new.ts", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(tree.locator("[data-tree-row]").filter({ hasText: /^README\.md/ })).toHaveCount(0);
+  });
+
+  test("51. the changes table is one tab stop, and arrow keys move through it", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const grid = page.getByTestId("code-review-rail").getByRole("grid", { name: "Changed files" });
+    await expect(grid.locator('[tabindex="0"]')).toHaveCount(1);
+    const firstRow = grid.locator('tr[data-grid-row="src/flux.ts"]');
+    const secondRow = grid.locator('tr[data-grid-row="src/retry.ts"]');
+    await firstRow.locator('[data-grid-col="0"]').focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(secondRow.locator('[data-grid-col="0"]')).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(secondRow.getByRole("switch", { name: "Viewed: src/retry.ts" })).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(firstRow.getByRole("switch", { name: "Viewed: src/flux.ts" })).toBeFocused();
+    // The cell last used keeps the table's only tab stop; Tab leaves the table.
+    await expect(grid.locator('[tabindex="0"]')).toHaveCount(1);
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="grid"]')))).toBe(false);
+  });
+
+  test("52. the picker points to matches in other groups instead of offering a duplicate", async ({ page }) => {
+    const beta = mkSession({
+      id: "s-beta",
+      title: "Beta login retry",
+      status: "idle",
+      project_root: "/repo/beta",
+      familiarWorkspace: false,
+      git: { branch: "main", repositoryUrl: "https://github.com/acme/beta", worktreeRoot: "/repo/beta/.worktrees/x", isWorktree: true },
+    });
+    await base(page, [NEWEST, OLDER, beta]);
+    await openDesk(page);
+    await page.keyboard.press("ControlOrMeta+p");
+    const panel = page.locator("[data-code-picker-panel]");
+    await expect(panel).toBeVisible();
+    await panel.getByRole("button", { name: /acme\/alpha/ }).click();
+    await panel.getByRole("combobox").fill("Beta login");
+    await expect(panel.getByText(/1 match is in other groups/)).toBeVisible();
+    await expect(panel.getByRole("button", { name: /Start a new session/ })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Show all groups" }).click();
+    await expect(panel.getByRole("option", { name: /Beta login retry/ })).toBeVisible();
+  });
+
+  test("53. in forced colors the selected session and tree row keep an outline", async ({ page }) => {
+    await base(page);
+    await page.emulateMedia({ forcedColors: "active" });
+    await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const styles = await page.evaluate(() => {
+      const outline = (el: Element | null) => (el ? getComputedStyle(el).outlineStyle : "missing");
+      return {
+        session: outline(document.querySelector('[data-code-session-id][aria-current="true"]')),
+        tree: outline(document.querySelector('[data-tree-row][data-selected="true"]')),
+      };
+    });
+    expect(styles.session).toBe("solid");
+    expect(styles.tree).toBe("solid");
+  });
+
+  test("54. at 320px every terminal control stays on screen", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await base(page);
+    await page.goto("/?mode=code&session=s-new", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(page.locator(".code-terminal-workspace__bar")).toBeVisible();
+    const offscreen = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".code-terminal-workspace__bar button"))
+        .map((el) => ({ name: el.getAttribute("aria-label") ?? el.textContent ?? "", rect: el.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.width > 0 && (rect.right > window.innerWidth + 1 || rect.left < -1))
+        .map(({ name }) => name.trim()),
+    );
+    expect(offscreen).toEqual([]);
+  });
+
+  test("55. editing a CRLF file saves CRLF, not a whole-file rewrite", async ({ page }) => {
+    await base(page);
+    const posts: { content?: string }[] = [];
+    await page.route("**/api/project-file**", (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        posts.push(request.postDataJSON());
+        return route.fulfill({ json: { ok: true, size: 20, version: "v2" } });
+      }
+      if (!(new URL(request.url()).searchParams.get("path") ?? "").endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content: "one\r\ntwo\r\n", size: 10, version: "v1" } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("three");
+    await desk.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0].content).toBe("one\r\ntwo\r\nthree");
+  });
+
+  test("56. a review thread that fails to resolve says so", async ({ page }) => {
+    const live = { ...NEWEST, pullRequest: { ...(NEWEST as unknown as { pullRequest: Record<string, unknown> }).pullRequest, attribution: "branch" } };
+    await base(page, [live, OLDER]);
+    await page.route("**/api/queue/**", (route) => route.fulfill({ json: { ok: true, items: [], prs: [], issues: [] } }));
+    await page.route("**/api/github/**", (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/resolve-thread")) return route.abort("failed");
+      if (url.pathname.endsWith("/checks")) return route.fulfill({ json: { ok: true, authed: true, sha: "d".repeat(40), rollup: "passing", runs: [], statuses: [] } });
+      return route.fulfill({
+        json: {
+          ok: true, authed: true, canResolve: true, issueComments: [], reviews: [],
+          reviewThreads: [{ id: "T1", isResolved: false, isOutdated: false, path: "src/flux.ts", comments: [{ id: "c1", author: { login: "val" }, body: "Rename this", createdAt: null }] }],
+        },
+      });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("tab", { name: "Pull request" }).click();
+    await rail.getByRole("button", { name: "Resolve" }).click();
+    await expect(rail.getByRole("alert").filter({ hasText: /Couldn.t update the thread/ })).toBeVisible();
+  });
+
+  test("57. a session switch reads the change list once, not once per view", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    let reads = 0;
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/changes" && request.method() === "GET" && [...url.searchParams.keys()].join() === "projectRoot") reads += 1;
+    });
+    for (const id of ["s-old", "s-new", "s-old", "s-new"]) {
+      await page.locator(`[data-code-session-id='${id}']`).first().click();
+      await expect(page.getByTestId("code-desk-activity")).toHaveText(id === "s-new" ? /running/ : /idle/);
+      await page.waitForTimeout(600);
+    }
+    // One read per switch is the target; dev StrictMode can add a second.
+    expect(reads).toBeLessThanOrEqual(8);
+  });
 });

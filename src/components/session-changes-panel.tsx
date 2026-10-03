@@ -138,11 +138,11 @@ export function SessionChangesInner({
   const setPrUrl = useCallback((next: string | null) => setOutbound({ prUrl: next }), [setOutbound]);
 
   // Default is a FORCED fetch through the shared changes-summary gate
-  // (cave-v8hh): the mount/visibility/`cave:changes-refresh`/post-mutation
-  // callers all follow a state change and must not reuse a cached response.
-  // Only the 5s running poll passes shared:true — that's the call that piles
-  // up with the chip/header/badge pollers on the same root, and one real
-  // request per window is exactly what it needs.
+  // (cave-v8hh): the visibility/`cave:changes-refresh`/post-mutation callers
+  // all follow a state change and must not reuse a cached response. The 5s
+  // running poll and the mount pass shared:true. A mount follows no change of
+  // its own, and forcing it made every session switch fetch the same list
+  // once for the desk and again for this panel (#5745).
   const load = useCallback(async (opts?: { shared?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
@@ -195,7 +195,7 @@ export function SessionChangesInner({
   // and when the document regains visibility. No polling while hidden — the
   // interval below only ticks for visible documents on a running session.
   useEffect(() => {
-    void load();
+    void load({ shared: true });
     void loadCheckpoints();
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -483,6 +483,54 @@ export function SessionChangesInner({
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
+  // Stable row callbacks, so the memoized rows re-render only when their own
+  // props change (#5745).
+  const toggleFileRef = useRef(toggleFile);
+  toggleFileRef.current = toggleFile;
+  const revertFileRef = useRef(revertFile);
+  revertFileRef.current = revertFile;
+  const onToggleRow = useCallback((file: ChangedFile) => toggleFileRef.current(file), []);
+  const onRevertRow = useCallback((file: ChangedFile) => void revertFileRef.current(file), []);
+
+  // The table is a grid with one tab stop (#5745): at 400 files its three
+  // controls a row were 1,200 Tab presses between the rail and the composer.
+  // Arrow keys move between rows and cells; the cell last used keeps the stop.
+  const [gridCursor, setGridCursor] = useState<{ path: string; col: number } | null>(null);
+  const cursorPath =
+    gridCursor && files.some((file) => file.path === gridCursor.path) ? gridCursor.path : files[0]?.path ?? null;
+  const cursorCol = gridCursor && cursorPath === gridCursor.path ? gridCursor.col : 0;
+  const onGridFocus = useCallback((event: React.FocusEvent<HTMLTableSectionElement>) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>("[data-grid-col]");
+    const row = cell?.closest<HTMLElement>("tr[data-grid-row]");
+    if (!cell || !row) return;
+    const path = row.dataset.gridRow ?? "";
+    const col = Number(cell.dataset.gridCol);
+    setGridCursor((prev) => (prev && prev.path === path && prev.col === col ? prev : { path, col }));
+  }, []);
+  const onGridKeyDown = useCallback((event: React.KeyboardEvent<HTMLTableSectionElement>) => {
+    if (event.altKey || event.metaKey || event.ctrlKey) return;
+    const cell = (event.target as HTMLElement).closest<HTMLElement>("[data-grid-col]");
+    const row = cell?.closest<HTMLElement>("tr[data-grid-row]");
+    if (!cell || !row) return;
+    const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("tr[data-grid-row]"));
+    let rowIndex = rows.indexOf(row);
+    let col = Number(cell.dataset.gridCol);
+    if (event.key === "ArrowDown") rowIndex = Math.min(rows.length - 1, rowIndex + 1);
+    else if (event.key === "ArrowUp") rowIndex = Math.max(0, rowIndex - 1);
+    else if (event.key === "ArrowRight") col += 1;
+    else if (event.key === "ArrowLeft") col -= 1;
+    else if (event.key === "Home") col = 0;
+    else if (event.key === "End") col = Number.MAX_SAFE_INTEGER;
+    else if (event.key === "PageDown") rowIndex = rows.length - 1;
+    else if (event.key === "PageUp") rowIndex = 0;
+    else return;
+    event.preventDefault();
+    const cells = Array.from(rows[rowIndex].querySelectorAll<HTMLElement>("[data-grid-col]"));
+    if (!cells.length) return;
+    const target = cells[Math.max(0, Math.min(cells.length - 1, col))];
+    target.focus();
+  }, []);
+
   // Commit review — start a NEW chat session whose opening prompt reviews the
   // working-tree changes. Dispatched through the cave:agents-new-chat bridge:
   // the Workspace opens the chat when this panel lives on a non-chat surface
@@ -645,7 +693,11 @@ export function SessionChangesInner({
           </div>
         ) : (
           <div className="session-changes-table-wrap overflow-hidden rounded-md border border-[var(--border-hairline)]">
-            <table className="session-changes-table w-full table-fixed border-collapse text-[length:var(--text-xs)]">
+            <table
+              className="session-changes-table w-full table-fixed border-collapse text-[length:var(--text-xs)]"
+              role="grid"
+              aria-label="Changed files"
+            >
               <colgroup>
                 <col />
                 <col className="w-[70px]" />
@@ -670,7 +722,11 @@ export function SessionChangesInner({
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--border-hairline)]">
+              <tbody
+                className="divide-y divide-[var(--border-hairline)]"
+                onKeyDown={onGridKeyDown}
+                onFocus={onGridFocus}
+              >
                 {files.map((file) => (
                   <FileRow
                     key={file.path}
@@ -678,10 +734,11 @@ export function SessionChangesInner({
                     expanded={expandedPath === file.path}
                     diffState={diffs[file.path]}
                     reverting={revertingPath === file.path}
-                    onToggle={() => toggleFile(file)}
-                    onRevert={() => void revertFile(file)}
+                    onToggle={onToggleRow}
+                    onRevert={onRevertRow}
                     viewed={reviewable ? isCodeRailFileViewed(viewed ?? {}, codeRailShapeOf(file)) : undefined}
-                    onToggleViewed={reviewable ? () => onToggleViewed?.(file) : undefined}
+                    onToggleViewed={reviewable ? onToggleViewed : undefined}
+                    focusCol={file.path === cursorPath ? cursorCol : null}
                   />
                 ))}
               </tbody>

@@ -125,14 +125,26 @@ export function CodeReviewRail({
       event.preventDefault();
       const controller = new AbortController();
       dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: widthPx, controller };
+      // One width per frame (#5745): pointermove fires faster than paint, and
+      // each width re-rendered the whole desk.
+      let frame = 0;
+      let pending: number | null = null;
+      const flush = () => {
+        frame = 0;
+        if (pending !== null) onWidthChange(pending);
+        pending = null;
+      };
       const move = (moveEvent: PointerEvent) => {
         const drag = dragRef.current;
         if (!drag || moveEvent.pointerId !== drag.pointerId) return;
         // The rail is on the right, so dragging left widens it.
-        onWidthChange(clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx));
+        pending = clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx);
+        if (!frame) frame = requestAnimationFrame(flush);
       };
       const end = (endEvent: PointerEvent) => {
         if (endEvent.pointerId !== dragRef.current?.pointerId) return;
+        if (frame) cancelAnimationFrame(frame);
+        flush();
         controller.abort();
         dragRef.current = null;
       };
