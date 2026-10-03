@@ -7,7 +7,7 @@ import { stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
-import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert, type ChangedFile } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { branchPrCache } from "@/lib/branch-pr-context";
@@ -341,6 +341,34 @@ async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
+/** The working tree as the status list sees it, with `path\0changeVersion`
+ *  keys from the same stamps. A commit can name the list it was reviewed
+ *  against and be refused when the tree has moved since (#5745). */
+async function changeSnapshot(repoRoot: string): Promise<{ files: ChangedFile[]; keys: string[] }> {
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+  const files = parsePorcelainZ(stdout);
+  await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
+  return { files, keys: files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`).sort() };
+}
+
+function sameChangeKeys(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
+}
+
+/** Parse a commit's `expectedChanges` into sorted keys, or null when absent. */
+function expectedChangeKeys(raw: unknown): string[] | null | "invalid" {
+  if (raw === undefined) return null;
+  if (!Array.isArray(raw) || raw.length > 5000) return "invalid";
+  const keys: string[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") return "invalid";
+    const { path: filePath, changeVersion } = entry as { path?: unknown; changeVersion?: unknown };
+    if (typeof filePath !== "string" || !filePath || typeof changeVersion !== "string") return "invalid";
+    keys.push(`${filePath}\0${changeVersion}`);
+  }
+  return keys.sort();
+}
+
 async function listChanges(repoRoot: string): Promise<NextResponse> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
@@ -623,6 +651,7 @@ export async function POST(req: NextRequest) {
     title?: string;
     prBody?: string;
     paths?: unknown;
+    expectedChanges?: unknown;
     expectedBranch?: string;
     expectedHead?: string;
     requireDefaultBranch?: boolean;
@@ -682,8 +711,36 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "invalid commit path" }, { status: 400 });
       }
     }
+    const expectedChanges = expectedChangeKeys(body.expectedChanges);
+    if (expectedChanges === "invalid") {
+      return NextResponse.json({ ok: false, error: "expectedChanges must list {path, changeVersion} entries" }, { status: 400 });
+    }
     return withRepositoryMutation(root.repoRoot, async () => {
       try {
+        // Commit only what was reviewed (#5745): refuse when the working tree
+        // no longer matches the list the caller showed. The repository lock is
+        // process-local, so an agent can still write between this check and
+        // staging; `verified` closes that window below.
+        const staleCommit = () =>
+          NextResponse.json(
+            {
+              ok: false,
+              stale: true,
+              error: "the working tree changed since you reviewed it; review the new changes, then commit",
+            },
+            { status: 409 },
+          );
+        let verified: { files: ChangedFile[]; indexTree: string } | null = null;
+        if (expectedChanges && !targetedPaths) {
+          const snapshot = await changeSnapshot(root.repoRoot);
+          if (!sameChangeKeys(snapshot.keys, expectedChanges)) return staleCommit();
+          // The index as it stands, to restore if the staged snapshot moves.
+          const { stdout: indexTree } = await git(root.repoRoot, ["write-tree"]);
+          verified = { files: snapshot.files, indexTree: indexTree.trim() };
+        } else if (expectedChanges) {
+          const snapshot = await changeSnapshot(root.repoRoot);
+          if (!sameChangeKeys(snapshot.keys, expectedChanges)) return staleCommit();
+        }
         const pathArgs = targetedPaths ? ["--", ...targetedPaths] : [];
       const { stdout: statusOut } = await git(
         root.repoRoot,
@@ -713,8 +770,25 @@ export async function POST(req: NextRequest) {
         root.repoRoot,
         targetedPaths
           ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
-          : ["add", "-A"],
+          : verified
+            // Stage exactly the verified files (and a rename's old path), so
+            // a file created after the check is never swept in.
+            ? ["--literal-pathspecs", "add", "-A", "--", ...verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))]
+            : ["add", "-A"],
       );
+      if (verified) {
+        // Re-stamp what was just staged. Stamps are file metadata, which
+        // staging leaves alone, so any difference is a write that may have
+        // reached the index. Then the index goes back as it was and the
+        // commit is refused rather than committing content nobody saw.
+        const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
+        await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+        if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
+          await git(root.repoRoot, ["read-tree", verified.indexTree]);
+          if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+          return staleCommit();
+        }
+      }
       try {
         await gitLong(
           root.repoRoot,
@@ -786,7 +860,7 @@ export async function POST(req: NextRequest) {
         const { stdout } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
         if (stdout.trim() !== expectedHead) {
           return NextResponse.json(
-            { ok: false, error: "the branch changed after the Canvas commit; review the new commit before opening the PR" },
+            { ok: false, error: "the branch changed after the commit; review the new commit before opening the PR" },
             { status: 409 },
           );
         }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Icon } from "@/lib/icon";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
@@ -11,6 +11,7 @@ import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
 import { checkpointLabel } from "@/lib/session-changes-format";
+import { changesOutbound, EMPTY_CHANGES_OUTBOUND, type ChangesOutbound } from "@/lib/changes-outbound-drafts";
 import {
   fetchSessionCheckpoints,
   fetchSessionFileDiff,
@@ -46,6 +47,13 @@ type ChangesResponse = {
 
 // ── Panel body (mounted per project root) ─────────────────────────────────────
 
+/** What a cached diff was read for: the file's status, line counts and change
+ *  stamp. A rewrite that keeps the counts still moves the stamp (#5745). */
+function diffSignature(file: ChangedFile | undefined): string {
+  if (!file) return "";
+  return `${file.status}:${file.insertions ?? 0}:${file.deletions ?? 0}:${file.changeVersion ?? ""}`;
+}
+
 export function SessionChangesInner({
   projectRoot,
   running,
@@ -54,6 +62,7 @@ export function SessionChangesInner({
   viewed,
   onToggleViewed,
   onFilesChange,
+  draftKey,
 }: {
   projectRoot: string;
   running: boolean;
@@ -72,6 +81,9 @@ export function SessionChangesInner({
    *  It is `null` until the first successful load and again on unmount: an
    *  initial `[]` or a failed request is not a snapshot of the worktree. */
   onFilesChange?: (files: ChangedFile[] | null) => void;
+  /** Where the commit message, Create PR and PR draft are kept between mounts
+   *  (#5745). The Coding Desk keys by session; defaults to the project root. */
+  draftKey?: string;
 }) {
   const reviewable = Boolean(viewed && onToggleViewed);
   const [files, setFiles] = useState<ChangedFile[]>([]);
@@ -93,20 +105,37 @@ export function SessionChangesInner({
   const [busyCheckpoint, setBusyCheckpoint] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  // Commit + Create PR flow.
-  const [commitMsg, setCommitMsg] = useState("");
+  // Commit + Create PR flow. The drafts and the post-commit "Create PR" live
+  // in a store, not here (#5745): this panel unmounts off its rail tab, on the
+  // narrow steps and behind the PR reader, and with it went a half-typed
+  // message, or the only way to open the PR for a commit just made.
+  const outboundKey = draftKey ?? projectRoot;
+  const outbound = useSyncExternalStore(
+    changesOutbound.subscribe,
+    () => changesOutbound.get(outboundKey),
+    () => EMPTY_CHANGES_OUTBOUND,
+  );
+  const setOutbound = useCallback(
+    (change: Partial<ChangesOutbound>) => changesOutbound.patch(outboundKey, change),
+    [outboundKey],
+  );
+  const commitMsg = outbound.commitMessage;
+  const setCommitMsg = useCallback((commitMessage: string) => setOutbound({ commitMessage }), [setOutbound]);
   const [committing, setCommitting] = useState(false);
+  const { announce } = useAnnouncer();
   // Set after a successful commit so the "Create PR" affordance persists even
   // though the file list is now empty.
-  const { announce } = useAnnouncer();
-  const [postCommit, setPostCommit] = useState<
-    { sha: string; branch: string; onDefaultBranch: boolean } | null
-  >(null);
-  const [prOpen, setPrOpen] = useState(false);
-  const [prTitle, setPrTitle] = useState("");
-  const [prBody, setPrBody] = useState("");
+  const postCommit = outbound.postCommit;
+  const setPostCommit = useCallback((next: ChangesOutbound["postCommit"]) => setOutbound({ postCommit: next }), [setOutbound]);
+  const prOpen = outbound.prOpen;
+  const setPrOpen = useCallback((next: boolean) => setOutbound({ prOpen: next }), [setOutbound]);
+  const prTitle = outbound.prTitle;
+  const setPrTitle = useCallback((next: string) => setOutbound({ prTitle: next }), [setOutbound]);
+  const prBody = outbound.prBody;
+  const setPrBody = useCallback((next: string) => setOutbound({ prBody: next }), [setOutbound]);
   const [creatingPr, setCreatingPr] = useState(false);
-  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const prUrl = outbound.prUrl;
+  const setPrUrl = useCallback((next: string | null) => setOutbound({ prUrl: next }), [setOutbound]);
 
   // Default is a FORCED fetch through the shared changes-summary gate
   // (cave-v8hh): the mount/visibility/`cave:changes-refresh`/post-mutation
@@ -199,19 +228,26 @@ export function SessionChangesInner({
     return () => window.removeEventListener("cave:changes-refresh", onRefresh);
   }, [load, loadCheckpoints]);
 
+  const diffRequestsRef = useRef(new Map<string, number>());
   const fetchDiff = useCallback(
     // `silent` re-fetches without flashing the "Loading diff…" state or wiping
     // the visible diff on error — used by the poll refresh so an open diff for
     // an actively-changing file stays current instead of going stale.
-    async (filePath: string, silent = false) => {
+    async (filePath: string, silent = false, sig?: string) => {
+      // Reads of one path can answer out of order; only the newest may land
+      // (#5751 review), or an older diff overwrites a newer one for good.
+      const request = (diffRequestsRef.current.get(filePath) ?? 0) + 1;
+      diffRequestsRef.current.set(filePath, request);
       if (!silent) setDiffs((prev) => ({ ...prev, [filePath]: { loading: true } }));
       try {
         const json = await fetchSessionFileDiff(fetch, projectRoot, filePath);
+        if (diffRequestsRef.current.get(filePath) !== request) return;
         setDiffs((prev) => ({
           ...prev,
-          [filePath]: { loading: false, diff: json.diff, truncated: json.truncated },
+          [filePath]: { loading: false, diff: json.diff, truncated: json.truncated, sig },
         }));
       } catch (err) {
+        if (diffRequestsRef.current.get(filePath) !== request) return;
         if (silent) return; // keep the last good diff on a background refresh
         setDiffs((prev) => ({
           ...prev,
@@ -225,25 +261,38 @@ export function SessionChangesInner({
   // #4: when the file list refreshes (poll/visibility), re-fetch the currently
   // expanded file's diff so it doesn't show a frozen snapshot. Keyed on a
   // signature of the list so it only fires when something actually changed.
-  const filesSig = files.map((f) => `${f.path}:${f.insertions ?? 0}:${f.deletions ?? 0}`).join("|");
+  // The full version stamp, not just the counts (#5751 review): a rewrite that
+  // keeps the line counts must still refresh the expanded diff.
+  const filesSig = files.map((f) => `${f.path}:${diffSignature(f)}`).join("|");
   // Aggregate +/- across all changed files for the header summary.
   const totalInsertions = files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
   const totalDeletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
   useEffect(() => {
     if (!expandedPath) return;
-    if (!files.some((f) => f.path === expandedPath)) return;
-    void fetchDiff(expandedPath, true);
+    const file = files.find((f) => f.path === expandedPath);
+    if (!file) return;
+    void fetchDiff(expandedPath, true, diffSignature(file));
     // expandedPath/files/fetchDiff intentionally omitted: refetch is driven by
     // list-content changes (filesSig), not by expand/collapse (toggleFile owns that).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filesSig]);
 
+  // A cached diff is shown only for the version it was read for (#5745):
+  // expanding a file that changed while collapsed reads it again, so Viewed
+  // can never be ticked against a diff the reader did not see.
+  const diffIsCurrent = useCallback(
+    (file: ChangedFile) => {
+      const cached = diffs[file.path];
+      return Boolean(cached && (cached.loading || cached.sig === diffSignature(file)));
+    },
+    [diffs],
+  );
   const toggleFile = useCallback(
     (file: ChangedFile) => {
       setExpandedPath((prev) => (prev === file.path ? null : file.path));
-      if (expandedPath !== file.path && !diffs[file.path]) void fetchDiff(file.path);
+      if (expandedPath !== file.path && !diffIsCurrent(file)) void fetchDiff(file.path, false, diffSignature(file));
     },
-    [diffs, expandedPath, fetchDiff],
+    [diffIsCurrent, expandedPath, fetchDiff],
   );
 
   // Jump-to-diff: when a transcript edit tool is clicked, expand that file's
@@ -267,7 +316,7 @@ export function SessionChangesInner({
     if (!match) return;
     appliedFocusNonceRef.current = focusNonce;
     setExpandedPath(match.path);
-    if (!diffs[match.path]) void fetchDiff(match.path);
+    if (!diffIsCurrent(match)) void fetchDiff(match.path, false, diffSignature(match));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNonce, focusPath, filesSig]);
 
@@ -372,23 +421,37 @@ export function SessionChangesInner({
     setPrUrl(null);
     try {
       const json = await mutateSessionChanges<{
-        ok?: boolean; sha?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
-      }>(fetch, projectRoot, "commit", { message });
-      setPostCommit({ sha: json.sha ?? "", branch: json.branch ?? "", onDefaultBranch: json.onDefaultBranch === true });
+        ok?: boolean; sha?: string; headOid?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
+      }>(fetch, projectRoot, "commit", {
+        message,
+        // The list as reviewed (#5745): the server refuses when the working
+        // tree no longer matches it, so nothing is committed unseen.
+        expectedChanges: files.map((file) => ({ path: file.path, changeVersion: file.changeVersion ?? "" })),
+      });
+      setOutbound({
+        postCommit: {
+          sha: json.sha ?? "",
+          headOid: json.headOid ?? "",
+          branch: json.branch ?? "",
+          onDefaultBranch: json.onDefaultBranch === true,
+        },
+        prTitle: message.split("\n")[0].slice(0, 72),
+        prBody: "",
+        prOpen: false,
+        commitMessage: "",
+      });
       announce("Changes committed.");
-      setPrTitle(message.split("\n")[0].slice(0, 72));
-      setPrBody("");
-      setPrOpen(false);
-      setCommitMsg("");
       setDiffs({});
       setExpandedPath(null);
       await Promise.all([load(), loadCheckpoints()]);
     } catch (err) {
       setActionError({ action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) });
+      // A refused commit usually means the tree moved: show the new list.
+      void load();
     } finally {
       setCommitting(false);
     }
-  }, [commitMsg, projectRoot, load, loadCheckpoints]);
+  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, setOutbound]);
 
   const createPr = useCallback(async () => {
     const title = prTitle.trim();
@@ -400,18 +463,23 @@ export function SessionChangesInner({
         fetch,
         projectRoot,
         "create-pr",
-        { title, prBody },
+        {
+          title,
+          prBody,
+          // Pinned to the commit made here (#5745): the server refuses when
+          // the branch moved or gained commits since.
+          ...(postCommit?.headOid ? { expectedHead: postCommit.headOid } : {}),
+          ...(postCommit?.branch ? { expectedBranch: postCommit.branch } : {}),
+        },
       );
-      setPrUrl(json.url ?? null);
+      setOutbound({ prUrl: json.url ?? null, prOpen: false, postCommit: null });
       if (json.url) announce("Pull request opened.");
-      setPrOpen(false);
-      setPostCommit(null);
     } catch (err) {
       setActionError({ action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) });
     } finally {
       setCreatingPr(false);
     }
-  }, [prTitle, prBody, projectRoot]);
+  }, [announce, postCommit, prTitle, prBody, projectRoot, setOutbound]);
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 

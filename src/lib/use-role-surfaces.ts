@@ -198,6 +198,7 @@ export function useRoleSurfaceSession(input: {
   openSession: (sessionId: string, familiarId?: string) => void;
   focusCard: (cardId: string) => void;
   refreshTasks: () => void;
+  refreshSessions?: () => void;
 }): RoleSurfaceSession {
   const {
     familiar,
@@ -209,6 +210,7 @@ export function useRoleSurfaceSession(input: {
     openSession,
     focusCard,
     refreshTasks,
+    refreshSessions,
   } = input;
   const candidateFamiliars = useMemo(() => {
     // The scoped roster is authoritative when it is present. A caller may
@@ -306,6 +308,7 @@ export function useRoleSurfaceSession(input: {
   );
   const focusCardStable = useCallback((cardId: string) => focusCard(cardId), [focusCard]);
   const refreshTasksStable = useCallback(() => refreshTasks(), [refreshTasks]);
+  const refreshSessionsStable = useCallback(() => refreshSessions?.(), [refreshSessions]);
 
   const contextsByFamiliarId = useMemo(() => {
     const contexts = new Map<string, RoleSurfaceContext>();
@@ -344,6 +347,7 @@ export function useRoleSurfaceSession(input: {
         openSession: openSessionStable,
         focusCard: focusCardStable,
         refreshTasks: refreshTasksStable,
+        refreshSessions: refreshSessionsStable,
       });
     }
     return contexts;
@@ -357,6 +361,7 @@ export function useRoleSurfaceSession(input: {
     openSessionStable,
     focusCardStable,
     refreshTasksStable,
+    refreshSessionsStable,
   ]);
 
   const context = familiar && candidateFamiliars.length === 1 && candidateFamiliars[0]?.id === familiar.id

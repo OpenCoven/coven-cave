@@ -544,6 +544,9 @@
 }
 .code-picker__row:hover { background: var(--bg-hover); }
 .code-picker__row[data-selected="true"] { background: color-mix(in oklab, var(--accent-presence) 14%, transparent); }
+/* The option the search field's arrow keys point at (#5745). A ring, so it
+   stays distinct from the current session's fill. */
+.code-picker__row[data-active="true"] { box-shadow: inset 0 0 0 1px var(--accent-presence); }
 .code-picker__dot {
   flex: none;
   width: var(--space-2);

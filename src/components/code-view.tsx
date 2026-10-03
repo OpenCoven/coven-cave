@@ -119,6 +119,8 @@ export type CodeViewProps = {
   pendingOpen?: PendingCodeOpen | null;
   onPendingOpenHandled?: () => void;
   onTasksRefresh: () => void;
+  /** Re-poll the session list now (the inspector changed a branch or worktree). */
+  onSessionsRefresh?: () => void;
 };
 
 export function CodeView({
@@ -130,6 +132,7 @@ export function CodeView({
   pendingOpen,
   onPendingOpenHandled,
   onTasksRefresh,
+  onSessionsRefresh,
 }: CodeViewProps) {
   // `?mode=code&session=<id>&ctab=<sessions|activity|prs|issues|reviews>&wtab=<diff|files|terminal|pr>`
   // deep link — parsed once (initializer stays PURE: React StrictMode runs it
@@ -712,7 +715,12 @@ export function CodeView({
                         : undefined
                     }
                     onJumpToSession={onJumpToSession}
-                    onRefresh={onTasksRefresh}
+                    // The inspector changed the session's git state: re-poll
+                    // the sessions it describes, not only the task feed (#5745).
+                    onRefresh={() => {
+                      onSessionsRefresh?.();
+                      onTasksRefresh();
+                    }}
                   />
                 </div>
               </>

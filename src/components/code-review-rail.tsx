@@ -348,6 +348,9 @@ export function CodeReviewRail({
                 viewed={viewed}
                 onToggleViewed={onToggleViewed}
                 onFilesChange={onPanelFilesChange}
+              // Drafts follow the session, so a late work-root change keeps
+              // the commit message and Create PR (#5745).
+              draftKey={`session:${row.id}`}
               />
             </div>
           </>

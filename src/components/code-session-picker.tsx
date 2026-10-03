@@ -16,7 +16,7 @@
  * than a shrug.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CodeReviewQueueControls } from "@/components/code-review-queue-controls";
 import { Icon } from "@/lib/icon";
 import { Popover, usePopoverInitialFocus } from "@/components/ui/popover";
@@ -35,13 +35,25 @@ const ACTIVITY_LABEL = {
   idle: "idle",
 } as const;
 
+// Picking another session remounts the desk, and the popover's focus return
+// went to a detached trigger (#5745). The pick leaves a note here; the new
+// desk's picker takes focus if it mounts within a moment.
+let focusTriggerAfterPickAt = 0;
+const FOCUS_AFTER_PICK_MS = 2000;
+
 function SessionRowButton({
   row,
-  selected,
+  id,
+  current,
+  active,
   onPick,
 }: {
   row: SessionRow;
-  selected: boolean;
+  id: string;
+  /** The session the desk is showing now. */
+  current: boolean;
+  /** The option the search field's arrow keys point at. */
+  active: boolean;
   onPick: () => void;
 }) {
   const activity = codeSessionActivity(row);
@@ -50,9 +62,14 @@ function SessionRowButton({
     <button
       type="button"
       role="option"
-      aria-selected={selected}
+      id={id}
+      // The listbox is driven from the search field (a combobox): one option
+      // is active at a time, and the rows are not separate Tab stops.
+      aria-selected={active}
+      tabIndex={-1}
       className="focus-ring code-picker__row"
-      data-selected={selected ? "true" : undefined}
+      data-selected={current ? "true" : undefined}
+      data-active={active ? "true" : undefined}
       data-code-session-id={row.id}
       onClick={onPick}
     >
@@ -67,6 +84,7 @@ function SessionRowButton({
         <span className="code-picker__row-state" data-activity={activity}>
           {ACTIVITY_LABEL[activity]}
         </span>
+        {current ? <span className="sr-only">, current session</span> : null}
       </span>
     </button>
   );
@@ -98,6 +116,22 @@ export function CodeSessionPicker({
   const [query, setQuery] = useState("");
   const [groupKey, setGroupKey] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const listboxId = useId();
+  const optionId = useCallback((sessionId: string) => `${listboxId}-option-${sessionId}`, [listboxId]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // The pick that remounted the desk asked for the new trigger to take focus.
+  useEffect(() => {
+    if (!focusTriggerAfterPickAt || Date.now() - focusTriggerAfterPickAt > FOCUS_AFTER_PICK_MS) return;
+    // Consumed only when focus actually moves: a cancelled frame (StrictMode's
+    // second effect run) must leave the request for the run that sticks.
+    const frame = requestAnimationFrame(() => {
+      focusTriggerAfterPickAt = 0;
+      anchorRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // Reopening with the last search still applied reads as missing sessions, so
   // both filters reset on close.
@@ -114,13 +148,27 @@ export function CodeSessionPicker({
     () => codeSessionPickerResult(queue, query, groupKey),
     [groupKey, query, queue],
   );
+  const options = useMemo(() => result.groups.flatMap((group) => group.sessions), [result]);
+  // A new search or filter starts from the top match.
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [groupKey, open, query]);
+  const active = options[Math.min(activeIndex, Math.max(0, options.length - 1))] ?? null;
+  useEffect(() => {
+    if (!open || !active) return;
+    const id = optionId(active.id);
+    Array.from(listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])
+      .find((option) => option.id === id)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [active, open, optionId]);
 
   const pick = useCallback(
     (id: string) => {
       setOpen(false);
+      if (id !== selected?.id) focusTriggerAfterPickAt = Date.now();
       onSelect(id);
     },
-    [onSelect],
+    [onSelect, selected?.id],
   );
 
   const create = useCallback(() => {
@@ -132,16 +180,23 @@ export function CodeSessionPicker({
 
   const onQueryKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
+      // Arrow keys move the active option (#5745); they used to do nothing,
+      // and Enter could only ever pick the first match.
+      if ((event.key === "ArrowDown" || event.key === "ArrowUp") && options.length > 0) {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setActiveIndex((index) => (Math.min(index, options.length - 1) + step + options.length) % options.length);
+        return;
+      }
       if (event.key !== "Enter") return;
       event.preventDefault();
       if (result.offersCreate) {
         create();
         return;
       }
-      const first = result.groups[0]?.sessions[0];
-      if (first) pick(first.id);
+      if (active) pick(active.id);
     },
-    [create, pick, result],
+    [active, create, options.length, pick, result.offersCreate],
   );
 
   const chipButton = (chip: CodeSessionPickerChip) => {
@@ -197,6 +252,11 @@ export function CodeSessionPicker({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onQueryKeyDown}
+              role="combobox"
+              aria-expanded={open}
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              aria-activedescendant={active ? optionId(active.id) : undefined}
               placeholder="Search sessions…"
               aria-label="Search sessions by title, project, repository or branch"
               className="code-picker__search-input"
@@ -226,7 +286,7 @@ export function CodeSessionPicker({
           {result.chips.length > 1 ? (
             <div className="code-picker__chips">{result.chips.map(chipButton)}</div>
           ) : null}
-          <div className="code-picker__list" role="listbox" aria-label="Sessions">
+          <div ref={listRef} className="code-picker__list" role="listbox" id={listboxId} aria-label="Sessions">
             {result.groups.map((group) => (
               <div key={group.key || "unknown"} className="code-picker__group">
                 <div className="code-picker__group-head">
@@ -237,7 +297,9 @@ export function CodeSessionPicker({
                   <SessionRowButton
                     key={row.id}
                     row={row}
-                    selected={row.id === selected?.id}
+                    id={optionId(row.id)}
+                    current={row.id === selected?.id}
+                    active={row.id === active?.id}
                     onPick={() => pick(row.id)}
                   />
                 ))}

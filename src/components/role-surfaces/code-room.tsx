@@ -57,6 +57,7 @@ export function CodeRoom({ context }: { context: RoleSurfaceContext }) {
       pendingOpen={pendingOpen}
       onPendingOpenHandled={clearPendingCodeOpen}
       onTasksRefresh={context.refreshTasks}
+      onSessionsRefresh={context.refreshSessions}
     />
   );
 }

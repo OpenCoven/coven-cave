@@ -170,7 +170,7 @@ type CheckRunDetail = {
 
 type ChecksState =
   | { phase: "loading" }
-  | { phase: "ready"; rollup: CheckSummary; runs: CheckRunDetail[] }
+  | { phase: "ready"; rollup: CheckSummary; runs: CheckRunDetail[]; sha: string | null }
   | { phase: "error" };
 
 function usePrChecks(repo: string, number: number): ChecksState {
@@ -185,7 +185,7 @@ function usePrChecks(repo: string, number: number): ChecksState {
           cache: "no-store",
         });
         const data = (await res.json().catch(() => null)) as
-          | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[] }
+          | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[]; sha?: string | null }
           | { ok: false }
           | null;
         if (cancelled) return;
@@ -193,7 +193,7 @@ function usePrChecks(repo: string, number: number): ChecksState {
           setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
           return;
         }
-        setState({ phase: "ready", rollup: data.rollup, runs: data.runs });
+        setState({ phase: "ready", rollup: data.rollup, runs: data.runs, sha: data.sha ?? null });
       } catch {
         if (!cancelled) setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
       }
@@ -215,8 +215,7 @@ function checkGlyph(run: CheckRunDetail): { glyph: string; cls: string } {
   return { glyph: "✕", cls: "text-[var(--color-danger)]" };
 }
 
-function ChecksSection({ repo, number }: { repo: string; number: number }) {
-  const state = usePrChecks(repo, number);
+function ChecksSection({ state }: { state: ChecksState }) {
   return (
     <section aria-label="Checks">
       <h3 className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -423,11 +422,16 @@ function ActionsSection({
   repo,
   number,
   prState,
+  checks,
   onActed,
 }: {
   repo: string;
   number: number;
   prState: string | undefined;
+  /** The checks this panel shows. Their head is what review and merge are
+   *  pinned to, and merge waits for them to pass, as the full reader does
+   *  (#5745). */
+  checks: ChecksState;
   onActed: () => void;
 }) {
   const [comment, setComment] = useState("");
@@ -435,6 +439,30 @@ function ActionsSection({
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirmMerge, setConfirmMerge] = useState(false);
   const mergeable = (prState ?? "open").toLowerCase() === "open";
+  const headSha = checks.phase === "ready" ? checks.sha : null;
+  // Review and merge both act on the head the checks above ran on, so both
+  // wait for it (#5751 review): an unpinned review lands on whatever commit
+  // is current, not the one whose checks were shown.
+  const headBlocked =
+    checks.phase === "loading"
+      ? "Review and merge wait for the checks to load."
+      : checks.phase === "error"
+        ? "Review and merge are off: the checks couldn't be loaded."
+        : !checks.sha
+          ? "Review and merge are off: the pull request's head is unknown."
+          : null;
+  const mergeBlocked =
+    headBlocked
+      ? headBlocked
+      : checks.phase !== "ready"
+        ? "Merge waits for the checks to load."
+        : checks.rollup === "failing"
+            ? "Merge is off: checks are failing."
+            : checks.rollup === "pending"
+              ? "Merge waits for the running checks."
+              : checks.rollup !== "passing"
+                ? "Merge is off: no checks reported for this head."
+                : null;
 
   async function post(path: string, body: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -454,7 +482,15 @@ function ActionsSection({
   async function review(event: "APPROVE" | "COMMENT") {
     setBusy(event === "APPROVE" ? "approve" : "comment");
     setNotice(null);
-    const result = await post("/api/github/review", { repo, number, event, body: comment.trim() });
+    if (!headSha) return;
+    const result = await post("/api/github/review", {
+      repo,
+      number,
+      event,
+      body: comment.trim(),
+      // The head the checks above are for; GitHub reviews that commit.
+      headSha,
+    });
     setBusy(null);
     if (result.ok) {
       setComment("");
@@ -465,13 +501,16 @@ function ActionsSection({
   }
 
   async function merge() {
+    if (mergeBlocked || !headSha) return;
     if (!confirmMerge) {
       setConfirmMerge(true);
       return;
     }
     setBusy("merge");
     setNotice(null);
-    const result = await post("/api/github/merge", { repo, number, method: "squash" });
+    // Pinned to the head that passed (#5745): GitHub refuses the merge if
+    // another commit landed since.
+    const result = await post("/api/github/merge", { repo, number, method: "squash", headSha });
     setBusy(null);
     setConfirmMerge(false);
     if (result.ok) {
@@ -496,15 +535,30 @@ function ActionsSection({
         aria-label="Review comment"
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={busy != null || !comment.trim()} onClick={() => review("COMMENT")}>
+        <Button
+          size="sm"
+          disabled={busy != null || !comment.trim() || headBlocked != null}
+          aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
+          onClick={() => review("COMMENT")}
+        >
           {busy === "comment" ? "Posting…" : "Comment"}
         </Button>
-        <Button size="sm" disabled={busy != null} onClick={() => review("APPROVE")}>
+        <Button
+          size="sm"
+          disabled={busy != null || headBlocked != null}
+          aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
+          onClick={() => review("APPROVE")}
+        >
           {busy === "approve" ? "Approving…" : "Approve"}
         </Button>
         <span className="ml-auto" />
         {mergeable ? (
-          <Button size="sm" disabled={busy != null} onClick={merge}>
+          <Button
+            size="sm"
+            disabled={busy != null || mergeBlocked != null}
+            aria-describedby={mergeBlocked ? "code-pr-merge-blocked" : undefined}
+            onClick={merge}
+          >
             {busy === "merge" ? "Merging…" : confirmMerge ? "Confirm squash merge" : "Squash merge"}
           </Button>
         ) : null}
@@ -514,6 +568,11 @@ function ActionsSection({
           </Button>
         ) : null}
       </div>
+      {(mergeable && mergeBlocked) || headBlocked ? (
+        <p id="code-pr-merge-blocked" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          {mergeBlocked}
+        </p>
+      ) : null}
       {notice ? (
         <p
           role={notice.kind === "err" ? "alert" : "status"}
@@ -527,6 +586,33 @@ function ActionsSection({
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
+
+/** Checks, threads and actions share one checks read (#5745): the actions
+ *  pin review and merge to the head those checks are for. */
+function PrReviewBlock({
+  repo,
+  number,
+  prState,
+  trustedForActions,
+  onActed,
+}: {
+  repo: string;
+  number: number;
+  prState: string | undefined;
+  trustedForActions: boolean;
+  onActed: () => void;
+}) {
+  const checks = usePrChecks(repo, number);
+  return (
+    <>
+      <ChecksSection state={checks} />
+      <ThreadsSection repo={repo} number={number} allowResolve={trustedForActions} />
+      {trustedForActions ? (
+        <ActionsSection repo={repo} number={number} prState={prState} checks={checks} onActed={onActed} />
+      ) : null}
+    </>
+  );
+}
 
 export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
   const workRoot = codeSessionWorkRoot(row);
@@ -569,20 +655,14 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
               </a>
             ) : null}
           </div>
-          <ChecksSection repo={pr.repo} number={pr.number as number} />
-          <ThreadsSection
+          <PrReviewBlock
             repo={pr.repo}
             number={pr.number as number}
-            allowResolve={trustedForActions}
+            prState={pr.state}
+            trustedForActions={trustedForActions}
+            onActed={() => setActedTick((t) => t + 1)}
           />
-          {trustedForActions ? (
-            <ActionsSection
-              repo={pr.repo}
-              number={pr.number as number}
-              prState={pr.state}
-              onActed={() => setActedTick((t) => t + 1)}
-            />
-          ) : (
+          {trustedForActions ? null : (
             <section aria-label="Review and merge" className="flex flex-col gap-2">
               <h2 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
                 Actions

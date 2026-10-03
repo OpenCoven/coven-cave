@@ -22,7 +22,7 @@
  * merge on anything short of a pass. "We could not tell" is not permission.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "@/styles/globals/surface-pr-reader.css";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -201,6 +201,12 @@ export type GitHubPrReaderProps = {
 };
 
 export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
+  // Opening the reader lands keyboard focus on its way back (#5745). It
+  // replaces the control that opened it, so focus otherwise fell to the page.
+  const backRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    backRef.current?.focus();
+  }, []);
   const [tab, setTab] = useState<PrReaderTab>("conversation");
   const detail = useGitHubPrDetail(repo, number);
   const threads = useGitHubPrThreads(repo, number);
@@ -242,7 +248,7 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
     <div className="pr-reader" data-testid="github-pr-reader">
       <div className="pr-reader__bar">
         {onBack ? (
-          <button type="button" className="focus-ring pr-reader__back" onClick={onBack}>
+          <button ref={backRef} type="button" className="focus-ring pr-reader__back" onClick={onBack}>
             <Icon name="ph:caret-left" width={11} height={11} aria-hidden />
             Back to files
           </button>

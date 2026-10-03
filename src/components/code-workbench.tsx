@@ -190,10 +190,57 @@ export function CodeWorkbench({
   const [treeChangedOnly, setTreeChangedOnly] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // The frame's `prFull`: the reader replaces the columns, and the room keeps
-  // your file, your rail width and your step for the trip back.
-  const [prFull, setPrFull] = useState(false);
+  // your file, your rail width and your step for the trip back. It holds the
+  // PR it opened (#5745): a sessions poll that briefly loses `pullRequest`
+  // (a failed revalidation) used to leave every column and the reader null,
+  // a blank desk with no way back.
+  const [prFull, setPrFull] = useState<{ repo: string; number: number } | null>(null);
+  // Bumped when the inspector changes the session's git state: the open file
+  // is read again even if it is not in the changes list (#5745).
+  const [viewerRefresh, setViewerRefresh] = useState(0);
   const [keysOpen, setKeysOpen] = useState(false);
   const inspectorAnchor = useRef<HTMLButtonElement | null>(null);
+
+  // The inspector's actions change the session's branch or worktree: re-poll
+  // the session list (the host's onRefresh) and read the open file again
+  // (#5745). It used to reload only the GitHub task feed. The changes views
+  // hear it from the inspector itself.
+  const onInspectorChanged = useCallback(() => {
+    onRefresh?.();
+    setViewerRefresh((tick) => tick + 1);
+  }, [onRefresh]);
+
+  // Opening the inspector moves focus into it (#5745): it is portaled after
+  // the whole desk, so Tab reached it only after every other control. Its
+  // controls can arrive after a fetch, so the panel itself takes focus when
+  // none is there yet.
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLElement>(".code-room__inspector");
+      const control = panel?.querySelector<HTMLElement>(
+        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      );
+      (control ?? panel)?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [inspectorOpen]);
+
+  // Full PR view by keyboard (#5745): the reader focuses its own Back control
+  // when it mounts (it loads lazily), and Back returns to the control that
+  // opened it. Both used to drop focus on the page.
+  const openFullPr = useCallback((repo: string, number: number) => {
+    setPrFull({ repo, number });
+  }, []);
+  const closeFullPr = useCallback(() => {
+    setPrFull(null);
+    requestAnimationFrame(() => {
+      const opener =
+        roomRef.current?.querySelector<HTMLElement>(".code-rail__full") ??
+        roomRef.current?.querySelector<HTMLElement>('[data-testid="code-review-rail"] [role="tab"][aria-selected="true"]');
+      opener?.focus();
+    });
+  }, []);
 
   // Keep the rail inside the room when the room itself is resized.
   useEffect(() => {
@@ -658,8 +705,8 @@ export function CodeWorkbench({
           scrollStrategy="content"
           ariaLabel="Session inspector"
         >
-          <div className="code-room__inspector">
-            <CodeInspector row={row} onChanged={onRefresh} />
+          <div className="code-room__inspector" tabIndex={-1} aria-label="Session inspector">
+            <CodeInspector row={row} onChanged={onInspectorChanged} />
           </div>
         </Popover>
       </div>
@@ -707,8 +754,8 @@ export function CodeWorkbench({
       )}
 
       <div className="code-room__body" ref={roomRef} data-split={fitsSplit ? "true" : undefined}>
-        {prFull && prRepo && prNumber != null ? (
-          <LazyPrReader repo={prRepo} number={prNumber} onBack={() => setPrFull(false)} />
+        {prFull ? (
+          <LazyPrReader repo={prFull.repo} number={prFull.number} onBack={closeFullPr} />
         ) : null}
         {prFull ? null : fitsSplit || step === "files" ? (
           <div className="code-room__tree" {...stepPanel("files")}>
@@ -758,7 +805,7 @@ export function CodeWorkbench({
                 variant="workbench"
                 rangeLabel={rangeLabel}
                 initialLine={focusLine}
-                changeVersion={selectedChangeVersion}
+                changeVersion={`${selectedChangeVersion ?? ""}|${viewerRefresh}`}
               />
             </div>
           </div>
@@ -785,7 +832,7 @@ export function CodeWorkbench({
             stepPanel={fitsSplit ? undefined : { id: stepPanelId("review"), labelledBy: stepTabId("review") }}
             focusPath={reviewFocus?.path}
             focusNonce={reviewFocus?.nonce}
-            onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
+            onOpenFullPr={prRepo && prNumber != null ? () => openFullPr(prRepo, prNumber) : undefined}
             files={changes.files}
             viewed={viewed}
             onToggleViewed={toggleViewed}

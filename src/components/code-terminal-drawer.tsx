@@ -27,14 +27,17 @@ import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
 import {
+  PRIMARY_TERMINAL_PANE_ID,
   closeTerminalPane,
-  createTerminalLayout,
   countTerminalPanes,
   resolveFocusedPane,
   splitTerminalPane,
+  terminalPaneThreadId,
   type TerminalLayoutNode,
   type TerminalSplitDirection,
 } from "@/lib/code-terminal-tree";
+import { readTerminalLayout, writeTerminalLayout } from "@/lib/code-terminal-layouts";
+import { stopTerminalThread } from "@/lib/terminal-thread-stop";
 import {
   CODE_TERMINAL_DEFAULT_HEIGHT_PX,
   CODE_TERMINAL_MIN_HEIGHT_PX,
@@ -86,10 +89,14 @@ export function CodeTerminalDrawer({
 }: CodeTerminalDrawerProps) {
   const { announce } = useAnnouncer();
   const [heightPx, setHeightPx] = useState(CODE_TERMINAL_DEFAULT_HEIGHT_PX);
-  const [layout, setLayout] = useState<TerminalLayoutNode>(createTerminalLayout);
-  const [focusedPaneId, setFocusedPaneId] = useState<string>(() =>
-    resolveFocusedPane(createTerminalLayout(), null),
-  );
+  // The session's saved layout (#5745): a session switch or a reload used to
+  // remount this drawer with one pane, orphaning every split's shell.
+  const [saved] = useState(() => readTerminalLayout(sessionId));
+  const [layout, setLayout] = useState<TerminalLayoutNode>(saved.layout);
+  const [focusedPaneId, setFocusedPaneId] = useState<string>(saved.focusedPaneId);
+  useEffect(() => {
+    writeTerminalLayout(sessionId, { layout, focusedPaneId });
+  }, [focusedPaneId, layout, sessionId]);
   const [broadcast, setBroadcast] = useState(false);
   // The region the drawer and the columns share: the body plus the drawer's
   // own height while open. Opening or resizing moves height between the two,
@@ -133,6 +140,9 @@ export function CodeTerminalDrawer({
   }, []);
 
   const handleClosePane = useCallback((paneId: string) => {
+    // Reap the pane's shell before it unmounts (#5745): its bridge is still
+    // registered now, and closing the pane is the only time anything will.
+    if (paneId !== PRIMARY_TERMINAL_PANE_ID) stopTerminalThread(terminalPaneThreadId(sessionId, paneId));
     setLayout((current) => {
       const { layout: next, nextFocusPaneId, closed } = closeTerminalPane(current, paneId);
       if (!closed) return current;
@@ -142,7 +152,7 @@ export function CodeTerminalDrawer({
       if (next.kind === "pane") setBroadcast(false);
       return next;
     });
-  }, []);
+  }, [sessionId]);
 
   const panes = countTerminalPanes(layout);
 

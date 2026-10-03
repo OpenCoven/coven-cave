@@ -86,6 +86,9 @@ export interface RoleSurfaceContext {
   focusCard(cardId: string): void;
   /** Ask the shell to refresh its GitHub/task feeds. */
   refreshTasks(): void;
+  /** Ask the shell to re-poll the session list now, e.g. after a surface
+   *  changed a session's branch or worktree (#5745). */
+  refreshSessions?(): void;
 }
 
 // ── Contributions ────────────────────────────────────────────────────────────

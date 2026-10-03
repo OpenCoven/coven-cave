@@ -226,8 +226,44 @@ export function resolveFocusedPane(node: TerminalLayoutNode, focusedPaneId: stri
   return listTerminalPanes(node)[0]?.id ?? PRIMARY_TERMINAL_PANE_ID;
 }
 
+// Pane ids name PTY threads (`cave.code.<session>.<pane>`), so they must never
+// repeat across page loads (#5745): a counter that restarted at 1 after a
+// reload gave a new split the previous load's orphaned shell and scrollback.
+// From the platform's CSPRNG (#5751 review): the id names a shell thread, so
+// it is drawn the way any identifier that reaches a PTY should be.
+const PANE_ID_PREFIX = (() => {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  return `pane-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+})();
 let paneCounter = 0;
 function defaultPaneId(): string {
   paneCounter += 1;
-  return `pane-${paneCounter}`;
+  return `${PANE_ID_PREFIX}-${paneCounter}`;
+}
+
+/**
+ * Is `value` a layout this module could have built? Used to restore a saved
+ * layout (#5745): anything malformed, over the pane cap, or without the
+ * primary pane is refused rather than rendered.
+ */
+export function isTerminalLayoutNode(value: unknown): value is TerminalLayoutNode {
+  const ids = new Set<string>();
+  const walk = (node: unknown, depth: number): boolean => {
+    if (!node || typeof node !== "object" || depth > 8) return false;
+    const candidate = node as Partial<TerminalSplitNode> & Partial<TerminalPaneNode>;
+    if (candidate.kind === "pane") {
+      if (typeof candidate.id !== "string" || !candidate.id || ids.has(candidate.id)) return false;
+      ids.add(candidate.id);
+      return true;
+    }
+    return (
+      candidate.kind === "split" &&
+      typeof candidate.id === "string" &&
+      (candidate.direction === "horizontal" || candidate.direction === "vertical") &&
+      walk(candidate.first, depth + 1) &&
+      walk(candidate.second, depth + 1)
+    );
+  };
+  return walk(value, 0) && ids.has(PRIMARY_TERMINAL_PANE_ID) && ids.size <= MAX_TERMINAL_PANES;
 }
