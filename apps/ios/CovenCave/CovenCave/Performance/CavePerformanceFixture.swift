@@ -1,4 +1,6 @@
 import Foundation
+import OSLog
+import UIKit
 
 struct CavePerformanceFixtureSnapshot {
     let projects: [ProjectInfo]
@@ -15,6 +17,15 @@ enum CavePerformanceFixture {
     static var isTranscriptRecoveryFixture: Bool {
         let arguments = ProcessInfo.processInfo.arguments
         return shouldEnable(arguments: arguments) && arguments.contains("--transcript-recovery-fixture")
+    }
+
+    /// `--image-zoom-fixture` puts two synthetic inline images in "Fixture chat 2"
+    /// and stops the streaming loop, so repeated zoom/dismiss cycles (#5314) run
+    /// without unrelated rendering churn.
+    static let imageZoomLaunchArgument = "--image-zoom-fixture"
+    static var isImageZoomFixture: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return shouldEnable(arguments: arguments) && arguments.contains(imageZoomLaunchArgument)
     }
 
     static func setRecoveryFixtureText(in thread: ChatThread, shrunk: Bool) {
@@ -113,12 +124,15 @@ enum CavePerformanceFixture {
             let familiar = familiars[index % familiars.count]
             let project = projects[index % projects.count]
             let isRichStreamingThread = index == 0
+            let isImageZoomThread = index == 1 && isImageZoomFixture
             let message = DisplayMessage(
                 id: identifier("message", index),
                 role: .assistant,
                 familiarId: familiar.id,
                 text: isRichStreamingThread
                     ? richMarkdown
+                    : isImageZoomThread
+                    ? imageZoomMarkdown()
                     : "Synthetic fixture response \(index + 1).",
                 streaming: isRichStreamingThread,
                 createdAt: baseDate.addingTimeInterval(TimeInterval(index))
@@ -235,7 +249,7 @@ enum CavePerformanceFixture {
     /// keep revising its final token in place so rendering never goes idle.
     /// This measures transcript/render work; it does not simulate network cost.
     static func runStreaming(in app: AppModel) async {
-        guard app.isPerformanceFixture, !isTranscriptRecoveryFixture,
+        guard app.isPerformanceFixture, !isTranscriptRecoveryFixture, !isImageZoomFixture,
               let thread = app.threads.first(where: { $0.id == identifier("chat", 0) })
         else { return }
         var frame = 0
@@ -263,6 +277,92 @@ enum CavePerformanceFixture {
         // Live replies append without touching `updatedAt`; `updateText`
         // would re-sort and rebuild the whole Chats list on every frame.
         thread.replaceStreamingText(identifier("message", 0), text)
+    }
+
+    // MARK: Inline image zoom fixture (#5314)
+
+    /// Two deterministic synthetic JPEG data URLs: a 48-megapixel source that
+    /// the zoom path must downsample to its 4,096-pixel target, and a small one.
+    /// No user content; generated on launch only under the zoom fixture flag.
+    static func imageZoomMarkdown() -> String {
+        let large = syntheticJPEGDataURL(width: 8_000, height: 6_000, hue: 0.58)
+        let small = syntheticJPEGDataURL(width: 1_600, height: 1_200, hue: 0.08)
+        return """
+        # Image zoom fixture
+
+        ![Zoom fixture image A](\(large))
+
+        ![Zoom fixture image B](\(small))
+        """
+    }
+
+    private static func syntheticJPEGDataURL(width: Int, height: Int, hue: CGFloat) -> String {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let size = CGSize(width: width, height: height)
+        let data = UIGraphicsImageRenderer(size: size, format: format).jpegData(withCompressionQuality: 0.8) { context in
+            let cg = context.cgContext
+            let colors = [UIColor(hue: hue, saturation: 0.7, brightness: 0.9, alpha: 1).cgColor,
+                          UIColor(hue: hue + 0.3, saturation: 0.6, brightness: 0.4, alpha: 1).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                cg.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+            }
+            cg.setStrokeColor(UIColor.white.withAlphaComponent(0.5).cgColor)
+            cg.setLineWidth(4)
+            let step = max(width, height) / 40
+            for x in stride(from: 0, through: width, by: step) {
+                cg.move(to: CGPoint(x: x, y: 0)); cg.addLine(to: CGPoint(x: x, y: height))
+            }
+            for y in stride(from: 0, through: height, by: step) {
+                cg.move(to: CGPoint(x: 0, y: y)); cg.addLine(to: CGPoint(x: width, y: y))
+            }
+            cg.strokePath()
+        }
+        return "data:image/jpeg;base64," + data.base64EncodedString()
+    }
+
+    private static let zoomSignposter = OSSignposter(
+        subsystem: "ai.opencoven.cave",
+        category: OSLog.Category.pointsOfInterest.rawValue
+    )
+
+    /// Emits the process's physical footprint as a Points of Interest event so
+    /// a trace can read residual memory per zoom cycle. Image zoom fixture only.
+    static func recordZoomFootprint(_ phase: ZoomPhase) {
+        guard isImageZoomFixture, let bytes = physicalFootprint() else { return }
+        switch phase {
+        case .presented:
+            zoomSignposter.emitEvent("image.zoom.footprint", "presented \(bytes, privacy: .public)")
+        case .dismissed:
+            zoomSignposter.emitEvent("image.zoom.footprint", "dismissed \(bytes, privacy: .public)")
+        case .settled:
+            zoomSignposter.emitEvent("image.zoom.footprint", "settled \(bytes, privacy: .public)")
+        }
+    }
+
+    /// Records the dismissed footprint, then the settled footprint one second
+    /// later, after the cover's teardown has had time to release its image.
+    static func zoomDismissed() {
+        guard isImageZoomFixture else { return }
+        recordZoomFootprint(.dismissed)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            recordZoomFootprint(.settled)
+        }
+    }
+
+    enum ZoomPhase { case presented, dismissed, settled }
+
+    private static func physicalFootprint() -> UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? info.phys_footprint : nil
     }
 
     private static func identifier(_ kind: String, _ index: Int) -> String {
