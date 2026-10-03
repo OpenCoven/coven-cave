@@ -317,7 +317,20 @@ export function CodeSessionPicker({
                 ) : null}
               </div>
             ) : null}
-            {!result.offersCreate && result.count === 0 ? (
+            {result.count === 0 && result.hiddenByGroup > 0 ? (
+              // The query matches, just not in the chosen group (#5745): say
+              // where, rather than offering a duplicate session.
+              <div className="code-picker__empty">
+                <p className="code-picker__empty-text">
+                  No session in this group matches.{" "}
+                  {result.hiddenByGroup === 1 ? "1 match is" : `${result.hiddenByGroup} matches are`} in other groups.
+                </p>
+                <button type="button" className="focus-ring code-picker__empty-action" onClick={() => setGroupKey(null)}>
+                  Show all groups
+                </button>
+              </div>
+            ) : null}
+            {!result.offersCreate && result.count === 0 && result.hiddenByGroup === 0 ? (
               <p className="code-picker__empty-text">{emptyMessage}</p>
             ) : null}
           </div>

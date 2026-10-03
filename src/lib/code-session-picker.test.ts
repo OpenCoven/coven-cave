@@ -202,4 +202,20 @@ assert.equal(
 assert.equal(codeSessionPickerResult(queue([]), "", null).offersCreate, false);
 assert.equal(codeSessionPickerResult(queue([]), "", null).count, 0);
 
+// A match the chosen group hides is not a miss (#5745): no offer to create a
+// duplicate session, and the count of matches elsewhere instead.
+{
+  const twoGroups = queue([
+    { key: "repo-cave", label: "acme/coven-cave", sessions: [row({ id: "cave-1", title: "Fix the caves" })] },
+    { key: "repo-pocket", label: "acme/coven-pocket", sessions: [row({ id: "pocket-1", title: "Pocket login retry" })] },
+  ]);
+  const hidden = codeSessionPickerResult(twoGroups, "login retry", "repo-cave");
+  assert.equal(hidden.count, 0);
+  assert.equal(hidden.offersCreate, false);
+  assert.equal(hidden.hiddenByGroup, 1);
+  const everywhere = codeSessionPickerResult(twoGroups, "nothing like this", "repo-cave");
+  assert.equal(everywhere.offersCreate, true);
+  assert.equal(everywhere.hiddenByGroup, 0);
+}
+
 console.log("code-session-picker: ok");

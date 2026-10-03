@@ -15,7 +15,7 @@
  * is never carried by colour alone.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectTree, type TreeDecoration } from "@/components/project-tree";
 import type { ChangedFile, FileStatus } from "@/lib/session-changes-api";
@@ -33,6 +33,20 @@ export const STATUS_LETTER: Record<FileStatus, string> = {
 /** Join a repo-relative change path onto the root the tree renders absolute. */
 export function absolutePath(root: string, relative: string): string {
   return `${root.replace(/\/$/, "")}/${relative.replace(/^\.?\//, "")}`;
+}
+
+// Statuses that add or remove an entry in the tree; an edit in place does not.
+const STRUCTURAL_STATUSES = new Set<FileStatus>(["added", "untracked", "deleted", "renamed"]);
+
+/** Every folder from the file's parent up to `root`, inclusive. */
+function ancestorDirs(root: string, absolute: string): string[] {
+  const top = root.replace(/\/+$/, "");
+  const dirs: string[] = [];
+  for (let dir = absolute.slice(0, absolute.lastIndexOf("/")); dir.length >= top.length; dir = dir.slice(0, dir.lastIndexOf("/"))) {
+    dirs.push(dir);
+    if (dir === top || !dir.includes("/")) break;
+  }
+  return dirs;
 }
 
 export type CodeWorkbenchTreeProps = {
@@ -74,6 +88,32 @@ export function CodeWorkbenchTree({
     }
     return map;
   }, [base, changes]);
+
+  // Files appearing or disappearing in the live list mean the tree's folders
+  // changed (#5745). The first ready list is the tree as loaded; after that,
+  // every folder above an entry that came or went is read again.
+  const structureKey = useMemo(
+    () =>
+      changes
+        .filter((file) => STRUCTURAL_STATUSES.has(file.status))
+        .flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]))
+        .sort()
+        .join("\n"),
+    [changes],
+  );
+  const lastStructureRef = useRef<string | null>(null);
+  const [refreshDirs, setRefreshDirs] = useState<{ dirs: ReadonlySet<string>; nonce: number } | null>(null);
+  useEffect(() => {
+    if (changesStatus !== "ready") return;
+    const previous = lastStructureRef.current;
+    lastStructureRef.current = structureKey;
+    if (previous === null || previous === structureKey) return;
+    const before = new Set(previous ? previous.split("\n") : []);
+    const after = new Set(structureKey ? structureKey.split("\n") : []);
+    const moved = [...after].filter((path) => !before.has(path)).concat([...before].filter((path) => !after.has(path)));
+    const dirs = new Set(moved.flatMap((path) => ancestorDirs(base, absolutePath(base, path))));
+    if (dirs.size) setRefreshDirs((prev) => ({ dirs, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, [base, changesStatus, structureKey]);
 
   const decorate = useCallback(
     (path: string) => byAbsolutePath.get(path) ?? null,
@@ -155,6 +195,7 @@ export function CodeWorkbenchTree({
             decorate={decorate}
             selectedPath={selectedPath}
             onFileClick={onSelect}
+            refreshDirs={refreshDirs}
           />
         )}
       </div>

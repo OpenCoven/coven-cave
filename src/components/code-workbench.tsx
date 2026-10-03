@@ -460,7 +460,10 @@ export function CodeWorkbench({
     [panelFiles],
   );
   const roomKeyRef = useRef("");
-  roomKeyRef.current = codeChangeSnapshotKey(railFileShapes);
+  // Computed once per list, not on every render (#5745): it sorts and joins
+  // every path, and the desk re-renders on each poll and each drag frame.
+  const roomKey = useMemo(() => codeChangeSnapshotKey(railFileShapes), [railFileShapes]);
+  roomKeyRef.current = roomKey;
   const refreshRoomRef = useRef(changes.refresh);
   refreshRoomRef.current = changes.refresh;
   useEffect(() => {
