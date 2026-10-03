@@ -167,6 +167,32 @@ const B = "/repo/src/b.ts";
   assert.equal(store.settle(A, save.id, save.content, "v2"), false);
 }
 
+// ── Overwrite writes over the version the conflict was about (#5756) ────────
+// It used to drop the precondition: a change after the conflict appeared was
+// overwritten unseen, and every later save of the draft went unchecked.
+{
+  const store = createFileEditDraftStore();
+  store.begin(A, "one", "v1");
+  store.update(A, "one mine");
+  const save = store.startSave(A);
+  store.fail(A, save.id, FILE_CHANGED_ON_DISK, true, "v2");
+  assert.equal(store.get(A).diskVersion, "v2", "the server's version is kept with the conflict");
+  store.acceptDisk(A);
+  assert.equal(store.get(A).baseVersion, "v2", "Overwrite is pinned to the version the person was warned about");
+  assert.equal(store.get(A).conflict, false);
+  // A later change is a new conflict, and a re-read moves the pin with it.
+  store.noteDiskVersion(A, "v3");
+  assert.equal(store.get(A).conflict, true);
+  store.noteDiskVersion(A, "v4");
+  assert.equal(store.get(A).diskVersion, "v4", "the newest disk version is the one Overwrite pins");
+  store.acceptDisk(A);
+  assert.equal(store.get(A).baseVersion, "v4");
+  // A failure that isn't a conflict doesn't touch the pin.
+  const again = store.startSave(A);
+  store.fail(A, again.id, "network down");
+  assert.equal(store.get(A).baseVersion, "v4");
+}
+
 // ── Drafts kept in storage (#5756) ─────────────────────────────────────────
 // The desktop app closes, quits and relaunches without an unload prompt, so a
 // memory-only draft was lost. Unsaved drafts are now written to storage, one

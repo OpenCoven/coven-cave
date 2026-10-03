@@ -193,7 +193,8 @@ assert.match(preview, /\}, \[path, familiarId, reloadNonce, changeVersion\]\);/,
 assert.match(preview, /onOpenPath\(changedRepoRoot \? `\$\{changedRepoRoot\.replace\(\/\\\/\+\$\/, ""\)\}\/\$\{f\.path\}` : f\.path\)/, "launchpad paths resolve against the git toplevel, not the project");
 assert.match(composer, /showSuggestions = [^;]*row\.familiarId/, "no suggestions for a session that cannot send");
 assert.match(composer, /No familiar is attached to this session/, "a session with no familiar says why Send is off");
-assert.match(panelSrc, /\{actionError\.action\}: \{actionError\.message\}/, "an action error names its action");
+// The shown error is the panel's own or the commit/PR one kept with the draft (#5756).
+assert.match(panelSrc, /\{shownError\.action\}: \{shownError\.message\}/, "an action error names its action");
 assert.doesNotMatch(panelSrc, /revert: \{actionError/, "no failure is labelled revert unless it was one");
 // Shortcuts: narrow steps follow the rail shortcuts, and the tree passes modified arrows.
 assert.match(workbench, /if \(action === "changes" \|\| action === "pr"\) \{\s*setRailTab\(action\);\s*onReviewOpenChange\(true\);[^}]*?if \(!fitsSplit\) setStep\("review"\);/, "Changes and PR shortcuts bring the narrow Review step forward");
@@ -237,7 +238,7 @@ assert.match(preview, /const target = pathRef\.current;[\s\S]{0,200}const sendin
 assert.match(preview, /if \(pathRef\.current === target\) \{\s*setFile\(/, "only the file the save was for, if still on screen, takes the saved text");
 // 3. A save names its starting version; a changed file is a conflict.
 assert.match(preview, /expectedVersion: sending\.baseVersion \?\? undefined/, "a save sends the version its edit started from");
-assert.match(preview, /fileEditDrafts\.fail\(target, sending\.id, conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
+assert.match(preview, /fileEditDrafts\.fail\(\s*target,\s*sending\.id,\s*conflict \? FILE_CHANGED_ON_DISK/, "a refused save keeps the edit and says why");
 assert.match(preview, /className="workspace-rail__preview-conflict" role="alert"[\s\S]{0,1200}onClick=\{reloadFromDisk\}[\s\S]{0,400}onClick=\{overwriteDisk\}/, "a conflict offers Reload and Overwrite in its own row");
 assert.match(workbench, /changeVersion=\{`\$\{selectedChangeVersion \?\? ""\}\|\$\{viewerRefresh\}`\}/, "the open file is read again when its change version moves, or the inspector changed the branch");
 
@@ -266,7 +267,8 @@ assert.match(panelSrc, /expectedHead: postCommit\.headOid[\s\S]{0,120}expectedBr
 // 7. The rail merges only on passing checks, pinned to their head.
 assert.match(prPanelSrc, /disabled=\{busy != null \|\| mergeBlocked != null\}/, "merge waits for passing checks");
 assert.match(prPanelSrc, /"\/api\/github\/merge", \{ repo, number, method: "squash", headSha \}/, "merge is pinned to the checked head");
-assert.match(prPanelSrc, /if \(!headSha\) return;\s*const result = await post\("\/api\/github\/review", \{[\s\S]{0,200}headSha,\s*\}\);/, "review is always pinned to the checked head");
+// The head check comes before busy is set (#5756), so it can't strand the buttons.
+assert.match(prPanelSrc, /if \(!headSha\) return;\s*setBusy\([\s\S]{0,120}const result = await post\("\/api\/github\/review", \{[\s\S]{0,200}headSha,\s*\}\);/, "review is always pinned to the checked head");
 assert.match(prPanelSrc, /disabled=\{busy != null \|\| headBlocked != null\}/, "Approve waits for the checked head (#5751 review)");
 assert.match(panelSrc, /const request = \(diffRequestsRef\.current\.get\(filePath\) \?\? 0\) \+ 1;[\s\S]{0,400}if \(diffRequestsRef\.current\.get\(filePath\) !== request\) return;/, "only the newest diff read for a path lands (#5751 review)");
 assert.match(panelSrc, /const filesSig = files\.map\(\(f\) => `\$\{f\.path\}:\$\{diffSignature\(f\)\}`\)\.join\("\|"\);/, "the expanded diff refreshes on the full version stamp");
@@ -347,5 +349,43 @@ assert.match(workbench, /withDraftTabs\(codeDeskMemory\.read\(row\.id\)\?\.openF
 // 3. Escape always leaves the editor for something that can take focus.
 assert.match(preview, /\[saveButtonRef\.current, reloadButtonRef\.current\]\.find\(\(button\) => button && !button\.disabled\) \?\? headerRef\.current/, "Escape goes to Save, Reload, or the viewer");
 assert.match(preview, /<header ref=\{headerRef\} tabIndex=\{-1\}/, "the viewer header can take focus from script");
+
+// ── Pass 5 medium fixes (#5756) ──────────────────────────────────────────────
+const drawerMed = await readFile(new URL("./code-terminal-drawer.tsx", import.meta.url), "utf8");
+const terminalMed = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
+const summaryMed = await readFile(new URL("../lib/changes-summary-fetch.ts", import.meta.url), "utf8");
+// 4. Overwrite is pinned to the conflict's version.
+assert.match(preview, /conflict \? json\.version \?\? null : null,/, "a 409 hands its disk version to the draft");
+// 5. Checks keep being read after they settle, with Retry, and after a refusal.
+assert.match(prPanelSrc, /usePausablePoll\(reread, SETTLED_CHECKS_POLL_MS, \{ enabled: !pending && state\.phase !== "loading" \}\);/, "settled checks are read again");
+assert.match(prPanelSrc, /<ChecksSection state=\{checks\} onRetry=\{recheck\} \/>/, "a failed checks load offers Retry");
+// 6. Create PR only with the commit made here; dismissing the result closes the form.
+assert.match(panelSrc, /if \(!title \|\| !postCommit[^\n]*\) return;/, "Create PR needs the pinned commit");
+assert.match(panelSrc, /onClick=\{\(\) => setOutbound\(\{ postCommit: null, prOpen: false \}\)\}/, "dismissing the commit result closes the PR form");
+assert.match(panelSrc, /err instanceof ChangesRequestError && err\.stale[\s\S]{0,400}postCommit: null, prOpen: false/, "a moved branch ends the attempt");
+// 9. A terminal starts on the drawer's first open; a mid-start teardown disposes what exists.
+assert.match(drawerMed, /const \[started, setStarted\] = useState\(\(\) => open \|\| terminalStarted\(sessionId\)\);/, "no shell until the drawer opens");
+assert.match(drawerMed, /\{started \? \(\s*<CodeTerminalWorkspace/, "the workspace mounts once started");
+assert.equal((terminalMed.match(/else for \(const dispose of made\.splice\(0\)\.reverse\(\)\) dispose\(\);/g) ?? []).length, 2, "both startup paths dispose a partial start");
+// Through the owner's stop, re-run once the shell exists: this view never
+// stops a shell on its own (bottom-terminal-ws-bridge.test.ts).
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*return;/, "a desktop shell started for a closed pane is stopped");
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);/, "a browser shell connected for a closed pane is killed");
+// 12. In-flight commit and Create PR live in the store.
+assert.match(panelSrc, /const committing = outbound\.pending === "commit";/);
+assert.match(panelSrc, /const creatingPr = outbound\.pending === "create-pr";/);
+// 13. Nothing the desk waits on can hang it.
+assert.match(preview, /signal: AbortSignal\.timeout\(SAVE_TIMEOUT_MS\),/, "a save times out");
+assert.match(summaryMed, /signal: AbortSignal\.timeout\(CHANGES_SUMMARY_TIMEOUT_MS\)/, "the change list times out");
+assert.equal((prPanelSrc.match(/signal: AbortSignal\.timeout\(GITHUB_ACTION_TIMEOUT_MS\),/g) ?? []).length, 2, "review, merge and resolve time out");
+
+// #5775 review: a closed pane's bridge outlives a mid-connect teardown so the
+// kill can reach its shell; the checks read times out; one request at a time.
+assert.match(terminalMed, /if \(!connected && terminalThreadStopped\(threadId\)\) return;\s*bridge\.dispose\(\);/, "a closed pane's bridge waits for its socket");
+assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);\s*return;/, "then kills the shell and lets go");
+assert.match(prPanelSrc, /cache: "no-store",\s*signal: AbortSignal\.timeout\(CHECKS_TIMEOUT_MS\),/, "the checks read times out into an error with Retry");
+assert.match(panelSrc, /const requestPending = outbound\.pending !== null;/);
+assert.match(panelSrc, /if \(!message \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no commit while a request runs");
+assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no Create PR while a request runs");
 
 console.log("code-desk-overhaul pins ok");

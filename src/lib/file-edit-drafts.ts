@@ -40,6 +40,10 @@ export type FileEditDraft = {
   error: string | null;
   /** The file changed on disk since `baseVersion`. */
   conflict: boolean;
+  /** The disk's version when the conflict was found (#5756). Overwrite
+   *  writes over exactly that version, so a later change is a new conflict
+   *  rather than something overwritten unseen. */
+  diskVersion?: string | null;
   /** The file's line break. The editor works in "\n"; a file whose every
    *  break is CRLF is saved back as CRLF, not rewritten line by line (#5745). */
   eol: "\n" | "\r\n";
@@ -152,9 +156,10 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
       patch(path, { baseContent: sent, baseVersion: version, saving: false, error: null, conflict: false });
       return true;
     },
-    fail(path: string, id: number, error: string, conflict = false) {
+    /** A save failed. A conflict names the disk's version, when the server said. */
+    fail(path: string, id: number, error: string, conflict = false, diskVersion: string | null = null) {
       if (drafts.get(path)?.id !== id) return;
-      patch(path, { saving: false, error, conflict });
+      patch(path, conflict ? { saving: false, error, conflict, diskVersion } : { saving: false, error, conflict });
     },
     /**
      * The viewer read the file again. If it is no longer the version the
@@ -169,11 +174,20 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
         if (draft.conflict) patch(path, { conflict: false, error: null });
         return;
       }
-      if (!draft.conflict) patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK });
+      if (!draft.conflict || draft.diskVersion !== version) {
+        patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK, diskVersion: version });
+      }
     },
-    /** Keep my edit and write it over the newer file (no version precondition). */
+    /**
+     * Keep my edit and write it over the newer file. The save is pinned to the
+     * version the conflict was about (#5756): dropping the precondition
+     * altogether overwrote any later change unseen, and left every later
+     * save of this draft unchecked.
+     */
     acceptDisk(path: string) {
-      patch(path, { baseVersion: null, conflict: false, error: null });
+      const draft = drafts.get(path);
+      if (!draft) return;
+      patch(path, { baseVersion: draft.diskVersion ?? null, conflict: false, error: null, diskVersion: null });
     },
     /** Every draft, least recently changed first. */
     all(): FileEditDraft[] {

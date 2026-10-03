@@ -13,6 +13,7 @@ import { buildChangesReviewPrompt } from "@/lib/changes-review";
 import { checkpointLabel, checkpointRestoreMessage, type CheckpointRestoreResult } from "@/lib/session-changes-format";
 import { changesOutbound, EMPTY_CHANGES_OUTBOUND, type ChangesOutbound } from "@/lib/changes-outbound-drafts";
 import {
+  ChangesRequestError,
   fetchSessionCheckpoints,
   fetchSessionFileDiff,
   mutateSessionChanges,
@@ -121,21 +122,27 @@ export function SessionChangesInner({
   );
   const commitMsg = outbound.commitMessage;
   const setCommitMsg = useCallback((commitMessage: string) => setOutbound({ commitMessage }), [setOutbound]);
-  const [committing, setCommitting] = useState(false);
+  // In flight in the store, not here (#5756): a tab change mid-commit used
+  // to re-enable Commit and lose the request's failure.
+  const committing = outbound.pending === "commit";
   const { announce } = useAnnouncer();
   // Set after a successful commit so the "Create PR" affordance persists even
   // though the file list is now empty.
   const postCommit = outbound.postCommit;
-  const setPostCommit = useCallback((next: ChangesOutbound["postCommit"]) => setOutbound({ postCommit: next }), [setOutbound]);
   const prOpen = outbound.prOpen;
   const setPrOpen = useCallback((next: boolean) => setOutbound({ prOpen: next }), [setOutbound]);
   const prTitle = outbound.prTitle;
   const setPrTitle = useCallback((next: string) => setOutbound({ prTitle: next }), [setOutbound]);
   const prBody = outbound.prBody;
   const setPrBody = useCallback((next: string) => setOutbound({ prBody: next }), [setOutbound]);
-  const [creatingPr, setCreatingPr] = useState(false);
+  const creatingPr = outbound.pending === "create-pr";
+  // One request at a time (#5775 review): a Create PR sent while a second
+  // commit ran, or the reverse, overwrote the other's state and its pin.
+  const requestPending = outbound.pending !== null;
+  // A commit's or Create PR's failure is kept with the draft (#5756); the
+  // panel's own actions report here directly.
+  const shownError = actionError ?? outbound.error;
   const prUrl = outbound.prUrl;
-  const setPrUrl = useCallback((next: string | null) => setOutbound({ prUrl: next }), [setOutbound]);
 
   // Default is a FORCED fetch through the shared changes-summary gate
   // (cave-v8hh): the visibility/`cave:changes-refresh`/post-mutation callers
@@ -423,10 +430,9 @@ export function SessionChangesInner({
 
   const commitChanges = useCallback(async () => {
     const message = commitMsg.trim();
-    if (!message) return;
-    setCommitting(true);
+    if (!message || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
-    setPrUrl(null);
+    setOutbound({ pending: "commit", error: null, prUrl: null });
     try {
       const json = await mutateSessionChanges<{
         ok?: boolean; sha?: string; headOid?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
@@ -447,25 +453,26 @@ export function SessionChangesInner({
         prBody: "",
         prOpen: false,
         commitMessage: "",
+        pending: null,
       });
       announce("Changes committed.");
       setDiffs({});
       setExpandedPath(null);
       await Promise.all([load(), loadCheckpoints()]);
     } catch (err) {
-      setActionError({ action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) });
+      setOutbound({ pending: null, error: { action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) } });
       // A refused commit usually means the tree moved: show the new list.
       void load();
-    } finally {
-      setCommitting(false);
     }
-  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, setOutbound]);
+  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
 
   const createPr = useCallback(async () => {
     const title = prTitle.trim();
-    if (!title) return;
-    setCreatingPr(true);
+    // Only ever the commit made here (#5756): the PR is pinned to it, and
+    // without it there is nothing reviewed to open a PR for.
+    if (!title || !postCommit || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
+    setOutbound({ pending: "create-pr", error: null });
     try {
       const json = await mutateSessionChanges<{ ok?: boolean; url?: string; error?: string }>(
         fetch,
@@ -480,14 +487,21 @@ export function SessionChangesInner({
           ...(postCommit?.branch ? { expectedBranch: postCommit.branch } : {}),
         },
       );
-      setOutbound({ prUrl: json.url ?? null, prOpen: false, postCommit: null });
+      setOutbound({ prUrl: json.url ?? null, prOpen: false, postCommit: null, pending: null });
       if (json.url) announce("Pull request opened.");
     } catch (err) {
-      setActionError({ action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setCreatingPr(false);
+      const error = { action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) };
+      if (err instanceof ChangesRequestError && err.stale) {
+        // The branch moved past the reviewed commit (#5756). Retrying can
+        // only be refused again, so the pin and the form go, and the list
+        // shows what changed.
+        setOutbound({ pending: null, error, postCommit: null, prOpen: false });
+        void load();
+      } else {
+        setOutbound({ pending: null, error });
+      }
     }
-  }, [announce, postCommit, prTitle, prBody, projectRoot, setOutbound]);
+  }, [announce, load, outboundKey, postCommit, prTitle, prBody, projectRoot, setOutbound]);
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
@@ -661,15 +675,15 @@ export function SessionChangesInner({
           </div>
         )}
 
-        {actionError && (
+        {shownError && (
           <div
             role="alert"
             className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
-              <span className="min-w-0 truncate" title={`${actionError.action}: ${actionError.message}`}>
-                {actionError.action}: {actionError.message}
+              <span className="min-w-0 truncate" title={`${shownError.action}: ${shownError.message}`}>
+                {shownError.action}: {shownError.message}
               </span>
             </span>
             <IconButton
@@ -677,7 +691,10 @@ export function SessionChangesInner({
               size="xs"
               className="shrink-0"
               aria-label="Dismiss error"
-              onClick={() => setActionError(null)}
+              onClick={() => {
+                setActionError(null);
+                setOutbound({ error: null });
+              }}
             />
           </div>
         )}
@@ -804,7 +821,9 @@ export function SessionChangesInner({
                   size="xs"
                   className="shrink-0"
                   aria-label="Dismiss commit result"
-                  onClick={() => setPostCommit(null)}
+                  // The PR form goes with it (#5756): without the commit it
+                  // was pinned to, Create PR would open an unreviewed head.
+                  onClick={() => setOutbound({ postCommit: null, prOpen: false })}
                 />
               </div>
               {!prOpen && !postCommit.onDefaultBranch ? (
@@ -821,7 +840,7 @@ export function SessionChangesInner({
             </div>
           ) : null}
 
-          {prOpen ? (
+          {prOpen && postCommit ? (
             <div className="space-y-1.5 rounded-md border border-[var(--border-hairline)] p-2">
               <input
                 value={prTitle}
@@ -843,7 +862,7 @@ export function SessionChangesInner({
                   variant="primary"
                   size="xs"
                   leadingIcon="ph:git-pull-request"
-                  disabled={!prTitle.trim() || creatingPr}
+                  disabled={!prTitle.trim() || requestPending}
                   onClick={() => void createPr()}
                 >
                   {creatingPr ? "Opening…" : "Create pull request"}
@@ -859,7 +878,9 @@ export function SessionChangesInner({
             </div>
           ) : null}
 
-          {!postCommit && !prOpen ? (
+          {/* Beside a commit result too (#5756): more changes can be committed
+              without first dismissing the last one. */}
+          {!prOpen ? (
             <div className="flex items-center gap-1.5">
               <input
                 value={commitMsg}
@@ -876,7 +897,7 @@ export function SessionChangesInner({
                 variant="primary"
                 size="xs"
                 leadingIcon="ph:git-diff"
-                disabled={!canCommit || !commitMsg.trim() || committing}
+                disabled={!canCommit || !commitMsg.trim() || requestPending}
                 onClick={() => void commitChanges()}
                 title="Stage all changes and commit"
                 className="shrink-0"

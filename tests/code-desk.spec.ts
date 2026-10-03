@@ -1501,7 +1501,8 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     // Overwrite is a deliberate choice: it writes my edit over the newer file.
     await desk.getByRole("button", { name: "Overwrite" }).click();
     await expect.poll(() => posts.length).toBe(2);
-    expect(posts[1].expectedVersion).toBeUndefined();
+    // Pinned to the version the conflict reported (#5756), not unchecked.
+    expect(posts[1].expectedVersion).toBe("v2");
     await expect(editor).toHaveCount(0);
     expect(disk.text).toContain("// mine");
 
@@ -1715,7 +1716,8 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(panes).toHaveCount(2);
     await page.locator("[data-code-session-id='s-old']").first().click();
     await expect(page.getByTestId("code-desk-activity")).toHaveText(/idle/);
-    await expect(panes).toHaveCount(1);
+    // A session whose drawer never opened starts no terminal at all (#5756).
+    await expect(panes).toHaveCount(0);
     await page.locator("[data-code-session-id='s-new']").first().click();
     await expect(page.getByTestId("code-desk-activity")).toHaveText(/running/);
     await expect(panes).toHaveCount(2);
@@ -2145,5 +2147,224 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(page.getByTestId("code-workbench")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("code-workbench-tree")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("code-tab-unsaved")).toHaveCount(0);
+  });
+
+  // ── Pass 5 medium fixes (#5756) ────────────────────────────────────────────
+
+  test("62. Overwrite writes over the version it warned about; a change after that is a new conflict", async ({ page }) => {
+    await base(page);
+    const disk = { text: "// flux.ts\nexport const v = 1;\n", version: 1 };
+    const posts: { expectedVersion?: string }[] = [];
+    await page.route("**/api/project-file**", (route) => {
+      const request = route.request();
+      if (!new URL(request.url()).searchParams.get("path")?.endsWith("flux.ts") && request.method() === "GET") return route.fallback();
+      if (request.method() === "GET") return route.fulfill({ json: { ok: true, kind: "text", content: disk.text, size: disk.text.length, version: `v${disk.version}` } });
+      const body = request.postDataJSON() as { content: string; expectedVersion?: string };
+      posts.push(body);
+      if (body.expectedVersion !== `v${disk.version}`) {
+        return route.fulfill({ status: 409, json: { ok: false, error: "file changed on disk", conflict: true, version: `v${disk.version}` } });
+      }
+      disk.text = body.content;
+      disk.version += 1;
+      return route.fulfill({ json: { ok: true, size: disk.text.length, version: `v${disk.version}` } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// mine");
+    disk.text = "// the agent's v2\n";
+    disk.version = 2;
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(desk.getByText("This file changed on disk since you started editing.")).toBeVisible();
+    // The agent writes again before the person decides.
+    disk.text = "// the agent's v3\n";
+    disk.version = 3;
+    await desk.getByRole("button", { name: "Overwrite" }).click();
+    await expect.poll(() => posts.length).toBe(2);
+    expect(posts[1].expectedVersion).toBe("v2");
+    await expect(desk.getByRole("button", { name: "Overwrite" })).toBeVisible();
+    expect(disk.text, "v3 was never shown, so it isn't overwritten").toBe("// the agent's v3\n");
+    // Overwriting v3, once warned about it, goes through.
+    await desk.getByRole("button", { name: "Overwrite" }).click();
+    await expect.poll(() => posts.length).toBe(3);
+    expect(posts[2].expectedVersion).toBe("v3");
+    await expect.poll(() => disk.text).toContain("// mine");
+  });
+
+  test("63. the rail reads its checks again: Retry after a failed load, and the new head after a refused review", async ({ page }) => {
+    const live = { ...NEWEST, pullRequest: { ...(NEWEST as unknown as { pullRequest: Record<string, unknown> }).pullRequest, attribution: "branch" } };
+    await base(page, [live, OLDER]);
+    let head = "a".repeat(40);
+    let rollup: "failing" | "passing" = "failing";
+    let checksDown = true;
+    const posts: { path: string; body: Record<string, unknown> }[] = [];
+    await page.route("**/api/queue/**", (route) => route.fulfill({ json: { ok: true, items: [], prs: [], issues: [] } }));
+    await page.route("**/api/github/**", (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        posts.push({ path: url.pathname, body });
+        // The agent pushed a fix: the old head's review is refused.
+        if (url.pathname.endsWith("/review") && body.headSha !== head) {
+          return route.fulfill({ status: 422, json: { ok: false, error: "Pull request revision changed. Refresh and review the latest head." } });
+        }
+        return route.fulfill({ json: { ok: true } });
+      }
+      if (url.pathname.endsWith("/checks")) {
+        if (checksDown) return route.fulfill({ status: 502, json: { ok: false, error: "GitHub is unavailable" } });
+        return route.fulfill({ json: { ok: true, authed: true, sha: head, rollup, runs: [{ name: "ci", status: "completed", conclusion: rollup === "failing" ? "failure" : "success" }], statuses: [] } });
+      }
+      return route.fulfill({ json: { ok: true, authed: true, canResolve: true, issueComments: [], reviewThreads: [], reviews: [] } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("tab", { name: "Pull request" }).click();
+    await expect(rail.getByText("Review and merge are off: the checks couldn't be loaded.")).toBeVisible();
+    // Not a dead end: Retry reads them again, without leaving the tab.
+    checksDown = false;
+    await rail.getByRole("button", { name: "Retry" }).click();
+    await expect(rail.getByText("Merge is off: checks are failing.")).toBeVisible();
+
+    // A fix lands on a new head; the panel still shows the old one.
+    head = "b".repeat(40);
+    rollup = "passing";
+    await rail.getByRole("button", { name: "Approve" }).click();
+    await expect(rail.getByText(/Pull request revision changed/)).toBeVisible();
+    // The refusal makes the panel read the checks again: the new head passes.
+    const merge = rail.getByRole("button", { name: "Squash merge" });
+    await expect(merge).toBeEnabled();
+    await merge.click();
+    await rail.getByRole("button", { name: "Confirm squash merge" }).click();
+    await expect.poll(() => posts.find((post) => post.path.endsWith("/merge"))).toBeTruthy();
+    expect(posts.find((post) => post.path.endsWith("/merge"))!.body.headSha).toBe("b".repeat(40));
+  });
+
+  test("64. Create PR is only ever for the commit made here, and a moved branch ends it honestly", async ({ page }) => {
+    await base(page);
+    const posts: Record<string, unknown>[] = [];
+    await page.route("**/api/changes", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      posts.push(body);
+      if (body.action === "commit") return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "a".repeat(40), branch: "feat/flux", onDefaultBranch: false } });
+      if (body.action === "create-pr") {
+        return route.fulfill({ status: 409, json: { ok: false, stale: true, error: "the branch changed after the commit; review the new commit before opening the PR" } });
+      }
+      return route.fulfill({ status: 409, json: { ok: false, error: "blocked" } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const message = rail.getByRole("textbox", { name: "Commit message" });
+    await message.fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect(rail.getByRole("button", { name: "Create PR" })).toBeVisible();
+    // More can be committed beside the result, without dismissing it first.
+    await expect(message).toBeVisible();
+
+    // Dismissing the commit result takes the PR form with it: without the
+    // commit it was pinned to, a PR would open an unreviewed head.
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await expect(rail.getByRole("textbox", { name: "Pull request title" })).toBeVisible();
+    await rail.getByRole("button", { name: "Dismiss commit result" }).click();
+    await expect(rail.getByRole("textbox", { name: "Pull request title" })).toHaveCount(0);
+
+    // A refusal because the branch moved ends the attempt instead of looping.
+    await message.fill("And the dial");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await rail.getByRole("button", { name: "Create pull request" }).click();
+    await expect(rail.getByText(/Couldn't create the pull request: the branch changed after the commit/)).toBeVisible();
+    await expect(rail.getByRole("textbox", { name: "Pull request title" })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Create PR" })).toHaveCount(0);
+    expect(posts.filter((post) => post.action === "create-pr")).toHaveLength(1);
+  });
+
+  test("65. a text file that isn't UTF-8 is shown, but not edited", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/project-file**", (route) => {
+      if (route.request().method() !== "GET" || !(new URL(route.request().url()).searchParams.get("path") ?? "").endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content: "caf�\n", size: 5, version: "v1", utf8: false } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await expect(desk.getByText("Read-only: not UTF-8")).toBeVisible();
+    await expect(desk.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  });
+
+  test("66. visiting sessions starts no terminal; opening the drawer starts one", async ({ page }) => {
+    await base(page);
+    const sockets: string[] = [];
+    page.on("websocket", (ws) => {
+      if (ws.url().includes("/api/pty-ws")) sockets.push(ws.url());
+    });
+    await openDesk(page);
+    for (const id of ["s-old", "s-new", "s-old", "s-new"]) {
+      await page.locator(`[data-code-session-id='${id}']`).first().click();
+      await expect(page.getByTestId("code-desk-activity")).toBeVisible();
+    }
+    await page.waitForTimeout(1000);
+    expect(sockets, "no shell for a session whose terminal was never opened").toEqual([]);
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect.poll(() => sockets.length).toBeGreaterThan(0);
+  });
+
+  test("67. a commit in flight survives the rail changing tab, and so does its failure", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let commits = 0;
+    await page.route("**/api/changes", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      commits += 1;
+      await held;
+      return route.fulfill({ status: 500, json: { ok: false, error: "commit signing failed: no key" } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("textbox", { name: "Commit message" }).fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect(rail.getByRole("button", { name: "Committing…" })).toBeDisabled();
+    await rail.getByRole("tab", { name: "Pull request" }).click();
+    await rail.getByRole("tab", { name: /Changes/ }).click();
+    await expect(rail.getByRole("button", { name: "Committing…" }), "still in flight after the remount").toBeDisabled();
+    release();
+    await expect(rail.getByText("Couldn't commit: commit signing failed: no key")).toBeVisible();
+    expect(commits).toBe(1);
+  });
+
+  test("68. one commit or Create PR at a time: a PR can't be sent while a second commit runs", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const actions: string[] = [];
+    await page.route("**/api/changes", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { action?: string };
+      actions.push(body.action ?? "?");
+      if (body.action === "commit" && actions.filter((a) => a === "commit").length === 2) await held;
+      if (body.action === "commit") return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "a".repeat(40), branch: "feat/flux", onDefaultBranch: false } });
+      return route.fulfill({ json: { ok: true, url: "https://github.com/acme/alpha/pull/8" } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const message = rail.getByRole("textbox", { name: "Commit message" });
+    await message.fill("First");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await rail.getByRole("textbox", { name: "Pull request title" }).fill("First");
+    await rail.getByRole("button", { name: "Cancel", exact: true }).click();
+    // A second commit is in flight: the first commit's PR has to wait for it.
+    await message.fill("Second");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect(rail.getByRole("button", { name: "Committing…" })).toBeDisabled();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    await expect(rail.getByRole("button", { name: "Create pull request" })).toBeDisabled();
+    expect(actions).toEqual(["commit", "commit"]);
+    release();
+    // The second commit lands and becomes the one a PR is opened for.
+    await expect(rail.getByRole("button", { name: "Create PR" })).toBeEnabled();
+    await expect(rail.getByRole("textbox", { name: "Pull request title" })).toHaveCount(0);
   });
 });

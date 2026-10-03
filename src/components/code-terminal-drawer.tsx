@@ -36,7 +36,7 @@ import {
   type TerminalLayoutNode,
   type TerminalSplitDirection,
 } from "@/lib/code-terminal-tree";
-import { readTerminalLayout, writeTerminalLayout } from "@/lib/code-terminal-layouts";
+import { markTerminalStarted, readTerminalLayout, terminalStarted, writeTerminalLayout } from "@/lib/code-terminal-layouts";
 import { stopTerminalThread } from "@/lib/terminal-thread-stop";
 import {
   CODE_TERMINAL_DEFAULT_HEIGHT_PX,
@@ -98,6 +98,14 @@ export function CodeTerminalDrawer({
     writeTerminalLayout(sessionId, { layout, focusedPaneId });
   }, [focusedPaneId, layout, sessionId]);
   const [broadcast, setBroadcast] = useState(false);
+  // The shell starts the first time the drawer opens for this session, then
+  // keeps running while it is closed (#5756).
+  const [started, setStarted] = useState(() => open || terminalStarted(sessionId));
+  useEffect(() => {
+    if (!open) return;
+    markTerminalStarted(sessionId);
+    setStarted(true);
+  }, [open, sessionId]);
   // The region the drawer and the columns share: the body plus the drawer's
   // own height while open. Opening or resizing moves height between the two,
   // so their sum is stable and the 70% ceiling cannot chase itself.
@@ -298,6 +306,7 @@ export function CodeTerminalDrawer({
           </>
         ) : null}
         <div className="code-term__drawer-body">
+          {started ? (
           <CodeTerminalWorkspace
             sessionId={sessionId}
             projectRoot={projectRoot}
@@ -325,6 +334,7 @@ export function CodeTerminalDrawer({
               </button>
             }
           />
+          ) : null}
         </div>
       </div>
     </div>

@@ -746,6 +746,13 @@
   color: var(--accent-presence);
 }
 
+/* A text file that isn't UTF-8 is shown but not edited (#5756). */
+.workspace-rail__preview-readonly {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .workspace-rail__preview-saved {
   display: inline-flex;
   align-items: center;
