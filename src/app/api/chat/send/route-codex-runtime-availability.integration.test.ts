@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'result-error', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -61,6 +61,22 @@ const shim = [
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
   "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
   "  if (process.env.COVEN_TEST_MODE === 'silent-stderr') { console.error('model gpt-5.6-sol is unsupported at /private/fixture/secret ghp_1234567890abcdefghijklmnopqrstuv'); process.exit(1); }",
+  // Coven relays Codex's own failure reason in the result frame's `error`
+  // and writes nothing to stderr. These match its real stream-json shape.
+  "  const resultErrors = {",
+  "    'result-error': \"Codex ran out of room in the model's context window at /private/fixture/secret\",",
+  "    'result-bare-exit': 'Codex exited with 1',",
+  "    'result-model-rejected': \"Codex exited with 1: The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.\",",
+  "  };",
+  "  if (Object.hasOwn(resultErrors, process.env.COVEN_TEST_MODE)) {",
+  "    const session = `${process.env.COVEN_TEST_MODE}-session`;",
+  "    const events = [",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: session },",
+  "      { type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 1, session_id: session, harness_session_id: null, error: resultErrors[process.env.COVEN_TEST_MODE] },",
+  "    ];",
+  "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
+  "    process.exit(1);",
+  "  }",
   "  if (process.env.COVEN_TEST_MODE === 'cancel') {",
   "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
   "    setInterval(() => {}, 1000);",
@@ -351,6 +367,63 @@ try {
   assert.doesNotMatch(stderrExitBody, /ghp_|\/private\/fixture|unsupported at/i);
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.confirmedModel, undefined);
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
+
+  // Coven relays Codex's own failure reason in the result frame, not on
+  // stderr. Cave must count it as runtime output (so the copy no longer
+  // claims Codex was silent) while still withholding its contents.
+  const postResultFailure = async (mode, prompt) => {
+    process.env.COVEN_TEST_MODE = mode;
+    return readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "opal",
+        prompt,
+        modelOverride: "openai/gpt-5.6-sol",
+        modelOverrideScope: "next-message",
+        projectRoot: familiarWorkspace,
+      }),
+    })));
+  };
+  const progressDetail = (events, id) =>
+    events.find((event) => event.kind === "progress" && event.id === id)?.detail;
+  {
+    const { body, events } = await postResultFailure("result-error", "relayed failure");
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, "runtime_process_failed");
+    assert.match(error?.message ?? "", /exit code 1/);
+    assert.match(error?.message ?? "", /diagnostic output, which Cave withheld/);
+    assert.doesNotMatch(error?.message ?? "", /did not emit an error message/);
+    assert.equal(
+      progressDetail(events, "runtime-process"),
+      "Exit code 1; runtime diagnostic output was withheld to protect local data.",
+    );
+    assert.equal(
+      JSON.parse(progressDetail(events, "runtime-launch-diagnostics")).failure.emittedDiagnostic,
+      true,
+      "the support record no longer says Codex emitted nothing",
+    );
+    assert.doesNotMatch(body, /\/private\/fixture|context window/i, "the relayed reason is never rendered");
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
+    assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
+  }
+  {
+    // Coven's bare wrapper restates the exit code; it is not Codex output.
+    const { events } = await postResultFailure("result-bare-exit", "bare wrapper");
+    assert.match(events.find((event) => event.kind === "error")?.message ?? "", /did not emit an error message/);
+    assert.equal(
+      progressDetail(events, "runtime-process"),
+      "Exit code 1; the runtime did not emit an error message.",
+    );
+  }
+  {
+    // A relayed model rejection must reach the model-state classifier
+    // instead of leaving the selection "pending" with no explanation.
+    const { body, events } = await postResultFailure("result-model-rejected", "relayed model rejection");
+    assert.equal(events.find((event) => event.kind === "error")?.code, "runtime_process_failed");
+    assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "failed");
+    assert.doesNotMatch(body, /ChatGPT account/, "the provider payload is not copied into chat");
+  }
 
   // Stop is an expected interruption, not evidence that Coven or Codex
   // failed. Its child commonly closes with a null exit code after SIGTERM;

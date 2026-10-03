@@ -98,6 +98,7 @@ import {
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
 import {
+  covenRelayedRunError,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -4643,6 +4644,8 @@ async function postChat(
               is_error?: boolean;
               total_cost_usd?: number;
               usage?: unknown;
+              /** Coven's relayed harness failure reason on `result` frames. */
+              error?: unknown;
               text?: string;
               message?: {
                 content?: Array<{
@@ -4689,6 +4692,21 @@ async function postChat(
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
               if (ev.is_error === false) covenCompletedSuccessfulResult = true;
+              // Coven relays the harness's own failure reason here (Codex's
+              // turn.failed message or its stderr tail) rather than on its
+              // stderr. Dropping it reported every relayed Codex failure as
+              // "the runtime did not emit an error message" and hid model and
+              // adapter evidence from the classifiers below. Capture it into
+              // the same redacted tail as stdout errors; Claude output stays
+              // excluded, matching the stderr rule.
+              const relayedError = ev.is_error === true && binding.harness !== "claude"
+                ? covenRelayedRunError(ev.error)
+                : null;
+              if (relayedError) {
+                const cleaned = resolveBackspaces(stripAnsi(relayedError));
+                captureCodexAdapterFailure(cleaned);
+                recordStdoutErrorTail(cleaned, true);
+              }
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
               // profile-selected Claude protocol. Let an unexpected Claude

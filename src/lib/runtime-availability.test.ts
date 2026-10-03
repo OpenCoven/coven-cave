@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  covenRelayedRunError,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -532,6 +533,23 @@ try {
     /stderr|token|path/i,
     "runtime process diagnostics report only that output was withheld, never its contents",
   );
+  // Coven's result frame relays the child's failure reason. Its own bare
+  // exit wrapper restates the exit code and is not a runtime diagnostic.
+  assert.equal(covenRelayedRunError("Codex exited with 1"), null);
+  assert.equal(covenRelayedRunError("Codex exited with an unknown status"), null);
+  assert.equal(covenRelayedRunError("Codex exited with 1:   "), null);
+  assert.equal(
+    covenRelayedRunError("Codex exited with 1: Error: thread/resume failed"),
+    "Error: thread/resume failed",
+  );
+  assert.equal(
+    covenRelayedRunError("  Codex ran out of room in the model's context window.  "),
+    "Codex ran out of room in the model's context window.",
+    "a relayed turn.failed message is retained verbatim for redacted capture",
+  );
+  assert.equal(covenRelayedRunError(""), null);
+  assert.equal(covenRelayedRunError(null), null);
+  assert.equal(covenRelayedRunError({ message: "not a string" }), null);
 
   // A resolved npm shim may produce a direct Node + script launch. Both the
   // executable and its fixed package target are part of the exact plan.
