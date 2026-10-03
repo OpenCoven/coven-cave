@@ -369,4 +369,21 @@ const hook = (dir, name, body) => {
   assert.ok(!fresh.json.diff.includes(scratch), "no absolute path in the headers");
 }
 
+// ── 18. Before the first commit, a staged file diffs from nothing (#5781) ───
+{
+  const { dir, git } = repo({ commit: false });
+  writeFileSync(path.join(dir, "start.txt"), "hello\n");
+  git("add", "-A");
+  const staged = await get({ projectRoot: dir, path: "start.txt" });
+  assert.equal(staged.status, 200, JSON.stringify(staged.json));
+  assert.match(staged.json.diff, /^\+hello$/m, "the staged file's start shows");
+}
+
+// ── 19. A folder that's gone says so (#5781) ───────────────────────────────
+{
+  const gone = await get({ projectRoot: path.join(workspace, "never-made") });
+  assert.equal(gone.status, 404, JSON.stringify(gone.json));
+  assert.equal(gone.json.missingRoot, true, "the desk can tell a gone folder from a failure");
+}
+
 console.log("changes route git states: ok");

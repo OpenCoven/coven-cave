@@ -31,6 +31,9 @@ assert.match(source, /checkout", "-b", branch\][\s\S]{0,2000}\} catch \(err\) \{
 assert.match(source, /if \(raw\.length > MAX_EXPECTED_CHANGES\) return "too-many";/);
 assert.match(source, /expectedChanges === "too-many"[\s\S]{0,400}status: 413/);
 assert.match(source, /\["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"\],\s*paths\.join\("\\0"\)/);
+// An empty list reads as no pathspec, and `add -A` would stage everything
+// (#5781): it is refused before staging.
+assert.match(source, /if \(paths\.length === 0\) \{\s*await rollback\(\);\s*return NextResponse\.json\(\{ ok: false, error: "nothing to commit[^"]*" \}, \{ status: 400 \}\);\s*\}\s*await gitWithInput\(/, "an empty verified list is refused");
 // Create PR's refusals because the branch moved are marked stale (#5756).
 assert.equal((source.match(/\{ ok: false, stale: true, error: (?:`the project moved|"the branch changed after the commit)/g) ?? []).length, 2);
 
