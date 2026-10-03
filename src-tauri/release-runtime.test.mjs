@@ -703,7 +703,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
-  const publishStart = workflow.indexOf("- name: Publish validated Windows MSI");
+  const publishStart = workflow.indexOf("- name: Publish verified signed Windows MSI");
   const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
   const publishBlock = workflow.slice(publishStart, signStart);
   assert.match(
@@ -729,7 +729,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(updaterManifestHeader, /!inputs\.windows_diagnostics_only/);
   assert.match(
     workflow,
-    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish verified signed Windows MSI/,
     "the MSI must pass its budget before it becomes a release asset",
   );
   const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
