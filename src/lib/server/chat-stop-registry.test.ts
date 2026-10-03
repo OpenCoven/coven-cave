@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 
 const {
   registerChatRun,
+  tryRegisterChatRun,
+  setChatRunStopHandler,
   unregisterChatRun,
   requestChatStop,
   requestOrQueueChatStop,
@@ -24,6 +26,26 @@ const {
   await import("./chat-stop-registry.ts");
 
 resetChatStopRegistryForTests();
+
+// Admission itself is live and stoppable, even before a transport exists.
+// A stopped predecessor can bind later without stealing the successor's alias.
+{
+  const first = tryRegisterChatRun(["admission-run", "admission-chat"], { runId: "admission-run" });
+  assert.ok(first);
+  assert.equal(hasActiveChatRun("admission-chat"), true);
+  assert.equal(tryRegisterChatRun(["other-run", "admission-chat"]), null);
+  assert.equal(requestChatStop("admission-chat"), true);
+  const next = tryRegisterChatRun(["next-run", "admission-chat"], { runId: "next-run" });
+  assert.ok(next);
+  let firstKills = 0;
+  setChatRunStopHandler(first, () => { firstKills += 1; });
+  assert.equal(firstKills, 1, "a Stop during setup reaches the attached transport");
+  unregisterChatRun(first);
+  assert.equal(chatRunBlocksNewTurn("admission-chat"), true, "old cleanup preserves the successor");
+  assert.throws(() => setChatRunStopHandler(first, () => {}), /admission has ended/);
+  unregisterChatRun(next);
+  assert.equal(chatRunBlocksNewTurn("admission-chat"), false);
+}
 
 // Deliberate stop: kills through the registration and flags the handle.
 {

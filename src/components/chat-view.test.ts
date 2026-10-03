@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 
 const styles = [
   "cave-md",
@@ -384,3 +385,52 @@ assert.match(
   /onStopEarlierRun=\{\s*earlierRunSessionId && earlierRunSessionId === sessionId/,
   "the stop action is offered only for the chat that was refused",
 );
+
+// Execute the actual handler against controlled HTTP completions. Keeping the
+// handler in ChatView avoids moving view state into a separate controller just
+// to test it; these assertions concern outcomes rather than source spelling.
+const stopHandlerSource = source.match(/const stopEarlierRun = async \(\) => \{[\s\S]*?\n  \};/)?.[0];
+assert.ok(stopHandlerSource);
+function stopFixture(fetchResponse: Promise<Response>) {
+  const state = { earlier: "chat-a", error: "earlier turn still running", announcements: [] as string[] };
+  const currentSessionRef = { current: "chat-a" };
+  const stop = new Function(
+    "fetch", "earlierRunSessionId", "currentSessionRef", "setEarlierRunSessionId", "setError", "announce",
+    `${stripTypeScriptTypes(stopHandlerSource)}; return stopEarlierRun;`,
+  )(
+    async () => fetchResponse, state.earlier, currentSessionRef,
+    (value: string | null) => { state.earlier = value; },
+    (value: string) => { state.error = value; },
+    (value: string) => { state.announcements.push(value); },
+  );
+  return { state, currentSessionRef, stop };
+}
+for (const response of [
+  Response.json({ error: "unavailable" }, { status: 500 }),
+  Response.json({ ok: true }),
+  new Response("not json", { status: 200 }),
+]) {
+  const fixture = stopFixture(Promise.resolve(response));
+  await fixture.stop();
+  assert.equal(fixture.state.earlier, "chat-a", "an unconfirmed Stop retains the repair action");
+  assert.doesNotMatch(fixture.state.error, /already ended|Stopped the earlier/);
+  assert.equal(fixture.state.announcements.at(-1), fixture.state.error);
+}
+for (const stopped of [true, false]) {
+  const fixture = stopFixture(Promise.resolve(Response.json({ ok: true, stopped })));
+  await fixture.stop();
+  assert.equal(fixture.state.earlier, null);
+  assert.match(fixture.state.error, stopped ? /Stopped the earlier/ : /already ended/);
+}
+for (const fails of [false, true]) {
+  let resolve!: (value: Response) => void;
+  const response = new Promise<Response>((done) => { resolve = done; });
+  const fixture = stopFixture(response);
+  const stopping = fixture.stop();
+  fixture.currentSessionRef.current = "chat-b";
+  fixture.state.error = "Chat B error";
+  resolve(Response.json(fails ? { error: "unavailable" } : { stopped: true }, { status: fails ? 500 : 200 }));
+  await stopping;
+  assert.equal(fixture.state.error, "Chat B error", "late Stop completion cannot overwrite another chat");
+  assert.deepEqual(fixture.state.announcements, []);
+}

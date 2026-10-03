@@ -159,7 +159,8 @@ import {
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
-  chatRunBlocksNewTurn,
+  tryRegisterChatRun,
+  setChatRunStopHandler,
   markChatRunProjectionSettled,
   markChatRunTransportSettled,
   registerChatRun,
@@ -807,7 +808,45 @@ function finalizeRuntimeHandoff(
   delete conversation.pendingRuntimeHandoff;
 }
 
+type ChatRunAdmission = {
+  handle: ChatRunHandle | null;
+  streamOwnsAdmission: boolean;
+  transportRegistered: boolean;
+};
+
+function registerAdmittedChatRun(
+  admission: ChatRunAdmission,
+  keys: Array<string | null | undefined>,
+  kill: () => void,
+  options: { runId?: string | null },
+): ChatRunHandle {
+  if (admission.handle) {
+    addChatRunKeys(admission.handle, keys);
+    setChatRunStopHandler(admission.handle, kill);
+  } else {
+    admission.handle = registerChatRun(keys, kill, options);
+  }
+  admission.transportRegistered = true;
+  return admission.handle;
+}
+
+// A stream can return before its asynchronous setup completes. Early returns
+// and setup failures release admission; an attached transport owns cleanup
+// until its existing completion/persistence path settles the run.
+async function startAdmittedChatStream(
+  admission: ChatRunAdmission,
+  start: () => Promise<void>,
+): Promise<void> {
+  admission.streamOwnsAdmission = true;
+  try {
+    await start();
+  } finally {
+    if (!admission.transportRegistered && admission.handle) unregisterChatRun(admission.handle);
+  }
+}
+
 function openClawChatResponse(args: {
+  admission: ChatRunAdmission;
   req: Request;
   body: SendBody;
   promptText: string;
@@ -829,7 +868,7 @@ function openClawChatResponse(args: {
   openClawRegistryCheckpoint?: OpenClawRegistryCheckpoint;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
-    start: async (controller) => {
+    start: (controller) => startAdmittedChatStream(args.admission, async () => {
       let closed = false;
       // A user "stop" aborts the request while the OpenClaw child is still
       // running; its late `close`/`error` handlers keep calling push after the
@@ -1251,7 +1290,8 @@ function openClawChatResponse(args: {
         };
         const stopGateway = () => abortGateway("[tool cancelled by user]");
         const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
-        const runHandle = registerChatRun(
+        const runHandle = registerAdmittedChatRun(
+          args.admission,
           [args.body.runId, conversationId],
           stopGateway,
           { runId: args.body.runId },
@@ -1494,7 +1534,8 @@ function openClawChatResponse(args: {
       // registration); a bare transport abort means the client vanished — let
       // the turn finish server-side so resync recovers the full reply, bounded
       // by the detach cap in case nothing ever comes back for it.
-      const runHandle = registerChatRun(
+      const runHandle = registerAdmittedChatRun(
+        args.admission,
         [args.body.runId, conversationId],
         killChild,
         { runId: args.body.runId },
@@ -1827,7 +1868,7 @@ function openClawChatResponse(args: {
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
-    },
+    }),
   });
 
   return new Response(stream, {
@@ -1864,6 +1905,22 @@ export async function postChatForGeneration(req: Request, origin: SessionOrigin)
 async function postChat(
   req: Request,
   dependencies: ChatSendRouteDependencies = {},
+  surfaceOrigin?: SessionOrigin,
+) {
+  const admission: ChatRunAdmission = {
+    handle: null, streamOwnsAdmission: false, transportRegistered: false,
+  };
+  try {
+    return await postAdmittedChat(req, dependencies, admission, surfaceOrigin);
+  } finally {
+    if (!admission.streamOwnsAdmission && admission.handle) unregisterChatRun(admission.handle);
+  }
+}
+
+async function postAdmittedChat(
+  req: Request,
+  dependencies: ChatSendRouteDependencies,
+  admission: ChatRunAdmission,
   /** Server-minted origin for a brand-new conversation (cave-cst0g). The
    *  dedicated generation surface passes the origin from its own route path;
    *  the chat surface (/api/chat/send) passes nothing. */
@@ -1985,6 +2042,12 @@ async function postChat(
     return Response.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
   const existingConversation = body.sessionId ? await loadConversation(body.sessionId) : null;
+  if (existingConversation && existingConversation.familiarId !== body.familiarId) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "not found" }),
+      { status: 404, headers: { "content-type": "application/json" } },
+    );
+  }
   const flowDiscussionStartsFresh = isUnstartedFlowDiscussion(existingConversation);
   if (body.sessionId && (
     existingConversation?.origin === "flow" ||
@@ -2001,7 +2064,10 @@ async function postChat(
   // earlier turn. Launching again would put two harnesses on one native
   // session, and the new registration would hide the earlier run from Stop
   // and the sessions list. Refuse before any attachment, queue or spawn work.
-  if (body.sessionId && chatRunBlocksNewTurn(body.sessionId)) {
+  if (body.sessionId) {
+    admission.handle = tryRegisterChatRun([body.runId, body.sessionId], { runId: body.runId });
+  }
+  if (body.sessionId && !admission.handle) {
     return Response.json({
       ok: false,
       code: "chat_run_active",
@@ -2024,12 +2090,6 @@ async function postChat(
   // run` is invoked with an unknown harness name. Every downstream check and
   // the spawn use this canonical id.
   binding.harness = canonicalHarnessId(binding.harness);
-  if (existingConversation && existingConversation.familiarId !== body.familiarId) {
-    return new Response(
-      JSON.stringify({ ok: false, error: "not found" }),
-      { status: 404, headers: { "content-type": "application/json" } },
-    );
-  }
   const runtimeHandoff = existingConversation
     ? resolveRuntimeHandoff(existingConversation)
     : null;
@@ -3115,6 +3175,7 @@ async function postChat(
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
+      admission,
       req,
       body,
       promptText,
@@ -3486,7 +3547,7 @@ async function postChat(
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
   const stream = new ReadableStream<Uint8Array>({
-    start: async (controller) => {
+    start: (controller) => startAdmittedChatStream(admission, async () => {
       let closed = false;
       const push = (e: StreamEvent) => {
         // Tee EVERY event through the per-run ring first (cave-h40l): the
@@ -4924,7 +4985,8 @@ async function postChat(
           /* ignore */
         }
       };
-      runHandle = registerChatRun(
+      runHandle = registerAdmittedChatRun(
+        admission,
         [body.runId, body.sessionId, sessionId],
         killCurrentChild,
         { runId: body.runId },
@@ -6385,7 +6447,7 @@ async function postChat(
       runBuffer?.finish();
       await sleep(20);
       close();
-    },
+    }),
   });
 
   return new Response(stream, {

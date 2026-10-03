@@ -6133,14 +6133,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         body: JSON.stringify({ sessionId }),
       });
       const json = (await res.json().catch(() => null)) as { stopped?: unknown } | null;
+      if (!res.ok || typeof json?.stopped !== "boolean") {
+        throw new Error("Stop was not confirmed");
+      }
+      if (currentSessionRef.current !== sessionId) return;
       const outcome = json?.stopped === true
         ? "Stopped the earlier turn. Retry to send your message."
         : "The earlier turn has already ended. Retry to send your message.";
       setError(outcome);
       announce(outcome, "polite");
     } catch {
+      if (currentSessionRef.current !== sessionId) return;
       setEarlierRunSessionId(sessionId);
-      setError("Couldn’t reach Cave to stop the earlier turn. Try again in a moment.");
+      const outcome = "Couldn’t confirm that the earlier turn stopped. Try again in a moment.";
+      setError(outcome);
+      announce(outcome, "polite");
     }
   };
 

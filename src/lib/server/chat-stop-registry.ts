@@ -38,6 +38,7 @@ export type ChatRunHandle = {
 
 const active = new Map<string, ChatRunEntry>();
 const activeByRunId = new Map<string, ChatRunEntry>();
+let entriesByHandle = new WeakMap<ChatRunHandle, ChatRunEntry>();
 // The send route can remain detached for ten minutes. Keep early runId Stops
 // beyond that maximum setup/detach budget, then recover abandoned capacity.
 // Never evict an unexpired Stop the route already acknowledged as queued.
@@ -99,6 +100,7 @@ export function registerChatRun(
     keys: [],
   };
   const entry: ChatRunEntry = { handle, kill };
+  entriesByHandle.set(handle, entry);
   if (handle.runId) {
     activeByRunId.set(handle.runId, entry);
     settledRunIds.delete(handle.runId);
@@ -120,8 +122,32 @@ export function registerChatRun(
   return handle;
 }
 
+/** Atomically admit a turn before asynchronous setup can launch a transport. */
+export function tryRegisterChatRun(
+  keys: Array<string | null | undefined>,
+  options: RegisterChatRunOptions = {},
+): ChatRunHandle | null {
+  if (keys.some((key) => key && chatRunBlocksNewTurn(key))) return null;
+  return registerChatRun(keys, () => {}, options);
+}
+
+/** Attach the transport to its admitted run, carrying any Stop from setup. */
+export function setChatRunStopHandler(handle: ChatRunHandle, kill: () => void): void {
+  const entry = entriesByHandle.get(handle);
+  if (!entry || !handle.projectionActive) throw new Error("Chat run admission has ended");
+  entry.kill = kill;
+  if (handle.stopRequested) {
+    try {
+      kill();
+    } catch {
+      /* child already gone */
+    }
+  }
+}
+
 /** Drop a run from the registry (child exited or request settled). */
 export function unregisterChatRun(handle: ChatRunHandle): void {
+  entriesByHandle.delete(handle);
   const projectionWasActive = handle.projectionActive;
   let changed = false;
   if (handle.runId && activeByRunId.get(handle.runId)?.handle === handle) {
@@ -250,6 +276,7 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
   const hadActiveRuns = active.size > 0;
   active.clear();
   activeByRunId.clear();
+  entriesByHandle = new WeakMap();
   pendingStops.clear();
   settledRunIds.clear();
   registryNow = options.now ?? (() => Date.now());
