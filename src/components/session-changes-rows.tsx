@@ -5,6 +5,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes, splitFilePath, checkpointLabel } from "@/lib/session-changes-format";
 import type { ChangedFile, CheckpointMeta, DiffState, FileStatus } from "@/lib/session-changes-api";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
 const STATUS_META: Record<FileStatus, { letter: string; label: string; color: string }> = {
   modified: { letter: "M", label: "modified", color: "var(--color-warning)" },
@@ -166,7 +168,7 @@ export const FileRow = memo(function FileRow({
             tabIndex={cellTab(0)}
             onClick={() => onToggle(file)}
             aria-expanded={expanded}
-            title={file.renamedFrom ? `${file.renamedFrom} → ${file.path}` : file.path}
+            title={describeHiddenUnicode(file.renamedFrom ? `${file.renamedFrom} → ${file.path}` : file.path)}
           >
             <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0" />
             <StatusChip status={file.status} />
@@ -174,11 +176,11 @@ export const FileRow = memo(function FileRow({
               {/* Truncated from the START (#5729): sibling files with long
                   names differ at the end, and so do deep folders. */}
               <span className="block truncate text-left font-mono text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] [direction:rtl]">
-                <bdi className="[direction:ltr] [unicode-bidi:isolate]">{basename}</bdi>
+                <bdi className="[direction:ltr] [unicode-bidi:isolate]"><HiddenUnicodeText text={basename} /></bdi>
               </span>
               {dirname ? (
                 <span className="block truncate text-left font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)] [direction:rtl]">
-                  <bdi className="[direction:ltr] [unicode-bidi:isolate]">{dirname}</bdi>
+                  <bdi className="[direction:ltr] [unicode-bidi:isolate]"><HiddenUnicodeText text={dirname} /></bdi>
                 </span>
               ) : null}
             </span>

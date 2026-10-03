@@ -12,6 +12,8 @@ import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { codeOpenFileLabels } from "@/lib/code-open-files";
 import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
 /** A tab's element id. The workbench labels the viewer's tabpanel with the
  *  active tab's id, so both sides derive it here (#5729). */
@@ -96,7 +98,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
               aria-keyshortcuts="Delete"
               tabIndex={selected ? 0 : -1}
               className="focus-ring code-tabs__tab"
-              title={path}
+              title={describeHiddenUnicode(path)}
               onClick={() => onSelect(path)}
               onKeyDown={(event) => onKeyDown(event, path)}
             >
@@ -104,7 +106,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
                   differ at the end, so end-truncation made every tab read the
                   same. <bdi> keeps a name like ".gitignore" in order. */}
               <span className="code-tabs__label">
-                <bdi>{label}</bdi>
+                <bdi><HiddenUnicodeText text={label} /></bdi>
               </span>
               {letter ? (
                 <span className="code-tree__status-letter code-tabs__status" data-status={letter} title="Changed in this worktree">
@@ -128,7 +130,7 @@ export function CodeOpenFileTabs({ paths, active, status, onSelect, onClose, idP
               // advertises that through aria-keyshortcuts.
               tabIndex={-1}
               aria-label={`Close ${label}`}
-              title={`Close ${label}`}
+              title={`Close ${describeHiddenUnicode(label)}`}
               onClick={() => {
                 // Same as Delete on the tab: the next tab takes focus, so a
                 // keyboard close never drops it on the page (#5729).

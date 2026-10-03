@@ -105,6 +105,7 @@ import {
 import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import type { SessionRow } from "@/lib/types";
 
 // The reader pulls a markdown renderer and a diff highlighter; the room opens
@@ -620,7 +621,7 @@ export function CodeWorkbench({
             {identity.branch ? (
               <span className="code-room__chip" title={workRoot} data-testid="code-desk-branch">
                 <Icon name="ph:git-branch" width={11} height={11} aria-hidden />
-                <span className="code-room__chip-value">{identity.branch.name}</span>
+                <span className="code-room__chip-value"><HiddenUnicodeText text={identity.branch.name} /></span>
                 {identity.branch.worktree ? <span className="code-room__chip-note">worktree</span> : null}
               </span>
             ) : null}

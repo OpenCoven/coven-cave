@@ -27,6 +27,7 @@ import {
 } from "@/lib/code-session-picker";
 import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
 import { codeSessionActivity, codeSessionBranch } from "@/lib/code-surface";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import type { SessionRow } from "@/lib/types";
 
 const ACTIVITY_LABEL = {
@@ -76,8 +77,8 @@ function SessionRowButton({
       {/* Activity is carried by the word beside the dot, never the dot alone. */}
       <span className="code-picker__dot" data-activity={activity} aria-hidden="true" />
       <span className="code-picker__row-main">
-        <span className="code-picker__row-title">{row.title || row.id}</span>
-        <span className="code-picker__row-meta">{branch ?? "no branch"}</span>
+        <span className="code-picker__row-title"><HiddenUnicodeText text={row.title || row.id} /></span>
+        <span className="code-picker__row-meta">{branch ? <HiddenUnicodeText text={branch} /> : "no branch"}</span>
       </span>
       <span className="code-picker__row-side">
         <span className="code-picker__row-age">{relativeTime(row.updated_at)}</span>
@@ -236,7 +237,7 @@ export function CodeSessionPicker({
         className="focus-ring code-picker__trigger"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="code-picker__trigger-title">{triggerTitle}</span>
+        <span className="code-picker__trigger-title"><HiddenUnicodeText text={triggerTitle} /></span>
         <Icon name="ph:caret-down" width={11} height={11} aria-hidden />
       </button>
       <Popover

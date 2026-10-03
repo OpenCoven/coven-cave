@@ -2587,6 +2587,82 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect.poll(() => posts).toBe(1);
     await expect.poll(() => page.evaluate(() => (window as unknown as { __saveDefault: boolean[] }).__saveDefault)).toEqual([true, true]);
   });
+
+  test("78. hidden and bidi characters in names and code show as code points, and an override can't flip what follows", async ({ page }) => {
+    const RLO = "\u202E";
+    const spoof = `src/invoice${RLO}gnp.exe`;
+    const lookalike = "src/a\u200Bb.ts";
+    const added = (path: string, n: number) => ({ path, status: "added", insertions: 1, deletions: 0, changeVersion: `1:1:${n}` });
+    await base(page, [NEWEST, OLDER], { current: [added(spoof, 1), added(lookalike, 2), added("src/ab.ts", 3)] });
+    await page.route("**/api/project-tree**", (route) =>
+      route.fulfill({ json: { ok: true, entries: [spoof, lookalike, "src/ab.ts"].map((p) => ({ name: p.slice(4), path: `${WORK_ROOT}/${p}`, isDir: false })) } }),
+    );
+    // "Trojan Source": reads as a comment, runs as a check.
+    const trojan = `const role = "user";\n/*${RLO} } \u2066if (isAdmin)\u2069 \u2066 begin admins only */\nexport {};\n`;
+    await page.route("**/api/project-file**", (route) => route.fulfill({ json: { ok: true, kind: "text", content: trojan, size: trojan.length } }));
+    const desk = await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const tree = page.getByTestId("code-workbench-tree");
+    const marker = (scope: Locator, cp: string) => scope.locator(`.cave-hidden-char[data-cp="${cp}"]`);
+
+    // Every listing names the override and the zero-width space.
+    await expect(marker(rail, "U+202E")).toHaveCount(1);
+    await expect(marker(rail, "U+200B")).toHaveCount(1);
+    await expect(marker(tree, "U+202E")).toHaveCount(1);
+    await expect(marker(tree, "U+200B")).toHaveCount(1);
+    const drawn = await marker(tree, "U+202E").evaluate((el) => ({
+      before: getComputedStyle(el, "::before").content,
+      bidi: getComputedStyle(el).unicodeBidi,
+    }));
+    expect(drawn.before).not.toBe("none");
+    expect(drawn.bidi).toBe("isolate");
+    // The override ends at its span: the name after it reads left to right.
+    const order = await marker(tree, "U+202E").evaluate((span) => {
+      const text = span.nextSibling as Text;
+      const range = document.createRange();
+      const leftOf = (at: number) => {
+        range.setStart(text, at);
+        range.setEnd(text, at + 1);
+        return range.getBoundingClientRect().left;
+      };
+      return { text: text.textContent, first: leftOf(0), last: leftOf((text.textContent ?? "").length - 1) };
+    });
+    expect(order.text).toBe("gnp.exe");
+    expect(order.first, "\"g\" is drawn before \"e\"").toBeLessThan(order.last);
+
+    // The tab, the viewer header, and the code: a note, and each control drawn.
+    await marker(tree, "U+202E").click();
+    await expect(marker(page.getByTestId("code-open-file-tabs"), "U+202E")).toHaveCount(1);
+    const viewer = desk.locator(".code-room__viewer");
+    await expect(marker(viewer.locator(".workspace-rail__preview-name"), "U+202E")).toHaveCount(1);
+    await expect(viewer.getByRole("note")).toContainText("hidden or bidirectional Unicode characters");
+    await expect(viewer.locator(".cave-syntax-block")).toBeVisible();
+    for (const cp of ["U+202E", "U+2066", "U+2069"]) {
+      await expect(marker(viewer.locator(".cave-syntax-block"), cp).first(), cp).toBeVisible();
+    }
+  });
+
+  test("79. after a reload away from the desk, a tab holding an unsaved edit still warns before closing", async ({ page }) => {
+    await base(page);
+    page.on("dialog", (dialog) => void dialog.accept());
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.type("// unsaved");
+    const drafts = () => page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("cave.code.edit-draft.v1:")).length);
+    await expect.poll(drafts).toBe(1);
+    // Home never loads the desk, which was the only importer of the guard.
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("code-workbench")).toHaveCount(0);
+    await expect.poll(drafts).toBe(1);
+    const warns = () => page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    await expect.poll(warns, { timeout: 15_000 }).toBe(true);
+  });
 });
 
 test.describe("Coding Desk on a phone (#5756)", () => {

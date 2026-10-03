@@ -184,4 +184,79 @@ if (process.platform !== "win32") {
   assert.deepEqual(await restore(clean.repo, empty), { restored: [], unchanged: [], kept: [], safetyCheckpointPath: null });
 }
 
+// ── 10. Before the first commit: staged files are in the checkpoint (#5781) ─
+// It used to diff the working tree against the index, which left a staged new
+// file out entirely (so reverting it deleted it for good) and stored a staged
+// file's later edit against the index, which a restore can't rebuild.
+function makeUnborn(files) {
+  const repo = path.join(scratch, `repo-${repoCount++}`);
+  mkdirSync(repo);
+  const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "Test");
+  git("config", "commit.gpgsign", "false");
+  for (const [rel, content] of Object.entries(files)) write(repo, rel, content);
+  git("add", "-A");
+  return { repo, git };
+}
+const EMPTY_TREE = /^coven-cave checkpoint base [0-9a-f]+\n/;
+{
+  const { repo, git } = makeUnborn({ "src/app.ts": "app\n", "notes.md": "n1\n" });
+  write(repo, "notes.md", "n2\n"); // staged, then edited
+  const file = await checkpoint(repo);
+  const text = readFileSync(file, "utf8");
+  const emptyTree = execFileSync("git", ["hash-object", "-t", "tree", "--stdin"], { cwd: repo, encoding: "utf8", input: "" }).trim();
+  assert.match(text, EMPTY_TREE);
+  assert.equal(checkpointBaseOf(text), emptyTree, "an unborn branch records the empty tree as its base");
+  assert.match(text, /\+\+\+ b\/src\/app\.ts/, "the staged new file is in the checkpoint");
+  // The desk's revert: with no commit, every listed file is new, and goes.
+  git("rm", "-q", "-f", "--", "src/app.ts");
+  git("rm", "-q", "-f", "--", "notes.md");
+  assert.equal(read(repo, "src/app.ts"), null);
+  const outcome = await restore(repo, file);
+  assert.deepEqual(outcome.restored, ["notes.md", "src/app.ts"]);
+  assert.equal(read(repo, "src/app.ts"), "app\n", "the reverted new file comes back");
+  assert.equal(read(repo, "notes.md"), "n2\n", "and the staged file's later edit");
+}
+
+// ── 11. A checkpoint from before the first commit still restores after it ──
+{
+  const { repo, git } = makeUnborn({ "a.txt": "a1\n" });
+  write(repo, "a.txt", "a2\n");
+  const file = await checkpoint(repo);
+  git("checkout", "--", "a.txt");
+  git("commit", "-q", "-m", "first");
+  const outcome = await restore(repo, file);
+  assert.deepEqual(outcome.restored, ["a.txt"]);
+  assert.equal(read(repo, "a.txt"), "a2\n");
+}
+
+// ── 12. The user's diff config doesn't reach the patch (#5781) ──────────────
+// `color.ui=always` filled checkpoints with escape codes, so a restore found
+// no `diff --git` line and reported nothing to restore; `diff.noprefix` left
+// nothing for `git apply` to strip.
+for (const [key, value] of [
+  ["color.ui", "always"],
+  ["color.diff", "always"],
+  ["diff.noprefix", "true"],
+  ["diff.mnemonicPrefix", "true"],
+  ["diff.submodule", "diff"],
+]) {
+  const { repo, git } = makeRepo({ "a.txt": "a1\n" });
+  git("config", key, value);
+  write(repo, "a.txt", "a2\n");
+  write(repo, "new.txt", "new\n");
+  const file = await checkpoint(repo);
+  const text = readFileSync(file, "utf8");
+  assert.ok(!text.includes("\u001b["), `${key}=${value}: no escape codes`);
+  assert.match(text, /^diff --git a\/a\.txt b\/a\.txt$/m, `${key}=${value}: standard headers`);
+  git("checkout", "HEAD", "--", "a.txt");
+  rmSync(path.join(repo, "new.txt"));
+  const outcome = await restore(repo, file);
+  assert.deepEqual(outcome.restored, ["a.txt", "new.txt"], `${key}=${value}: both come back`);
+  assert.equal(read(repo, "a.txt"), "a2\n");
+  assert.equal(read(repo, "new.txt"), "new\n");
+}
+
 console.log("checkpoint-restore: ok");

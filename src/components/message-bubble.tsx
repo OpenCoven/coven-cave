@@ -86,6 +86,8 @@ import { sanitizeHtml } from "@/lib/html-sanitize";
 import { stripAutoloadingContent } from "@/lib/html-sanitize";
 import { decorateResponseHtml } from "@/lib/response-status-tokens";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
+import { hasHiddenUnicode, revealHiddenUnicodeInHtml } from "@/lib/hidden-unicode";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import {
@@ -197,7 +199,7 @@ function renderCodeBlockFrame({
             // dim leading span, so the DOM text (what Copy reads) stays
             // byte-identical to the raw diff.
             if (dl.kind === "meta" || dl.kind === "hunk") {
-              content = `<span>${escHtml(dl.raw)}</span>`;
+              content = `<span>${revealHiddenUnicodeInHtml(escHtml(dl.raw))}</span>`;
               gutterClass = " cave-diff-meta";
             } else {
               const marker = dl.marker ? `<span class="cave-diff-marker">${dl.marker}</span>` : "";
@@ -286,10 +288,13 @@ function renderCodeBlockFrame({
 }
 
 async function renderCodeBlock(
-  code: string,
+  source: string,
   info: string,
   { highlightCode = true }: { highlightCode?: boolean } = {},
 ): Promise<string> {
+  // A byte-order mark opening a file is ordinary, not a hidden character to
+  // flag (#5781); it isn't drawn either way.
+  const code = source.startsWith("\ufeff") ? source.slice(1) : source;
   const { lang, filename } = parseFenceInfo(info);
   const block = deriveReadingBlock(info);
   // One classifier decides "is this a patch", so the rendering and the
@@ -324,6 +329,10 @@ async function renderCodeBlock(
       diffLines = null;
     }
   }
+  // Bidi controls and invisible characters drawn as code points (#5781), so
+  // code can't read in an order other than the one it runs in. Only text
+  // nodes carry source here: Shiki's and plainCodeHtml's attributes don't.
+  highlighted = revealHiddenUnicodeInHtml(highlighted);
 
   return renderCodeBlockFrame({
     code,
@@ -415,21 +424,35 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
     row.scrollIntoView({ block: "center" });
   }, [html, highlightLine, containerRef]);
 
+  // Said once above the block (#5781): the characters themselves are drawn
+  // as code points inside it.
+  const hiddenNote = hasHiddenUnicode(text, "code") ? (
+    <p className="cave-hidden-note" role="note">
+      This holds hidden or bidirectional Unicode characters, shown as ⟨U+…⟩. They can make code read in a different order from how it runs.
+    </p>
+  ) : null;
+
   if (!html) {
     return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
-        {text}
-      </pre>
+      <>
+        {hiddenNote}
+        <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+          <HiddenUnicodeText text={text} kind="code" />
+        </pre>
+      </>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={`cave-syntax-block text-[length:var(--text-sm)] ${className ?? ""}`}
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      {hiddenNote}
+      <div
+        ref={containerRef}
+        className={`cave-syntax-block text-[length:var(--text-sm)] ${className ?? ""}`}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </>
   );
 }
 

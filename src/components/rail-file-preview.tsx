@@ -12,6 +12,8 @@ import { copyText } from "@/lib/clipboard";
 import { codeOutline } from "@/lib/code-outline";
 import { FILE_CHANGED_ON_DISK, fileEditDrafts, isDraftDirty } from "@/lib/file-edit-drafts";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
@@ -490,12 +492,12 @@ export function RailFilePreview({
           width={12}
           aria-hidden
         />
-        <span className="workspace-rail__preview-name" title={path}>{name}</span>
+        <span className="workspace-rail__preview-name" title={describeHiddenUnicode(path)}><HiddenUnicodeText text={name} /></span>
         {workbench ? (
           <>
             {dir ? (
-              <span className="workspace-rail__preview-dir" title={path}>
-                {dir}
+              <span className="workspace-rail__preview-dir" title={describeHiddenUnicode(path)}>
+                <HiddenUnicodeText text={dir} />
               </span>
             ) : null}
             {/* Provenance, always on: this pane reads the working tree, not a

@@ -8,8 +8,8 @@ assert.match(source, /await stampChangedFiles\(files, \(filePath\) => resolveCon
 
 assert.match(
   source,
-  /function gitDiff[\s\S]*\["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", \.\.\.args\]/,
-  "git diff calls must disable external diff helpers and textconv filters, and read paths literally (#5756)",
+  /function gitDiff[\s\S]*\["--literal-pathspecs", "diff", \.\.\.PATCH_DIFF_ARGS, \.\.\.args\]/,
+  "git diff calls must disable external diff helpers and textconv filters, read paths literally (#5756), and ignore colour and prefix config (#5781)",
 );
 // Revert and the tracked check read paths literally (#5756): a bracketed
 // path was a glob that also matched, and reverted, its siblings.

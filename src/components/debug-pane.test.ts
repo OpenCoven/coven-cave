@@ -646,8 +646,8 @@ assert.match(
 );
 assert.match(
   checkpointModule,
-  /gitDiff\(repoRoot, \["--binary", "HEAD", "--"\]\)/,
-  "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD",
+  /"rev-parse", "--verify", "--quiet", "HEAD\^\{commit\}"\][\s\S]{0,120}\.catch\(\(\) => hashText\(repoRoot, "", "tree"\)\);\s*let \{ stdout: patch \} = await gitDiff\(repoRoot, \["--binary", base, "--"\]\)/,
+  "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD, or the empty tree before the first commit (#5781)",
 );
 assert.match(
   checkpointModule,
