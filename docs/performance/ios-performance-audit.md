@@ -116,13 +116,15 @@ kept app spans from only its final 48 seconds this way.
 
 The design budgets remain the validation contract. A pass below means the
 automated evidence directly enforces the bound; a deferred row is not treated
-as passed.
+as passed. *Met on device* means a ratified physical-device measurement meets
+the bound and nothing in CI enforces it; see
+[Ratified budgets, 2026-10-02](#ratified-budgets-2026-10-02-5292).
 
 | Budget | Status | Evidence / next measurement |
 | --- | --- | --- |
 | App model initialization <= 50 ms p95 | Deferred | Thread snapshot I/O moved out of initialization, but no `app-model.init` p95 series is captured. Add the named span and collect repeated Release samples. |
 | First connection bootstrap local processing <= 250 ms | Deferred | Single-flight and concurrent-resource tests pass; add a local-processing span and collect repeated Release samples. |
-| Warm tab selection to stable frame <= 100 ms | Deferred | No stable-frame timing hook exists. Measure with a Release signpost around tab selection and first stable frame. |
+| Warm tab selection to stable frame <= 100 ms | Met on device | `destination.stable-frame` measured 73.7 ms p95 warm on the 2026-10-01 Release baseline. |
 | Chat publication cadence 10-20 updates/second | Pass (upper bound) | The 50 ms coalescer limits publication to at most 20 updates/second; terminal events still flush immediately. |
 | Main-thread attachment decode in row body = 0 | Pass | `MessageBubble.body` no longer calls `UIImage.fromDataUrl`; cache tests prove one downsampled decode per source/size. |
 | Duplicate in-flight fetches for the same bootstrap resource = 0 | Pass | Two concurrent refresh callers share one probe; independent bootstrap resources run once each. |
@@ -242,7 +244,7 @@ supported iPhone:
 These are implementation-shape differences, not relaxed performance bounds.
 
 
-## Current-shell baseline fixture (#5292, in progress)
+## Current-shell baseline fixture (#5292)
 
 The explicit `--performance-fixture` launch argument installs deterministic,
 non-sensitive data: 20 projects, 1,000 local chats, 1,000 server sessions,
@@ -288,9 +290,10 @@ back into a newly created renderer is a separate mount, not a second sample on
 the same renderer. Failure, teardown, or app deactivation cancels an unfinished
 sample. Image loading and later streaming updates are outside this boundary.
 
-Physical Release measurements, cold/warm distributions, trace-based bottleneck
-ranking, and measured budgets remain outstanding. No simulator, parser, or
-unit-test result in this work constitutes that acceptance.
+The physical Release baseline and the budgets ratified from it are recorded
+under [Device baseline, 2026-10-01](#device-baseline-2026-10-01-5292) and
+[Ratified budgets, 2026-10-02](#ratified-budgets-2026-10-02-5292). No simulator,
+parser, or unit-test result constitutes that evidence.
 
 ### Release capture driver
 
@@ -475,3 +478,26 @@ one clear back to 1,500 rows per cycle (10 samples, 171.0 / 185.8 / 185.8 ms),
 the recorded known exception. In a cold process the first rich render is the
 first WebKit acquisition (10 samples, median 399 ms, max 449 ms) and the first
 destination switch takes 103.9–141.8 ms; the second of each is near warm cost.
+
+### Ratified budgets, 2026-10-02 (#5292)
+
+Val ratified these on 2026-10-02, from the device baseline above. They are
+warm p95 values unless the row says otherwise. Cold and warm distributions stay
+separate. None of these is enforced in CI; each is re-measured with the capture
+driver above.
+
+| Interaction | Budget | Measured at baseline |
+| --- | --- | --- |
+| `drawer.open` to stable frame | <= 100 ms p95 | 82.9 ms, met |
+| `destination.stable-frame` (tab switch) | <= 100 ms p95 | 73.7 ms, met |
+| `search.query`, typed queries | <= 100 ms p95 | 69.4 ms, met |
+| `search.query`, clearing back to 1,500 rows | Known exception: reported, no budget | 185.8 ms max |
+| `chat.first-rich-render` | <= 300 ms p95 (new) | 268.8 ms, met |
+| Cold first-in-process render and first switch | Reported only, never mixed with warm | 449 ms and 141.8 ms max |
+| Main-thread hitch during any measured navigation | < 100 ms | Not measured ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
+| Duplicate request caused solely by view reappearance | 0 | Not measured: the fixture is offline ([#5748](https://github.com/OpenCoven/coven-cave/issues/5748)) |
+
+The project switcher and project-selection budgets from #5292's original scope
+are retired with the chat-only shell, and are not rebuilt to be measured. The
+clear-search exception stands until a change targets SwiftUI's `List` diff for
+that transition. Such a change should then propose a budget for it.
