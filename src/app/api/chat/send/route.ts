@@ -159,6 +159,7 @@ import {
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
+  chatRunBlocksNewTurn,
   markChatRunProjectionSettled,
   markChatRunTransportSettled,
   registerChatRun,
@@ -1993,6 +1994,18 @@ async function postChat(
       ok: false,
       code: "flow_session_read_only",
       error: "Flow executions are read-only in Chat. Use Discuss in Chat to start a linked conversation.",
+    }, { status: 409 });
+  }
+  // One live turn per conversation. A client that lost its stream (reload,
+  // thread switch, another device) can still send while this server runs the
+  // earlier turn. Launching again would put two harnesses on one native
+  // session, and the new registration would hide the earlier run from Stop
+  // and the sessions list. Refuse before any attachment, queue or spawn work.
+  if (body.sessionId && chatRunBlocksNewTurn(body.sessionId)) {
+    return Response.json({
+      ok: false,
+      code: "chat_run_active",
+      error: "This chat is still running an earlier turn. Wait for it to finish, or stop it, then send again.",
     }, { status: 409 });
   }
   // Persisted transcripts keep metadata plus a durable store id; base64
