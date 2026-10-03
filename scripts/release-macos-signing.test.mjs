@@ -333,6 +333,24 @@ test("Windows release publication treats an absent release as a recoverable prob
   );
 });
 
+test("Windows signer archive is verified before exposing signing credentials", () => {
+  const buildJob = getWorkflowJob("build");
+  const verifyStart = buildJob.indexOf("name: Verify Windows signing tool");
+  const stageStart = buildJob.indexOf("name: Stage Windows MSI for code signing");
+  const signStart = buildJob.indexOf("name: Sign Windows MSI with SSL.com eSigner");
+  assert.ok(verifyStart >= 0 && stageStart > verifyStart && signStart > stageStart);
+  const verifyStep = buildJob.slice(verifyStart, stageStart);
+  assert.match(verifyStep, /!inputs\.windows_diagnostics_only/);
+  assert.doesNotMatch(verifyStep, /secrets\.|continue-on-error/);
+  assert.match(verifyStep, /e22094505decbe622afe5b0c27abc618ed2ba179bd94f3450490352399d5ef2a/);
+  assert.match(verifyStep, /Get-FileHash -LiteralPath \$archive -Algorithm SHA256/);
+  assert.match(verifyStep, /\.Hash -ne \$expectedHash\) \{\s*throw/);
+  assert.ok(verifyStep.indexOf("SHA-256 mismatch") < verifyStep.indexOf("Expand-Archive"));
+  assert.ok(verifyStep.indexOf("Expand-Archive") < verifyStep.indexOf("CODESIGNTOOL_PATH="));
+  assert.match(verifyStep, /Test-Path -LiteralPath \(Join-Path \$toolDir \$entry\) -PathType Leaf/);
+  assert.match(verifyStep, /CODESIGNTOOL_PATH=\$toolDir/);
+});
+
 test("Windows MSI must pass signing and Authenticode verification before upload", () => {
   const buildJob = getWorkflowJob("build");
   const stepNames = [
@@ -374,7 +392,7 @@ test("Windows MSI must pass signing and Authenticode verification before upload"
   assert.match(publishStep, /gh release upload \$env:RELEASE_TAG \$msis\[0\]\.FullName --clobber/);
   assert.doesNotMatch(
     buildJob.slice(positions[0], positions[4]),
-    /gh release upload[^\n]*\.msi/,
+    /gh release upload/,
     "the unsigned MSI must not reach the release before verification",
   );
   for (const step of [signStep, verifyStep, publishStep]) {
