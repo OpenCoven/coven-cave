@@ -22,6 +22,7 @@ await mkdir(familiarWorkspace, { recursive: true });
 
 const codexLog = path.join(home, "codex-calls.jsonl");
 const covenLog = path.join(home, "coven-calls.jsonl");
+const authMode = path.join(home, "auth-mode");
 const fixturePath = fileURLToPath(
   new URL("../../../../lib/fixtures/codex/0.145.0-tool-lifecycle.jsonl", import.meta.url),
 );
@@ -74,7 +75,7 @@ process.env.COVEN_SOCKET = daemonSocket;
 // logged so the test can assert the exact launch contract. Paths are baked in
 // because the capability probe deliberately scrubs custom environment keys.
 const codexShimSource = (version) => [
-  "const { appendFileSync, readFileSync } = require('node:fs');",
+  "const { appendFileSync, existsSync, readFileSync } = require('node:fs');",
   "const args = process.argv.slice(2);",
   `appendFileSync(${JSON.stringify(codexLog)}, JSON.stringify(args) + "\\n");`,
   "if (args.includes('--version')) {",
@@ -90,6 +91,13 @@ const codexShimSource = (version) => [
   "  process.exit(0);",
   "}",
   "if (args[0] === 'exec') {",
+  `  if (existsSync(${JSON.stringify(authMode)})) {`,
+  `    const mode = readFileSync(${JSON.stringify(authMode)}, 'utf8');`,
+  "    if (mode === 'turn') console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-auth' }));",
+  "    const diagnostic = 'Not logged in. Run codex login. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL';",
+  "    console.log(JSON.stringify(mode === 'turn' ? { type: 'turn.failed', error: { message: diagnostic } } : { type: 'error', message: diagnostic }));",
+  "    process.exit(1);",
+  "  }",
   `  process.stdout.write(readFileSync(${JSON.stringify(fixturePath)}, 'utf8'));`,
   "  process.exit(0);",
   "}",
@@ -268,6 +276,23 @@ try {
     !(await loggedCalls(covenLog)).some((args) => args[0] === "run" && args[1] === "codex"),
     "a verified direct turn never starts `coven run codex`",
   );
+
+  // Native Codex may send its auth verdict only in a JSONL failure frame.
+  // Both supported shapes must preserve the verdict and discard the payload.
+  for (const mode of ["error", "turn"]) {
+    await writeFile(authMode, mode);
+    const authResponse = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: `auth ${mode}`, projectRoot: familiarWorkspace }),
+    }));
+    const { body, events: authEvents } = await readSse(authResponse);
+    assert.equal(authEvents.find((event) => event.kind === "error")?.code, "harness_auth_required", `${mode} frame offers sign-in`);
+    assert.equal(authEvents.find((event) => event.kind === "error")?.harness, "codex");
+    assert.doesNotMatch(body, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|secret|Not logged in/, "native auth payload never reaches SSE");
+    assert.equal(authEvents.findLast((event) => event.kind === "done")?.isError, true);
+    await rm(authMode);
+  }
 
   // A project grant approved between turns changes process authority. Codex
   // resume cannot widen an already-created sandbox reliably, so Cave must

@@ -36,6 +36,10 @@ const CodeReadingInspector = dynamic(
   () => import("@/components/code-reading-inspector").then((m) => m.CodeReadingInspector),
   { ssr: false },
 );
+const HarnessAuthTerminal = dynamic(
+  () => import("@/components/harness-auth-terminal").then((m) => m.HarnessAuthTerminal),
+  { ssr: false },
+);
 import type { CodeReadingTarget } from "@/components/code-reading-inspector";
 import type { InspectorPin } from "@/lib/code-reading";
 import {
@@ -145,7 +149,7 @@ import {
   initialPromptHandoffClaimed,
 } from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
-import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { authRecoveryHarness, parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -222,6 +226,7 @@ import {
 } from "@/lib/runtime-models";
 import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { HarnessAuthVaultButton } from "@/components/harness-auth-vault-button";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -848,6 +853,7 @@ function ChatErrorStrip({
   onRetry,
   onOpenDebug,
   onOpenSetup,
+  authFamiliarId,
   onDismiss,
   addProjectLabel,
   addingProject,
@@ -882,6 +888,7 @@ function ChatErrorStrip({
   /** Open the Setup wizard overlay (soft, not a route change) when the coven
    *  CLI is unresolvable — the composer message is preserved for retry (#2618). */
   onOpenSetup?: () => void;
+  authFamiliarId?: string;
   /** The runtime the failing send used — lets the auth-failure fix row name
    *  it and offer its exact login command (cave-f6ol). */
   harnessId?: string | null;
@@ -939,13 +946,20 @@ function ChatErrorStrip({
 
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
-  const harnessFailure = useMemo(() => parseHarnessFailure(recoveryText), [recoveryText]);
+  const harnessFailure = useMemo(
+    () => code === "harness_auth_required" ? null : parseHarnessFailure(recoveryText),
+    [code, recoveryText],
+  );
   // Sign-in failures land here at the FIRST message (the wizard greens on
   // install, never auth) — surface the runtime's login command instead of
   // ending at raw stderr (cave-f6ol).
   const authFailure = useMemo(
-    () => parseHarnessAuthFailure(recoveryText, harnessId),
-    [recoveryText, harnessId],
+    () => parseHarnessAuthFailure(
+      code === "harness_auth_required" ? "authentication required"
+        : code === "harness_auth_configuration_required" ? "api key missing" : recoveryText,
+      harnessId,
+    ),
+    [code, recoveryText, harnessId],
   );
   // A preflight-confirmed missing runtime (or the legacy Coven ENOENT path)
   // gets a soft Setup recovery instead of a bare error + generic Retry. The
@@ -976,7 +990,7 @@ function ChatErrorStrip({
       <div className="flex items-center gap-2 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
         <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
-        {code ? (
+        {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
@@ -1044,7 +1058,12 @@ function ChatErrorStrip({
         />
       ) : null}
       {!harnessFailure && authFailure ? (
-        <AuthFixRow failure={authFailure} buttonClassName={btn} />
+        <AuthFixRow
+          failure={authFailure}
+          canConnect={code === "harness_auth_required"}
+          authFamiliarId={authFamiliarId}
+          buttonClassName={btn}
+        />
       ) : null}
       {!harnessFailure && !authFailure && runtimeMissing ? (
         <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
@@ -1132,39 +1151,63 @@ function ChatErrorStrip({
   );
 }
 
-/** Runtime sign-in fix row (cave-f6ol): names the runtime, gives the exact
- *  login command to run in a terminal, and copies it — the predictable
- *  first-message failure for a user who skipped the wizard's login prose. */
+/** Runtime sign-in fix row: start the CLI's interactive login in a dedicated
+ *  terminal, then let the user retry the unchanged message. */
 function AuthFixRow({
   failure,
+  canConnect,
+  authFamiliarId,
   buttonClassName,
 }: {
   failure: HarnessAuthFailure;
+  canConnect: boolean;
+  authFamiliarId?: string;
   buttonClassName: string;
 }) {
   const { copied, copy } = useCopy();
+  const { announce } = useAnnouncer();
+  const [connecting, setConnecting] = useState(false);
   const runtime = failure.harnessLabel ?? "The runtime";
   return (
     <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
       <span className="min-w-0">
-        {runtime} isn&apos;t signed in.
-        {failure.loginCommand ? (
+        {failure.kind === "configuration" ? (
+          <>{runtime} needs its API key or credentials repaired in this familiar&apos;s Vault. Retry after saving.</>
+        ) : <>{runtime} isn&apos;t signed in.</>}
+        {failure.kind === "login" && failure.loginCommand ? (
           <>
             {" "}Run{" "}
             <code className="rounded bg-[var(--bg-base)]/40 px-1 py-0.5 font-mono text-[length:var(--text-2xs)]">
               {failure.loginCommand}
             </code>{" "}
-            in a terminal, then retry.
+            to sign in, then retry.
           </>
-        ) : (
+        ) : failure.kind === "login" ? (
           " Sign in from a terminal, then retry."
-        )}
+        ) : null}
       </span>
+      {failure.kind === "configuration" && authFamiliarId ? (
+        <HarnessAuthVaultButton familiarId={authFamiliarId} className={buttonClassName} />
+      ) : null}
       {failure.loginCommand ? (
-        <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>
-          <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={11} aria-hidden />
-          {copied ? "Copied" : "Copy command"}
-        </button>
+        <>
+          {canConnect && failure.kind === "login" && ["codex", "claude", "copilot"].includes(failure.harness ?? "") ? (
+            <button type="button" onClick={(event) => {
+              // WebKit does not focus buttons on every pointer activation.
+              event.currentTarget.focus({ preventScroll: true });
+              setConnecting(true);
+              announce(`Opening ${runtime} sign-in terminal.`);
+            }} className={buttonClassName}>
+              <Icon name="ph:plug" width={11} aria-hidden />
+              Connect {runtime}
+            </button>
+          ) : null}
+          <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>
+            <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={11} aria-hidden />
+            {copied ? "Copied" : "Copy command"}
+          </button>
+          {connecting ? <HarnessAuthTerminal failure={failure} onClose={() => setConnecting(false)} /> : null}
+        </>
       ) : null}
     </div>
   );
@@ -2513,11 +2556,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
   // re-expands its detail every time a *new* error fires (not just the first).
-  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string } | null>(null);
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string } | null>(null);
   const debugErrorSeqRef = useRef(0);
-  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string }) => {
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string }) => {
     debugErrorSeqRef.current += 1;
-    setDebugError({ seq: debugErrorSeqRef.current, ...ctx });
+    const seq = debugErrorSeqRef.current;
+    setDebugError((previous) => ({
+      // A terminal done(isError) follows the actionable error frame. Keep
+      // that turn's recovery code/runtime instead of replacing it with the
+      // later payload-free failure notice; never carry it to another turn.
+      ...(ctx.turnId && previous?.turnId === ctx.turnId ? previous : {}),
+      seq,
+      ...ctx,
+    }));
   }, []);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
   // The working directory of a send that failed the 403 project-access check —
@@ -7190,7 +7241,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: ev.code });
+        raiseDebugError({ turnId: assistantId, code: ev.code, harness: ev.harness });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
       }
@@ -8823,7 +8874,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenDebug={openDebug}
           onUseHarness={lastFailedSend ? handleUseHarnessFix : undefined}
           onOpenSetup={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
-          harnessId={familiar.harness ?? null}
+          authFamiliarId={familiar.id}
+          harnessId={authRecoveryHarness(debugError?.harness, session?.harness, familiar.harness)}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }

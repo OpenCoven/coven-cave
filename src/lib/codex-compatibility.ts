@@ -14,6 +14,7 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { parseHarnessAuthFailure } from "./harness-failure.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCHEMA_DOCUMENT_BYTES = 1_048_576;
@@ -1068,8 +1069,8 @@ export type CodexStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
-  /** Terminal Codex failure with no untrusted payload attached. */
-  | { kind: "failure" }
+  /** Terminal Codex failure with only a classified auth verdict. */
+  | { kind: "failure"; authKind?: "login" | "configuration" }
   /** `turn.completed` token usage. The raw `usage` object is passed through
    *  untouched; the chat route validates it with parseStreamJsonUsage. */
   | { kind: "usage"; usage: unknown }
@@ -1103,6 +1104,18 @@ function eventFingerprint(value: Record<string, unknown>): string {
   return createHash("sha256").update(shape).digest("hex").slice(0, 12);
 }
 
+function codexFailureEvent(value: Record<string, unknown>): CodexStreamEvent {
+  // Codex uses both top-level `message` (error) and `error.message`
+  // (turn.failed). Inspect only these schema fields, then discard the text.
+  const nestedError = record(value.error);
+  const messages = [value.message, nestedError?.message, value.error]
+    .filter((candidate): candidate is string => typeof candidate === "string");
+  const verdicts = messages.map((message) => parseHarnessAuthFailure(message, "codex")?.kind);
+  const authKind = verdicts.includes("configuration") ? "configuration"
+    : verdicts.includes("login") ? "login" : null;
+  return authKind ? { kind: "failure", authKind } : { kind: "failure" };
+}
+
 export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema): CodexStreamEvent | null {
   const event = record(value);
   if (!event || typeof event.type !== "string") return null;
@@ -1113,7 +1126,7 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
     return id ? { kind: "session", sessionId: id } : { kind: "unknown", fingerprint: eventFingerprint(event) };
   }
   if (event.type === "turn.failed" || event.type === "error") {
-    return { kind: "failure" };
+    return codexFailureEvent(event);
   }
   if (event.type === "turn.started") {
     return { kind: "ignored" };
@@ -1337,7 +1350,7 @@ export class CodexJsonlDecoder {
           const event = (this.protocolArmed || this.protocolActive)
             ? parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" }
             : rawType === "turn.failed" || rawType === "error"
-              ? { kind: "failure" as const }
+              ? codexFailureEvent(frame ?? {})
               : { kind: "unknown" as const, fingerprint: "prelude-control-frame" };
           events.push(event);
           tokens.push(event);

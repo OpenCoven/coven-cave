@@ -8,6 +8,7 @@ import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
+import { createTerminalPtyLifetime } from "@/lib/terminal-pty-lifetime";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 import { stopTerminalThread, terminalThreadStopped } from "@/lib/terminal-thread-stop";
 import { Icon } from "@/lib/icon";
@@ -247,6 +248,7 @@ export function BottomTerminal({
   onUserInput,
   writerRef,
   onHealthChange,
+  disposeOnUnmount = false,
   releaseKey,
 }: {
   threadId: string;
@@ -267,6 +269,8 @@ export function BottomTerminal({
   /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
   writerRef?: React.Ref<TerminalWriterHandle>;
   onHealthChange?: (health: TerminalHealth) => void;
+  /** Temporary dialogs own their shell, including late startup/reconnect. */
+  disposeOnUnmount?: boolean;
   /** Keys the host handles even while this terminal has focus (its own
    *  toggle, say). Read live, so a rebinding applies without a remount. */
   releaseKey?: (event: KeyboardEvent) => boolean;
@@ -529,6 +533,8 @@ export function BottomTerminal({
     setReady(false);
     setHealth(retryNonce > 0 ? "recovering" : "starting");
 
+    const lifetime = createTerminalPtyLifetime(threadId, disposeOnUnmount);
+    const ptyThreadId = lifetime.threadId;
     let disposed = false;
     let cleanup: (() => void) | null = null;
     let healthTimer: ReturnType<typeof setInterval> | null = null;
@@ -595,10 +601,10 @@ export function BottomTerminal({
         return [] as string[];
       });
       log("pty_list →", running);
-      const attachToRunning = running.includes(threadId);
+      const attachToRunning = running.includes(ptyThreadId);
       if (attachToRunning) {
         const snapshot = await bridge
-          .invoke<number[]>("pty_snapshot", { threadId: threadId })
+          .invoke<number[]>("pty_snapshot", { threadId: ptyThreadId })
           .catch(() => [] as number[]);
         if (snapshot.length > 0) {
           const bytes = new Uint8Array(snapshot);
@@ -610,7 +616,7 @@ export function BottomTerminal({
         thread_id: string;
         bytes: number[];
       }>("pty:data", (e) => {
-        if (e.payload.thread_id !== threadId) return;
+        if (e.payload.thread_id !== ptyThreadId) return;
         const bytes = new Uint8Array(e.payload.bytes);
         term.write(bytes);
         pushToMirror(bytes);
@@ -619,7 +625,7 @@ export function BottomTerminal({
         thread_id: string;
         code: number | null;
       }>("pty:exit", (e) => {
-        if (e.payload.thread_id !== threadId) return;
+        if (e.payload.thread_id !== ptyThreadId) return;
         log("pty:exit", e.payload);
         stopped = true;
         const exitMsg = `\r\n\x1b[2m[exit ${e.payload.code ?? 0}]\x1b[0m\r\n`;
@@ -638,7 +644,7 @@ export function BottomTerminal({
       const writeToPty = (out: string) => {
         if (stopped) return;
         void bridge.invoke("pty_write", {
-          threadId: threadId,
+          threadId: ptyThreadId,
           bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
       };
@@ -659,14 +665,14 @@ export function BottomTerminal({
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
           await withTimeout(
-            bridge.invoke("pty_start", {
+            lifetime.run(() => bridge.invoke("pty_start", {
               options: {
-                thread_id: threadId,
+                thread_id: ptyThreadId,
                 project_root: projectRootRef.current ?? null,
                 cols: term.cols,
                 rows: term.rows,
               },
-            }),
+            }), () => bridge.invoke("pty_stop", { threadId: ptyThreadId })),
             DESKTOP_COMMAND_TIMEOUT_MS,
             "Shell startup",
           );
@@ -705,7 +711,7 @@ export function BottomTerminal({
         // src/lib/pausable-poll-discipline.test.ts exists to keep structural.
         if (disposed || stopped || !visibleRef.current || document.hidden) return;
         void bridge.invoke<string[]>("pty_list").then((sessions) => {
-          if (disposed || stopped || sessions.includes(threadId)) return;
+          if (disposed || stopped || sessions.includes(ptyThreadId)) return;
           sendToPtyRef.current = null;
           setReady(false);
           setHealth("failed");
@@ -716,7 +722,7 @@ export function BottomTerminal({
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         void bridge.invoke("pty_resize", {
-          threadId: threadId,
+          threadId: ptyThreadId,
           cols,
           rows,
         }).catch(() => { /* harmless mid-tear-down */ });
@@ -763,6 +769,7 @@ export function BottomTerminal({
 
       if (disposed) cleanup();
      } catch (err) {
+       if (disposeOnUnmount) lifetime.dispose();
        // A thrown/rejected await (loadTauri, createXterm, listen, a native
        // command) must not leave the pane stuck on "Starting terminal…" — surface
        // it (with Retry) instead of hanging silently.
@@ -776,10 +783,11 @@ export function BottomTerminal({
 
     return () => {
       disposed = true;
+      lifetime.dispose();
       if (cleanup) cleanup();
       else for (const dispose of made.splice(0).reverse()) dispose();
     };
-  }, [threadId, platform, openFind, retryNonce]);
+  }, [threadId, platform, openFind, retryNonce, disposeOnUnmount]);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -790,6 +798,8 @@ export function BottomTerminal({
     setReady(false);
     setHealth(retryNonce > 0 ? "recovering" : "starting");
 
+    const lifetime = createTerminalPtyLifetime(threadId, disposeOnUnmount);
+    const ptyThreadId = lifetime.threadId;
     let disposed = false;
     let cleanup: (() => void) | null = null;
     // What startup has made so far (#5756): see the desktop effect above.
@@ -820,7 +830,7 @@ export function BottomTerminal({
         // so the kill below can still reach its shell (#5775 review). Any
         // other teardown closes it now (a still-connecting socket too); the
         // server keeps that shell for the next attach.
-        if (!connected && terminalThreadStopped(threadId)) return;
+        if (!connected && (disposeOnUnmount || terminalThreadStopped(threadId))) return;
         bridge.dispose();
       });
 
@@ -877,7 +887,8 @@ export function BottomTerminal({
                 decoderRef.current = new TextDecoder("utf-8", { fatal: false });
                 pendingMirrorRef.current = "";
               }
-              await bridge.reconnect();
+              await lifetime.run(() => bridge.reconnect(), () => bridge.kill());
+              if (disposed) return;
               bridge.resize(term.cols, term.rows);
               setHealth("healthy");
               return;
@@ -908,9 +919,10 @@ export function BottomTerminal({
       });
 
       try {
-        await bridge.connect(threadId, term.cols, term.rows, projectRootRef.current);
+        await lifetime.run(() => bridge.connect(ptyThreadId, term.cols, term.rows, projectRootRef.current), () => bridge.kill());
         connected = true;
       } catch (err) {
+        if (disposeOnUnmount) lifetime.dispose();
         if (disposed) {
           bridge.dispose(); // torn down mid-connect: nothing left to tell
           return;
@@ -931,7 +943,7 @@ export function BottomTerminal({
         return;
       }
       if (disposed) {
-        bridge.dispose();
+        if (!disposeOnUnmount) bridge.dispose();
         term.dispose();
         return;
       }
@@ -1014,13 +1026,14 @@ export function BottomTerminal({
         pendingMirrorRef.current = "";
         termRef.current = null;
         wsBridgeRef.current = null;
-        bridge.dispose();
+        if (!disposeOnUnmount) bridge.dispose();
         term.dispose();
       };
       made.length = 0; // `cleanup` disposes everything from here on
 
       if (disposed) cleanup();
      } catch (err) {
+       if (disposeOnUnmount) lifetime.dispose();
        if (!disposed) {
          log("ws terminal startup FAILED", err);
          setStartError(`Terminal failed to start: ${String(err)}`);
@@ -1031,10 +1044,11 @@ export function BottomTerminal({
 
     return () => {
       disposed = true;
+      lifetime.dispose();
       if (cleanup) cleanup();
       else for (const dispose of made.splice(0).reverse()) dispose();
     };
-  }, [threadId, platform, pushToMirror, openFind, retryNonce]);
+  }, [threadId, platform, pushToMirror, openFind, retryNonce, disposeOnUnmount]);
 
   if (unavailable) {
     return (

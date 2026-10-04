@@ -47,6 +47,7 @@ import {
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { parseHarnessAuthFailure } from "@/lib/harness-failure";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -3876,6 +3877,13 @@ async function postAdmittedChat(
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
       const STDERR_KEEP = 15;
+      // Keep only the verdict. Claude and Copilot diagnostics may contain
+      // project text or credentials, and their raw stderr is intentionally
+      // discarded before the error reaches Chat.
+      let runtimeAuthKind: "login" | "configuration" | null = null;
+      const recordRuntimeAuthKind = (kind: "login" | "configuration" | null | undefined) => {
+        if (kind === "configuration" || (kind === "login" && !runtimeAuthKind)) runtimeAuthKind = kind;
+      };
       // Some harnesses (notably codex) route their error output through
       // stdout, where the AssistantFilter discards it. Capture any stdout
       // lines that look like errors as a fallback for the diagnostic.
@@ -3886,6 +3894,9 @@ async function postAdmittedChat(
       const recordStdoutErrorTail = (text: string, force = false) => {
         for (const part of text.split(/\r?\n/)) {
           const trimmed = part.trim();
+          if (["codex", "claude", "copilot"].includes(binding.harness)) {
+            recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
+          }
           if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
@@ -3903,6 +3914,9 @@ async function postAdmittedChat(
         for (const part of text.split(/\r?\n/)) {
           const trimmed = part.trim();
           if (!trimmed) continue;
+          if (["codex", "claude", "copilot"].includes(binding.harness)) {
+            recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
+          }
           relayedErrTail.push(trimmed);
           if (relayedErrTail.length > STDOUT_ERR_KEEP) relayedErrTail.shift();
         }
@@ -4649,6 +4663,7 @@ async function postAdmittedChat(
             // Terminal Codex failure: error state only — the engine already
             // stripped every payload from this event.
             result = { ...result, is_error: true };
+            recordRuntimeAuthKind(event.authKind);
             recordStdoutErrorTail("Codex reported a failure event", true);
             return;
           }
@@ -5543,6 +5558,9 @@ async function postAdmittedChat(
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
               if (!trimmed) continue;
+              if (["codex", "claude", "copilot"].includes(binding.harness)) {
+                recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
+              }
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered
               // to the chat transcript.
@@ -5840,6 +5858,7 @@ async function postAdmittedChat(
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
+        runtimeAuthKind = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -5901,6 +5920,7 @@ async function postAdmittedChat(
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
+        runtimeAuthKind = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -5941,7 +5961,7 @@ async function postAdmittedChat(
       // A Codex adapter can disappear or become misconfigured after the
       // bounded preflight passed. Coven has started in this branch, so map
       // only its adapter-level evidence back to the same actionable Codex
-      // state; provider/auth errors intentionally remain untouched.
+      // state; runtime sign-in errors are classified separately below.
       // The adapter-evidence mapping below is about Coven's adapter layer;
       // the direct spawn has no Coven in front of it and keeps the shared
       // direct-runner failure diagnostics instead.
@@ -5954,6 +5974,24 @@ async function postAdmittedChat(
           pushProgress("harness-start", "codex failed to start", "error", adapterFailure.message);
           push({ kind: "error", code: adapterFailure.code, message: adapterFailure.message });
       }
+      }
+
+      if (!launchFailure && !sshRuntime && !runHandle.stopRequested && result.is_error && !assistantText.trim()
+          && ["codex", "claude", "copilot"].includes(binding.harness)
+          && (runtimeAuthKind
+            || [...stderrTail, ...stdoutErrTail].some((line) => parseHarnessAuthFailure(line, binding.harness)))) {
+        for (const line of [...stderrTail, ...stdoutErrTail]) {
+          recordRuntimeAuthKind(parseHarnessAuthFailure(line, binding.harness)?.kind);
+        }
+        const configuration = runtimeAuthKind === "configuration";
+        const code = configuration ? "harness_auth_configuration_required" : "harness_auth_required";
+        const label = parseHarnessAuthFailure("authentication required", binding.harness)?.harnessLabel ?? "The runtime";
+        const message = configuration
+          ? `${label} needs its API key or credentials repaired in this familiar's Vault. Open the Vault, then retry.`
+          : `${label} needs sign-in. Connect it, then retry.`;
+        launchFailure = { code, message };
+        pushProgress("harness-auth", configuration ? "Runtime credentials need repair" : "Runtime sign-in required", "error", message);
+        push({ kind: "error", code, message, harness: binding.harness });
       }
 
       if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {

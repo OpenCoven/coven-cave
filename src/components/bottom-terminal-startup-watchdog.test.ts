@@ -26,8 +26,8 @@ assert.match(src, /log\("desktop terminal startup FAILED", err\)/, "the desktop 
 
 // ── Retry re-runs the transport effects ──────────────────────────────────────
 assert.match(src, /const retryStart = useCallback\(\(\) => \{[\s\S]*?setRetryNonce\(\(n\) => n \+ 1\)/, "Retry bumps the nonce that re-runs startup");
-assert.match(src, /\}, \[threadId, platform, openFind, retryNonce\]\)/, "the desktop transport effect re-runs on retry");
-assert.match(src, /\}, \[threadId, platform, pushToMirror, openFind, retryNonce\]\)/, "the WebSocket transport effect re-runs on retry");
+assert.match(src, /\}, \[threadId, platform, openFind, retryNonce, disposeOnUnmount\]\)/, "the desktop transport effect re-runs on retry");
+assert.match(src, /\}, \[threadId, platform, pushToMirror, openFind, retryNonce, disposeOnUnmount\]\)/, "the WebSocket transport effect re-runs on retry");
 
 // ── The overlay shows the error + a Retry button (not just the spinner) ──────
 assert.match(src, /\{!ready && startError \?/, "the error state replaces the spinner overlay");

@@ -43,7 +43,7 @@ export type StreamEvent =
       /** Assistant identity confirmed by the transcript store, not the harness. */
       persistedTurnId?: string;
     }
-  | { kind: "error"; message: string; code?: string };
+  | { kind: "error"; message: string; code?: string; /** Server-selected runtime for an auth recovery action. */ harness?: string };
 
 /** Discriminator literal for every {@link StreamEvent} variant. */
 export type StreamEventKind = StreamEvent["kind"];
