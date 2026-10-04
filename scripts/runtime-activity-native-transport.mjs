@@ -36,10 +36,11 @@ const destination = option('--destination');
 const evidence = option('--evidence');
 const derived = option('--derived-data');
 const liveUISend = args.includes('--live-ui-send');
+const unitSuite = args.includes('--unit-suite');
 const fixtureId = randomUUID();
 if (process.platform !== 'darwin' || !args.includes('--execute') || !destination ||
-    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || args.length !== (liveUISend ? 8 : 7)) {
-  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send]');
+    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || (liveUISend && unitSuite) || args.length !== (liveUISend || unitSuite ? 8 : 7)) {
+  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send | --unit-suite]');
   process.exitCode = 2;
 } else {
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -66,11 +67,13 @@ const runReport = {
   candidate: { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
     sourceBefore: await sourceFingerprint() },
   host: { node: process.version, xcode: execFileSync('xcodebuild', ['-version'], { encoding: 'utf8' }).trim() },
-  scenario: liveUISend ? 'hermes-live-native-send-termination-restart-hydration' : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
-  classification: 'real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider',
+  scenario: unitSuite ? 'full-unit-suite-with-native-tcp-recovery' : liveUISend ? 'hermes-live-native-send-termination-restart-hydration' : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
+  classification: unitSuite
+    ? 'full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider'
+    : 'real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider',
   passed: false, providerRequests: 0, toolInvocations: 0,
   limitations: ['Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.',
-    liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
+    unitSuite ? 'Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.' : liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
     'The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt.'],
 };
 let caveServer;
@@ -352,7 +355,7 @@ try {
   await run('build-for-testing', 'xcodebuild', ['build-for-testing', '-project', 'apps/ios/CovenCave/CovenCave.xcodeproj',
     '-scheme', 'CovenCave', '-destination', `platform=iOS Simulator,id=${destination}`, '-derivedDataPath', derived,
     '-parallel-testing-enabled', 'NO', '-enablePerformanceTestsDiagnostics', 'NO',
-    '-jobs', '2', 'CODE_SIGNING_ALLOWED=YES', 'CODE_SIGN_IDENTITY=-']);
+    '-jobs', '2', 'CODE_SIGNING_ALLOWED=YES', 'CODE_SIGN_IDENTITY=-', 'CODE_SIGN_STYLE=Manual', 'DEVELOPMENT_TEAM=']);
   const products = path.join(derived, 'Build/Products');
   const generated = (await readdir(products)).find((name) => /^CovenCave_iphonesimulator.*\.xctestrun$/.test(name));
   assert.ok(generated, 'the generated native test plan must exist');
@@ -360,7 +363,12 @@ try {
   const targets = plan.TestConfigurations?.flatMap((configuration) => configuration.TestTargets) ?? Object.values(plan);
   const target = targets.find((entry) => entry?.BlueprintName === 'CovenCaveTests' || entry?.TestBundlePath?.endsWith('/CovenCaveTests.xctest'));
   assert.ok(target, 'the generated plan must contain CovenCaveTests');
-  target.OnlyTestIdentifiers = ['ActivityTransportTests'];
+  if (unitSuite) {
+    delete target.OnlyTestIdentifiers;
+    delete target.SkipTestIdentifiers;
+  } else {
+    target.OnlyTestIdentifiers = ['ActivityTransportTests'];
+  }
   target.EnvironmentVariables = { ...target.EnvironmentVariables, CAVE_NATIVE_ACTIVITY_FIXTURE: JSON.stringify({
     origin: caveServer.origin, token: mobileToken, projectRoot, marker, releaseURL: `${providerOrigin}/release/${releaseKey}`,
     restartURL: `${providerOrigin}/restart/${restartKey}`,
@@ -378,9 +386,12 @@ try {
     await run('install-native-app', 'xcrun', ['simctl', 'install', destination,
       target.TestHostPath.replace('__TESTROOT__', products)]);
     await run('native-transport', 'xcodebuild', ['test-without-building', '-xctestrun', fixturePlan,
-      '-destination', `platform=iOS Simulator,id=${destination}`, '-only-testing:CovenCaveTests/ActivityTransportTests',
+      '-destination', `platform=iOS Simulator,id=${destination}`,
+      unitSuite ? '-only-testing:CovenCaveTests' : '-only-testing:CovenCaveTests/ActivityTransportTests',
       '-resultBundlePath', path.join(evidence, 'native-transport.xcresult'), '-parallel-testing-enabled', 'NO',
-      '-enablePerformanceTestsDiagnostics', 'NO']);
+      '-enablePerformanceTestsDiagnostics', 'NO',
+      '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '60',
+      '-maximum-test-execution-time-allowance', '180']);
     assert.equal(runReport.providerRequests, 1);
     assert.equal(runReport.toolInvocations, 1);
     assert.equal(runReport.restart?.previousStopped, true, 'the native test must exercise a real server restart');
@@ -394,44 +405,48 @@ try {
     acceptedRunId = conversation?.turns.find((turn) => turn.role === 'user')?.attentionClearOperationId;
     assert.ok(acceptedRunId, 'the UI must reconcile the exact accepted delivery');
   }
-  const uiTarget = targets.find((entry) => entry?.BlueprintName === 'CovenCaveUITests' || entry?.TestBundlePath?.endsWith('/CovenCaveUITests.xctest'));
-  assert.ok(uiTarget, 'the generated plan must contain the native UI target');
-  uiTarget.OnlyTestIdentifiers = ['ActivityRecoveryUITests'];
-  uiTarget.EnvironmentVariables = { ...uiTarget.EnvironmentVariables, CAVE_NATIVE_ACTIVITY_UI_FIXTURE: JSON.stringify({
-    origin: caveServer.origin, token: mobileToken, projectRoot, marker,
-    sessionId: conversation?.sessionId ?? 'live-ui-creates-session', runId: acceptedRunId ?? fixtureId,
-    ...(liveUISend ? { mode: 'live-send', snapshotURL: `${providerOrigin}/ui-snapshot/${uiSnapshotKey}` } : {}),
-    completionURL: `${providerOrigin}/ui-complete/${uiCompletionKey}`,
-    restartURL: `${providerOrigin}/ui-restart/${uiRestartKey}`,
-  }) };
-  // Replacing the app ends the previous fixture's Live Activity and can launch
-  // it without arguments. Drain that installation side effect before XCTest
-  // installs its runner and launches the fixture. XCTest still installs and
-  // owns its test artifacts (UseDestinationArtifacts requires a physical device).
-  const installedApp = uiTarget.UITargetAppPath.replace('__TESTROOT__', products);
-  await run('install-ui-app', 'xcrun', ['simctl', 'install', destination, installedApp]);
-  await writeFile(planJson, JSON.stringify(plan), { mode: 0o600 });
-  execFileSync('plutil', ['-convert', 'xml1', '-o', fixturePlan, planJson]);
-  await rm(planJson);
-  if (!liveUISend) {
-    await stopCave(caveServer, caveServer.port);
-    assert.ok(caveServer.child.exitCode !== null || caveServer.child.signalCode !== null);
-    runReport.uiOutage = { previousPid: caveServer.child.pid, previousStopped: true };
-    await appendFile(ledger, JSON.stringify({ kind: 'native_ui_server_stopped', ordinal: 1 }) + '\n');
+  if (!unitSuite) {
+    const uiTarget = targets.find((entry) => entry?.BlueprintName === 'CovenCaveUITests' || entry?.TestBundlePath?.endsWith('/CovenCaveUITests.xctest'));
+    assert.ok(uiTarget, 'the generated plan must contain the native UI target');
+    uiTarget.OnlyTestIdentifiers = ['ActivityRecoveryUITests'];
+    uiTarget.EnvironmentVariables = { ...uiTarget.EnvironmentVariables, CAVE_NATIVE_ACTIVITY_UI_FIXTURE: JSON.stringify({
+      origin: caveServer.origin, token: mobileToken, projectRoot, marker,
+      sessionId: conversation?.sessionId ?? 'live-ui-creates-session', runId: acceptedRunId ?? fixtureId,
+      ...(liveUISend ? { mode: 'live-send', snapshotURL: `${providerOrigin}/ui-snapshot/${uiSnapshotKey}` } : {}),
+      completionURL: `${providerOrigin}/ui-complete/${uiCompletionKey}`,
+      restartURL: `${providerOrigin}/ui-restart/${uiRestartKey}`,
+    }) };
+    // Replacing the app ends the previous fixture's Live Activity and can launch
+    // it without arguments. Drain that installation side effect before XCTest
+    // installs its runner and launches the fixture. XCTest still installs and
+    // owns its test artifacts (UseDestinationArtifacts requires a physical device).
+    const installedApp = uiTarget.UITargetAppPath.replace('__TESTROOT__', products);
+    await run('install-ui-app', 'xcrun', ['simctl', 'install', destination, installedApp]);
+    await writeFile(planJson, JSON.stringify(plan), { mode: 0o600 });
+    execFileSync('plutil', ['-convert', 'xml1', '-o', fixturePlan, planJson]);
+    await rm(planJson);
+    if (!liveUISend) {
+      await stopCave(caveServer, caveServer.port);
+      assert.ok(caveServer.child.exitCode !== null || caveServer.child.signalCode !== null);
+      runReport.uiOutage = { previousPid: caveServer.child.pid, previousStopped: true };
+      await appendFile(ledger, JSON.stringify({ kind: 'native_ui_server_stopped', ordinal: 1 }) + '\n');
+    }
+    await run('native-recovery-ui', 'xcodebuild', ['test-without-building', '-xctestrun', fixturePlan,
+      '-destination', `platform=iOS Simulator,id=${destination}`, '-only-testing:CovenCaveUITests/ActivityRecoveryUITests',
+      '-resultBundlePath', path.join(evidence, 'native-recovery-ui.xcresult'), '-parallel-testing-enabled', 'NO',
+      '-enablePerformanceTestsDiagnostics', 'NO']);
+    assert.equal(runReport.uiCompletionReceived, true, 'the opt-in UI gate must run, not skip');
+    assert.equal(runReport.providerRequests, 1, 'rendered recovery must not dispatch again');
+    assert.equal(runReport.toolInvocations, 1, 'rendered recovery must not repeat the tool');
+    assert.equal(runReport.providerFailure, undefined);
+    // A completion receipt alone does not prove XCTest's assertions passed.
+    // run() above must also have observed a successful terminal test exit.
+    runReport.renderedRecoveryVerified = true;
+    runReport.sceneSupervisorRecoveryVerified = true;
+    runReport.liveUISendTerminationHydrationVerified = liveUISend;
+  } else {
+    runReport.fullUnitSuiteExecuted = true;
   }
-  await run('native-recovery-ui', 'xcodebuild', ['test-without-building', '-xctestrun', fixturePlan,
-    '-destination', `platform=iOS Simulator,id=${destination}`, '-only-testing:CovenCaveUITests/ActivityRecoveryUITests',
-    '-resultBundlePath', path.join(evidence, 'native-recovery-ui.xcresult'), '-parallel-testing-enabled', 'NO',
-    '-enablePerformanceTestsDiagnostics', 'NO']);
-  assert.equal(runReport.uiCompletionReceived, true, 'the opt-in UI gate must run, not skip');
-  assert.equal(runReport.providerRequests, 1, 'rendered recovery must not dispatch again');
-  assert.equal(runReport.toolInvocations, 1, 'rendered recovery must not repeat the tool');
-  assert.equal(runReport.providerFailure, undefined);
-  // A completion receipt alone does not prove XCTest's assertions passed.
-  // run() above must also have observed a successful terminal test exit.
-  runReport.renderedRecoveryVerified = true;
-  runReport.sceneSupervisorRecoveryVerified = true;
-  runReport.liveUISendTerminationHydrationVerified = liveUISend;
   runReport.passed = true;
 } catch (error) {
   runReport.failure = error instanceof Error ? error.message : 'native transport failed';

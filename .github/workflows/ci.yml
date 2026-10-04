@@ -263,7 +263,7 @@ jobs:
           {
             echo "IOS_SIMULATOR_UDID=$udid"
             echo "IOS_DERIVED_DATA=$RUNNER_TEMP/ios-derived-data"
-            echo "IOS_RESULT_BUNDLE=$RUNNER_TEMP/CovenCaveTests.xcresult"
+            echo "IOS_RESULT_BUNDLE=$RUNNER_TEMP/native-activity-ci/native-transport.xcresult"
           } >> "$GITHUB_ENV"
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl list devices booted
@@ -326,25 +326,30 @@ jobs:
       # died without leaving a bad bundle (a build error, a lost simulator, a
       # cancelled step) still fails the job. All three couplings are pinned by
       # scripts/ios-build-ci.test.mjs.
+      - name: Prepare the native TCP fixture
+        run: |
+          set -euo pipefail
+          pnpm build
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { mkdirSync, appendFileSync } from 'node:fs';
+          import path from 'node:path';
+          import { installPinnedRelease } from './scripts/coven-automations-release-canary.ts';
+          const prefix = path.join(process.env.RUNNER_TEMP, 'native-activity-coven');
+          mkdirSync(prefix);
+          const binary = installPinnedRelease(prefix);
+          appendFileSync(process.env.GITHUB_ENV, `COVEN_BIN=${binary}\n`);
+          NODE
+
       - name: Run the iOS XCTest suite
         id: xctest
         continue-on-error: true
-        working-directory: apps/ios/CovenCave
         run: |
           set -euo pipefail
-          xcodebuild -scheme CovenCave \
-            -destination "id=$IOS_SIMULATOR_UDID" \
-            -derivedDataPath "$IOS_DERIVED_DATA" \
-            -resultBundlePath "$IOS_RESULT_BUNDLE" \
-            -only-testing:CovenCaveTests \
-            -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 60 \
-            -maximum-test-execution-time-allowance 180 \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM= \
-            test-without-building
+          node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
+            scripts/runtime-activity-native-transport.mjs --execute --unit-suite \
+            --destination "$IOS_SIMULATOR_UDID" \
+            --derived-data "$IOS_DERIVED_DATA" \
+            --evidence "$RUNNER_TEMP/native-activity-ci"
 
       # xcodebuild's exit status covers "did every executed test pass". It does
       # NOT cover "did anything execute": a selector that matches no target
