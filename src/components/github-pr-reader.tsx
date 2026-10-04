@@ -523,7 +523,7 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
                           <span className="pr-reader__del">&minus;{file.deletions}</span>
                         </div>
                         {file.patch ? (
-                          <SyntaxBlock text={file.patch} lang="diff" className="pr-reader__patch" />
+                          <SyntaxBlock text={file.patch} lang="diff" className="pr-reader__patch" label={file.filename} />
                         ) : (
                           <p className="pr-reader__file-nopatch">
                             {file.noPatchReason === "budget"

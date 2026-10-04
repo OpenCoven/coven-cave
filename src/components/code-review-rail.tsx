@@ -24,6 +24,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { SessionChangesInner } from "@/components/session-changes-panel";
 import { AfsPane } from "@/components/afs-pane";
 import {
+  CODE_RAIL_MIN_WIDTH_PX,
   clampCodeRailWidth,
   codeRailDiffBar,
   countCodeRailViewed,
@@ -245,6 +246,11 @@ export function CodeReviewRail({
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize the review rail"
+          // A focusable splitter says where it is (#5781), as the terminal
+          // drawer's does: the bounds dragging allows, and the width now.
+          aria-valuemin={CODE_RAIL_MIN_WIDTH_PX}
+          aria-valuemax={clampCodeRailWidth(Number.MAX_SAFE_INTEGER, roomWidthPx)}
+          aria-valuenow={widthPx}
           tabIndex={0}
           className="focus-ring code-rail__grip"
           onPointerDown={onPointerDown}

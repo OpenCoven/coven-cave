@@ -611,3 +611,10 @@ test("root-only pending opens resolve an all-local session override before the r
   assert.equal(queue.sessions.filter((row) => row.id === "familiar-newest").length, 1);
   assert.equal(queue.sessions.some((row) => row.id === "generated-newer-still-hidden"), false);
 });
+
+test("a session row without a root is rootless, not a crash (#5781)", () => {
+  assert.deepEqual(codeSessionEligibility(sessionFixture({ project_root: null as unknown as string })), {
+    reviewable: false,
+    reason: "rootless",
+  });
+});

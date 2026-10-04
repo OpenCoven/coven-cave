@@ -4198,7 +4198,9 @@ export function Workspace() {
     sessions,
     activeSessionId: activeChatSessionId,
     daemonRunning,
-    daemonStatusUnknown: daemonStatusUnavailable !== null,
+    // Unknown until the first answer too (#5781): the header read
+    // "workbench offline" on every load before the poll came back.
+    daemonStatusUnknown: daemonStatusUnavailable !== null || !daemonStatusResolved,
     openUrl: openUrlInAppBrowser,
     openSession: openFamiliarSession,
     focusCard: focusCardFromRoom,

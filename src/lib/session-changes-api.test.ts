@@ -45,3 +45,18 @@ test("a refusal because the branch moved is marked stale (#5756)", async () => {
   const other = await mutateSessionChanges(plain, "/project", "create-pr", {}).catch((err) => err);
   assert.equal(other.stale, false);
 });
+
+test("a changes action that never answers lets go, and says it may have happened (#5781)", async () => {
+  const seen: (AbortSignal | undefined)[] = [];
+  const hung = (async (_input: string, init?: RequestInit) => {
+    seen.push(init?.signal ?? undefined);
+    throw new DOMException("The operation timed out.", "TimeoutError");
+  }) as never;
+  const err = await mutateSessionChanges(hung, "/project", "commit", {}).catch((error) => error);
+  assert.ok(seen[0] instanceof AbortSignal, "the request carries a time limit");
+  assert.equal(err.status, 0);
+  assert.equal(err.stale, false);
+  assert.match(err.message, /^no answer in 180 seconds\. It may have happened anyway: check the changes before trying again$/);
+  const revert = await mutateSessionChanges(hung, "/project", "revert", {}).catch((error) => error);
+  assert.match(revert.message, /^no answer in 150 seconds\./);
+});

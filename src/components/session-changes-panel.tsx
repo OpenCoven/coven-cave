@@ -142,6 +142,7 @@ export function SessionChangesInner({
   // A commit's or Create PR's failure is kept with the draft (#5756); the
   // panel's own actions report here directly.
   const shownError = actionError ?? outbound.error;
+  const [errorAtMount] = useState(() => outbound.error);
   const prUrl = outbound.prUrl;
 
   // Default is a FORCED fetch through the shared changes-summary gate
@@ -156,11 +157,21 @@ export function SessionChangesInner({
   // asked for, and an idle session's list stayed stale, so the next commit
   // met a spurious "working tree changed".
   const queuedLoadRef = useRef(false);
-  const loadAgainRef = useRef<() => void>(() => {});
-  const load = useCallback(async (opts?: { shared?: boolean }) => {
+  const queuedRunRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  const loadAgainRef = useRef<() => Promise<void>>(async () => {});
+  const load = useCallback(async (opts?: { shared?: boolean }): Promise<void> => {
     if (inFlightRef.current) {
-      if (!opts?.shared) queuedLoadRef.current = true;
-      return;
+      if (opts?.shared) return;
+      queuedLoadRef.current = true;
+      // A forced load waits for the run it queued (#5781): a revert's
+      // refresh returned at once, and focus went to a row the queued run
+      // then removed.
+      if (!queuedRunRef.current) {
+        let resolve!: () => void;
+        const promise = new Promise<void>((done) => { resolve = done; });
+        queuedRunRef.current = { promise, resolve };
+      }
+      return queuedRunRef.current.promise;
     }
     inFlightRef.current = true;
     setRefreshing(true);
@@ -186,11 +197,13 @@ export function SessionChangesInner({
       setLoaded(true);
       if (queuedLoadRef.current) {
         queuedLoadRef.current = false;
-        loadAgainRef.current();
+        const queued = queuedRunRef.current;
+        queuedRunRef.current = null;
+        void loadAgainRef.current().finally(() => queued?.resolve());
       }
     }
   }, [projectRoot]);
-  loadAgainRef.current = () => void load();
+  loadAgainRef.current = () => load();
 
   // Let a host (the Coding Desk) compare this panel's snapshot with its own.
   // Only a SUCCESSFUL load is a snapshot: the initial `[]` before the first
@@ -737,7 +750,8 @@ export function SessionChangesInner({
         {/* Transient action failures are dismissable */}
         {checkpointMessage && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
-            <span className="min-w-0 truncate" title={checkpointMessage}>{checkpointMessage}</span>
+            {/* Wrapped, not cut (#5781): "Kept …" at the end was the part that mattered. */}
+            <span className="min-w-0 break-words">{checkpointMessage}</span>
             <IconButton
               icon="ph:x-bold"
               size="xs"
@@ -750,12 +764,14 @@ export function SessionChangesInner({
 
         {shownError && (
           <div
-            role="alert"
+            // An alert when it happens, not again on every return to the
+            // tab (#5781): a stored commit error remounted as a new alert.
+            role={shownError !== errorAtMount ? "alert" : undefined}
             className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0" />
-              <span className="min-w-0 truncate" title={`${shownError.action}: ${shownError.message}`}>
+              <span className="min-w-0 break-words">
                 {shownError.action}: {shownError.message}
               </span>
             </span>

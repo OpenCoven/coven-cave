@@ -317,10 +317,10 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.keyboard.press("Escape");
 
     // Closing the active tab lands on its neighbour; closing the last empties the strip.
-    await tabs.getByRole("button", { name: "Close flux.ts" }).click();
+    await tabs.locator('.code-tabs__close[title="Close flux.ts"]').click();
     await expect(tabs.getByRole("tab")).toHaveCount(1);
     await expect(viewerName).toHaveText("README.md");
-    await tabs.getByRole("button", { name: "Close README.md" }).click();
+    await tabs.locator('.code-tabs__close[title="Close README.md"]').click();
     await expect(page.getByTestId("code-open-file-tabs")).toHaveCount(0);
   });
 
@@ -423,7 +423,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const taller = page.getByRole("button", { name: "Taller" });
     await expect(taller).toHaveAttribute("aria-pressed", "false");
     await taller.click();
-    await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(taller, "one name, the state in aria-pressed (#5781)").toHaveAttribute("aria-pressed", "true");
     await expect(grip).toHaveAttribute("aria-valuenow", "460");
 
     // Closing never costs height (#5729): the drawer used to re-clamp against
@@ -433,7 +433,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.waitForTimeout(600);
     await page.getByRole("button", { name: "Open the terminal drawer" }).click();
     await expect(grip).toHaveAttribute("aria-valuenow", "460");
-    await expect(page.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "true");
 
     // Remembered on this device. (A plain reload lands on the workspace's
     // default mode — the ?mode= idiom strips itself — so re-enter the desk.)
@@ -581,7 +581,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const paneBar = page.locator(".code-terminal-workspace__bar");
     await expect(paneBar.getByRole("button", { name: "Taller" })).toBeVisible();
     await paneBar.getByRole("button", { name: "Taller" }).click();
-    await expect(paneBar.getByRole("button", { name: "Shorter" })).toHaveAttribute("aria-pressed", "true");
+    await expect(paneBar.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "true");
 
     // Even at its tallest, the drawer leaves the columns their share of the
     // space they split, and nothing in the columns paints over the pane bar —
@@ -591,7 +591,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
       drawer: document.querySelector('[data-testid="code-terminal-drawer"]')?.getBoundingClientRect().height ?? 0,
     }));
     expect(split.body).toBeGreaterThanOrEqual(Math.floor((split.body + split.drawer) * 0.3) - 1);
-    await paneBar.getByRole("button", { name: "Shorter" }).click();
+    await paneBar.getByRole("button", { name: "Taller" }).click();
     await expect(paneBar.getByRole("button", { name: "Taller" })).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -1203,7 +1203,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await tree.getByText("README.md", { exact: true }).click();
     await tree.getByText("flux.ts", { exact: true }).click();
     const tabs = page.getByTestId("code-open-file-tabs");
-    await tabs.getByRole("button", { name: "Close flux.ts" }).click();
+    await tabs.locator('.code-tabs__close[title="Close flux.ts"]').click();
     await expect(tabs.getByRole("tab", { name: /README\.md/ })).toBeFocused();
 
     // Sending keeps the field focused while the reply streams.
@@ -1267,7 +1267,7 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expectTabControlsPanel(page, fileTabs.getByRole("tab", { name: /flux\.ts/ }));
     // One tab stop for the strip: close buttons are clicked or reached by
     // Delete on the tab, which says so.
-    await expect(fileTabs.getByRole("button", { name: "Close flux.ts" })).toHaveAttribute("tabindex", "-1");
+    await expect(fileTabs.locator('.code-tabs__close[title="Close flux.ts"]')).toHaveAttribute("tabindex", "-1");
     await expect(fileTabs.getByRole("tab", { name: /flux\.ts/ })).toHaveAttribute("aria-keyshortcuts", "Delete");
 
     // Toggles keep one name; the state is in aria-checked / aria-pressed.
@@ -2835,6 +2835,225 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     const rail = page.getByTestId("code-review-rail");
     await rail.getByRole("button", { name: "Save patch checkpoint" }).click();
     await expect(rail.getByText(/Checkpoint saved, without one untracked file too large to keep: data\/big\.bin\./)).toBeVisible();
+  });
+
+  test("88. a session with no folder says so once, and a row without a root doesn't take the room down", async ({ page }) => {
+    const rootless = mkSession({ id: "s-rootless", title: "No folder session", project_root: "", updated_at: NEW_ISO, familiarWorkspace: false });
+    const broken = mkSession({ id: "s-broken", title: "Broken row", project_root: null, updated_at: OLD_ISO, familiarWorkspace: false });
+    await base(page, [NEWEST, rootless, broken, OLDER]);
+    const desk = await openDesk(page);
+    await expect(page.getByText(/couldn't finish loading/)).toHaveCount(0);
+    await page.getByRole("button", { name: /^All local/ }).click();
+    await page.locator("[data-code-session-id='s-rootless']").first().click();
+    await expect(desk.getByText("This session has no project folder")).toBeVisible();
+    await expect(desk.getByText(/Couldn't load/)).toHaveCount(0);
+    await expect(desk.getByTestId("code-workbench-tree")).toHaveCount(0);
+  });
+
+  test("89. a session whose folder is gone says so once, with Check again", async ({ page }) => {
+    const gone = mkSession({ ...NEWEST, id: "s-gone", title: "Gone worktree session", git: { ...(NEWEST as unknown as { git: object }).git, worktreeRoot: "/repo/alpha/.worktrees/gone" } });
+    await base(page, [gone, OLDER]);
+    await page.route("**/api/changes**", (route) => {
+      if (!(new URL(route.request().url()).searchParams.get("projectRoot") ?? "").includes("/gone")) return route.fallback();
+      return route.fulfill({ status: 404, json: { ok: false, error: "projectRoot does not exist", missingRoot: true } });
+    });
+    await page.goto("/?mode=code&session=s-gone", { waitUntil: "domcontentloaded" });
+    const desk = page.getByTestId("code-workbench");
+    await expect(desk.getByText("This session's folder is no longer on disk")).toBeVisible({ timeout: 30_000 });
+    await expect(desk.getByRole("button", { name: "Check again" })).toBeVisible();
+    await expect(desk.getByText(/Couldn't load/)).toHaveCount(0);
+  });
+
+  test("90. the viewer offers one Copy, and the rail's diff controls name their file", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const viewer = desk.locator(".code-room__viewer");
+    await expect(viewer.locator(".cave-syntax-block")).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Copy", exact: true })).toHaveCount(1);
+    await expect(viewer.locator(".cave-code-header")).toBeHidden();
+    const rail = page.getByTestId("code-review-rail");
+    await rail.locator('tr[data-grid-row="src/flux.ts"] button[aria-expanded]').first().click();
+    await expect(rail.getByRole("button", { name: "Copy src/flux.ts" })).toBeVisible();
+    await expect(rail.getByRole("button", { name: "Collapse src/flux.ts" })).toBeVisible();
+  });
+
+  test("91. each shortcut's Rebind and Unbind say which shortcut", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await page.getByRole("button", { name: "Shortcuts" }).click();
+    const dialog = page.getByRole("dialog");
+    const names = async (pattern: RegExp) => dialog.getByRole("button", { name: pattern }).evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+    const rebind = await names(/^Rebind /);
+    const unbind = await names(/^Unbind /);
+    expect(rebind.length).toBeGreaterThan(3);
+    expect(unbind.length, "every shortcut's Unbind is named for it").toBe(rebind.length);
+    expect(new Set(rebind).size, "every Rebind is distinct").toBe(rebind.length);
+    expect(new Set(unbind).size, "every Unbind is distinct").toBe(unbind.length);
+    await expect(dialog.getByRole("button", { name: /^Rebind/ }).first()).not.toHaveAttribute("aria-pressed", /.*/);
+  });
+
+  test("92. the tab strip owns only tabs, and the picker's listbox only options", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+    await expect(tabs.getByRole("button"), "close is the pointer's, out of the tablist").toHaveCount(0);
+    await page.locator(".code-picker__trigger").first().click();
+    await page.getByRole("combobox").fill("zz-no-such-session");
+    const listbox = page.getByRole("listbox", { name: "Sessions" });
+    await expect(page.getByText(/No session/).first()).toBeVisible();
+    await expect(listbox.getByRole("button")).toHaveCount(0);
+    await expect(listbox.getByText(/No session/)).toHaveCount(0);
+  });
+
+  test("93. the rail's resize grip says its range and its width", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const grip = page.getByRole("separator", { name: "Resize the review rail" });
+    await expect(grip).toHaveAttribute("aria-valuemin", "280");
+    const now = Number(await grip.getAttribute("aria-valuenow"));
+    const max = Number(await grip.getAttribute("aria-valuemax"));
+    expect(now).toBeGreaterThanOrEqual(280);
+    expect(max).toBeGreaterThanOrEqual(now);
+    // ArrowRight narrows the rail (it sits on the right), and the value follows.
+    await grip.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(async () => Number(await grip.getAttribute("aria-valuenow"))).toBeLessThan(now);
+  });
+
+  test("94. a failed save shows its whole reason once, and a save that landed late isn't a conflict", async ({ page }) => {
+    await base(page);
+    const reason = "the server refused the write because the volume is read-only right now; nothing was written";
+    let saveAnswer: "fail" | "ok" = "fail";
+    let disk = "// flux.ts\nexport const name = \"flux.ts\";\n";
+    let version = "v1";
+    await page.route("**/api/project-file**", (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        if (saveAnswer === "fail") return route.fulfill({ status: 500, json: { ok: false, error: reason } });
+        return route.fulfill({ json: { ok: true, size: 80, version: "v2" } });
+      }
+      const path = new URL(request.url()).searchParams.get("path") ?? "";
+      if (!path.endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content: disk, size: disk.length, version } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await desk.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// more");
+    await desk.getByRole("button", { name: "Save", exact: true }).click();
+    const row = desk.getByTestId("save-error");
+    await expect(row).toContainText(reason);
+    expect(await row.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), "not cut off").toBe(true);
+    await expect(desk.locator(".code-room__viewer [role=alert]"), "said once, by the announcer").toHaveCount(0);
+    // The save landed after all: the disk now holds the edit. A re-read
+    // settles the draft instead of calling the user's own write a conflict.
+    disk = `${disk}// more`;
+    version = "v2";
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await expect(desk.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+    await expect(desk.getByText(/changed on disk since you started editing/)).toHaveCount(0);
+  });
+
+  test("95. a file emptied by the agent shows as empty", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let content = "export const before = 1;\n";
+    await page.route("**/api/project-file**", (route) => {
+      const path = new URL(route.request().url()).searchParams.get("path") ?? "";
+      if (route.request().method() !== "GET" || !path.endsWith("flux.ts")) return route.fallback();
+      return route.fulfill({ json: { ok: true, kind: "text", content, size: content.length } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const viewer = desk.locator(".code-room__viewer");
+    await expect(viewer.getByText("export const before")).toBeVisible();
+    content = "";
+    fixture.current = [{ ...CHANGED_FILES[0], deletions: 1, insertions: 0, changeVersion: "300:300:0" }, CHANGED_FILES[1]];
+    await expect(viewer.getByText("export const before")).toHaveCount(0, { timeout: 20_000 });
+  });
+
+  test("96. with the viewer away, ⌘S never opens the browser's Save page", async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await base(page);
+    const steps = await openNarrowDesk(page);
+    await steps.getByRole("tab", { name: "Review" }).click();
+    await expect(page.locator(".code-room__viewer")).toHaveCount(0);
+    const prevented = await page.evaluate(() => {
+      const event = new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prevented).toBe(true);
+  });
+
+  test("97. before the daemon answers, the header says its state is unknown, not offline", async ({ page }) => {
+    await base(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    for (const pattern of ["**/api/daemon/status**", "**/api/daemon/connection**"]) {
+      await page.route(pattern, async (route) => {
+        await held;
+        return route.fallback();
+      });
+    }
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("workbench status unknown")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("workbench offline")).toHaveCount(0);
+    release();
+    await expect(page.getByText("workbench live")).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("98. when the open session leaves the list, the switch is announced", async ({ page }) => {
+    const list = { sessions: [NEWEST, OLDER] as unknown[] };
+    await base(page, list.sessions);
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: list.sessions } }));
+    await openDesk(page);
+    list.sessions = [OLDER];
+    await expect(page.locator("[aria-live]").filter({ hasText: /“Wire the flux capacitor” is no longer in the list\. Showing “Fix login retry”\./ })).toHaveCount(1, { timeout: 20_000 });
+  });
+
+  test("99. after a revert with a refresh already running, focus lands on the row that took its place", async ({ page }) => {
+    const fixture = { current: CHANGED_FILES as typeof CHANGED_FILES | "fail" };
+    await base(page, [NEWEST, OLDER], fixture);
+    let hold = false;
+    await page.route("**/api/changes**", async (route) => {
+      const url = new URL(route.request().url());
+      const listing = route.request().method() === "GET" && !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (listing && hold) await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (route.request().method() === "POST") {
+        fixture.current = [CHANGED_FILES[1]];
+        return route.fulfill({ json: { ok: true, reverted: "checkout", checkpointPath: "/x.patch" } });
+      }
+      return route.fallback();
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("button", { name: "Revert src/flux.ts" }).click();
+    hold = true;
+    // A refresh starts and is held, so the revert's own refresh queues.
+    await page.evaluate(() => window.dispatchEvent(new Event("cave:changes-refresh")));
+    await rail.getByRole("button", { name: "Confirm revert src/flux.ts" }).click();
+    await expect(rail.locator('tr[data-grid-row="src/flux.ts"]')).toHaveCount(0, { timeout: 15_000 });
+    await expect(rail.locator('tr[data-grid-row="src/retry.ts"] [data-grid-col="0"]'), "the row that took its place").toBeFocused();
+  });
+
+  test("100. a name stored decomposed still shows its change letter in the tree", async ({ page }) => {
+    const nfc = "src/café.ts";
+    await base(page, [NEWEST, OLDER], { current: [{ path: nfc, status: "modified", insertions: 1, deletions: 0, changeVersion: "1:1:1" }] as typeof CHANGED_FILES });
+    await page.route("**/api/project-tree**", (route) =>
+      route.fulfill({ json: { ok: true, entries: [{ name: "café.ts", path: `${WORK_ROOT}/src/café.ts`, isDir: false }] } }),
+    );
+    await openDesk(page);
+    const row = page.getByTestId("code-workbench-tree").getByRole("treeitem").first();
+    await expect(row.locator(".project-tree__status-letter")).toHaveText("M");
   });
 
   test("86. a conflicted file reads as conflicted", async ({ page }) => {

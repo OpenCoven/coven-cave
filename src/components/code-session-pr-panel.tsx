@@ -161,8 +161,10 @@ function StageStrip({ snapshot }: { snapshot: StageSnapshot }) {
                 {inner}
               </a>
             ) : (
-              <span className="flex items-center gap-1" title={step.detail} aria-label={step.detail}>
+              <span className="flex items-center gap-1" title={step.detail}>
                 {inner}
+                {/* The state as words (#5781): a label on a plain span isn't read. */}
+                {step.detail ? <span className="sr-only">{`, ${step.detail}`}</span> : null}
               </span>
             )}
           </span>
@@ -273,6 +275,8 @@ function ChecksSection({ state, onRetry }: { state: ChecksState; onRetry: () => 
               <>
                 <span aria-hidden className={`w-3 shrink-0 text-center ${v.cls}`}>{v.glyph}</span>
                 <span className="min-w-0 flex-1 truncate">{run.name}</span>
+                {/* Pass or fail as words, not only the glyph's colour (#5781). */}
+                <span className="sr-only">{`, ${(run.conclusion ?? run.status).replace(/_/g, " ")}`}</span>
                 {run.completedAt ? (
                   <span className="shrink-0 text-[var(--text-muted)]">{relativeTime(run.completedAt)}</span>
                 ) : null}
@@ -431,6 +435,8 @@ function ThreadsSection({
                     variant="ghost"
                     disabled={busyThread === thread.id}
                     onClick={() => toggleResolved(thread)}
+                    // One "Resolve" per thread, each named for its file (#5781).
+                    aria-label={`Resolve thread on ${thread.path ?? "the pull request"}`}
                   >
                     {busyThread === thread.id ? "…" : "Resolve"}
                   </Button>

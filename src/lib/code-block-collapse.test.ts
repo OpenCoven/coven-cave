@@ -41,4 +41,19 @@ function makeBtn() {
   assert.equal(btn.attrs["aria-label"], "Collapse code");
 }
 
+// A labelled block keeps its name through the toggle (#5781).
+{
+  const classes = new Set();
+  const wrap = {
+    classList: { toggle: (token) => (classes.has(token) ? (classes.delete(token), false) : (classes.add(token), true)) },
+    getAttribute: (name) => (name === "data-code-label" ? "src/flux.ts" : null),
+  };
+  const attrs = {};
+  const btn = { setAttribute: (name, value) => { attrs[name] = value; } };
+  toggleCodeBlockCollapse(wrap, btn);
+  assert.equal(attrs["aria-label"], "Expand src/flux.ts");
+  toggleCodeBlockCollapse(wrap, btn);
+  assert.equal(attrs["aria-label"], "Collapse src/flux.ts");
+}
+
 console.log("code-block-collapse.test.ts: ok");

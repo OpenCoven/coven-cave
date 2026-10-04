@@ -64,6 +64,7 @@ import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pen
 import type { SessionRow } from "@/lib/types";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMeasuredWidth } from "@/lib/use-measured-width";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
 // GitHub tabs, and github-view is a 3k-line surface (same split posture as
@@ -457,8 +458,13 @@ export function CodeView({
   // Land on the newest session so the surface is immediately useful; keep the
   // user's explicit pick as long as that session is still visible. Skipped
   // after an explicit Back (null) and on narrow mounts (list-first drill-in).
+  // The session that was open, so its leaving can be said (#5781): removed
+  // or archived elsewhere, it was swapped for another without a word.
+  const { announce } = useAnnouncer();
+  const lastSelectedRef = useRef<SessionRow | null>(null);
   useEffect(() => {
     if (selected) {
+      lastSelectedRef.current = selected;
       if (pendingNewIdRef.current === selected.id) pendingNewIdRef.current = null;
       return;
     }
@@ -466,8 +472,13 @@ export function CodeView({
     if (narrowLanding !== false) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
     const first = queue.sessions[0];
-    if (first) setSelectedId(first.id);
-  }, [narrowLanding, queue.sessions, selected, selectedId]);
+    if (!first) return;
+    const gone = lastSelectedRef.current;
+    if (gone && gone.id === selectedId) {
+      announce(`“${gone.title || gone.id}” is no longer in the list. Showing “${first.title || first.id}”.`);
+    }
+    setSelectedId(first.id);
+  }, [announce, narrowLanding, queue.sessions, selected, selectedId]);
 
   return (
     <div ref={roomRef} className="flex h-full min-h-0 flex-col">

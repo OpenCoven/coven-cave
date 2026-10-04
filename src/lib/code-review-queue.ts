@@ -139,7 +139,9 @@ function buildGroups(rows: readonly SessionRow[], mode: CodeQueueMode): GroupRec
 export function codeSessionEligibility(row: SessionRow): CodeSessionEligibility {
   if (row.archived_at) return { reviewable: false, reason: "archived" };
   if (row.generated) return { reviewable: false, reason: "generated" };
-  if (!row.project_root.trim()) return { reviewable: false, reason: "rootless" };
+  // A malformed row without a root is rootless too (#5781): reading `.trim()`
+  // of null took the whole Coding Desk down, whichever session was open.
+  if (!row.project_root?.trim()) return { reviewable: false, reason: "rootless" };
 
   const git = row.git;
   if (!git || !git.worktreeRoot?.trim()) {
