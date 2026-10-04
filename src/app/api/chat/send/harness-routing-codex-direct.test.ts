@@ -112,7 +112,9 @@ const codexShimSource = (version) => [
   `  frames.splice(1, 0, ...${JSON.stringify(reasoningFrames)});`,
   "  const bytes = Buffer.from(frames.map((frame) => JSON.stringify(frame)).join('\\n') + '\\n');",
   "  for (let i = 0; i < bytes.length; i += 7) process.stdout.write(bytes.subarray(i, i + 7));",
-  "  process.exit(0);",
+  // POSIX pipe writes can remain buffered. Preserve the seven-byte framing
+  // stress without exiting before the terminal tool/turn frames are flushed.
+  "  return process.stdout.end(() => process.exit(0));",
   "}",
   "process.exit(9);",
 ].join("\n");

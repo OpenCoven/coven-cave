@@ -658,6 +658,8 @@ final class ChatThread: Identifiable, Hashable {
                         $0.isError = false
                         $0.streaming = true
                         $0.activity = nil
+                        $0.runtimeIdentity = nil
+                        $0.reasoningBlocks = nil
                     }
                 }
 
@@ -1490,6 +1492,8 @@ final class ChatThread: Identifiable, Hashable {
             $0.serverTurnId = nil
             $0.toolOutputReference = nil
             $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil
+            $0.runtimeIdentity = nil
+            $0.reasoningBlocks = nil
         }
         let retryPlaceholder = messages[idx]
         updatedAt = Date()

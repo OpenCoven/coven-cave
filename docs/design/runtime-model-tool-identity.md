@@ -30,6 +30,15 @@ suites, 204 tests pass and one opt-in TCP case is skipped. The initial unsigned
 run failed Keychain access; all 14 tool-output tests pass with simulator ad-hoc
 signing and unchanged source. The owned simulator is shut down.
 
+The [subsequent review packet](evidence/runtime-activity-curation-review-2026-10-04.json)
+records a native retry fix: resetting a response now clears the previous
+attempt's identity and reasoning summaries. The regression fails before the
+fix; 30 focused simulator tests and all 106 mobile contract files pass after it,
+including restoration of the original reply when retry authority is revoked.
+The Codex fixture also waits for stdout to flush before exiting, preserving
+seven-byte framing and terminal assertions. Its local integration test passes;
+the Linux hosted API failure still requires confirmation on the updated head.
+
 Desktop startup isolation, packaged clients, physical-device and human
 accessibility acceptance, the remaining providers and signed admission gates
 remain open. Prior evidence below retains its own build and limitations.
