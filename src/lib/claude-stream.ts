@@ -3,7 +3,7 @@ import { cleanModelId } from "./chat-model-state.ts";
 
 export type ClaudeMessageEvent =
   | { kind: "reasoning"; id: string; phase: "complete" | "unavailable"; text?: string; unavailableReason?: "provider-withheld" }
-  | { kind: "model"; model: string }
+  | { kind: "model"; model: string | null }
   | { kind: "text"; text: string }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; toolUseId: string; content: unknown; isError: boolean };
@@ -66,8 +66,11 @@ export function parseClaudeMessageEnvelope(
 
   const events: ClaudeMessageEvent[] = [];
   if (envelope.type === profile.eventTypes.assistant) {
-    const model = cleanModelId(message?.model);
-    if (model) events.push({ kind: "model", model });
+    // Missing reports preserve the prior observation; explicit invalid reports
+    // must reach the identity reducer so they cannot retain stale confirmation.
+    if (message?.model !== undefined) {
+      events.push({ kind: "model", model: cleanModelId(message.model) });
+    }
     for (const [index, value] of content.entries()) {
       const block = record(value);
       if (block?.type === "thinking" || block?.type === "redacted_thinking") {

@@ -22,7 +22,15 @@ assert.deepEqual(parseClaudeMessageEnvelope({ type: "user", message: {
 } }, v2), [], "user/tool messages cannot assert a runtime model");
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "assistant", message: {
   model: { id: "forged-model" }, content: [],
-} }, v2), [], "malformed model metadata is not promoted into identity");
+} }, v2), [{ kind: "model", model: null }], "malformed model metadata invalidates earlier identity");
+for (const model of [null, "", 42, [], {}]) {
+  assert.deepEqual(parseClaudeMessageEnvelope({ type: "assistant", message: {
+    model, content: [{ type: "text", text: "Answer" }],
+  } }, v2), [{ kind: "model", model: null }, { kind: "text", text: "Answer" }]);
+}
+assert.deepEqual(parseClaudeMessageEnvelope({ type: "assistant", message: {
+  content: [],
+} }, v2), [], "an absent model field leaves earlier identity intact");
 
 for (const profile of CLAUDE_COMPATIBILITY_PROFILES) {
   assert.deepEqual(

@@ -110,6 +110,7 @@ const FRAMES = [
 const shim = [
   "const frames = " + JSON.stringify(FRAMES) + ";",
   "if (process.env.CLAUDE_TOOL_TEST_MODE === 'unknown-model') frames.find((frame) => frame.message?.id === 'msg_01Second').message.model = 'unknown';",
+  "if (process.env.CLAUDE_TOOL_TEST_MODE?.startsWith('invalid-model:')) frames.find((frame) => frame.message?.id === 'msg_01Second').message.model = JSON.parse(process.env.CLAUDE_TOOL_TEST_MODE.slice(14));",
   "if (process.argv[2] === 'run' && process.argv[3] === 'claude') {",
   "  if (process.env.CLAUDE_TOOL_TEST_MODE === 'protocol-drift-hooks') {",
   "    const sessionId = 'protocol-drift-hook-session';",
@@ -244,22 +245,24 @@ try {
   assert.doesNotMatch(assistantText, /rate_limit|utilization/i, "the notice never leaks into the transcript");
 
 
-  process.env.CLAUDE_TOOL_TEST_MODE = "unknown-model";
-  const unknownModel = await readSse(await POST(new Request("http://localhost/api/chat/send", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "sage", prompt: "model fixture", projectRoot: familiarWorkspace }),
-  })));
-  const unknownDone = unknownModel.events.findLast((event) => event.kind === "done");
-  assert.equal(unknownDone.responseMetadata.runtimeIdentity.model, null,
-    "a later unavailable native report clears the earlier assistant model");
-  assert.equal(unknownDone.responseMetadata.confirmedModel, undefined);
-  const unknownReports = unknownModel.events.filter((event) => event.kind === "response_metadata")
-    .map((event) => event.responseMetadata.runtimeIdentity.model);
-  assert.ok(unknownReports.includes("claude-opus-5"), "the earlier report is observed before invalidation");
-  assert.equal(unknownReports.at(-1), null);
-  const unknownSaved = (await loadConversation(unknownDone.sessionId)).turns.at(-1);
-  assert.deepEqual(unknownSaved.responseMetadata.runtimeIdentity, unknownDone.responseMetadata.runtimeIdentity);
-  assert.equal(unknownSaved.responseMetadata.confirmedModel, undefined);
+  for (const mode of ["unknown-model", ...[null, "", 42, {}, []].map((value) => `invalid-model:${JSON.stringify(value)}`)]) {
+    process.env.CLAUDE_TOOL_TEST_MODE = mode;
+    const unknownModel = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "sage", prompt: "model fixture", projectRoot: familiarWorkspace }),
+    })));
+    const unknownDone = unknownModel.events.findLast((event) => event.kind === "done");
+    assert.equal(unknownDone.responseMetadata.runtimeIdentity.model, null,
+      "a later unavailable native report clears the earlier assistant model");
+    assert.equal(unknownDone.responseMetadata.confirmedModel, undefined);
+    const unknownReports = unknownModel.events.filter((event) => event.kind === "response_metadata")
+      .map((event) => event.responseMetadata.runtimeIdentity.model);
+    assert.ok(unknownReports.includes("claude-opus-5"), "the earlier report is observed before invalidation");
+    assert.equal(unknownReports.at(-1), null);
+    const unknownSaved = (await loadConversation(unknownDone.sessionId)).turns.at(-1);
+    assert.deepEqual(unknownSaved.responseMetadata.runtimeIdentity, unknownDone.responseMetadata.runtimeIdentity);
+    assert.equal(unknownSaved.responseMetadata.confirmedModel, undefined);
+  }
 
   process.env.CLAUDE_TOOL_TEST_MODE = "reasoning";
   const summaryRun = await readSse(await POST(new Request("http://localhost/api/chat/send", {
