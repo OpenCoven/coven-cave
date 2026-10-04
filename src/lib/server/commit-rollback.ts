@@ -11,13 +11,21 @@
  */
 
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
 
-function git(repoRoot: string, args: string[]) {
-  return execFileAsync("git", args, { windowsHide: true, cwd: repoRoot, timeout: GIT_TIMEOUT_MS });
+function git(repoRoot: string, args: string[], env?: Record<string, string>) {
+  return execFileAsync("git", args, {
+    windowsHide: true,
+    cwd: repoRoot,
+    timeout: GIT_TIMEOUT_MS,
+    ...(env ? { env: { ...process.env, ...env } } : {}),
+  });
 }
 
 export type CommitStart = {
@@ -38,14 +46,81 @@ export async function captureCommitStart(repoRoot: string, branch: string, index
 
 /**
  * Put HEAD and the index back as `start` had them. A branch the route made
- * (`created`) is checked out of and deleted, but only while it still points
- * at the commit it was made on: a branch that gained a commit is kept.
+ * (`created`) is checked out of and deleted, but only while HEAD is still
+ * where it started (#5795): another process's commit on that branch keeps
+ * the branch, and the checkout stays on it, since switching away would take
+ * that commit's files out of the worktree. `start.index` null leaves the
+ * index alone, for a commit made from a private index.
  */
 export async function rollbackCommitStart(repoRoot: string, start: CommitStart, created: string | null): Promise<void> {
   if (created) {
-    const back = start.branch === "HEAD" && start.oid ? ["checkout", "--detach", start.oid] : ["checkout", start.branch];
-    await git(repoRoot, back).catch(() => {});
-    if (start.oid) await git(repoRoot, ["update-ref", "-d", `refs/heads/${created}`, start.oid]).catch(() => {});
+    const head = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).then(({ stdout }) => stdout.trim(), () => null);
+    if (head === start.oid) {
+      const back = start.branch === "HEAD" && start.oid ? ["checkout", "--detach", start.oid] : ["checkout", start.branch];
+      await git(repoRoot, back).catch(() => {});
+      if (start.oid) await git(repoRoot, ["update-ref", "-d", `refs/heads/${created}`, start.oid]).catch(() => {});
+    }
   }
   if (start.index) await git(repoRoot, ["read-tree", start.index]).catch(() => {});
+}
+
+/**
+ * A private copy of the index for one desk commit (#5795). The desk stages
+ * the reviewed files here and commits from it, so a file another process
+ * stages in the real index while the commit runs (its hooks take seconds)
+ * never joins it. The copy keeps the index's own time, a second early, as
+ * the checkpoint's does (#5781): a fresh copy's newer time would make a
+ * same-size edit from the same second look unchanged.
+ */
+export async function createPrivateIndex(repoRoot: string): Promise<{ env: Record<string, string>; dispose: () => void }> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-commit-"));
+  const index = path.join(dir, "index");
+  const realIndex = path.resolve(repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
+  if (fs.existsSync(/* turbopackIgnore: true */ realIndex)) {
+    const { atime, mtimeMs } = fs.statSync(/* turbopackIgnore: true */ realIndex);
+    fs.copyFileSync(/* turbopackIgnore: true */ realIndex, index);
+    fs.utimesSync(index, atime, new Date(mtimeMs - 1000));
+  }
+  return {
+    env: { GIT_INDEX_FILE: index },
+    dispose: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+/** A commit message's subject as `git log --format=%s` prints it: the first
+ *  paragraph, its lines joined by single spaces. */
+export function commitSubject(message: string): string {
+  const lines = message.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim());
+  const start = lines.findIndex((line) => line !== "");
+  if (start < 0) return "";
+  const end = lines.indexOf("", start);
+  return lines.slice(start, end < 0 ? undefined : end).join(" ");
+}
+
+/**
+ * The desk's own commit, when a `git commit` that reported failure (a hook
+ * timed out or failed after it) still made one (#5795). HEAD moving isn't
+ * proof: an agent committing in the session's terminal moves it too. The
+ * commit is the desk's only when its parent is where the desk started and,
+ * with a private index, its tree is that index's tree; without one, its
+ * subject is the desk's message.
+ */
+export async function deskCommitLanded(
+  repoRoot: string,
+  start: CommitStart,
+  expect: { indexEnv?: Record<string, string>; message: string },
+): Promise<string | null> {
+  const head = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).then(({ stdout }) => stdout.trim(), () => null);
+  if (!head || head === start.oid) return null;
+  const parent = await git(repoRoot, ["rev-parse", "--verify", "--quiet", `${head}^1`]).then(({ stdout }) => stdout.trim(), () => null);
+  if (parent !== start.oid) return null;
+  if (expect.indexEnv) {
+    const [headTree, indexTree] = await Promise.all([
+      git(repoRoot, ["rev-parse", `${head}^{tree}`]).then(({ stdout }) => stdout.trim(), () => null),
+      git(repoRoot, ["write-tree"], expect.indexEnv).then(({ stdout }) => stdout.trim(), () => null),
+    ]);
+    return headTree && headTree === indexTree ? head : null;
+  }
+  const subject = await git(repoRoot, ["log", "-1", "--format=%s", head]).then(({ stdout }) => stdout.trim(), () => null);
+  return subject === commitSubject(expect.message) ? head : null;
 }
