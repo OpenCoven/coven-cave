@@ -27,6 +27,7 @@ import {
 } from "@/lib/server/checkpoint-restore";
 import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
 import { captureCommitStart, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "@/lib/server/commit-rollback";
+import { prCreateArgs, resolvePrTarget } from "@/lib/github-pr-target";
 
 export const dynamic = "force-dynamic";
 
@@ -748,6 +749,8 @@ export async function POST(req: NextRequest) {
     projectRoot?: string;
     path?: string;
     confirmUntracked?: boolean;
+    /** The reverted row's version, as the user reviewed it (#5795). */
+    expectedChangeVersion?: string;
     action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
     checkpoint?: string;
     message?: string;
@@ -1088,12 +1091,16 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
       }
+      // In origin's parent when origin is a fork, from origin's branch, and
+      // always named (#5795): left to itself, gh picked the fork, or an
+      // `upstream` remote where the branch was never pushed.
+      const target = await resolvePrTarget(root.repoRoot);
+      const prArgs = prCreateArgs(target, { base: def, branch, title, body: prBody });
+      const base = prArgs[prArgs.indexOf("--base") + 1]!;
       try {
-        const { stdout } = await ghCli(root.repoRoot, [
-          "pr", "create", "--base", def, "--head", branch, "--title", title, "--body", prBody,
-        ]);
+        const { stdout } = await ghCli(root.repoRoot, prArgs);
         const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
-        return NextResponse.json({ ok: true, url, branch, base: def });
+        return NextResponse.json({ ok: true, url, branch, base });
       } catch (err) {
         const e = err as NodeJS.ErrnoException & { stderr?: string };
         if (e.code === "ENOENT") {
@@ -1102,7 +1109,7 @@ export async function POST(req: NextRequest) {
         const detail = stderrOf(err);
         // gh exits non-zero when a PR already exists; its message includes the URL.
         const existing = detail.match(PR_URL_RE);
-        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base: def, existed: true });
+        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base, existed: true });
         return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
       }
       } catch (err) {
@@ -1200,6 +1207,24 @@ export async function POST(req: NextRequest) {
   const entry = await changedEntry(root.repoRoot, body.path);
   if (!entry) return pathNotAllowed();
   const from = entry.renamedFrom && resolveContainedFile(root.repoRoot, entry.renamedFrom) ? entry.renamedFrom : undefined;
+  // The file as the desk decides on it (#5795): the version the user reviewed
+  // when the client sends it, and again after the safety checkpoint, which
+  // can take a while. A write that landed meanwhile was reverted, and was in
+  // no checkpoint.
+  const stamp = async () => {
+    const files: ChangedFile[] = [body.path as string, ...(from ? [from] : [])].map((p) => ({ path: p, status: entry.status }));
+    await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+    return files.map((file) => file.changeVersion ?? "").join("\n");
+  };
+  const changedSinceReview = () =>
+    NextResponse.json(
+      { ok: false, stale: true, error: "this file changed since you reviewed it; nothing was reverted. Review it again" },
+      { status: 409 },
+    );
+  const decided = await stamp();
+  if (typeof body.expectedChangeVersion === "string" && body.expectedChangeVersion !== decided.split("\n")[0]) {
+    return changedSinceReview();
+  }
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
@@ -1268,6 +1293,7 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
+    if ((await stamp()) !== decided) return changedSinceReview();
 
     switch (plan.action) {
       case "checkout":

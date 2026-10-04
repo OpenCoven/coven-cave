@@ -446,6 +446,7 @@ export const SUITES = {
     "src/lib/session-pr-status.test.ts",
     "src/lib/merged-chat-auto-archive.test.ts",
     "src/lib/branch-pr-context.test.ts",
+    "src/lib/github-pr-target.test.ts",
     "src/components/chat-list-pr-badge.test.ts",
     "src/components/chat-split-host.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",

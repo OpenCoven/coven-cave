@@ -489,6 +489,9 @@ export function SessionChangesInner({
           // confirm step the user just clicked through is the explicit
           // consent for that.
           confirmUntracked: file.status === "untracked" || file.status === "added",
+          // The version the user reviewed (#5795): a file the agent wrote
+          // since is refused, not reverted.
+          ...(file.changeVersion ? { expectedChangeVersion: file.changeVersion } : {}),
         });
         setDiffs((prev) => {
           const next = { ...prev };
@@ -505,6 +508,8 @@ export function SessionChangesInner({
         await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
         setActionError({ action: "Couldn't revert the file", message: err instanceof Error ? err.message : String(err) });
+        // The row may be stale: another tab committed it, or the agent wrote it.
+        void load();
       } finally {
         setRevertingPath(null);
         setRevertFocus({ path: file.path, index: Math.max(0, index) });

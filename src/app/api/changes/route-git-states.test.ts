@@ -513,4 +513,20 @@ function withRemote(name, { setHead = true } = {}) {
   assert.equal(remoteTip("trunk"), before, "the remote's default is untouched");
 }
 
+// ── 26. A revert holds to the version the user reviewed (#5795) ────────────
+{
+  const { dir, git } = repo();
+  writeFileSync(path.join(dir, "f.txt"), "agent v1\n");
+  const [row] = (await get({ projectRoot: dir })).json.files;
+  writeFileSync(path.join(dir, "f.txt"), "agent v2, written after the review\n");
+  const stale = await post({ projectRoot: dir, path: "f.txt", expectedChangeVersion: row.changeVersion });
+  assert.equal(stale.status, 409, JSON.stringify(stale.json));
+  assert.equal(stale.json.stale, true);
+  assert.equal(readFileSync(path.join(dir, "f.txt"), "utf8"), "agent v2, written after the review\n", "nothing was reverted");
+  const [fresh] = (await get({ projectRoot: dir })).json.files;
+  const revert = await post({ projectRoot: dir, path: "f.txt", expectedChangeVersion: fresh.changeVersion });
+  assert.equal(revert.status, 200, JSON.stringify(revert.json));
+  assert.equal(git("status", "--porcelain"), "");
+}
+
 console.log("changes route git states: ok");

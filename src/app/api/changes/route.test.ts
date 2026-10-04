@@ -16,6 +16,13 @@ assert.match(
 for (const command of ['"checkout", "HEAD", "--", body.path', '"rm", "-f", "--", body.path', '"clean", "-f", "--", body.path', '"ls-files", "--error-unmatch", "--", relPath']) {
   assert.ok(source.includes(`["--literal-pathspecs", ${command}]`), `literal pathspecs for ${command}`);
 }
+// A revert re-stamps its file after the safety checkpoint (#5795): a write
+// that landed while it was taken was reverted and in no checkpoint.
+assert.match(source, /checkpointPath = \(await checkpointChanges\(root\.repoRoot\)\)\.path;[\s\S]{0,400}if \(\(await stamp\(\)\) !== decided\) return changedSinceReview\(\);\s*switch \(plan\.action\)/);
+// Create PR names its repository and head (#5795): gh picked a fork, or an
+// upstream remote where the branch was never pushed.
+assert.match(source, /const target = await resolvePrTarget\(root\.repoRoot\);\s*const prArgs = prCreateArgs\(target, \{ base: def, branch, title, body: prBody \}\);/);
+assert.match(source, /await ghCli\(root\.repoRoot, prArgs\)/);
 // A refused or failed commit rolls back staging and any branch it made (#5756).
 assert.match(source, /: await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\);/);
 // A reviewed commit is built in a private index, so the rollback has no
