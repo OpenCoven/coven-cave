@@ -24,7 +24,7 @@ function git(repoRoot: string, args: string[], env?: Record<string, string>) {
     windowsHide: true,
     cwd: repoRoot,
     timeout: GIT_TIMEOUT_MS,
-    ...(env ? { env: { ...process.env, ...env } } : {}),
+    env: env ? { ...process.env, ...env } : process.env,
   });
 }
 

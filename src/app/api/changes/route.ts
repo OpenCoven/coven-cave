@@ -78,7 +78,7 @@ function git(cwd: string, args: string[], env?: Record<string, string>): Promise
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
-    ...(env ? { env: { ...process.env, ...env } } : {}),
+    env: env ? { ...process.env, ...env } : process.env,
   });
 }
 
@@ -91,7 +91,7 @@ function gitWithInput(cwd: string, args: string[], input: string, env?: Record<s
     cwd,
     timeout: GIT_TIMEOUT_MS * 3,
     maxBuffer: MAX_GIT_BUFFER,
-    ...(env ? { env: { ...process.env, ...env } } : {}),
+    env: env ? { ...process.env, ...env } : process.env,
   });
   pending.child.stdin?.end(input);
   return pending;
@@ -120,7 +120,7 @@ function gitLong(cwd: string, args: string[], env?: Record<string, string>): Pro
     cwd,
     timeout: NET_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
-    ...(env ? { env: { ...process.env, ...env } } : {}),
+    env: env ? { ...process.env, ...env } : process.env,
   });
 }
 /** Run the GitHub CLI (argument array, no shell) for PR creation. */
