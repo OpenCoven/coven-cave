@@ -234,6 +234,31 @@ jobs:
       - run: brew install xcodegen
       - run: bash scripts/ios-xcodegen.sh
 
+      - name: Prepare the native TCP fixture
+        run: |
+          set -euo pipefail
+          # Keep the production build out of the booted simulator's memory budget.
+          # Report resource use while it runs so a slow runner leaves evidence.
+          /usr/bin/time -l pnpm build &
+          fixture_build_pid=$!
+          while kill -0 "$fixture_build_pid" 2>/dev/null; do
+            date -u
+            vm_stat
+            sysctl vm.swapusage
+            ps -axo pid,ppid,%cpu,rss,comm | sort -k4,4nr | sed -n '1,12p'
+            sleep 60
+          done
+          wait "$fixture_build_pid"
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { mkdirSync, appendFileSync } from 'node:fs';
+          import path from 'node:path';
+          import { installPinnedRelease } from './scripts/coven-automations-release-canary.ts';
+          const prefix = path.join(process.env.RUNNER_TEMP, 'native-activity-coven');
+          mkdirSync(prefix);
+          const binary = installPinnedRelease(prefix);
+          appendFileSync(process.env.GITHUB_ENV, `COVEN_BIN=${binary}\n`);
+          NODE
+
       - name: Compile the iOS app
         working-directory: apps/ios/CovenCave
         run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
@@ -326,20 +351,6 @@ jobs:
       # died without leaving a bad bundle (a build error, a lost simulator, a
       # cancelled step) still fails the job. All three couplings are pinned by
       # scripts/ios-build-ci.test.mjs.
-      - name: Prepare the native TCP fixture
-        run: |
-          set -euo pipefail
-          pnpm build
-          node --experimental-strip-types --input-type=module <<'NODE'
-          import { mkdirSync, appendFileSync } from 'node:fs';
-          import path from 'node:path';
-          import { installPinnedRelease } from './scripts/coven-automations-release-canary.ts';
-          const prefix = path.join(process.env.RUNNER_TEMP, 'native-activity-coven');
-          mkdirSync(prefix);
-          const binary = installPinnedRelease(prefix);
-          appendFileSync(process.env.GITHUB_ENV, `COVEN_BIN=${binary}\n`);
-          NODE
-
       - name: Run the iOS XCTest suite
         id: xctest
         continue-on-error: true
