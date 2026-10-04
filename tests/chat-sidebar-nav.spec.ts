@@ -600,7 +600,7 @@ test.describe("chat threads rail", () => {
     const timestamp = (await attentionRow.locator(".cnav__time").textContent())?.trim();
     expect(timestamp).toBeTruthy();
     await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Blocked$`),
+      new RegExp(`^Project alpha\\s+${timestamp}\\s+Approve release checklist\\s+Runtime: Codex\\s+Blocked$`),
     );
 
     await narrowChatRail(page);
@@ -623,7 +623,7 @@ test.describe("chat threads rail", () => {
     expect(labelState.width).toBeGreaterThan(0);
     expect(labelState.height).toBeGreaterThan(0);
     await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Blocked$`),
+      new RegExp(`^Project alpha\\s+${timestamp}\\s+Approve release checklist\\s+Runtime: Codex\\s+Blocked$`),
     );
   });
 

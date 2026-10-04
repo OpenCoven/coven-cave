@@ -201,7 +201,7 @@ function sessionWorkBranch(session: SessionRow): string | null {
 }
 
 function sessionProjectName(session: SessionRow, project?: { name: string } | null): string {
-  return project?.name || session.project_root.split(/[\\/]/).filter(Boolean).pop() || "No project";
+  return project?.name || session.project_root?.split(/[\\/]/).filter(Boolean).pop() || "No project";
 }
 
 function ThreadSummary({ session, title, project, prStatus, now, attentionLabel, broadcast, confirming = false }: {
@@ -220,7 +220,7 @@ function ThreadSummary({ session, title, project, prStatus, now, attentionLabel,
   return (
     <span className="cnav__thread-copy">
       <span className="cnav__thread-overline">
-        <span className="cnav__thread-project" title={session.project_root || undefined}>
+        <span className="cnav__thread-project" title={session.project_root || undefined} aria-hidden={Boolean(project)}>
           {sessionProjectName(session, project)}
         </span>
         {broadcast ? (
