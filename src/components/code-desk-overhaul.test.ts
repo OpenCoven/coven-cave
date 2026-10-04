@@ -367,8 +367,8 @@ assert.match(panelSrc, /err instanceof ChangesRequestError && err\.stale[\s\S]{0
 assert.match(drawerMed, /const \[started, setStarted\] = useState\(\(\) => open \|\| terminalStarted\(sessionId\)\);/, "no shell until the drawer opens");
 assert.match(drawerMed, /\{started \? \(\s*<CodeTerminalWorkspace/, "the workspace mounts once started");
 assert.equal((terminalMed.match(/else for \(const dispose of made\.splice\(0\)\.reverse\(\)\) dispose\(\);/g) ?? []).length, 2, "both startup paths dispose a partial start");
-// Through the owner's stop, re-run once the shell exists: this view never
-// stops a shell on its own (bottom-terminal-ws-bridge.test.ts).
+// Ordinary desk shells remain owned by the workspace; temporary auth shells
+// have their own lifetime (bottom-terminal-lifetime.behavior.test.tsx).
 assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*return;/, "a desktop shell started for a closed pane is stopped");
 assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);/, "a browser shell connected for a closed pane is killed");
 // 12. In-flight commit and Create PR live in the store.
@@ -381,7 +381,7 @@ assert.equal((prPanelSrc.match(/signal: AbortSignal\.timeout\(GITHUB_ACTION_TIME
 
 // #5775 review: a closed pane's bridge outlives a mid-connect teardown so the
 // kill can reach its shell; the checks read times out; one request at a time.
-assert.match(terminalMed, /if \(!connected && terminalThreadStopped\(threadId\)\) return;\s*bridge\.dispose\(\);/, "a closed pane's bridge waits for its socket");
+assert.match(terminalMed, /if \(!connected && \(disposeOnUnmount \|\| terminalThreadStopped\(threadId\)\)\) return;\s*bridge\.dispose\(\);/, "a closed pane or temporary terminal keeps its bridge until the socket can stop its shell");
 assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);\s*return;/, "then kills the shell and lets go");
 assert.match(prPanelSrc, /cache: "no-store",\s*signal: AbortSignal\.timeout\(CHECKS_TIMEOUT_MS\),/, "the checks read times out into an error with Retry");
 assert.match(panelSrc, /const requestPending = outbound\.pending !== null;/);
