@@ -529,4 +529,20 @@ function withRemote(name, { setHead = true } = {}) {
   assert.equal(git("status", "--porcelain"), "");
 }
 
+// ── 27. Offline, an origin/HEAD naming a branch that's gone isn't trusted ──
+// The remote can't be asked, origin/HEAD still names master, and master is
+// gone: the local main is the default, so the commit gets its own branch.
+{
+  const { dir, git, bare } = withRemote("master");
+  git("branch", "-q", "-m", "master", "main");
+  git("update-ref", "-d", "refs/remotes/origin/master");
+  rmSync(bare, { recursive: true, force: true });
+  assert.equal(git("symbolic-ref", "refs/remotes/origin/HEAD").trim(), "refs/remotes/origin/master");
+  writeFileSync(path.join(dir, "f.txt"), "offline change\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Offline change", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "main");
+  assert.equal(commit.json.branchCreated, true);
+}
+
 console.log("changes route git states: ok");
