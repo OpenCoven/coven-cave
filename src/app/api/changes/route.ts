@@ -160,11 +160,40 @@ async function worktreeName(repoRoot: string): Promise<string | null> {
 }
 
 /** The repo's default branch: origin/HEAD when known, else main/master, else main. */
+const REMOTE_HEAD_TTL_MS = 5 * 60_000;
+const REMOTE_HEAD_FAILED_TTL_MS = 30_000;
+const remoteHeadCache = new Map<string, { branch: string | null; at: number }>();
+
+/** The remote's own default branch (#5795). `origin/HEAD` is written once, at
+ *  clone: it goes stale when the default is renamed, and a repository made
+ *  with `git init` and pushed has none, so the desk committed on the real
+ *  default and Create PR pushed to it. Null with no `origin`, or when it
+ *  can't be asked without a prompt. */
+async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
+  const url = await git(repoRoot, ["remote", "get-url", "origin"]).then(({ stdout }) => stdout.trim(), () => "");
+  if (!url) return null;
+  const key = `${repoRoot}\0${url}`;
+  const hit = remoteHeadCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.branch ? REMOTE_HEAD_TTL_MS : REMOTE_HEAD_FAILED_TTL_MS)) return hit.branch;
+  const branch = await execFileAsync("git", ["ls-remote", "--symref", "origin", "HEAD"], {
+    windowsHide: true,
+    cwd: repoRoot,
+    timeout: GIT_TIMEOUT_MS,
+    maxBuffer: MAX_GIT_BUFFER,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  }).then(({ stdout }) => /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(stdout)?.[1] ?? null, () => null);
+  remoteHeadCache.set(key, { branch, at: Date.now() });
+  return branch;
+}
+
 async function defaultBranch(repoRoot: string): Promise<string> {
+  const remote = await remoteHeadBranch(repoRoot);
+  if (remote) return remote;
   try {
     const { stdout } = await git(repoRoot, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
     const m = stdout.trim().match(/refs\/remotes\/origin\/(.+)$/);
-    if (m) return m[1];
+    // Only while what it names still exists (#5795).
+    if (m && (await refExists(repoRoot, `refs/remotes/origin/${m[1]}`))) return m[1];
   } catch { /* no origin/HEAD ref */ }
   for (const b of ["main", "master"]) {
     try {

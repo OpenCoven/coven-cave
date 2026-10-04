@@ -456,4 +456,61 @@ const reviewed = async (dir) =>
   assert.equal(git("status", "--porcelain"), "", "the real index learned the commit");
 }
 
+// A repository with a local bare remote whose default branch is `name`.
+function withRemote(name, { setHead = true } = {}) {
+  const { dir, git } = repo({ commit: false });
+  git("checkout", "-q", "-b", name);
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  const bare = `${dir}.git`;
+  execFileSync("git", ["init", "-q", "--bare", "-b", name, bare]);
+  git("remote", "add", "origin", bare);
+  git("push", "-q", "-u", "origin", name);
+  if (setHead) git("remote", "set-head", "origin", "-a");
+  const remoteTip = (branch) => execFileSync("git", ["--git-dir", bare, "rev-parse", branch], { encoding: "utf8" }).trim();
+  return { dir, git, bare, remoteTip };
+}
+
+// ── 24. The default branch is the remote's own, not a stale origin/HEAD ────
+// A clone from before GitHub renamed master to main kept origin/HEAD on
+// master, so a commit on main stayed there, and Create PR pushed it (#5795).
+{
+  const { dir, git, bare, remoteTip } = withRemote("master");
+  execFileSync("git", ["--git-dir", bare, "branch", "-m", "master", "main"]);
+  execFileSync("git", ["--git-dir", bare, "symbolic-ref", "HEAD", "refs/heads/main"]);
+  git("fetch", "-q", "origin");
+  git("branch", "-q", "-m", "master", "main");
+  git("branch", "-q", "-u", "origin/main", "main");
+  assert.equal(git("symbolic-ref", "refs/remotes/origin/HEAD").trim(), "refs/remotes/origin/master", "origin/HEAD is stale");
+  const before = remoteTip("main");
+  writeFileSync(path.join(dir, "f.txt"), "desk change\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Fix the widget", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "main");
+  assert.equal(commit.json.branchCreated, true, "the commit gets its own branch");
+  assert.match(commit.json.branch, /^cave\//);
+  assert.equal(remoteTip("main"), before);
+}
+
+// ── 25. A default named neither main nor master, with no origin/HEAD ───────
+// `git init`, add a remote, push: the usual way, and it leaves no origin/HEAD.
+{
+  const { dir, git, remoteTip } = withRemote("trunk", { setHead: false });
+  writeFileSync(path.join(dir, "f.txt"), "desk change on trunk\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Trunk change", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "trunk");
+  assert.equal(commit.json.branchCreated, true);
+  // Back on trunk with a commit of its own: Create PR won't push the default.
+  git("checkout", "-q", "trunk");
+  writeFileSync(path.join(dir, "g.txt"), "on trunk\n");
+  git("add", "g.txt");
+  git("commit", "-q", "-m", "local trunk commit");
+  const before = remoteTip("trunk");
+  const pr = await post({ projectRoot: dir, action: "create-pr", title: "Should not push" });
+  assert.equal(pr.status, 400, JSON.stringify(pr.json));
+  assert.match(pr.json.error, /you're on trunk/);
+  assert.equal(remoteTip("trunk"), before, "the remote's default is untouched");
+}
+
 console.log("changes route git states: ok");
