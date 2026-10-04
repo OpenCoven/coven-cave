@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-03",
+  "scope": "Real send-route module, isolated Coven daemon, installed CLI and real provider; no built HTTP server or UI acceptance.",
+  "runs": [
+    {
+      "harness": "claude",
+      "path": "coven",
+      "runtimeVersion": "2.1.288 (Claude Code)",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "candidate": {
+        "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+        "patchSha256": "c4eb141cc44ca01b4f4524f24c0169b48de785e6755cdf8763d4554cb1f4dcdd",
+        "changedSourceSha256": "999aa5615bbea8b79428a0bc896eddd2b62a63abb525a70929ac369b791fad7e"
+      },
+      "startedAt": "2026-10-03T15:13:37.891Z",
+      "finishedAt": "2026-10-03T15:13:59.273Z",
+      "httpStatus": 200,
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "name": "Read",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "Read",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "identityMatches": true,
+        "toolCount": 1
+      },
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true
+      },
+      "passed": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "limitations": [
+        "Node imports the real route; no built HTTP server or UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "profile": "claude-stream-json-v2"
+    },
+    {
+      "harness": "codex",
+      "path": "coven",
+      "runtimeVersion": "codex-cli 0.160.0",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "candidate": {
+        "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+        "patchSha256": "c4eb141cc44ca01b4f4524f24c0169b48de785e6755cdf8763d4554cb1f4dcdd",
+        "changedSourceSha256": "999aa5615bbea8b79428a0bc896eddd2b62a63abb525a70929ac369b791fad7e"
+      },
+      "startedAt": "2026-10-03T15:13:59.381Z",
+      "finishedAt": "2026-10-03T15:14:23.367Z",
+      "httpStatus": 200,
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "codex",
+        "version": null,
+        "model": null,
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "unknown",
+          "reasoning": "unknown"
+        }
+      },
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [],
+      "answerContainsMarker": true,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "identityMatches": true,
+        "toolCount": 0
+      },
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true
+      },
+      "passed": false,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "limitations": [
+        "Node imports the real route; no built HTTP server or UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "routing": {
+        "mode": "fallback",
+        "diagnostic": "unsupported-version",
+        "version": "0.160.0"
+      },
+      "failure": "native tool completion must reach Cave"
+    }
+  ]
+}

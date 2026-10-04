@@ -92,6 +92,8 @@ assert.match(
   "a failed capability gate cannot start a direct workflow session",
 );
 const compatibilityGateIndex = source.indexOf("if (!spec)");
+assert.match(source, /startCopilotFlowRunWithTransportBoundary\(\{\s*spec,\s*clientVersion: capability\.version,/,
+  "workflow observations retain the probed local Copilot version");
 const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRunWithTransportBoundary", compatibilityGateIndex);
 assert.ok(
   compatibilityGateIndex >= 0 && directCopilotLaunchIndex > compatibilityGateIndex,

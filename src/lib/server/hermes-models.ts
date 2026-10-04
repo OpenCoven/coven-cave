@@ -173,7 +173,16 @@ async function discoverHermesModels(
           : null,
       );
       if (id && !isSyntheticLocalModel(id, "hermes")) {
-        models.set(id, { id, label: id });
+        // Hermes's model_routes inventory exposes aliases as id and their
+        // configured backing model as root. Keep the alias for launch; the
+        // configured value only informs the menu, never response identity.
+        const root = cleanModelId((item as { root?: unknown }).root);
+        const configuredModelId = root && root !== id ? root : null;
+        models.set(id, {
+          id,
+          label: configuredModelId ? `${id} (configured: ${configuredModelId})` : id,
+          ...(configuredModelId ? { configuredModelId } : {}),
+        });
       }
     }
     return [...models.values()];

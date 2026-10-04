@@ -1,6 +1,7 @@
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { ChatAttentionReason } from "./chat-attention-marker.ts";
+import { normalizeRuntimeIdentity, type ChatRuntimeIdentity } from "./chat-runtime-identity.ts";
 import type {
   InferenceProtocol,
   InferenceSupportTier,
@@ -9,6 +10,9 @@ import type {
 export type ChatResponseMetadata = {
   familiarId: string;
   harness: string;
+  /** Actual runtime report; absent on legacy transcripts. Never reconstructed
+   * from confirmedModel, which older versions inferred from argv + exit. */
+  runtimeIdentity?: ChatRuntimeIdentity;
   inferenceRouteId?: string;
   inferenceRouteFingerprint?: string;
   inferenceProvider?: string;
@@ -51,6 +55,17 @@ export type ChatResponseMetadata = {
     reason: ChatAttentionReason;
   };
 };
+
+/** Presentation of a response uses only its validated native report. Legacy
+ * intent remains available in the separately labeled model-status trail. */
+export function responseMetadataIdentity(metadata?: ChatResponseMetadata): ChatRuntimeIdentity | undefined {
+  return typeof metadata?.harness === "string"
+    ? normalizeRuntimeIdentity(metadata.runtimeIdentity, metadata.harness) : undefined;
+}
+
+export function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
+  return responseMetadataIdentity(metadata)?.model ?? null;
+}
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the
  *  user can place, not a machine-specific absolute path. Matches the macOS

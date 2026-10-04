@@ -90,7 +90,7 @@ test("a tool call becomes a pre/post pair with a shared call_id", () => {
   assert.equal(post[0].ts, "2026-07-04T10:00:01.200Z");
 });
 
-test("error and still-running tools are marked is_error for the completion check", () => {
+test("only observed outcomes become post-tool events", () => {
   const events = conversationToHfrEvents(
     baseConversation({
       turns: [
@@ -103,6 +103,8 @@ test("error and still-running tools are marked is_error for the completion check
             { id: "c1", name: "A", status: "error" },
             { id: "c2", name: "B", status: "running" },
             { id: "c3", name: "C", status: "ok" },
+            { id: "c4", name: "D", status: "requested" },
+            { id: "c5", name: "E", status: "unknown" },
           ],
         },
       ],
@@ -111,7 +113,7 @@ test("error and still-running tools are marked is_error for the completion check
   const post = byHook(events, "post_tool_call");
   assert.deepEqual(
     post.map((p) => p.is_error),
-    [true, true, false],
+    [true, false],
   );
 });
 
@@ -266,8 +268,9 @@ test("only subagent links parented by this session are emitted", () => {
 });
 
 test("field truncation keeps head for args, tail for tool results", () => {
-  const longIn = "a".repeat(50);
-  const longOut = "b".repeat(50);
+  // Prose-like values exercise clipping without resembling credential blobs.
+  const longIn = "a ".repeat(25);
+  const longOut = "b ".repeat(25);
   const events = conversationToHfrEvents(
     baseConversation({
       turns: [
@@ -292,10 +295,10 @@ test("field truncation keeps head for args, tail for tool results", () => {
   );
   const [pre] = byHook(events, "pre_tool_call");
   const [post] = byHook(events, "post_tool_call");
-  assert.equal(pre.args, "aaaaaaaaaa…[+40 chars]");
-  assert.equal(pre.tool_input, "aaaaaaaaaa…[+40 chars]");
-  assert.equal(post.result, "…[+40 chars]bbbbbbbbbb");
-  assert.equal(post.tool_output, "…[+40 chars]bbbbbbbbbb");
+  assert.equal(pre.args, "a a a a a …[+40 chars]");
+  assert.equal(pre.tool_input, "a a a a a …[+40 chars]");
+  assert.equal(post.result, "…[+40 chars]b b b b b ");
+  assert.equal(post.tool_output, "…[+40 chars]b b b b b ");
 });
 
 test("serializeHfrJsonl emits one compact JSON object per line, trailing newline", () => {
@@ -346,4 +349,77 @@ test("malformed timestamps never throw and fall back to the start ts", () => {
 
 test("empty serialize is a single newline", () => {
   assert.equal(serializeHfrJsonl([]), "\n");
+});
+
+test("rejected requests cannot become completed execution receipts", () => {
+  const events = conversationToHfrEvents(baseConversation({ turns: [{
+    id: "denied", role: "assistant", text: "Request declined", createdAt: "2026-07-04T10:00:00.000Z",
+    tools: [{ id: "call", name: "Bash", status: "rejected" }],
+  }] }));
+  assert.equal(byHook(events, "pre_tool_call").length, 1);
+  assert.equal(byHook(events, "post_tool_call").length, 0);
+});
+
+test("exports per-turn native identity without promoting saved or legacy model intent", () => {
+  const claude = { schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5" };
+  const copilot = { schemaVersion: 1, harness: "copilot", version: "1.0.82", model: "claude-sonnet-5" };
+  const turns = [
+    { harness: "claude", runtimeIdentity: claude },
+    { harness: "copilot", runtimeIdentity: copilot },
+    { harness: "copilot", confirmedModel: "legacy-inferred-model" },
+    { harness: "copilot", runtimeIdentity: { ...copilot, schemaVersion: 99 } },
+    { harness: "codex", runtimeIdentity: copilot },
+    { harness: "copilot", runtimeIdentity: { ...copilot, model: null } },
+  ].map((responseMetadata, index) => ({
+    id: `turn-${index}`, role: "assistant" as const, text: `answer-${index}`,
+    createdAt: "2026-10-03T16:00:00.000Z", responseMetadata,
+    tools: [{ id: `call-${index}`, name: "Read", status: "ok" as const, output: "read" }],
+  }));
+  const events = conversationToHfrEvents(baseConversation({ model: "saved-intent", turns }));
+  assert.equal(events[0].model, undefined, "a session header cannot establish a model for every turn");
+  assert.equal(events[0].recorded_model, "saved-intent");
+  const llms = byHook(events, "post_llm_call");
+  assert.deepEqual(llms.map((event) => event.model), [claude.model, copilot.model, undefined, undefined, undefined, undefined]);
+  assert.deepEqual(llms.slice(0, 2).map((event) => event.runtime_identity), [claude, copilot]);
+  assert.equal((llms[5].runtime_identity as { model: null }).model, null);
+  for (const hook of ["pre_tool_call", "post_tool_call"]) {
+    const calls = byHook(events, hook);
+    assert.equal(calls[1].turn_id, "turn-1");
+    assert.deepEqual(calls[1].runtime_identity, copilot, "tool observations retain their turn's runtime");
+    assert.equal(calls[4].runtime_identity, undefined, "mismatched runtime claims stay unavailable");
+  }
+});
+
+test("projects historical tool payloads and legacy assistant reasoning before export clipping", () => {
+  const signedUrl = `https://example.com/${"x".repeat(100)}?signature=PRIVATE_SIGNED_URL`;
+  const conv = baseConversation({ turns: [
+    { id: "user", role: "user", text: "User example: <thinking>keep</thinking>", createdAt: "2026-10-03T16:00:00.000Z" },
+    { id: "token=PRIVATE_TURN_ID", role: "assistant", text: "Visible<thinking>PRIVATE_REASONING</thinking> answer.", createdAt: "2026-10-03T16:00:01.000Z",
+      tools: [
+        { id: "reader@example.com", name: "Read reader@example.com token=PRIVATE_CREDENTIAL", input: signedUrl, output: JSON.stringify({ text: "safe", _meta: { signature: "PRIVATE_PROVIDER_STATE" } }), status: "ok" },
+        { id: "pending", name: "Read", status: "running", output: "PRIVATE_PARTIAL_OUTPUT" },
+        { id: "already:opaque-" + "a".repeat(64), name: "Read", status: "ok", output: "safe" },
+      ] },
+  ] });
+  const original = JSON.stringify(conv);
+  const events = conversationToHfrEvents(conv);
+  const wire = serializeHfrJsonl(events);
+  for (const sentinel of ["PRIVATE_SIGNED_URL", "PRIVATE_REASONING", "PRIVATE_PROVIDER_STATE", "PRIVATE_PARTIAL_OUTPUT", "PRIVATE_CREDENTIAL", "PRIVATE_TURN_ID", "reader@example.com"]) {
+    assert.ok(!wire.includes(sentinel), sentinel);
+  }
+  assert.equal(byHook(events, "user_message")[0].text, "User example: <thinking>keep</thinking>");
+  assert.equal(byHook(events, "post_llm_call")[0].output, "Visible answer.");
+  const pre = byHook(events, "pre_tool_call");
+  const post = byHook(events, "post_tool_call");
+  assert.equal(pre[0].turn_id, byHook(events, "post_llm_call")[0].turn_id);
+  assert.equal(pre[0].args, "[redacted signed URL]");
+  assert.equal(pre[0].tool_call_id, post[0].tool_call_id);
+  assert.equal(pre[2].tool_call_id, "already:opaque-" + "a".repeat(64), "historical projected IDs remain stable");
+  assert.equal(post.length, 2);
+  assert.ok(String(post[0].result).includes("[withheld provider state]"));
+  const clipped = byHook(conversationToHfrEvents(conv, { maxFieldChars: 10 }), "pre_tool_call")[0];
+  assert.ok(!String(clipped.args).includes("https://"), "signing parameters beyond the clip limit still withhold the whole URL");
+  assert.doesNotMatch(conversationToHfrJsonl(conv, { maxFieldChars: 0 }), /PRIVATE_|reader@example\.com/,
+    "disabling optional clipping cannot bypass disclosure projection");
+  assert.equal(JSON.stringify(conv), original, "export does not rewrite execution history");
 });

@@ -128,6 +128,7 @@ function startGatewayFixture(helloExtra, onChatSend) {
   const listening = once(gateway, "listening");
   const sockets = new Set();
   let connectionCount = 0;
+  let chatSendCount = 0;
   gateway.on("connection", (socket) => {
     sockets.add(socket);
     const connection = ++connectionCount;
@@ -166,12 +167,14 @@ function startGatewayFixture(helloExtra, onChatSend) {
         return;
       }
       if (frame.method !== "chat.send") return;
+      chatSendCount += 1;
       const runId = `negotiation-route-run-${connection}`;
       socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { runId } }));
       onChatSend(socket, { runId, sessionKey: frame.params.sessionKey, agentId: frame.params.agentId });
     });
   });
   return {
+    chatSendCount: () => chatSendCount,
     async address() {
       await listening;
       const address = gateway.address();
@@ -185,7 +188,10 @@ function startGatewayFixture(helloExtra, onChatSend) {
   };
 }
 
+let includeDisclosureTools = false;
+let onGatewayTurn = null;
 const gatewayA = startGatewayFixture({ serverVersion: "2026.7.2-beta.5" }, (socket, routed) => {
+  onGatewayTurn?.();
   const emit = (seq, event, payload) => socket.send(JSON.stringify({ type: "event", event, seq, payload }));
   emit(1, "agent", {
     runId: routed.runId, sessionKey: routed.sessionKey, agentId: routed.agentId,
@@ -201,7 +207,25 @@ const gatewayA = startGatewayFixture({ serverVersion: "2026.7.2-beta.5" }, (sock
     seq: 1, stream: "tool", ts: 1200,
     data: { phase: "result", toolCallId: "tool-1", name: "exec", result: { text: "route-ok", exitCode: 0 }, isError: false },
   });
-  emit(4, "chat", {
+  let nextEventSeq = 4;
+  let nextToolSeq = 2;
+  if (includeDisclosureTools) {
+    const tool = (data) => emit(nextEventSeq++, "agent", {
+      runId: routed.runId, sessionKey: routed.sessionKey, agentId: routed.agentId,
+      seq: nextToolSeq++, stream: "tool", ts: 1300, data,
+    });
+    tool({ phase: "start", toolCallId: "call-array", name: "read", args: { path: "safe.ts" } });
+    tool({ phase: "update", toolCallId: "call-array", partialResult: "PRIVATE_PROGRESS_SENTINEL" });
+    tool({ phase: "result", toolCallId: "call-array", name: "read", result: [{ type: "future_opaque_payload", text: "PRIVATE_ARRAY_SENTINEL" }], isError: false });
+    // A result can arrive before its start; synthetic request presentation
+    // must apply the same output disclosure policy as an ordinary result.
+    tool({ phase: "result", toolCallId: "call-object", name: "read", result: { type: "future_opaque_payload", text: "PRIVATE_OBJECT_SENTINEL" }, isError: false });
+    tool({ phase: "start", toolCallId: "mixed-blocks", name: "read", args: { path: "safe.ts" } });
+    tool({ phase: "result", toolCallId: "mixed-blocks", name: "read", result: [
+      { type: "text", text: "Readable result" }, { type: "future_opaque_payload", text: "PRIVATE_MIXED_SENTINEL" },
+    ], isError: false });
+  }
+  emit(nextEventSeq, "chat", {
     runId: routed.runId, sessionKey: routed.sessionKey, agentId: routed.agentId,
     seq: 1, state: "final", message: { text: "opaque final" },
   });
@@ -255,6 +279,8 @@ try {
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { __postChatForTests } = await import("./route.ts");
+  const { subscribeRunStream } = await import("@/lib/server/chat-stream-buffer");
+  const { hasActiveChatRun } = await import("@/lib/server/chat-stop-registry");
 
   await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
   const project = await createProject({ name: "OpenClaw negotiation fixture", root: workspace });
@@ -274,6 +300,28 @@ try {
   // ── 1. Structured negotiation streams and persists tool activity ──────────
   process.env.OPENCLAW_GATEWAY_DISPATCH = "1";
   process.env.OPENCLAW_GATEWAY_URL = gatewayAUrl;
+  // A first turn has no conversation id on its request. Its early replay
+  // stream must already belong to the admitted run before Gateway activity
+  // arrives; transport selection cannot leave this buffer without an owner.
+  const firstRun = "cave-negotiation-first-turn";
+  let firstTurnAdmitted = false;
+  let firstTurnReplayAvailable = false;
+  onGatewayTurn = () => {
+    firstTurnAdmitted = hasActiveChatRun(firstRun);
+    const earlyReplay = subscribeRunStream(firstRun, 0, () => {}, () => {});
+    firstTurnReplayAvailable = Boolean(earlyReplay && !earlyReplay.done);
+    earlyReplay?.unsubscribe();
+  };
+  const firstTurnEvents = await readSse(await post({
+    familiarId: "wren", prompt: "start a new negotiated conversation",
+    projectRoot: workspace, runId: firstRun,
+  }));
+  onGatewayTurn = null;
+  assert.equal(firstTurnAdmitted, true, "a first-turn replay stream has an admission owner before Gateway events");
+  assert.equal(firstTurnReplayAvailable, true, "early first-turn events are replayable before transport selection finishes");
+  assert.equal(firstTurnEvents.findLast((event) => event.kind === "done")?.isError, false);
+  assert.equal(hasActiveChatRun(firstRun), false, "settlement releases first-turn admission");
+
   const structuredSession = "openclaw-negotiation-structured";
   const structuredEventsRaw = await post({
     familiarId: "wren",
@@ -296,6 +344,10 @@ try {
     "negotiated structured mode streams the projected tool lifecycle",
   );
   assert.equal(structuredEvents.findLast((event) => event.kind === "done")?.isError, false);
+  assert.deepEqual(structuredEvents.findLast((event) => event.kind === "done")?.responseMetadata?.runtimeIdentity, {
+    schemaVersion: 1, harness: "openclaw", version: "2026.7.2-beta.5", model: null,
+    activity: { schemaVersion: 1, path: "gateway", tools: "supported", reasoning: "unsupported" },
+  }, "an accepted gateway turn keeps the negotiated version without inventing a model");
 
   const structuredConversation = await loadConversation(structuredSession);
   const structuredTurn = structuredConversation?.turns.at(-1);
@@ -309,6 +361,57 @@ try {
     }],
     "validated projected tool activity persists on the conversation's assistant turn",
   );
+
+  // ── 1b. Opaque payloads cannot bypass the typed result decoder ─────────────
+  includeDisclosureTools = true;
+  const requestsBeforeDisclosure = gatewayA.chatSendCount();
+  const disclosureSession = "openclaw-negotiation-disclosure";
+  const disclosureResponse = await post({
+    familiarId: "wren", prompt: "inspect the supported tool results", projectRoot: workspace,
+    sessionId: disclosureSession, runId: "cave-negotiation-disclosure",
+  });
+  assert.equal(disclosureResponse.status, 200);
+  const disclosureRaw = await disclosureResponse.text();
+  const disclosureEvents = disclosureRaw.split("\n").filter((line) => line.startsWith("data: ")).map((line) => JSON.parse(line.slice(6)));
+  includeDisclosureTools = false;
+  assert.equal(disclosureEvents.findLast((event) => event.kind === "done")?.isError, false);
+  assert.doesNotMatch(JSON.stringify(disclosureEvents), /PRIVATE_\w+_SENTINEL/);
+  const disclosureTools = disclosureEvents.filter((event) => event.kind === "tool_use");
+  assert.ok(disclosureEvents.findIndex((event) => event.kind === "response_metadata") <
+    disclosureEvents.findIndex((event) => event.kind === "tool_use"), "launch identity precedes early Gateway tool events");
+  assert.equal(disclosureEvents.find((event) => event.kind === "response_metadata").responseMetadata.runtimeIdentity.version, null,
+    "the launch report does not borrow a version before Gateway acceptance");
+  const toolFrames = disclosureRaw.split("\n\n").filter((frame) => frame.includes('"kind":"tool_use"'));
+  const toolSequences = toolFrames.map((frame) => Number(frame.match(/^id: (\d+)$/m)?.[1]));
+  assert.equal(toolSequences.length, disclosureTools.length);
+  assert.ok(toolSequences.every((seq, index) => Number.isSafeInteger(seq) && seq > (toolSequences[index - 1] ?? 0)),
+    "even synchronously drained Gateway events carry a stable replay cursor");
+  const expectedResults = [
+    { id: "openclaw:tool-1", status: "ok", output: '{"text":"route-ok","exitCode":0}' },
+    { id: "openclaw:call-array", status: "ok", output: undefined },
+    { id: "openclaw:call-object", status: "ok", output: undefined },
+    { id: "openclaw:mixed-blocks", status: "ok", output: "Readable result" },
+  ];
+  const resultFields = (tool) => ({ id: tool.id, status: tool.status, output: tool.output });
+  assert.deepEqual(disclosureTools.filter((tool) => tool.status === "ok").map(resultFields), expectedResults);
+  assert.ok(disclosureTools.filter((tool) => tool.status === "running").every((tool) => tool.output === undefined),
+    "partial progress retains lifecycle metadata only");
+  const replay = subscribeRunStream("cave-negotiation-disclosure", 0, () => {}, () => {});
+  assert.ok(replay?.done);
+  const replayEvents = replay.replay.map((entry) => JSON.parse(entry.json));
+  assert.deepEqual(replayEvents.filter((event) => event.kind === "tool_use"), disclosureTools);
+  assert.doesNotMatch(JSON.stringify(replayEvents), /PRIVATE_\w+_SENTINEL/);
+  replay.unsubscribe();
+  const resumedReplay = subscribeRunStream("cave-negotiation-disclosure", toolSequences[0], () => {}, () => {});
+  assert.ok(resumedReplay?.done);
+  assert.equal(resumedReplay.gapBeforeSeq, null);
+  assert.deepEqual(resumedReplay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "tool_use"), disclosureTools.slice(1),
+    "resume after the first early tool event neither loses nor repeats observations");
+  resumedReplay.unsubscribe();
+  assert.equal(gatewayA.chatSendCount(), requestsBeforeDisclosure + 1, "replay does not dispatch another Gateway turn");
+  const disclosureTurn = (await loadConversation(disclosureSession))?.turns.at(-1);
+  assert.deepEqual(disclosureTurn?.tools?.map(resultFields), expectedResults);
+  assert.doesNotMatch(JSON.stringify(disclosureTurn), /PRIVATE_\w+_SENTINEL/);
 
   // ── 2. Resume: the persisted tool activity is still there on a later turn ──
   const resumedEvents = await readSse(await post({
@@ -345,8 +448,8 @@ try {
   assert.equal(degradedDiagnostic.status, "notice");
   assert.match(
     degradedDiagnostic.detail,
-    new RegExp(`discovered event schema ${"f".repeat(64)} is not a validated compatibility schema; plain chat is retained\\.`),
-    "the diagnostic is value-free: schema hash only, never payloads",
+    /discovered event schema \[redacted\] is not a validated compatibility schema; plain chat is retained\./,
+    "the diagnostic passes through the shared display filter and never carries provider payloads",
   );
   assert.equal(
     degradedEvents.some((event) => event.kind === "tool_use"),
@@ -433,7 +536,11 @@ try {
     "the plain CLI path surfaces no negotiation diagnostic",
   );
   assert.equal(cliEvents.findLast((event) => event.kind === "done")?.isError, false);
+  assert.equal(cliEvents.findLast((event) => event.kind === "done")?.responseMetadata?.runtimeIdentity?.version, null,
+    "CLI fallback must not adopt a gateway version from an unused transport");
   const cliConversation = await loadConversation("openclaw-negotiation-cli");
+  assert.deepEqual(cliConversation.turns.at(-1).responseMetadata.runtimeIdentity.activity,
+    { schemaVersion: 1, path: "cli", tools: "unsupported", reasoning: "unsupported" });
   assert.equal(cliConversation?.turns.at(-1)?.tools, undefined, "the CLI path persists no tool activity");
 } finally {
   restoreEnv();

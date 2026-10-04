@@ -932,7 +932,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                               disabled: true,
                             }]
                           : []),
-                        ...modelOptions.map((option) => ({ value: option.id, label: option.label })),
+                        ...modelOptions.map((option) => ({ value: option.id, label: option.id, detail: option.label })),
                         ...(allowCustomModel ? [{ value: "__custom__", label: "Custom…" }] : []),
                       ]}
                     />

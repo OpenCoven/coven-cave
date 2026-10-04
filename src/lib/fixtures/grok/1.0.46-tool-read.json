@@ -1,0 +1,53 @@
+[
+  {
+    "type": "tool_call",
+    "toolCallId": "read-marker",
+    "title": "read_file",
+    "kind": "read",
+    "status": "pending",
+    "toolName": "read_file",
+    "rawInput": {
+      "target_file": "marker.txt"
+    },
+    "content": [],
+    "locations": []
+  },
+  {
+    "type": "tool_call_update",
+    "toolCallId": "read-marker",
+    "status": null,
+    "content": [],
+    "rawOutput": null,
+    "locations": [
+      {
+        "path": "marker.txt"
+      }
+    ]
+  },
+  {
+    "type": "tool_call_update",
+    "toolCallId": "read-marker",
+    "status": "completed",
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "1\u2192CAVE_GROK_READ_FIXTURE\n"
+        }
+      }
+    ],
+    "rawOutput": {
+      "type": "ReadFile",
+      "FileContent": {
+        "content": "1\u2192CAVE_GROK_READ_FIXTURE\n",
+        "content_concise": "1\u2192CAVE_GROK_READ_FIXTURE\n",
+        "absolute_path": "/fixture/project/marker.txt",
+        "offset": null,
+        "raw_output": "CAVE_GROK_READ_FIXTURE\n",
+        "total_lines": 2
+      }
+    },
+    "locations": []
+  }
+]

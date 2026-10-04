@@ -1,8 +1,128 @@
 import XCTest
+import UIKit
 
 /// The same driver runs smoke checks and repeated physical captures.
 /// Its wall-clock test duration is not a performance measurement; use app spans.
 final class PerformanceBaselineUITests: XCTestCase {
+    @MainActor
+    func testSmallChronologicalTimelineRenderJourney() {
+        exerciseTimeline(count: 12)
+    }
+
+    @MainActor
+    func testRetainedChronologicalTimelineRenderJourney() {
+        exerciseTimeline(count: 120)
+    }
+
+    @MainActor
+    func testRetainedRichChronologicalTimelineRenderJourney() {
+        exerciseTimeline(count: 120, rich: true)
+    }
+
+    @MainActor
+    func testRetainedRichTimelinePreservesEarlierToolThroughScrolling() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture",
+                               "--timeline-performance-fixture", "--timeline-performance-count", "120",
+                               "--timeline-performance-rich"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 30))
+        openRecoveryThread(in: app)
+        let capture = app.buttons["Capture timeline metrics"]
+        let tail = app.webViews.links["Timeline fixture tail"].firstMatch
+        func waitForTail() {
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hittable == true"), object: tail)], timeout: 60), .completed)
+        }
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        let middle = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fixture-60.txt")).firstMatch
+        func scrollToMiddle() {
+            for _ in 0..<32 {
+                if middle.exists && middle.isHittable { break }
+                transcript.swipeDown(velocity: .slow)
+            }
+            XCTAssertTrue(middle.isHittable, "An earlier retained tool must remain reachable")
+            let prose = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Timeline item 60")).firstMatch
+            XCTAssertTrue(prose.waitForExistence(timeout: 10), "Earlier rich prose must render when revisited")
+        }
+        waitForTail()
+        capture.tap()
+        scrollToMiddle()
+        capture.tap()
+        middle.tap()
+        let detail = app.staticTexts["fixture-60.txt"].firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 10))
+        capture.tap()
+        attachTimelineScreenshot(app, name: "timeline-rich-middle-expanded")
+        app.buttons["Scroll to latest"].tap()
+        waitForTail()
+        capture.tap()
+        scrollToMiddle()
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), "Expansion survives leaving and remounting an earlier entry")
+        capture.tap()
+        attachTimelineScreenshot(app, name: "timeline-rich-middle-restored")
+    }
+
+    @MainActor
+    private func exerciseTimeline(count: Int, rich: Bool = false) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture",
+                               "--timeline-performance-fixture", "--timeline-performance-count", String(count)]
+        if rich { app.launchArguments.append("--timeline-performance-rich") }
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 30))
+        openRecoveryThread(in: app)
+        let capture = app.buttons["Capture timeline metrics"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 15))
+        capture.tap()
+        let tail = app.webViews.links["Timeline fixture tail"].firstMatch
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: tail)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 60), .completed,
+                       "Actual WebKit tail must render at the retained activity limit")
+        capture.tap()
+        let tool = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fixture-\(count - 1).txt")).firstMatch
+        XCTAssertTrue(tool.isHittable)
+        tool.tap()
+        XCTAssertTrue(app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch.waitForExistence(timeout: 10))
+        let authority = app.staticTexts["Approval and change confirmation unavailable."].firstMatch
+        let requiredHeight = (authority.label as NSString).boundingRect(
+            with: CGSize(width: authority.frame.width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: UIFont.preferredFont(forTextStyle: .caption2)], context: nil).height
+        XCTAssertGreaterThanOrEqual(authority.frame.height, requiredHeight - 1,
+                                    "Authority availability must wrap without truncation")
+        capture.tap()
+        attachTimelineScreenshot(app, name: "timeline-\(count)-\(rich ? "rich" : "mixed")-expanded")
+        leaveRecoveryThread(in: app)
+        XCTAssertTrue(capture.waitForExistence(timeout: 10))
+        capture.tap()
+        openRecoveryThread(in: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: tail)], timeout: 60), .completed)
+        let reopenedDetail = app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch
+        if !reopenedDetail.exists {
+            attachTimelineScreenshot(app, name: "timeline-\(count)-\(rich ? "rich" : "mixed")-awaiting-reopened-tool")
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Timeline awaiting reopened tool"
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
+        XCTAssertTrue(reopenedDetail.waitForExistence(timeout: 10),
+                      "The user's expanded tool survives navigation")
+        capture.tap()
+        attachTimelineScreenshot(app, name: "timeline-\(count)-\(rich ? "rich" : "mixed")-reopened")
+    }
+
+    @MainActor
+    private func attachTimelineScreenshot(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

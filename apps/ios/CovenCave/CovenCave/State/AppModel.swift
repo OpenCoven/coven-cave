@@ -516,6 +516,7 @@ final class AppModel {
     /// choice here means a re-created row re-reads it and stays open. In-memory
     /// only; expansion is a reading position, not something to persist.
     var expandedActivityMessages: Set<String> = []
+    var reasoningDisclosureState = ChatReasoningDisclosureState()
 
     #if DEBUG
     /// Process-lifetime marker for the deterministic cold-connection preview.
@@ -2372,7 +2373,12 @@ final class AppModel {
             (try? await threadStore.load()) ?? []
         }
         self.coreResourceClientFactory = coreResourceClientFactory
+        #if DEBUG
+        self.clientSession = clientSession ?? NativeActivityRecoveryPreview.sessionIfRequested()
+            ?? ToolOutputPreview.sessionIfRequested()
+        #else
         self.clientSession = clientSession
+        #endif
         self.reminderNotificationScheduler = reminderNotificationScheduler
         self.baseURLDiscoverer = baseURLDiscoverer
         connection = loadPersistedConnection && !isPerformanceFixture ? CaveConnection.load(defaults: defaults) : nil
@@ -2385,6 +2391,12 @@ final class AppModel {
             threadsHydrated = true
         }
         #if DEBUG
+        if let fixture = NativeActivityRecoveryPreview.configuration {
+            configureNativeActivityRecoveryPreview(fixture)
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-connecting") {
             connection = CaveConnection(host: "cave-desktop.example")
             connectionState = .checking
@@ -2495,6 +2507,50 @@ final class AppModel {
     }
 
     #if DEBUG
+    private func configureNativeActivityRecoveryPreview(_ fixture: NativeActivityRecoveryPreview.Configuration) {
+        connection = CaveConnection(host: fixture.origin)
+        familiars = [Familiar(id: fixture.familiarId, displayName: "Native activity", role: "Fixture",
+            description: "Owned recovery gate", pronouns: nil, color: nil, status: "active",
+            harness: fixture.runtimeHarness, model: "", icon: "moon.stars.fill", avatarUrl: nil,
+            activeSessions: 1, memoryFreshness: nil)]
+        familiarsLoaded = true
+        tasksLoaded = true
+        sessionsLoaded = true
+        let project = ProjectInfo(id: "native-recovery", name: "Native recovery", root: fixture.projectRoot,
+            color: nil, updatedAt: nil, access: fixture.providerCanary ? .read : .write)
+        if fixture.startsEmpty {
+            if ProcessInfo.processInfo.arguments.contains("--ui-native-activity-new-thread") {
+                precondition(!FileManager.default.fileExists(atPath: fixture.threadStoreURL.path),
+                             "A live-send fixture must start with a new isolated thread store")
+                threads = [ChatThread(id: NativeActivityRecoveryPreview.threadId, title: "Native recovery",
+                    familiarIds: [fixture.familiarId], projectRoot: fixture.projectRoot)]
+            } else {
+                // Relaunch uses the ordinary persisted phone snapshot. No
+                // accepted run, partial activity or saved answer is reseeded.
+                precondition(FileManager.default.fileExists(atPath: fixture.threadStoreURL.path),
+                             "A live-send fixture relaunch requires its persisted thread store")
+                threadsHydrated = false
+                hydrateThreadsTask = Task { await self.hydrateThreads() }
+            }
+        } else {
+            let user = DisplayMessage(role: .user, text: "Read the controlled marker.", queued: true,
+                queuedRunIdsByFamiliarId: ["nativeactivity": fixture.runId],
+                queuedAttemptedFamiliarIds: ["nativeactivity"], queuedTargetFamiliarIds: ["nativeactivity"],
+                queuedContext: .init(projectRoot: fixture.projectRoot, sessionIds: ["nativeactivity": fixture.sessionId]))
+            let thread = ChatThread(id: NativeActivityRecoveryPreview.threadId, title: "Native recovery",
+                familiarIds: ["nativeactivity"], sessionIds: ["nativeactivity": fixture.sessionId],
+                projectRoot: fixture.projectRoot, messages: [user])
+            threads = [thread]
+        }
+        projects = [project]
+        projectsLoaded = true
+        previewChatProjects = [project]
+        seedPreviewProjectContext()
+        // Cached phone state only. The normal scene lifecycle must detect the
+        // fixture outage and recover this accepted queue through its supervisor.
+        connectionState = .connected
+    }
+
     private func configureEmptyChatPreview() {
         connection = nil
         familiars = [
@@ -3027,7 +3083,8 @@ final class AppModel {
     /// carry: a succeeded call, a failed one with its reason, and an
     /// informational notice. Release builds never carry fixture state.
     private func configureToolActivityPreview() {
-        connection = nil
+        let previewOutput = ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-output")
+        connection = previewOutput ? CaveConnection(host: "http://tool-output-preview.invalid") : nil
         familiars = [
             Familiar(
                 id: "nyx",
@@ -3062,6 +3119,22 @@ final class AppModel {
             familiarId: "nyx",
             text: "Fixed — the summary was reading the first line of a pretty-printed payload."
         )
+        if previewOutput, let connection {
+            reply.toolOutputReference = ToolOutputReference(sessionId: "ui-preview-tool-activity", connection: connection)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-reported-runtime") {
+            // Display-only fixture values from the Claude HTTP canary. The
+            // distinct request and familiar configuration must not replace
+            // the response's report. This does not exercise native transport.
+            reply.runtimeIdentity = ChatRuntimeIdentity(
+                schemaVersion: 1, harness: "claude", version: "2.1.288",
+                model: "claude-opus-5-5",
+                activity: ChatRuntimeActivity(
+                    schemaVersion: 1, path: "coven", tools: "supported", reasoning: "unknown"
+                )
+            )
+            reply.requestedModel = "claude-sonnet-5"
+        }
         reply.activity = [
             ActivityStep(id: "a", kind: .tool, title: "Read",
                          detail: "src/lib/tool-arg-summary.ts", status: .ok, durationMs: 42),
@@ -3076,6 +3149,18 @@ final class AppModel {
                          status: .ok, durationMs: 1_200),
         ]
 
+        let timelinePreview = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline")
+        let liveTimeline = timelinePreview && ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-live")
+        if timelinePreview {
+            // Only the isolated DEBUG preview resets this preference. Production
+            // keeps an existing opt-out and defaults to visible on new installs.
+            UserDefaults.standard.removeObject(forKey: "cave.chat.showReasoningSummaries")
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-reasoning-off") {
+                UserDefaults.standard.set(false, forKey: "cave.chat.showReasoningSummaries")
+            }
+            reply = timelinePreviewMessage(reply, completed: !liveTimeline)
+        }
+
         threads = [
             ChatThread(
                 id: "ui-preview-tool-activity",
@@ -3089,10 +3174,62 @@ final class AppModel {
             ),
         ]
         previewChatProjects = [previewProject]
+        if previewOutput { threads.first?.sessionIds["nyx"] = "ui-preview-tool-activity" }
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-output-rotated-session") {
+            threads.first?.sessionIds["nyx"] = "different-conversation"
+        }
         projects = [previewProject]
         projectsLoaded = true
         seedPreviewProjectContext()
         connectionState = .connected
+        if liveTimeline {
+            let previewMessage = reply
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(30))
+                guard let self, let thread = self.threads.first(where: { $0.id == "ui-preview-tool-activity" }),
+                      let index = thread.messages.firstIndex(where: { $0.id == previewMessage.id }) else { return }
+                thread.messages[index] = self.timelinePreviewMessage(previewMessage, completed: true)
+            }
+        }
+    }
+
+    /// Render-only lifecycle fixture; it performs no provider or tool request.
+    private func timelinePreviewMessage(_ original: DisplayMessage, completed: Bool) -> DisplayMessage {
+        var message = original
+        let run = "57610000-0000-4000-8000-000000000001"
+        let attempt = "57610000-0000-4000-8000-000000000002"
+        let first = "Inspecting 🧙 café.\n"
+        let producer = ToolActivity.Producer(harness: "hermes", version: nil, protocol: "responses")
+        let failed = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-failed")
+        let status: ActivityStep.Status = completed ? (failed ? .error : .ok) : .running
+        message.text = first + (completed ? "Ready to review.\n" : "")
+        message.streaming = !completed
+        message.activity = [ActivityStep(
+            id: "a", kind: .tool, title: "Read", detail: "src/example.ts", status: status,
+            durationMs: completed ? 42 : nil,
+            errorOutput: completed && failed ? "The requested file was not found." : nil,
+            activity: ToolActivity(
+                schemaVersion: 1, runId: run, attemptId: attempt, callId: "a", phase: status.rawValue,
+                source: "runtime-report", producer: producer, firstObservedAt: 100, sequence: 1,
+                updatedAt: completed ? 200 : 100, executionObservedAt: 100,
+                terminalObservedAt: completed ? 200 : nil,
+                authority: ["binding": "unavailable", "approval": "unavailable", "effect": "unavailable"]
+            ), textOffset: first.utf16.count
+        )]
+        func summary(_ suffix: String, _ text: String, sequence: Int, offset: Int) -> ChatReasoningBlock {
+            ChatReasoningBlock(
+                schemaVersion: 1, id: "\(attempt):\(suffix)", representation: "provider-summary",
+                phase: "complete", text: text, textOffset: offset, disclosure: "display-safe",
+                observation: .init(runId: run, attemptId: attempt, source: "runtime-report",
+                                   producer: producer, firstObservedAt: 100, sequence: sequence,
+                                   updatedAt: 200, completedAt: 200, binding: "unavailable")
+            )
+        }
+        message.reasoningBlocks = [summary("before", "Checking the relevant source.", sequence: 0, offset: 0)]
+        if completed {
+            message.reasoningBlocks?.append(summary("after", "The source check is complete.", sequence: 2, offset: first.utf16.count))
+        }
+        return message
     }
 
     private func seedPreviewProjectContext() {
@@ -6073,6 +6210,11 @@ final class AppModel {
     /// carry-over) and never recreated, so repeated discovery rounds don't
     /// leak URLSessions the way per-probe construction did.
     private static let probeSession: URLSession = {
+        #if DEBUG
+        if let fixtureSession = NativeActivityRecoveryPreview.sessionIfRequested() {
+            return fixtureSession
+        }
+        #endif
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 6
         config.timeoutIntervalForResource = 10
@@ -7372,7 +7514,8 @@ final class AppModel {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
         let assignee = thread.familiarIds.first ?? convo.familiarId
-        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee)
+        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee,
+            toolOutputReference: ToolOutputReference(sessionId: sessionId, connection: client.connection))
         persistThreads()
     }
 

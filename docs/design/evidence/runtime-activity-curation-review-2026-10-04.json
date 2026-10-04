@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T11:36:59.186648+00:00",
+  "pr": 5799,
+  "baseHead": "246b4863d2f27d8c8eacf3303bc720c10e907871",
+  "nativeRetry": {
+    "finding": "Retry and cursor-zero replay retained runtimeIdentity and reasoningBlocks from the previous attempt.",
+    "before": "Five retry tests ran; two new nil assertions failed. The unchanged rollback assertions passed.",
+    "repair": "Clear runtimeIdentity and reasoningBlocks together with text/activity on both response reset paths.",
+    "after": "30 signed Debug simulator tests pass: six retry dispatch, ten queued context, fourteen tool-output. All 106 mobile contract files pass.",
+    "rollback": "Original reply including identity and summaries is restored when pre-dispatch authority is revoked; newer edits are preserved.",
+    "simulatorState": "Shutdown"
+  },
+  "codexFixture": {
+    "ciJob": 111426237054,
+    "failure": "Linux API suite failed the successful command lifecycle assertion after 243 files.",
+    "finding": "Fixture exited immediately after seven-byte stdout writes; buffered terminal frames could be lost.",
+    "repair": "End stdout and exit in its completion callback; seven-byte writes and lifecycle assertions retained.",
+    "localVerification": "Full Codex direct routing integration and focused lint pass. Generic macOS backpressure probe did not reproduce truncation; Linux hosted confirmation remains required.",
+    "reference": "https://nodejs.org/api/process.html#process_a_note_on_process_i_o"
+  },
+  "scope": "Native response-reset code and regression coverage plus test-fixture I/O. Web product source unchanged from qualified build.",
+  "privateLogSha256": {
+    "ios-retry-before.log": "31670cf3cbbbff8b96e9a025687896f232b3dfb15bc1ba3d29594b8ca4f8da9f",
+    "ios-retry-after.log": "d2725bc566feff1dafd8c6d69f23494432dbd7a6cbe6626a63e83fcb4a5fbd2b",
+    "mobile-retry-reset.log": "2297532a803ee39bf89af0887f509ec33b59a6ee00cfb87832a72f7b7160800b",
+    "codex-direct-flush.log": "ba03116152999b31c548860aa872fc48e262d47f394b78d31d6de23cadfe03c2",
+    "ci-api-111426237054.log": "0072de9a5a3aff2dd4f0745722e7be06ee723c8a1da8fdc9a2fc861e124030a8",
+    "stdout-backpressure-reproduction.json": "a55d8d4709e60c1787e9c6ba2401f300e14687ea3802249519624fc8722c5d47"
+  }
+}

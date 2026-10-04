@@ -2,6 +2,20 @@ import XCTest
 @testable import CovenCave
 
 final class ChatResponseControlsTests: XCTestCase {
+    func testSelectableModelsRequireRuntimeInventoryEvidence() {
+        let latest = ChatModelOption(id: "openai/gpt-6.1-sol", label: "Sol")
+        let legacy = ChatModelOption(id: "openai/gpt-5.6-sol", label: "Older Sol")
+        let state = ChatModelState(familiarId: "cody", harness: "codex", effectiveModel: legacy.id, source: "session")
+        for provenance in ["live", "cached", "fallback", "unavailable", "runtime-managed", "future"] {
+            let response = ChatModelStateResponse(ok: true, state: state, options: [legacy], inventory: ChatModelInventory(
+                runtime: "codex", models: [latest], provenance: provenance, defaultOwner: "runtime", allowCustom: false
+            ))
+            XCTAssertEqual(response.selectableOptions, ["live", "cached"].contains(provenance) ? [latest] : [])
+            XCTAssertEqual(response.state.effectiveModel, legacy.id, "Historical selection survives without becoming a selectable menu item")
+        }
+        XCTAssertTrue(ChatModelStateResponse(ok: true, state: state, options: [legacy]).selectableOptions.isEmpty)
+    }
+
     func testRuntimePresentationKeepsConfigurationContextConcise() {
         XCTAssertEqual(ChatRuntimePresentation.harnessLabel("codex"), "Codex")
         XCTAssertEqual(ChatRuntimePresentation.harnessLabel("opencode"), "OpenCode")
@@ -19,12 +33,53 @@ final class ChatResponseControlsTests: XCTestCase {
         )
         XCTAssertEqual(
             ChatModelInventoryProvenancePresentation.notice(for: "fallback"),
-            "Showing built-in model choices."
+            "Couldn’t refresh model choices."
         )
         XCTAssertEqual(
             ChatModelInventoryProvenancePresentation.notice(for: "unavailable"),
             "Couldn’t refresh model choices."
         )
+    }
+
+    func testActivityAvailabilitySurvivesLiveHistoryAndMalformedOptionalReports() throws {
+        for state in ["supported", "partial", "unsupported", "unknown", "disabled"] {
+            let activity = ChatRuntimeActivity(schemaVersion: 1, path: "ssh", tools: state, reasoning: state)
+            let identity = ChatRuntimeIdentity(schemaVersion: 1, harness: "claude", version: nil, model: nil, activity: activity)
+            let metadata = ChatTurnResponseMetadata(harness: "claude", runtimeIdentity: identity)
+            let restored = try JSONDecoder().decode(ChatTurnResponseMetadata.self, from: JSONEncoder().encode(metadata))
+            XCTAssertEqual(restored.runtimeIdentity?.activity, activity)
+            XCTAssertEqual(activity.statusLines.count, 3)
+            XCTAssertEqual(activity.statusLines[0], "Runtime path: SSH relay")
+            let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(identity))
+            let frame = try JSONSerialization.data(withJSONObject: ["kind": "response_metadata", "responseMetadata": ["harness": "claude", "runtimeIdentity": wire]])
+            guard case .runtimeIdentity(let live)? = StreamEvent.decode(String(decoding: frame, as: UTF8.self)) else {
+                return XCTFail("Missing live availability")
+            }
+            XCTAssertEqual(live, identity)
+        }
+        for malformed in [42, ["schemaVersion": 99], ["schemaVersion": 1, "path": "PRIVATE", "tools": "supported", "reasoning": "unknown"]] as [Any] {
+            let identity = ChatRuntimeIdentity.decode(["schemaVersion": 1, "harness": "claude", "activity": malformed])
+            XCTAssertNotNil(identity, "An optional capability report cannot hide runtime identity")
+            XCTAssertNil(identity?.activity)
+        }
+    }
+
+    func testRuntimeIdentitySeparatesReportsFromSelectedModelsAndSurvivesHistory() throws {
+        let identity = ChatRuntimeIdentity(schemaVersion: 1, harness: "claude", version: "2.1.280", model: "claude-opus-5-5")
+        let metadata = ChatTurnResponseMetadata(harness: "claude", desiredModel: "anthropic/opus", runtimeIdentity: identity)
+        let restored = try JSONDecoder().decode(ChatTurnResponseMetadata.self, from: JSONEncoder().encode(metadata))
+        XCTAssertEqual(restored.runtimeIdentity, identity)
+        XCTAssertEqual(restored.desiredModel, "anthropic/opus")
+        XCTAssertNil(ChatRuntimeIdentity.decode(["schemaVersion": 99, "harness": "claude", "model": "forged"]))
+        let wire = #"{"kind":"done","responseMetadata":{"harness":"claude","desiredModel":"anthropic/opus","runtimeIdentity":{"schemaVersion":1,"harness":"claude","version":"2.1.280","model":"claude-opus-5-5"}}}"#
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let reported)? = StreamEvent.decode(wire) else {
+            return XCTFail("Expected done identity")
+        }
+        XCTAssertEqual(reported, identity)
+        guard case .runtimeIdentity(let live)? = StreamEvent.decode(wire.replacingOccurrences(of: "\"done\"", with: "\"response_metadata\"")) else {
+            return XCTFail("Expected live runtime identity")
+        }
+        XCTAssertEqual(live, reported)
     }
 
     private actor Gate {
@@ -66,7 +121,7 @@ final class ChatResponseControlsTests: XCTestCase {
         let expected = [
             "live": "Live inventory",
             "cached": "Cached inventory",
-            "fallback": "Fallback inventory",
+            "fallback": "Inventory unavailable",
             "runtime-managed": "Runtime-managed inventory",
             "unavailable": "Inventory unavailable",
         ]
@@ -377,7 +432,7 @@ final class ChatResponseControlsTests: XCTestCase {
             """
         ))
 
-        guard case .done(let isError, let sessionId, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies) = event else {
+        guard case .done(let isError, let sessionId, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies, let runtimeIdentity) = event else {
             return XCTFail("expected done event")
         }
         XCTAssertFalse(isError)
@@ -386,6 +441,7 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(desiredModel, "")
         XCTAssertEqual(forwardedModel, "gpt-5.6-sol")
         XCTAssertNil(confirmedModel)
+        XCTAssertNil(runtimeIdentity)
         XCTAssertEqual(modelSource, "runtime-default")
         XCTAssertEqual(modelApplicationState, "saved")
         XCTAssertEqual(modelApplicationReason, "Using the runtime default.")

@@ -3,7 +3,7 @@ import type { OpenCodeEnvelopePath, OpenCodeEventSchema } from "@/lib/opencode-c
 export type OpenCodeRunEvent =
   | { kind: "ignore"; sessionId?: string }
   | { kind: "text"; sessionId?: string; text: string; diagnostic?: "unknown-event" }
-  | { kind: "tool_start"; sessionId?: string; id: string; name: string; input: unknown }
+  | { kind: "tool_start"; sessionId?: string; id: string; name: string; input: unknown; executionObserved?: false }
   | { kind: "tool_progress"; sessionId?: string; id: string; output: unknown }
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
@@ -108,9 +108,15 @@ function toolId(event: Record<string, unknown>, part: Record<string, unknown> | 
   return stringAt(idSource, ...aliases) ?? (!schema?.shape?.idEnvelope ? stringAt(event, ...aliases) : undefined) ?? null;
 }
 
-function toolStatus(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | undefined {
+function toolStatusValue(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): unknown {
   const aliases = shapeAliases(schema, "status", ["status"]);
-  return stringAt(state, ...aliases) ?? stringAt(part, ...aliases);
+  const value = valueAt(state, aliases);
+  return value !== undefined ? value : valueAt(part, aliases);
+}
+
+function toolStatus(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | undefined {
+  const value = toolStatusValue(state, part, schema);
+  return typeof value === "string" ? value : undefined;
 }
 
 function terminalToolState(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): boolean {
@@ -222,21 +228,35 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const toolProgressTypes = eventTypes(schema, "toolProgress", []);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);
+  const isToolEvent = [...toolStartTypes, ...toolProgressTypes, ...toolEndTypes, ...toolCompleteTypes].includes(eventType);
+  const rawStatus = toolStatusValue(state, toolPart, schema);
+  const status = typeof rawStatus === "string" ? rawStatus.toLowerCase() : undefined;
+  const terminal = terminalToolState(state, toolPart, schema);
+  if (isToolEvent && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool")) {
+    if (rawStatus !== undefined && typeof rawStatus !== "string") {
+      return { kind: "other", sessionId, diagnostic: "malformed-event" };
+    }
+    if (status !== undefined && !terminal && !["pending", "queued", "running", "in_progress"].includes(status)) {
+      return { kind: "other", sessionId, diagnostic: "unknown-event" };
+    }
+  }
   if (toolStartTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool") && !terminalToolState(state, toolPart, schema)) {
-    return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
+    return { kind: "tool_start", ...(["pending", "queued"].includes(toolStatus(state, toolPart, schema)?.toLowerCase() ?? "") ? { executionObserved: false as const } : {}), sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
   }
   if (toolProgressTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool") && !terminalToolState(state, toolPart, schema)) {
     const output = shapeAliases(schema, "output", ["output"]);
     return { kind: "tool_progress", sessionId, id, output: valueAt(state, output) ?? valueAt(toolPart, output) ?? "" };
   }
   if (toolEndTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool")) {
+    if (status !== undefined && !terminal) return { kind: "other", sessionId, diagnostic: "malformed-event" };
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
     return { kind: "tool_end", sessionId, id, output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(toolPart, output) ?? valueAt(toolPart, error) ?? "", isError: toolStateIsError(state, toolPart, schema) };
   }
   if (toolCompleteTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool")) {
-    // Legacy `tool_use` frames were terminal snapshots and some omit a
-    // status entirely. Their output/error is the durable terminal signal.
+    // Legacy `tool_use` frames can omit status; their output/error signals
+    // completion. An explicit nonterminal state takes precedence over a
+    // preview payload and must never fabricate a successful/failed result.
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
     const stateError = valueAt(state, error);
@@ -245,8 +265,8 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
       || hasToolErrorPayload(stateError)
       || valueAt(toolPart, output) !== undefined
       || hasToolErrorPayload(partError);
-    if (!terminalToolState(state, toolPart, schema) && !hasTerminalPayload) {
-      return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
+    if (!terminal && (status !== undefined || !hasTerminalPayload)) {
+      return { kind: "tool_start", ...(toolStatus(state, toolPart, schema)?.toLowerCase() !== "running" ? { executionObserved: false as const } : {}), sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
     }
     return {
       kind: "tool",

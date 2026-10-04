@@ -1,0 +1,1367 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T05:53:04.430791+00:00",
+  "issues": [
+    5761,
+    5765,
+    5767
+  ],
+  "candidate": {
+    "head": "18f6e327addc63707736c91040524bdc734a323c",
+    "sourceFingerprint": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+    "buildId": "jWUpxykRXSyNo49w4GE3-",
+    "artifacts": {
+      "server.mjs": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+      ".next/server/app/api/chat/send/route.js": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d",
+      ".next/server/app/api/runtime-models/[runtime]/route.js": "0a4b2d116c1c221caf4dff56891cb2fc2b7faf3bdb320574163ea8dfd2cfe1af"
+    },
+    "nativeDelta": "No iOS source changed from the Hermes alias checkpoint; earlier native and provider UI evidence keeps its original source/build."
+  },
+  "changes": [
+    "Explicit opt-in interactive phase for real Claude/Copilot canaries. Owned preferences/project/queue state, private temporary connection, snapshot/restored/finish controls, bounded lifetime and owned-run Stop on failure.",
+    "Measure the activity rail when the first tool mounts it after an initially empty render; observe parent width, detach on clear, measure once even without ResizeObserver. Existing width threshold and CSS remain.",
+    "Claude fast mode shares its base family. Newer base releases remove older fast modes; standard mode wins an otherwise equal release. Preserve the newest fast release if no matching standard release is discovered."
+  ],
+  "checks": {
+    "web-rail-lifecycle-red": {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "src/components/chat-run-rail-lifecycle.test.tsx"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:17.586015+00:00",
+      "sourceBefore": "7536d5b221f9ee5f447e81f1447ca7152bd118e5d6b7ea9dfae12e712d7f80aa",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-rail-lifecycle-red.log",
+      "finishedAt": "2026-10-04T04:43:18.480188+00:00",
+      "exitCode": 1,
+      "sourceAfter": "7536d5b221f9ee5f447e81f1447ca7152bd118e5d6b7ea9dfae12e712d7f80aa",
+      "sourceUnchanged": true,
+      "receiptSHA256": "bd211b76f73355224505e95ac90f32b62b05b1cfef4419178aa3ae6aa9d1268e",
+      "logSHA256": "f66930fca63e20df332d1cec572d2029f865c098de2f1aa6e8589ca357409be7"
+    },
+    "web-rail-lifecycle-green": {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "src/components/chat-run-rail-lifecycle.test.tsx"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:36.726663+00:00",
+      "sourceBefore": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-rail-lifecycle-green.log",
+      "finishedAt": "2026-10-04T04:43:37.687496+00:00",
+      "exitCode": 0,
+      "sourceAfter": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "sourceUnchanged": true,
+      "receiptSHA256": "ff566679ab9affa84fb35c82626d2b9878c807e291e6b5718bdc2f97bc299f15",
+      "logSHA256": "8ec184e9c5cf23aa4de9254d45478ddf631a0a7c869acae2079a1de2c6d963ce"
+    },
+    "web-rail-contracts": {
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "src/components/chat-run-rail.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:36.726688+00:00",
+      "sourceBefore": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-rail-contracts.log",
+      "finishedAt": "2026-10-04T04:43:37.259048+00:00",
+      "exitCode": 254,
+      "sourceAfter": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "sourceUnchanged": true,
+      "receiptSHA256": "2337371bd6c3fa5b56e8949bf83959a4c0f002c82b6832cdf5de0baab351a8a0",
+      "logSHA256": "6b76367cca11cbe54ef1025ee4796107f5d9f8edf9bdb2878a32225a64643446"
+    },
+    "web-rail-contracts-corrected": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/components/chat-run-rail.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:51.211107+00:00",
+      "sourceBefore": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-rail-contracts-corrected.log",
+      "finishedAt": "2026-10-04T04:43:51.573667+00:00",
+      "exitCode": 0,
+      "sourceAfter": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "sourceUnchanged": true,
+      "receiptSHA256": "75670d955fe3f2a7497a8ed43bbc4ccb99b1a54872340c519fddff51b1e050fa",
+      "logSHA256": "d30e94d3a3c81aa28a7be43028fca532a2914487d4cb13f3947a9acfec69c2dc"
+    },
+    "web-rail-model": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/chat-run-rail.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:51.211260+00:00",
+      "sourceBefore": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-rail-model.log",
+      "finishedAt": "2026-10-04T04:43:51.571625+00:00",
+      "exitCode": 0,
+      "sourceAfter": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "sourceUnchanged": true,
+      "receiptSHA256": "01450d9d4e7220459da24413a09e9f5ee7b1e843379a5a0e6832e6eeb7cbff3d",
+      "logSHA256": "5aceeb018e2d4fb0a1cf0a9db21c61db637d10872f834ae84ce3af067d0df048"
+    },
+    "web-provider-tests-wired": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:43:51.211062+00:00",
+      "sourceBefore": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-tests-wired.log",
+      "finishedAt": "2026-10-04T04:43:51.789350+00:00",
+      "exitCode": 1,
+      "sourceAfter": "bc8bae997f7eb8319c7cab9b925021645c806fcc6c799a6fd1605add25c98c47",
+      "sourceUnchanged": true,
+      "receiptSHA256": "9f150494abdeedd628c51f1686f1f2f2381937392afda0b633f36287d00377cc",
+      "logSHA256": "7cdb06852ab3d0ac8fd3c7de9607a1913260e5f1c860226837e3a482b7404d6b"
+    },
+    "web-provider-app-suite": {
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:44:41.070764+00:00",
+      "sourceBefore": "6b755b697bbd35192fcad1793e66cc522c3d5e6e0009ea0f1a37d788c6fddddc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-app-suite.log",
+      "finishedAt": "2026-10-04T04:46:25.908135+00:00",
+      "exitCode": 1,
+      "sourceAfter": "6b755b697bbd35192fcad1793e66cc522c3d5e6e0009ea0f1a37d788c6fddddc",
+      "sourceUnchanged": true,
+      "receiptSHA256": "cfae70bbfe1b825900629e4d49f77db15845ad4637b31262c840e732deb03603",
+      "logSHA256": "3c6be92133cb4c1941e6f1405978a855c1c5c5680410aa3b9331df765b57ad22"
+    },
+    "web-provider-app-suite-corrected": {
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:24.014912+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-app-suite-corrected.log",
+      "finishedAt": "2026-10-04T05:52:31.438393+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "5171ef5b3f5c32b73ffadeab767e933a696ecbad0d8f9aacf415f58c9620e8bd",
+      "logSHA256": "81ea5edeb84a15d83fa622d3260eb75fb9044bf0bc603f4ff09c157755b04478"
+    },
+    "web-claude-fast-family-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:06.952667+00:00",
+      "sourceBefore": "21bde8ea497dbc8d587faec9fdad167b3a7c191b37636cfe808bcd849ad3d0c3",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-claude-fast-family-red.log",
+      "finishedAt": "2026-10-04T05:46:07.908665+00:00",
+      "exitCode": 1,
+      "sourceAfter": "21bde8ea497dbc8d587faec9fdad167b3a7c191b37636cfe808bcd849ad3d0c3",
+      "sourceUnchanged": true,
+      "receiptSHA256": "c81fec314f8109c47e24ada4dc471706d9e4a01ec8c8b3ec5e97e2afef9b0b0d",
+      "logSHA256": "fe032da7c7f01dcb981cb3d55a313cbab4c49e846db7f19954a4cd296bae996e"
+    },
+    "web-claude-fast-family-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:24.014740+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-claude-fast-family-green.log",
+      "finishedAt": "2026-10-04T05:46:24.466292+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "ac708db7a19f699f1dfe365aadfe082d83ab6ec04646052e6c988f2694d67c26",
+      "logSHA256": "663716c44933d03c3a39e32190efea8fccf46b91b8dc51d3b83b550cc7c79948"
+    },
+    "web-provider-typecheck-final": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:24.014740+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-typecheck-final.log",
+      "finishedAt": "2026-10-04T05:46:31.623118+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "8984df9a311338e71dd7315448f98fe4adb5af026a6225ac21028423c8f85b18",
+      "logSHA256": "5bdaef12ca46a8e785744fa3d3ded7bfdba8c60af61d9af69054a0b367a9ad04"
+    },
+    "web-provider-lint-final": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/components/chat-run-rail.tsx",
+        "src/components/chat-run-rail-lifecycle.test.tsx",
+        "scripts/runtime-activity-canary.mjs",
+        "scripts/runtime-activity-interactive-provider.mjs",
+        "scripts/run-tests.mjs",
+        "src/lib/runtime-model-families.ts",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:24.015008+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-lint-final.log",
+      "finishedAt": "2026-10-04T05:46:25.821893+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "762fe3b292204d37a66f5a2e73c5a4f0be58b940027698dcbe8796b7e9219a8c",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "web-provider-inventory-api": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/runtime-models/[runtime]/route.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:47.466012+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-inventory-api.log",
+      "finishedAt": "2026-10-04T05:46:47.955781+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "43635a3fe16bd125d4fe252f712887571f96c8a2138e883e7c2136482b0b799e",
+      "logSHA256": "60ba5b5baaa4c91002b8afdbb8306e0ca33b1a2a389c82158f98fe03caea90f6"
+    },
+    "web-provider-alias-regression": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/hermes-models.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:47.465660+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-alias-regression.log",
+      "finishedAt": "2026-10-04T05:46:48.121706+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "e19b7be7fd69430881a67c82e449221df4c832f6ff7c8547009e9eb519ac1a66",
+      "logSHA256": "7a5bd259c571327b8810e64423cb7fd1f2e39f246a3cddb98cdb8146bcf2a3d9"
+    },
+    "web-provider-tests-wired-complete": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:47.468526+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-tests-wired-complete.log",
+      "finishedAt": "2026-10-04T05:46:48.194643+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "a37b3c6797d1dfc26ea110b0771bb0e6d3e75c3cb6e8be838a90d898dd1c43ea",
+      "logSHA256": "38b5c474d89192527f65be6556812544742ee13b98198cc1895188f098d59cf4"
+    },
+    "web-provider-build-final": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:46:47.465656+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-build-final.log",
+      "finishedAt": "2026-10-04T05:47:14.882414+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "0e7dc193c0f05cd1c5f7b4668f9a29d20e09af7f3334d07364481f2feb248483",
+      "logSHA256": "7b7cbb6696f725e19da672661e929d1a6a5c9064e846fb2ff7faa7456922800b"
+    },
+    "web-copilot-menu-live": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "/Users/buns/.coven/cave/verification/issue-5761/copilot-model-menu-live.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:47:27.150029+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-copilot-menu-live.log",
+      "finishedAt": "2026-10-04T05:47:33.770315+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "dcc44014234cb5fd190e48ac855c6f38f7ccd9ea621ab951c4345946fc6ee8d6",
+      "logSHA256": "52edb94f2deb9d7c5fb84b44b2e67088f7de229b1a4112833fc8dcdc0ad83083"
+    },
+    "web-provider-final-diff": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T05:53:04.514862+00:00",
+      "sourceBefore": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-provider-final-diff.log",
+      "finishedAt": "2026-10-04T05:53:05.269966+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+      "sourceUnchanged": true,
+      "receiptSHA256": "c42cda0e85e8f45bfa605180246a09ef231d288aa9d43527d1047f1ee85c6798",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "invalidArguments": [
+    {
+      "args": [],
+      "exitCode": 2,
+      "refusedBeforeCanarySetup": true
+    },
+    {
+      "args": [
+        "--harness",
+        "claude",
+        "--execute",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "/tmp/cave-unused"
+      ],
+      "exitCode": 2,
+      "refusedBeforeCanarySetup": true
+    },
+    {
+      "args": [
+        "--harness",
+        "claude",
+        "--execute",
+        "--http",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "relative"
+      ],
+      "exitCode": 2,
+      "refusedBeforeCanarySetup": true
+    },
+    {
+      "args": [
+        "--harness",
+        "opencode",
+        "--execute",
+        "--http",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "/tmp/cave-unused"
+      ],
+      "exitCode": 2,
+      "refusedBeforeCanarySetup": true
+    }
+  ],
+  "claudeFirstAttempt": {
+    "check": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-canary.mjs",
+        "--harness",
+        "claude",
+        "--execute",
+        "--http",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/web-claude-provider-first"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:37:56.509343+00:00",
+      "sourceBefore": "1377d841733b66b8f938cf05e8ca5e53310574f1a482cf91699a616456804ecf",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-claude-provider-first.log",
+      "finishedAt": "2026-10-04T04:40:06.523256+00:00",
+      "exitCode": 1,
+      "sourceAfter": "1377d841733b66b8f938cf05e8ca5e53310574f1a482cf91699a616456804ecf",
+      "sourceUnchanged": true,
+      "receiptSHA256": "9e38b05e3c525d546dc39ffe7f1719d90c636c118847de165c488b349ed0870d",
+      "logSHA256": "bd155fe20736d83f6af1f17e766ab96244fb6955e292dc639897043990e97607"
+    },
+    "report": {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-AVLfGW",
+      "harness": "claude",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-04T04:37:56.777Z",
+      "candidate": {
+        "head": "18f6e327addc63707736c91040524bdc734a323c",
+        "patchSha256": "f1d5995eff051e6d2336cb2b82d1eef2c1efb9e09b1d8bc9ea2939ef165cf677",
+        "changedSourceSha256": "b71f7469d2311cb3f0a9a86b3cd6f759f5309dc95513f34192d962898179d560"
+      },
+      "runtimeVersion": "2.1.288 (Claude Code)",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "kv8FenOX2f9mApbjXkoMk",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+      },
+      "daemon": {
+        "pid": 66765,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-AVLfGW/coven/coven.sock"
+      },
+      "profile": "claude-stream-json-v2",
+      "server": {
+        "pid": 68060,
+        "port": 64381
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "aacc0756-dbf4-460b-9408-bf201a1cfdbf",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "reasoning",
+        "tool_use",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "path": "coven",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "id": "toolu_01DaTqAZuKU784rFNrQAQTAr",
+          "name": "Read",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01DaTqAZuKU784rFNrQAQTAr",
+          "name": "Read",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "answerComparison": {
+        "liveLength": 223,
+        "savedLength": 223,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 0,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": "Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- '/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-AVLfGW/project'\n",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-04T04:40:06.516Z"
+    },
+    "reportSHA256": "ef794f2a24ed865e9ea211adf56fc4970a85214f17f5c3cc0f9f98a5065330ca",
+    "interactive": {
+      "startedAt": "2026-10-04T04:38:12.459Z",
+      "client": "web",
+      "harness": "claude",
+      "passed": false,
+      "expectedIdentity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "uiRenderingVerified": false,
+      "limitations": [
+        "UI observations must be recorded separately; these assertions inspect saved history and replay.",
+        "Conversation counts are not tool-invocation or protected-effect receipts."
+      ],
+      "failure": "Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- '/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-AVLfGW/project'\n",
+      "stopRequests": [
+        {
+          "runId": "927c08f9-2412-4123-a0af-a9cf29af55a2",
+          "stopped": false
+        }
+      ],
+      "temporaryConnectionRemoved": true,
+      "finishedAt": "2026-10-04T04:40:06.321Z"
+    }
+  },
+  "claudeCorrected": {
+    "check": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-canary.mjs",
+        "--harness",
+        "claude",
+        "--execute",
+        "--http",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/web-claude-provider-corrected"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:40:22.682926+00:00",
+      "sourceBefore": "15e5d80c1bbe6c149a2caf2d000c8a91fda9b45e694be5f1a434a7b753fa3f77",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-claude-provider-corrected.log",
+      "finishedAt": "2026-10-04T04:42:14.444008+00:00",
+      "exitCode": 0,
+      "sourceAfter": "15e5d80c1bbe6c149a2caf2d000c8a91fda9b45e694be5f1a434a7b753fa3f77",
+      "sourceUnchanged": true,
+      "receiptSHA256": "50a96fee29a8d85dbb5add8ba0338c9e518362ad197a9c33b08cc12699a20d5f",
+      "logSHA256": "5821cfc9a1f185fd062b6da1a4bc1dbfbb14700a0edcbc3b1da790faa4fce621"
+    },
+    "report": {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-pOvwqi",
+      "harness": "claude",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-04T04:40:22.945Z",
+      "candidate": {
+        "head": "18f6e327addc63707736c91040524bdc734a323c",
+        "patchSha256": "f1d5995eff051e6d2336cb2b82d1eef2c1efb9e09b1d8bc9ea2939ef165cf677",
+        "changedSourceSha256": "5c64e11604e1317303f72f22950dea91473353421862fdad3fe733c85aa631ef"
+      },
+      "runtimeVersion": "2.1.288 (Claude Code)",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server, real provider and separately observed interactive client on loopback; backend checks do not themselves prove UI rendering, remote HTTPS, packaged release or human accessibility.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "kv8FenOX2f9mApbjXkoMk",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+      },
+      "daemon": {
+        "pid": 91132,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-pOvwqi/coven/coven.sock"
+      },
+      "profile": "claude-stream-json-v2",
+      "server": {
+        "pid": 92426,
+        "port": 64957
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "3050f5e6-8590-49f5-b2a9-cc882f30446e",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "reasoning",
+        "tool_use",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "path": "coven",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "id": "toolu_01GsWQDZAPVJ4QrD7kYPNQKP",
+          "name": "Read",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01GsWQDZAPVJ4QrD7kYPNQKP",
+          "name": "Read",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "answerComparison": {
+        "liveLength": 50,
+        "savedLength": 50,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 0,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "interactive": {
+        "startedAt": "2026-10-04T04:40:37.983Z",
+        "client": "web",
+        "harness": "claude",
+        "passed": true,
+        "expectedIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "coven",
+            "tools": "supported",
+            "reasoning": "unknown"
+          }
+        },
+        "uiRenderingVerified": false,
+        "limitations": [
+          "UI observations must be recorded separately; these assertions inspect saved history and replay.",
+          "Conversation counts are not tool-invocation or protected-effect receipts."
+        ],
+        "live": {
+          "sessionId": "787ecf89-a5c9-4b18-8a1b-696916d06939",
+          "runId": "205e8eb8-2e14-4135-9f84-330f175bb732",
+          "userTurnId": "e8f9158c-95c4-4743-917c-0e9aa87b76f6",
+          "assistantTurnId": "d3dcdecd-9e2d-46b9-9ca0-607152da11b9",
+          "identity": {
+            "schemaVersion": 1,
+            "harness": "claude",
+            "version": "2.1.288",
+            "model": "claude-opus-5-5",
+            "activity": {
+              "schemaVersion": 1,
+              "path": "coven",
+              "tools": "supported",
+              "reasoning": "unknown"
+            }
+          },
+          "tool": {
+            "id": "toolu_01BcHtJFmwTM7dnAA7AiXQDw",
+            "name": "Read",
+            "status": "ok"
+          },
+          "outputContainsMarker": true,
+          "replayMatchesSavedAnswerIdentityAndTool": true,
+          "conversationCount": 2
+        },
+        "restored": {
+          "sessionId": "787ecf89-a5c9-4b18-8a1b-696916d06939",
+          "runId": "205e8eb8-2e14-4135-9f84-330f175bb732",
+          "userTurnId": "e8f9158c-95c4-4743-917c-0e9aa87b76f6",
+          "assistantTurnId": "d3dcdecd-9e2d-46b9-9ca0-607152da11b9",
+          "identity": {
+            "schemaVersion": 1,
+            "harness": "claude",
+            "version": "2.1.288",
+            "model": "claude-opus-5-5",
+            "activity": {
+              "schemaVersion": 1,
+              "path": "coven",
+              "tools": "supported",
+              "reasoning": "unknown"
+            }
+          },
+          "tool": {
+            "id": "toolu_01BcHtJFmwTM7dnAA7AiXQDw",
+            "name": "Read",
+            "status": "ok"
+          },
+          "outputContainsMarker": true,
+          "replayMatchesSavedAnswerIdentityAndTool": true,
+          "conversationCount": 2
+        },
+        "temporaryConnectionRemoved": true,
+        "finishedAt": "2026-10-04T04:42:14.249Z"
+      },
+      "passed": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-04T04:42:14.438Z"
+    },
+    "reportSHA256": "5daefd427d62d2965a1fa5543ca7f4b8320c5207dc41fd919caa898704727651",
+    "interactive": {
+      "startedAt": "2026-10-04T04:40:37.983Z",
+      "client": "web",
+      "harness": "claude",
+      "passed": true,
+      "expectedIdentity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "uiRenderingVerified": false,
+      "limitations": [
+        "UI observations must be recorded separately; these assertions inspect saved history and replay.",
+        "Conversation counts are not tool-invocation or protected-effect receipts."
+      ],
+      "live": {
+        "sessionId": "787ecf89-a5c9-4b18-8a1b-696916d06939",
+        "runId": "205e8eb8-2e14-4135-9f84-330f175bb732",
+        "userTurnId": "e8f9158c-95c4-4743-917c-0e9aa87b76f6",
+        "assistantTurnId": "d3dcdecd-9e2d-46b9-9ca0-607152da11b9",
+        "identity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "coven",
+            "tools": "supported",
+            "reasoning": "unknown"
+          }
+        },
+        "tool": {
+          "id": "toolu_01BcHtJFmwTM7dnAA7AiXQDw",
+          "name": "Read",
+          "status": "ok"
+        },
+        "outputContainsMarker": true,
+        "replayMatchesSavedAnswerIdentityAndTool": true,
+        "conversationCount": 2
+      },
+      "restored": {
+        "sessionId": "787ecf89-a5c9-4b18-8a1b-696916d06939",
+        "runId": "205e8eb8-2e14-4135-9f84-330f175bb732",
+        "userTurnId": "e8f9158c-95c4-4743-917c-0e9aa87b76f6",
+        "assistantTurnId": "d3dcdecd-9e2d-46b9-9ca0-607152da11b9",
+        "identity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "coven",
+            "tools": "supported",
+            "reasoning": "unknown"
+          }
+        },
+        "tool": {
+          "id": "toolu_01BcHtJFmwTM7dnAA7AiXQDw",
+          "name": "Read",
+          "status": "ok"
+        },
+        "outputContainsMarker": true,
+        "replayMatchesSavedAnswerIdentityAndTool": true,
+        "conversationCount": 2
+      },
+      "temporaryConnectionRemoved": true,
+      "finishedAt": "2026-10-04T04:42:14.249Z"
+    }
+  },
+  "copilotIncomplete": {
+    "check": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-canary.mjs",
+        "--harness",
+        "copilot",
+        "--execute",
+        "--http",
+        "--interactive-client",
+        "web",
+        "--interactive-evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/web-copilot-provider-final"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:44:41.079742+00:00",
+      "sourceBefore": "6b755b697bbd35192fcad1793e66cc522c3d5e6e0009ea0f1a37d788c6fddddc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/web-copilot-provider-final.log",
+      "finishedAt": "2026-10-04T05:15:02.530729+00:00",
+      "exitCode": 1,
+      "sourceAfter": "6b755b697bbd35192fcad1793e66cc522c3d5e6e0009ea0f1a37d788c6fddddc",
+      "sourceUnchanged": true,
+      "receiptSHA256": "dc7f9c984ba6fdc56cf6b8f44088cb6d2aea926cd3a580a0e5f5a955a880384f",
+      "logSHA256": "c10f7666040e913677fb517c1bc82de5b7c14b6d49f4fadd21544a371272b5a3"
+    },
+    "report": {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-Q7Erif",
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-04T04:44:41.493Z",
+      "candidate": {
+        "head": "18f6e327addc63707736c91040524bdc734a323c",
+        "patchSha256": "43bd692ea93d71b4f5252c1d0e8afb0e2484050bfc01d5ef53c8df11af30ae1a",
+        "changedSourceSha256": "d0cb20f4659164a1963594b6d66094b4f7ec75317355d2588059cc479d0f4649"
+      },
+      "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "Tw4NQ-0LnklRbBGHZ9spW",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+      },
+      "daemon": {
+        "pid": 12362,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-Q7Erif/coven/coven.sock"
+      },
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.88",
+        "probeExecutable": "copilot",
+        "launchCommand": {
+          "command": "/Users/buns/.nvm/versions/node/v24.13.0/lib/node_modules/@github/copilot/npm-loader.js",
+          "fixedArgs": [],
+          "requiredFiles": []
+        },
+        "spawnPathWarmed": true,
+        "scope": "canonical-launch-preflight"
+      },
+      "profile": "copilot-jsonl-v1",
+      "server": {
+        "pid": 14970,
+        "port": 49755
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "97787bcc-8940-4d43-8dd3-e84f01c93be3",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "tool_use",
+        "assistant_replace",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.88",
+        "model": "claude-sonnet-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "path": "direct",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "id": "toolu_01RK9GoiZv6VGmKeYQJgg3fo",
+          "name": "view",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01RK9GoiZv6VGmKeYQJgg3fo",
+          "name": "view",
+          "status": "running",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01RK9GoiZv6VGmKeYQJgg3fo",
+          "name": "view",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": false,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "answerComparison": {
+        "liveLength": 291,
+        "savedLength": 290,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 1,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": "interactive verification must finish explicitly",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-04T05:15:02.523Z"
+    },
+    "reportSHA256": "d958b3c5348b8048513f74f45405676bb4f3cc26dc3b26441aaeca6e35ace5c0",
+    "interactive": {
+      "startedAt": "2026-10-04T04:45:02.293Z",
+      "client": "web",
+      "harness": "copilot",
+      "passed": false,
+      "expectedIdentity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.88",
+        "model": "claude-sonnet-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "uiRenderingVerified": false,
+      "limitations": [
+        "UI observations must be recorded separately; these assertions inspect saved history and replay.",
+        "Conversation counts are not tool-invocation or protected-effect receipts."
+      ],
+      "failure": "interactive verification must finish explicitly",
+      "stopRequests": [],
+      "temporaryConnectionRemoved": true,
+      "finishedAt": "2026-10-04T05:15:02.247Z"
+    }
+  },
+  "liveCopilotModelInventory": {
+    "startedAt": "2026-10-04T05:47:27.499Z",
+    "passed": true,
+    "classification": "Actual installed Copilot model inventory through production Cave. No chat/provider/tool execution or browser rendering.",
+    "upstreamIds": [
+      "github/auto",
+      "github/claude-sonnet-5",
+      "github/claude-fable-5.1",
+      "github/claude-fable-5",
+      "github/claude-opus-5",
+      "github/claude-opus-4.8",
+      "github/claude-opus-4.8-fast",
+      "github/claude-haiku-4.5",
+      "github/gpt-6-astra",
+      "github/gpt-5.6-sol",
+      "github/gpt-5.6-terra",
+      "github/gpt-5.6-luna",
+      "github/gpt-5.5",
+      "github/gpt-5.4",
+      "github/gpt-5.4-mini",
+      "github/gpt-5.3-codex",
+      "github/gpt-5-mini",
+      "github/mai-code-1.1-flash",
+      "github/grok-4.5",
+      "github/kimi-k3",
+      "github/claude-opus-5.5",
+      "github/claude-sonnet-5.5",
+      "github/gpt-6.1-sol",
+      "github/gpt-6-luna",
+      "github/gpt-6-sol",
+      "github/grok-4.6",
+      "github/grok-4.7"
+    ],
+    "cave": {
+      "pid": 22122,
+      "port": 62901,
+      "buildId": "jWUpxykRXSyNo49w4GE3-",
+      "inventoryRouteSHA256": "0a4b2d116c1c221caf4dff56891cb2fc2b7faf3bdb320574163ea8dfd2cfe1af"
+    },
+    "inventory": {
+      "ok": true,
+      "runtime": "copilot",
+      "models": [
+        {
+          "id": "github/auto",
+          "label": "Auto (Copilot picks)"
+        },
+        {
+          "id": "github/claude-fable-5.1",
+          "label": "Claude Fable 5.1"
+        },
+        {
+          "id": "github/claude-haiku-4.5",
+          "label": "Claude Haiku 4.5"
+        },
+        {
+          "id": "github/gpt-6-astra",
+          "label": "GPT-6 Astra"
+        },
+        {
+          "id": "github/gpt-5.6-terra",
+          "label": "GPT-5.6 Terra"
+        },
+        {
+          "id": "github/gpt-5.5",
+          "label": "GPT-5.5"
+        },
+        {
+          "id": "github/gpt-5.4-mini",
+          "label": "GPT-5.4 mini"
+        },
+        {
+          "id": "github/gpt-5.3-codex",
+          "label": "GPT-5.3-Codex"
+        },
+        {
+          "id": "github/mai-code-1.1-flash",
+          "label": "MAI-Code-1.1-Flash"
+        },
+        {
+          "id": "github/kimi-k3",
+          "label": "Kimi K3"
+        },
+        {
+          "id": "github/claude-opus-5.5",
+          "label": "Claude Opus 5.5"
+        },
+        {
+          "id": "github/claude-sonnet-5.5",
+          "label": "Claude Sonnet 5.5"
+        },
+        {
+          "id": "github/gpt-6.1-sol",
+          "label": "GPT-6.1 Sol"
+        },
+        {
+          "id": "github/gpt-6-luna",
+          "label": "GPT-6 Luna"
+        },
+        {
+          "id": "github/grok-4.7",
+          "label": "Grok 4.7"
+        }
+      ],
+      "defaultOwner": "cave",
+      "allowCustom": true,
+      "scope": {
+        "familiarId": null,
+        "runtime": "copilot",
+        "provider": "github",
+        "credentialScope": "global",
+        "providerConfiguration": "global"
+      },
+      "provenance": "live",
+      "freshness": "fresh",
+      "refreshState": "ready",
+      "availability": "available"
+    },
+    "serverStopped": true,
+    "conversationFiles": [],
+    "finishedAt": "2026-10-04T05:47:33.762Z"
+  },
+  "browserObservations": {
+    "tool": "cua_repl native app accessibility and tool-visible screenshots",
+    "browser": "Dia, verified system default",
+    "claude": {
+      "buildId": "kv8FenOX2f9mApbjXkoMk",
+      "currentBuildRevalidated": false,
+      "observed": [
+        "Real composer, isolated read-granted project, explicitly selected Explore read only.",
+        "During streaming: claude 2.1.288 and claude-opus-5-5. Successful Read tool; no captured tool Running phase.",
+        "Completed response and expanded saved tool output contain the controlled marker.",
+        "Reload preserves exact identity, Read success, output and session; backend snapshot/restored/finish verifies stable history/replay IDs and two total conversations."
+      ],
+      "layoutFinding": "Before the rail fix, first live tool mounted a wide rail in the narrow browser pane; it squeezed the transcript. Reload hid it. Reproduced and corrected by three React lifecycle regressions; rebuilt UI was not subsequently captured."
+    },
+    "copilot": {
+      "buildId": "Tw4NQ-0LnklRbBGHZ9spW",
+      "completedComposerTurn": false,
+      "observed": [
+        "Real inventory menu included Opus 4.8 fast and Opus 5.5, motivating the family fix.",
+        "Explore read only visibly selected, controlled prompt prepared but send action not executed."
+      ],
+      "interruption": "Computer-use reported intervening user changes. The interactive deadline expired and cleaned up before later abort input; no further browser actions after the second interference report.",
+      "savedConversations": 1,
+      "conversationMeaning": "Only the initial HTTP canary; not a browser provider pass."
+    },
+    "captureLimits": "Screenshots were inspected in tool output but not exported as standalone evidence images. No screenshot artifact, wide-layout, physical-device, human keyboard or VoiceOver acceptance claimed."
+  },
+  "desktop": {
+    "launched": false,
+    "blocker": "Distinct app identifier is insufficient: prepare_gui_reachability may uninstall the global ai.opencoven.cave LaunchAgent when the isolated app has daemon_mode false. The user has that LaunchAgent installed. Preserve it and the running installed app.",
+    "source": "src-tauri/src/desktop_reachability.rs:1697",
+    "nextStep": "Establish an owned native startup path that cannot mutate the global LaunchAgent before desktop verification."
+  },
+  "cleanup": {
+    "recordedAt": "2026-10-04T05:48:06.730115+00:00",
+    "runs": [
+      {
+        "label": "web-claude-provider-first",
+        "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-AVLfGW",
+        "passed": false,
+        "serverStopped": true,
+        "daemonStopped": true,
+        "pids": [
+          {
+            "pid": 66765,
+            "absent": true
+          },
+          {
+            "pid": 68060,
+            "absent": true
+          }
+        ],
+        "connectionRemoved": true,
+        "conversations": 2
+      },
+      {
+        "label": "web-claude-provider-corrected",
+        "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-pOvwqi",
+        "passed": true,
+        "serverStopped": true,
+        "daemonStopped": true,
+        "pids": [
+          {
+            "pid": 91132,
+            "absent": true
+          },
+          {
+            "pid": 92426,
+            "absent": true
+          }
+        ],
+        "connectionRemoved": true,
+        "conversations": 2
+      },
+      {
+        "label": "web-copilot-provider-final",
+        "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-Q7Erif",
+        "passed": false,
+        "serverStopped": true,
+        "daemonStopped": true,
+        "pids": [
+          {
+            "pid": 12362,
+            "absent": true
+          },
+          {
+            "pid": 14970,
+            "absent": true
+          }
+        ],
+        "connectionRemoved": true,
+        "conversations": 1
+      }
+    ],
+    "menuServer": {
+      "pid": 22122,
+      "absent": true,
+      "serverStopped": true
+    },
+    "ownedSimulator": {
+      "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+      "state": "Shutdown"
+    },
+    "desktopLaunched": false,
+    "browserTab": "Owned test tab retained because computer-use reported an intervening user change; no further browser actions.",
+    "roots": "Intentionally retained as evidence."
+  },
+  "coordination": {
+    "requestKey": "curation-runtime-old-release-20261004",
+    "sourceThread": "01a100a2-2a9b-7681-bdbe-994106f4ba12",
+    "targetThread": "01a1008b-f333-7ab1-92fe-d72663d9ca58",
+    "delivery": "delivered",
+    "receipt": {
+      "threadId": "01a1008b-f333-7ab1-92fe-d72663d9ca58"
+    },
+    "statement": "No resumed dependency on the OLD issue-5761-runtime-model-tools checkout at 2240d8c3d. Earlier release stands; original/current preservation wording was stale for old unit only. Current and recovered Runtimes remain protected; curation owns exact deletion gates and Val existing bounded authority. No deletion performed by this session."
+  },
+  "limits": [
+    "Current build verifies live model inventory and automated rail lifecycle, not a new real-provider browser turn.",
+    "Conversation counts and provider reports are not protected-effect or tool-invocation receipts.",
+    "Canonical publisher admission, unanswered OpenCode execution approval, remaining runtime/client paths and human acceptance remain open."
+  ],
+  "disposition": "Incomplete and uncommitted. Current and recovered Runtimes worktrees intentionally preserved. Old checkout release remains in force for separately authorized curation; this session deleted nothing. No commit/push/PR/merge/release, trust publication or closure.",
+  "designChecklist": {
+    "uiSources": [
+      "src/components/chat-run-rail.tsx"
+    ],
+    "review": "No stylesheet/token, new interaction, motion, disclosure policy or privilege changes. Parent-row gate keeps existing threshold and DOM order. Empty-to-tool, resize, clear/remount, missing-observer regression tests; existing source contracts pass. Browser demonstrated original defect; final-build UI rendering remains unverified after user interference. No theme/RTL/human accessibility acceptance inferred from unchanged tokens or React tests."
+  }
+}

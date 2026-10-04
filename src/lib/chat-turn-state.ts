@@ -1,3 +1,6 @@
+import type { ChatReasoningBlock } from "./chat-reasoning-blocks.ts";
+import { settleToolObservations, type ToolStatus } from "./chat-tool-state.ts";
+import type { ToolActivity } from "./chat-activity.ts";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
@@ -13,6 +16,7 @@ import type { TurnUsage } from "@/lib/usage-format";
  * an SSE reader continue accumulating safely after the visible view unmounts.
  */
 export type ToolEvent = {
+  activity?: ToolActivity;
   id: string;
   name: string;
   input?: string;
@@ -20,7 +24,9 @@ export type ToolEvent = {
   /** Set when a transcript was loaded without this tool's output (#5581): its
    *  length, so the card can show it exists and fetch it when opened. */
   outputChars?: number;
-  status: "running" | "ok" | "error";
+  /** Client-only source of a lazy result, bound by the history request. */
+  outputSessionId?: string;
+  status: ToolStatus;
   durationMs?: number;
   /**
    * Length of the turn text when this tool's first event arrived. Turn rows
@@ -67,6 +73,7 @@ export type Turn = {
   text: string;
   attachments?: ChatAttachment[];
   reasoning?: string;
+  reasoningBlocks?: ChatReasoningBlock[];
   tools?: ToolEvent[];
   progress?: ProgressEvent[];
   createdAt: string;
@@ -95,6 +102,7 @@ export type ConversationHistoryTurn = {
   text: string;
   attachments?: ChatAttachment[];
   reasoning?: string;
+  reasoningBlocks?: ChatReasoningBlock[];
   tools?: ToolEvent[];
   progress?: ProgressEvent[];
   durationMs?: number;
@@ -121,7 +129,7 @@ export type ConversationHistoryPayload = {
 };
 
 /** Normalize the API's permissive persisted turn shape for ChatView. */
-export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[]): Turn[] {
+export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[], outputSessionId?: string): Turn[] {
   return rawTurns
     .filter(
       (turn): turn is ConversationHistoryTurn & { role: "user" | "assistant" } =>
@@ -134,7 +142,8 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       text: turn.text,
       attachments: turn.attachments,
       reasoning: turn.reasoning,
-      tools: turn.tools,
+      reasoningBlocks: turn.reasoningBlocks,
+      tools: settleToolObservations(turn.tools)?.map((tool) => ({ ...tool, outputSessionId })),
       progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
       durationMs: turn.durationMs,
       usage: turn.usage,

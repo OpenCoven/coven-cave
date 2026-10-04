@@ -213,10 +213,10 @@ assert.match(
   /const grokForwardModel = grokShouldUseCliDefault\([\s\S]*?\? null\s*:\s*cleanModelId\(desiredModel\);[\s\S]*?buildGrokBuildArgs\(\{[\s\S]*?model: grokForwardModel,/,
   "an inherited non-Grok global model must omit --model so the installed Grok CLI chooses its authenticated default",
 );
-assert.match(
+assert.doesNotMatch(
   chatRoute,
   /if \(!confirmedModel && grokLaunchModel\) confirmedModel = desiredModel;/,
-  "Cave must confirm a Grok model only when the post-transform argv guard forwarded it",
+  "forwarding a selected Grok model does not establish the runtime's resolved model",
 );
 assert.match(
   chatRoute,
@@ -275,7 +275,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /case "tool_start":[\s\S]*?envelopeToolUse[\s\S]*?consumePendingEnvelopeProgress[\s\S]*?consumePendingEnvelopeResult/,
+  /case "tool_start":[\s\S]*?envelopeToolStart[\s\S]*?consumePendingEnvelopeProgress[\s\S]*?consumePendingEnvelopeResult/,
   "selected Grok schemas must reconcile reordered progress and terminal tool results through the shared tracker",
 );
 assert.match(

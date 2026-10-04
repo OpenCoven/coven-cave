@@ -16,6 +16,7 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const base = "apps/ios/CovenCave/CovenCave";
 const theme = await read(`${base}/Theme/Theme.swift`);
 const bubble = await read(`${base}/Views/MessageBubble.swift`);
+const prose = await read(`${base}/Views/MessageProseView.swift`);
 const webview = await read(`${base}/Views/MarkdownWebView.swift`);
 const entry = await read("apps/ios/markdown/entry.mjs");
 const css = await read("apps/ios/markdown/markdown.css");
@@ -39,10 +40,11 @@ assert.match(
   "MessageBubble should read the chrome palette from the environment",
 );
 assert.match(
-  bubble,
+  prose,
   /accentHex: chrome\.accentHex/,
-  "MessageBubble should pass chrome.accentHex to MarkdownWebView",
+  "Each prose span should pass chrome.accentHex to MarkdownWebView",
 );
+assert.match(bubble, /MessageProseView\(message:/, "MessageBubble retains the shared prose renderer");
 
 // --- MarkdownWebView carries accentHex into the JS options ------------------
 assert.match(

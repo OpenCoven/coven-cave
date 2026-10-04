@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T02:41:17.791676+00:00",
+  "issue": "https://github.com/OpenCoven/coven-cave/issues/5767",
+  "parent": "https://github.com/OpenCoven/coven-cave/issues/5761",
+  "classification": "real production server restart and Swift TCP client; synthetic external Hermes provider",
+  "status": "verified local restart/history slice; full goal incomplete and uncommitted",
+  "result": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-04T02:38:09.018Z",
+    "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "candidate": {
+      "head": "18f6e327addc63707736c91040524bdc734a323c",
+      "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "buildId": "v1THgZr1dvmIVuJQomLJ5",
+      "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d"
+    },
+    "host": {
+      "node": "v24.18.1",
+      "xcode": "Xcode 26.6\nBuild version 17F113"
+    },
+    "scenario": "hermes-summary-tool-reconnect-restart-history",
+    "classification": "real built Cave and native TCP; synthetic external Hermes provider",
+    "passed": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "limitations": [
+      "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+      "Native client/decoder/fold/history checks; not rendered UI, human VoiceOver, physical-device performance or a real provider.",
+      "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+    ],
+    "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+    "serverPid": 94856,
+    "ingressRefusalsVerified": true,
+    "restart": {
+      "previousPid": 94856,
+      "newPid": 96822,
+      "previousStopped": true,
+      "sameOrigin": true,
+      "ingressRefusalsVerified": true
+    },
+    "savedConversations": 1,
+    "serverStopped": true,
+    "providerStopped": true,
+    "noDaemonState": true,
+    "fixtureRootRemoved": true,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-04T02:38:48.777Z"
+  },
+  "nativeTests": {
+    "executed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "assertions": [
+      "disconnect while tool is running, reconnect from cursor, and two exact completed-run replays",
+      "completed turn survives a real stop/start at the same origin and store",
+      "old run and session replay keys throw NoResumableRun after restart",
+      "two authenticated history reads retain exact answer, runtime/model identity, terminal tools and public summaries",
+      "saved tool output remains identical after restart",
+      "replacement credential denies the next output read; prior simulator credentials restored"
+    ]
+  },
+  "invocationLedger": [
+    {
+      "kind": "provider",
+      "ordinal": 1
+    },
+    {
+      "kind": "read_file",
+      "ordinal": 1,
+      "markerSha256": "1ee3b28bcc558eebeaf311ef56997a7019f5da438cf7142bf33ee67dfa8f22f7"
+    },
+    {
+      "kind": "server_restart",
+      "ordinal": 1
+    }
+  ],
+  "checks": [
+    {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:37:32.248211+00:00",
+      "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-restart-build.log",
+      "finishedAt": "2026-10-04T02:37:56.188473+00:00",
+      "exitCode": 0,
+      "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "sourceUnchanged": true
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "scripts/runtime-activity-native-transport.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:37:59.189839+00:00",
+      "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-restart-lint.log",
+      "finishedAt": "2026-10-04T02:38:00.192290+00:00",
+      "exitCode": 0,
+      "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "sourceUnchanged": true
+    },
+    {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-native-transport.mjs",
+        "--execute",
+        "--destination",
+        "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "--derived-data",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "--evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-restart-transport"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:38:08.753609+00:00",
+      "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-restart-transport-run.log",
+      "finishedAt": "2026-10-04T02:38:48.786611+00:00",
+      "exitCode": 0,
+      "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+      "sourceUnchanged": true
+    }
+  ],
+  "cleanup": {
+    "serverPIDsAbsent": [
+      94856,
+      96822
+    ],
+    "invocations": {
+      "provider": 1,
+      "read_file": 1,
+      "server_restart": 1
+    },
+    "simulator": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "before": "Shutdown",
+    "after": "Shutdown",
+    "providerStopped": true,
+    "fixtureRootRemoved": true
+  },
+  "firstAttempt": "passed; no retry or timeout adjustment",
+  "sourceFiles": [
+    {
+      "path": "scripts/runtime-activity-native-transport.mjs",
+      "sha256": "7abf99e3cc2313cf852913997d77f5afb0cf8bf81d6fd3f7a93eee7b7d289940"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/ActivityTransportTests.swift",
+      "sha256": "a45035c966346e66d73943e6c05e137ee66afd19ba8b81b2a59602311cd09a7a"
+    }
+  ],
+  "limits": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "Native client/decoder/fold/history checks; not rendered UI, human VoiceOver, physical-device performance or a real provider.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt.",
+    "This checks explicit client recovery from saved history, not rendered UI or automatic ChatThread recovery after a daemon crash.",
+    "The restart happens after persistence completes; interrupted writes, ring eviction, in-flight tool termination and protected-effect reconciliation are not qualified by this scenario."
+  ],
+  "artifactSHA256": {
+    "native-restart-transport/result.json": "709d00fa3fe43b4a1eaa6c9eeae05f9d0d33b169b940f0686ab5edc7c03d463f",
+    "native-restart-transport/invocations.jsonl": "b8e639d2ee008885bfe0388cc10ce9b63fd4b21ce9389fe08e508ffb9236a3ea",
+    "native-restart-transport/native-transport.log": "691038a2251a7d5bb9c17ae20d17bb75bea87d4b6b44e59ed00ef85d7ce99e5e",
+    "native-restart-build.log": "ff9bef7646f20469d6a2d19ea0b8c49dfa247cb455fd63a80c0f735f3f0c9a05",
+    "native-restart-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

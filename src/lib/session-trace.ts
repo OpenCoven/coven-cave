@@ -5,7 +5,8 @@
  * tone rules are unit-testable.
  */
 
-/** Daemon event row as returned by /api/sessions/[id]/events. */
+/** Projected daemon event row returned by /api/sessions/[id]/events.
+ * Raw PTY/provider payloads are withheld by the server. */
 export type SessionTraceEvent = {
   seq: number;
   id: string;

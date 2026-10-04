@@ -95,7 +95,7 @@ assert.match(
   /\/\/\/ Optional so snapshots written before durable message delete decode\.\n\s*var serverTurnId: String\?/,
   "DisplayMessage must carry the server turn id, optional so old snapshots decode",
 );
-const restored = blockAfter(thread, "static func restored(from turn: ChatTurn, familiarId: String?) -> DisplayMessage {");
+const restored = blockAfter(thread, "static func restored(from turn: ChatTurn, familiarId: String?,");
 assert.ok(restored, "DisplayMessage.restored must exist");
 assert.match(
   restored,

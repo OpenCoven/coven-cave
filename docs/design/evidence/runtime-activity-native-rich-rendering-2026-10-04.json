@@ -1,0 +1,2203 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-04T02:33:57.896342+00:00",
+  "issue": "https://github.com/OpenCoven/coven-cave/issues/5766",
+  "parent": "https://github.com/OpenCoven/coven-cave/issues/5761",
+  "actorSession": "01a100a2-2a9b-7681-bdbe-994106f4ba12",
+  "scope": "Local offline native all-rich timeline rendering and regression checks; not full-goal qualification.",
+  "sourceFingerprint": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+  "head": "18f6e327addc63707736c91040524bdc734a323c",
+  "worktree": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+  "fixture": {
+    "tools": 120,
+    "richProseSpans": 121,
+    "eagerTimelineEntries": 241,
+    "alwaysMountedTailRenderers": 1,
+    "device": "iPhone 16 Pro simulator / iOS 26.5",
+    "udid": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "configuration": "Release",
+    "scheme": "CovenCavePerformance"
+  },
+  "implementation": [
+    "Timeline entry geometry stays eager and keyed; earlier prose creates WebKit within one viewport of the visible region and unloads it outside that region.",
+    "Each prose span retains its measured height while WebKit is unloaded. A native loading placeholder occupies that geometry until a fresh renderer reports its measured height.",
+    "Streaming prose, the tail, and VoiceOver keep rich rendering active. Reader actions retain full-response scope.",
+    "Tool provenance and app-owned expansion state retain their existing implementations.",
+    "The existing outer ChatView scroll recovery implementation is unchanged by this checkpoint."
+  ],
+  "journeys": [
+    {
+      "name": "native-rich-render-baseline",
+      "implementation": "baseline",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-baseline.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T01:56:09.078348+00:00",
+        "sourceBefore": "dcb69fec50fc101bedfcff91daf7f65a3f10b5c74f08355a49e7c7b26dedc77f",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-baseline.log",
+        "finishedAt": "2026-10-04T02:01:32.265455+00:00",
+        "exitCode": 0,
+        "sourceAfter": "dcb69fec50fc101bedfcff91daf7f65a3f10b5c74f08355a49e7c7b26dedc77f",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "opened",
+        "rendered-tail",
+        "last-tool-expanded",
+        "another-conversation",
+        "same-process-reopened"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 262605488,
+            "attachedWebViews": 121,
+            "counters": {
+              "markdown.webview.created": 121,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 120,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 96,
+                "latestMilliseconds": 20533.167417,
+                "maximumMilliseconds": 20664.101042
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.998959,
+                "maximumMilliseconds": 12.297875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 647.967291,
+                "maximumMilliseconds": 647.967291
+              },
+              "markdown.render.settled": {
+                "count": 120,
+                "latestMilliseconds": 5389.191834,
+                "maximumMilliseconds": 5394.203625
+              },
+              "markdown.webview.init": {
+                "count": 121,
+                "latestMilliseconds": 19300.500334,
+                "maximumMilliseconds": 19380.70575
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079159.126415
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 260164296,
+            "attachedWebViews": 121,
+            "counters": {
+              "markdown.webview.created": 121,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 121,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 121,
+                "latestMilliseconds": 20991.201541,
+                "maximumMilliseconds": 21377.162666
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.998959,
+                "maximumMilliseconds": 12.297875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 647.967291,
+                "maximumMilliseconds": 647.967291
+              },
+              "markdown.render.settled": {
+                "count": 121,
+                "latestMilliseconds": 4155.635333,
+                "maximumMilliseconds": 5394.203625
+              },
+              "markdown.webview.init": {
+                "count": 121,
+                "latestMilliseconds": 19300.500334,
+                "maximumMilliseconds": 19380.70575
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079177.586666
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 260360928,
+            "attachedWebViews": 121,
+            "counters": {
+              "markdown.webview.created": 121,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 121,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 121,
+                "latestMilliseconds": 20991.201541,
+                "maximumMilliseconds": 21377.162666
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.998959,
+                "maximumMilliseconds": 12.297875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 647.967291,
+                "maximumMilliseconds": 647.967291
+              },
+              "markdown.render.settled": {
+                "count": 121,
+                "latestMilliseconds": 4155.635333,
+                "maximumMilliseconds": 5394.203625
+              },
+              "markdown.webview.init": {
+                "count": 121,
+                "latestMilliseconds": 19300.500334,
+                "maximumMilliseconds": 19380.70575
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079191.294363
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 209832648,
+            "attachedWebViews": 1,
+            "counters": {
+              "markdown.webview.created": 122,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 122,
+              "markdown.webview.invalidated": 121
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 122,
+                "latestMilliseconds": 2286.490583,
+                "maximumMilliseconds": 21377.162666
+              },
+              "chat.list-projection": {
+                "count": 6,
+                "latestMilliseconds": 2.179541,
+                "maximumMilliseconds": 12.297875
+              },
+              "drawer.open": {
+                "count": 2,
+                "latestMilliseconds": 665.74275,
+                "maximumMilliseconds": 665.74275
+              },
+              "markdown.render.settled": {
+                "count": 122,
+                "latestMilliseconds": 4.545167,
+                "maximumMilliseconds": 5394.203625
+              },
+              "markdown.webview.init": {
+                "count": 122,
+                "latestMilliseconds": 2264.248875,
+                "maximumMilliseconds": 19380.70575
+              }
+            },
+            "threadID": "performance-fixture-chat-0001",
+            "unixSeconds": 1791079222.4226542
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 245844752,
+            "attachedWebViews": 121,
+            "counters": {
+              "markdown.webview.created": 243,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 243,
+              "markdown.webview.invalidated": 122
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 243,
+                "latestMilliseconds": 22145.472583,
+                "maximumMilliseconds": 22145.472583
+              },
+              "chat.list-projection": {
+                "count": 8,
+                "latestMilliseconds": 2.03775,
+                "maximumMilliseconds": 12.297875
+              },
+              "drawer.open": {
+                "count": 3,
+                "latestMilliseconds": 632.578458,
+                "maximumMilliseconds": 665.74275
+              },
+              "markdown.render.settled": {
+                "count": 243,
+                "latestMilliseconds": 11.566459,
+                "maximumMilliseconds": 5394.203625
+              },
+              "markdown.webview.init": {
+                "count": 243,
+                "latestMilliseconds": 22007.224,
+                "maximumMilliseconds": 22007.224
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079266.605037
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "92f451281130ef4e4f1b6b1add6a818b1b3e74b32845768150bda518a3d825cf",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:01:47.153807+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/486F9A87-E618-4B83-884E-1ED82F677386/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-baseline-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-render-lazy-candidate",
+      "implementation": "rejected-nested-lazy-stack",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-lazy-candidate.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:01:59.134363+00:00",
+        "sourceBefore": "45e1ad6f7ab5724f02da618c26bb86c945ded5297e6ad8f34da343973970dd13",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-lazy-candidate.log",
+        "finishedAt": "2026-10-04T02:04:41.193597+00:00",
+        "exitCode": 0,
+        "sourceAfter": "45e1ad6f7ab5724f02da618c26bb86c945ded5297e6ad8f34da343973970dd13",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "opened",
+        "rendered-tail",
+        "last-tool-expanded",
+        "another-conversation",
+        "same-process-reopened"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 159533600,
+            "attachedWebViews": 12,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2773.732125,
+                "maximumMilliseconds": 2773.732125
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.071084,
+                "maximumMilliseconds": 12.777875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.459083,
+                "maximumMilliseconds": 648.459083
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 26.449208,
+                "maximumMilliseconds": 150.449667
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2671.987667,
+                "maximumMilliseconds": 2671.987667
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079422.3731189
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 158452256,
+            "attachedWebViews": 12,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2773.732125,
+                "maximumMilliseconds": 2773.732125
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.071084,
+                "maximumMilliseconds": 12.777875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.459083,
+                "maximumMilliseconds": 648.459083
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 26.449208,
+                "maximumMilliseconds": 150.449667
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2671.987667,
+                "maximumMilliseconds": 2671.987667
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079424.873009
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 158517792,
+            "attachedWebViews": 9,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2773.732125,
+                "maximumMilliseconds": 2773.732125
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.071084,
+                "maximumMilliseconds": 12.777875
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.459083,
+                "maximumMilliseconds": 648.459083
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 26.449208,
+                "maximumMilliseconds": 150.449667
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2671.987667,
+                "maximumMilliseconds": 2671.987667
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079429.239756
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 155453984,
+            "attachedWebViews": 1,
+            "counters": {
+              "markdown.webview.created": 16,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 16,
+              "markdown.webview.invalidated": 15
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 13,
+                "latestMilliseconds": 703.066875,
+                "maximumMilliseconds": 2773.732125
+              },
+              "chat.list-projection": {
+                "count": 6,
+                "latestMilliseconds": 2.09125,
+                "maximumMilliseconds": 12.777875
+              },
+              "drawer.open": {
+                "count": 2,
+                "latestMilliseconds": 615.881875,
+                "maximumMilliseconds": 648.459083
+              },
+              "markdown.render.settled": {
+                "count": 16,
+                "latestMilliseconds": 4.038958,
+                "maximumMilliseconds": 150.449667
+              },
+              "markdown.webview.init": {
+                "count": 16,
+                "latestMilliseconds": 664.8125,
+                "maximumMilliseconds": 2671.987667
+              }
+            },
+            "threadID": "performance-fixture-chat-0001",
+            "unixSeconds": 1791079441.323145
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 161712672,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 29,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 29,
+              "markdown.webview.invalidated": 16
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 24,
+                "latestMilliseconds": 1826.796167,
+                "maximumMilliseconds": 2773.732125
+              },
+              "chat.list-projection": {
+                "count": 8,
+                "latestMilliseconds": 1.943708,
+                "maximumMilliseconds": 12.777875
+              },
+              "drawer.open": {
+                "count": 3,
+                "latestMilliseconds": 632.70975,
+                "maximumMilliseconds": 648.459083
+              },
+              "markdown.render.settled": {
+                "count": 29,
+                "latestMilliseconds": 12.650959,
+                "maximumMilliseconds": 150.449667
+              },
+              "markdown.webview.init": {
+                "count": 29,
+                "latestMilliseconds": 1796.177791,
+                "maximumMilliseconds": 2671.987667
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079453.5400271
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "67373d64f148c7073b2f88f25047f193c47bf0124f1af6417d8bc5d9636e41a3",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:04:54.512236+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/09207808-5FBC-40E1-971D-7B0E6121BBB6/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-lazy-candidate-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-render-scroll",
+      "implementation": "rejected-nested-lazy-stack",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-scroll.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:05:46.921782+00:00",
+        "sourceBefore": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-scroll.log",
+        "finishedAt": "2026-10-04T02:09:33.839535+00:00",
+        "exitCode": 0,
+        "sourceAfter": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "tail-initial",
+        "tool-60-reached",
+        "tool-60-expanded",
+        "tail-return",
+        "tool-60-restored"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 145541664,
+            "attachedWebViews": 12,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2751.2415,
+                "maximumMilliseconds": 2751.2415
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.2795,
+                "maximumMilliseconds": 12.8545
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 649.012333,
+                "maximumMilliseconds": 649.012333
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 16.5095,
+                "maximumMilliseconds": 147.868416
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2621.806334,
+                "maximumMilliseconds": 2628.37025
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079652.441794
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 169118264,
+            "attachedWebViews": 19,
+            "counters": {
+              "markdown.webview.created": 67,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 67,
+              "markdown.webview.invalidated": 41
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 66,
+                "latestMilliseconds": 498.213542,
+                "maximumMilliseconds": 6824.55925
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.2795,
+                "maximumMilliseconds": 12.8545
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 649.012333,
+                "maximumMilliseconds": 649.012333
+              },
+              "markdown.render.settled": {
+                "count": 67,
+                "latestMilliseconds": 24.571167,
+                "maximumMilliseconds": 147.868416
+              },
+              "markdown.webview.init": {
+                "count": 67,
+                "latestMilliseconds": 450.015917,
+                "maximumMilliseconds": 2628.37025
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079694.675257
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 169396792,
+            "attachedWebViews": 17,
+            "counters": {
+              "markdown.webview.created": 67,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 67,
+              "markdown.webview.invalidated": 41
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 66,
+                "latestMilliseconds": 498.213542,
+                "maximumMilliseconds": 6824.55925
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.2795,
+                "maximumMilliseconds": 12.8545
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 649.012333,
+                "maximumMilliseconds": 649.012333
+              },
+              "markdown.render.settled": {
+                "count": 67,
+                "latestMilliseconds": 24.571167,
+                "maximumMilliseconds": 147.868416
+              },
+              "markdown.webview.init": {
+                "count": 67,
+                "latestMilliseconds": 450.015917,
+                "maximumMilliseconds": 2628.37025
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079697.6085749
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 184666728,
+            "attachedWebViews": 11,
+            "counters": {
+              "markdown.webview.created": 93,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 93,
+              "markdown.webview.invalidated": 42
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 92,
+                "latestMilliseconds": 3400.792583,
+                "maximumMilliseconds": 6824.55925
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.2795,
+                "maximumMilliseconds": 12.8545
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 649.012333,
+                "maximumMilliseconds": 649.012333
+              },
+              "markdown.render.settled": {
+                "count": 93,
+                "latestMilliseconds": 7.86375,
+                "maximumMilliseconds": 501.975375
+              },
+              "markdown.webview.init": {
+                "count": 93,
+                "latestMilliseconds": 3341.742958,
+                "maximumMilliseconds": 3341.742958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079702.941961
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 175557200,
+            "attachedWebViews": 18,
+            "counters": {
+              "markdown.webview.created": 133,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 133,
+              "markdown.webview.invalidated": 106
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 132,
+                "latestMilliseconds": 498.902958,
+                "maximumMilliseconds": 6824.55925
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.2795,
+                "maximumMilliseconds": 12.8545
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 649.012333,
+                "maximumMilliseconds": 649.012333
+              },
+              "markdown.render.settled": {
+                "count": 133,
+                "latestMilliseconds": 20.989708,
+                "maximumMilliseconds": 501.975375
+              },
+              "markdown.webview.init": {
+                "count": 133,
+                "latestMilliseconds": 455.847917,
+                "maximumMilliseconds": 3341.742958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079749.558964
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "c5fdf71b79934cff14da86fab8bbf71dee0c96f52a14a7d72d2ad4cc85bedf12",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:10:17.023841+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/84B6740E-33EE-49A6-8872-DA1046EF88E7/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-scroll-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-render-final",
+      "implementation": "rejected-nested-lazy-stack",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test-without-building",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-final.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:10:19.419303+00:00",
+        "sourceBefore": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-final.log",
+        "finishedAt": "2026-10-04T02:11:53.219242+00:00",
+        "exitCode": 0,
+        "sourceAfter": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "opened",
+        "rendered-tail",
+        "last-tool-expanded",
+        "another-conversation",
+        "same-process-reopened"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 146229768,
+            "attachedWebViews": 12,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2528.157291,
+                "maximumMilliseconds": 2580.213209
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.130459,
+                "maximumMilliseconds": 11.827042
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.899708,
+                "maximumMilliseconds": 648.899708
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 79.773042,
+                "maximumMilliseconds": 95.592167
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2402.711958,
+                "maximumMilliseconds": 2402.711958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079857.493414
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 145361416,
+            "attachedWebViews": 12,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2528.157291,
+                "maximumMilliseconds": 2580.213209
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.130459,
+                "maximumMilliseconds": 11.827042
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.899708,
+                "maximumMilliseconds": 648.899708
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 79.773042,
+                "maximumMilliseconds": 95.592167
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2402.711958,
+                "maximumMilliseconds": 2402.711958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079859.993565
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 145197576,
+            "attachedWebViews": 9,
+            "counters": {
+              "markdown.webview.created": 15,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 15,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 12,
+                "latestMilliseconds": 2528.157291,
+                "maximumMilliseconds": 2580.213209
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.130459,
+                "maximumMilliseconds": 11.827042
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 648.899708,
+                "maximumMilliseconds": 648.899708
+              },
+              "markdown.render.settled": {
+                "count": 15,
+                "latestMilliseconds": 79.773042,
+                "maximumMilliseconds": 95.592167
+              },
+              "markdown.webview.init": {
+                "count": 15,
+                "latestMilliseconds": 2402.711958,
+                "maximumMilliseconds": 2402.711958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079864.3934
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 147180040,
+            "attachedWebViews": 1,
+            "counters": {
+              "markdown.webview.created": 16,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 16,
+              "markdown.webview.invalidated": 15
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 13,
+                "latestMilliseconds": 653.709458,
+                "maximumMilliseconds": 2580.213209
+              },
+              "chat.list-projection": {
+                "count": 6,
+                "latestMilliseconds": 2.2955,
+                "maximumMilliseconds": 11.827042
+              },
+              "drawer.open": {
+                "count": 2,
+                "latestMilliseconds": 615.985167,
+                "maximumMilliseconds": 648.899708
+              },
+              "markdown.render.settled": {
+                "count": 16,
+                "latestMilliseconds": 4.645833,
+                "maximumMilliseconds": 95.592167
+              },
+              "markdown.webview.init": {
+                "count": 16,
+                "latestMilliseconds": 618.754375,
+                "maximumMilliseconds": 2402.711958
+              }
+            },
+            "threadID": "performance-fixture-chat-0001",
+            "unixSeconds": 1791079876.126854
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 149277192,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 29,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 29,
+              "markdown.webview.invalidated": 16
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 23,
+                "latestMilliseconds": 1962.4394590000002,
+                "maximumMilliseconds": 2580.213209
+              },
+              "chat.list-projection": {
+                "count": 8,
+                "latestMilliseconds": 2.091375,
+                "maximumMilliseconds": 11.827042
+              },
+              "drawer.open": {
+                "count": 3,
+                "latestMilliseconds": 632.377584,
+                "maximumMilliseconds": 648.899708
+              },
+              "markdown.render.settled": {
+                "count": 29,
+                "latestMilliseconds": 56.274,
+                "maximumMilliseconds": 114.435625
+              },
+              "markdown.webview.init": {
+                "count": 29,
+                "latestMilliseconds": 1804.1400840000001,
+                "maximumMilliseconds": 2402.711958
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791079888.2603722
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "21678978fe03e9abaa2b01c88225f414f72019e7df64f63d1053e6e33047a8c8",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:12:05.315167+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/14BCE0B7-3994-4EA1-88C0-1ECB95A92605/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-final-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-viewport-mixed",
+      "implementation": "viewport-WebViews",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-mixed.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:19:03.406395+00:00",
+        "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-mixed.log",
+        "finishedAt": "2026-10-04T02:21:40.459403+00:00",
+        "exitCode": 0,
+        "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "opened",
+        "rendered-tail",
+        "last-tool-expanded",
+        "another-conversation",
+        "same-process-reopened"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 210422376,
+            "attachedWebViews": 2,
+            "counters": {
+              "markdown.webview.created": 2,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 2,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "mixed",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 2,
+                "latestMilliseconds": 1263.813209,
+                "maximumMilliseconds": 1540.333959
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.158333,
+                "maximumMilliseconds": 11.475292
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.097,
+                "maximumMilliseconds": 632.097
+              },
+              "markdown.render.settled": {
+                "count": 2,
+                "latestMilliseconds": 24.654917,
+                "maximumMilliseconds": 24.654917
+              },
+              "markdown.webview.init": {
+                "count": 2,
+                "latestMilliseconds": 1172.7767920000001,
+                "maximumMilliseconds": 1482.371083
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080435.479336
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 210356840,
+            "attachedWebViews": 2,
+            "counters": {
+              "markdown.webview.created": 2,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 2,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "mixed",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 2,
+                "latestMilliseconds": 1263.813209,
+                "maximumMilliseconds": 1540.333959
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.158333,
+                "maximumMilliseconds": 11.475292
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.097,
+                "maximumMilliseconds": 632.097
+              },
+              "markdown.render.settled": {
+                "count": 2,
+                "latestMilliseconds": 24.654917,
+                "maximumMilliseconds": 24.654917
+              },
+              "markdown.webview.init": {
+                "count": 2,
+                "latestMilliseconds": 1172.7767920000001,
+                "maximumMilliseconds": 1482.371083
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080439.612615
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 211159656,
+            "attachedWebViews": 2,
+            "counters": {
+              "markdown.webview.created": 2,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 2,
+              "markdown.webview.invalidated": 0
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "mixed",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 2,
+                "latestMilliseconds": 1263.813209,
+                "maximumMilliseconds": 1540.333959
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.158333,
+                "maximumMilliseconds": 11.475292
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.097,
+                "maximumMilliseconds": 632.097
+              },
+              "markdown.render.settled": {
+                "count": 2,
+                "latestMilliseconds": 24.654917,
+                "maximumMilliseconds": 24.654917
+              },
+              "markdown.webview.init": {
+                "count": 2,
+                "latestMilliseconds": 1172.7767920000001,
+                "maximumMilliseconds": 1482.371083
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080449.713026
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 163203688,
+            "attachedWebViews": 1,
+            "counters": {
+              "markdown.webview.created": 3,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 3,
+              "markdown.webview.invalidated": 2
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "mixed",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 3,
+                "latestMilliseconds": 476.579334,
+                "maximumMilliseconds": 1540.333959
+              },
+              "chat.list-projection": {
+                "count": 6,
+                "latestMilliseconds": 2.003917,
+                "maximumMilliseconds": 11.475292
+              },
+              "drawer.open": {
+                "count": 2,
+                "latestMilliseconds": 632.382792,
+                "maximumMilliseconds": 632.382792
+              },
+              "markdown.render.settled": {
+                "count": 3,
+                "latestMilliseconds": 4.101375,
+                "maximumMilliseconds": 24.654917
+              },
+              "markdown.webview.init": {
+                "count": 3,
+                "latestMilliseconds": 425.300625,
+                "maximumMilliseconds": 1482.371083
+              }
+            },
+            "threadID": "performance-fixture-chat-0001",
+            "unixSeconds": 1791080467.046126
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 202345064,
+            "attachedWebViews": 2,
+            "counters": {
+              "markdown.webview.created": 5,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 5,
+              "markdown.webview.invalidated": 3
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "mixed",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 5,
+                "latestMilliseconds": 1629.076333,
+                "maximumMilliseconds": 1629.076333
+              },
+              "chat.list-projection": {
+                "count": 8,
+                "latestMilliseconds": 1.94,
+                "maximumMilliseconds": 11.475292
+              },
+              "drawer.open": {
+                "count": 3,
+                "latestMilliseconds": 632.705958,
+                "maximumMilliseconds": 632.705958
+              },
+              "markdown.render.settled": {
+                "count": 5,
+                "latestMilliseconds": 23.497459,
+                "maximumMilliseconds": 24.654917
+              },
+              "markdown.webview.init": {
+                "count": 5,
+                "latestMilliseconds": 601.008375,
+                "maximumMilliseconds": 1482.371083
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080483.8794742
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "b73b554ea595d77c9b6512a896251e5f775c086f06889298dc8f8e950933db92",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:21:46.203207+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/A4E67ED5-63C2-4B81-8610-B230562F285E/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-mixed-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-viewport-rich",
+      "implementation": "viewport-WebViews",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test-without-building",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-rich.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:21:46.240615+00:00",
+        "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-rich.log",
+        "finishedAt": "2026-10-04T02:23:27.205192+00:00",
+        "exitCode": 0,
+        "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "opened",
+        "rendered-tail",
+        "last-tool-expanded",
+        "another-conversation",
+        "same-process-reopened"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 214616680,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 13,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 10,
+              "markdown.webview.invalidated": 3
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 10,
+                "latestMilliseconds": 2928.934083,
+                "maximumMilliseconds": 3281.408875
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.958875,
+                "maximumMilliseconds": 9.475375
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.746834,
+                "maximumMilliseconds": 632.746834
+              },
+              "markdown.render.settled": {
+                "count": 10,
+                "latestMilliseconds": 1151.100916,
+                "maximumMilliseconds": 1153.294417
+              },
+              "markdown.webview.init": {
+                "count": 13,
+                "latestMilliseconds": 1662.456291,
+                "maximumMilliseconds": 2021.4369590000001
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080539.2297559
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 213961320,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 13,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 10,
+              "markdown.webview.invalidated": 3
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 10,
+                "latestMilliseconds": 2928.934083,
+                "maximumMilliseconds": 3281.408875
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.958875,
+                "maximumMilliseconds": 9.475375
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.746834,
+                "maximumMilliseconds": 632.746834
+              },
+              "markdown.render.settled": {
+                "count": 10,
+                "latestMilliseconds": 1151.100916,
+                "maximumMilliseconds": 1153.294417
+              },
+              "markdown.webview.init": {
+                "count": 13,
+                "latestMilliseconds": 1662.456291,
+                "maximumMilliseconds": 2021.4369590000001
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080543.529753
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 214878824,
+            "attachedWebViews": 9,
+            "counters": {
+              "markdown.webview.created": 13,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 10,
+              "markdown.webview.invalidated": 4
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 10,
+                "latestMilliseconds": 2928.934083,
+                "maximumMilliseconds": 3281.408875
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 1.958875,
+                "maximumMilliseconds": 9.475375
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.746834,
+                "maximumMilliseconds": 632.746834
+              },
+              "markdown.render.settled": {
+                "count": 10,
+                "latestMilliseconds": 1151.100916,
+                "maximumMilliseconds": 1153.294417
+              },
+              "markdown.webview.init": {
+                "count": 13,
+                "latestMilliseconds": 1662.456291,
+                "maximumMilliseconds": 2021.4369590000001
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080553.946498
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 165661288,
+            "attachedWebViews": 1,
+            "counters": {
+              "markdown.webview.created": 14,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 11,
+              "markdown.webview.invalidated": 13
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 11,
+                "latestMilliseconds": 559.57025,
+                "maximumMilliseconds": 3281.408875
+              },
+              "chat.list-projection": {
+                "count": 6,
+                "latestMilliseconds": 2.084416,
+                "maximumMilliseconds": 9.475375
+              },
+              "drawer.open": {
+                "count": 2,
+                "latestMilliseconds": 632.50175,
+                "maximumMilliseconds": 632.746834
+              },
+              "markdown.render.settled": {
+                "count": 11,
+                "latestMilliseconds": 3.872959,
+                "maximumMilliseconds": 1153.294417
+              },
+              "markdown.webview.init": {
+                "count": 14,
+                "latestMilliseconds": 511.254375,
+                "maximumMilliseconds": 2021.4369590000001
+              }
+            },
+            "threadID": "performance-fixture-chat-0001",
+            "unixSeconds": 1791080571.2299008
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 205556328,
+            "attachedWebViews": 9,
+            "counters": {
+              "markdown.webview.created": 23,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 20,
+              "markdown.webview.invalidated": 14
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 20,
+                "latestMilliseconds": 3068.458917,
+                "maximumMilliseconds": 3281.408875
+              },
+              "chat.list-projection": {
+                "count": 8,
+                "latestMilliseconds": 2.130041,
+                "maximumMilliseconds": 9.475375
+              },
+              "drawer.open": {
+                "count": 3,
+                "latestMilliseconds": 632.232,
+                "maximumMilliseconds": 632.746834
+              },
+              "markdown.render.settled": {
+                "count": 20,
+                "latestMilliseconds": 1454.003542,
+                "maximumMilliseconds": 1454.003542
+              },
+              "markdown.webview.init": {
+                "count": 23,
+                "latestMilliseconds": 1399.566667,
+                "maximumMilliseconds": 2021.4369590000001
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080588.8634
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "955fbd7f3c1b6c60a888e3454c47962f276845005f5ba0b95fe8d89e467c48bd",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:23:32.894288+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/88B4FFF8-7685-42C4-A329-B36EABF022A4/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-rich-metrics.json"
+      }
+    },
+    {
+      "name": "native-rich-viewport-scroll",
+      "implementation": "viewport-WebViews",
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test-without-building",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-scroll.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:23:32.929394+00:00",
+        "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-scroll.log",
+        "finishedAt": "2026-10-04T02:26:55.394876+00:00",
+        "exitCode": 0,
+        "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+        "sourceUnchanged": true
+      },
+      "phases": [
+        "tail-initial",
+        "tool-60-reached",
+        "tool-60-expanded",
+        "tail-return",
+        "tool-60-restored"
+      ],
+      "metrics": {
+        "captures": [
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 215026280,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 13,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 11,
+              "markdown.webview.invalidated": 3
+            },
+            "expandedCount": 0,
+            "index": 0,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 11,
+                "latestMilliseconds": 3204.57125,
+                "maximumMilliseconds": 3557.12075
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.078084,
+                "maximumMilliseconds": 10.063833
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.779959,
+                "maximumMilliseconds": 632.779959
+              },
+              "markdown.render.settled": {
+                "count": 11,
+                "latestMilliseconds": 182.397333,
+                "maximumMilliseconds": 184.157708
+              },
+              "markdown.webview.init": {
+                "count": 13,
+                "latestMilliseconds": 2807.0875,
+                "maximumMilliseconds": 3150.3625
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080644.297451
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 215075456,
+            "attachedWebViews": 17,
+            "counters": {
+              "markdown.webview.created": 72,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 70,
+              "markdown.webview.invalidated": 55
+            },
+            "expandedCount": 0,
+            "index": 1,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 70,
+                "latestMilliseconds": 1757.047333,
+                "maximumMilliseconds": 3557.12075
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.078084,
+                "maximumMilliseconds": 10.063833
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.779959,
+                "maximumMilliseconds": 632.779959
+              },
+              "markdown.render.settled": {
+                "count": 70,
+                "latestMilliseconds": 22.821875,
+                "maximumMilliseconds": 684.89025
+              },
+              "markdown.webview.init": {
+                "count": 72,
+                "latestMilliseconds": 424.016584,
+                "maximumMilliseconds": 3150.3625
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080711.113765
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 215779968,
+            "attachedWebViews": 16,
+            "counters": {
+              "markdown.webview.created": 72,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 70,
+              "markdown.webview.invalidated": 56
+            },
+            "expandedCount": 1,
+            "index": 2,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 70,
+                "latestMilliseconds": 1757.047333,
+                "maximumMilliseconds": 3557.12075
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.078084,
+                "maximumMilliseconds": 10.063833
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.779959,
+                "maximumMilliseconds": 632.779959
+              },
+              "markdown.render.settled": {
+                "count": 70,
+                "latestMilliseconds": 22.821875,
+                "maximumMilliseconds": 684.89025
+              },
+              "markdown.webview.init": {
+                "count": 72,
+                "latestMilliseconds": 424.016584,
+                "maximumMilliseconds": 3150.3625
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080717.447222
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 217516672,
+            "attachedWebViews": 10,
+            "counters": {
+              "markdown.webview.created": 82,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 80,
+              "markdown.webview.invalidated": 72
+            },
+            "expandedCount": 1,
+            "index": 3,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 80,
+                "latestMilliseconds": 3174.0995,
+                "maximumMilliseconds": 3557.12075
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.078084,
+                "maximumMilliseconds": 10.063833
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.779959,
+                "maximumMilliseconds": 632.779959
+              },
+              "markdown.render.settled": {
+                "count": 80,
+                "latestMilliseconds": 682.638208,
+                "maximumMilliseconds": 684.89025
+              },
+              "markdown.webview.init": {
+                "count": 82,
+                "latestMilliseconds": 2430.667166,
+                "maximumMilliseconds": 3150.3625
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080724.8138041
+          },
+          {
+            "activityCount": 120,
+            "appPhysicalFootprintBytes": 216058496,
+            "attachedWebViews": 16,
+            "counters": {
+              "markdown.webview.created": 138,
+              "markdown.webview.failed": 0,
+              "markdown.webview.first-render": 136,
+              "markdown.webview.invalidated": 122
+            },
+            "expandedCount": 1,
+            "index": 4,
+            "shape": "rich",
+            "spans": {
+              "chat.first-rich-render": {
+                "count": 136,
+                "latestMilliseconds": 518.958709,
+                "maximumMilliseconds": 3557.12075
+              },
+              "chat.list-projection": {
+                "count": 4,
+                "latestMilliseconds": 2.078084,
+                "maximumMilliseconds": 10.063833
+              },
+              "drawer.open": {
+                "count": 1,
+                "latestMilliseconds": 632.779959,
+                "maximumMilliseconds": 632.779959
+              },
+              "markdown.render.settled": {
+                "count": 136,
+                "latestMilliseconds": 18.865916,
+                "maximumMilliseconds": 684.89025
+              },
+              "markdown.webview.init": {
+                "count": 138,
+                "latestMilliseconds": 433.737042,
+                "maximumMilliseconds": 3150.3625
+              }
+            },
+            "threadID": "performance-fixture-chat-0000",
+            "unixSeconds": 1791080797.3308349
+          }
+        ],
+        "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload."
+      },
+      "metricsSHA256": "9e83a67fa2804200bd80548e9a1b66b6f5e3711fdc9e891dc2228f01190f2168",
+      "cleanup": {
+        "observedAt": "2026-10-04T02:27:01.017031+00:00",
+        "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "state": "Shutdown",
+        "collectionStartingState": "Shutdown",
+        "metricsSource": "/Users/buns/Library/Developer/CoreSimulator/Devices/9DF2F308-20E6-4410-8A6D-FE40502EADA1/data/Containers/Data/Application/7DEA3EEA-FCCF-46F7-AD40-35DA3316B81E/Library/Application Support/performance-fixture/timeline-metrics.json",
+        "metricsSaved": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-scroll-metrics.json"
+      }
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "runtime-activity-native-rich-middle-2026-10-04.png",
+      "source": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-scroll-attachments/66B95ED0-4CAF-4EE9-ACEC-B83C91FD4F2C.png",
+      "sha256": "887ce0f0ef68820911e8e35ea432d127704f0c101a321c84cfb26187b727f634",
+      "observation": "Earlier tool 60 remains expanded after returning from the tail; rich prose renders again in WebKit.",
+      "sourceFingerprint": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8"
+    },
+    {
+      "path": "runtime-activity-native-rich-reopened-2026-10-04.png",
+      "source": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-rich-attachments/4C42C1A6-238E-4F10-A9DA-0D12DB2AEF3A.png",
+      "sha256": "e28676633c1ddbe5362efddfc2542645516a18bc406d4d55aa8ea63fff25c83d",
+      "observation": "All-rich tail after same-process reopening, with the last tool expanded.",
+      "sourceFingerprint": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8"
+    }
+  ],
+  "checks": [
+    {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:19:11.264262+00:00",
+      "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-mobile.log",
+      "finishedAt": "2026-10-04T02:19:35.502546+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "sourceUnchanged": true,
+      "logSHA256": "692a798657925a6b9ab75519c0c4a29f7adea29d9e2fdeeb602cf1d1f5aa217c",
+      "testSummary": [
+        "\u2713 106 test file(s) passed [mobile]"
+      ]
+    },
+    {
+      "command": [
+        "xcodebuild",
+        "test-without-building",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCavePerformance",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-recovery.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-",
+        "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+        "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:27:01.052157+00:00",
+      "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-recovery.log",
+      "finishedAt": "2026-10-04T02:29:12.781646+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "sourceUnchanged": true,
+      "logSHA256": "729f812064f411b63fcbc2c43d1584678c3c5c4c3c90a9cd543171bc01be63b9",
+      "testSummary": [
+        "Test Suite 'CovenCaveUITests.xctest' passed at 2026-10-03 21:29:00.549.\n\t Executed 2 tests, with 0 failures (0 unexpected) in 106.846 (106.850) seconds"
+      ]
+    },
+    {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-regression.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/MarkdownWebViewLifecycleTests",
+        "-only-testing:CovenCaveTests/MarkdownBundleLoadingTests",
+        "-only-testing:CovenCaveTests/CavePerformanceTests",
+        "-only-testing:CovenCaveTests/AssistantResponseProjectionTests",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:29:13.084453+00:00",
+      "sourceBefore": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-viewport-regression.log",
+      "finishedAt": "2026-10-04T02:33:48.297381+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8",
+      "sourceUnchanged": true,
+      "logSHA256": "c33614da08184e36440eecdef7bb4e09d63107f73e8acdb607b6427766b34150",
+      "testSummary": [
+        "Test Suite 'CovenCaveTests.xctest' passed at 2026-10-03 21:30:32.163.\n\t Executed 89 tests, with 0 failures (0 unexpected) in 17.659 (17.692) seconds",
+        "Test Suite 'CovenCaveUITests.xctest' passed at 2026-10-03 21:33:32.868.\n\t Executed 12 tests, with 0 failures (0 unexpected) in 177.184 (177.195) seconds"
+      ]
+    }
+  ],
+  "finalCleanup": {
+    "observedAt": "2026-10-04T02:33:57.690566+00:00",
+    "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "before": "Shutdown",
+    "state": "Shutdown",
+    "sourceFingerprint": "3a3c678bb9ab643225a2d1045839428e3e04a87f92d6bd0da37ac061ba988be8"
+  },
+  "rejectedAttempts": [
+    {
+      "check": {
+        "command": [
+          "pnpm",
+          "test:mobile"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:02:21.171083+00:00",
+        "sourceBefore": "45e1ad6f7ab5724f02da618c26bb86c945ded5297e6ad8f34da343973970dd13",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-lazy-mobile.log",
+        "finishedAt": "2026-10-04T02:02:26.668169+00:00",
+        "exitCode": 1,
+        "sourceAfter": "45e1ad6f7ab5724f02da618c26bb86c945ded5297e6ad8f34da343973970dd13",
+        "sourceUnchanged": true
+      },
+      "finding": "Source identity gate still expected eager ForEach; updated alongside the attempted renderer."
+    },
+    {
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test-without-building",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-recovery.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:12:13.835660+00:00",
+        "sourceBefore": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-render-recovery.log",
+        "finishedAt": "2026-10-04T02:15:15.816968+00:00",
+        "exitCode": 65,
+        "sourceAfter": "ad3ec8630a0079ffce98f256eaf4329fbde84fffa50c9aa36dbbc6ee03105634",
+        "sourceUnchanged": true
+      },
+      "finding": "Mixed 120-tool reopening left the earlier nested lazy stack blank. Shrink and repeated-open recovery tests passed."
+    },
+    {
+      "check": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "-derivedDataPath",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "-resultBundlePath",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-rich-mixed-reopen-diagnostic.xcresult",
+          "-parallel-testing-enabled",
+          "NO",
+          "-enablePerformanceTestsDiagnostics",
+          "NO",
+          "-jobs",
+          "2",
+          "CODE_SIGNING_ALLOWED=YES",
+          "CODE_SIGN_IDENTITY=-",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:15:50.308522+00:00",
+        "sourceBefore": "9ca23cd5e0c9d0ba50f2130cac4f839bf096f6ac75aa5fe5299df6e7a02a1a08",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-rich-mixed-reopen-diagnostic.log",
+        "finishedAt": "2026-10-04T02:17:17.470687+00:00",
+        "exitCode": 65,
+        "sourceAfter": "9ca23cd5e0c9d0ba50f2130cac4f839bf096f6ac75aa5fe5299df6e7a02a1a08",
+        "sourceUnchanged": true
+      },
+      "finding": "The same missing tool detail persisted through an explicit ten-second wait. Screenshot and accessibility hierarchy showed the rendered tail with blank preceding timeline area; nested laziness was rejected."
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift",
+      "sha256": "6fca0aa8717002f83fcb331981d9c8740953cf18bccd800c6a5d6b2854bc35dc"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/MessageProseView.swift",
+      "sha256": "703ad5d3465e7036e3f2f991db1dcf0856e730b69477146bba05556a06b05833"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Performance/CaveTimelinePerformanceFixture.swift",
+      "sha256": "4ac8a830f2c68b2891afec5270bd8737bedfc3bd7d4ec37fc4af2dead452de74"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Performance/CavePerformanceFixture.swift",
+      "sha256": "c40946bfa7ee70f7d20992c2fa8a92647182547bc4f80b2c66de4ac010d11bb0"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/CavePerformanceTests.swift",
+      "sha256": "f05996e37a3c3559c7e8a529d87d4d8275a5c0928623094115c0d7119dd4e354"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveUITests/PerformanceBaselineUITests.swift",
+      "sha256": "fab86b7858ba5e69c1c948fdbed344b1d68d8ad9e32eb76a86f729deb951812f"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift",
+      "sha256": "bdc49e5695d26a3e5698effbac0abd49b9b201a522356112a057fb9f01466636"
+    },
+    {
+      "path": "scripts/ios-message-reader.test.mjs",
+      "sha256": "46a016846a40f4627dd45a6ab75d567463844273391f1af86eefc76709ca6e7e"
+    }
+  ],
+  "limits": [
+    "Each baseline or candidate is a single local journey under uncontrolled host load, not a percentile benchmark or performance gate.",
+    "Attached WebView counts depend on viewport, prefetch region and content height; these observations are not a hard renderer cap.",
+    "App physical footprint excludes separate WebKit processes.",
+    "The maximum first-rich-render span is cumulative per-renderer instrumentation, not full-transcript latency or a frame/hitch distribution.",
+    "Invalidation counters record cancellation/ownership, not proven deallocation.",
+    "Same-process reopening is navigation, not network/history reload or provider transport qualification.",
+    "No physical-device performance or human VoiceOver acceptance is claimed.",
+    "Signed runtime admission, pending OpenCode access-mode authority, wider runtime/transport/theme/parallel/retry coverage and delivery remain incomplete."
+  ]
+}

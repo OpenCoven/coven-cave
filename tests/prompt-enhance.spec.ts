@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { runtimeModelInventoryScope } from "../src/lib/runtime-models";
 
 // The ultimate Enhance (cave-b6c2): the composer's Enhance action (now an
 // item in the "+" menu, chat revamp 1d) streams a real rewrite from the
@@ -25,6 +26,8 @@ const ENHANCED = "Investigate the login regression and outline a fix plan.";
 const NEXT_PATH_RESPONSE = "The login path is ready to verify.\n<coven:next-paths>\n- [reply rationale=\"Verify the changed login flow\" evidence=\"message:a-evidence\"] Verify the login flow\n</coven:next-paths>";
 const ISO = "2026-08-19T14:00:00.000Z";
 const PROJECT_ROOT = process.cwd();
+const INITIAL_MODEL = "openai/gpt-6.1-sol";
+const ALTERNATE_MODEL = "openai/gpt-6.1-mini";
 const CHAT_SESSION = {
   id: "s-agentic-enhance",
   title: "Agentic enhancement evidence",
@@ -32,7 +35,7 @@ const CHAT_SESSION = {
   project_root: PROJECT_ROOT,
   harness: "codex",
   familiarId: "nova",
-  model: "openai/gpt-5.5",
+  model: INITIAL_MODEL,
   runtime: `local:${PROJECT_ROOT}`,
   exit_code: null,
   archived_at: null,
@@ -139,7 +142,7 @@ async function seedChat(
     modelPatches: [],
     stopRequests: [],
   };
-  let model = "openai/gpt-5.5";
+  let model = INITIAL_MODEL;
   let chatReplySent = false;
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -178,6 +181,18 @@ async function seedChat(
       },
     }),
   );
+  // Model switches use reported inventory, never historical catalog seeds
+  // or the machine's installed CLI/account.
+  await page.route("**/api/runtime-models/codex**", (route) => {
+    const url = new URL(route.request().url());
+    return route.fulfill({ json: {
+      ok: true, runtime: "codex",
+      models: [INITIAL_MODEL, ALTERNATE_MODEL].map((id) => ({ id, label: id })),
+      provenance: "live", freshness: "fresh", refreshState: "ready", availability: "available",
+      defaultOwner: "runtime", allowCustom: false,
+      scope: runtimeModelInventoryScope("codex", url.searchParams.get("familiarId")),
+    } });
+  });
   await page.route("**/api/chat/model-state**", (route) => {
     if (route.request().method() === "PATCH") {
       const patch = route.request().postDataJSON() as Record<string, unknown>;
@@ -241,7 +256,7 @@ async function openChat(page: Page) {
   await expect(chat.getByRole("button", { name: /^Project: E2E Project · Full/ })).toBeVisible({
     timeout: 45_000,
   });
-  await expect(chat.getByRole("button", { name: /^Model: GPT-5\.5/ })).toBeVisible({
+  await expect(chat.getByRole("button", { name: `Runtime: Codex · Model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
     timeout: 45_000,
   });
   await expect(chat.getByRole("button", { name: "Open linked task: Fix the login regression" })).toBeVisible({
@@ -598,9 +613,10 @@ test.describe("Chat agentic prompt enhancement", () => {
     await expect(toolsMenu.getByRole("menuitem", { name: "Model & tuning…" })).toBeVisible();
     await toolsMenu.getByRole("menuitem", { name: "Model & tuning…" }).click();
     const runtimeMenu = page.getByRole("menu", { name: "Runtime and model" });
-    await expect(runtimeMenu.getByRole("menuitemradio", { name: "GPT-5.4", exact: true })).toBeVisible();
-    await runtimeMenu.getByRole("menuitemradio", { name: "GPT-5.4", exact: true }).click();
+    await expect(runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true })).toBeVisible();
+    await runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true }).click();
     expect(fixture.modelPatches).toHaveLength(1);
+    expect(fixture.modelPatches[0]?.model).toBe(ALTERNATE_MODEL);
 
     await expect(() => expect(
       fixture.stopRequests.some((request) => request.runId === thirdRunId),

@@ -119,12 +119,16 @@ function snapOffset(offset: number, textLength: number, breakpoints: number[]): 
 export function segmentTurn<T extends SegmentedTool>(
   text: string,
   tools: readonly T[] | undefined,
+  options: { boundaries?: readonly number[]; atomicRanges?: ReadonlyArray<readonly [number, number]> } = {},
 ): Array<TurnSegment<T>> | null {
   if (!tools || tools.length === 0) return null;
   if (!tools.every((t) => typeof t.textOffset === "number" && Number.isFinite(t.textOffset))) {
     return null;
   }
-  const breakpoints = paragraphBreakpoints(text);
+  const breakpoints = [...new Set([...paragraphBreakpoints(text), ...(options.boundaries ?? [])])]
+    .filter((point) => point >= 0 && point <= text.length &&
+      !options.atomicRanges?.some(([start, end]) => point > start && point < end))
+    .sort((a, b) => a - b);
   // Stable sort: tools captured at the same boundary keep arrival order.
   const placed = tools
     .map((tool) => ({

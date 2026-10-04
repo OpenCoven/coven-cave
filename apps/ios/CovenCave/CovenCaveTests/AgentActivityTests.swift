@@ -23,7 +23,148 @@ final class AgentActivityTests: XCTestCase {
                   durationMs: durationMs)
     }
 
+
+    private var provenanceJSON: String {
+        #"{"schemaVersion":1,"runId":"22222222-3333-4444-8555-666666666666","attemptId":"33333333-3333-4444-8555-666666666666","callId":"t1","phase":"ok","source":"runtime-report","producer":{"harness":"hermes","version":null,"protocol":"hermes-responses-v1"},"firstObservedAt":100,"updatedAt":150,"executionObservedAt":110,"terminalObservedAt":150,"authority":{"binding":"unavailable","approval":"unavailable","effect":"unavailable"}}"#
+    }
+
+    func testToolProvenanceSurvivesLiveReplayAndHistory() throws {
+        let eventJSON = #"{"kind":"tool_use","id":"t1","name":"Read","status":"ok","activity":\#(provenanceJSON)}"#
+        let event = try XCTUnwrap(StreamEvent.decode(eventJSON))
+        let live = try XCTUnwrap(ActivityFold.fold([], event: event))
+        XCTAssertEqual(live[0].activity?.producer.harness, "hermes")
+        XCTAssertNil(ActivityFold.fold(live, event: event), "cursor replay is idempotent")
+        XCTAssertNil(ActivityFold.fold(live, event: toolEvent(status: "error")), "late outcomes cannot replace provenance")
+        let historyJSON = #"{"id":"t1","name":"Read","status":"ok","activity":\#(provenanceJSON)}"#
+        let saved = try JSONDecoder().decode(ToolCall.self, from: Data(historyJSON.utf8))
+        XCTAssertEqual(ActivityFold.steps(fromTools: [saved])?[0].activity, live[0].activity)
+        let snapshot = try JSONEncoder().encode(live)
+        XCTAssertEqual(try JSONDecoder().decode([ActivityStep].self, from: snapshot), live)
+    }
+
+    func testRejectedRequestSurvivesReplayHistoryAndSnapshot() throws {
+        let provenance = provenanceJSON
+            .replacingOccurrences(of: #""phase":"ok""#, with: #""phase":"rejected""#)
+            .replacingOccurrences(of: #""executionObservedAt":110"#, with: #""executionObservedAt":null"#)
+        let eventJSON = #"{"kind":"tool_use","id":"t1","name":"Bash","status":"rejected","activity":\#(provenance)}"#
+        let event = try XCTUnwrap(StreamEvent.decode(eventJSON))
+        let live = try XCTUnwrap(ActivityFold.fold([], event: event))
+        XCTAssertEqual(live[0].status, .rejected)
+        XCTAssertEqual(live.summaryLabel, "1 tool call · 1 rejected")
+        XCTAssertNotNil(live[0].activity)
+        XCTAssertNil(live[0].activity?.executionObservedAt)
+        XCTAssertEqual(live[0].activity?.terminalObservedAt, 150)
+        for status in ["running", "ok", "error", "unknown"] {
+            XCTAssertNil(ActivityFold.fold(live, event: toolEvent(status: status)))
+        }
+        XCTAssertNil(ActivityFold.settle(live, success: false))
+        let historyJSON = #"{"id":"t1","name":"Bash","status":"rejected","activity":\#(provenance)}"#
+        let saved = try JSONDecoder().decode(ToolCall.self, from: Data(historyJSON.utf8))
+        XCTAssertEqual(ActivityFold.steps(fromTools: [saved]), live)
+        XCTAssertEqual(try JSONDecoder().decode([ActivityStep].self, from: JSONEncoder().encode(live)), live)
+    }
+
+    func testInvalidProvenanceKeepsToolHistoryReadable() throws {
+        for invalid in [
+            provenanceJSON.replacingOccurrences(of: #""schemaVersion":1"#, with: #""schemaVersion":2"#),
+            provenanceJSON.replacingOccurrences(of: #""callId":"t1""#, with: #""callId":"other""#),
+            provenanceJSON.replacingOccurrences(of: #""approval":"unavailable""#, with: #""approval":"approved""#),
+            provenanceJSON.replacingOccurrences(of: #""terminalObservedAt":150"#, with: #""terminalObservedAt":99"#),
+            #"{"schemaVersion":{},"producer":"invalid"}"#,
+        ] {
+            let toolJSON = #"{"id":"t1","name":"Read","status":"ok","activity":\#(invalid)}"#
+            let tool = try JSONDecoder().decode(ToolCall.self, from: Data(toolJSON.utf8))
+            XCTAssertEqual(tool.status, "ok")
+            XCTAssertNil(tool.activity)
+            let stepJSON = #"{"id":"t1","kind":"tool","title":"Read","status":"ok","activity":\#(invalid)}"#
+            XCTAssertNil(try JSONDecoder().decode(ActivityStep.self, from: Data(stepJSON.utf8)).activity)
+        }
+    }
+
+    func testDisconnectDoesNotCreateProducerProvenance() throws {
+        let running = provenanceJSON.replacingOccurrences(of: #""phase":"ok""#, with: #""phase":"running""#)
+            .replacingOccurrences(of: #""terminalObservedAt":150"#, with: #""terminalObservedAt":null"#)
+        let json = #"{"kind":"tool_use","id":"t1","name":"Read","status":"running","activity":\#(running)}"#
+        let live = try XCTUnwrap(ActivityFold.fold([], event: try XCTUnwrap(StreamEvent.decode(json))))
+        XCTAssertNotNil(live[0].activity)
+        let settled = try XCTUnwrap(ActivityFold.settle(live, success: true))
+        XCTAssertEqual(settled[0].status, .unknown)
+        XCTAssertNil(settled[0].activity)
+    }
+
+
+    private var reasoningJSON: String {
+        #"{"schemaVersion":1,"id":"33333333-3333-4444-8555-666666666666:r1","representation":"provider-summary","phase":"complete","text":"Compare the results.","disclosure":"display-safe","observation":{"runId":"22222222-3333-4444-8555-666666666666","attemptId":"33333333-3333-4444-8555-666666666666","source":"runtime-report","producer":{"harness":"codex","version":"0.145.0","protocol":"codex-jsonl-v1"},"firstObservedAt":100,"updatedAt":150,"completedAt":150,"binding":"unavailable"}}"#
+    }
+
+    func testProviderSummaryLiveReplayHistoryAndSnapshotAgree() throws {
+        let json = #"{"kind":"reasoning","block":\#(reasoningJSON)}"#
+        guard case .reasoning(let block)? = StreamEvent.decode(json) else { return XCTFail("missing typed summary") }
+        XCTAssertEqual(block.text, "Compare the results.")
+        XCTAssertEqual(ChatReasoningBlock.merging([block], block), [block])
+        let turnJSON = #"{"id":"a","role":"assistant","text":"Answer","reasoningBlocks":[\#(reasoningJSON)]}"#
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: Data(turnJSON.utf8))
+        let message = DisplayMessage.restored(from: turn, familiarId: "sage")
+        XCTAssertEqual(message.reasoningBlocks, [block])
+        XCTAssertEqual(try JSONDecoder().decode(DisplayMessage.self, from: JSONEncoder().encode(message)).reasoningBlocks, [block])
+        var late = block; late.phase = "running"; late.text = nil; late.disclosure = "withheld"; late.observation?.completedAt = nil
+        XCTAssertEqual(ChatReasoningBlock.merging([block], late), [block])
+    }
+
+    func testProviderWithholdingIsDistinctFromLocalInterruption() throws {
+        var block = try JSONDecoder().decode(ChatReasoningBlock.self, from: Data(reasoningJSON.utf8))
+        block.phase = "unavailable"
+        block.text = nil
+        block.disclosure = "withheld"
+        block.observation?.completedAt = nil
+        block.unavailableReason = "provider-withheld"
+        XCTAssertNotNil(block.validated)
+        let stored = try JSONDecoder().decode(ChatReasoningBlock.self, from: JSONEncoder().encode(block))
+        XCTAssertEqual(stored.validated?.unavailableReason, "provider-withheld")
+        block.observation?.source = "application"
+        XCTAssertNil(block.validated, "A disconnect cannot claim provider withholding")
+        block.unavailableReason = nil
+        XCTAssertNotNil(block.validated)
+    }
+
+    func testUnknownReasoningMetadataLeavesAnswerReadable() throws {
+        for invalid in [reasoningJSON.replacingOccurrences(of: #""schemaVersion":1"#, with: #""schemaVersion":2"#), #"{"schemaVersion":{},"phase":42}"#] {
+            let turnJSON = #"{"id":"a","role":"assistant","text":"Answer","reasoningBlocks":[\#(invalid)]}"#
+            let turn = try JSONDecoder().decode(ChatTurn.self, from: Data(turnJSON.utf8))
+            let message = DisplayMessage.restored(from: turn, familiarId: "sage")
+            XCTAssertEqual(message.text, "Answer")
+            XCTAssertTrue(message.reasoningBlocks?.isEmpty == true)
+        }
+    }
+
     // MARK: - Tool folding
+
+    func testRequestDoesNotClaimExecutionAndSettlesUnknown() {
+        let requested = ActivityFold.fold([], event: toolEvent(status: "requested"))!
+        XCTAssertEqual(requested[0].status, .requested)
+        XCTAssertEqual(requested.summaryLabel, "1 tool call · 1 requested")
+        XCTAssertEqual(ActivityFold.settle(requested, success: true)?[0].status, .unknown)
+        let running = ActivityFold.fold(requested, event: toolEvent(status: "running"))!
+        XCTAssertEqual(running.count, 1)
+        XCTAssertEqual(running[0].status, .running)
+        XCTAssertNil(ActivityFold.fold(running, event: toolEvent(status: "requested")))
+    }
+
+    func testLateStartDoesNotReviveUnknownOutcome() {
+        let unknown = ActivityFold.fold([], event: toolEvent(status: "unknown"))!
+        XCTAssertNil(ActivityFold.fold(unknown, event: toolEvent(status: "running")))
+        XCTAssertNil(ActivityFold.fold(unknown, event: toolEvent(status: "requested")))
+    }
+
+    func testFirstTerminalOutputAndDurationSurviveReplay() {
+        let failed = ActivityFold.fold([], event: toolEvent(output: "original", status: "error", durationMs: 10))!
+        XCTAssertNil(ActivityFold.fold(failed, event: toolEvent(output: "replacement", status: "error", durationMs: 20)))
+    }
+
+    func testFuturePersistedStatusBecomesUnknown() throws {
+        let json = Data(#"{"id":"future","kind":"tool","title":"read","status":"future-status"}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(ActivityStep.self, from: json).status, .unknown)
+    }
 
     func testToolStartAppendsARunningStep() {
         let steps = ActivityFold.fold([], event: toolEvent(input: "ls -la"))
@@ -250,14 +391,41 @@ final class AgentActivityTests: XCTestCase {
 
     // MARK: - Settling
 
-    func testSettleCoercesRunningStepsToTheTurnOutcome() {
+    func testTurnCompletionDoesNotInventToolOutcomes() {
         var steps = ActivityFold.fold([], event: toolEvent(id: "a", status: "ok"))!
         steps = ActivityFold.fold(steps, event: toolEvent(id: "b", name: "Edit"))!
         let ok = ActivityFold.settle(steps, success: true)
-        XCTAssertEqual(ok?.map(\.status), [.ok, .ok])
+        XCTAssertEqual(ok?.map { $0.status.rawValue }, ["ok", "unknown"])
         let failed = ActivityFold.settle(steps, success: false)
-        XCTAssertEqual(failed?.map(\.status), [.ok, .error],
-                       "already-settled steps keep their own outcome")
+        XCTAssertEqual(failed?.map { $0.status.rawValue }, ["ok", "unknown"],
+                       "a failed turn also leaves an unresolved tool's outcome unknown")
+    }
+
+    func testLateStartCannotReopenACompletedTool() {
+        let completed = ActivityFold.fold([], event: toolEvent(id: "late", status: "ok"))!
+        let replayed = ActivityFold.fold(completed, event: toolEvent(id: "late", input: "pwd")) ?? completed
+        XCTAssertEqual(replayed[0].status, .ok)
+        XCTAssertEqual(replayed[0].detail, "pwd", "late arguments can fill missing details without regressing the outcome")
+    }
+
+    func testLateResultCanResolveAnUnknownOutcome() {
+        let running = ActivityFold.fold([], event: toolEvent(id: "late-result"))!
+        let unknown = ActivityFold.settle(running, success: true)!
+        let resolved = ActivityFold.fold(unknown, event: toolEvent(id: "late-result", status: "ok"))!
+        XCTAssertEqual(resolved[0].status, .ok)
+    }
+
+    func testUnknownOutcomeSurvivesSnapshotWithoutBecomingSuccess() throws {
+        let running = ActivityFold.fold([], event: toolEvent())!
+        let unknown = ActivityFold.settle(running, success: true)!
+        let restored = try JSONDecoder().decode([ActivityStep].self, from: JSONEncoder().encode(unknown))
+        XCTAssertEqual(restored[0].status, .unknown)
+        XCTAssertEqual(restored.summaryLabel, "1 tool call · 1 outcome unknown")
+    }
+
+    func testUnrecognizedToolStatusDoesNotCreateAnEndlessSpinner() {
+        let steps = ActivityFold.fold([], event: toolEvent(status: "future-protocol-state"))!
+        XCTAssertEqual(steps[0].status, .unknown)
     }
 
     func testSettleWithNothingRunningReportsNoChange() {
@@ -274,8 +442,8 @@ final class AgentActivityTests: XCTestCase {
             ToolCall(id: "3", name: "Read", input: nil, output: nil, status: nil),
         ]
         let steps = ActivityFold.steps(fromTools: tools)
-        XCTAssertEqual(steps?.map(\.status), [.ok, .error, .ok],
-                       "persisted calls are settled — unknown reads as ok, never running")
+        XCTAssertEqual(steps?.map { $0.status.rawValue }, ["ok", "error", "unknown"],
+                       "historical calls without an outcome never acquire a success marker")
         XCTAssertEqual(steps?[0].detail, "pwd")
     }
 
@@ -309,9 +477,9 @@ final class AgentActivityTests: XCTestCase {
 
     func testSummaryLabelCountsToolsAndFailures() {
         var steps = ActivityFold.fold([], event: toolEvent(id: "a", status: "ok"))!
-        XCTAssertEqual(steps.summaryLabel, "Ran 1 tool")
+        XCTAssertEqual(steps.summaryLabel, "1 tool call")
         steps = ActivityFold.fold(steps, event: toolEvent(id: "b", name: "Edit", status: "error"))!
-        XCTAssertEqual(steps.summaryLabel, "Ran 2 tools · 1 failed")
+        XCTAssertEqual(steps.summaryLabel, "2 tool calls · 1 failed")
     }
 
     func testSummaryLabelForProgressOnlyTurns() {
@@ -333,7 +501,7 @@ final class AgentActivityTests: XCTestCase {
 
     func testDecodeToolUseCarriesIdStatusAndDuration() throws {
         let json = #"{"kind":"tool_use","id":"t1","name":"Bash","input":"ls","status":"ok","durationMs":123}"#
-        guard case .toolUse(let id, let name, let input, _, let status, let durationMs)? =
+        guard case .toolUse(let id, let name, let input, _, let status, let durationMs, _)? =
                 StreamEvent.decode(json) else {
             return XCTFail("expected a toolUse event")
         }

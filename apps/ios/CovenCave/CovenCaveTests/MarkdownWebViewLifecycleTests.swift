@@ -189,6 +189,9 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         XCTAssertNil(coordinator.onHeadings)
         XCTAssertNil(coordinator.onFailure)
         XCTAssertEqual(recorder.snapshot()["markdown.webview.init"]?.count, 1)
+        XCTAssertEqual(recorder.counter("markdown.webview.created"), 1)
+        XCTAssertEqual(recorder.counter("markdown.webview.invalidated"), 1,
+                       "repeated teardown must not undercount active renderer ownership")
     }
 
     @MainActor

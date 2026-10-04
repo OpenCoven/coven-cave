@@ -51,17 +51,9 @@ assert.deepEqual(
   dynamicCopilot,
   "Copilot replaces its seed with the authenticated account inventory",
 );
-assert.ok(
-  (await listRuntimeModelOptions("copilot", "sage", {
-    listCopilot: async () => [],
-  })).some((model) => model.id === "github/auto"),
-  "a failed Copilot probe falls back to the safe static seed",
-);
-assert.ok(
-  !(await listRuntimeModelOptions("copilot", "sage", {
-    listCopilot: async () => [],
-  })).some((model) => model.id === "github/claude-opus-5"),
-  "failure fallback never fabricates Copilot Opus 5 access",
+assert.deepEqual(
+  await listRuntimeModelOptions("copilot", "sage", { listCopilot: async () => [] }),
+  [], "failed Copilot discovery never restores a static model list",
 );
 
 let openCodeCalls = 0;
@@ -90,31 +82,33 @@ assert.deepEqual(
 );
 assert.equal(openCodeCalls, 1);
 
-assert.ok(
-  (await listRuntimeModelOptions("codex", null)).some(
-    (model) => model.id === "openai/gpt-5.6-sol",
-  ),
-  "static runtimes retain their existing catalog",
+const codexModel = { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol" };
+assert.deepEqual(
+  (await listRuntimeModelInventory("codex", "sage", {
+    listCodexInventory: async (id) => {
+      assert.equal(id, "sage");
+      return { models: [codexModel], provenance: "live" };
+    },
+  })).models,
+  [codexModel], "Codex gets runtime-reported choices, not the static catalog",
 );
-assert.ok(
-  (await listRuntimeModelOptions("codex", null)).some(
-    (model) => model.id === "openai/gpt-6-astra",
-  ),
-  "Codex fallback inventory includes GPT-6 Astra",
+assert.deepEqual(
+  (await listRuntimeModelInventory("codex", "sage", {
+    allowCliInventory: false,
+    listCodexInventory: async () => { throw new Error("must not discover local models for a remote runtime"); },
+  })).models,
+  [],
 );
-assert.ok(
-  (await listRuntimeModelOptions("copilot", "sage", {
-    listCopilot: async () => [],
-  })).some((model) => model.id === "github/gpt-6-astra"),
-  "Copilot fallback inventory includes GPT-6 Astra when discovery is unavailable",
-);
-assert.deepEqual(await listRuntimeModelOptions("not-a-runtime", null), []);
-assert.ok(
-  (await listRuntimeModelOptions("claude", "sage", {
+for (const runtime of ["codex", "claude", "copilot"]) {
+  const inventory = await listRuntimeModelInventory(runtime, "sage", {
+    listCodexInventory: async () => ({ models: [], provenance: "unavailable" }),
     listClaude: async () => { throw new Error("transient"); },
-  })).some((model) => model.id === "anthropic/claude-opus-4-8"),
-  "a failed Claude resolver preserves the seed",
-);
+    listCopilot: async () => [],
+  });
+  assert.deepEqual(inventory.models, [], `${runtime} cannot advertise old seeds after failed discovery`);
+  assert.equal(inventory.provenance, "unavailable");
+}
+assert.deepEqual(await listRuntimeModelOptions("not-a-runtime", null), []);
 const hermesInventory = await listRuntimeModelInventory("hermes", "sage");
 assert.equal(hermesInventory.provenance, "runtime-managed", "Hermes never claims the static OpenAI seed for a scoped familiar");
 assert.deepEqual(hermesInventory.models, [], "Hermes scoped inventory omits the OpenAI seed until its provider can be discovered");

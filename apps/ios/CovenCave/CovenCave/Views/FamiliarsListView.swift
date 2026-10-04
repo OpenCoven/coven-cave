@@ -597,7 +597,7 @@ struct FamiliarDetailView: View {
             modelBindingScope = response.presentationBindingScope
             guard modelRequestTarget == responseTarget else { return }
             modelState = response.state
-            modelOptions = response.options ?? []
+            modelOptions = response.selectableOptions
             modelAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
             modelProvenance = response.inventory?.provenance ?? "unavailable"
         } catch {
@@ -634,7 +634,7 @@ struct FamiliarDetailView: View {
                     currentTarget: self.modelRequestTarget
                 ) else { return }
                 self.modelState = response.state
-                self.modelOptions = response.options ?? self.modelOptions
+                self.modelOptions = response.selectableOptions
                 self.modelAllowsRuntimeDefault =
                     response.inventory?.allowsRuntimeDefault ?? self.modelAllowsRuntimeDefault
                 self.modelProvenance = response.inventory?.provenance ?? self.modelProvenance

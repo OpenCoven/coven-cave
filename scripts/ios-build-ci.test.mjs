@@ -290,8 +290,13 @@ const invokesXcodebuildAction = (run, action) =>
 const compileStep = stepRunning((run) => invokesXcodebuildAction(run, "build-for-testing"));
 assert.ok(compileStep, "the iOS job still compiles the test bundles");
 
+assert.ok(
+  runScripts.some((run) => run.includes("scripts/runtime-activity-native-transport.mjs") && run.includes("--unit-suite")),
+  "routine XCTest CI supplies the built-server TCP fixture to the complete unit suite",
+);
+
 const testStep = stepRunning(
-  (run) => invokesXcodebuildAction(run, "test-without-building") || invokesXcodebuildAction(run, "test"),
+  (run) => run.includes("scripts/runtime-activity-native-transport.mjs") && run.includes("--unit-suite"),
 );
 assert.ok(
   testStep,
@@ -308,7 +313,7 @@ const testRun = String(testStep.run ?? "");
 // An unsigned simulator host can launch but cannot read its Keychain.
 // Managed-device reads deliberately fail closed on that error, so signing
 // must be fixed in CI rather than treating inaccessible storage as empty.
-for (const step of [compileStep, testStep]) {
+for (const step of [compileStep]) {
   const invocation = String(step.run ?? "")
     .replace(/\\\r?\n\s*/g, " ")
     .split("\n")
@@ -351,7 +356,7 @@ assert.doesNotMatch(
 );
 assert.match(
   testRun,
-  /-destination\s+"id=\$IOS_SIMULATOR_UDID"/,
+  /--destination\s+"\$IOS_SIMULATOR_UDID"/,
   "the test action targets the simulator the job resolved and booted",
 );
 assert.ok(
@@ -373,9 +378,15 @@ assert.ok(
 // UI tests keep their compile gate but stay out of the blocking path: they
 // drive XCUIApplication, which is minutes per case and the most flake-prone
 // thing this pipeline could own.
+const nativeRunner = readFileSync(new URL("./runtime-activity-native-transport.mjs", import.meta.url), "utf8");
+for (const setting of ["CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_STYLE=Manual", "DEVELOPMENT_TEAM="]) {
+  assert.ok(nativeRunner.includes(`'${setting}'`),
+    `the fixture's build-for-testing preserves ad-hoc signing: ${setting}`);
+}
+assert.doesNotMatch(nativeRunner, /CODE_SIGNING_ALLOWED=NO|-allowProvisioningUpdates/);
 assert.match(
-  testRun,
-  /-only-testing:CovenCaveTests\b/,
+  nativeRunner,
+  /unitSuite \? '-only-testing:CovenCaveTests' : '-only-testing:CovenCaveTests\/ActivityTransportTests'/,
   "routine PR CI runs the unit bundle; CovenCaveUITests stays compile-only for cost and flake reasons",
 );
 
@@ -387,13 +398,13 @@ assert.match(
 // difference between "one test is named and failed" and "the gate reports
 // nothing distinguishable from an infrastructure blip".
 assert.match(
-  testRun,
-  /-test-timeouts-enabled\s+YES/,
+  nativeRunner,
+  /'-test-timeouts-enabled', 'YES'/,
   "per-test timeouts must be enabled — a hung test otherwise wedges the job until it times out with no report",
 );
 assert.match(
-  testRun,
-  /-default-test-execution-time-allowance\s+\d+/,
+  nativeRunner,
+  /'-default-test-execution-time-allowance', '\d+'/,
   "a default per-test allowance bounds a hang to one test instead of the whole run",
 );
 
@@ -403,8 +414,8 @@ assert.ok(
   "the iOS job verifies the result bundle — xcodebuild exits 0 when its selector matches no tests, which is the original defect one layer up",
 );
 assert.match(
-  testRun,
-  /-resultBundlePath\s+"\$IOS_RESULT_BUNDLE"/,
+  nativeRunner,
+  /'-resultBundlePath', path\.join\(evidence, 'native-transport\.xcresult'\)/,
   "the test action writes the result bundle the verification step reads",
 );
 assert.equal(
@@ -417,6 +428,20 @@ assert.match(
   /--tests-dir\s+apps\/ios\/CovenCave\/CovenCaveTests/,
   "the executed-count floor is derived from the unit-test sources rather than hardcoded",
 );
+
+assert.match(testRun, /--evidence "\$RUNNER_TEMP\/native-activity-ci"/);
+assert.ok(runScripts.some((run) => run.includes('IOS_RESULT_BUNDLE=$RUNNER_TEMP/native-activity-ci/native-transport.xcresult')),
+  "the verifier reads the exact full-suite result bundle written by the fixture");
+assert.match(nativeRunner, /if \(unitSuite\) \{\s*delete target\.OnlyTestIdentifiers;/,
+  "full-suite mode must not retain the transport-only selector");
+assert.match(nativeRunner, /target\.EnvironmentVariables = \{[\s\S]*CAVE_NATIVE_ACTIVITY_FIXTURE: JSON\.stringify/,
+  "the XCTest plan supplies the real TCP fixture configuration");
+assert.match(nativeRunner, /if \(!unitSuite\) \{\s*const uiTarget/,
+  "routine CI leaves the separate native UI gate opt-in");
+assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("installPinnedRelease")),
+  "CI prepares a production server and the existing integrity-verified pinned CLI");
+assert.match(nativeRunner, /await run\('native-transport', 'xcodebuild', \['test-without-building'/,
+  "the fixture actually runs XCTest instead of only compiling it");
 
 // ── The simulator guard must fail CLOSED ────────────────────────────────────
 //

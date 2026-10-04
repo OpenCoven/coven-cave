@@ -1,16 +1,17 @@
 // Shared flow-session transcript resolution (cave-ibb7). A flow session's
 // output can live in three places, in order of preference: the persisted Cave
 // conversation, the OpenClaw JSONL transcript, or (before either exists) the
-// daemon's PTY event stream. The flows/session-transcript route has always
-// walked this chain for the Executions view; the research-mission reconcile
-// now needs the same chain server-side to read control markers from sessions
-// whose flow-run record never flipped out of "running".
+// daemon's PTY event stream. Execution reconciliation walks this chain
+// server-side to read control markers from sessions
+// whose flow-run record never flipped out of "running". Browser reads use the
+// separate display resolver below and never fall back to raw PTY output.
 
 import { loadConversation } from "../cave-conversations.ts";
 import { loadState } from "../cave-config.ts";
 import { callDaemon, callDaemonTarget, type DaemonTarget } from "../coven-daemon.ts";
 import { loadConversationFromJsonl } from "../openclaw-conversation.ts";
 import { stripAnsi } from "../ansi.ts";
+import { projectConversationDisplay } from "./conversation-display-projection.ts";
 
 type CovenEvent = {
   kind: string;
@@ -114,4 +115,29 @@ export async function flowSessionTranscript(
 
   if (requireAvailable) throw new Error(`Flow transcript unavailable: ${sessionId}`);
   return "";
+}
+
+/** Browser reads admit persisted assistant messages through the shared history
+ * projection. PTY output has no assistant/diagnostic/provider-state boundary,
+ * so it cannot be a display fallback. Keep the execution resolver above intact
+ * for completion pagination and control-marker parsing. Neither read rewrites
+ * the underlying transcript or establishes provider-summary provenance. */
+export async function flowSessionDisplayTranscript(sessionId: string): Promise<{
+  transcript: string;
+  availability: "available" | "unavailable";
+}> {
+  const display = (conversation: NonNullable<Awaited<ReturnType<typeof loadConversation>>>) => {
+    const transcript = assistantTranscript(projectConversationDisplay(conversation));
+    return { transcript, availability: transcript.trim() ? "available" as const : "unavailable" as const };
+  };
+  const conversation = await loadConversation(sessionId);
+  if (conversation && (assistantTranscript(conversation).trim() || conversation.flowOutcome)) return display(conversation);
+
+  const state = await loadState();
+  const familiarId = state.sessionFamiliar[sessionId];
+  if (familiarId) {
+    const jsonlConversation = await loadConversationFromJsonl(sessionId, familiarId);
+    if (jsonlConversation) return display(jsonlConversation);
+  }
+  return { transcript: "", availability: "unavailable" };
 }

@@ -1,0 +1,555 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-04T00:22:26.109556+00:00",
+  "issues": [
+    5761,
+    5762,
+    5765,
+    5766,
+    5767
+  ],
+  "status": "Verified Main Chat timeline slice; local and uncommitted, broader runtime goal incomplete",
+  "candidate": {
+    "head": "18f6e327addc63707736c91040524bdc734a323c",
+    "branch": "fix/issue-5761-runtime-model-tools-current",
+    "buildId": "STj8wBZPA6fEY8714CsSp",
+    "source": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201"
+  },
+  "scope": {
+    "timeline": "Existing Main Chat rich renderer consumes Cave observation sequence and UTF-16 offsets with stable per-summary/per-call rows.",
+    "richContent": "Protects fenced and inline code, paired markers, grouped image decks and adjacent questions. Existing parsers retain rendering and authority ownership.",
+    "persistence": "Pure attachment/attention projection maps positions; mismatched full projection drops positions honestly.",
+    "preferences": "Default-on, saved opt-out/in, local expansion retained through pending/settled updates.",
+    "legacy": "Missing, duplicate or mixed-run positions retain existing fallback; no fabricated timestamp ordering."
+  },
+  "browser": {
+    "classification": "built Cave, real Coven daemon, synthetic external Hermes provider; browser assertions recorded separately",
+    "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "modelMenu": "Attempt 1 actual menu retains only newest known family models and a custom deployment from synthetic inventory; not provider availability proof.",
+    "assertions": {
+      "default": {
+        "kinds": [
+          "reasoning",
+          "text",
+          "tool"
+        ],
+        "preference": null,
+        "reasoningOpen": true
+      },
+      "optout": {
+        "reasoningOpen": false,
+        "preference": "0",
+        "toolVisible": true
+      },
+      "expanded": {
+        "reasoningOpen": true,
+        "toolOpen": true,
+        "preference": "0"
+      },
+      "settled": {
+        "kinds": [
+          "reasoning",
+          "text",
+          "tool",
+          "reasoning",
+          "text"
+        ],
+        "sameNodes": true,
+        "focusPreserved": true,
+        "userExpandedReasoning": true,
+        "userExpandedTool": true,
+        "newReasoningOpen": false,
+        "removed": [],
+        "rows": [
+          {
+            "key": "reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-before",
+            "text": "REASONING SUMMARY\n4 words\n\nhermes \u00b7 provider report\n\nInspect the marker file."
+          },
+          {
+            "key": "prose:reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-before",
+            "text": "Inspecting \ud83e\uddd9 caf\u00e9."
+          },
+          {
+            "key": "tool:native-read-1",
+            "text": "read_file\n\u00b7 marker.txt\nSucceeded\n1m 24s\nOBSERVATION\n\nRuntime report \u00b7 hermes \u00b7 version unavailable\n\nApproval and change confirmation unavailable.\n\nINPUT\nPath\nmarker.txt\nRaw JSON\nOUTPUT\nTEXT\nquoted\nCopy\nCAVE_BROWSER_91433ef6-0baf-47de-927c-990b41ff9c47"
+          },
+          {
+            "key": "reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-after",
+            "text": "REASONING SUMMARY\n4 words"
+          },
+          {
+            "key": "prose:reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-after",
+            "text": "Done: CAVEBROWSER91433ef6-0baf-47de-927c-990b41ff9c47"
+          }
+        ],
+        "model": "Response model. Runtime: hermes \u00b7 Version not reported. Runtime-reported model: served-fixture-v3. Requested model: Runtime default. Model: applied. Source: runtime-default. Runtime path: API. Tool details: supported on this path. Reasoning summaries: supported on this path"
+      },
+      "historyOptout": {
+        "kinds": [
+          "reasoning",
+          "text",
+          "tool",
+          "reasoning",
+          "text"
+        ],
+        "keys": [
+          "reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-before",
+          "prose:reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-before",
+          "tool:native-read-1",
+          "reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-after",
+          "prose:reasoning:2484fcb1-615b-4293-a46d-ccd3f6a1b984:summary-after"
+        ],
+        "savedPreference": "0",
+        "framesSampled": 468,
+        "allFramesCollapsed": true,
+        "toolOutputReadsBeforeExpand": 0,
+        "model": "Response model. Runtime: hermes \u00b7 Version not reported. Runtime-reported model: served-fixture-v3. Requested model: Runtime default. Model: applied. Source: runtime-default. Runtime path: API. Tool details: supported on this path. Reasoning summaries: supported on this path"
+      },
+      "historyOptin": {
+        "savedPreference": "1",
+        "framesSampled": 466,
+        "allFramesOpen": true,
+        "kinds": [
+          "reasoning",
+          "text",
+          "tool",
+          "reasoning",
+          "text"
+        ]
+      },
+      "light": {
+        "theme": "coven",
+        "mode": "light",
+        "rows": [
+          "reasoning",
+          "text",
+          "tool",
+          "reasoning",
+          "text"
+        ],
+        "overflow": false
+      },
+      "tideKeyboard": {
+        "theme": "tide",
+        "mode": "dark",
+        "rows": [
+          "reasoning",
+          "text",
+          "tool",
+          "reasoning",
+          "text"
+        ],
+        "overflow": false,
+        "keyboard": {
+          "reasoningEnterAndSpace": true,
+          "toolEnter": true,
+          "focus": {
+            "focused": true,
+            "outline": "solid",
+            "width": "2px"
+          }
+        }
+      },
+      "narrow": {
+        "width": 390,
+        "height": 844,
+        "reduced": true,
+        "theme": "tide",
+        "mode": "dark",
+        "documentWidth": 390,
+        "rows": [
+          {
+            "kind": "reasoning",
+            "width": 296,
+            "scrollWidth": 296,
+            "clientWidth": 296
+          },
+          {
+            "kind": "text",
+            "width": 296,
+            "scrollWidth": 296,
+            "clientWidth": 296
+          },
+          {
+            "kind": "tool",
+            "width": 296,
+            "scrollWidth": 296,
+            "clientWidth": 296
+          },
+          {
+            "kind": "reasoning",
+            "width": 296,
+            "scrollWidth": 296,
+            "clientWidth": 296
+          },
+          {
+            "kind": "text",
+            "width": 296,
+            "scrollWidth": 296,
+            "clientWidth": 296
+          }
+        ],
+        "focus": "read_file\u00b7 marker.txtSucceeded1m 24s"
+      },
+      "proofLimits": [
+        "Synthetic provider only; no external provider availability claim.",
+        "One successful tool, not parallel/retry/error/approval/large-result matrix.",
+        "400-character inline-output policy and three recent outputs retained; lazy network fetch was incorrectly expected in history-lazy-output.txt. No tool-output request is expected for this marker.",
+        "Automated keyboard and sampled frames, not human VoiceOver acceptance.",
+        "Auxiliary mobile-handoff 400 and journal generation 501 observed; no clean-console claim."
+      ]
+    },
+    "cleanup": {
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true
+    }
+  },
+  "nativeTransport": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-04T00:11:12.666Z",
+    "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "candidate": {
+      "head": "18f6e327addc63707736c91040524bdc734a323c",
+      "sourceBefore": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "buildId": "STj8wBZPA6fEY8714CsSp",
+      "sourceAfter": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469"
+    },
+    "host": {
+      "node": "v24.18.1",
+      "xcode": "Xcode 26.6\nBuild version 17F113"
+    },
+    "scenario": "hermes-summary-tool-reconnect-history",
+    "classification": "real built Cave and native TCP; synthetic external Hermes provider",
+    "passed": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "limitations": [
+      "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+      "Native client/decoder/fold/history checks; not rendered UI, human VoiceOver, physical-device performance or a real provider.",
+      "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+    ],
+    "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+    "serverPid": 49452,
+    "ingressRefusalsVerified": true,
+    "savedConversations": 1,
+    "serverStopped": true,
+    "providerStopped": true,
+    "noDaemonState": true,
+    "fixtureRootRemoved": true,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-04T00:11:45.460Z"
+  },
+  "passedTestFiles": {
+    "app": 1495,
+    "api": 506
+  },
+  "focusedComponentTests": 51,
+  "sourceDeltaFromBuild": {
+    "currentSource": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+    "appApiStartAndNativeTransportSource": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+    "buildSource": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+    "reconstructedBuildSource": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+    "changedSinceBuild": [
+      "scripts/runtime-activity-browser-fixture.mjs",
+      "src/components/chat-view-lifecycle.test.ts",
+      "src/app/api/chat/send/harness-routing-tool-events.test.ts"
+    ],
+    "changedSinceAppApiStart": [
+      "scripts/runtime-activity-browser-fixture.mjs"
+    ],
+    "classification": "Only two test source assertions and the manual browser fixture closed-input guard changed after production build. App/API suites overlapped only the fixture guard edit; typecheck and focused lint cover final source. Production server and browser code match the build."
+  },
+  "checks": [
+    {
+      "label": "timeline-helpers-first",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--test",
+        "src/lib/chat-activity-timeline.test.ts",
+        "src/lib/project-text-offsets.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:59:03.089207+00:00",
+      "sourceBefore": "8f6e5c428982983481b643bf0c0c37cace6584e5274c9985a82ae5c7ccc74c02",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-helpers-first.log",
+      "finishedAt": "2026-10-03T23:59:03.398193+00:00",
+      "exitCode": 0,
+      "sourceAfter": "8f6e5c428982983481b643bf0c0c37cace6584e5274c9985a82ae5c7ccc74c02",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-disclosure-second",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "src/components/chat-turn-timeline.test.tsx",
+        "src/components/streaming-turn-response.test.tsx"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:04:24.084099+00:00",
+      "sourceBefore": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-disclosure-second.log",
+      "finishedAt": "2026-10-04T00:04:25.431190+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-stale-contracts",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/components/chat-view-lifecycle.test.ts",
+        "src/app/api/chat/send/harness-routing-tool-events.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:10:23.863967+00:00",
+      "sourceBefore": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-stale-contracts.log",
+      "finishedAt": "2026-10-04T00:10:24.209531+00:00",
+      "exitCode": 0,
+      "sourceAfter": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-hermes-route",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:03:19.126550+00:00",
+      "sourceBefore": "a4f70e4a34a8bcaedf39743dff12503b7cb3940cdedc5dff4f3942a7d70cbe57",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-hermes-route.log",
+      "finishedAt": "2026-10-04T00:03:23.833381+00:00",
+      "exitCode": 0,
+      "sourceAfter": "a4f70e4a34a8bcaedf39743dff12503b7cb3940cdedc5dff4f3942a7d70cbe57",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-typecheck-final",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:18:49.197170+00:00",
+      "sourceBefore": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-typecheck-final.log",
+      "finishedAt": "2026-10-04T00:18:54.633518+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-build",
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:04:46.417176+00:00",
+      "sourceBefore": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-build.log",
+      "finishedAt": "2026-10-04T00:05:14.639102+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-lint",
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:04:24.084017+00:00",
+      "sourceBefore": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-lint.log",
+      "finishedAt": "2026-10-04T00:04:48.871017+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-changed-contract-lint",
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/components/chat-view-lifecycle.test.ts",
+        "src/app/api/chat/send/harness-routing-tool-events.test.ts",
+        "scripts/runtime-activity-browser-fixture.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:21:11.778008+00:00",
+      "sourceBefore": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-changed-contract-lint.log",
+      "finishedAt": "2026-10-04T00:21:12.787190+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-wiring",
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:04:24.083858+00:00",
+      "sourceBefore": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-wiring.log",
+      "finishedAt": "2026-10-04T00:04:24.691946+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9375c2c40446e24626553874579fedc02b87102a8212cd8aa5c361cbe15401fc",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "timeline-app-second",
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:11:12.302796+00:00",
+      "sourceBefore": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-app-second.log",
+      "finishedAt": "2026-10-04T00:16:39.999410+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "sourceUnchanged": false
+    },
+    {
+      "label": "timeline-api-second",
+      "command": [
+        "pnpm",
+        "test:api"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:11:12.303642+00:00",
+      "sourceBefore": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-api-second.log",
+      "finishedAt": "2026-10-04T00:16:45.727804+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9190ae432f7f98493f9b3f7148a6e65f0a5997c08874ff8e10b231bac63b9201",
+      "sourceUnchanged": false
+    },
+    {
+      "label": "timeline-native-transport-run",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-native-transport.mjs",
+        "--execute",
+        "--destination",
+        "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "--derived-data",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "--evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-transport"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:11:12.303681+00:00",
+      "sourceBefore": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-transport-run.log",
+      "finishedAt": "2026-10-04T00:11:45.468806+00:00",
+      "exitCode": 0,
+      "sourceAfter": "c267a8502cfc8c21106a5ecfc1058650044b8f7ec76047fc516f9d226f260469",
+      "sourceUnchanged": true
+    }
+  ],
+  "checkNotes": [
+    "Full app/API checks started at c267a850 and finished at 9190ae43 after only the manual browser fixture closed-input guard changed. Fingerprint difference is retained and independently reconstructed.",
+    "Production build matches all current application code. Subsequent test-source changes passed full suites, final typecheck and focused lint."
+  ],
+  "retainedFailedAttempts": [
+    {
+      "label": "timeline-app",
+      "reason": "698 test files passed, then the old source contract omitted structured reasoning from indicator suppression. Updated contract and full rerun passed."
+    },
+    {
+      "label": "timeline-api",
+      "reason": "235 files passed, then old source contract expected direct persistence without the new offset projection. Updated contract and full rerun passed."
+    },
+    {
+      "label": "timeline-browser-attempt-1",
+      "reason": "Launched with /dev/null stdin; verified live only, then stopped all three exact owned PIDs. Aborted attempt root retained; no completion claim."
+    },
+    {
+      "label": "timeline-browser-attempt-2/history-lazy-output.txt",
+      "reason": "Assertion incorrectly required a network read for a short, recent output retained by the existing history policy. No application change; display and zero requests observed."
+    }
+  ],
+  "closedInputRejection": {
+    "expectedExitCode": 1,
+    "failure": "Browser fixture needs an open control input; start the command with tty=true.",
+    "providerRequests": 0,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true
+  },
+  "cleanup": {
+    "ownedSimulator": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "simulatorState": "Shutdown",
+    "browserSessionsClosed": [
+      "cave5761timeline",
+      "cave5761timeline2"
+    ],
+    "failedFixtureRoot": "Intentionally retained only for aborted attempt 1; owned main/server/daemon PIDs verified stopped.",
+    "worktrees": "Intentionally preserved for actor 01a100a2-2a9b-7681-bdbe-994106f4ba12; no commit/push/PR/merge/release/closure or Project mutation."
+  },
+  "preservation": {
+    "cave": {
+      "stagedPatchUnchanged": true,
+      "stagedPatchSha256": "70e4b738fa7285c94ce287726d73e02086f20b488c76559229508d920e6f6a9a"
+    },
+    "runtimes": {
+      "stagedPatchUnchanged": true,
+      "stagedPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archivedWorkingFilesUnchanged": true,
+      "workingFileCount": 9
+    }
+  },
+  "localEvidenceRoot": "/Users/buns/.coven/cave/verification/issue-5761",
+  "sourceArchive": "/Users/buns/.coven/cave/verification/issue-5761/timeline-source-final-20261004",
+  "artifactSha256": {
+    "timeline-browser-attempt-2/result.json": "b8604e0676f1168d91b2877c59ad46d8ec81051cfa3692970eca9664acf2d404",
+    "timeline-browser-attempt-2/browser-assertions.json": "1b7847e0ccb375caa2ea8c026a696c8f00823e1779f2c2874ca53176b723689a",
+    "timeline-browser-attempt-2/saved-conversation.json": "5f5b35edf6de1c7a693e0e579ad73351f54e0455a67311c76c7773181db94118",
+    "timeline-native-transport/result.json": "84e3bc72716f1ef16a95394221ce7e9249caa6ee53c479afed6f48060c6e5d5e",
+    "timeline-source-delta-final.json": "d91055b97a640f41b49729d61d848ea1163bc9e322d51134fedd6e1db81283a4",
+    "timeline-preservation.json": "46845dc1a111f362b3e2d761191e5f6102877637b85f8568bae6dfde8f478c5f"
+  },
+  "imageSha256": {
+    "runtime-activity-timeline-light-2026-10-04.png": "ceeabc414fc3f42b5833bb273bd9e059e9d658734b68fad80d3da5a0e66c922a",
+    "runtime-activity-timeline-tide-2026-10-04.png": "8b5a2be8adaceeeb4c5105e540d46322f01ca410aa1da73df325b9c539f3447c",
+    "runtime-activity-timeline-narrow-2026-10-04.png": "d19b86c9da59353e1b8469e89f04cc8ce826a9c754a314054d3a2d98d7c7d5da"
+  },
+  "builtArtifactSha256": {
+    "server.mjs": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+    ".next/server/app/api/chat/send/route.js": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+  },
+  "limitations": [
+    "Single successful tool scenario, not the full parallel/retry/error/no-summary/approval/hostile-content matrix.",
+    "Comparative large-trace performance and scroll anchoring under large updates remain unqualified.",
+    "Native chronological UI, native desktop panels, remote HTTPS and human accessibility acceptance remain incomplete.",
+    "Canonical signed admission for every runtime, OpenCode controlled canary approval, and protected-effect authority remain separate blockers.",
+    "No real provider availability claim from synthetic model inventory or provider fixtures."
+  ]
+}

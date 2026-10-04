@@ -1,0 +1,647 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T01:13:26.384735+00:00",
+  "issue": 5766,
+  "parentIssue": 5761,
+  "relatedIssues": [
+    5765,
+    5767
+  ],
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "sourceFingerprint": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+  "scope": "Chronological Markdown rendering parity and native pure-projection scaling. No model-menu policy, runtime trust, provider execution or transport change.",
+  "implementation": "Native code-range scanning now advances ordered cursors; safe-boundary filtering sweeps sorted ranges with strict endpoint comparisons; offset placement uses binary search. Source, IDs, order and legacy fallback are unchanged.",
+  "markdown": {
+    "sharedScenarioCount": 22,
+    "newScenarioCount": 5,
+    "parser": "@create-markdown/core 2.0.3",
+    "finding": "Reference-style links and footnotes render literally in the installed unsplit parser. Their text/definitions remain intact across timeline spans; ordinary inline links and fenced examples preserve baseline semantics. This change does not add reference-link or footnote support.",
+    "verification": "TypeScript compares rendered HTML and expected links. Native uses the packaged WKWebView renderer and compares element types, text and links against the unsplit baseline."
+  },
+  "performance": {
+    "method": "Two priming iterations excluded, seven warm samples per shape/size. Same synthetic source and public tool records, 30/120/1000 events. Exact text and tool order asserted outside each timed interval.",
+    "nativeConfiguration": "Release with ENABLE_TESTABILITY=YES on the same owned iPhone 16 Pro / iOS 26.5 simulator; app-internal pure function timing only.",
+    "comparison": [
+      {
+        "shape": "prose",
+        "count": 30,
+        "utf16Length": 770,
+        "beforeMedianMs": 0.18025,
+        "afterMedianMs": 0.219083,
+        "reductionPercent": -21.543966712898754
+      },
+      {
+        "shape": "prose",
+        "count": 120,
+        "utf16Length": 3130,
+        "beforeMedianMs": 0.727917,
+        "afterMedianMs": 0.720875,
+        "reductionPercent": 0.9674179885893586
+      },
+      {
+        "shape": "prose",
+        "count": 1000,
+        "utf16Length": 26890,
+        "beforeMedianMs": 6.456833,
+        "afterMedianMs": 6.901333,
+        "reductionPercent": -6.884179906774746
+      },
+      {
+        "shape": "fenced",
+        "count": 30,
+        "utf16Length": 1740,
+        "beforeMedianMs": 0.334667,
+        "afterMedianMs": 0.474708,
+        "reductionPercent": -41.84487864055912
+      },
+      {
+        "shape": "fenced",
+        "count": 120,
+        "utf16Length": 7110,
+        "beforeMedianMs": 1.494667,
+        "afterMedianMs": 1.274667,
+        "reductionPercent": 14.718997609500972
+      },
+      {
+        "shape": "fenced",
+        "count": 1000,
+        "utf16Length": 61670,
+        "beforeMedianMs": 25.071166,
+        "afterMedianMs": 12.699584,
+        "reductionPercent": 49.34585810647978
+      }
+    ],
+    "nativeBefore": {
+      "records": [
+        {
+          "count": 30,
+          "maxMs": 0.185917,
+          "medianMs": 0.18025,
+          "samplesMs": [
+            0.185917,
+            0.182417,
+            0.178541,
+            0.177709,
+            0.18025,
+            0.182417,
+            0.179916
+          ],
+          "shape": "prose",
+          "utf16Length": 770
+        },
+        {
+          "count": 120,
+          "maxMs": 0.749583,
+          "medianMs": 0.727917,
+          "samplesMs": [
+            0.745083,
+            0.732459,
+            0.727458,
+            0.749583,
+            0.727917,
+            0.719417,
+            0.7145
+          ],
+          "shape": "prose",
+          "utf16Length": 3130
+        },
+        {
+          "count": 1000,
+          "maxMs": 6.722791,
+          "medianMs": 6.456833,
+          "samplesMs": [
+            6.4655,
+            6.43925,
+            6.328583,
+            6.403042,
+            6.722791,
+            6.456833,
+            6.482875
+          ],
+          "shape": "prose",
+          "utf16Length": 26890
+        },
+        {
+          "count": 30,
+          "maxMs": 0.41175,
+          "medianMs": 0.334667,
+          "samplesMs": [
+            0.336417,
+            0.334583,
+            0.334625,
+            0.41175,
+            0.341959,
+            0.332958,
+            0.334667
+          ],
+          "shape": "fenced",
+          "utf16Length": 1740
+        },
+        {
+          "count": 120,
+          "maxMs": 1.59625,
+          "medianMs": 1.494667,
+          "samplesMs": [
+            1.594542,
+            1.59625,
+            1.502125,
+            1.494667,
+            1.484625,
+            1.47875,
+            1.492083
+          ],
+          "shape": "fenced",
+          "utf16Length": 7110
+        },
+        {
+          "count": 1000,
+          "maxMs": 26.920292,
+          "medianMs": 25.071166,
+          "samplesMs": [
+            25.157958,
+            23.874708,
+            23.978334,
+            26.920292,
+            25.071166,
+            23.851041,
+            26.810709
+          ],
+          "shape": "fenced",
+          "utf16Length": 61670
+        }
+      ],
+      "scope": "warm pure projection only"
+    },
+    "nativeAfter": {
+      "records": [
+        {
+          "count": 30,
+          "maxMs": 0.224791,
+          "medianMs": 0.219083,
+          "samplesMs": [
+            0.224791,
+            0.220208,
+            0.218375,
+            0.219916,
+            0.217708,
+            0.215792,
+            0.219083
+          ],
+          "shape": "prose",
+          "utf16Length": 770
+        },
+        {
+          "count": 120,
+          "maxMs": 0.88825,
+          "medianMs": 0.720875,
+          "samplesMs": [
+            0.716875,
+            0.718458,
+            0.715875,
+            0.720875,
+            0.722041,
+            0.722042,
+            0.88825
+          ],
+          "shape": "prose",
+          "utf16Length": 3130
+        },
+        {
+          "count": 1000,
+          "maxMs": 9.635875,
+          "medianMs": 6.901333,
+          "samplesMs": [
+            9.635875,
+            6.304833,
+            6.293708,
+            8.220417,
+            8.019541,
+            6.135542,
+            6.901333
+          ],
+          "shape": "prose",
+          "utf16Length": 26890
+        },
+        {
+          "count": 30,
+          "maxMs": 0.523584,
+          "medianMs": 0.474708,
+          "samplesMs": [
+            0.474125,
+            0.473375,
+            0.4655,
+            0.474708,
+            0.521083,
+            0.518709,
+            0.523584
+          ],
+          "shape": "fenced",
+          "utf16Length": 1740
+        },
+        {
+          "count": 120,
+          "maxMs": 1.451166,
+          "medianMs": 1.274667,
+          "samplesMs": [
+            1.451166,
+            1.421417,
+            1.256459,
+            1.257292,
+            1.268625,
+            1.292916,
+            1.274667
+          ],
+          "shape": "fenced",
+          "utf16Length": 7110
+        },
+        {
+          "count": 1000,
+          "maxMs": 13.533791,
+          "medianMs": 12.699584,
+          "samplesMs": [
+            12.178917,
+            13.533791,
+            12.6325,
+            12.947292,
+            12.699584,
+            13.043458,
+            11.314125
+          ],
+          "shape": "fenced",
+          "utf16Length": 61670
+        }
+      ],
+      "scope": "warm pure projection only"
+    },
+    "webBaseline": {
+      "scope": "warm pure projection only; excludes DOM, WebKit, network and physical-device measurements",
+      "runtime": "v24.18.1",
+      "records": [
+        {
+          "shape": "prose",
+          "count": 30,
+          "utf16Length": 770,
+          "samplesMs": [
+            0.12029200000000628,
+            0.1525000000000034,
+            0.1115000000000066,
+            0.1221660000000071,
+            0.10537499999999511,
+            0.10466700000000628,
+            0.1167080000000027
+          ],
+          "medianMs": 0.1167080000000027,
+          "maxMs": 0.1525000000000034
+        },
+        {
+          "shape": "prose",
+          "count": 120,
+          "utf16Length": 3130,
+          "samplesMs": [
+            0.7300409999999999,
+            0.33816699999999855,
+            0.3804580000000044,
+            0.25029200000000174,
+            0.23487499999998818,
+            0.21829099999999357,
+            0.20854200000000844
+          ],
+          "medianMs": 0.25029200000000174,
+          "maxMs": 0.7300409999999999
+        },
+        {
+          "shape": "prose",
+          "count": 1000,
+          "utf16Length": 26890,
+          "samplesMs": [
+            2.4028339999999986,
+            2.1010000000000133,
+            2.402582999999993,
+            2.185958999999997,
+            2.2204590000000053,
+            1.9926669999999973,
+            2.6692079999999976
+          ],
+          "medianMs": 2.2204590000000053,
+          "maxMs": 2.6692079999999976
+        },
+        {
+          "shape": "fenced",
+          "count": 30,
+          "utf16Length": 1740,
+          "samplesMs": [
+            0.28316700000000594,
+            0.16754199999999742,
+            0.18625000000000114,
+            0.1685420000000022,
+            0.163415999999998,
+            0.15687499999999943,
+            0.2863750000000067
+          ],
+          "medianMs": 0.1685420000000022,
+          "maxMs": 0.2863750000000067
+        },
+        {
+          "shape": "fenced",
+          "count": 120,
+          "utf16Length": 7110,
+          "samplesMs": [
+            0.5902499999999975,
+            0.8601669999999899,
+            0.6562919999999934,
+            0.6003749999999997,
+            0.5875839999999926,
+            0.8337920000000025,
+            0.5923329999999964
+          ],
+          "medianMs": 0.6003749999999997,
+          "maxMs": 0.8601669999999899
+        },
+        {
+          "shape": "fenced",
+          "count": 1000,
+          "utf16Length": 61670,
+          "samplesMs": [
+            20.793874999999986,
+            21.170166999999992,
+            7.419332999999995,
+            7.255333000000007,
+            8.752916999999997,
+            7.9665410000000065,
+            7.446750000000009
+          ],
+          "medianMs": 7.9665410000000065,
+          "maxMs": 21.170166999999992
+        }
+      ]
+    },
+    "webBenchmarkSource": "import assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\nimport { pathToFileURL } from 'node:url';\nimport { performance } from 'node:perf_hooks';\n\nconst root = process.cwd();\nconst { chatActivityTimeline } = await import(pathToFileURL(`${root}/src/lib/chat-activity-timeline.ts`));\nconst corpus = JSON.parse(readFileSync(`${root}/apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-timeline-v1.json`, 'utf8'));\nconst template = corpus.scenarios[0].tools[0];\nconst records = [];\nfor (const shape of ['prose', 'fenced']) {\n  for (const count of [30, 120, 1000]) {\n    let text = '';\n    const tools = [];\n    for (let index = 0; index < count; index++) {\n      const tool = structuredClone(template);\n      tool.id = `call-${index}`;\n      tool.activity.callId = tool.id;\n      tool.activity.sequence = index;\n      tool.textOffset = text.length;\n      tools.push(tool);\n      text += `Observation ${index}: \ud83e\uddd9 caf\u00e9.\\n\\n`;\n      if (shape === 'fenced') text += `\\x60\\x60\\x60text\\nfirst ${index}\\n\\nsecond ${index}\\n\\x60\\x60\\x60\\n\\n`;\n    }\n    // Exercise the same terminal public records as the renderer; no tool runs.\n    const samples = [];\n    for (let iteration = 0; iteration < 9; iteration++) {\n      const start = performance.now();\n      const entries = chatActivityTimeline(text, tools, []);\n      const elapsed = performance.now() - start;\n      assert.equal(entries.length, 2 * count);\n      assert.equal(entries.filter(e => e.kind === 'text').map(e => e.text).join(''), text);\n      assert.deepEqual(entries.filter(e => e.kind === 'tool').map(e => e.tool.id), tools.map(t => t.id));\n      if (iteration >= 2) samples.push(elapsed);\n    }\n    const ordered = [...samples].sort((a, b) => a - b);\n    records.push({ shape, count, utf16Length: text.length, samplesMs: samples, medianMs: ordered[3], maxMs: ordered.at(-1) });\n  }\n}\nconsole.log(JSON.stringify({ scope: 'warm pure projection only; excludes DOM, WebKit, network and physical-device measurements', runtime: process.version, records }, null, 2));\n",
+    "interpretation": "The 1000-event fenced workload median fell from 25.071 ms to 12.700 ms (49.3%). The 120-event fenced case fell from 1.495 to 1.275 ms. Other shapes include neutral/slower samples; this is not a universal speedup. The 1000-event case is stress beyond the current native 120-step retention cap. No timing assertion or CI threshold was introduced."
+  },
+  "verified": [
+    "22 selected Release native unit tests passed, including 22 shared scenarios, packaged Markdown parity and existing projection tests.",
+    "Three Debug Activity UI regressions passed: chronology, local choices through completion/backgrounding, and largest-text title/tool bounds. All four screenshots were inspected.",
+    "All 106 mobile files, TypeScript shared corpus, typecheck and focused ESLint passed at the final source fingerprint."
+  ],
+  "checks": {
+    "timeline-projection-baseline": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "/Users/buns/.coven/cave/verification/issue-5761/timeline-projection-benchmark.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:03:16.074705+00:00",
+      "sourceBefore": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-projection-baseline.log",
+      "finishedAt": "2026-10-04T01:03:16.520448+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-ts-first": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:03:49.495949+00:00",
+      "sourceBefore": "651ed102d5c73423411d99038614dc203a9f9bc1c5524813f2dccef5a741619a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-ts-first.log",
+      "finishedAt": "2026-10-04T01:03:49.795041+00:00",
+      "exitCode": 0,
+      "sourceAfter": "651ed102d5c73423411d99038614dc203a9f9bc1c5524813f2dccef5a741619a",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-xcodegen": {
+      "command": [
+        "pnpm",
+        "mobile:ios:xcodegen"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:04:29.225819+00:00",
+      "sourceBefore": "97fb5d19c67de5cd2f93c5a9e0eaf5ca71682d9cb1b3e23f8a0c263e4fac21fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-xcodegen.log",
+      "finishedAt": "2026-10-04T01:04:30.222777+00:00",
+      "exitCode": 0,
+      "sourceAfter": "97fb5d19c67de5cd2f93c5a9e0eaf5ca71682d9cb1b3e23f8a0c263e4fac21fc",
+      "sourceUnchanged": true
+    },
+    "timeline-native-projection-baseline": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-configuration",
+        "Release",
+        "ENABLE_TESTABILITY=YES",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-projection-baseline.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/MarkdownBundleLoadingTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:04:40.310767+00:00",
+      "sourceBefore": "97fb5d19c67de5cd2f93c5a9e0eaf5ca71682d9cb1b3e23f8a0c263e4fac21fc",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-projection-baseline.log",
+      "finishedAt": "2026-10-04T01:06:50.697824+00:00",
+      "exitCode": 0,
+      "sourceAfter": "97fb5d19c67de5cd2f93c5a9e0eaf5ca71682d9cb1b3e23f8a0c263e4fac21fc",
+      "sourceUnchanged": true
+    },
+    "timeline-native-projection-optimized": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-configuration",
+        "Release",
+        "ENABLE_TESTABILITY=YES",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-projection-optimized.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/MarkdownBundleLoadingTests",
+        "-only-testing:CovenCaveTests/AssistantResponseProjectionTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:07:48.353779+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-projection-optimized.log",
+      "finishedAt": "2026-10-04T01:10:07.060020+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    },
+    "timeline-native-ui-regression": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-ui-regression.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelinePreservesSummaryProseToolOrder",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineSupportsAccessibilityTextSize",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:10:33.234067+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-ui-regression.log",
+      "finishedAt": "2026-10-04T01:12:24.375087+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-mobile": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:10:33.221203+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-mobile.log",
+      "finishedAt": "2026-10-04T01:10:59.329011+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:10:33.234191+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-typecheck.log",
+      "finishedAt": "2026-10-04T01:10:38.890689+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-ts-final": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:10:33.205481+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-ts-final.log",
+      "finishedAt": "2026-10-04T01:10:33.670564+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    },
+    "timeline-rich-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T01:10:33.215943+00:00",
+      "sourceBefore": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/timeline-rich-lint.log",
+      "finishedAt": "2026-10-04T01:10:34.372058+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d7256b2cede82ec58187a6bc969d1495f07320f7f83e6e1d6de943ec3653b01",
+      "sourceUnchanged": true
+    }
+  },
+  "cleanup": {
+    "observedAt": "2026-10-04T01:12:24.492496+00:00",
+    "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "state": "Shutdown",
+    "shutdownExitCode": 149,
+    "stderr": "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\nUnable to shutdown device in current state: Shutdown\n"
+  },
+  "uiArtifacts": "/Users/buns/.coven/cave/verification/issue-5761/timeline-native-ui-regression-attachments/manifest.json",
+  "changedSourceFiles": [
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Models/ChatActivityTimeline.swift",
+      "sha256": "7a5624c5bbe609fb27a04b34238b0f17e3378b9700d4b3118b71b94515a97501"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/ChatActivityTimelineTests.swift",
+      "sha256": "516121beecbdb887a10bd41298acab859e0302f513f366b006e59333a1608df1"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/MarkdownBundleLoadingTests.swift",
+      "sha256": "da84adf848bc4dd2efdedf6dd34abd6412d001cfc0ef316fbd18f6051c324897"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-timeline-v1.json",
+      "sha256": "4e0cddd33cfbb7cce7dbb1dc2054ed0b1dcaa95c27fc9cb0a28eea24a5d561f9"
+    },
+    {
+      "path": "src/lib/chat-activity-timeline.test.ts",
+      "sha256": "dd5265dcce4cccb91cbb9b82d5673fbe11a28b16a411dd2f7d540ee4a05807c9"
+    }
+  ],
+  "stagedPatchSha256": "70e4b738fa7285c94ce287726d73e02086f20b488c76559229508d920e6f6a9a",
+  "limitations": [
+    "Pure projection samples exclude DOM, WebKit creation/rendering, SwiftUI layout, scrolling, memory, network and physical-device performance.",
+    "Warm seven-sample local comparisons are not a production latency distribution or a performance gate.",
+    "Native UI remains a DEBUG render-only fixture; output reads use the existing isolated URLProtocol. No new provider/transport qualification.",
+    "Screenshot and accessibility-tree bounds do not establish human VoiceOver acceptance or complete Dynamic Type parity for Markdown prose.",
+    "Signed runtime admission, the separately pending OpenCode access-mode decision, remaining runtime/path/reconnect coverage and human acceptance remain open.",
+    "No commit, push, PR, merge, release, issue closure or Project mutation. Worktrees intentionally preserved."
+  ],
+  "nextStep": "Measure native WebView count, memory and scrolling for a chronological workload at the retained activity limit, including expansion and history reopen; preserve the wider runtime admission and human acceptance blockers."
+}

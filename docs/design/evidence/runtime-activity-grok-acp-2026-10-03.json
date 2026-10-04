@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T22:16:21.164472+00:00",
+  "issue": 5763,
+  "parentIssue": 5761,
+  "classification": "native read-only protocol verified; decoder and route fixture verified; canonical signed admission pending",
+  "runtime": {
+    "previous": "grok 1.0.5 (5115b46bc909) [stable]",
+    "refusal": {
+      "httpStatus": 426,
+      "minimumVersion": "1.0.13"
+    },
+    "current": "grok 1.0.46 (2765805b9442)",
+    "executableSha256": "e8daa302364c9c3b6a5546d511cfbd1ab5e5d407a9b04282f660665ea405f9f3",
+    "upgrade": "native updater, exit 0; exact 1.0.5 rollback binary byte-verified and retained",
+    "availableModels": [
+      "grok-4.7"
+    ],
+    "reportedPrimaryModel": null
+  },
+  "nativeCapture": {
+    "startedAt": "2026-10-03T22:04:56.327452+00:00",
+    "endedAt": "2026-10-03T22:05:04.603183+00:00",
+    "exitCode": 0,
+    "timedOut": false,
+    "stdoutBytes": 13135,
+    "stderrBytes": 0,
+    "stdoutSha256": "68226bb68f19bb4ea2d2fa36f136c3ac1c7b773be28ec3fcdf3fd3fc71debdf7",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "frameCounts": {
+      "available_commands": 4,
+      "text": 40,
+      "usage": 2,
+      "tool_call": 1,
+      "tool_call_update": 2,
+      "end": 1
+    },
+    "unparsedLines": 0,
+    "pid": 90966,
+    "processReaped": true,
+    "markerUnchanged": true,
+    "files": [
+      "marker.txt"
+    ]
+  },
+  "acceptance": {
+    "exitZero": true,
+    "markerUnchanged": true,
+    "markerInToolResult": true,
+    "markerInAssistantText": true,
+    "pidAbsentAfterReap": true,
+    "nativeRuntime": "1.0.46",
+    "notCaveStockTrustAcceptance": true
+  },
+  "observedToolSequence": [
+    "tool_call pending",
+    "tool_call_update status=null locations only",
+    "tool_call_update completed"
+  ],
+  "source": {
+    "publicRevision": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+    "binarySourceCommitResolved": false,
+    "qualification": "pinned public reducer matches observed native field shapes; reproducibility unproven"
+  },
+  "decoder": {
+    "proposal": "src/lib/fixtures/grok/1.0.46-unsigned-proposal.json",
+    "proposalSha256": "3ebd9cd729f0d8a84a0c337e2d158cd06c75756b84c93c16939716dc9b16d591",
+    "defaultAdmission": "plain/no-compatible-schema with explicit unconfigured registry source",
+    "signedFixture": "ephemeral test key only; no user cache or trust keys installed",
+    "reportedModel": "null; aggregate modelUsage is not qualified as primary identity"
+  },
+  "checks": {
+    "grok-help-native-assertion-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/grok-compatibility.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:05:28.656887+00:00",
+      "sourceBefore": "68c5c99857781075daf9f9ada001c72fba71f2a835a3147f0c8efd0e57be963d",
+      "log": "grok-help-native-assertion-red.log",
+      "finishedAt": "2026-10-03T22:05:28.955158+00:00",
+      "exitCode": 1,
+      "sourceAfter": "68c5c99857781075daf9f9ada001c72fba71f2a835a3147f0c8efd0e57be963d",
+      "sourceUnchanged": true
+    },
+    "grok-acp-lifecycle-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/grok-compatibility.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:06:34.649236+00:00",
+      "sourceBefore": "9ef3e8387598945053bfb388876215bc5de733a52cc24fd0d9f04215fc10ea17",
+      "log": "grok-acp-lifecycle-red.log",
+      "finishedAt": "2026-10-03T22:06:35.470734+00:00",
+      "exitCode": 1,
+      "sourceAfter": "9ef3e8387598945053bfb388876215bc5de733a52cc24fd0d9f04215fc10ea17",
+      "sourceUnchanged": true
+    },
+    "grok-native-route-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-grok-compatibility.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:07:22.827435+00:00",
+      "sourceBefore": "2293263143b5fd03f41a3fd102fd3aeea18d944de82711abe703b50767d7a7ee",
+      "log": "grok-native-route-red.log",
+      "finishedAt": "2026-10-03T22:07:27.904551+00:00",
+      "exitCode": 1,
+      "sourceAfter": "2293263143b5fd03f41a3fd102fd3aeea18d944de82711abe703b50767d7a7ee",
+      "sourceUnchanged": true
+    },
+    "grok-native-route-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-grok-compatibility.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:07:49.642794+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-native-route-green.log",
+      "finishedAt": "2026-10-03T22:07:56.408384+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "sourceUnchanged": true
+    },
+    "grok-acp-unit-final": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/grok-compatibility.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:08:02.097779+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-acp-unit-final.log",
+      "finishedAt": "2026-10-03T22:08:03.043092+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "sourceUnchanged": true
+    },
+    "grok-acp-focused": {
+      "command": [
+        "node",
+        "/Users/buns/.coven/cave/verification/issue-5761/grok-acp-focused.mjs"
+      ],
+      "startedAt": "2026-10-03T22:11:09.762507+00:00",
+      "sourceBefore": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "log": "grok-acp-focused.log",
+      "finishedAt": "2026-10-03T22:11:11.692682+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "sourceUnchanged": true
+    },
+    "grok-acp-focused-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/lib/grok-compatibility.ts",
+        "src/lib/grok-compatibility.test.ts",
+        "src/lib/chat-runtime-activity.ts",
+        "src/lib/chat-runtime-activity.test.ts",
+        "src/app/api/chat/send/route.ts",
+        "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
+        "--max-warnings=0"
+      ],
+      "startedAt": "2026-10-03T22:08:02.100763+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-acp-focused-lint.log",
+      "finishedAt": "2026-10-03T22:08:03.876511+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "sourceUnchanged": true
+    },
+    "grok-acp-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "startedAt": "2026-10-03T22:08:02.098621+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-acp-typecheck.log",
+      "finishedAt": "2026-10-03T22:08:40.148971+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "sourceUnchanged": true
+    },
+    "grok-acp-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "startedAt": "2026-10-03T22:09:39.081581+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-acp-build.log",
+      "finishedAt": "2026-10-03T22:10:39.861183+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "sourceUnchanged": false
+    },
+    "grok-acp-api": {
+      "command": [
+        "pnpm",
+        "test:api"
+      ],
+      "startedAt": "2026-10-03T22:09:39.081603+00:00",
+      "sourceBefore": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+      "log": "grok-acp-api.log",
+      "finishedAt": "2026-10-03T22:15:43.910812+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "sourceUnchanged": false,
+      "testFilesPassed": 505
+    },
+    "grok-current-passive": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--input-type=module",
+        "-e",
+        "import {probeGrokRunCapabilities,resolveGrokCompatibility} from \"./src/lib/grok-compatibility.ts\"; const capabilities=await probeGrokRunCapabilities({command:\"/Users/buns/.grok/bin/grok\",fixedArgs:[\"--no-auto-update\"]},process.env); const selected=await resolveGrokCompatibility(capabilities,{cachePath:\"/Users/buns/.coven/cave/verification/issue-5761/grok-contract-20261003/no-production-trust.json\"}); console.log(JSON.stringify({capabilities,mode:selected.mode,diagnostic:selected.diagnostic,bundleSource:selected.bundleSource,scope:\"passive-current-binary; no key or registry URL supplied\"}));"
+      ],
+      "startedAt": "2026-10-03T22:12:00.420325+00:00",
+      "sourceBefore": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "log": "grok-current-passive.log",
+      "finishedAt": "2026-10-03T22:12:00.740512+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+      "sourceUnchanged": true
+    }
+  },
+  "buildId": "CA55xpKKfBBzkUfFV7o4a",
+  "sourceFingerprint": {
+    "before": "fbf59ebc7b113b33be90d638d60f60ece92fe2a91ca46d96376f6be8aec8392b",
+    "after": "b1a225671ec2c3221422185eabbd1c1f120822e07332bd3e2718a3bc1d67c2b1",
+    "explanation": "Only src/lib/fixtures/grok/README.md was added during the API/build runs. Recomputing the final fingerprint excluding that README exactly reproduces the verified code fingerprint; no executable source changed."
+  },
+  "limitations": [
+    "Native canary called the installed CLI directly, not stock-trust Cave HTTP.",
+    "Cave live/history check replays sanitized native frames with an isolated signed fixture.",
+    "In-progress/failure decoder cases derive from public source; only pending/location/completed were observed live.",
+    "Canonical release signing, publisher URL/key/checkpoint reconciliation, and real Cave/Grok admission remain pending.",
+    "No human accessibility, packaged desktop, native HTTPS, physical device, or protected-effect receipt qualification in this slice.",
+    "All work remains uncommitted; current Cave and Runtimes worktrees are preserved."
+  ],
+  "publisherChecks": [
+    {
+      "startedAt": "2026-10-03T22:11:10.871666+00:00",
+      "sha256": {
+        "examples/grok-compatibility-proposal.json": "3ebd9cd729f0d8a84a0c337e2d158cd06c75756b84c93c16939716dc9b16d591",
+        "scripts/verify-grok-cave-contract.mjs": "722a56ebcdb2a03047eff5e30dbd91ea24836ddc82a5471b4fe9991aabf355db",
+        "docs/grok-compatibility-proposal.md": "bf8767f69cb90203484651bdc1e59ed5e232faefad2ecd80314f82958ceed5d7"
+      },
+      "commands": [
+        {
+          "command": [
+            "node",
+            "scripts/compatibility-registry.test.mjs"
+          ],
+          "exitCode": 0
+        },
+        {
+          "command": [
+            "node",
+            "scripts/codex-compatibility-document.test.mjs"
+          ],
+          "exitCode": 0
+        },
+        {
+          "command": [
+            "node",
+            "--experimental-strip-types",
+            "scripts/verify-grok-cave-contract.mjs",
+            "--cave",
+            "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current"
+          ],
+          "exitCode": 0
+        }
+      ],
+      "finishedAt": "2026-10-03T22:11:11.151318+00:00",
+      "unchanged": true
+    },
+    {
+      "startedAt": "2026-10-03T22:13:36.236227+00:00",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "scripts/verify-grok-cave-contract.mjs",
+        "--cave",
+        "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current"
+      ],
+      "sha256": {
+        "examples/grok-compatibility-proposal.json": "3ebd9cd729f0d8a84a0c337e2d158cd06c75756b84c93c16939716dc9b16d591",
+        "scripts/verify-grok-cave-contract.mjs": "fc01b8c098861c72a5396be4a740d8c56b0cdc35a91471da7ea10d67172aba6b",
+        "docs/grok-compatibility-proposal.md": "c4f0dea8d030fd96b62b6ca05f985862392978a2061f2898589cf77b0338696b"
+      },
+      "finishedAt": "2026-10-03T22:13:36.334209+00:00",
+      "exitCode": 0,
+      "unchanged": true
+    }
+  ],
+  "additionalChecks": {
+    "testWiring": "all 2120 test files wired",
+    "whitespace": "git diff --check passed in both checkouts",
+    "canonicalRuntimesRegistry": "git diff --exit-code -- registry passed",
+    "activeHandles": "all build/test/native canary handles terminal; no owned server started in this slice"
+  }
+}

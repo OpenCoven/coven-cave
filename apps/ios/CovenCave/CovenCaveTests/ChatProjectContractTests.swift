@@ -39,6 +39,15 @@ final class ChatProjectContractTests: XCTestCase {
 
         XCTAssertEqual(body.projectRoot, "/repos/cave")
         XCTAssertNil(body.sessionId)
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        XCTAssertNil(encoded["permissionMode"], "Ordinary native sends preserve the existing omitted permission field")
+    }
+
+    func testExplicitReadPermissionUsesTheServerField() throws {
+        var body = CaveClient.SendBody(familiarId: "canary", prompt: "Read the marker")
+        body.permissionMode = "read"
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        XCTAssertEqual(encoded["permissionMode"] as? String, "read")
     }
 
     @MainActor

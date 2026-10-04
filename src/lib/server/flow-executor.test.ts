@@ -149,6 +149,9 @@ assert.match(
   "a failed capability gate cannot start a direct flow session",
 );
 
+assert.match(source, /startCopilotFlowRunWithTransportBoundary\(\{\s*spec,\s*clientVersion: capability\.version,/,
+  "Flow observations retain the version from the probe that selected the local executable");
+
 // Flow prompts direct familiars to write memory/self-reports into their own
 // workspace, but the spawn cwd is the project root and a non-interactive run
 // can't prompt for permission — the workspace must ride as a harness-level

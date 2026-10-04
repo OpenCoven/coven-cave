@@ -3,12 +3,12 @@
 // "Model parity" means every runtime gets the same first-class, working model
 // selection, sourced from the provider tied to that runtime where one exists.
 // Model ids follow Cave's existing namespaced convention (`provider/model`),
-// matching the live default (`openai/gpt-5.6-sol`).
+// preserving the provider and full model ID reported by discovery.
 //
-// Curated fallback lists are generated from config/runtime-model-catalog.json.
-// `allowCustom` is the safety valve so the menu never blocks an id that is not
-// listed yet. Runtime-managed adapters get `provider: null` and render a
-// free-text field only. Live account-scoped discovery can replace these seeds.
+// Historical catalog metadata is generated from config/runtime-model-catalog.json.
+// Current choices come from runtime/account-scoped discovery, never these seeds.
+// `allowCustom` separately governs explicit custom IDs; runtime-managed adapters
+// have no fabricated local inventory.
 
 export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | null;
 
@@ -20,7 +20,13 @@ import { GENERATED_RUNTIME_MODEL_CATALOG } from "./runtime-model-catalog.gen.ts"
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 import { canonicalHarnessId } from "./harness-adapters.ts";
 
-export type RuntimeModelOption = { id: string; label: string };
+export type RuntimeModelOption = {
+  id: string;
+  label: string;
+  /** Discovery's configured backing model for an alias. Used only for menu
+   * ordering; neither a launch ID nor confirmation of the served model. */
+  configuredModelId?: string;
+};
 
 export type RuntimeModelInventoryProvenance =
   | "live"
@@ -110,16 +116,16 @@ export type RuntimeModelCatalog = {
   /** Harness id: codex | claude | copilot | hermes | openclaw. */
   runtime: string;
   provider: RuntimeProvider;
-  /** Curated seed; empty ⇒ no menu, free-text only. */
+  /** Historical metadata; not a current supported-model inventory. */
   models: RuntimeModelOption[];
-  /** Fallback when no curated model exists. Runtime markers are synthetic. */
+  /** Legacy catalog default metadata; never proof of the native default. */
   defaultModel?: string;
   /** User may type any model id not present in `models`. */
   allowCustom: boolean;
   /**
    * Who chooses the model when Cave has no explicit familiar/session/turn
    * selection. A runtime-owned default is represented by omitting the model
-   * launch argument; catalog entries remain choices, never implicit defaults.
+   * launch argument; catalog entries do not establish live choices or defaults.
    */
   defaultOwner: "cave" | "runtime";
 };
@@ -127,9 +133,8 @@ export type RuntimeModelCatalog = {
 export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> =
   GENERATED_RUNTIME_MODEL_CATALOG;
 
-const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
-
 const DYNAMIC_INVENTORY_RUNTIMES = new Set([
+  "codex",
   "claude",
   "copilot",
   "grok",
@@ -223,9 +228,10 @@ export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
   return null;
 }
 
-export function defaultModelForRuntime(runtime: string): string {
-  const catalog = catalogForRuntime(runtime);
-  return catalog?.models[0]?.id ?? catalog?.defaultModel ?? GLOBAL_DEFAULT_MODEL;
+/** An unconfigured selection belongs to the runtime; a catalog seed cannot
+ * establish its current configured or authenticated default. */
+export function defaultModelForRuntime(_runtime: string): string {
+  return "";
 }
 
 /** Whether an unselected launch must defer to the runtime/provider config. */

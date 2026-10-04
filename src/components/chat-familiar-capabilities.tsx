@@ -135,8 +135,8 @@ function FamiliarIdentityHero({
       }),
   ];
 
-  // Model select: sourced from the same runtime → provider catalog the chat
-  // picker uses; a saved id outside the curated seed stays selectable.
+  // Model select shares the chat inventory. A saved id outside the current
+  // inventory remains visible without becoming a selectable supported model.
   const effectiveHarness = familiar.harness ?? defaultHarnessId;
   const runtimeModelInventory = useRuntimeModelInventory(effectiveHarness, familiar.id);
   const runtimeModelOptions = runtimeModelInventory.models;
@@ -152,7 +152,7 @@ function FamiliarIdentityHero({
     ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
   ];
   if (modelValue && !modelOptions.some((o) => o.value === modelValue)) {
-    modelOptions.push({ value: modelValue, label: modelValue, detail: "Saved model id" });
+    modelOptions.push({ value: modelValue, label: modelValue, detail: "Saved selection · not in current inventory", disabled: true });
   }
 
   // Voice select: provider-level binding; the full voice picker (specific

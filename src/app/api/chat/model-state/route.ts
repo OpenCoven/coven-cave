@@ -163,10 +163,14 @@ export async function GET(req: Request) {
     !isSshRuntime(binding.runtime) &&
     !state.runtime?.startsWith("ssh:");
   const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
+  const canReadCliInventory = localInventoryRequest &&
+    canonicalHarnessId(binding.harness) === state.harness &&
+    !isSshRuntime(binding.runtime) && !state.runtime?.startsWith("ssh:");
   const inventory = await listRuntimeModelInventory(
     state.harness,
     familiarId,
     {
+      allowCliInventory: canReadCliInventory,
       allowOpenCodeInventory: canReadOpenCodeInventory,
       allowHermesInventory: canReadHermesInventory,
     },

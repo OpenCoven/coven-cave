@@ -46,8 +46,8 @@ test("2a ③ — the context row renders under the header, from the same facts a
   // must never disagree about which model answered.
   assert.match(
     chatView,
-    /const contextRowModel =\s*\n\s*responseMetadataModel\(lastSettledAssistantTurn\?\.responseMetadata\) \?\?/,
-    "the row's model comes from the settled turn's response metadata first",
+    /const contextRowModel = responseMetadataModel\(displayResponseMetadata\);/,
+    "the row's model comes only from the same current response metadata as the header",
   );
   // 2b: a brand-new chat renders NO context band — the new-session dashboard
   // already states the harness and model, so a lone model chip would repeat it.

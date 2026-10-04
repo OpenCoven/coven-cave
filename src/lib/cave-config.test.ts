@@ -16,6 +16,7 @@ const { DEFAULT_CHAT_AUTO_ARCHIVE_POLICY } = await import("./chat-auto-archive.t
 const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
 
 try {
+  assert.equal((await config.loadConfig()).defaults.model, "", "fresh installs defer to the runtime instead of pinning a historical model seed");
   assert.deepEqual(await config.loadState(), {
     sessionFamiliar: {},
     sessionTitles: {},

@@ -10,8 +10,8 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 200px;
-  height: 30px;
+  max-width: 100%;
+  min-height: var(--space-8);
   padding: 0 11px;
   font-size: var(--text-xs);
   font-family: inherit;
@@ -34,11 +34,11 @@
 }
 .cave-composer-runtime-chip .cave-composer-select__value {
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: var(--leading-normal);
 }
 .cave-composer-runtime-chip .cave-composer-select__chevron { color: var(--text-muted); }
 
@@ -49,4 +49,10 @@
   align-items: center;
   justify-content: center;
   color: var(--accent-presence);
+}
+
+/* Runtime identity stays readable; the existing context row can scroll. */
+.cave-context-chip--runtime {
+  flex-shrink: 0;
+  max-width: none;
 }
