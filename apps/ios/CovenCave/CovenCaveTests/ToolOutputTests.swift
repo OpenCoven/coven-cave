@@ -5,6 +5,8 @@ import XCTest
 private final class ToolOutputURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, Data))?
     static var responseURL: URL?
+    static var holdResponseOpen = false
+    static var onStop: (() -> Void)?
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -14,10 +16,10 @@ private final class ToolOutputURLProtocol: URLProtocol {
                                            headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: body)
-            client?.urlProtocolDidFinishLoading(self)
+            if !Self.holdResponseOpen { client?.urlProtocolDidFinishLoading(self) }
         } catch { client?.urlProtocol(self, didFailWithError: error) }
     }
-    override func stopLoading() {}
+    override func stopLoading() { Self.onStop?() }
 }
 
 private actor DeferredToolOutput: ToolOutputLoading {
@@ -42,6 +44,31 @@ final class ToolOutputTests: XCTestCase {
         config.protocolClasses = [ToolOutputURLProtocol.self]
         let session = URLSession(configuration: config)
         return (CaveClient(connection: CaveConnection(host: "https://tool-output.example.test"), session: session), session)
+    }
+
+    func testOversizedResponseIsCancelledBeforeTheServerFinishes() async {
+        let (client, session) = client()
+        let finished = expectation(description: "bounded read terminates")
+        let stopped = expectation(description: "network request cancelled")
+        ToolOutputURLProtocol.handler = { _ in (200, Data(repeating: 65, count: 2 * 1024 * 1024 + 1)) }
+        ToolOutputURLProtocol.holdResponseOpen = true
+        ToolOutputURLProtocol.onStop = { stopped.fulfill() }
+        defer {
+            session.invalidateAndCancel()
+            ToolOutputURLProtocol.handler = nil
+            ToolOutputURLProtocol.holdResponseOpen = false
+            ToolOutputURLProtocol.onStop = nil
+        }
+        let task = Task {
+            do {
+                _ = try await client.toolOutput(sessionId: "chat", toolId: "a")
+                XCTFail("Oversized unfinished response was accepted")
+            } catch { XCTAssertEqual(error as? ToolOutputError, .tooLarge) }
+            finished.fulfill()
+        }
+        await fulfillment(of: [finished, stopped], timeout: 5)
+        task.cancel()
+        await task.value
     }
 
     func testEncodedIdentifiersCannotChangeTheTargetAndOutputIsVerbatim() async throws {

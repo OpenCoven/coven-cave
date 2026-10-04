@@ -53,8 +53,9 @@ extension CaveClient: ToolOutputLoading {
         )
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let reader = CaveClient(connection: connection, session: injectedSession ?? Self.toolOutputSession)
-        let (body, response) = try await reader.data(for: req)
+        let (bytes, response) = try await (injectedSession ?? Self.toolOutputSession)
+            .bytes(for: req, delegate: DeviceAccessRedirectGuard.shared)
+        defer { bytes.task.cancel() }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, http.url == req.url else {
             // The shared redirect guard protects credentials. This detail read
@@ -71,7 +72,15 @@ extension CaveClient: ToolOutputLoading {
         }
         // JSON escaping can expand a valid 256 KiB projected unit. Bound the
         // envelope separately, then enforce the server's UTF-8 display limit.
-        guard body.count <= 2 * 1024 * 1024 else { throw ToolOutputError.tooLarge }
+        let envelopeLimit = 2 * 1024 * 1024
+        guard response.expectedContentLength <= envelopeLimit else { throw ToolOutputError.tooLarge }
+        var body = Data()
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            guard body.count < envelopeLimit else { throw ToolOutputError.tooLarge }
+            body.append(byte)
+        }
+        try Task.checkCancellation()
         struct Envelope: Decodable { let ok: Bool; let output: String }
         guard let envelope = try? JSONDecoder().decode(Envelope.self, from: body), envelope.ok else {
             throw ToolOutputError.invalidResponse
