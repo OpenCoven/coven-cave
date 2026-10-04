@@ -27,7 +27,7 @@ export function runtimeIdentityForLaunch(harness: string, version?: string | nul
 export function withReportedRuntimeModel(identity: ChatRuntimeIdentity, value: unknown): ChatRuntimeIdentity {
   // Frames without a report leave the last observation intact. An explicit
   // unavailable/invalid report invalidates it instead of retaining stale proof.
-  if (value === undefined || value === null) return identity;
+  if (value === undefined) return identity;
   const model = cleanModelId(value);
   const bare = model?.split("/").at(-1)?.toLowerCase();
   if (!model || model.length > 256 || isSyntheticLocalModel(model, identity.harness) ||

@@ -20,6 +20,7 @@ assert.deepEqual(normalizeRuntimeIdentity({ ...launch, activity: { ...activity, 
 assert.deepEqual(withReportedRuntimeModel({ ...launch, activity }, "claude-opus-5-5").activity, activity);
 
 const priorReport = withReportedRuntimeModel(launch, "claude-opus-5-5");
+assert.equal(withReportedRuntimeModel(priorReport, null).model, null, "an explicit null report clears prior exact identity");
 assert.equal(withReportedRuntimeModel(priorReport, "unknown").model, null, "an explicit unavailable report clears a prior exact model");
 assert.equal(withReportedRuntimeModel(priorReport, "auto").model, null, "a later selection alias cannot retain stale exact evidence");
 assert.equal(withReportedRuntimeModel(priorReport, undefined).model, priorReport.model, "an unrelated event without a model does not overwrite the report");

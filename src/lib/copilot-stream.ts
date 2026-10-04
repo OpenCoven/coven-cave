@@ -575,7 +575,8 @@ export type CopilotChatEvent =
       toolRequests: CopilotToolRequest[];
       /** The message content is usable, but one or more declared tool calls were not. */
       malformedToolRequests?: boolean;
-      model?: string;
+      /** Missing leaves prior identity intact; null invalidates a prior report. */
+      model?: string | null;
     }
   | {
       kind: "tool_start";
@@ -712,7 +713,10 @@ export function parseCopilotChatEvent(
         content: content ?? "",
         toolRequests,
         ...(malformedToolRequests ? { malformedToolRequests: true } : {}),
-        model: asModel(field(data, protocol.fields.model)),
+        // Preserve explicit invalid reports as null. Collapsing them into
+        // absence would retain an earlier exact model in live/history/replay.
+        model: field(data, protocol.fields.model) === undefined
+          ? undefined : asModel(field(data, protocol.fields.model)) ?? null,
       };
   }
   if (typeIs(type, protocol.eventTypes.toolStart)) {

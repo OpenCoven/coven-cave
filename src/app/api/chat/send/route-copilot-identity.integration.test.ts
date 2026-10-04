@@ -59,6 +59,10 @@ try {
   const cases = [
     { name: "later exact report", first: "gpt-6.1-sol", later: "claude-sonnet-5", expected: "claude-sonnet-5" },
     { name: "later unavailable report", first: "gpt-6.1-sol", later: "unknown", expected: null },
+    { name: "later null report", first: "gpt-6.1-sol", later: null, expected: null },
+    { name: "later empty report", first: "gpt-6.1-sol", later: "", expected: null },
+    { name: "later malformed report", first: "gpt-6.1-sol", later: { model: "forged" }, expected: null },
+    { name: "later numeric report", first: "gpt-6.1-sol", later: 42, expected: null },
     { name: "later alias", first: "gpt-6.1-sol", later: "auto", expected: null },
     { name: "absent later report", first: "gpt-6.1-sol", later: undefined, expected: "gpt-6.1-sol" },
     { name: "no assistant report", first: undefined, later: undefined, expected: null },
