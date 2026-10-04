@@ -194,6 +194,53 @@ afterEach(() => {
   dragSignals.end.mockReset();
 });
 
+test("running rail chats show runtime, work state, branch and PR context on separate lines", async () => {
+  const session = {
+    ...makeSession(),
+    id: "working-pr-chat",
+    title: "Improve the rail",
+    status: "running",
+    workBranch: "feat/issue-5790-chat-siderail",
+    pullRequest: { repo: "OpenCoven/coven-cave", number: 5790, state: "open" },
+  };
+  const onOpenSession = vi.fn();
+  const onOpenUrl = vi.fn();
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(SidebarChatsSection, {
+      sessions: [session],
+      onOpenSession,
+      onOpenUrl,
+      onDeleteSession: async () => undefined,
+    }));
+  });
+
+  const row = renderer.root.find((node) => node.type === "div"
+    && typeof node.props.className === "string"
+    && node.props.className.split(" ").includes("cnav__thread"));
+  const findClass = (name: string) => row.find((node) => typeof node.type === "string"
+    && typeof node.props.className === "string"
+    && node.props.className.split(" ").includes(name));
+  expect(row.props["data-status"]).toBe("running");
+  expect(textContent(findClass("cnav__working").children)).toBe("Working");
+  expect(textContent(findClass("cnav__thread-project").children)).toBe("repo");
+  expect(findClass("cnav__thread-title").props.title).toContain("PR #5790");
+  expect(
+    textContent(findClass("chat-row-title__head").children)
+    + textContent(findClass("chat-row-title__tail").children),
+  ).toBe("Improve the rail");
+  expect(findClass("cnav__thread-branch").props.title).toBe("Branch feat/issue-5790-chat-siderail");
+  expect(textContent(findClass("cnav__thread-branch").children)).toMatch(/^feat\/issue…hat-siderail$/);
+  expect(textContent(findClass("cnav__thread-pr-number").children)).toBe("#5790");
+  expect(findClass("cnav__runtime").props.title).toBe("Runtime: Claude Code");
+  const prButton = row.find((node) => node.type === "button"
+    && node.props["aria-label"] === "Open pull request (PR #5790 · open)");
+  await act(async () => prButton.props.onClick({ stopPropagation: vi.fn() }));
+  expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/OpenCoven/coven-cave/pull/5790");
+  expect(onOpenSession).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
 test("workspace project browsing masks other roots, hosts, loading and revoked projects", async () => {
   const alpha = { ...makeSession(), id: "alpha-chat", title: "Alpha chat", project_root: "/alpha" };
   const beta = { ...makeSession(), id: "beta-chat", title: "Beta chat", project_root: "/beta" };

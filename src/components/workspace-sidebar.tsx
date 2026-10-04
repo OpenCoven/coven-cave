@@ -46,6 +46,9 @@ import {
 import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
 import { chatListStaleNotice } from "@/lib/chat-list-authority";
 import { ChatRowTitle } from "@/components/chat-row-title";
+import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
+import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import { truncateBranch } from "@/lib/truncate-middle";
 
 type Props = {
   sessions: SessionRow[];
@@ -190,6 +193,76 @@ function sidebarThreadTitle(session: SessionRow, archived: boolean): string {
   return sessionRailTitle({ ...session, pullRequest: undefined });
 }
 
+function sessionWorkBranch(session: SessionRow): string | null {
+  // git.branch on a shared checkout changes under unrelated sessions. Only
+  // use it when the session itself is tied to a worktree.
+  return session.workBranch ?? session.pullRequest?.branch ??
+    (session.git?.isWorktree ? session.git.branch : null) ?? null;
+}
+
+function sessionProjectName(session: SessionRow, project?: { name: string } | null): string {
+  return project?.name || session.project_root?.split(/[\\/]/).filter(Boolean).pop() || "No project";
+}
+
+function ThreadSummary({ session, title, project, prStatus, now, attentionLabel, broadcast, confirming = false }: {
+  session: SessionRow;
+  title: string;
+  project?: { name: string } | null;
+  prStatus: SessionPrStatus | null;
+  now: number;
+  attentionLabel: string | null;
+  broadcast?: "sent" | "failed" | null;
+  confirming?: boolean;
+}) {
+  const running = session.status === "running";
+  const branch = sessionWorkBranch(session);
+  const lastActive = bareTimeAt(session.updated_at || session.created_at, now);
+  return (
+    <span className="cnav__thread-copy">
+      <span className="cnav__thread-overline">
+        <span className="cnav__thread-project" title={session.project_root || undefined} aria-hidden={Boolean(project)}>
+          {sessionProjectName(session, project)}
+        </span>
+        {broadcast ? (
+          <span className="cnav__broadcast" data-state={broadcast}>{broadcast === "sent" ? "Sent" : "Failed"}</span>
+        ) : confirming ? null : (
+          <span className="cnav__thread-state">
+            {running ? <span className="cnav__working"><span className="cnav__working-ring" aria-hidden />Working</span> : null}
+            <span className="cnav__time" title={`Last active ${relativeTime(session.updated_at || session.created_at, now)}`}>{lastActive}</span>
+          </span>
+        )}
+      </span>
+      <span className="cnav__thread-line">
+        <ChatRowTitle
+          className="cnav__thread-title"
+          title={title}
+          displayTitle={stripLeadingTrailingEmoji(session.title || "(untitled chat)")}
+        />
+      </span>
+      <span className="cnav__thread-context">
+        {branch ? (
+          <span className="cnav__thread-branch" title={`Branch ${branch}`}>
+            <Icon name="ph:git-branch" width={12} aria-hidden />
+            <span>{truncateBranch(branch)}</span>
+          </span>
+        ) : <span className="cnav__thread-context-empty" />}
+        <span className="cnav__thread-context-end">
+          {prStatus && session.pullRequest?.number != null ? (
+            <span className="cnav__thread-pr-number" data-pr-state={prStatus.key} aria-hidden>
+              #{session.pullRequest.number}
+            </span>
+          ) : null}
+          <span className="cnav__runtime" title={`Runtime: ${runtimeDisplayName(session.harness)}`}>
+            <RuntimeLogo runtime={session.harness} size={13} />
+            <span className="sr-only">Runtime: {runtimeDisplayName(session.harness)}</span>
+          </span>
+        </span>
+      </span>
+      <ThreadAttentionCue label={attentionLabel} />
+    </span>
+  );
+}
+
 // PR-status badge in a thread row's leading slot — the workspace-sidebar twin
 // of the chat list's badge (#2983): GitHub state colors, click opens the PR
 // (in-app browser when wired) without opening the chat. Rendered as a sibling
@@ -302,6 +375,7 @@ function ThreadRow({
   return (
     <div
       className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+      data-status={session.status}
       data-attention={attentionState}
       data-attention-kind={attentionKind ?? undefined}
     >
@@ -387,23 +461,7 @@ function ThreadRow({
           </span>
         ) : null}
         {project ? <span className="sr-only">{`Project ${project.name} `}</span> : null}
-        <span className="cnav__thread-copy">
-          <span className="cnav__thread-line">
-            <ChatRowTitle className="cnav__thread-title" title={title} />
-            {/* Broadcast outcome replaces the timestamp while it shows: a
-                failed target must be visible on its own row, since a
-                broadcast that half-worked and said nothing is worse than one
-                that failed outright. */}
-            {broadcast ? (
-              <span className="cnav__broadcast" data-state={broadcast}>
-                {broadcast === "sent" ? "Sent" : "Failed"}
-              </span>
-            ) : confirming ? null : (
-              <span className="cnav__time">{bareTimeAt(session.updated_at || session.created_at, now)}</span>
-            )}
-          </span>
-          <ThreadAttentionCue label={attentionLabel} />
-        </span>
+        <ThreadSummary session={session} title={title} project={project} prStatus={prStatus} now={now} attentionLabel={attentionLabel} broadcast={broadcast} confirming={confirming} />
       </button>
       {attentionDescription ? (
         <span id={attentionDescriptionId} className="sr-only">{attentionDescription}</span>
@@ -460,15 +518,16 @@ type PinnedThreadRowProps = {
   session: SessionRow;
   active: boolean;
   now: number;
+  project?: { name: string } | null;
   onOpenUrl?: (url: string) => void;
   onOpen: () => void;
   onTogglePin: () => void;
   selectMode: boolean;
 };
 
-// The Pinned rail is deliberately NOT a ThreadRow: it drops the timestamp,
-// project tile, drag/split, and archive/delete affordances to stay a compact,
-// always-visible shortlist, and its trailing bookmark is a one-click unpin
+// The Pinned rail is deliberately NOT a ThreadRow: it drops the project tile,
+// drag/split, and archive/delete affordances to stay an always-visible
+// shortlist, and its trailing bookmark is a one-click unpin
 // rather than ThreadRow's row-actions overlay. It still shares attention
 // derivation (resolveThreadAttention) and cue rendering (ThreadAttentionCue)
 // with ThreadRow so the two row shapes can't render divergent attention state
@@ -477,7 +536,7 @@ type PinnedThreadRowProps = {
 // running or failed, so this row reuses ThreadRow's own tick class and
 // archive-glyph derivation rather than re-deriving them — see cave-zs85n
 // Task 6 gap-fix notes.
-function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin, selectMode }: PinnedThreadRowProps) {
+function PinnedThreadRow({ session, active, now, project, onOpenUrl, onOpen, onTogglePin, selectMode }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
   const prefetchHandlers = useThreadPrefetch(session.id, selectMode);
   const archived = Boolean(session.archived_at);
@@ -492,6 +551,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin,
   return (
     <div
       className={`cnav__thread cnav__thread--flat${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+      data-status={session.status}
       data-attention={attentionState}
       data-attention-kind={attentionKind ?? undefined}
     >
@@ -517,10 +577,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin,
         ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
         )}
-        <span className="cnav__thread-copy">
-          <ChatRowTitle className="cnav__thread-title" title={title} />
-          <ThreadAttentionCue label={attentionLabel} />
-        </span>
+        <ThreadSummary session={session} title={title} project={project} prStatus={prStatus} now={now} attentionLabel={attentionLabel} />
       </button>
       {attentionDescription ? (
         <span id={attentionDescriptionId} className="sr-only">{attentionDescription}</span>
@@ -931,6 +988,7 @@ export function SidebarChatsSection({
                   <li key={`pin-${session.id}`}>
                     <PinnedThreadRow
                       session={session}
+                      project={sessionProjectById.get(session.id) ?? null}
                       selectMode={select.selectMode}
                       active={activeSessionId === session.id}
                       now={now}
