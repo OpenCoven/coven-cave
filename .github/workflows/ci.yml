@@ -235,6 +235,9 @@ jobs:
       - run: bash scripts/ios-xcodegen.sh
 
       - name: Prepare the native TCP fixture
+        env:
+          # The hosted ARM typecheck worker exhausts its default ~2 GiB heap.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           set -euo pipefail
           # Keep the production build out of the booted simulator's memory budget.
