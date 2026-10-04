@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 
 const messageBubble = read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+const messageProse = read("apps/ios/CovenCave/CovenCave/Views/MessageProseView.swift");
 const chatView = read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 const runner = read("scripts/run-tests.mjs");
 
@@ -29,16 +30,24 @@ assert.match(
 );
 
 assert.match(
-  messageBubble,
+  messageProse,
   /\.accessibilityLabel\("Open response in reader"\)/,
   "reader expand button should be directly accessible from the assistant bubble",
 );
 
 assert.match(
   messageBubble,
-  /if !projection\.visible\.isEmpty \|\| \(message\.streaming && message\.attachmentDataUrls\.isEmpty\)/,
+  /if timeline == nil && \(!projection\.visible\.isEmpty \|\| \(message\.streaming && message\.attachmentDataUrls\.isEmpty\)\)/,
   "settled control-only responses should not render an empty text bubble",
 );
+
+assert.match(messageBubble, /open\(parsed\.visible\)/, "a segmented reader action still opens the full answer");
+assert.match(messageBubble, /onOpenReader: message\.streaming \? nil : onOpenReader\.map/, "earlier spans do not offer a reader action before the response settles");
+assert.match(messageBubble, /ForEach\(timeline\)/, "timeline entries keep stable identities and mounted geometry");
+assert.match(messageBubble, /deferOffscreenMarkdown: !isTail/, "the tail renderer stays mounted for viewport recovery");
+assert.match(messageProse, /!deferOffscreenMarkdown \|\| message\.streaming \|\| voiceOverEnabled \|\| isNearViewport/, "streaming, VoiceOver and nearby prose keep rich rendering");
+assert.match(messageProse, /@State private var mdHeight/, "each prose span owns its measured WebView height");
+assert.doesNotMatch(messageBubble, /@State private var mdHeight/, "segmented prose cannot share one height binding");
 
 assert.match(
   chatView,

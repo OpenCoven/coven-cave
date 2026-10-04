@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 // Pure model for the transcript's LEFT turn spine (Chat.dc.html 2a,
 // cave-j86la): one node per turn in the left gutter, that turn's tool calls
 // rolled into a proportional category stack.
@@ -47,7 +48,7 @@ export type InstrumentTurn = {
     id: string;
     name: string;
     input?: string;
-    status: "running" | "ok" | "error";
+    status: ToolStatus;
     durationMs?: number;
   }[];
 };

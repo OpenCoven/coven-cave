@@ -77,7 +77,7 @@ export function isCaveConfigCompatibilityError(error: unknown): error is CaveCon
 
 const DEFAULT_CONFIG: CaveConfig = {
   version: CONFIG_SCHEMA_VERSION,
-  defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+  defaults: { harness: "codex", model: "" },
   familiars: {},
   roles: [],
   addons: {

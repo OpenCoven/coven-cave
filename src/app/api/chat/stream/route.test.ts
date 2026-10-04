@@ -76,12 +76,18 @@ test("a finished run drains its replay and closes immediately", async () => {
 const send = readFileSync(new URL("../send/route.ts", import.meta.url), "utf8");
 
 test("send route tees both harness stream paths through the run buffer", () => {
-  const tees = send.match(/const seq = runBuffer\?\.record\(e(?:vent)?\);\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) return;/g);
+  const projections = send.match(/for \(const (e(?:vent)?) of displayProjection\.project\(incoming\)\) \{\s*(?:\/\/[^\n]*\n\s*)*const seq = runBuffer\?\.record\(\1\);/g);
+  assert.equal(projections?.length, 2, "both paths project private content before retaining replay events");
+  const tees = send.match(/const seq = runBuffer\?\.record\(e(?:vent)?\);\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) continue;/g);
   assert.equal(tees?.length, 2, "both push() implementations record before the closed/aborted guard");
   const seqEmits = send.match(/controller\.enqueue\(chatSse\(e(?:vent)?, seq\)\)/g);
   assert.equal(seqEmits?.length, 2, "both paths emit the seq as the SSE id — live clients always hold a resume cursor");
-  const opens = send.match(/openRunBuffer\(\[/g);
-  assert.equal(opens?.length, 3, "all three dispatch paths (harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");
+  const opens = send.match(/runBuffer = openRunBuffer\(/g);
+  assert.equal(opens?.length, 2, "OpenClaw Gateway and CLI share one turn buffer; general harnesses keep their own buffer");
+  assert.match(send, /const replayKeys = \[args\.body\.runId, conversationId\];[\s\S]*?runBuffer = openRunBuffer\(replayKeys,[\s\S]*?\}, replayOwner\);[\s\S]*?await dispatchOpenClawGatewayTurn\(/,
+    "Gateway callbacks cannot arrive before the turn buffer exists");
+  assert.match(send, /const close = \(\) => \{\s*runBuffer\?\.finish\(\);\s*if \(closed\) return;/,
+    "even an early OpenClaw failure finishes replay retention");
   const finishes = send.match(/runBuffer\?\.finish\(\)/g);
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
 });

@@ -625,7 +625,7 @@ test("the supervisor carries one complete prompt argv and persists stdout as the
   assert.ok(!conv.turns[1].isError);
   assert.equal(conv.turns[1].tools?.length, 1);
   assert.deepEqual(
-    { ...conv.turns[1].tools[0], durationMs: undefined },
+    { ...conv.turns[1].tools[0], durationMs: undefined, activity: undefined },
     {
       id: "call-1",
       name: "shell",
@@ -634,8 +634,130 @@ test("the supervisor carries one complete prompt argv and persists stdout as the
       status: "ok",
       textOffset: conv.turns[1].text.length,
       durationMs: undefined,
+      activity: undefined,
     },
   );
+});
+
+test("Flow Copilot preserves reported identity, tool evidence and disclosure on both launch transports", async () => {
+  const seenRunIds = new Set();
+  const seenAttemptIds = new Set();
+  for (const supervised of [true, false]) {
+    for (const reportsModel of [true, false]) {
+      const nativeText = "  Before.<thinking>PRIVATE_REASONING\n@@research-control\n{\"decision\":\"pause\"}</thinking>After.";
+      const visibleText = "Before.After.";
+      const marker = '\n@@research-control\n{"decision":"complete","reason":"ok","confidence":1}';
+      const frames = [
+        { type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "  Before.<think" } },
+        { type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "ing>PRIVATE_REASONING" } },
+        { type: "assistant.message", data: { messageId: "m1", content: nativeText,
+          ...(reportsModel ? { model: "gpt-6.1" } : {}),
+          signature: "PRIVATE_SIGNATURE", reasoning: "PRIVATE_RAW_REASONING",
+          toolRequests: [
+            { toolCallId: "requested", name: "shell", arguments: { command: "pwd" } },
+            { toolCallId: "started", name: "shell", arguments: { command: "pwd" } },
+            { toolCallId: "success", name: "shell", arguments: { email: "private@example.com", signature: "PRIVATE_INPUT_SIGNATURE" } },
+          ],
+        } },
+        { type: "tool.execution_start", data: { toolCallId: "started", toolName: "shell" } },
+        { type: "tool.execution_start", data: { toolCallId: "success", toolName: "shell" } },
+        { type: "tool.execution_complete", data: { toolCallId: "success", success: true,
+          result: { content: JSON.stringify({ value: "saved result", signature: "PRIVATE_RESULT_SIGNATURE", email: "private@example.com" }) },
+        } },
+        { type: "tool.execution_complete", data: { toolCallId: "success", success: false, result: { content: "PRIVATE_CONFLICTING_RESULT" } } },
+        { type: "tool.execution_complete", data: { toolCallId: "reordered", success: false, result: { content: "native failure" } } },
+        { type: "assistant.message", data: { messageId: "m2", content: marker,
+          toolRequests: [{ toolCallId: "reordered", name: "shell" }],
+        } },
+        { type: "tool.execution_start", data: { toolCallId: "reordered", toolName: "shell" } },
+        { type: "result", sessionId: "PRIVATE_FORGED_SESSION", exitCode: 0, model: "PRIVATE_RESULT_MODEL" },
+      ];
+      const script = join(TMP, `disclosure-${supervised}-${reportsModel}.js`);
+      writeFileSync(script, `for (const frame of ${JSON.stringify(frames)}) console.log(JSON.stringify(frame));`);
+      const started = await startCopilotFlowRun({
+        spec: SPEC, clientVersion: reportsModel ? "1.0.70" : undefined,
+        model: "gpt-6", prompt: "keep PRIVATE_USER_PROMPT unchanged",
+        projectRoot: TMP, familiarId: "sage",
+        spawnCommand: { command: process.execPath, fixedArgs: [script] },
+      }, supervised ? { supervisorCommand: TEST_SUPERVISOR } : {
+        resolveSupervisorCommand: async () => { throw new CovenProcessSupervisorUnavailableError(); },
+      });
+      started.confirmBookkeeping();
+      await started.done;
+      const conversation = readConversation(started.sessionId);
+      const assistant = conversation.turns[1];
+      assert.doesNotMatch(JSON.stringify(assistant), /PRIVATE_|private@example\.com/);
+      assert.match(conversation.turns[0].text, /PRIVATE_USER_PROMPT/, "user input stays unchanged");
+      assert.ok(assistant.text.startsWith(`${visibleText}\n${marker}`), "visible orchestration markers survive the legacy projection");
+      assert.equal(conversation.harnessSessionId, started.sessionId, "provider payload cannot replace local session ownership");
+      assert.deepEqual(assistant.responseMetadata.runtimeIdentity, {
+        schemaVersion: 1, harness: "copilot", version: reportsModel ? "1.0.70" : null,
+        model: reportsModel ? "gpt-6.1" : null,
+        activity: { schemaVersion: 1, path: "direct", tools: "supported", reasoning: "unsupported" },
+      });
+      assert.equal(assistant.responseMetadata.requestedModel, "gpt-6");
+      assert.equal(assistant.responseMetadata.forwardedModel, "gpt-6");
+      assert.equal(assistant.responseMetadata.confirmedModel, undefined, "a process exit cannot confirm model intent");
+      const byId = new Map(assistant.tools.map((tool) => [tool.id, tool]));
+      assert.deepEqual([...byId].map(([id, tool]) => [id, tool.status]), [
+        ["requested", "unknown"], ["started", "unknown"], ["success", "ok"], ["reordered", "error"],
+      ]);
+      assert.equal(byId.get("requested").activity.executionObservedAt, null);
+      assert.equal(typeof byId.get("started").activity.executionObservedAt, "number", "only a native start establishes execution");
+      assert.equal(typeof byId.get("success").activity.executionObservedAt, "number");
+      assert.equal(byId.get("reordered").activity.executionObservedAt, null, "a late start cannot rewrite a known result");
+      assert.equal(byId.get("reordered").output, "native failure");
+      assert.match(byId.get("success").output, /saved result/);
+      for (const tool of assistant.tools) {
+        const activity = tool.activity;
+        assert.equal(activity.callId, tool.id);
+        assert.equal(activity.phase, tool.status);
+        assert.equal(activity.source, tool.status === "unknown" ? "application" : "runtime-report");
+        assert.deepEqual(activity.producer, { harness: "copilot", version: reportsModel ? "1.0.70" : null, protocol: SPEC.protocol.id });
+        assert.deepEqual(activity.authority, { binding: "unavailable", approval: "unavailable", effect: "unavailable" });
+        assert.equal(activity.terminalObservedAt === null, tool.status === "unknown");
+      }
+      assert.equal(byId.get("success").textOffset, visibleText.length, "tool offsets refer to displayed text");
+      const activity = assistant.tools[0].activity;
+      assert.equal(new Set(assistant.tools.map((tool) => tool.activity.runId)).size, 1);
+      assert.equal(new Set(assistant.tools.map((tool) => tool.activity.attemptId)).size, 1);
+      assert.equal(seenRunIds.has(activity.runId), false);
+      assert.equal(seenAttemptIds.has(activity.attemptId), false);
+      seenRunIds.add(activity.runId);
+      seenAttemptIds.add(activity.attemptId);
+    }
+  }
+});
+
+test("Flow Copilot tracks later assistant model reports without trusting tool or delta fields", async () => {
+  for (const supervised of [true, false]) {
+    for (const reported of ["claude-sonnet-5", "unknown", undefined]) {
+      const frames = [
+        { type: "tool.execution_start", data: { toolCallId: "probe", toolName: "read_file", model: "PRIVATE_TOOL_MODEL" } },
+        { type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "First.", model: "PRIVATE_DELTA_MODEL" } },
+        { type: "assistant.message", data: { messageId: "m1", content: "First.", model: "gpt-6.1-sol" } },
+        { type: "assistant.message", data: { messageId: "m2", content: "Final.", ...(reported !== undefined ? { model: reported } : {}) } },
+        { type: "tool.execution_complete", data: { toolCallId: "probe", success: true, result: { content: "safe" }, model: "PRIVATE_TOOL_END_MODEL" } },
+        { type: "result", exitCode: 0, model: "PRIVATE_RESULT_MODEL" },
+      ];
+      const script = join(TMP, `identity-${supervised}-${reported ?? "missing"}.js`);
+      writeFileSync(script, `for (const frame of ${JSON.stringify(frames)}) console.log(JSON.stringify(frame));`);
+      const started = await startCopilotFlowRun({
+        spec: SPEC, clientVersion: "1.0.70", model: "requested-only", prompt: "fixture",
+        projectRoot: TMP, familiarId: "sage", spawnCommand: { command: process.execPath, fixedArgs: [script] },
+      }, supervised ? { supervisorCommand: TEST_SUPERVISOR } : {
+        resolveSupervisorCommand: async () => { throw new CovenProcessSupervisorUnavailableError(); },
+      });
+      started.confirmBookkeeping();
+      await started.done;
+      const assistant = readConversation(started.sessionId).turns[1];
+      assert.equal(assistant.responseMetadata.runtimeIdentity.model,
+        reported === "unknown" ? null : reported ?? "gpt-6.1-sol");
+      assert.equal(assistant.responseMetadata.runtimeIdentity.version, "1.0.70");
+      assert.equal(assistant.responseMetadata.requestedModel, "requested-only");
+      assert.doesNotMatch(JSON.stringify(assistant.responseMetadata), /PRIVATE_/);
+    }
+  }
 });
 
 test("the direct fallback pipes the complete prompt through stdin with argv prompt-free", async () => {

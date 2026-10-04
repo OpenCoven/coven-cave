@@ -291,7 +291,8 @@ try {
     const reasoningConversation = await loadConversation("coven-envelope-reasoning-session");
     const reasoningTurn = reasoningConversation?.turns.at(-1);
     assert.equal(reasoningTurn?.text.trim(), "Visible answer.");
-    assert.equal(reasoningTurn?.reasoning, "private notes", "reasoning survives reload without control markers");
+    assert.equal(reasoningTurn?.reasoning, undefined, "legacy tags do not designate a display-safe provider summary");
+    assert.doesNotMatch(JSON.stringify(events), /private notes/, "unclassified content never crosses the SSE boundary");
     assert.equal(
       reasoningTurn?.responseMetadata?.attentionRequest?.reason,
       "approval",
@@ -414,14 +415,18 @@ try {
   }
   {
     // A relayed error that exits 0 (as an SSH run also does) skips the
-    // process-failure path and reaches the empty-response diagnostic, which
-    // copies the renderable tail into persisted assistant text. Only the
-    // fixed withheld line may get there, never the relayed payload.
+    // process-failure path and reaches the empty-response diagnostic.
+    // Only the fixed diagnostic-presence message may be streamed or saved,
+    // never the relayed payload or any renderable-tail copy.
     const { body, events } = await postResultFailure("result-error-exit-0", "relayed failure, exit 0");
     assert.equal(events.find((event) => event.kind === "error")?.code, undefined, "exit 0 is not a process failure");
     assert.doesNotMatch(body, /\/private\/fixture|ghp_|failed reading/i, "the relayed reason is never rendered or persisted");
-    assert.match(body, /details were withheld to protect local data/, "chat says Codex reported an error without repeating it");
-    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
+    const answer = events.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
+    assert.match(answer, /Runtime diagnostic output was withheld to protect local data/, "chat reports diagnostic presence without repeating its contents");
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true);
+    const saved = await loadConversation(done.sessionId);
+    assert.equal(saved?.turns.findLast((turn) => turn.role === "assistant")?.text, answer, "history retains the same fixed diagnostic as the live stream");
   }
   {
     // Coven's bare wrapper restates the exit code; it is not Codex output.

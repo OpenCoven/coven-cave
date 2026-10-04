@@ -40,7 +40,9 @@ const PROBE_ENV_KEYS = new Set([
 // Cache a probe only until either the ordinary probe TTL or the selected
 // profile's expiry, whichever arrives first. Otherwise a profile that expires
 // during the 60-second TTL could remain enabled after its trust window ends.
-let cached: { value: CompatibilityResolution; validUntil: number } | null = null;
+type InstalledClaudeRuntime = { compatibility: CompatibilityResolution; version: string | null };
+type ClaudeProbeDependencies = { version?: () => Promise<string | null>; help?: () => Promise<string | null>; now?: () => number };
+let cached: { value: InstalledClaudeRuntime; validUntil: number } | null = null;
 let profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
 // Once a durable high-water mark exists, a corrupt or older selectable cache
@@ -398,8 +400,16 @@ function claudeAdvertisesStreamJson(help: string): boolean {
 /** Probe only documented local CLI metadata. Output is reduced to a version and
  * allowlisted capability names before it reaches compatibility selection. */
 export async function resolveInstalledClaudeCompatibility(
-  dependencies: { version?: () => Promise<string | null>; help?: () => Promise<string | null>; now?: () => number } = {},
+  dependencies: ClaudeProbeDependencies = {},
 ): Promise<CompatibilityResolution> {
+  return (await resolveInstalledClaudeRuntime(dependencies)).compatibility;
+}
+
+/** Keep the exact probed version beside its compatibility decision. A profile
+ * range is not the installed version, including on the degraded text path. */
+export async function resolveInstalledClaudeRuntime(
+  dependencies: ClaudeProbeDependencies = {},
+): Promise<InstalledClaudeRuntime> {
   const now = dependencies.now?.() ?? Date.now();
   if (!dependencies.version && !dependencies.help && cached && now < cached.validUntil) return cached.value;
   await loadClaudeCompatibilityCache();
@@ -429,16 +439,20 @@ export async function resolveInstalledClaudeCompatibility(
   const resolution = profileCacheTrustFailure
     ? { kind: "fallback", reason: "invalid-profile" } as const
     : resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));
+  const installed = {
+    compatibility: resolution,
+    version: version?.match(/(?:^|\s)(v?\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?)(?=\s|$)/)?.[1] ?? null,
+  };
   if (!dependencies.version && !dependencies.help) {
     const profileExpiresAt = resolution.kind === "compatible" && !resolution.stale
       ? Date.parse(resolution.profile.expiresAt)
       : Number.POSITIVE_INFINITY;
     cached = {
-      value: resolution,
+      value: installed,
       validUntil: Math.min(now + PROBE_TTL_MS, profileExpiresAt),
     };
   }
-  return resolution;
+  return installed;
 }
 
 export function claudeCompatibilityDiagnostic(resolution: CompatibilityResolution): string | null {

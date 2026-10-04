@@ -25,6 +25,7 @@
 // is a post-hoc .jsonl replayer, not a live frame decoder, so it stays out of
 // this call path by design.
 
+import type { ToolOutcome } from "./chat-tool-state.ts";
 import {
   formatToolInputValue,
   type ToolCallTracker,
@@ -32,13 +33,14 @@ import {
 } from "./chat-tool-events.ts";
 
 /**
- * A neutral tool-call action decoded from one runtime frame. `use` opens a
- * call; `result` settles it. `input`/`output` stay `unknown` — normalization
+ * A neutral tool-call action decoded from one runtime frame. `use` requests a
+ * call; `start` observes execution; `result` settles it. Payload normalization
  * happens in applyToolActions so decoders never re-implement formatting.
  */
 export type ToolAction =
   | { op: "use"; id: string; name: string; input?: unknown }
-  | { op: "result"; id: string; output?: unknown; isError: boolean };
+  | { op: "start"; id: string; name: string; input?: unknown }
+  | { op: "result"; id: string; output?: unknown; isError: boolean; outcome?: ToolOutcome };
 
 /**
  * A runtime's tool-decode half. `toolActions` receives the ALREADY-PARSED frame
@@ -83,20 +85,26 @@ export function applyToolActions(
   ctx: ToolApplyContext,
 ): void {
   for (const action of actions) {
-    if (action.op === "use") {
+    if (action.op === "use" || action.op === "start") {
       ctx.boundarySentinel?.observe(action.name, action.input);
-      const ev = tracker.envelopeToolUse(
+      const start = action.op === "start"
+        ? tracker.envelopeToolStart.bind(tracker)
+        : tracker.envelopeToolUse.bind(tracker);
+      const ev = start(
         action.id,
         action.name,
         formatToolInputValue(action.input),
         ctx.textLen(),
       );
       if (ev) ctx.push({ kind: "tool_use", ...ev });
+      const pending = tracker.consumePendingEnvelopeResult(action.id);
+      if (pending) ctx.push({ kind: "tool_use", ...pending });
     } else {
       const ev = tracker.envelopeToolResult(
         action.id,
         normalizeOutput(action.output),
         action.isError,
+        action.outcome,
       );
       if (ev) ctx.push({ kind: "tool_use", ...ev });
     }

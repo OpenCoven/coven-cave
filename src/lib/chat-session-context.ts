@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 // Pure model for the chat session's slim context row (Chat.dc.html 2a ③).
 //
 // The row states what a machine decided about the last run — done, elapsed,
@@ -48,7 +49,7 @@ export type ChatContextTurn = {
   tools?: Array<{
     name: string;
     input?: string;
-    status: "running" | "ok" | "error";
+    status: ToolStatus;
     durationMs?: number;
   }>;
 };

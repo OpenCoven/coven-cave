@@ -7,8 +7,8 @@ to its internal `hfr.trace.v1` schema, scores it against scenario contracts
 scorecards, task-completion verdicts, and regression scenarios.
 
 HFR ingests **observer-hook JSONL** — one JSON event per line, from the vocabulary
-`session · pre_tool_call · post_tool_call · post_llm_call · subagent_start ·
-subagent_stop · final_answer`. This exporter produces exactly that stream from a
+`session · user_message · pre_tool_call · post_tool_call · post_llm_call · subagent_start ·
+subagent_stop`. This exporter produces that stream from a
 Coven familiar's run history, so a familiar's work can be evaluated in HFR.
 
 ## Why the conversation file is the source
@@ -22,8 +22,8 @@ events without needing the live daemon.
 ## Usage
 
 ```bash
-pnpm hfr:export                          # every conversation → stdout (JSONL)
-pnpm hfr:export --familiar cody          # only cody's runs
+pnpm hfr:export --session <id>          # one conversation → stdout (JSONL)
+pnpm hfr:export --familiar cody          # must select exactly one conversation
 pnpm hfr:export --session <id> --out trace.jsonl
 pnpm hfr:export --subagents links.json   # splice in delegation edges
 ```
@@ -36,7 +36,7 @@ pnpm hfr:export --subagents links.json   # splice in delegation edges
 | `--subagents <path>` | JSON array of `{parentSessionId, childSessionId, familiarId?, status?, startedAt?, endedAt?}` |
 | `--out <path>` | write JSONL to a file (default stdout) |
 | `--source-format <str>` | override the session event's `source_format` (default `coven.cave.v1`) |
-| `--max-field-chars <n>` | cap free-text fields; tool results keep their tail, `0` disables |
+| `--max-field-chars <n>` | optional free-text clipping; tool results keep their tail, `0` disables clipping but not disclosure bounds |
 
 Then hand the JSONL to HFR's normalizer / scenario runner.
 
@@ -44,12 +44,25 @@ Then hand the JSONL to HFR's normalizer / scenario runner.
 
 | HFR event | Coven source | Notes |
 |-----------|--------------|-------|
-| `session` | conversation header | `session_id`, `source_format`, `familiar_id` (eval scope), `harness`, `model` |
+| `session` | conversation header | `session_id`, `source_format`, `familiar_id` (eval scope), `harness`, `recorded_model`; the header model is historical context, not a per-turn native report |
 | `user_message` | `role:"user"` turn | |
-| `pre_tool_call` / `post_tool_call` | `turn.tools[]` | shared `call_id = tool.id`; `is_error` true for `error` **and** unresolved `running` tools; `post.ts = pre.ts + durationMs` |
-| `post_llm_call` | `turn.usage` / `turn.costUsd` | tokens snake-cased for HFR; omitted when the harness reported neither |
+| `pre_tool_call` / `post_tool_call` | projected `turn.tools[]` | shared display `tool_call_id`; only `ok`/`error` results produce a post event; `post.ts = pre.ts + durationMs` |
+| `post_llm_call` | valid assistant answer, usage, or cost | tokens snake-cased for HFR; `model` comes only from validated per-turn `runtimeIdentity.model` |
 | `subagent_start` / `subagent_stop` | `--subagents` links | only edges whose `parentSessionId` is this session |
-| `final_answer` | last assistant turn | skips `cancelled`/`isError` turns |
+
+Assistant hooks retain `turn_id` and a validated `runtime_identity` when the
+stored server metadata supplies one. That record preserves the exact harness,
+version, model, and activity availability through runtime switches. Legacy
+selected/forwarded/confirmed model fields do not become native identity. Missing
+or invalid reports remain unavailable; the exporter does not fill them from the
+conversation header. HFR's handling of these additional fields is not qualified
+by Cave's exporter tests.
+
+The last valid `post_llm_call.assistant_response`/`output` supplies the answer;
+there is no separate `final_answer` event. Cancelled/error drafts are omitted.
+Tool timestamps remain reconstructed from the turn start and recorded duration,
+not authoritative execution timestamps. Exported observations do not establish
+approval, a session lease, or a committed effect.
 
 ## Scope & follow-ups
 
@@ -64,7 +77,12 @@ Then hand the JSONL to HFR's normalizer / scenario runner.
 - **Eval metrics.** `results.tsv` (`metric_before/after/delta/outcome` per track)
   is HFR's natural baseline-vs-candidate compare input; wiring it into an HFR
   compare export is a separate slice.
-- **Redaction.** Sensitive daemon events are already redacted upstream; HFR's own
-  secret-scan policy runs on the exported text downstream. Field names track
-  HFR's observer-hook contract and are centralized in `hfr-trace-export.ts` for a
-  single-file reconcile once HFR's schema is pinned.
+- **Disclosure.** Historical tool names, IDs, arguments, and completed results
+  pass through the same projection as conversation reads before optional
+  clipping. Credentials, common PII, signed URLs, and recognized opaque provider
+  fields are filtered; unfinished tool output is withheld. Legacy thinking tags
+  are removed from assistant answers. User-authored text and literal code
+  examples remain intact. This is not exhaustive PII detection or an export of
+  private execution state; stored records are not rewritten.
+- **Downstream qualification.** Cave's local tests verify emitted JSONL and the
+  CLI boundary. A pinned HFR normalizer/scorer run remains separate evidence.

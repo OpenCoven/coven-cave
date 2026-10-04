@@ -182,6 +182,7 @@ struct MarkdownWebView: UIViewRepresentable {
         private var rendererAcquisitionSpan: CavePerformanceSpan?
         private var firstRichRenderSpan: CavePerformanceSpan?
         private var firstRichFrameReporter: CavePerformanceStableFrame.ReporterView?
+        private var recordedFirstRender = false
 
         private struct Opts {
             var streaming = false
@@ -205,6 +206,7 @@ struct MarkdownWebView: UIViewRepresentable {
             config.userContentController = userContentController
             webView = WKWebView(frame: .zero, configuration: config)
             super.init()
+            recorder.increment("markdown.webview.created")
             if firstRichRenderSpan != nil {
                 NotificationCenter.default.addObserver(self, selector: #selector(cancelFirstRichRender),
                                                        name: UIApplication.willResignActiveNotification, object: nil)
@@ -241,6 +243,7 @@ struct MarkdownWebView: UIViewRepresentable {
         func invalidate() {
             guard !isInvalidated else { return }
             isInvalidated = true
+            performanceRecorder.increment("markdown.webview.invalidated")
             NotificationCenter.default.removeObserver(self, name: .caveImageAuthorityChanged, object: nil)
             NotificationCenter.default.removeObserver(self, name: UIApplication.willResignActiveNotification, object: nil)
             callbackGeneration &+= 1
@@ -400,6 +403,10 @@ struct MarkdownWebView: UIViewRepresentable {
                 switch result {
                 case .success(let value):
                     if let h = value as? Double, h.isFinite, h > 0 {
+                        if !self.recordedFirstRender {
+                            self.recordedFirstRender = true
+                            self.performanceRecorder.increment("markdown.webview.first-render")
+                        }
                         self.onHeight?(CGFloat(h))
                         self.scheduleFirstRichFrame()
                     } else if !o.streaming {
@@ -422,6 +429,7 @@ struct MarkdownWebView: UIViewRepresentable {
         private func reportFailure() {
             guard !isInvalidated, !failedReported else { return }
             failedReported = true
+            performanceRecorder.increment("markdown.webview.failed")
             failed = true
             callbackGeneration &+= 1
             let generation = callbackGeneration

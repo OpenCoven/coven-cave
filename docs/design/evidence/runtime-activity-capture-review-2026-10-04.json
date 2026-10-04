@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T03:33:39.181441+00:00",
+  "issues": [
+    5761,
+    5767
+  ],
+  "sourceFingerprint": "a7adbf1e0860f3da81c01b23b8632a6c237fe6f2728e6caa7b26756dc25a8068",
+  "classification": "Evidence-review correction; no product or test change",
+  "finding": "The earlier omitted-row and obscured-offline assessments came from resized review previews. Original PNGs are intact. Those assessments are superseded; they are not reproduced app rendering defects.",
+  "captures": [
+    {
+      "original": "/Users/buns/.coven/cave/verification/issue-5761/native-supervisor-ui-attachments/1F13F4C3-E091-44F3-9DEB-E44A11C461A2.png",
+      "retainedCopy": "runtime-activity-native-supervisor-offline-2026-10-04.png",
+      "sha256": "f2b42cc7cba06bb28b834dca122d4702dde2ef1f5e50d402b163b9c60ed05a78",
+      "width": 1206,
+      "height": 2622,
+      "inspection": "Original-resolution view_image, without resizing",
+      "observation": "Queued message, queued status, timestamp, reconnect pill and composer are intact."
+    },
+    {
+      "original": "/Users/buns/.coven/cave/verification/issue-5761/native-adoption-ui-final-attachments/E353EC12-A352-413D-909C-25E52F58ED95.png",
+      "retainedCopy": "runtime-activity-native-recovery-original-2026-10-04.png",
+      "sha256": "35a61121eab43c7a7facac497be6fb5fbc8ca8530f46abee6fd04cf317e3fa84",
+      "width": 1206,
+      "height": 2622,
+      "inspection": "Original-resolution view_image, without resizing",
+      "observation": "Both summaries, prose, succeeded read_file, answer and runtime/model identity are intact."
+    }
+  ],
+  "supersedes": [
+    "runtime-activity-native-recovery-2026-10-04.json retainedFailures/native-adoption-rendered-final visual assessment",
+    "runtime-activity-native-supervisor-2026-10-04.json visualInspection/offlineDiagnostic result",
+    "https://github.com/OpenCoven/coven-cave/issues/5767#issuecomment-5976160163 offline visual gap"
+  ],
+  "limits": [
+    "A still image establishes that captured frame, not continuous visual stability, physical-device behavior or human VoiceOver acceptance.",
+    "Existing test results, source hashes and first-attempt execution failures remain unchanged. No additional run was needed for this evidence correction."
+  ]
+}

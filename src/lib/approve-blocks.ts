@@ -249,6 +249,12 @@ function rewriteApproveMarkers(
   return output + text.slice(cursor);
 }
 
+/** Preserve offsets while keeping protocol attributes opaque to sibling text
+ * parsers. This does not validate or authorize the represented question. */
+export function maskApproveMarkers(text: string): string {
+  return rewriteApproveMarkers(text, (_marker, raw) => raw.replace(/[^\r\n]/g, " "));
+}
+
 /** Only valid question markers may enter the rich-card pipeline. */
 export function sanitizeApproveMarkers(text: string): string {
   return rewriteApproveMarkers(text, (marker, raw) => marker.question ? raw : "");

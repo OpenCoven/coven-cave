@@ -349,6 +349,7 @@ async function runViaSession(body: RunBody) {
     // direct launch contract and the session has actually been started.
     const direct = await startCopilotFlowRunWithTransportBoundary({
       spec,
+      clientVersion: capability.version,
       prompt,
       projectRoot,
       familiarId,

@@ -74,11 +74,11 @@ final class CaveVoiceTurnSender: VoiceTurnSending {
                     )
                 case .assistantChunk(let chunk):
                     reply += chunk
-                case .assistantReplace(let full):
+                case .assistantReplace(let full, _):
                     reply = full
                 case .error(let message):
                     throw CaveError.transport(message)
-                case .done(let isError, let sessionId, _, _, _, _, _, _, _, _, _, _, _, _, _):
+                case .done(let isError, let sessionId, _, _, _, _, _, _, _, _, _, _, _, _, _, _):
                     publishBoundSession(
                         sessionId,
                         boundSessionId: &boundSessionId,

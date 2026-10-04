@@ -1179,12 +1179,21 @@ for (const contract of contracts) {
     /function registerAdmittedChatRun[\s\S]*?if \(admission\.handle\) \{\s*addChatRunKeys\(admission\.handle, keys\);\s*setChatRunStopHandler\(admission\.handle, kill\);[\s\S]*?registerChatRun\(keys, kill, options\)/,
     "/chat/send: transports carry early Stop intent through the original handle",
   );
-  const runBuffers = [...sendSource.matchAll(/runBuffer = openRunBuffer\([\s\S]*?\n\s*\}, runHandle\);/g)];
-  assert.equal(runBuffers.length, 3, "all transport buffers respect admission ownership");
+  const runBuffers = [...sendSource.matchAll(/runBuffer = openRunBuffer\([\s\S]*?\n\s*\}, (\w+)\);/g)];
+  assert.deepEqual(
+    runBuffers.map((buffer) => buffer[1]),
+    ["replayOwner", "runHandle"],
+    "OpenClaw shares one owned replay buffer across Gateway/CLI; direct runtimes retain their admitted buffer",
+  );
+  assert.match(
+    sendSource,
+    /const replayOwner = args\.admission\.handle \?\? registerChatRun\([\s\S]*?args\.admission\.handle = replayOwner;\s*addChatRunKeys\(replayOwner, replayKeys\);/,
+    "OpenClaw's early replay owner survives transport selection and setup cleanup",
+  );
   assert.equal(
     [...sendSource.matchAll(/\{ runId: (?:args\.body|body)\.runId \}/g)].length,
-    4,
-    "/chat/send: early admission and all three transport bindings identify the per-send token",
+    5,
+    "/chat/send: admission, early replay, and all three transport bindings identify the per-send token",
   );
   assert.match(
     sendSource,

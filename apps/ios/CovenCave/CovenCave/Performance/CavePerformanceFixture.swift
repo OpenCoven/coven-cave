@@ -125,7 +125,7 @@ enum CavePerformanceFixture {
             let project = projects[index % projects.count]
             let isRichStreamingThread = index == 0
             let isImageZoomThread = index == 1 && isImageZoomFixture
-            let message = DisplayMessage(
+            var message = DisplayMessage(
                 id: identifier("message", index),
                 role: .assistant,
                 familiarId: familiar.id,
@@ -137,6 +137,10 @@ enum CavePerformanceFixture {
                 streaming: isRichStreamingThread,
                 createdAt: baseDate.addingTimeInterval(TimeInterval(index))
             )
+            if isRichStreamingThread && CaveTimelinePerformanceFixture.isEnabled {
+                message = CaveTimelinePerformanceFixture.message(from: message, count: CaveTimelinePerformanceFixture.count,
+                                                                shape: CaveTimelinePerformanceFixture.shape)
+            }
             let thread = ChatThread(
                 id: identifier("chat", index),
                 title: isRichStreamingThread
@@ -249,7 +253,7 @@ enum CavePerformanceFixture {
     /// keep revising its final token in place so rendering never goes idle.
     /// This measures transcript/render work; it does not simulate network cost.
     static func runStreaming(in app: AppModel) async {
-        guard app.isPerformanceFixture, !isTranscriptRecoveryFixture, !isImageZoomFixture,
+        guard app.isPerformanceFixture, !isTranscriptRecoveryFixture, !isImageZoomFixture, !CaveTimelinePerformanceFixture.isEnabled,
               let thread = app.threads.first(where: { $0.id == identifier("chat", 0) })
         else { return }
         var frame = 0
@@ -354,7 +358,7 @@ enum CavePerformanceFixture {
 
     enum ZoomPhase { case presented, dismissed, settled }
 
-    private static func physicalFootprint() -> UInt64? {
+    static func physicalFootprint() -> UInt64? {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {

@@ -197,3 +197,19 @@ assert.deepEqual(runRailTicks(56000), [0, 14000, 28000, 42000, 56000], "five eve
 assert.deepEqual(runRailTicks(0), [], "no ticks for a run with no measured time");
 
 console.log("chat-run-rail.test.ts: ok");
+
+const unresolved = runRailModel([turn("uncertain", [
+  { id: "request", name: "read", status: "requested" },
+  { id: "lost", name: "write", status: "unknown" },
+])], { nowMs: NOW });
+assert.equal(unresolved.done, 0);
+assert.equal(unresolved.failed, 0);
+assert.equal(unresolved.running, 0);
+assert.equal(unresolved.requested, 1);
+assert.equal(unresolved.unknown, 1);
+assert.equal(unresolved.now?.heading, "Outcome unknown");
+
+const rejection = runRailModel([{ id: "denied", tools: [{ id: "a", name: "Bash", status: "rejected" }] }], { nowMs: 0 });
+assert.equal(rejection.rejected, 1);
+assert.equal(rejection.done + rejection.failed + rejection.running + rejection.unknown, 0);
+assert.equal(rejection.now?.heading, "Rejected");

@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T20:50:29.083846+00:00",
+  "issue": 5766,
+  "parentIssue": 5761,
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "scope": "Native reported identity rendering on the existing DEBUG tool-activity fixture; no production view/transport changes in this slice.",
+  "sourceFingerprint": "e90da1dc6c039dd3191ff9287d9e3feb687fa942268e452223b0897753a24983",
+  "changedExistingFilesSinceMainCheckpoint": [
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift"
+  ],
+  "simulator": {
+    "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "device": "iPhone 16 Pro",
+    "os": "iOS 26.5"
+  },
+  "checks": {
+    "native-reported-xcodegen": {
+      "startedAt": "2026-10-03T20:42:32.665659+00:00",
+      "finishedAt": "2026-10-03T20:42:35.477953+00:00",
+      "exitCode": 0,
+      "sourceBefore": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceAfter": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceUnchanged": true,
+      "log": "native-reported-xcodegen.log"
+    },
+    "native-reported-mobile": {
+      "startedAt": "2026-10-03T20:42:53.409521+00:00",
+      "finishedAt": "2026-10-03T20:43:46.716003+00:00",
+      "exitCode": 0,
+      "sourceBefore": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceAfter": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceUnchanged": true,
+      "log": "native-reported-mobile.log"
+    },
+    "native-reported-tests": {
+      "startedAt": "2026-10-03T20:42:52.231926+00:00",
+      "finishedAt": "2026-10-03T20:45:10.748747+00:00",
+      "exitCode": 0,
+      "sourceBefore": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceAfter": "806a7b20a99ebdd35ac68b4d321065e931b3069e6b81c1d0627a33a4b2347c77",
+      "sourceUnchanged": true,
+      "log": "native-reported-tests.log"
+    },
+    "native-reported-scroll-ui": {
+      "startedAt": "2026-10-03T20:45:58.471378+00:00",
+      "finishedAt": "2026-10-03T20:47:21.811065+00:00",
+      "exitCode": 0,
+      "sourceBefore": "33b7da5402ff3590de30f65edbb2c5c279e3cc467e82f03fa7cd94517d9c34ac",
+      "sourceAfter": "33b7da5402ff3590de30f65edbb2c5c279e3cc467e82f03fa7cd94517d9c34ac",
+      "sourceUnchanged": true,
+      "log": "native-reported-scroll-ui.log"
+    },
+    "native-reported-large-text": {
+      "startedAt": "2026-10-03T20:48:40.750004+00:00",
+      "finishedAt": "2026-10-03T20:49:41.989945+00:00",
+      "exitCode": 0,
+      "sourceBefore": "e90da1dc6c039dd3191ff9287d9e3feb687fa942268e452223b0897753a24983",
+      "sourceAfter": "e90da1dc6c039dd3191ff9287d9e3feb687fa942268e452223b0897753a24983",
+      "sourceUnchanged": true,
+      "log": "native-reported-large-text.log"
+    }
+  },
+  "counts": {
+    "nativeUnitTests": 100,
+    "nativeUICases": 3,
+    "mobileTestFiles": 106
+  },
+  "assertions": [
+    "Missing-identity legacy fixture retains explicit unavailable labels and expanded tool arguments/failure details.",
+    "Reported claude 2.1.288 and claude-opus-5-5 remain distinct from requested claude-sonnet-5 and current familiar gpt-5.6.",
+    "Runtime path and supported versus unverified activity states remain in the accessibility label.",
+    "Background/foreground retains the reported identity in the same process.",
+    "Largest accessibility text wraps horizontally within the screen; bounded scrolling brings the complete runtime and model into the upper viewport."
+  ],
+  "visualInspection": {
+    "normal": "All six footer lines are visible, including exact runtime/model and distinct requested model.",
+    "accessibility": "The font is visibly enlarged; the footer spans screens. The final start capture shows the complete runtime/version and wrapped model ID; lower labels are retained in the companion result-bundle capture.",
+    "earlierCaptureLimit": "First green UI run only captured the lower footer; second captured the start too low. Tightened scroll positioning and reran the large-text case before claiming visual readability."
+  },
+  "screenshots": {
+    "normal": {
+      "path": "runtime-identity-native-reported-2026-10-03.png",
+      "sha256": "6d1ef2e44eb12e054afe880079200292012fd8dc5b353995ee067eeffa36ce28",
+      "sourceAttachment": "native-reported-scroll-attachments/AB583B98-1065-4BAC-A878-B8BEA30E2FFA.png"
+    },
+    "accessibilityStart": {
+      "path": "runtime-identity-native-large-text-2026-10-03.png",
+      "sha256": "847be80814d5fa3f8047598ea61374cee30e1ce5ad4574f2f38c2d29791cfd52",
+      "sourceAttachment": "native-reported-large-text-attachments/C306FDA0-A488-4CC3-BE4D-7F5523E811A4.png"
+    }
+  },
+  "resultBundles": [
+    "native-reported-tests.xcresult",
+    "native-reported-scroll-ui.xcresult",
+    "native-reported-large-text.xcresult"
+  ],
+  "remaining": [
+    "Automated accessibility-tree and screenshot evidence does not substitute for human VoiceOver.",
+    "No network reconnect, process restart/history reload, real-provider native transport, Release performance or physical-device qualification is claimed.",
+    "Native tool rows still lack a lazy authorized full-result inspector; successful output is omitted from compact Activity snapshots. Reuse the existing projected output read with captured conversation/tool identity and current authentication.",
+    "The complete runtime/path and canonical signed compatibility gaps recorded on #5761 remain open."
+  ],
+  "nextStep": "Implement native on-demand tool-result inspection through CaveClient and the existing server projection; preserve compact snapshot bounds, authenticated reads and conversation isolation.",
+  "newlyModifiedSourceFile": "apps/ios/CovenCave/CovenCave/State/AppModel.swift was previously unchanged at the main checkpoint; adds only DEBUG fixture data."
+}

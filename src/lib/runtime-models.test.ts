@@ -271,7 +271,7 @@ assert.ok(
   "copilot catalog should seed Claude Sonnet 5",
 );
 assert.equal(catalogForRuntime("copilot").allowCustom, true, "copilot accepts unlisted model ids");
-assert.equal(defaultModelForRuntime("copilot"), "github/auto");
+assert.equal(defaultModelForRuntime("copilot"), "");
 assert.ok(
   !catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-opus-5"),
   "the static Copilot seed must not bypass account rollout or administrator policy",
@@ -426,9 +426,9 @@ const openclaw = catalogForRuntime("openclaw");
 assert.equal(openclaw.provider, null);
 assert.equal(openclaw.models.length, 0, "openclaw renders free-text only");
 assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there is no menu");
-assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.6-sol");
-assert.equal(defaultModelForRuntime("hermes"), "openai/gpt-5.6-sol", "Hermes should default to the first authenticated model");
-assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw should inherit a real global default, not openclaw-local");
+assert.equal(defaultModelForRuntime("codex"), "");
+assert.equal(defaultModelForRuntime("hermes"), "", "Hermes resolves its own authenticated default");
+assert.equal(defaultModelForRuntime("openclaw"), "", "OpenClaw resolves its own configured default");
 assert.equal(runtimeOwnsModelDefault("codex"), false);
 assert.equal(runtimeOwnsModelDefault("hermes"), true);
 assert.equal(runtimeOwnsModelDefault("grok"), true);

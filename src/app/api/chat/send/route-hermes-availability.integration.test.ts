@@ -86,6 +86,7 @@ try {
   );
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
+  const { subscribeRunStream } = await import("@/lib/server/chat-stream-buffer");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -227,6 +228,39 @@ try {
       "fresh Hermes response",
       "the successful fresh retry persists instead of being suppressed by the stale attempt",
     );
+  }
+
+  // Successful but empty quiet output still passes through the shared
+  // no-answer diagnostic. Raw stderr must not become a display unit there.
+  for (const hasDiagnostic of [true, false]) {
+    await installHermesFixture(
+      hasDiagnostic
+        ? "printf '%s\\n' 'PRIVATE_DIAGNOSTIC private.person@example.com signature=opaque-provider-state' >&2\nexit 0"
+        : "exit 0",
+      hasDiagnostic
+        ? 'process.stderr.write("PRIVATE_DIAGNOSTIC private.person@example.com signature=opaque-provider-state"); process.exit(0);'
+        : 'process.exit(0);',
+    );
+    const runId = `hermes-empty-${hasDiagnostic}`;
+    const { events } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "ember", prompt: "empty quiet response", projectRoot: familiarWorkspace, runId, sessionId: `${runId}-session` }),
+    })));
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true);
+    const text = events.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
+    assert.match(text, /produced no output/);
+    assert.doesNotMatch(text, /installed but not authenticated/, "an empty response cannot diagnose authentication");
+    assert.match(text, /Try `\/doctor`/);
+    if (hasDiagnostic) assert.match(text, /diagnostic output was withheld/i);
+    const saved = await loadConversation(done.sessionId);
+    assert.equal(saved.turns.at(-1).text, text);
+    const replay = subscribeRunStream(runId, 0, () => {}, () => {});
+    assert.ok(replay?.done);
+    assert.equal(replay.replay.map((entry) => JSON.parse(entry.json))
+      .filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join(""), text);
+    assert.doesNotMatch(JSON.stringify([events, saved, replay]), /PRIVATE_DIAGNOSTIC|private\.person|opaque-provider-state/);
   }
 
   // Model parity: capability probing and the successful spawn share the exact

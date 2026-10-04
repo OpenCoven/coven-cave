@@ -1,3 +1,4 @@
+import { newestRuntimeModelFamilies } from "../runtime-model-families.ts";
 import { canonicalHarnessId } from "../harness-adapters.ts";
 import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
 import {
@@ -10,7 +11,7 @@ import {
   type RuntimeModelInventoryProvenance,
   type RuntimeModelOption,
 } from "../runtime-models.ts";
-import { listClaudeModelInventory, listClaudeModels } from "./claude-models.ts";
+import { listCliRuntimeModels } from "./cli-runtime-models.ts";
 import { listCopilotModelInventory, listCopilotModels } from "./copilot-models.ts";
 import { listGrokModels } from "./grok-models.ts";
 import {
@@ -21,12 +22,15 @@ import { listOpenCodeModels } from "./opencode-models.ts";
 
 export type RuntimeModelOptionsDependencies = {
   allowOpenCodeInventory?: boolean;
+  /** Local discovery cannot describe an SSH/profile-bound runtime. */
+  allowCliInventory?: boolean;
+  listCodexInventory?: (familiarId?: string | null) => ReturnType<typeof listCliRuntimeModels>;
   /** Hermes API discovery is valid only for a bare, local binding. Callers
    * that resolved familiar profile/SSH state opt in explicitly. */
   allowHermesInventory?: boolean;
-  listClaude?: typeof listClaudeModels;
+  listClaude?: (familiarId?: string | null) => Promise<RuntimeModelOption[]>;
   listCopilot?: typeof listCopilotModels;
-  listClaudeInventory?: typeof listClaudeModelInventory;
+  listClaudeInventory?: (familiarId?: string | null) => ReturnType<typeof listCliRuntimeModels>;
   listCopilotInventory?: typeof listCopilotModelInventory;
   listGrok?: typeof listGrokModels;
   listHermes?: typeof listHermesModels;
@@ -45,9 +49,10 @@ function sanitizeModels(
     const label = typeof option.label === "string" && option.label.trim()
       ? option.label.trim()
       : id;
-    models.set(id, { id, label });
+    const configuredModelId = cleanModelId(option.configuredModelId);
+    models.set(id, { id, label, ...(configuredModelId && configuredModelId !== id ? { configuredModelId } : {}) });
   }
-  return [...models.values()];
+  return newestRuntimeModelFamilies([...models.values()]);
 }
 
 function withProvenance(
@@ -70,13 +75,10 @@ function fallbackInventory(
   familiarId?: string | null,
 ): RuntimeModelInventory {
   const catalog = catalogForRuntime(runtime);
-  const models = [...(catalog?.models ?? [])];
+  // A catalog seed is historical metadata, not evidence of current support.
+  const models: RuntimeModelOption[] = [];
   const provenance: RuntimeModelInventoryProvenance =
-    models.length > 0
-      ? "fallback"
-      : catalog?.defaultOwner === "runtime"
-        ? "runtime-managed"
-        : "unavailable";
+    catalog?.defaultOwner === "runtime" ? "runtime-managed" : "unavailable";
   return withProvenance({
     runtime,
     models,
@@ -106,10 +108,14 @@ export async function listRuntimeModelInventory(
       models: RuntimeModelOption[];
       provenance: RuntimeModelInventoryProvenance;
     } | null = null;
-    if (canonicalRuntime === "claude") {
+    if (canonicalRuntime === "codex") {
+      if (dependencies.allowCliInventory === false) return degraded;
+      result = await (dependencies.listCodexInventory ?? ((id) => listCliRuntimeModels("codex", id)))(familiarId);
+    } else if (canonicalRuntime === "claude") {
+      if (dependencies.allowCliInventory === false) return degraded;
       const discovery = dependencies.listClaude
         ? { models: await dependencies.listClaude(familiarId), provenance: "live" as const }
-        : await (dependencies.listClaudeInventory ?? listClaudeModelInventory)(familiarId);
+        : await (dependencies.listClaudeInventory ?? ((id) => listCliRuntimeModels("claude", id)))(familiarId);
       result = discovery;
     } else if (canonicalRuntime === "copilot") {
       const discovery = dependencies.listCopilot

@@ -154,10 +154,12 @@ test("buildCaveEnvironment isolates authority fixtures from inherited credential
       caveHomeDir: "/isolated/coven/cave",
       covenHomeDir: "/isolated/coven",
       adminToken: "fixture-admin",
+      mobileAccessToken: "fixture-mobile",
     },
     inherited,
   );
   assert.equal(configured.COVEN_CAVE_AUTH_TOKEN, "fixture-admin");
+  assert.equal(configured.COVEN_CAVE_ACCESS_TOKEN, "fixture-mobile", "only an explicit fixture credential may enter the isolated server");
   assert.equal(configured.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE, "off");
 });
 

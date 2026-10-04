@@ -139,8 +139,8 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && openCodeLaunchModel && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
-  "OpenCode marks model-specific failed runs as rejected without retaining raw JSON error messages",
+  /openCodeDirect && openCodeLaunchModel && forwardModel[\s\S]*?modelApplicationForHarness\(openCodeModelRejected\s*\? \{ failed: true \} : \{ supported: true \}\)/,
+  "OpenCode marks rejected selections as failed and keeps accepted forwarding unconfirmed",
 );
 assert.match(
   route,
@@ -199,8 +199,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const tailBlock = !openCodeDirect && !grokDirect && tailSource\.length/,
-  "OpenCode and Grok stderr never become assistant-visible or persisted empty-response diagnostics",
+  /const diagnosticHint = tailSource\.length\s*\? "Runtime diagnostic output was withheld to protect local data\. "/,
+  "raw diagnostics from every runtime remain withheld in empty-response copy",
 );
 assert.match(
   route,

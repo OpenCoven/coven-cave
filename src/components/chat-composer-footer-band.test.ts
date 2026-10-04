@@ -157,7 +157,7 @@ assert.doesNotMatch(
 // Grammar: Project > Worktree (conditional) > Branch > Model in control order
 assert.match(
   pill,
-  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Runtime: \$\{context\.runtimeName\} · Model: \$\{modelLabel\} — change model`\}/,
   "the chips read Project / Worktree / Branch / Model as separately labelled controls in order",
 );
 assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");

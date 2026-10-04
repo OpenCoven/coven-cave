@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T11:15:56.328722+00:00",
+  "issues": [
+    5761,
+    5767,
+    5474
+  ],
+  "candidate": {
+    "head": "2900102d206ff2167eff669ddb128ed5953b505f",
+    "patchSha256": "a28571461e36a1bfea87abc46e39be3fbdd8376ee42616439a0896ed1d0ba7c2",
+    "changedSourceSha256": "e64e73c67844b3941cc9da9c1edf099a041b7350a050a2e1e04df4386ed13efa",
+    "fingerprintScope": "Tested integration before this documentation-only evidence addition."
+  },
+  "build": {
+    "id": "IFGFiVoWYV_PGLEcgui1h",
+    "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+    "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+  },
+  "scope": "Three-way integration of the retained Cave runtime snapshot with main including auth recovery #5796, and exact-build Claude/Copilot Read-only browser qualification. Original Cave/Runtimes sources remain owned and preserved.",
+  "integration": {
+    "archivedBase": "18f6e327addc63707736c91040524bdc734a323c",
+    "trackedPaths": 160,
+    "untrackedFiles": 140,
+    "resolvedConflicts": [
+      "src/lib/codex-compatibility.ts",
+      "src/app/api/chat/send/harness-routing-codex-direct.test.ts"
+    ],
+    "retainedContracts": [
+      "tool_end rejected outcome and failure authKind",
+      "authMode failure fixture plus reasoningFrames and 7-byte ordinary-path chunking",
+      "error.harness remains auth target, separate from served model identity"
+    ],
+    "additionalRepair": "Register Hermes model test in ALIAS_LOADER; focused failure reproduced before and three related tests pass after."
+  },
+  "verification": {
+    "productionBuild": "passed including TypeScript, bundle and standalone budgets",
+    "lint": "full pass before one-line test-runner repair; changed runner lint also passes",
+    "testsWired": 2131,
+    "apiFilesPassed": 507,
+    "mobileFilesPassed": 106,
+    "conformanceFilesPassed": 17,
+    "app": "1501 files passed on full rerun. Retained first attempt stopped at unchanged arcade timing test after 805 files; isolated retry passed without code changes.",
+    "appFilesPassed": 1501,
+    "publicationFollowup": "Two existing synthetic credential literals were prefixed synthetic- to satisfy the unchanged pre-commit hook. Both affected tests and focused lint pass afterward; redaction assertions remain intact. Product source is unchanged from the verified build."
+  },
+  "remainingGates": [
+    {
+      "runtime": "claude",
+      "path": "local Coven",
+      "nextStep": "Qualify packaged clients against this provider path."
+    },
+    {
+      "runtime": "copilot",
+      "path": "local direct",
+      "nextStep": "Qualify packaged clients against this provider path."
+    },
+    {
+      "runtime": "copilot",
+      "path": "Flow supervised/direct fallback",
+      "nextStep": "Qualify authorized real-provider Flow execution and opt-in native supervisor lifecycle."
+    },
+    {
+      "runtime": "codex",
+      "path": "local direct",
+      "nextStep": "Reconcile canonical publisher endpoint, key binding and immutable checkpoint with the publisher owner, then qualify stock-trust execution."
+    },
+    {
+      "runtime": "codex",
+      "path": "unverified local Coven relay",
+      "nextStep": "Resolve canonical direct admission; do not substitute shell identity for the relay."
+    },
+    {
+      "runtime": "grok",
+      "path": "local direct native ACP",
+      "nextStep": "Obtain canonical signed admission through the publisher owner, then qualify stock-trust Cave execution."
+    },
+    {
+      "runtime": "opencode",
+      "path": "local direct",
+      "nextStep": "Await the existing unanswered Full-access canary approval; preserve the Read-only refusal."
+    },
+    {
+      "runtime": "hermes",
+      "path": "Responses API",
+      "nextStep": "Obtain the canonical served-model producer report and a supported permission path before actual turn qualification; preserve the existing Read-only refusal."
+    },
+    {
+      "runtime": "hermes",
+      "path": "quiet CLI",
+      "nextStep": "Use a qualified structured API or establish an upstream structured CLI contract."
+    },
+    {
+      "runtime": "openclaw",
+      "path": "negotiated Gateway",
+      "nextStep": "Preserve separate owner/release gate #4892; qualify actual accepted producer without blocking unrelated runtimes."
+    },
+    {
+      "runtime": "openclaw",
+      "path": "CLI bridge fallback",
+      "nextStep": "Keep fallback limitation explicit; preserve the separate #4892 compatibility owner."
+    },
+    {
+      "runtime": "any",
+      "path": "SSH or unverified Coven relay",
+      "nextStep": "Establish remote producer/version and protocol evidence for the exact host/path."
+    }
+  ],
+  "remainingClientGates": [
+    "Canonical Codex/Grok admission and stock-trust live route proof.",
+    "OpenCode execution approval remains unanswered; no access escalation.",
+    "Remote HTTPS/managed pairing, remaining real-provider native paths and packaged-client rendering.",
+    "Broader golden scenarios: ring eviction, interrupted persistence, retry/approval/effect receipts and hostile/private content across clients.",
+    "Human keyboard/VoiceOver, reduced-motion/theme/RTL and physical-device acceptance."
+  ],
+  "nativeStartup": "Establish isolation from the installed global LaunchAgent before another native desktop runtime test. Prior native Debug and physical-device evidence retains its recorded build and scope.",
+  "browser": {
+    "claude": {
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "permission": "read",
+      "httpHistoryAndReplayPassed": true,
+      "interactiveBackendPassed": true,
+      "liveAndReload": {
+        "identity": "claude 2.1.288 / claude-opus-5-5",
+        "tool": "Read Succeeded",
+        "expandedOutputContainsMarker": true,
+        "activityMap": "1 DONE 0 RUNNING 0 FAILED",
+        "projectAccess": "Read",
+        "singleComposerSend": true
+      },
+      "uiEvidence": "CUA accessibility observations in current session; no exported screenshot artifact or human accessibility claim.",
+      "originalParentPassed": false,
+      "ownedProcessesAndListenerAbsent": true,
+      "limitations": [
+        "Built HTTP server, real provider and separately observed interactive client on loopback; backend checks do not themselves prove UI rendering, remote HTTPS, packaged release or human accessibility.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "cleanupFollowup": "Original parent report retained: immediate post-stop kill(pid,0) observed daemon still exiting. Fresh independent checks confirm both owned PIDs and listener absent. UI/live/restored checks passed; no extra send."
+    },
+    "copilot": {
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.88",
+        "model": "claude-sonnet-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "permission": "read",
+      "httpHistoryAndReplayPassed": true,
+      "interactiveBackendPassed": true,
+      "liveAndReload": {
+        "identity": "copilot 1.0.88 / claude-sonnet-5",
+        "tool": "view Succeeded",
+        "expandedOutputContainsMarker": true,
+        "activityMap": "2 DONE 0 RUNNING 0 FAILED",
+        "projectAccess": "Read",
+        "singleComposerSend": true
+      },
+      "uiEvidence": "CUA accessibility observations in current session; no exported screenshot artifact or human accessibility claim.",
+      "originalParentPassed": true,
+      "ownedProcessesAndListenerAbsent": true,
+      "limitations": [
+        "Built HTTP server, real provider and separately observed interactive client on loopback; backend checks do not themselves prove UI rendering, remote HTTPS, packaged release or human accessibility.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "scenarioDeviation": "Copilot also ran a successful read-only find inside the isolated project to locate marker.txt, despite the prompt requesting no additional commands. Do not claim exactly one tool invocation."
+    }
+  },
+  "native": {
+    "unsignedRun": {
+      "result": "failed",
+      "retainedLog": "ios-focused.log",
+      "cause": "ToolOutputTests Keychain entitlement error -34018 with CODE_SIGNING_ALLOWED=NO",
+      "passingSuites": [
+        [
+          "ActivityCorpusTests",
+          "5 tests, with 0 failures (0 unexpected) in 0.038 (0.040) seconds"
+        ],
+        [
+          "ActivityTransportTests",
+          "2 tests, with 1 test skipped and 0 failures (0 unexpected) in 0.012 (0.062) seconds"
+        ],
+        [
+          "AgentActivityTests",
+          "56 tests, with 0 failures (0 unexpected) in 0.141 (0.659) seconds"
+        ],
+        [
+          "CavePerformanceTests",
+          "34 tests, with 0 failures (0 unexpected) in 3.259 (3.301) seconds"
+        ],
+        [
+          "ChatActivityTimelineTests",
+          "4 tests, with 0 failures (0 unexpected) in 0.700 (0.702) seconds"
+        ],
+        [
+          "ChatProjectContractTests",
+          "28 tests, with 0 failures (0 unexpected) in 0.088 (0.102) seconds"
+        ],
+        [
+          "ChatResponseControlsTests",
+          "41 tests, with 0 failures (0 unexpected) in 0.124 (0.216) seconds"
+        ],
+        [
+          "MarkdownBundleLoadingTests",
+          "5 tests, with 0 failures (0 unexpected) in 3.698 (3.700) seconds"
+        ],
+        [
+          "MarkdownWebViewLifecycleTests",
+          "16 tests, with 0 failures (0 unexpected) in 13.437 (13.441) seconds"
+        ]
+      ]
+    },
+    "signedRetry": {
+      "result": "passed",
+      "suite": "ToolOutputTests",
+      "tests": 14,
+      "failures": 0,
+      "signing": "simulator ad-hoc CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES",
+      "log": "ios-tool-output-signed.log",
+      "resultBundle": "ios-tool-output-signed.xcresult",
+      "sourceChanges": false
+    },
+    "simulatorState": "Shutdown",
+    "limits": [
+      "Debug simulator unit tests only; no physical-device or Release UI acceptance.",
+      "ActivityTransportTests.testRealHTTPStreamReconnectHistoryAndAuthorizedOutput skipped: requires the separately launched built-server TCP gate."
+    ],
+    "summary": "204 passed, one skipped across ten selected suites; nine suites passed before the unsigned Keychain failure, then all 14 ToolOutputTests passed with simulator ad-hoc signing. No application or test source change."
+  },
+  "privateEvidenceSha256": {
+    "claude-browser/parent-report.json": "dd3d5a73dd89f328dc1a4be337b148c22e45a9180ac391cdec9d65ac6012dfaa",
+    "claude-browser/result.json": "226f4fe41fd71d3f86ed6680c80c017390b8bd6243c8e5e7f51f9df920abc2cf",
+    "claude-browser/ui-observation.json": "494d6af88cb395360b305f38d963b589e2c560275e1cea55e3f336a3d6fcb478",
+    "claude-browser/cleanup-followup.json": "405bf686b2bcf291c98de984e0fc9a32e16ed842c5843c46cc0feb3b868076dc",
+    "copilot-browser/parent-report.json": "fb9ff34b3ebb2f255cc04aa9d5527151a4981857232214ee766f92dbdf328a42",
+    "copilot-browser/result.json": "eb8d905e1cc35790a673b34cf9ec4ee0175ea9934e76ab75ba63b634167a1765",
+    "copilot-browser/ui-observation.json": "efc05090bb4015f1284141ff60426e954b8ab750a4dfee5f6d5845c512c8abc6",
+    "copilot-browser/cleanup-followup.json": "d28fd08c31e31454efd012f0cc235a8c584987bccfc66e6dc9a7d0753d6874ea",
+    "archive-verification.json": "996c6555f12d92deb30369ccafc277c57fa2f301bab015649a52da1ea2e6e516",
+    "originals-after-browser.json": "f49b1802d88144e1b6c66140c6fecbae865e5e651ec712f6aaf6b003da066da3",
+    "build-final.log": "4393e8883199256080cdcceaa9996d47caf863afd8edd2eeb329f84dd43af2d8",
+    "api-tests-after-alias.log": "2f4b8e073baee2faab1fbc26ac6d293bea0d0b3e73193b690942139e13db14f9",
+    "mobile-tests.log": "ad35751e06bbb3b232ecdbc6aa2a254ac25d576cfe165289db36ffd58341e40f",
+    "conformance.log": "cefe014d1aa69eb5378ee1e5d73cf01e017cc6825959605352df29439961f756",
+    "hermes-alias-before.log": "6a3380ea55b4683dd4b74441ceae0ad472772024fa1f78150191182026b914c0",
+    "hermes-alias-after.log": "22dcda7ad4a4f357521283a1a2ce343a005755c6476189903fe4f36c2764859b",
+    "arcade-isolated.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app-tests-retry.log": "5881c6056f8f2a54b2064b21225974f7f89d291543b1b7ed3c100d8d82b641b4",
+    "ios-focused.log": "cfe736b8dfc4c5f898b1566806744de3e04800765ba905538c5d656d987cd36f",
+    "ios-tool-output-signed.log": "2033a4c2b2bda7354885a4380f849cf46d077008911e91bd8f2c14a68107fe8e",
+    "native-integration-verification.json": "102702d5bea9b1d7b18f93da48abbacc5daae89ec18d787e632d686511fa77ac",
+    "synthetic-fixture-tests.log": "51f916be1b9eac9a47f00afa5e878ece21caed277d4ccfb272272d940ac9fbe6"
+  },
+  "disposition": "Original Cave and Runtimes units remain owned and preserved. Integration is locally verified; broader qualification and publication are incomplete."
+}

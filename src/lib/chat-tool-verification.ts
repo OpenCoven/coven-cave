@@ -65,6 +65,7 @@ function isSafeTestCommand(command: string): boolean {
 }
 
 export function verificationEvidenceFromTool(tool: ToolEvent): VerifiedResultEvidence | null {
+  if (tool.status === "requested" || tool.status === "unknown" || tool.status === "rejected") return null;
   if (!RUNNER_NAMES.has(tool.name.trim().toLowerCase()) || !tool.input) return null;
   let parsed: unknown;
   try {

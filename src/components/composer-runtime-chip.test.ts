@@ -32,7 +32,7 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  /aria-label=\{`Runtime: \$\{context\.runtimeName\} · Model: \$\{modelLabel\} — change model`\}/,
   "the model chip is a separately labelled control (split grammar, cave-g21f)",
 );
 assert.match(
@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?!config\.modelValue && runtimeOwnsModelDefault\(config\.runtime\)[\s\S]*?"Runtime default"[\s\S]*?: runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
-  "triggerless context actions derive runtime/model labels once and name a runtime-owned default explicitly",
+  /runtimeModelLabel\(config\.modelValue, config\.modelOptions\) \?\? "Runtime default \(unresolved\)"/,
+  "runtime default remains explicitly unresolved until the runtime reports a model",
 );
 assert.match(
   contextPill,
@@ -155,7 +155,7 @@ assert.match(
 );
 assert.match(
   chip,
-  /\(hasRuntimeDefault \|\| modelOptions\.length > 0 \|\| modelIsOutsideInventory\) && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default/,
+  /<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default[\s\S]*?No models reported · use runtime default/,
   "the model group exposes runtime-owned defaults even when no inventory is available",
 );
 assert.match(
@@ -164,16 +164,10 @@ assert.match(
   "a persisted custom or stale model remains visible and explicitly marked when scoped inventory omits it",
 );
 
-// ── Two-step pick: a runtime pick keeps the menu open for the model pick ─────
-// Collapsing on the runtime click stranded the switch halfway — the user had
-// to reopen the menu to choose a model. The menu now stays up (the Model group
-// re-lists from the optimistic state flip) and only a model pick, or picking a
-// menu-less runtime with no model step, completes the visit.
-assert.match(
-  chip,
-  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,700}?if \(catalog\.models\.length === 0 && catalog\.runtime !== "opencode"\) setOpen\(false\);/,
-  "a runtime pick closes the menu only for menu-less runtimes; curated runtimes and OpenCode's asynchronous inventory stay open until a model is picked",
-);
+// A runtime pick stays open while scoped model discovery resolves.
+const runtimeSelection = chip.match(/onSelect=\{\(\) => \{[\s\S]*?onPickRuntime\(catalog\.runtime\);[\s\S]*?\}\}/)?.[0] ?? "";
+assert.ok(runtimeSelection, "runtime selection is wired");
+assert.doesNotMatch(runtimeSelection, /setOpen\(false\)/, "runtime selection keeps the model picker open");
 const modelRowBlock = chip.match(/\{modelOptions\.map\(\(m\) =>[\s\S]*?\)\)\}/)?.[0] ?? "";
 assert.match(
   modelRowBlock,
@@ -212,3 +206,6 @@ assert.match(
 );
 
 console.log("composer-runtime-chip.test.ts: ok");
+
+assert.match(contextPill, /\{context\.runtimeName\} · \{modelLabel\}/, "the visible chip includes the runtime name");
+assert.match(chip, /return modelValue \|\| null/, "exact model IDs are never shortened to a path segment or alias");

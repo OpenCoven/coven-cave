@@ -129,7 +129,7 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow keeps live tools chronological and settles them into activity and edit-card slots", () => {
+test("TurnRow keeps ordered tools in stable rows and preserves the legacy activity slots", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
@@ -143,14 +143,16 @@ test("TurnRow keeps live tools chronological and settles them into activity and 
   );
   assert.match(
     turnRender,
-    /\{pending\s*\? bubbleSegments\?\.map\([\s\S]*?: null\}[\s\S]*?\{!pending && otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\} \/>/,
-    "live tool blocks give way to one settled non-edit ToolGroup",
+    /\{!timeline && pending\s*\? bubbleSegments\?\.map\([\s\S]*?: null\}[\s\S]*?\{!timeline && !pending && otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\} \/>/,
+    "legacy tool blocks give way to one settled non-edit ToolGroup",
   );
   assert.match(
     turnRender,
     /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
     "the shared response owns activity and settled edit-card presentation",
   );
+  assert.match(turnRender, /<ChatTurnTimeline entries=\{timeline\} renderTool=\{\(tool\) => <ToolBlock tool=\{tool\} \/>/, "ordered tools retain one stable per-call component");
+  assert.match(turnRender, /transcriptContent=\{transcriptContent\}/);
   // Exclusivity, not just existence: the chronology assertion above pins that a
   // <ToolRuns> renders inside the segment map, but a SECOND one anywhere else in
   // the turn would satisfy it and render every tool twice.

@@ -1,7 +1,11 @@
+import { normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
+import { normalizeToolActivity } from "@/lib/chat-activity";
+import { normalizeToolStatus } from "@/lib/chat-tool-state";
 import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { normalizeRuntimeIdentity } from "@/lib/chat-runtime-identity";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   conversationFileRevision,
@@ -19,6 +23,7 @@ import { linkedContextForSession } from "@/lib/chat-linked-context";
 import { conversationEtag } from "@/lib/server/conversation-etag";
 import { ifNoneMatchIncludes } from "@/lib/server/json-etag";
 import { slimConversationToolOutputs } from "@/lib/conversation-tool-output";
+import { projectConversationDisplay } from "@/lib/server/conversation-display-projection";
 import { unlinkSessionFromCards } from "@/lib/cave-board";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
@@ -114,6 +119,7 @@ const MODEL_APPLICATION_REASONS = new Set([
   "Explicit model ids require session or next-message scope; clearing requires a runtime-default scope.",
   "Model forwarding is unavailable for this runtime binding.",
   "Coven forwarded the selected model; downstream acceptance was not confirmed.",
+  "OpenCode received the selected model; the resolved model was not reported.",
 ]);
 const CHAT_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
@@ -238,12 +244,16 @@ function normalizeResponseMetadata(
   const gatewaySessionId = cleanMetadataToken(value.gatewaySessionId, 160);
   const sessionKey = cleanMetadataToken(value.sessionKey, 256);
   const attentionRequest = normalizeOwnedAttentionRequest(value.attentionRequest, attentionOwner);
+  // Only existing server-owned turns may carry a runtime report. Client
+  // transcript writes can restore model intent, but cannot mint this evidence.
+  const runtimeIdentity = attentionOwner ? normalizeRuntimeIdentity(value.runtimeIdentity, harness) : undefined;
 
   return {
     familiarId,
     harness,
     model,
     runtime,
+    ...(runtimeIdentity ? { runtimeIdentity } : {}),
     ...(requestedModel !== undefined ? { requestedModel } : {}),
     ...(desiredModel !== undefined ? { desiredModel } : {}),
     ...(forwardedModel !== undefined ? { forwardedModel } : {}),
@@ -299,7 +309,12 @@ function sanitizeConversationMetadata(conversation: ConversationFile): Conversat
           });
       return {
         ...turn,
+        reasoningBlocks: turn.role === "assistant" ? normalizeReasoningBlocks(turn.reasoningBlocks) : undefined,
         ...(responseMetadata ? { responseMetadata } : { responseMetadata: undefined }),
+        ...(Array.isArray(turn.tools) ? { tools: turn.tools.flatMap((tool) => tool && typeof tool === "object" ? [{
+          ...tool,
+          activity: turn.role === "assistant" ? normalizeToolActivity(tool.activity, tool.id, normalizeToolStatus(tool.status)) : undefined,
+        }] : []) } : { tools: undefined }),
       };
     }),
   };
@@ -512,8 +527,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // outputs are omitted with their length and fetched from ./tool-output when
   // a card opens. Every other reader of this route keeps the full payload.
   const recentToolOutputsOnly = new URL(req.url).searchParams.get("toolOutputs") === "recent";
-  const presentConversation = <T extends Record<string, unknown>>(conversation: T): T =>
-    recentToolOutputsOnly ? slimConversationToolOutputs(conversation) : conversation;
+  const presentConversation = (conversation: ConversationFile): ConversationFile => {
+    const projected = projectConversationDisplay(conversation);
+    return recentToolOutputsOnly ? slimConversationToolOutputs(projected) : projected;
+  };
 
   // Primary: cave-conversations JSON (written by chat/send for UI-originated chats)
   //

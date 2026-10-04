@@ -264,54 +264,51 @@ import {
   assert.equal(readDebugEventsCache("s8"), null, "test hook clears the cache");
 }
 
-// ── turnActualModel / turnMetaSummary: served-model + usage meta (S2) ───────
+// ── turnActualModel / turnMetaSummary: native identity + usage meta ───────
 import { turnActualModel, turnMetaSummary } from "./session-debug.ts";
 
 const baseTurn = { id: "t1", role: "assistant", text: "hi", createdAt: "2026-07-17T00:00:00Z" };
+const reported = { schemaVersion: 1, harness: "copilot", version: "1.0.82", model: "claude-sonnet-5" };
+const reportedMetadata = { harness: "copilot", model: "saved-intent", confirmedModel: "legacy-inferred", runtimeIdentity: reported };
 
-assert.equal(turnActualModel(baseTurn), null, "no responseMetadata → no served model");
-assert.equal(
-  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
-  "opus-4",
-  "requested model reported when no confirmation exists",
-);
-assert.equal(
-  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4", confirmedModel: "sonnet-4.6" } }),
-  "sonnet-4.6",
-  "confirmedModel (post-application truth) wins over the requested model",
-);
-assert.equal(
-  turnActualModel({ ...baseTurn, responseMetadata: { model: "  " } }),
-  null,
-  "whitespace-only model is not a model",
-);
+assert.equal(turnActualModel(baseTurn), null, "no responseMetadata means no native model");
+for (const responseMetadata of [
+  { model: "opus-4" },
+  { model: "opus-4", confirmedModel: "sonnet-4.6" },
+  { ...reportedMetadata, runtimeIdentity: { ...reported, schemaVersion: 99 } },
+  { ...reportedMetadata, harness: "codex" },
+  { ...reportedMetadata, runtimeIdentity: { ...reported, model: null } },
+]) {
+  assert.equal(turnActualModel({ ...baseTurn, responseMetadata }), null,
+    "legacy intent, invalid reports and unreported models stay unavailable");
+}
+assert.equal(turnActualModel({ ...baseTurn, responseMetadata: reportedMetadata }), "claude-sonnet-5");
+assert.equal(turnActualModel({ ...baseTurn, role: "user", responseMetadata: reportedMetadata }), null,
+  "user-authored metadata cannot supply native identity");
 
-assert.equal(turnMetaSummary(baseTurn), null, "no model, no usage → null (row shows nothing)");
+const unavailableIdentity = "Runtime not recorded · Model not reported";
+assert.equal(turnMetaSummary(baseTurn), unavailableIdentity);
+assert.equal(turnMetaSummary({ ...baseTurn, responseMetadata: { model: "opus-4" } }), unavailableIdentity);
+assert.equal(turnMetaSummary({ ...baseTurn, role: "user" }), null, "user rows have no runtime identity to report");
 assert.equal(
-  turnMetaSummary({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
-  "opus-4",
-  "model-only meta",
+  turnMetaSummary({ ...baseTurn, responseMetadata: reportedMetadata }),
+  "copilot 1.0.82 · claude-sonnet-5",
+  "the exact runtime version and model remain visible together",
+);
+assert.equal(
+  turnMetaSummary({ ...baseTurn, responseMetadata: { ...reportedMetadata, runtimeIdentity: { ...reported, version: null, model: null } } }),
+  "copilot · Version not reported · Model not reported",
 );
 assert.equal(
   turnMetaSummary({ ...baseTurn, usage: { inputTokens: 1000, outputTokens: 234 }, costUsd: 0.08 }),
-  "1.2k tok · $0.08",
-  "usage-only meta reuses the shared usageSummary formatter",
+  `${unavailableIdentity} · 1.2k tok · $0.08`,
+  "usage does not fill missing model provenance",
 );
 assert.equal(
-  turnMetaSummary({
-    ...baseTurn,
-    responseMetadata: { confirmedModel: "sonnet-4.6" },
-    usage: { inputTokens: 1000, outputTokens: 234 },
-    costUsd: 0.08,
-  }),
-  "sonnet-4.6 · 1.2k tok · $0.08",
-  "combined meta: served model first, then tokens/cost",
+  turnMetaSummary({ ...baseTurn, responseMetadata: reportedMetadata, usage: { inputTokens: 1000, outputTokens: 234 }, costUsd: 0.08 }),
+  "copilot 1.0.82 · claude-sonnet-5 · 1.2k tok · $0.08",
 );
-assert.equal(
-  turnMetaSummary({ ...baseTurn, usage: { inputTokens: 0, outputTokens: 0 } }),
-  null,
-  "zero-token usage with no cost reports nothing, not '0 tok'",
-);
+assert.equal(turnMetaSummary({ ...baseTurn, usage: { inputTokens: 0, outputTokens: 0 } }), unavailableIdentity);
 
 console.log("session-debug core assertions passed");
 

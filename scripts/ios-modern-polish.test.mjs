@@ -15,6 +15,7 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const haptics = await read("apps/ios/CovenCave/CovenCave/Haptics.swift");
 const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+const prose = await read("apps/ios/CovenCave/CovenCave/Views/MessageProseView.swift");
 const markdownCss = await read("apps/ios/markdown/markdown.css");
 const theme = await read("apps/ios/CovenCave/CovenCave/Theme/Theme.swift");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
@@ -83,12 +84,12 @@ assert.match(
   "nested markdown margins must be included in the height reported to the native bubble",
 );
 assert.match(
-  bubble,
+  prose,
   /markdownLoadingPlaceholder\(projection\)/,
   "rich replies should keep native text visible until the WebView reports a measured height",
 );
 assert.doesNotMatch(
-  bubble,
+  bubble + prose,
   /\.accessibilityElement\(children: \.ignore\)/,
   "rendered markdown must retain its accessible links and headings",
 );
@@ -117,17 +118,17 @@ assert.match(
   "ChromePalette should expose the soft vertical accent gradient for filled surfaces",
 );
 assert.match(
-  bubble,
+  prose,
   /if isUser \{ return AnyShapeStyle\(chrome\.accentGradient\) \}/,
   "the user bubble should use the accent gradient wash",
 );
 assert.match(
-  bubble,
+  prose,
   /return AnyShapeStyle\(chrome\.bgRaised\)/,
   "the assistant bubble should sit on the theme's raised surface",
 );
 assert.match(
-  bubble,
+  prose,
   /foregroundStyle\(isUser \? chrome\.accentForeground : Color\.primary\)/,
   "user-bubble text must use the luminance-aware accent foreground, not hard-coded white",
 );

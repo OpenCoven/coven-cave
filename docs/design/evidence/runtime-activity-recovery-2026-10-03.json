@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T20:14:20.706358+00:00",
+  "issue": 5761,
+  "caveBase": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+  "latestMainObserved": "18f6e327addc63707736c91040524bdc734a323c",
+  "sourceFingerprintScope": "Sorted git-listed tracked and untracked nonignored src, scripts, apps/ios, package.json, pnpm-lock.yaml paths and bytes. Short checks overlapped temporary mobile process fixtures; each check records its own before/after fingerprint.",
+  "recovery": {
+    "temporaryArtifactsLost": true,
+    "interruptedRunsCountedAsPassed": false,
+    "durableLogDirectory": "~/.coven/cave/verification/issue-5761",
+    "caveSourcePreserved": true,
+    "runtimesDraftRecoveredFrom": "Original source-edit patches in the same authorized Codex session",
+    "runtimesBranch": "fix/issue-5761-codex-recovery",
+    "runtimesBase": "2be31ec0b38e1248f75641607f78780e8e8c08e6",
+    "runtimesFiles": 6,
+    "runtimesFreshChecks": [
+      "offline document validation/signature tests passed",
+      "existing compatibility publisher tests passed",
+      "actual Cave verifier/cache/recorded-fixture test passed with generated test key; stock trust rejects it"
+    ]
+  },
+  "checks": {
+    "typecheck-recovery-20261003": {
+      "startedAt": "2026-10-03T20:05:24.187817+00:00",
+      "finishedAt": "2026-10-03T20:06:01.906646+00:00",
+      "exitCode": 0,
+      "sourceBefore": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceAfter": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceUnchanged": true
+    },
+    "mobile-process-atomic-20261003": {
+      "startedAt": "2026-10-03T20:05:24.187827+00:00",
+      "finishedAt": "2026-10-03T20:05:38.410410+00:00",
+      "exitCode": 0,
+      "sourceBefore": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceAfter": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceUnchanged": true
+    },
+    "family-policy-20261003": {
+      "startedAt": "2026-10-03T20:06:15.369968+00:00",
+      "finishedAt": "2026-10-03T20:06:16.175524+00:00",
+      "exitCode": 0,
+      "sourceBefore": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceAfter": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceUnchanged": true
+    },
+    "shared-corpus-20261003": {
+      "startedAt": "2026-10-03T20:06:15.369872+00:00",
+      "finishedAt": "2026-10-03T20:06:16.203649+00:00",
+      "exitCode": 0,
+      "sourceBefore": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceAfter": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceUnchanged": true
+    },
+    "wired-recovery-20261003": {
+      "startedAt": "2026-10-03T20:06:15.369966+00:00",
+      "finishedAt": "2026-10-03T20:06:16.399380+00:00",
+      "exitCode": 0,
+      "sourceBefore": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceAfter": "5d3cb4c1167bd6010ca50c97b8e0c254fd353496cd64ebfc36de1d8969a95179",
+      "sourceUnchanged": true
+    },
+    "native-corpus-recovery-20261003": {
+      "startedAt": "2026-10-03T20:05:58.352825+00:00",
+      "finishedAt": "2026-10-03T20:08:07.457611+00:00",
+      "exitCode": 0,
+      "sourceBefore": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceAfter": "747cbf4f688a8155c5c894b06fc69452c1711e5d378df1d060ed800a2ac559d3",
+      "sourceUnchanged": true
+    },
+    "native-ui-identity-red-20261003": {
+      "startedAt": "2026-10-03T20:08:43.135654+00:00",
+      "finishedAt": "2026-10-03T20:10:14.261865+00:00",
+      "exitCode": 65,
+      "sourceBefore": "cc9b25de606aa89d069449784f3c963681c0bc0b5e5363cb0ca138b4c4a8fdc4",
+      "sourceAfter": "cc9b25de606aa89d069449784f3c963681c0bc0b5e5363cb0ca138b4c4a8fdc4",
+      "sourceUnchanged": true
+    },
+    "native-ui-identity-label-red-20261003": {
+      "startedAt": "2026-10-03T20:10:44.639771+00:00",
+      "finishedAt": "2026-10-03T20:11:52.478712+00:00",
+      "exitCode": 65,
+      "sourceBefore": "bd8705925b6fc1b1e42d399ed05729bb2855ae7fc66a55f7504add3172d262a5",
+      "sourceAfter": "bd8705925b6fc1b1e42d399ed05729bb2855ae7fc66a55f7504add3172d262a5",
+      "sourceUnchanged": true
+    },
+    "native-identity-ui-green-20261003": {
+      "startedAt": "2026-10-03T20:12:20.957726+00:00",
+      "finishedAt": "2026-10-03T20:13:32.275883+00:00",
+      "exitCode": 0,
+      "sourceBefore": "9949e6b51ff78e0f5de0e3cc79a37078b757bd74a4d331f5315b71338dc7313c",
+      "sourceAfter": "9949e6b51ff78e0f5de0e3cc79a37078b757bd74a4d331f5315b71338dc7313c",
+      "sourceUnchanged": true
+    },
+    "mobile-native-label-20261003": {
+      "startedAt": "2026-10-03T20:12:51.701532+00:00",
+      "finishedAt": "2026-10-03T20:13:21.190821+00:00",
+      "exitCode": 0,
+      "sourceBefore": "9949e6b51ff78e0f5de0e3cc79a37078b757bd74a4d331f5315b71338dc7313c",
+      "sourceAfter": "9949e6b51ff78e0f5de0e3cc79a37078b757bd74a4d331f5315b71338dc7313c",
+      "sourceUnchanged": true
+    }
+  },
+  "native": {
+    "unitTests": 100,
+    "uiTests": 1,
+    "simulatorOS": "iOS 26.5",
+    "scenario": "Existing --ui-preview-tool-activity fixture",
+    "firstUIAttempt": "Failed because the parent message identifier replaced the new child identifier; captured hierarchy established the correct query. Child identifier removed.",
+    "reproducedDefect": "Correct query found the combined footer labeled only Model application status; all three runtime/model/activity accessibility assertions failed.",
+    "fix": "Remove generic accessibilityLabel override; combine real status text.",
+    "greenAssertions": [
+      "3 tool calls and 1 failed summary",
+      "runtime not recorded, model unavailable, activity not recorded exposed in combined accessibility label",
+      "expanded tool argument and failed-command reason",
+      "expanded state remains after two seconds"
+    ],
+    "screenshot": {
+      "path": "runtime-activity-ios-2026-10-03.png",
+      "sha256": "18252eaae00695e2f3c0eec774d938503a114e86822f2f5a39d0fadc80f50426"
+    },
+    "resultBundle": "native-identity-ui-green-20261003.xcresult"
+  },
+  "mobileFixtureFix": "Publish supervisor result JSON by same-directory write/rename, retaining existing timeouts and cleanup assertions. Focused 19 tests and full 106-file mobile suite passed.",
+  "limits": [
+    "No human VoiceOver acceptance",
+    "Native UI fixture is not real-provider/native network transport qualification",
+    "No complete theme/device/golden-scenario matrix",
+    "Codex canonical publisher review and release-owned trust coordinates remain unresolved",
+    "Grok ACP admission and remaining runtime/path canaries remain unqualified",
+    "Current main must be reconciled before PR-head verification",
+    "No commit, push, PR, merge, publication, production signing key or trust-root change"
+  ]
+}

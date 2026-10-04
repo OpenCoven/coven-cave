@@ -11,6 +11,13 @@ import {
 } from "./hermes-responses-stream.ts";
 
 test("Hermes Responses events normalise text, calls, output, session, and completion", () => {
+  const partial = parseHermesResponsesEvent("response.output_item.added", { item: {
+    type: "function_call", call_id: "partial", name: "shell", arguments: '{"command":"sk-proj-partial',
+  } });
+  assert.deepEqual(partial, { kind: "tool_start", id: "partial", name: "shell", input: undefined });
+  assert.deepEqual(parseHermesResponsesEvent("response.function_call_arguments.done", {
+    call_id: "partial", arguments: '{"command":"unfinished',
+  }), { kind: "ignore" }, "a malformed final argument value is never disclosed as a safe snapshot");
   assert.deepEqual(
     parseHermesResponsesEvent("response.created", { response: { id: "resp-1" } }),
     { kind: "session", id: "resp-1" },
@@ -35,13 +42,13 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
   );
   assert.deepEqual(
     parseHermesResponsesEvent("response.output_item.done", {
-      item: { call_id: "call-failed", status: "failed", error: { message: "denied" } },
+      item: { type: "function_call_output", call_id: "call-failed", status: "failed", error: { message: "denied" } },
     }),
     { kind: "tool_end", id: "call-failed", output: { message: "denied" }, isError: true },
   );
   assert.deepEqual(
     parseHermesResponsesEvent("response.output_item.done", {
-      item: { call_id: "call-item-error", error: { message: "blocked" } },
+      item: { type: "function_call_output", call_id: "call-item-error", error: { message: "blocked" } },
     }),
     { kind: "tool_end", id: "call-item-error", output: { message: "blocked" }, isError: true },
   );
@@ -96,7 +103,7 @@ test("Hermes extension and malformed/future events fail closed", () => {
     parseHermesResponsesEvent("hermes.tool.progress", {
       tool_call_id: "call-2", tool_name: "read_file", status: "running", input: { path: "a.ts" },
     }),
-    { kind: "tool_start", id: "call-2", name: "read_file", input: { path: "a.ts" } },
+    { kind: "tool_start", id: "call-2", name: "read_file", input: { path: "a.ts" }, executionObserved: true },
   );
   assert.deepEqual(
     parseHermesResponsesEvent("hermes.tool.progress", { tool_call_id: "call-2", status: "failed", output: "no" }),
@@ -106,7 +113,7 @@ test("Hermes extension and malformed/future events fail closed", () => {
     parseHermesResponsesEvent("hermes.tool.progress", {
       toolCallId: "call-camel", tool: "read_file", status: "running", input: { path: "a.ts" },
     }),
-    { kind: "tool_start", id: "call-camel", name: "read_file", input: { path: "a.ts" } },
+    { kind: "tool_start", id: "call-camel", name: "read_file", input: { path: "a.ts" }, executionObserved: true },
   );
   assert.deepEqual(
     parseHermesResponsesEvent("hermes.tool.progress", {
@@ -116,6 +123,57 @@ test("Hermes extension and malformed/future events fail closed", () => {
   );
   assert.deepEqual(parseHermesResponsesEvent("response.output_item.added", { item: { name: "missing-id" } }), { kind: "ignore" });
   assert.deepEqual(parseHermesResponsesEvent("new.future.event", { surprise: true }), { kind: "ignore" });
+});
+
+test("native reasoning items select only completed summary text and cannot settle tools", () => {
+  const item = { id: "rs-one", type: "reasoning", status: "in_progress", summary: [],
+    text: "private-raw-text", encrypted_content: "opaque-state", signature: "opaque-signature" };
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.added", { item }),
+    { kind: "reasoning", id: "rs-one", phase: "running" });
+  for (const type of ["response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.done"]) {
+    assert.deepEqual(parseHermesResponsesEvent(type, { item_id: "rs-one", text: "partial", delta: "partial" }),
+      { kind: "ignore" }, "only a complete item establishes the full disclosure unit");
+  }
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.done", { item: {
+    ...item, status: "completed", summary: [{ type: "summary_text", text: "First." }, { type: "summary_text", text: "Second." }],
+  } }), { kind: "reasoning", id: "rs-one", phase: "complete", text: "First.\nSecond." });
+  for (const summary of [null, [], [{ type: "thinking", text: "private" }], [{ type: "summary_text", text: 42 }],
+    [{ type: "summary_text", text: "safe" }, { type: "unknown", text: "private" }]]) {
+    assert.deepEqual(parseHermesResponsesEvent("response.output_item.done", { item: { ...item, status: "completed", summary } }),
+      { kind: "reasoning", id: "rs-one", phase: "complete" }, "opaque/malformed summary fields never fall back to raw text");
+  }
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.done", { item }),
+    { kind: "reasoning", id: "rs-one", phase: "unavailable" });
+  for (const type of ["response.output_item.added", "response.output_item.done"]) {
+    for (const itemType of ["message", "unknown", undefined]) {
+      assert.deepEqual(parseHermesResponsesEvent(type, { item: {
+        id: "existing-tool-id", call_id: "existing-tool-id", name: "shell", type: itemType, status: "completed", output: "forged-result",
+      } }), { kind: "ignore" }, "non-tool items cannot start or settle a matching call");
+    }
+  }
+});
+
+test("function-call items remain requests; unsupported terminal statuses remain unknown", () => {
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.done", { item: {
+    type: "function_call", id: "fc-one", call_id: "call-one", name: "shell", status: "completed", arguments: '{}', output: "not-a-result",
+  } }), { kind: "tool_start", id: "call-one", name: "shell", input: '{}', itemId: "fc-one" });
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.added", { item: {
+    type: "function_call_output", id: "fco-one", call_id: "call-one", status: "completed", output: [{ type: "input_text", text: "actual result" }],
+  } }), { kind: "tool_end", id: "call-one", output: [{ type: "input_text", text: "actual result" }], isError: false });
+  assert.deepEqual(parseHermesResponsesEvent("response.output_item.added", { item: {
+    type: "function_call_output", id: "fco-one", call_id: "call-one", output: "partial",
+  } }), { kind: "ignore" }, "an announced output without completed status is not yet a final result");
+  assert.deepEqual(parseHermesResponsesEvent("hermes.tool.progress", {
+    tool_call_id: "call-one", status: "completed", item: { status: "future-status", output: "partial" },
+  }), { kind: "ignore" }, "a terminal extension cannot override an unknown nested outcome");
+  for (const status of ["cancelled", "canceled", "incomplete", "future-status", null, [], ["completed"], {}]) {
+    for (const type of ["hermes.tool.progress", "hermes.tool.completed", "response.function_call_output", "response.output_item.done"]) {
+      assert.deepEqual(parseHermesResponsesEvent(type, {
+        status, tool_call_id: "call-one", tool_name: "shell", output: "partial", error: "not-an-outcome",
+        item: { type: "function_call_output", id: "fco-one", call_id: "call-one", status, output: "partial" },
+      }), { kind: "ignore" }, "an unrecognized outcome cannot be converted into success, failure, or cancellation");
+    }
+  }
 });
 
 test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () => {
@@ -175,4 +233,24 @@ test("structured transport is opt-in and refuses non-HTTP endpoint values", () =
   assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
   assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080/v1", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
   assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080/v1/responses", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
+});
+
+
+test("response identity requires a terminal served-runtime report, never the echoed request", () => {
+  const response = { id: "resp_identity", model: "requested-alias", runtime: {
+    provider: "provider", model: "actual-model-v2", route_source: "model_routes",
+    requested: { provider: "requested-provider", model: "requested-alias" },
+  } };
+  for (const type of ["response.created", "response.in_progress"]) {
+    assert.deepEqual(parseHermesResponsesEvent(type, { response }),
+      { kind: "session", id: "resp_identity" }, "an early route cannot confirm which fallback eventually serves the turn");
+  }
+  assert.deepEqual(parseHermesResponsesEvent("response.completed", { response }),
+    { kind: "done", id: "resp_identity", model: "actual-model-v2", isError: false });
+  for (const runtime of [undefined, null, [], "actual-model-v2", {}, { model: 42 }, { model: "bad\nmodel" },
+    { requested: { model: "requested-alias" } }]) {
+    assert.deepEqual(parseHermesResponsesEvent("response.completed", {
+      model: "forged-root-model", runtime: response.runtime, response: { id: "resp_identity", model: "requested-alias", runtime },
+    }), { kind: "done", id: "resp_identity", isError: false }, "missing or malformed served identity stays unavailable");
+  }
 });

@@ -79,6 +79,29 @@ private struct PerformanceDrawerAnimationProbe: View {
 
 @MainActor
 final class CavePerformanceTests: XCTestCase {
+    @MainActor
+    func testTimelineWorkloadKeepsEveryRetainedToolAndRichParagraph() throws {
+        let original = DisplayMessage(id: "timeline-fixture", role: .assistant, text: "unused")
+        for shape in CaveTimelinePerformanceFixture.Shape.allCases {
+            for count in [12, ActivityFold.maxSteps] {
+                let message = CaveTimelinePerformanceFixture.message(from: original, count: count, shape: shape)
+                XCTAssertFalse(message.streaming)
+                XCTAssertEqual(message.id, original.id)
+                XCTAssertEqual(message.activitySteps.count, count)
+                let entries = try XCTUnwrap(ChatActivityTimeline.entries(text: message.text, steps: message.activitySteps, reasoning: []))
+                XCTAssertEqual(entries.count, 2 * count + 1)
+                let text = entries.compactMap { entry -> String? in
+                    if case .text(_, let text) = entry { return text }; return nil
+                }
+                XCTAssertEqual(text.joined(), message.text)
+                XCTAssertEqual(text.filter { MarkdownDetect.plainTimelineParagraph($0) == nil }.count, shape == .rich ? count + 1 : (count == 12 ? 3 : 13))
+                XCTAssertTrue(message.activitySteps.allSatisfy {
+                    $0.activity?.validated(callId: $0.id, status: $0.status.rawValue) != nil
+                })
+            }
+        }
+    }
+
     func testBaselineSpanNamesStayStable() {
         XCTAssertEqual(
             CavePerformanceSpanName.baseline.map(\.rawValue),

@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T22:39:30.933368+00:00",
+  "issue": 5763,
+  "parentIssue": 5761,
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "classification": "Local identity correction verified; broader runtime acceptance incomplete",
+  "productionChanges": [
+    "TypeScript and Swift reject unknown, provider/unknown, and uppercase sentinel values as exact model IDs.",
+    "A later explicit unavailable/alias report clears earlier identity; missing report fields preserve the last observation.",
+    "Copilot chat and Flow consume only assistant-message model fields and accept later reports; tool/delta/result lookalikes cannot confirm identity.",
+    "Claude clears its pending confirmation when a later valid native model field reports unavailable.",
+    "Requested and forwarded model intent, probed runtime version, and activity support remain independent."
+  ],
+  "regressions": {
+    "observedBefore": [
+      "TypeScript accepted unknown as a model ID",
+      "Swift accepted three sentinel forms in live, history, and snapshots",
+      "Both Copilot chat and Flow accepted PRIVATE_TOOL_MODEL before a real assistant report"
+    ],
+    "sharedCorpus": {
+      "identity": 17,
+      "tools": 6,
+      "reasoning": 3
+    },
+    "copilotChat": "Five cases through the imported handler and deterministic absolute launcher; live metadata, done, reconnect replay, saved history, and unchanged requested argv.",
+    "copilotFlow": "Later exact, unavailable, and missing reports through supervised and direct fallback; 37 tests passed; two opt-in real native supervisor cancellation/crash cases skipped because COVEN_PROCESS_SUPERVISOR_NATIVE was not configured.",
+    "claude": "Compatible relay fixture reports an exact model followed by unknown; live and saved final model null, confirmation absent.",
+    "native": "978 simulator unit tests passed, including shared corpus across live/history/snapshot decoding.",
+    "intermediateFailures": [
+      "Claude fixture initially requested an override its fake Coven launcher did not advertise; removed that unrelated precondition.",
+      "Existing source-pattern assertion expected the old echoed variable; updated it to the validated report; behavioral tests separately establish the boundary.",
+      "An initially mistyped test-wiring command did not execute; pnpm check:tests-wired later passed."
+    ]
+  },
+  "buildId": "p5F8jaaKA8JBPwRmumcla",
+  "buildArtifactDisposition": "Subsequent packaged Client v1 conformance tests rebuild and remove .next in their existing cleanup. The successful normal build ID is retained as evidence, not as a currently installed artifact.",
+  "sourceDelta": {
+    "from": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+    "to": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+    "deltaFiles": [
+      "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+      "src/app/api/chat/send/harness-routing-model-capabilities.test.ts"
+    ],
+    "classification": "test-only corrections; production sources unchanged",
+    "reconstructedPriorFingerprintVerified": true
+  },
+  "grokIdentityAudit": {
+    "schemaVersion": 1,
+    "recordedAt": "2026-10-03T22:31:34.499358+00:00",
+    "publicRevision": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+    "binarySourceCommitResolved": false,
+    "decision": "Keep Grok primary model null. Neither a unique aggregate modelUsage key nor the Messages fallback establishes exact final-response identity.",
+    "classification": "Source-derived inference; not stock-trust runtime qualification.",
+    "sources": [
+      {
+        "path": "crates/codegen/xai-grok-pager/src/headless/reducer/acp.rs",
+        "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/headless/reducer/acp.rs#L148-L151",
+        "sha256": "a74d5d59feb45101a07ddd2263ae79a6272f120145aaffb7de95936091863cf4",
+        "finding": "The selected ACP reducer drops ResponseStarted; it does not expose its response model."
+      },
+      {
+        "path": "crates/codegen/xai-grok-pager/src/headless/reducer/messages/mod.rs",
+        "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/headless/reducer/messages/mod.rs#L356-L379",
+        "sha256": "e8b956dd2e31c069f838fab0919236428805289d96da2016ecba8da9804dd93a",
+        "finding": "Messages may substitute the session model or the literal unknown when response identity is absent."
+      },
+      {
+        "path": "crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs",
+        "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs#L2216-L2243",
+        "sha256": "114d721dbcf94cc17b72d3b9f34a5b3dbf81681b611583e72ba9b163b3d949af",
+        "finding": "Usage is recorded only when provided. Some missing-usage responses do not set the incomplete flag."
+      },
+      {
+        "path": "crates/codegen/xai-chat-state/src/usage.rs",
+        "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-chat-state/src/usage.rs#L106-L139",
+        "sha256": "58c6d484ba570ff8c3b2e8a104a948efb187cbaf1846940dc9a43daa8c8fd7f9",
+        "finding": "The model ledger combines main-loop calls and subagent usage; it is not a final response identity."
+      },
+      {
+        "path": "crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampling_events.rs",
+        "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampling_events.rs#L290-L307",
+        "sha256": "809e032810791bd83c15d6ff0de943b7a444c640faf607d947e0bf8844c25c84",
+        "finding": "The upstream response-start event carries a model before projection; exposing it needs a qualified producer contract."
+      }
+    ]
+  },
+  "checks": {
+    "runtime-model-unknown-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/chat-runtime-identity.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:23:20.389235+00:00",
+      "finishedAt": "2026-10-03T22:23:20.851401+00:00",
+      "exitCode": 1,
+      "sourceBefore": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceAfter": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceUnchanged": true,
+      "logSha256": "cd4cc71c2b9d4347401bfec9d114f35feff633bc03a3e58dcf55988c3a018465"
+    },
+    "runtime-model-flow-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test-name-pattern",
+        "Flow Copilot tracks later",
+        "src/lib/server/flow-copilot-session.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:23:21.076111+00:00",
+      "finishedAt": "2026-10-03T22:23:21.674164+00:00",
+      "exitCode": 1,
+      "sourceBefore": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceAfter": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceUnchanged": true,
+      "logSha256": "55467b9840ff44935ea097c018290636011a6bd1d9bf8c0d09354823d1d92b62"
+    },
+    "runtime-model-corpus-native-red": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/runtime-model-corpus-native-red.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T22:23:21.076577+00:00",
+      "finishedAt": "2026-10-03T22:24:09.373724+00:00",
+      "exitCode": 65,
+      "sourceBefore": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceAfter": "fbd9df584583ded1a54e6cdfbda8e4b4c5116a2aedbddbf84072b1a932833e67",
+      "sourceUnchanged": true,
+      "logSha256": "e4df4f037230ae1244bc2efa28e72959274a78cafd6fa08a47834142fe2aaf0c"
+    },
+    "runtime-model-route-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-copilot-identity.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:26:50.600007+00:00",
+      "finishedAt": "2026-10-03T22:26:55.576286+00:00",
+      "exitCode": 1,
+      "sourceBefore": "baee0a5ebe8c1388cb41b4137c5d29f22be7a5e9018a093173c56acbc64cd105",
+      "sourceAfter": "baee0a5ebe8c1388cb41b4137c5d29f22be7a5e9018a093173c56acbc64cd105",
+      "sourceUnchanged": true,
+      "logSha256": "ea614228d60fca47dd0751720c722bfffa22f86a9f05102d8e0e743e19c86f1a"
+    },
+    "runtime-model-identity-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/chat-runtime-identity.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:27:26.663190+00:00",
+      "finishedAt": "2026-10-03T22:27:27.044096+00:00",
+      "exitCode": 0,
+      "sourceBefore": "35426afe90fddced9e019b8ee5eea48e8861f5a7ef27e39824ef49c76fb65ee5",
+      "sourceAfter": "35426afe90fddced9e019b8ee5eea48e8861f5a7ef27e39824ef49c76fb65ee5",
+      "sourceUnchanged": true,
+      "logSha256": "d77c187f516cc66ba01f7aa7b81c9cc319d5acd783eeb4cc8c1ff56e9f02a39c"
+    },
+    "runtime-model-flow-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/flow-copilot-session.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:27:26.663152+00:00",
+      "finishedAt": "2026-10-03T22:27:32.531952+00:00",
+      "exitCode": 0,
+      "sourceBefore": "35426afe90fddced9e019b8ee5eea48e8861f5a7ef27e39824ef49c76fb65ee5",
+      "sourceAfter": "35426afe90fddced9e019b8ee5eea48e8861f5a7ef27e39824ef49c76fb65ee5",
+      "sourceUnchanged": true,
+      "logSha256": "dcac6364905c06f925b05e664d2a65f59a9dc63c54fbd7ee6d6885ee7b7e7ed0"
+    },
+    "runtime-model-route-replay-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-copilot-identity.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:28:23.136417+00:00",
+      "finishedAt": "2026-10-03T22:28:43.834445+00:00",
+      "exitCode": 0,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "49a867fba552086f883dc0624f1b93156418117be2a879eb2554e031b7bf07e3"
+    },
+    "runtime-model-shared-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--test",
+        "src/lib/chat-runtime-identity.test.ts",
+        "src/lib/chat-activity-corpus.test.ts",
+        "src/lib/chat-model-state.test.ts",
+        "src/lib/chat-runtime-activity.test.ts",
+        "src/lib/copilot-stream.test.ts",
+        "src/lib/claude-stream.test.ts",
+        "src/lib/hermes-responses-stream.test.ts",
+        "src/lib/chat-tool-outcomes.test.ts",
+        "src/lib/chat-display-disclosure.test.ts",
+        "src/lib/session-debug.test.ts",
+        "src/lib/streaming-turn-view-model.test.ts",
+        "src/components/chat-response-metadata.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:28:33.806375+00:00",
+      "finishedAt": "2026-10-03T22:28:34.230064+00:00",
+      "exitCode": 0,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "e2731f33cdc1b337f491731082489b8254bd09c8d0784c40fd4a34c84b3d4434"
+    },
+    "runtime-model-native-green": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/runtime-model-native-green.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T22:28:23.136632+00:00",
+      "finishedAt": "2026-10-03T22:29:59.470219+00:00",
+      "exitCode": 0,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "e56b949de2c109aa92af97f8f1d5f02fb2e9c08687c97f95722db84a9c33dba4"
+    },
+    "runtime-model-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "startedAt": "2026-10-03T22:28:41.375276+00:00",
+      "finishedAt": "2026-10-03T22:29:26.540125+00:00",
+      "exitCode": 0,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "5bdaef12ca46a8e785744fa3d3ded7bfdba8c60af61d9af69054a0b367a9ad04"
+    },
+    "runtime-model-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/lib/chat-runtime-identity.ts",
+        "src/lib/chat-runtime-identity.test.ts",
+        "src/lib/server/flow-copilot-session.ts",
+        "src/lib/server/flow-copilot-session.test.ts",
+        "src/app/api/chat/send/route.ts",
+        "src/app/api/chat/send/route-copilot-identity.integration.test.ts",
+        "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+        "scripts/run-tests.mjs"
+      ],
+      "startedAt": "2026-10-03T22:28:41.377009+00:00",
+      "finishedAt": "2026-10-03T22:28:43.762127+00:00",
+      "exitCode": 0,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runtime-model-claude-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:28:23.136760+00:00",
+      "finishedAt": "2026-10-03T22:28:27.600328+00:00",
+      "exitCode": 1,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "3e871d0b05a7fd140687716d488af4172d4218d6663b3683a471d1d4feaffc76"
+    },
+    "runtime-model-claude-fixture-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:30:20.989158+00:00",
+      "finishedAt": "2026-10-03T22:30:26.153606+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "e88bf6881116964bc55c38586a33e0be79253ff3824a8098ce8d3594502064cf"
+    },
+    "runtime-model-api-regressions": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
+        "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
+        "src/app/api/chat/send/harness-routing-tool-events.test.ts",
+        "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts",
+        "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
+        "src/app/api/chat/stream/route.test.ts",
+        "src/app/api/chat/conversation/[id]/route.test.ts",
+        "src/app/api/flows/session-transcript/route.test.ts",
+        "src/app/api/sessions/[id]/events/route-disclosure.test.ts",
+        "src/lib/hfr-trace-export.test.ts",
+        "src/lib/cave-conversations.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:29:31.091856+00:00",
+      "finishedAt": "2026-10-03T22:29:38.833095+00:00",
+      "exitCode": 1,
+      "sourceBefore": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceAfter": "d0aad9d1a78684846e2ca1a739fa2aac4dc65138fd4e0ad9998e773da570c348",
+      "sourceUnchanged": true,
+      "logSha256": "c91d27d2e0db5486f5b83c9d323ab4d28fab7bee086387805846b84dd0fe282e"
+    },
+    "runtime-model-capabilities-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/app/api/chat/send/harness-routing-model-capabilities.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:30:20.988773+00:00",
+      "finishedAt": "2026-10-03T22:30:21.418293+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "29ee5c5e958fbd2e51b075d4f989be6b9ff717a38a325935b81e82904c169ada"
+    },
+    "runtime-model-final-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+        "src/app/api/chat/send/harness-routing-model-capabilities.test.ts"
+      ],
+      "startedAt": "2026-10-03T22:30:20.988478+00:00",
+      "finishedAt": "2026-10-03T22:30:22.253321+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runtime-model-wiring": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "startedAt": "2026-10-03T22:30:57.971516+00:00",
+      "finishedAt": "2026-10-03T22:30:58.552170+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "6d59ddf7b79b2ee4af58a0bcd8471489d54f1e469767729a5edb187f3e776554"
+    },
+    "runtime-model-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "startedAt": "2026-10-03T22:30:57.971069+00:00",
+      "finishedAt": "2026-10-03T22:31:53.212090+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "afbac7f8cfd10295e64362f82e823f3cfc5ecea6401f3c032140629e6b343777"
+    },
+    "runtime-model-api": {
+      "command": [
+        "pnpm",
+        "test:api"
+      ],
+      "startedAt": "2026-10-03T22:32:32.297681+00:00",
+      "finishedAt": "2026-10-03T22:39:23.606401+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "495d48d0ebf0eba18d25f2cfa1aa740c21c51f525d03255e83e0b1fae2e1ab6f"
+    },
+    "runtime-model-conformance": {
+      "command": [
+        "pnpm",
+        "test:conformance"
+      ],
+      "startedAt": "2026-10-03T22:32:32.297621+00:00",
+      "finishedAt": "2026-10-03T22:35:17.789711+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "fb3618ba6fa1d98ef41621c02e62aa11035c01cf699688b18f2f99daeff5a9fd"
+    },
+    "runtime-model-full-lint": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "startedAt": "2026-10-03T22:33:01.974788+00:00",
+      "finishedAt": "2026-10-03T22:34:04.559822+00:00",
+      "exitCode": 0,
+      "sourceBefore": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceAfter": "3e39994a4056adb14cb4e48db98f09a1662126aeb97584fb3f874c7e091d47d5",
+      "sourceUnchanged": true,
+      "logSha256": "54ed3f881c4beb07623ca90bb013b8bf5145f302ea052eb94fcdc1974ef62f74"
+    }
+  },
+  "limits": [
+    "No commit, push, PR, merge, publication, canonical signature or trust-key change.",
+    "Imported route fixtures are not HTTP authentication or real-provider acceptance.",
+    "Simulator unit tests are not physical-device, native HTTPS, packaged desktop, or human accessibility acceptance.",
+    "Canonical Codex/Grok admission, OpenCode Full-access permission, remaining path/producer and end-to-end acceptance gaps remain open.",
+    "Both owned dirty worktrees remain intentionally preserved; original messages and other owners are unchanged."
+  ]
+}

@@ -74,8 +74,8 @@ assert.match(
 );
 assert.match(
   main,
-  /const activityDetails =[\s\S]*?<ReasoningBlock[\s\S]*?<ProgressGroup[\s\S]*?<ToolGroup/,
-  "activityDetails preserves reasoning, progress, and non-edit tool details",
+  /const reasoningContent =[\s\S]*?<ReasoningBlock[\s\S]*?const activityDetails =[\s\S]*?<ProgressGroup[\s\S]*?<ToolGroup/,
+  "reasoning stays outside the collapsed progress and non-edit tool details",
 );
 assert.match(
   main,
@@ -111,6 +111,7 @@ assert.match(
   "failed turns expose only the shared response Retry instead of duplicate controls",
 );
 assert.match(main, /activityDetails=\{activityDetails\}/, "Main Chat supplies the activity slot");
+assert.match(main, /reasoningContent=\{reasoningContent\}/, "Main Chat supplies reasoning independently of activity visibility");
 assert.match(
   main,
   /supplementaryContent=\{supplementaryContent\}/,

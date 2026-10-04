@@ -1,0 +1,632 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T02:48:08.022282+00:00",
+  "issue": 5767,
+  "parentIssue": 5761,
+  "classification": "real-provider-verified for two local HTTP read-only paths; incomplete overall qualification",
+  "build": {
+    "id": "v1THgZr1dvmIVuJQomLJ5",
+    "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+    "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+  },
+  "sourceDelta": "Only scripts/runtime-activity-canary.mjs changed after build source 24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d. It warms discovery and records the resolved preflight command. Final checker source 541295c2c647db1eab6fc37c7aff9a68171d7b595f93649f8cf0fc90ebd9539e; no production source or built artifact changed.",
+  "runs": [
+    {
+      "label": "current-claude-http",
+      "check": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-canary.mjs",
+          "--harness",
+          "claude",
+          "--execute",
+          "--http"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:40:36.608510+00:00",
+        "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/current-claude-http.log",
+        "finishedAt": "2026-10-04T02:40:49.461599+00:00",
+        "exitCode": 0,
+        "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+        "sourceUnchanged": true
+      },
+      "report": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "permission": "read",
+        "transport": "http",
+        "startedAt": "2026-10-04T02:40:36.878Z",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "patchSha256": "3c365510fc5aa69fb84005874100c0ff28ae50fe50cd0fe2db14dc2eec949485",
+          "changedSourceSha256": "ca6181dda9c1668ea757ba06c2bd3815725193941afc379d85e8c684c080ea69"
+        },
+        "runtimeVersion": "2.1.288 (Claude Code)",
+        "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+        "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+        "limitations": [
+          "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+          "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+          "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+        ],
+        "build": {
+          "id": "v1THgZr1dvmIVuJQomLJ5",
+          "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+          "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+        },
+        "daemon": {
+          "pid": 4202
+        },
+        "profile": "claude-stream-json-v2",
+        "server": {
+          "pid": 5525,
+          "port": 58746
+        },
+        "ingress": {
+          "missingCredential": 401,
+          "invalidCredential": 401
+        },
+        "runId": "85b27763-5191-4f8a-9432-76e88d205164",
+        "httpStatus": 200,
+        "eventKinds": [
+          "user",
+          "response_metadata",
+          "progress",
+          "session",
+          "reasoning",
+          "tool_use",
+          "assistant_chunk",
+          "done"
+        ],
+        "errors": [],
+        "diagnostics": [
+          {
+            "id": "harness-start",
+            "status": "running"
+          },
+          {
+            "id": "harness-start",
+            "status": "done"
+          },
+          {
+            "id": "save-transcript",
+            "status": "running"
+          },
+          {
+            "id": "save-transcript",
+            "status": "done"
+          }
+        ],
+        "identity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "coven",
+            "tools": "supported",
+            "reasoning": "unknown"
+          }
+        },
+        "path": "coven",
+        "done": {
+          "isError": false,
+          "cancelled": false,
+          "persisted": true
+        },
+        "tools": [
+          {
+            "id": "toolu_0177SH1tmWcy7Deqkjx6syfM",
+            "name": "Read",
+            "status": "requested",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_0177SH1tmWcy7Deqkjx6syfM",
+            "name": "Read",
+            "status": "ok",
+            "outputContainsMarker": true
+          }
+        ],
+        "answerContainsMarker": true,
+        "historyHttpStatus": 200,
+        "saved": {
+          "exists": true,
+          "answerContainsMarker": true,
+          "answerMatches": true,
+          "answerMatchesPersistencePolicy": true,
+          "identityMatches": true,
+          "toolCount": 1,
+          "toolOutputContainsMarker": true
+        },
+        "answerComparison": {
+          "liveLength": 224,
+          "savedLength": 224,
+          "savedMatchesTrimmedLive": true,
+          "liveLeadingWhitespace": 0,
+          "liveTrailingWhitespace": 0
+        },
+        "replayHttpStatus": 200,
+        "replay": {
+          "finished": true,
+          "toolsMatch": true,
+          "answerContainsMarker": true,
+          "answerMatches": true,
+          "identityMatches": true
+        },
+        "passed": true,
+        "serverStopped": true,
+        "daemonStopped": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T02:40:49.455Z"
+      },
+      "pidAbsenceVerified": true
+    },
+    {
+      "label": "current-copilot-http",
+      "check": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-canary.mjs",
+          "--harness",
+          "copilot",
+          "--execute",
+          "--http"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:41:32.108094+00:00",
+        "sourceBefore": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/current-copilot-http.log",
+        "finishedAt": "2026-10-04T02:41:53.556183+00:00",
+        "exitCode": 1,
+        "sourceAfter": "24ba835252e810087f9c65fc50f12ffcf1cd65c5b6d92171e8bbb3ebe00d6b2d",
+        "sourceUnchanged": true
+      },
+      "report": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "permission": "read",
+        "transport": "http",
+        "startedAt": "2026-10-04T02:41:32.371Z",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "patchSha256": "3c365510fc5aa69fb84005874100c0ff28ae50fe50cd0fe2db14dc2eec949485",
+          "changedSourceSha256": "ca6181dda9c1668ea757ba06c2bd3815725193941afc379d85e8c684c080ea69"
+        },
+        "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+        "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+        "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+        "limitations": [
+          "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+          "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+          "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+        ],
+        "build": {
+          "id": "v1THgZr1dvmIVuJQomLJ5",
+          "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+          "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+        },
+        "daemon": {
+          "pid": 12603
+        },
+        "routing": {
+          "mode": "direct-jsonl",
+          "diagnostic": null,
+          "version": "1.0.82",
+          "probeExecutable": "copilot",
+          "scope": "canonical-launch-preflight"
+        },
+        "profile": "copilot-jsonl-v1",
+        "server": {
+          "pid": 13890,
+          "port": 59027
+        },
+        "ingress": {
+          "missingCredential": 401,
+          "invalidCredential": 401
+        },
+        "runId": "3f76f3bc-9a02-4447-a396-bb405c07c536",
+        "httpStatus": 200,
+        "eventKinds": [
+          "user",
+          "response_metadata",
+          "progress",
+          "session",
+          "tool_use",
+          "assistant_replace",
+          "assistant_chunk",
+          "done"
+        ],
+        "errors": [],
+        "diagnostics": [
+          {
+            "id": "harness-start",
+            "status": "running"
+          },
+          {
+            "id": "harness-start",
+            "status": "done"
+          },
+          {
+            "id": "save-transcript",
+            "status": "running"
+          },
+          {
+            "id": "save-transcript",
+            "status": "done"
+          }
+        ],
+        "identity": {
+          "schemaVersion": 1,
+          "harness": "copilot",
+          "version": "1.0.88",
+          "model": "claude-sonnet-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "direct",
+            "tools": "supported",
+            "reasoning": "unsupported"
+          }
+        },
+        "path": "direct",
+        "done": {
+          "isError": false,
+          "cancelled": false,
+          "persisted": true
+        },
+        "tools": [
+          {
+            "id": "toolu_01LJcFboxyX1E2znsn19Qvsp",
+            "name": "view",
+            "status": "requested",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_01LJcFboxyX1E2znsn19Qvsp",
+            "name": "view",
+            "status": "running",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_01LJcFboxyX1E2znsn19Qvsp",
+            "name": "view",
+            "status": "ok",
+            "outputContainsMarker": true
+          }
+        ],
+        "answerContainsMarker": true,
+        "historyHttpStatus": 200,
+        "saved": {
+          "exists": true,
+          "answerContainsMarker": true,
+          "answerMatches": false,
+          "answerMatchesPersistencePolicy": true,
+          "identityMatches": true,
+          "toolCount": 1,
+          "toolOutputContainsMarker": true
+        },
+        "answerComparison": {
+          "liveLength": 289,
+          "savedLength": 288,
+          "savedMatchesTrimmedLive": true,
+          "liveLeadingWhitespace": 1,
+          "liveTrailingWhitespace": 0
+        },
+        "replayHttpStatus": 200,
+        "replay": {
+          "finished": true,
+          "toolsMatch": true,
+          "answerContainsMarker": true,
+          "answerMatches": true,
+          "identityMatches": true
+        },
+        "passed": false,
+        "failure": "reported version must match the canonical launch probe\n\n'1.0.88' !== '1.0.82'\n",
+        "serverStopped": true,
+        "daemonStopped": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T02:41:53.549Z"
+      },
+      "pidAbsenceVerified": true
+    },
+    {
+      "label": "current-copilot-http-warmed",
+      "check": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-canary.mjs",
+          "--harness",
+          "copilot",
+          "--execute",
+          "--http"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T02:46:40.382923+00:00",
+        "sourceBefore": "541295c2c647db1eab6fc37c7aff9a68171d7b595f93649f8cf0fc90ebd9539e",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/current-copilot-http-warmed.log",
+        "finishedAt": "2026-10-04T02:46:57.375561+00:00",
+        "exitCode": 0,
+        "sourceAfter": "541295c2c647db1eab6fc37c7aff9a68171d7b595f93649f8cf0fc90ebd9539e",
+        "sourceUnchanged": true
+      },
+      "report": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "permission": "read",
+        "transport": "http",
+        "startedAt": "2026-10-04T02:46:40.647Z",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "patchSha256": "3c365510fc5aa69fb84005874100c0ff28ae50fe50cd0fe2db14dc2eec949485",
+          "changedSourceSha256": "d0f87beea3a7eabdbf599954748a23dda35d57853466a40a92a0f0a2c9658699"
+        },
+        "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+        "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+        "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+        "limitations": [
+          "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+          "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+          "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+        ],
+        "build": {
+          "id": "v1THgZr1dvmIVuJQomLJ5",
+          "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+          "sendRouteSha256": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d"
+        },
+        "daemon": {
+          "pid": 40714
+        },
+        "routing": {
+          "mode": "direct-jsonl",
+          "diagnostic": null,
+          "version": "1.0.88",
+          "probeExecutable": "copilot",
+          "launchCommand": {
+            "command": "~/.nvm/versions/node/v24.13.0/lib/node_modules/@github/copilot/npm-loader.js",
+            "fixedArgs": [],
+            "requiredFiles": []
+          },
+          "spawnPathWarmed": true,
+          "scope": "canonical-launch-preflight"
+        },
+        "profile": "copilot-jsonl-v1",
+        "server": {
+          "pid": 42022,
+          "port": 59837
+        },
+        "ingress": {
+          "missingCredential": 401,
+          "invalidCredential": 401
+        },
+        "runId": "3ead95bb-60bd-4886-beca-c574adb5e9cc",
+        "httpStatus": 200,
+        "eventKinds": [
+          "user",
+          "response_metadata",
+          "progress",
+          "session",
+          "tool_use",
+          "assistant_replace",
+          "assistant_chunk",
+          "done"
+        ],
+        "errors": [],
+        "diagnostics": [
+          {
+            "id": "harness-start",
+            "status": "running"
+          },
+          {
+            "id": "harness-start",
+            "status": "done"
+          },
+          {
+            "id": "save-transcript",
+            "status": "running"
+          },
+          {
+            "id": "save-transcript",
+            "status": "done"
+          }
+        ],
+        "identity": {
+          "schemaVersion": 1,
+          "harness": "copilot",
+          "version": "1.0.88",
+          "model": "claude-sonnet-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "direct",
+            "tools": "supported",
+            "reasoning": "unsupported"
+          }
+        },
+        "path": "direct",
+        "done": {
+          "isError": false,
+          "cancelled": false,
+          "persisted": true
+        },
+        "tools": [
+          {
+            "id": "toolu_01NFAJNCgWMiTG81Kz6fDgAe",
+            "name": "bash",
+            "status": "requested",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_01NFAJNCgWMiTG81Kz6fDgAe",
+            "name": "bash",
+            "status": "running",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_01NFAJNCgWMiTG81Kz6fDgAe",
+            "name": "bash",
+            "status": "error",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_0158Y26MAPEg6gKucgguxwbE",
+            "name": "view",
+            "status": "requested",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_0158Y26MAPEg6gKucgguxwbE",
+            "name": "view",
+            "status": "running",
+            "outputContainsMarker": false
+          },
+          {
+            "id": "toolu_0158Y26MAPEg6gKucgguxwbE",
+            "name": "view",
+            "status": "ok",
+            "outputContainsMarker": true
+          }
+        ],
+        "answerContainsMarker": true,
+        "historyHttpStatus": 200,
+        "saved": {
+          "exists": true,
+          "answerContainsMarker": true,
+          "answerMatches": false,
+          "answerMatchesPersistencePolicy": true,
+          "identityMatches": true,
+          "toolCount": 2,
+          "toolOutputContainsMarker": true
+        },
+        "answerComparison": {
+          "liveLength": 270,
+          "savedLength": 268,
+          "savedMatchesTrimmedLive": true,
+          "liveLeadingWhitespace": 2,
+          "liveTrailingWhitespace": 0
+        },
+        "replayHttpStatus": 200,
+        "replay": {
+          "finished": true,
+          "toolsMatch": true,
+          "answerContainsMarker": true,
+          "answerMatches": true,
+          "identityMatches": true
+        },
+        "passed": true,
+        "serverStopped": true,
+        "daemonStopped": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T02:46:57.369Z"
+      },
+      "pidAbsenceVerified": true
+    }
+  ],
+  "copilotDiagnosis": {
+    "initialFailure": "1.0.88 response versus 1.0.82 standalone launch preflight. Tool/replay/history assertions passed before the version assertion failed.",
+    "cause": "Separate installs and different discovery state: the fresh bounded preflight selected Homebrew 1.0.82; the server startup warms PATH and selected NVM 1.0.88. A fresh diagnostic with the server warm-up selected the same NVM installation before any provider request.",
+    "diagnostics": [
+      {
+        "label": "copilot-exact-preflight",
+        "routing": {
+          "mode": "direct-jsonl",
+          "diagnostic": null,
+          "version": "1.0.82",
+          "probeExecutable": "copilot",
+          "scope": "canonical-launch-preflight"
+        },
+        "launchCommand": {
+          "command": "/opt/homebrew/Caskroom/copilot-cli/1.0.24/copilot",
+          "fixedArgs": []
+        },
+        "daemonStopped": true,
+        "pidAbsenceVerified": true,
+        "sourceUnchanged": true,
+        "expectedDiagnosticStop": "Stopped before HTTP startup and before any provider request; exit 1 is deliberate."
+      },
+      {
+        "label": "copilot-exact-warm-preflight",
+        "routing": {
+          "mode": "direct-jsonl",
+          "diagnostic": null,
+          "version": "1.0.88",
+          "probeExecutable": "copilot",
+          "scope": "canonical-launch-preflight"
+        },
+        "launchCommand": {
+          "command": "~/.nvm/versions/node/v24.13.0/lib/node_modules/@github/copilot/npm-loader.js",
+          "fixedArgs": []
+        },
+        "daemonStopped": true,
+        "pidAbsenceVerified": true,
+        "sourceUnchanged": true,
+        "expectedDiagnosticStop": "Stopped before HTTP startup and before any provider request; exit 1 is deliberate."
+      }
+    ],
+    "fix": "Warm the existing harness spawn-path helper before the canary capability probe, matching server startup; retain exact-version equality and record the resolved command. No timeout, permission, runtime installation or trust change.",
+    "retainedDiagnosticErrors": [
+      "copilot-launch-cold.log and copilot-launch-warm.log: diagnostic Array.map(realpathSync) incorrectly passed the index as options; corrected before interpreting results.",
+      "Standalone corrected diagnostics reused a prior temporary home; only the two fresh canary diagnostics above establish the cold/warm comparison."
+    ]
+  },
+  "copilotToolSequence": {
+    "reportedCalls": [
+      {
+        "name": "bash",
+        "intent": "cat the owned marker.txt file",
+        "terminalState": "error"
+      },
+      {
+        "name": "view",
+        "intent": "read the same owned marker.txt file",
+        "terminalState": "ok",
+        "markerVerified": true
+      }
+    ],
+    "qualification": "Both calls are preserved in history/replay. This is not a one-call counter assertion. Tool status is not proof of rollback, enforcement or committed effects."
+  },
+  "checks": [
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "scripts/runtime-activity-canary.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T02:46:41.532278+00:00",
+      "sourceBefore": "541295c2c647db1eab6fc37c7aff9a68171d7b595f93649f8cf0fc90ebd9539e",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/current-canary-lint.log",
+      "finishedAt": "2026-10-04T02:46:42.499370+00:00",
+      "exitCode": 0,
+      "sourceAfter": "541295c2c647db1eab6fc37c7aff9a68171d7b595f93649f8cf0fc90ebd9539e",
+      "sourceUnchanged": true
+    }
+  ],
+  "limits": [
+    "Loopback production HTTP; forwarded peer is simulated. No real remote HTTPS, packaged desktop, native provider transport or UI acceptance in these canaries.",
+    "Provider authentication and CLI configuration use the existing account; only Cave/Coven stores and the controlled project are isolated.",
+    "Claude reasoning remains unknown; Copilot reasoning is unsupported by the adapter. Tool visibility success does not change either state.",
+    "No protected-action receipt or durable side-effect counter qualification. The independent synthetic native restart packet has its own controlled counter.",
+    "Other runtime/path qualifications remain in the separate matrix; no commit, push, PR, merge, publication or trust change."
+  ],
+  "localArtifactSHA256": {
+    "current-claude-http.json": "de7728af385c6ddd38cc7387d7f056c4a53ef84b731bbdf6a439957498502852",
+    "current-copilot-http.json": "6cc2ae544c1f8e905f7ee3945e94b54851c19b7a22455adfe4da38bc6e01c754",
+    "current-copilot-http-warmed.json": "aa7f91c839521696b9b1070d036539e4105a37235b9a29aa672dcf4d19f16f0a",
+    "current-claude-http-report.json": "89bd578b74dff34944447216909719c2e138d5536930b2948d74bcc2696718eb",
+    "current-copilot-http-report.json": "d7bc393a08853d6aab581fc1a15722a5871ae2546c7b5877167c661dac87fae5",
+    "current-copilot-http-warmed-report.json": "4fb37d1bf4364eb2bba2680797d5cbc0d32cb61e6317ae879e0a4289b9f99843",
+    "current-canary-lint.json": "2b20ad97bea79625c207d1e4eded73f68eb77260ef1415c829ce32f3dcf22aa6",
+    "copilot-installed-versions.json": "eaed9fcf3ab0ea8be03771994fa68cc1c2eb743ee9f8265d940c506ab020b60d"
+  }
+}

@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T21:58:05.983942+00:00",
+  "issue": 5764,
+  "parentIssue": 5761,
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "status": "locally-verified; broader-goal-incomplete",
+  "sourceFingerprint": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+  "scope": "Web lazy projected tool-output reads bound to their history source, open disclosure and current tool record. No new endpoint or authority.",
+  "changedPaths": [
+    "src/lib/tool-output-fetch.ts",
+    "src/lib/tool-output-fetch.test.ts",
+    "src/lib/use-tool-output.ts",
+    "src/lib/use-tool-output.test.ts",
+    "src/lib/chat-turn-state.ts",
+    "src/lib/cave-conversations.test.ts",
+    "src/components/chat-view.tsx",
+    "scripts/run-tests.mjs"
+  ],
+  "checks": {
+    "web-tool-output-cache-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/lib/tool-output-fetch.test.ts"
+      ],
+      "startedAt": "2026-10-03T21:45:09.447545+00:00",
+      "sourceBefore": "90ed552df4f395d4a20dc0c68ed7384f5f604937d031677373b0743458dde7a8",
+      "log": "web-tool-output-cache-red.log",
+      "finishedAt": "2026-10-03T21:45:09.858849+00:00",
+      "exitCode": 1,
+      "sourceAfter": "90ed552df4f395d4a20dc0c68ed7384f5f604937d031677373b0743458dde7a8",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-binding-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/cave-conversations.test.ts"
+      ],
+      "startedAt": "2026-10-03T21:45:16.546418+00:00",
+      "sourceBefore": "90ed552df4f395d4a20dc0c68ed7384f5f604937d031677373b0743458dde7a8",
+      "log": "web-tool-output-binding-red.log",
+      "finishedAt": "2026-10-03T21:45:16.974279+00:00",
+      "exitCode": 1,
+      "sourceAfter": "90ed552df4f395d4a20dc0c68ed7384f5f604937d031677373b0743458dde7a8",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-fetch-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/lib/tool-output-fetch.test.ts"
+      ],
+      "startedAt": "2026-10-03T21:46:12.799939+00:00",
+      "sourceBefore": "f2ff90524791469841d8ad96ee67e2af4891d898cfbf91df175f1b4d7d9eb0c6",
+      "log": "web-tool-output-fetch-green.log",
+      "finishedAt": "2026-10-03T21:46:13.119710+00:00",
+      "exitCode": 0,
+      "sourceAfter": "f2ff90524791469841d8ad96ee67e2af4891d898cfbf91df175f1b4d7d9eb0c6",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-focused": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/lib/tool-output-fetch.test.ts",
+        "src/lib/use-tool-output.test.ts",
+        "src/lib/cave-conversations.test.ts"
+      ],
+      "startedAt": "2026-10-03T21:46:55.269675+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-focused.log",
+      "finishedAt": "2026-10-03T21:46:55.720197+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "startedAt": "2026-10-03T21:47:10.775143+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-typecheck.log",
+      "finishedAt": "2026-10-03T21:47:59.768210+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-lint": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "startedAt": "2026-10-03T21:47:10.774943+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-lint.log",
+      "finishedAt": "2026-10-03T21:47:42.690655+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-wiring": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "startedAt": "2026-10-03T21:47:10.775023+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-wiring.log",
+      "finishedAt": "2026-10-03T21:47:11.394855+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-app": {
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "startedAt": "2026-10-03T21:47:10.774997+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-app.log",
+      "finishedAt": "2026-10-03T21:53:13.443607+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-api": {
+      "command": [
+        "pnpm",
+        "test:api"
+      ],
+      "startedAt": "2026-10-03T21:49:09.026157+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-api.log",
+      "finishedAt": "2026-10-03T21:55:28.959797+00:00",
+      "exitCode": 0,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-history-refresh-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "/Users/buns/.coven/cave/verification/issue-5761/web-output-history-refresh-red.mjs"
+      ],
+      "startedAt": "2026-10-03T21:52:46.941046+00:00",
+      "sourceBefore": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "log": "web-tool-output-history-refresh-red.log",
+      "finishedAt": "2026-10-03T21:52:47.777086+00:00",
+      "exitCode": 1,
+      "sourceAfter": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-final-focused": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/lib/tool-output-fetch.test.ts",
+        "src/lib/use-tool-output.test.ts",
+        "src/lib/cave-conversations.test.ts"
+      ],
+      "startedAt": "2026-10-03T21:55:58.118515+00:00",
+      "sourceBefore": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "log": "web-tool-output-final-focused.log",
+      "finishedAt": "2026-10-03T21:55:59.571505+00:00",
+      "exitCode": 0,
+      "sourceAfter": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-final-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/lib/tool-output-fetch.ts",
+        "src/lib/tool-output-fetch.test.ts",
+        "src/lib/use-tool-output.ts",
+        "src/lib/use-tool-output.test.ts",
+        "src/lib/chat-turn-state.ts",
+        "src/lib/cave-conversations.test.ts",
+        "src/components/chat-view.tsx",
+        "--max-warnings=0"
+      ],
+      "startedAt": "2026-10-03T21:56:12.887119+00:00",
+      "sourceBefore": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "log": "web-tool-output-final-lint.log",
+      "finishedAt": "2026-10-03T21:56:16.147311+00:00",
+      "exitCode": 0,
+      "sourceAfter": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "sourceUnchanged": true
+    },
+    "web-tool-output-final-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "startedAt": "2026-10-03T21:56:12.887119+00:00",
+      "sourceBefore": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "log": "web-tool-output-final-build.log",
+      "finishedAt": "2026-10-03T21:57:19.551045+00:00",
+      "exitCode": 0,
+      "sourceAfter": "75f1477fdbe11df41e0e400cdfc1419337a597e4b9f810348d6c4fdab2f4eb84",
+      "sourceUnchanged": true
+    }
+  },
+  "redToGreen": [
+    {
+      "case": "A successful shared cache entry survives a later denied read",
+      "red": "web-tool-output-cache-red",
+      "fix": "Each open performs a new same-origin authenticated read; no settled global result cache."
+    },
+    {
+      "case": "Stored tool metadata supplies a forged output session",
+      "red": "web-tool-output-binding-red",
+      "fix": "History mapping assigns the actual requested conversation and erases lookalike stored bindings."
+    },
+    {
+      "case": "History refresh with unchanged IDs preserves old output in an open card",
+      "red": "web-tool-output-history-refresh-red",
+      "fix": "The loaded tool object is part of request scope; replacement suppresses stale text before effects and starts a fresh read."
+    }
+  ],
+  "verificationScope": {
+    "broadCheckpoint": "3bfe0d51b47659713f616f6f4933eb95c4f5667dd702d7b099d6ae99902c7362",
+    "broadResults": "1492 app files, 505 API files, full lint, typecheck and all 2120 test files wired passed with unchanged source.",
+    "finalDelta": "History object invalidation in the lazy hook and its single ChatView call, six React cases with async act cleanup, and response URL tests. No server production code changed.",
+    "finalFocused": "16 checks pass: 9 fetch cases, 6 real React hook cases and the conversation/history test file. Existing react-test-renderer deprecation notices remain; async act warnings are gone.",
+    "finalBuild": {
+      "id": "guTRBeyijvXTAqg_gDl5L",
+      "result": "Production compilation, TypeScript, static generation, server bundling and bundle/standalone budgets passed on the unchanged final source."
+    }
+  },
+  "behavior": [
+    "Closed cards do not load omitted output; a single open card shares its own pending read across rerenders.",
+    "Closing, unmounting, tool/conversation changes and history replacement discard the result and abort its request. Late loaders that ignore abort cannot restore text.",
+    "Empty output is a completed result; missing source asks for history reload rather than guessing the current session.",
+    "Requests refuse redirects, use same-origin credentials and no-store, enforce a 2 MiB envelope and 256 KiB UTF-8 output ceiling, and never display raw error bodies."
+  ],
+  "limits": [
+    "Full output stays out of this shared fetch cache and transcript snapshots; existing inline transcript retention is unchanged.",
+    "React-test-renderer proves hook behavior, not rendered production-browser or human accessibility acceptance.",
+    "The pre-refinement broad-suite checkpoint and final focused/build evidence are recorded separately; do not claim broad suites ran on the final refined fingerprint.",
+    "Native real transport/VoiceOver/physical-device checks, canonical Codex admission and Grok ACP qualification remain open.",
+    "A single Full-access OpenCode canary is awaiting Val's answer; Read-only admission remains intact.",
+    "No commit, push, PR, merge, registry trust or saved access-setting change."
+  ]
+}

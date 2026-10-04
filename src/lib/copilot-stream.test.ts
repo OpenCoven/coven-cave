@@ -568,7 +568,7 @@ assert.equal(
         break;
       }
       case "tool_start": {
-        const toolEv = tracker.envelopeToolUse(
+        const toolEv = tracker.envelopeToolStart(
           ev.toolCallId,
           ev.toolName,
           formatToolInputValue(ev.input),
@@ -596,14 +596,15 @@ assert.equal(
 
   assert.equal(
     streamed.length,
-    2,
-    "one running chip (from toolRequests; execution_start dedups onto it) and one settle",
+    3,
+    "request, execution start and result update one stable call",
   );
   assert.equal(streamed[0].id, "toolu_01");
-  assert.equal(streamed[0].status, "running");
+  assert.equal(streamed[0].status, "requested");
   assert.equal(streamed[1].id, "toolu_01", "start and settle merge on the native id");
-  assert.equal(streamed[1].status, "ok");
-  assert.match(streamed[1].output ?? "", /hello-fixture/);
+  assert.equal(streamed[1].status, "running");
+  assert.equal(streamed[2].status, "ok");
+  assert.match(streamed[2].output ?? "", /hello-fixture/);
 
   const persisted = toPersistedTools(tracker.snapshot(), 0);
   assert.ok(persisted, "the turn persists its tool rows");

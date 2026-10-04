@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 /**
  * group-chat.ts — pure model + reducers for the Group Chat ("coven") surface.
  *
@@ -108,8 +109,10 @@ export type GroupReply = {
    * instead of flattening both into one label.
    */
   activityKind?: "progress" | "tool";
-  /** Tool names invoked this turn, in call order, from `tool_use` starts. */
+  /** Observed tool calls, including requests whose execution is unconfirmed. */
   toolCalls?: string[];
+  /** Stable wire IDs deduplicate request/start/result frames of the same call. */
+  toolCallIds?: string[];
   /**
    * How a non-completing turn ended, when the operator ended it rather than the
    * model failing. `stopped` kept whatever had streamed; `skipped` never
@@ -136,7 +139,7 @@ export type GroupStreamEvent =
   | { kind: "assistant_chunk"; text: string }
   | { kind: "assistant_replace"; text: string }
   | { kind: "progress"; label?: string; status?: "running" | "done" | "notice" | "error" }
-  | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
+  | { kind: "tool_use"; id?: string; name?: string; status?: ToolStatus }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
   | { kind: "error"; message: string; code?: string };
 
@@ -181,14 +184,20 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
       return {
         ...reply,
         status: reply.status === "queued" ? "streaming" : reply.status,
-        activity: ev.name ? `${ev.name}…` : reply.activity,
+        activity: ev.name
+          ? ev.status === "requested" ? `${ev.name} · Requested`
+            : ev.status === "unknown" ? `${ev.name} · Outcome unknown` : ev.status === "rejected" ? `${ev.name} · Rejected` : `${ev.name}…`
+          : reply.activity,
         activityKind: "tool",
-        // Count starts only: a single call reports `running` then `ok`/`error`,
-        // so counting every event would double every tool in the summary row.
+        // Current events always have IDs. Keep the legacy start-only fallback
+        // for older producers that cannot correlate requests and results.
         toolCalls:
-          ev.name && (ev.status === undefined || ev.status === "running")
+          ev.name && (ev.id ? !reply.toolCallIds?.includes(ev.id) : ev.status === undefined || ev.status === "requested" || ev.status === "running")
             ? [...(reply.toolCalls ?? []), ev.name]
             : reply.toolCalls,
+        toolCallIds: ev.id && ev.name && !reply.toolCallIds?.includes(ev.id)
+          ? [...(reply.toolCallIds ?? []), ev.id]
+          : reply.toolCallIds,
       };
     case "done":
       return {

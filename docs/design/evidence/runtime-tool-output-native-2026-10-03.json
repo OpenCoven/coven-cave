@@ -1,0 +1,497 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T21:38:22.071047+00:00",
+  "issue": 5766,
+  "parentIssue": 5761,
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "sourceFingerprint": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+  "scope": "Native on-demand projected tool-output reader with per-message conversation and desktop reference. Full results remain transient; reads use the existing authenticated endpoint.",
+  "changedPathsSinceNativeReportedCheckpoint": [
+    "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift",
+    "apps/ios/CovenCave/CovenCave/Models/ToolOutputReference.swift",
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift",
+    "apps/ios/CovenCave/CovenCave/State/ChatThread.swift",
+    "apps/ios/CovenCave/CovenCave/State/ToolOutputStore.swift",
+    "apps/ios/CovenCave/CovenCave/Views/AgentActivityView.swift",
+    "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+    "apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift",
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift",
+    "scripts/ios-claude-design-fidelity.test.mjs",
+    "scripts/ios-message-delete-persistence.test.mjs"
+  ],
+  "simulator": {
+    "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "device": "iPhone 16 Pro",
+    "os": "iOS 26.5"
+  },
+  "verificationRoot": "~/.coven/cave/verification/issue-5761",
+  "checks": {
+    "native-tool-output-ui-red": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-ui-red.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed",
+        "CODE_SIGNING_ALLOWED=NO"
+      ],
+      "startedAt": "2026-10-03T20:55:10.591628+00:00",
+      "sourceBefore": "f067931437168bfdbadde700539a17004991ace438db82f6724e793add0d4bc1",
+      "finishedAt": "2026-10-03T20:56:48.284847+00:00",
+      "exitCode": 65,
+      "sourceAfter": "f067931437168bfdbadde700539a17004991ace438db82f6724e793add0d4bc1",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-ui-red.log"
+    },
+    "native-tool-output-xcodegen": {
+      "command": [
+        "pnpm",
+        "mobile:ios:xcodegen"
+      ],
+      "startedAt": "2026-10-03T21:01:19.572860+00:00",
+      "sourceBefore": "58f7e02a7dd3643c5b07df1d709368c7decf1b26b0eefa4fdc291be2705ecc69",
+      "finishedAt": "2026-10-03T21:01:21.367911+00:00",
+      "exitCode": 0,
+      "sourceAfter": "58f7e02a7dd3643c5b07df1d709368c7decf1b26b0eefa4fdc291be2705ecc69",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-xcodegen.log"
+    },
+    "native-tool-output-focused": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-focused.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "CODE_SIGNING_ALLOWED=NO"
+      ],
+      "startedAt": "2026-10-03T21:01:47.478113+00:00",
+      "sourceBefore": "eb5098640582ae3b24c977d17bf1d982387121b11b4abfc2ac7dbcc48267c862",
+      "finishedAt": "2026-10-03T21:06:25.794089+00:00",
+      "exitCode": 65,
+      "sourceAfter": "eb5098640582ae3b24c977d17bf1d982387121b11b4abfc2ac7dbcc48267c862",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-focused.log"
+    },
+    "native-tool-output-mobile": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "startedAt": "2026-10-03T21:02:12.234346+00:00",
+      "sourceBefore": "eb5098640582ae3b24c977d17bf1d982387121b11b4abfc2ac7dbcc48267c862",
+      "finishedAt": "2026-10-03T21:02:17.711195+00:00",
+      "exitCode": 1,
+      "sourceAfter": "eb5098640582ae3b24c977d17bf1d982387121b11b4abfc2ac7dbcc48267c862",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-mobile.log"
+    },
+    "native-tool-output-signed": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-signed.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:07:09.379104+00:00",
+      "sourceBefore": "213d025ce3fab7763be578b6d92760478cf54ed74df79a96faf56736fbc623fe",
+      "finishedAt": "2026-10-03T21:11:40.446061+00:00",
+      "exitCode": 65,
+      "sourceAfter": "213d025ce3fab7763be578b6d92760478cf54ed74df79a96faf56736fbc623fe",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-signed.log"
+    },
+    "native-tool-output-mobile-recheck": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "startedAt": "2026-10-03T21:07:16.611510+00:00",
+      "sourceBefore": "213d025ce3fab7763be578b6d92760478cf54ed74df79a96faf56736fbc623fe",
+      "finishedAt": "2026-10-03T21:08:31.634623+00:00",
+      "exitCode": 0,
+      "sourceAfter": "213d025ce3fab7763be578b6d92760478cf54ed74df79a96faf56736fbc623fe",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-mobile-recheck.log"
+    },
+    "native-tool-output-lifecycle": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-lifecycle.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testDeniedToolOutputNeverShowsServerErrorBody",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:11:46.786777+00:00",
+      "sourceBefore": "add6cb4f217b713ead5e55f8008665ae2dd08fe356441a615af988c835590e09",
+      "finishedAt": "2026-10-03T21:14:12.930106+00:00",
+      "exitCode": 65,
+      "sourceAfter": "add6cb4f217b713ead5e55f8008665ae2dd08fe356441a615af988c835590e09",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-lifecycle.log"
+    },
+    "native-tool-output-header": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-header.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:14:36.343802+00:00",
+      "sourceBefore": "2d6b16389e9a0e5e7bb24d314a3a01a18b6fbe0d3198cb8cdb92404ff35415f0",
+      "finishedAt": "2026-10-03T21:17:35.271559+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2d6b16389e9a0e5e7bb24d314a3a01a18b6fbe0d3198cb8cdb92404ff35415f0",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-header.log"
+    },
+    "native-tool-output-scope-red": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-scope-red.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testOldToolNeverUsesTheThreadsReplacementConversation",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:18:36.077947+00:00",
+      "sourceBefore": "2eeca5c912a5add5a64adf5aef184a7e3eb3d42156caffcd3240074822178be3",
+      "finishedAt": "2026-10-03T21:22:03.539800+00:00",
+      "exitCode": 65,
+      "sourceAfter": "2eeca5c912a5add5a64adf5aef184a7e3eb3d42156caffcd3240074822178be3",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-scope-red.log"
+    },
+    "native-tool-output-reference-xcodegen": {
+      "command": [
+        "pnpm",
+        "mobile:ios:xcodegen"
+      ],
+      "startedAt": "2026-10-03T21:24:07.344536+00:00",
+      "sourceBefore": "b9711417ed9d1a2521c287a5afec96bcb74af4b671ae6717b014209634f01661",
+      "finishedAt": "2026-10-03T21:24:08.886373+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b9711417ed9d1a2521c287a5afec96bcb74af4b671ae6717b014209634f01661",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-reference-xcodegen.log"
+    },
+    "native-tool-output-reference-tests": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-reference-tests.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "-only-testing:CovenCaveTests/GroupDeleteRecoveryTests",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:24:39.579617+00:00",
+      "sourceBefore": "be46dc99fb65728fa4af4f109a1b4ece904406c25b3588b4bf9480cfd3487dca",
+      "finishedAt": "2026-10-03T21:28:12.622174+00:00",
+      "exitCode": 0,
+      "sourceAfter": "be46dc99fb65728fa4af4f109a1b4ece904406c25b3588b4bf9480cfd3487dca",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-reference-tests.log"
+    },
+    "native-tool-output-reference-mobile": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "startedAt": "2026-10-03T21:24:49.788564+00:00",
+      "sourceBefore": "be46dc99fb65728fa4af4f109a1b4ece904406c25b3588b4bf9480cfd3487dca",
+      "finishedAt": "2026-10-03T21:24:58.551767+00:00",
+      "exitCode": 1,
+      "sourceAfter": "be46dc99fb65728fa4af4f109a1b4ece904406c25b3588b4bf9480cfd3487dca",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-reference-mobile.log"
+    },
+    "native-tool-output-response-scope-red": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-response-scope-red.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ToolOutputTests/testResponseFromAnotherEndpointCannotSupplyToolOutput",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:28:44.915618+00:00",
+      "sourceBefore": "2710ede3e22971b1078595f7c4b38c7f83e6b6da2b46b3a59ab753bbbf720c57",
+      "finishedAt": "2026-10-03T21:29:32.056018+00:00",
+      "exitCode": 65,
+      "sourceAfter": "2710ede3e22971b1078595f7c4b38c7f83e6b6da2b46b3a59ab753bbbf720c57",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-response-scope-red.log"
+    },
+    "native-tool-output-mobile-final": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "startedAt": "2026-10-03T21:28:46.068724+00:00",
+      "sourceBefore": "2710ede3e22971b1078595f7c4b38c7f83e6b6da2b46b3a59ab753bbbf720c57",
+      "finishedAt": "2026-10-03T21:29:17.145983+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2710ede3e22971b1078595f7c4b38c7f83e6b6da2b46b3a59ab753bbbf720c57",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-mobile-final.log"
+    },
+    "native-tool-output-final-tests": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-final-tests.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "-only-testing:CovenCaveTests/GroupDeleteRecoveryTests",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:29:54.874097+00:00",
+      "sourceBefore": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "finishedAt": "2026-10-03T21:32:11.523791+00:00",
+      "exitCode": 0,
+      "sourceAfter": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "sourceUnchanged": true,
+      "log": "native-tool-output-final-tests.log"
+    },
+    "native-tool-output-release-smoke": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCavePerformance",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-tool-output-release-smoke.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testCurrentShellWarmJourneys",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "startedAt": "2026-10-03T21:32:40.850865+00:00",
+      "sourceBefore": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "log": "native-tool-output-release-smoke.log",
+      "finishedAt": "2026-10-03T21:37:18.370587+00:00",
+      "exitCode": 0,
+      "sourceAfter": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "sourceUnchanged": true
+    }
+  },
+  "finalDebugResult": {
+    "unitTests": 120,
+    "activityUITests": 7,
+    "failures": 0
+  },
+  "mobileResult": {
+    "files": 106,
+    "failures": 0,
+    "note": "Final mobile run precedes the final Swift-only response URL guard; that guard is covered by the final native suite."
+  },
+  "regressions": [
+    {
+      "case": "Missing native output action",
+      "red": "native-tool-output-ui-red",
+      "result": "Added full-height lazy reader."
+    },
+    {
+      "case": "Unsigned simulator Keychain access fails with -34018",
+      "red": "native-tool-output-focused",
+      "result": "Native request tests use local ad-hoc simulator signing with project entitlements; production authentication stays intact.",
+      "reference": "https://developer.apple.com/documentation/security/errsecmissingentitlement"
+    },
+    {
+      "case": "Backgrounding a NavigationStack-based sheet crashes with navigation-bar ownership assertion",
+      "red": [
+        "native-tool-output-signed",
+        "native-tool-output-lifecycle"
+      ],
+      "result": "Fixed header replaces unnecessary navigation stack; clear/cancel on inactivity, shield the sheet and dismiss on return."
+    },
+    {
+      "case": "Current session map sends an old tool to a replacement conversation with a colliding tool ID",
+      "red": "native-tool-output-scope-red",
+      "result": "Persist original conversation/endpoint per message and never guess missing references."
+    },
+    {
+      "case": "Valid-looking output from another response URL is accepted",
+      "red": "native-tool-output-response-scope-red",
+      "result": "Require HTTP response URL to equal the requested URL before reading its envelope. This is URLProtocol response simulation, not an actual HTTP redirect canary."
+    },
+    {
+      "case": "Existing source-contract anchors no longer match added bindings/parameters",
+      "red": [
+        "native-tool-output-mobile",
+        "native-tool-output-reference-mobile"
+      ],
+      "result": "Preserved adjacent response-reader bindings; updated history helper anchors and source-reference assertions without weakening behavior checks."
+    }
+  ],
+  "screenshots": {
+    "runtime-tool-output-native-2026-10-03.png": {
+      "sha256": "36fd95e74d2147f321ba12385745f8e3d08c0960812172b11b008bd15f8bd0e3",
+      "check": "native-tool-output-final-tests",
+      "visuallyInspected": true
+    },
+    "runtime-tool-output-native-denied-2026-10-03.png": {
+      "sha256": "6433d3db5fb37e94591fb1c3014df13a45b959f4591b0426a53299fb45d86276",
+      "check": "native-tool-output-final-tests",
+      "visuallyInspected": true
+    }
+  },
+  "limits": [
+    "Native UI/network tests use an isolated URLProtocol fixture, not real provider or native HTTPS transport qualification.",
+    "Human VoiceOver, physical-device acceptance and quantitative performance captures remain unverified.",
+    "Large output layout, complete detail text-size/theme matrix, process-restart history and network/replay/no-repeat effects remain incomplete.",
+    "Canonical signed Codex admission, other runtime/path qualification and cross-producer contract review remain open.",
+    "No commit, push, PR, merge, distribution or registry trust change. Local simulator signing only."
+  ],
+  "releaseSmokeStatus": "passed",
+  "releaseSmokeResult": "Release configuration built successfully; one warm-journey UI smoke test passed. Test elapsed time is not a performance measurement."
+}

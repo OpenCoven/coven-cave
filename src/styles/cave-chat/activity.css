@@ -198,6 +198,7 @@
 
 .cave-tool-summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   cursor: pointer;
@@ -397,6 +398,8 @@ details[open] > .cave-tool-summary::before {
 .cave-tool-run__status {
   display: inline-flex;
   flex: none;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-1);
   margin-left: auto;
@@ -735,9 +738,8 @@ details[open] > .cave-tool-summary::before {
   flex: 0 2 auto;
   max-width: min(38vw, 560px);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   color: var(--text-muted);
   /* Quiet UI-sans secondary text (Codex/ChatGPT vocabulary) rather than a
      monospace "code" string — the title is the hero, this is the demoted

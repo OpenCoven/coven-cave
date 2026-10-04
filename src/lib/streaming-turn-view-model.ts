@@ -87,8 +87,8 @@ function toolActivityLabel(tool: ToolEvent): string {
 function normalizeToolEvent(tool: ToolEvent): ActivityEvent {
   return {
     id: `tool:${tool.id}`,
-    label: toolActivityLabel(tool),
-    state: tool.status === "running" ? "running" : tool.status === "ok" ? "complete" : "failed",
+    label: tool.status === "requested" ? "Tool call requested" : tool.status === "unknown" ? "Tool outcome unknown" : tool.status === "rejected" ? "Tool request rejected" : toolActivityLabel(tool),
+    state: tool.status === "requested" ? "running" : tool.status === "running" ? "running" : tool.status === "ok" ? "complete" : tool.status === "unknown" || tool.status === "rejected" ? "notice" : "failed",
     source: "tool",
     durationMs: tool.durationMs,
   };

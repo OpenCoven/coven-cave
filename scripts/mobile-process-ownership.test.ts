@@ -668,11 +668,12 @@ async function runSupervisorFailure(
   const startedAt = Date.now();
   const fixture = mkdtempSync(join(scriptsDir, `.mobile-process-${stage}-`));
   const resultPath = join(fixture, "result.json");
+  const pendingResultPath = join(fixture, "result.pending.json");
   const ownerPath = join(fixture, "next.owner.json");
   const harnessPath = join(fixture, "harness.mjs");
   const moduleUrl = new URL("./mobile-process-ownership.ts", import.meta.url).href;
   writeFileSync(harnessPath, `
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import {
   kernelProcessIdentity,
   readProcessOwner,
@@ -725,7 +726,8 @@ const result = await superviseOwnedBackend({
     process.kill(pid, signal);
   },
 });
-writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));
+writeFileSync(${JSON.stringify(pendingResultPath)}, JSON.stringify(result));
+renameSync(${JSON.stringify(pendingResultPath)}, ${JSON.stringify(resultPath)});
 if (result.kind !== "state-failed-cleanup-failed") process.exit(0);
 `);
   const supervisor = spawn(process.execPath, [

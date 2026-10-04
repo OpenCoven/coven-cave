@@ -1,0 +1,202 @@
+[
+  {
+    "id": "plain",
+    "source": "A short observation.\n\n",
+    "plainText": "A short observation."
+  },
+  {
+    "id": "unicode",
+    "source": "  读文件 é 👨‍👩‍👧‍👦.\n",
+    "plainText": "读文件 é 👨‍👩‍👧‍👦."
+  },
+  {
+    "id": "bidi",
+    "source": "مرحبا بالعالم.\n",
+    "plainText": "مرحبا بالعالم."
+  },
+  {
+    "id": "spaces",
+    "source": "Keep  two spaces.",
+    "plainText": null
+  },
+  {
+    "id": "url",
+    "source": "https://example.com",
+    "plainText": "https://example.com"
+  },
+  {
+    "id": "punctuation",
+    "source": "Read a-b.txt: done!",
+    "plainText": "Read a-b.txt: done!"
+  },
+  {
+    "id": "markdown-0",
+    "source": "",
+    "plainText": null
+  },
+  {
+    "id": "markdown-1",
+    "source": " \n",
+    "plainText": null
+  },
+  {
+    "id": "markdown-2",
+    "source": "Before\nafter",
+    "plainText": null
+  },
+  {
+    "id": "markdown-3",
+    "source": "First.\n\nSecond.",
+    "plainText": null
+  },
+  {
+    "id": "markdown-4",
+    "source": "**bold**",
+    "plainText": null
+  },
+  {
+    "id": "markdown-5",
+    "source": "*emphasis*",
+    "plainText": null
+  },
+  {
+    "id": "markdown-6",
+    "source": "_emphasis_",
+    "plainText": null
+  },
+  {
+    "id": "markdown-7",
+    "source": "~~removed~~",
+    "plainText": null
+  },
+  {
+    "id": "markdown-8",
+    "source": "`code`",
+    "plainText": null
+  },
+  {
+    "id": "markdown-9",
+    "source": "```text\ncode\n```",
+    "plainText": null
+  },
+  {
+    "id": "markdown-10",
+    "source": "~~~text\ncode\n~~~",
+    "plainText": null
+  },
+  {
+    "id": "markdown-11",
+    "source": "[link](https://example.com)",
+    "plainText": null
+  },
+  {
+    "id": "markdown-12",
+    "source": "![image](https://example.com/x.png)",
+    "plainText": null
+  },
+  {
+    "id": "markdown-13",
+    "source": "[reference][id]",
+    "plainText": null
+  },
+  {
+    "id": "markdown-14",
+    "source": "[^note]",
+    "plainText": null
+  },
+  {
+    "id": "markdown-15",
+    "source": "<coven:approve prompt=\"Do this?\" />",
+    "plainText": null
+  },
+  {
+    "id": "markdown-16",
+    "source": "<b>HTML</b>",
+    "plainText": null
+  },
+  {
+    "id": "markdown-17",
+    "source": "| a | b |",
+    "plainText": null
+  },
+  {
+    "id": "markdown-18",
+    "source": "- item",
+    "plainText": null
+  },
+  {
+    "id": "markdown-19",
+    "source": "+ item",
+    "plainText": null
+  },
+  {
+    "id": "markdown-20",
+    "source": "1. item",
+    "plainText": null
+  },
+  {
+    "id": "markdown-21",
+    "source": "1) item",
+    "plainText": null
+  },
+  {
+    "id": "markdown-22",
+    "source": "---",
+    "plainText": null
+  },
+  {
+    "id": "markdown-23",
+    "source": "    indented",
+    "plainText": null
+  },
+  {
+    "id": "markdown-24",
+    "source": "\tindented",
+    "plainText": null
+  },
+  {
+    "id": "markdown-25",
+    "source": "escaped\\text",
+    "plainText": null
+  },
+  {
+    "id": "markdown-26",
+    "source": "# Heading",
+    "plainText": null
+  },
+  {
+    "id": "markdown-27",
+    "source": "a &amp; b",
+    "plainText": null
+  },
+  {
+    "id": "leading-blank-plain",
+    "source": "\n\n  Plain paragraph.\n",
+    "plainText": "Plain paragraph."
+  },
+  {
+    "id": "leading-blank-code",
+    "source": "\n\n    indented\n\n",
+    "plainText": null
+  },
+  {
+    "id": "spaced-blank-code",
+    "source": " \n    indented\n",
+    "plainText": null
+  },
+  {
+    "id": "space-tab-code",
+    "source": "  \tindented",
+    "plainText": null
+  },
+  {
+    "id": "internal-tab",
+    "source": "A\tparagraph.",
+    "plainText": null
+  },
+  {
+    "id": "internal-form-feed",
+    "source": "A\fparagraph.",
+    "plainText": null
+  }
+]

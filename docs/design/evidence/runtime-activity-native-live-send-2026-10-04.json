@@ -1,0 +1,974 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T03:48:56.833438+00:00",
+  "issues": [
+    5761,
+    5767
+  ],
+  "qualification": "Incomplete experimental live-send mode; three uninstrumented startup failures remain unexplained. Existing accepted-queue gate passes on the same final source.",
+  "candidate": {
+    "head": "18f6e327addc63707736c91040524bdc734a323c",
+    "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+    "buildId": "v1THgZr1dvmIVuJQomLJ5",
+    "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4"
+  },
+  "implementation": [
+    "Optional --live-ui-send runs the actual composer/send path from an empty isolated phone thread.",
+    "Relaunch uses the normal ThreadSnapshotStore and AppModel hydration; no accepted delivery or response is reseeded.",
+    "Controller verifies the real partial phone snapshot before termination, then saved server turn and exact run ID before restart.",
+    "Recovered snapshot must retain user/assistant message IDs, clear the queue, restore summaries/tool/model and leave the durable counter at one provider request and one marker read.",
+    "Production supervisor, authentication, recovery and notification code are unchanged. Temporary Swift diagnostics were removed."
+  ],
+  "observations": [
+    "Initial, final and recheck runs fail opening the fixture chat, before any provider request or tool read. The first retained screenshot shows the connection screen. No auth-root-cause or product fix is established.",
+    "A temporary Swift diagnostic run and a passive server request-observer run pass the complete live-send/termination/restart/hydration path. These passes do not supersede the failed uninstrumented attempts.",
+    "The observer run sees authorized native requests succeed and the expired replay stream return 404 before authenticated history/output recovery.",
+    "The observer running-state capture shows a native notification permission prompt. Accessibility presence is not unobscured visual acceptance."
+  ],
+  "runs": {
+    "native-live-send-first": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-first-transport",
+          "--live-ui-send"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:36:23.317091+00:00",
+        "sourceBefore": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-first.log",
+        "finishedAt": "2026-10-04T03:38:02.089511+00:00",
+        "exitCode": 1,
+        "sourceAfter": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:36:23.782Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-live-native-send-termination-restart-hydration",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": false,
+        "providerRequests": 0,
+        "toolInvocations": 0,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 23107,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 23144,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "failure": "native-recovery-ui failed; see its retained log\n\n65 !== 0\n",
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:38:02.083Z"
+      },
+      "tests": {
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "passedTests": 0,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "finishTime": 1791085080.003,
+          "passedTests": 0,
+          "result": "Failed",
+          "skippedTests": 0,
+          "startTime": 1791085003.044,
+          "statistics": [],
+          "testFailures": [
+            {
+              "failureText": "XCTAssertTrue failed",
+              "targetName": "CovenCaveUITests",
+              "testIdentifier": 1,
+              "testIdentifierString": "ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput()",
+              "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput",
+              "testName": "testRenderedRecoveryRetainsSavedActivityAndOutput()"
+            }
+          ],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    },
+    "native-live-send-diagnostic": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-diagnostic-transport",
+          "--live-ui-send"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:39:38.438616+00:00",
+        "sourceBefore": "9cd84f260af658b27dd88ccc6ddde0af518d6a3b734175687b0a6ef624d37638",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-diagnostic.log",
+        "finishedAt": "2026-10-04T03:40:52.225193+00:00",
+        "exitCode": 0,
+        "sourceAfter": "9cd84f260af658b27dd88ccc6ddde0af518d6a3b734175687b0a6ef624d37638",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:39:38.725Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "9cd84f260af658b27dd88ccc6ddde0af518d6a3b734175687b0a6ef624d37638",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "9cd84f260af658b27dd88ccc6ddde0af518d6a3b734175687b0a6ef624d37638"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-live-native-send-termination-restart-hydration",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": true,
+        "providerRequests": 1,
+        "toolInvocations": 1,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 32848,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 32853,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "interruptedPhone": {
+          "sha256": "4a5aa30e84f2f36126f6522458ebb1d5dd8cc5196ab75cd7061279035431f69a",
+          "userMessageId": "DABD65E4-7293-4177-A166-4C5617D6DEF9",
+          "assistantMessageId": "F17F9DFA-4137-46AB-B88C-A4EEC4D35E41",
+          "runId": "478A6817-40E7-4DD7-B18D-B57EBE55AAD4",
+          "sessionId": "native-http-response",
+          "queued": true,
+          "toolStatus": "running",
+          "summaries": 1
+        },
+        "serverPersistenceVerified": true,
+        "uiOutage": {
+          "previousPid": 32853,
+          "previousStopped": true
+        },
+        "uiRestart": {
+          "previousPid": 32853,
+          "newPid": 34716,
+          "previousStopped": true,
+          "sameOrigin": true
+        },
+        "recoveredPhone": {
+          "sha256": "0dce8eb0dc8041ca6017c61a7d908306c0ccc2d61871b8fde96d5e5333bd03f9",
+          "stableMessageIds": true,
+          "queued": false,
+          "toolStatus": "ok",
+          "summaries": 2
+        },
+        "uiCompletionReceived": true,
+        "renderedRecoveryVerified": true,
+        "sceneSupervisorRecoveryVerified": true,
+        "liveUISendTerminationHydrationVerified": true,
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:40:52.218Z"
+      },
+      "tests": {
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791085250.296,
+          "passedTests": 1,
+          "result": "Passed",
+          "skippedTests": 0,
+          "startTime": 1791085197.906,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    },
+    "native-live-send-final": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-final-transport",
+          "--live-ui-send"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:41:13.289370+00:00",
+        "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-final.log",
+        "finishedAt": "2026-10-04T03:42:15.283258+00:00",
+        "exitCode": 1,
+        "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:41:13.579Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "fixtureId": "a6b26316-fefd-47f8-87c2-20e928e715e0",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-live-native-send-termination-restart-hydration",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": false,
+        "providerRequests": 0,
+        "toolInvocations": 0,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 37395,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 37401,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "failure": "native-recovery-ui failed; see its retained log\n\n65 !== 0\n",
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:42:15.276Z"
+      },
+      "tests": {
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "passedTests": 0,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "finishTime": 1791085333.38,
+          "passedTests": 0,
+          "result": "Failed",
+          "skippedTests": 0,
+          "startTime": 1791085290.208,
+          "statistics": [],
+          "testFailures": [
+            {
+              "failureText": "failed - The owned fixture chat did not open",
+              "targetName": "CovenCaveUITests",
+              "testIdentifier": 1,
+              "testIdentifierString": "ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput()",
+              "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput",
+              "testName": "testRenderedRecoveryRetainsSavedActivityAndOutput()"
+            }
+          ],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    },
+    "native-live-send-network": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-network-transport",
+          "--live-ui-send"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:42:51.714974+00:00",
+        "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-network.log",
+        "finishedAt": "2026-10-04T03:43:53.232590+00:00",
+        "exitCode": 0,
+        "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:42:52.011Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "fixtureId": "0dbb4941-fb5b-4aac-a87c-54a07838a49a",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-live-native-send-termination-restart-hydration",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": true,
+        "providerRequests": 1,
+        "toolInvocations": 1,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 41374,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 41379,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "interruptedPhone": {
+          "sha256": "adcb967834bebdc9efdbdab54d597282c418ac2dc2a0c4b44aeb0c1412b3d75f",
+          "userMessageId": "58955CB2-2EF1-417A-B884-27EE4BE992D8",
+          "assistantMessageId": "FBFD7529-6AA2-46EE-BED9-15CE735C77A4",
+          "runId": "2E106015-F595-432B-B9DF-E996688BF224",
+          "sessionId": "native-http-response",
+          "queued": true,
+          "toolStatus": "running",
+          "summaries": 1
+        },
+        "serverPersistenceVerified": true,
+        "uiOutage": {
+          "previousPid": 41379,
+          "previousStopped": true
+        },
+        "uiRestart": {
+          "previousPid": 41379,
+          "newPid": 43910,
+          "previousStopped": true,
+          "sameOrigin": true
+        },
+        "recoveredPhone": {
+          "sha256": "a2e91bc7df58752ede56ebbcc968be3d336560200bb622d17a925148b59ca354",
+          "stableMessageIds": true,
+          "queued": false,
+          "toolStatus": "ok",
+          "summaries": 2
+        },
+        "uiCompletionReceived": true,
+        "renderedRecoveryVerified": true,
+        "sceneSupervisorRecoveryVerified": true,
+        "liveUISendTerminationHydrationVerified": true,
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:43:53.224Z"
+      },
+      "tests": {
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791085431.257,
+          "passedTests": 1,
+          "result": "Passed",
+          "skippedTests": 0,
+          "startTime": 1791085378.384,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    },
+    "native-live-send-recheck": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-recheck-transport",
+          "--live-ui-send"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:44:17.533533+00:00",
+        "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-recheck.log",
+        "finishedAt": "2026-10-04T03:45:09.669957+00:00",
+        "exitCode": 1,
+        "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:44:17.826Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "fixtureId": "62d2710c-64db-4471-b46f-bd2900a308a9",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-live-native-send-termination-restart-hydration",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": false,
+        "providerRequests": 0,
+        "toolInvocations": 0,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 47320,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 47325,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "failure": "native-recovery-ui failed; see its retained log\n\n65 !== 0\n",
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:45:09.662Z"
+      },
+      "tests": {
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "passedTests": 0,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "finishTime": 1791085507.813,
+          "passedTests": 0,
+          "result": "Failed",
+          "skippedTests": 0,
+          "startTime": 1791085463.983,
+          "statistics": [],
+          "testFailures": [
+            {
+              "failureText": "failed - The owned fixture chat did not open",
+              "targetName": "CovenCaveUITests",
+              "testIdentifier": 1,
+              "testIdentifierString": "ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput()",
+              "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput",
+              "testName": "testRenderedRecoveryRetainsSavedActivityAndOutput()"
+            }
+          ],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    },
+    "native-live-send-baseline": {
+      "invocation": {
+        "command": [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "scripts/runtime-activity-native-transport.mjs",
+          "--execute",
+          "--destination",
+          "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+          "--derived-data",
+          "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+          "--evidence",
+          "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-baseline-transport"
+        ],
+        "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+        "startedAt": "2026-10-04T03:46:01.819332+00:00",
+        "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-baseline.log",
+        "finishedAt": "2026-10-04T03:46:57.512682+00:00",
+        "exitCode": 0,
+        "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+        "sourceUnchanged": true
+      },
+      "result": {
+        "schemaVersion": 1,
+        "startedAt": "2026-10-04T03:46:02.110Z",
+        "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "fixtureId": "32c6eb1a-de32-44cd-8b81-1620209de60a",
+        "candidate": {
+          "head": "18f6e327addc63707736c91040524bdc734a323c",
+          "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+          "buildId": "v1THgZr1dvmIVuJQomLJ5",
+          "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4"
+        },
+        "host": {
+          "node": "v24.18.1",
+          "xcode": "Xcode 26.6\nBuild version 17F113"
+        },
+        "scenario": "hermes-summary-tool-reconnect-restart-native-supervisor-history",
+        "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+        "passed": true,
+        "providerRequests": 1,
+        "toolInvocations": 1,
+        "limitations": [
+          "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+          "UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.",
+          "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+        ],
+        "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+        "daemon": {
+          "pid": 51249,
+          "version": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)"
+        },
+        "serverPid": 51293,
+        "ingressRefusalsVerified": true,
+        "realDaemonRosterVerified": true,
+        "restart": {
+          "previousPid": 51293,
+          "newPid": 52967,
+          "previousStopped": true,
+          "sameOrigin": true,
+          "ingressRefusalsVerified": true
+        },
+        "savedConversations": 1,
+        "uiOutage": {
+          "previousPid": 52967,
+          "previousStopped": true
+        },
+        "uiRestart": {
+          "previousPid": 52967,
+          "newPid": 54327,
+          "previousStopped": true,
+          "sameOrigin": true
+        },
+        "uiCompletionReceived": true,
+        "renderedRecoveryVerified": true,
+        "sceneSupervisorRecoveryVerified": true,
+        "liveUISendTerminationHydrationVerified": false,
+        "serverStopped": true,
+        "providerStopped": true,
+        "daemonStopped": true,
+        "noDaemonState": true,
+        "fixtureRootRemoved": true,
+        "sourceUnchanged": true,
+        "finishedAt": "2026-10-04T03:46:57.504Z"
+      },
+      "tests": {
+        "native-transport": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 2,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791085571.855,
+          "passedTests": 2,
+          "result": "Passed",
+          "skippedTests": 0,
+          "startTime": 1791085568.291,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 2
+        },
+        "native-recovery-ui": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+                "deviceName": "Cave 5761 runtime tools",
+                "modelName": "iPhone 16 Pro",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791085615.538,
+          "passedTests": 1,
+          "result": "Passed",
+          "skippedTests": 0,
+          "startTime": 1791085572.565,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - CovenCave",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    }
+  },
+  "checks": {
+    "native-live-send-mobile": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T03:36:24.480866+00:00",
+      "sourceBefore": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-mobile.log",
+      "finishedAt": "2026-10-04T03:36:49.676062+00:00",
+      "exitCode": 0,
+      "sourceAfter": "2ce53dbdfef93d91b3e7dfa66237ddf14ff62cfb4e947b6734d2834d06072c79",
+      "sourceUnchanged": true
+    },
+    "native-live-send-mobile-final": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T03:47:16.366779+00:00",
+      "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-mobile-final.log",
+      "finishedAt": "2026-10-04T03:47:41.038014+00:00",
+      "exitCode": 0,
+      "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "sourceUnchanged": true
+    },
+    "native-live-send-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "scripts/runtime-activity-native-transport.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T03:41:14.421953+00:00",
+      "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-lint.log",
+      "finishedAt": "2026-10-04T03:41:15.464106+00:00",
+      "exitCode": 0,
+      "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "sourceUnchanged": true
+    },
+    "newest-model-families-current": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T03:46:22.114160+00:00",
+      "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/newest-model-families-current.log",
+      "finishedAt": "2026-10-04T03:46:22.391207+00:00",
+      "exitCode": 0,
+      "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "sourceUnchanged": true
+    },
+    "native-live-send-release": {
+      "command": [
+        "xcodebuild",
+        "build",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCavePerformance",
+        "-configuration",
+        "Release",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T03:47:15.263421+00:00",
+      "sourceBefore": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-live-send-release.log",
+      "finishedAt": "2026-10-04T03:48:23.018730+00:00",
+      "exitCode": 0,
+      "sourceAfter": "8c709893142930ff518bf35ee73f983607bba9c914c881a7e94b4f6297d79ff4",
+      "sourceUnchanged": true
+    }
+  },
+  "release": {
+    "checkedAt": "2026-10-04T03:48:56.833438+00:00",
+    "binarySHA256": "32526bf1d576bcfd5ef98c46d32d8697931bd0588adf30f32981754be20c6d8f",
+    "debugContains": {
+      "--ui-native-activity-recovery": true,
+      "CAVE_NATIVE_ACTIVITY_UI_FIXTURE": true,
+      "--ui-native-activity-new-thread": true,
+      "A live-send fixture relaunch requires its persisted thread store": true
+    },
+    "releaseExcludes": {
+      "--ui-native-activity-recovery": true,
+      "CAVE_NATIVE_ACTIVITY_UI_FIXTURE": true,
+      "--ui-native-activity-new-thread": true,
+      "A live-send fixture relaunch requires its persisted thread store": true
+    },
+    "scope": "Release compilation and DEBUG exclusion only, no new Release runtime journey."
+  },
+  "screenshots": [
+    {
+      "path": "runtime-activity-native-live-send-running-diagnostic-2026-10-04.png",
+      "sha256": "ef868d656a6db4ea9f7947ff4851cad564e39899398d7f0a16b5986220150a56",
+      "inspection": "Original resolution",
+      "observation": "Notification permission dialog obscures the running frame. Diagnostic only, not rendered-running acceptance."
+    },
+    {
+      "path": "runtime-activity-native-live-send-recovered-2026-10-04.png",
+      "sha256": "b1a6e2587db5ffad51e764e895592dfed0ebb8d32dfea5c40959085004a6ae5a",
+      "inspection": "Original resolution",
+      "observation": "Complete recovered timeline: two summaries, prose, succeeded tool, answer and reported identity."
+    }
+  ],
+  "cleanup": {
+    "checkedAt": "2026-10-04T03:48:56.833438+00:00",
+    "ownedPidsAbsent": {
+      "23107": true,
+      "23144": true,
+      "32848": true,
+      "32853": true,
+      "34716": true,
+      "37395": true,
+      "37401": true,
+      "41374": true,
+      "41379": true,
+      "43910": true,
+      "47320": true,
+      "47325": true,
+      "51249": true,
+      "51293": true,
+      "52967": true,
+      "54327": true
+    },
+    "simulator": {
+      "udid": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+      "state": "Shutdown"
+    },
+    "allFixtureTeardownsPassed": true,
+    "note": "Per-run noncredential phone snapshots remain in the owned simulator; host fixture roots and temporary credential-bearing test plans were removed by the harness."
+  },
+  "remaining": [
+    "Capture passive evidence of a failing empty-thread launch and isolate its connection/navigation cause; keep timeouts and authorization gates unchanged.",
+    "Handle the notification permission dialog explicitly in the owned UI test before claiming visible running activity.",
+    "Actual Hermes provider, canonical Codex/Grok admission, OpenCode approval, remote HTTPS/pairing, packaged clients, protected effects and human VoiceOver remain separate gaps."
+  ],
+  "disposition": "Incomplete. Worktrees preserved and uncommitted. No commit/push/PR/merge/release, trust publication, issue closure or Project Done."
+}

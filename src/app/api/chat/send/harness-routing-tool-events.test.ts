@@ -88,27 +88,27 @@ assert.match(
   // the Gateway dispatch's own hello) decides it; the default without any
   // negotiated outcome stays `true` for the dispatcher's own compatibility
   // check.
-  /const gatewayToolTracker = new ToolCallTracker\(Date\.now, "openclaw:"\);[\s\S]{0,400}?let gatewayToolProjectionEnabled = seamNegotiation\s*\?\s*openClawBridgeCapabilitiesFromNegotiation\(seamNegotiation\)\.toolEvents\s*:\s*true;\s*let gatewayCompatibilityDiagnosticSent = false;/,
+  /const gatewayToolTracker = new ToolCallTracker\(Date\.now, "openclaw:", \(\) => \(\{[\s\S]{0,250}?runId: observationRunId, harness: "openclaw", version: negotiatedGatewayVersion, protocol: negotiatedGatewayProfile,[\s\S]{0,450}?let gatewayToolProjectionEnabled = seamNegotiation\s*\?\s*openClawBridgeCapabilitiesFromNegotiation\(seamNegotiation\)\.toolEvents\s*:\s*true;\s*let gatewayCompatibilityDiagnosticSent = false;/,
   "Gateway tool activity must use a dedicated stable id namespace and a per-turn negotiation-decided projection fence",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_start" && gatewayToolProjectionEnabled[\s\S]*?formatToolInputValue\(redactSecretsDeep\(event\.input\)\)[\s\S]*?redactSecretText\([\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?input,[\s\S]*?gatewayAssistantText\.length[\s\S]*?kind: "tool_use"[\s\S]*?consumePendingEnvelopeProgress\(event\.id\)[\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  /event\.kind === "tool_start" && gatewayToolProjectionEnabled[\s\S]*?formatToolInputValue\(redactSecretsDeep\(event\.input\)\)[\s\S]*?redactSecretText\([\s\S]*?gatewayToolTracker\.envelopeToolStart\([\s\S]*?input,[\s\S]*?gatewayAssistantText\.length[\s\S]*?kind: "tool_use"[\s\S]*?consumePendingEnvelopeProgress\(event\.id\)[\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
   "Gateway tool starts must deeply redact and text-redact input before tracking, then reconcile progress or results that arrived first",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_progress" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolProgress\([\s\S]*?output,[\s\S]*?kind: "tool_use"/,
+  /event\.kind === "tool_progress" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\);[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolProgress\([\s\S]*?output,[\s\S]*?kind: "tool_use"/,
   "Gateway tool progress must deeply redact, flatten, and text-redact output before tracker retention",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_end" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolResult\([\s\S]*?output,[\s\S]*?event\.isError[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  /event\.kind === "tool_end" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\);[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolResult\([\s\S]*?output,[\s\S]*?event\.isError[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
   "a Gateway result must be redacted before retention and still produce one settled card when it arrives before its start",
 );
 assert.doesNotMatch(
   chatRoute,
-  /gatewayToolTracker\.envelopeTool(?:Use|Progress|Result)\(\s*event\.id,[\s\S]{0,160}?event\.(?:input|output)/,
+  /gatewayToolTracker\.envelopeTool(?:Use|Start|Progress|Result)\(\s*event\.id,[\s\S]{0,160}?event\.(?:input|output)/,
   "raw Gateway event payloads must never reach ToolCallTracker",
 );
 {
@@ -151,7 +151,7 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /const abortGateway = \(toolOutcome: string\) => \{[\s\S]*?settleOpenGatewayTools\(toolOutcome\);[\s\S]*?void gatewayDispatch\.abort\(\);[\s\S]*?const stopGateway = \(\) => abortGateway\("\[tool cancelled by user\]"\);[\s\S]*?const stopDetachedGateway = \(\) => abortGateway\("\[tool did not settle before the Gateway turn ended\]"\);/,
+  /const abortGateway = \(toolOutcome: string\) => \{[\s\S]*?settleOpenGatewayTools\(toolOutcome\);[\s\S]*?void gatewayDispatch\.abort\(\);[\s\S]*?const stopGateway = \(\) => abortGateway\("\[tool outcome unknown after cancellation request\]"\);[\s\S]*?const stopDetachedGateway = \(\) => abortGateway\("\[tool did not settle before the Gateway turn ended\]"\);/,
   "explicit Stop and detached-client expiry must share Gateway abort mechanics but retain distinct user-facing tool outcomes",
 );
 assert.match(
@@ -171,7 +171,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const leadingTrimShift =\s*gatewayAssistantText\.length - gatewayAssistantText\.trimStart\(\)\.length;\s*const persistedGatewayTools = toPersistedTools\(\s*gatewayToolTracker\.snapshot\(\),\s*leadingTrimShift,\s*\);/,
+  /const leadingTrimShift =\s*gatewayDisplayText\.length - gatewayDisplayText\.trimStart\(\)\.length;\s*const persistedGatewayTools = toPersistedTools\(\s*projectLegacyToolOffsets\(gatewayToolTracker\.snapshot\(\), gatewayAssistantText\),\s*leadingTrimShift,\s*\);/,
   "Gateway tool persistence must shift offsets against the trimmed assistant text",
 );
 assert.match(
@@ -268,7 +268,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /reportCopilotProtocolDiagnostic[\s\S]*?label: "Copilot tool activity needs an update"[\s\S]*?status: "notice"/,
+  /reportCopilotProtocolDiagnostic[\s\S]*?pushProgress\(`copilot-protocol-\$\{code\}`, "Copilot tool activity needs an update", "notice", detail\)/,
   "Copilot protocol drift must be presented as a neutral notice",
 );
 
@@ -334,8 +334,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
-  "the saved assistant turn captures the tracker's final tool state",
+  /toPersistedTools\(projectTextOffsets\(\s*projectLegacyToolOffsets\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\], assistantText\),\s*displayAssistantText, covenAttention\.text, projectPersistedText,\s*\), 0\)/,
+  "the saved assistant turn captures final tool state with positions projected through private-text and persistence cleanup",
 );
 
 assert.match(
@@ -352,7 +352,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const resetToolTrackerForRetry = \(\) => \{[\s\S]*?settleUnfinishedTools\(\);[\s\S]*?priorAttemptTools\.push[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `retry-\$\{toolAttempt\}:`\);/,
+  /const resetToolTrackerForRetry = \(\) => \{[\s\S]*?settleUnfinishedTools\(\);[\s\S]*?priorAttemptTools\.push[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `retry-\$\{toolAttempt\}:`, toolObservationContext\);/,
   "resume and recovery retries must settle and persist prior-attempt tools under a distinct id namespace",
 );
 
@@ -364,7 +364,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  /projectLegacyToolOffsets\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\], assistantText\)/,
   "tools emitted before a retry must remain in the saved assistant turn",
 );
 
@@ -427,20 +427,19 @@ for (const [id, label] of [
   }
 }
 
-// Copilot's protocol diagnostic is the one member of that family emitted
-// through `push({ kind: "progress" })` rather than pushProgress, so the loop
-// above cannot see it. Pin it on its own shape.
+// Copilot uses a computed id, but still goes through the same projected
+// progress boundary as the other runtime diagnostics.
 const copilotDiagnostic =
-  /reportCopilotProtocolDiagnostic = [\s\S]*?push\(\{([\s\S]*?)\}\);/.exec(chatRoute);
+  /reportCopilotProtocolDiagnostic = [\s\S]*?(pushProgress\([^;]+\));/.exec(chatRoute);
 assert.ok(copilotDiagnostic, "Copilot's protocol diagnostic must still be emitted");
 assert.match(
   copilotDiagnostic[1],
-  /status: "notice"/,
+  /"notice"/,
   "Copilot protocol drift must be presented as a neutral notice",
 );
 assert.doesNotMatch(
   copilotDiagnostic[1],
-  /status: "error"/,
+  /"error"/,
   "Copilot protocol drift must not regress to an error",
 );
 
@@ -548,7 +547,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /redactSecretsDeep\(event\.output\)[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)/,
+  /case "tool_end": \{\s*const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\);/,
   "structured Hermes function output must display supported text blocks without exposing tool-supplied credentials",
 );
 
@@ -584,7 +583,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hermesCallNamesById\.set\(event\.id, event\.name\)[\s\S]*?if \(event\.isFinal\) \{\s*const name = hermesCallNamesById\.get\(id\);\s*if \(name\) boundarySentinel\?\.observe\(name, next\);/,
+  /hermesCallNamesById\.set\(event\.id, event\.name\)[\s\S]*?if \(!event\.isFinal\) return false;[\s\S]*?const name = hermesCallNamesById\.get\(id\);\s*if \(name\) boundarySentinel\?\.observe\(name, next\);/,
   "final streamed Hermes tool arguments must pass through the runtime boundary sentinel",
 );
 
@@ -608,8 +607,8 @@ assert.match(
     second.id,
     "two overlapping Bash calls must get distinct ids",
   );
-  assert.equal(first.status, "running");
-  assert.equal(second.status, "running");
+  assert.equal(first.status, "requested");
+  assert.equal(second.status, "requested");
 
   t = 250;
   const firstDone = tracker.hookEnd("Bash", '{"exitCode":0}', false);
@@ -632,9 +631,9 @@ assert.match(
   const started = tracker.envelopeToolUse("call-args", "shell");
   assert.ok(started);
   const partial = tracker.envelopeToolInput("call-args", '{"command":');
-  assert.deepEqual(partial, { id: "call-args", name: "shell", input: '{"command":', status: "running" });
+  assert.deepEqual(partial, { id: "call-args", name: "shell", input: '{"command":', status: "requested" });
   const complete = tracker.envelopeToolInput("call-args", '{"command":"pwd"}');
-  assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "running" });
+  assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "requested" });
   assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
 }
 
@@ -651,7 +650,7 @@ assert.match(
   );
   const refreshed = tracker.envelopeToolInput("call-progress", '{"command":"pwd"}');
   assert.deepEqual(refreshed, {
-    id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "running",
+    id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "requested",
   });
   assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
 }
@@ -668,11 +667,11 @@ assert.match(
     id: "call-interrupted",
     name: "shell",
     output: "[stream ended]",
-    status: "error",
+    status: "unknown",
     durationMs: 250,
   }]);
   assert.deepEqual(tracker.failOpenCalls(), [], "settling open calls twice must not duplicate tool events");
-  assert.equal(tracker.snapshot()[0]?.status, "error");
+  assert.equal(tracker.snapshot()[0]?.status, "unknown");
 }
 
 // Behavioral: a post with no open call still surfaces, under a fresh id.
@@ -696,7 +695,7 @@ assert.match(
   );
   assert.ok(running, "envelope tool_use must surface as a tool event");
   assert.equal(running.id, "toolu_01", "envelope events keep the native tool_use id");
-  assert.equal(running.status, "running");
+  assert.equal(running.status, "requested");
   assert.match(running.input ?? "", /"command": "ls"/, "envelope input is pretty-printed");
 
   assert.equal(
@@ -723,33 +722,14 @@ assert.match(
   assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
 }
 
-// Behavioral: a reordered user result can settle an envelope before a late
-// pre-hook arrives. That hook is live again and must receive a terminal SSE
-// update when its matching post hook is lost before the turn ends.
+// Late pre-hooks reconcile with the first terminal result without reopening it.
 {
-  let t = 0;
-  const tracker = new ToolCallTracker(() => t);
+  const tracker = new ToolCallTracker(() => 0);
   tracker.envelopeToolResult("toolu-late-hook", "done", false);
-  const startedEnvelope = tracker.envelopeToolUse("toolu-late-hook", "Bash", "{\"command\":\"ls\"}");
-  assert.equal(startedEnvelope?.status, "running");
-  const settledEnvelope = tracker.consumePendingEnvelopeResult("toolu-late-hook");
-  assert.equal(settledEnvelope?.status, "ok");
-  t = 50;
-  const lateHook = tracker.hookStart("Bash", "{\"command\":\"ls\"}");
-  assert.equal(lateHook.id, "toolu-late-hook");
-  assert.equal(lateHook.status, "running");
-  t = 100;
-  assert.deepEqual(
-    tracker.settleUnfinished(),
-    [{
-      id: "toolu-late-hook",
-      name: "Bash",
-      output: "[tool did not settle before the turn ended]",
-      status: "error",
-      durationMs: 50,
-    }],
-    "a late hook without post_tool_use must not leave the live tool chip running after done",
-  );
+  assert.equal(tracker.envelopeToolUse("toolu-late-hook", "Bash", '{"command":"ls"}')?.status, "requested");
+  assert.equal(tracker.consumePendingEnvelopeResult("toolu-late-hook")?.status, "ok");
+  assert.equal(tracker.hookStart("Bash", '{"command":"ls"}').status, "ok");
+  assert.deepEqual(tracker.settleUnfinished(), []);
 }
 
 // Unknown result ids are retained briefly to recover reordered JSONL, but a
@@ -761,12 +741,12 @@ assert.match(
   }
   assert.equal(
     tracker.envelopeToolUse("unknown-0", "Read")?.status,
-    "running",
+    "requested",
     "the oldest unmatched result is evicted once the bounded recovery buffer fills",
   );
   assert.equal(
     tracker.envelopeToolUse(`unknown-${MAX_PENDING_TOOL_RESULTS}`, "Read")?.status,
-    "running",
+    "requested",
     "the most recent reordered result remains recoverable within the bound",
   );
   assert.equal(
@@ -799,7 +779,7 @@ assert.match(
   const tracker = new ToolCallTracker(() => 0);
   assert.equal(tracker.envelopeToolResult("toolu_reordered", "done", false), null);
   const started = tracker.envelopeToolUse("toolu_reordered", "Read", '{"path":"a.ts"}');
-  assert.equal(started?.status, "running");
+  assert.equal(started?.status, "requested");
   const settled = tracker.consumePendingEnvelopeResult("toolu_reordered");
   assert.deepEqual(settled, {
     id: "toolu_reordered",
@@ -822,18 +802,18 @@ assert.match(
   let t = 0;
   const tracker = new ToolCallTracker(() => t);
   const running = tracker.envelopeToolUse("toolu_unfinished", "Bash");
-  assert.equal(running?.status, "running");
+  assert.equal(running?.status, "requested");
   t = 75;
   assert.deepEqual(tracker.settleUnfinished(), [{
     id: "toolu_unfinished",
     name: "Bash",
     output: "[tool did not settle before the turn ended]",
-    status: "error",
+    status: "unknown",
     durationMs: 75,
   }]);
   assert.equal(
     toPersistedTools(tracker.snapshot(), 0)?.[0].status,
-    "error",
+    "unknown",
     "unfinished calls are terminal both live and after reload",
   );
 }
@@ -859,7 +839,7 @@ assert.match(
   t = 350;
   const hookDone = tracker.hookEnd("Bash", '{"exitCode":0}', false);
   assert.equal(hookDone.id, "toolu_a");
-  assert.equal(hookDone.durationMs, 300, "duration baselined at the hook pre, not envelope parse");
+  assert.equal(hookDone.durationMs, 350, "duration spans the first observed request through the result");
 
   assert.equal(
     tracker.envelopeToolResult("toolu_a", "pwd output", false),
@@ -882,8 +862,8 @@ assert.match(
   t = 250;
   const post = tracker.hookEnd("Bash", "hook output", false);
   assert.equal(post.id, started.id, "late post hooks retain the original tool id");
-  assert.equal(post.output, "hook output", "post-hook output takes precedence over the envelope result");
-  assert.equal(post.durationMs, 250, "late post-hook timing uses the pre-hook start");
+  assert.equal(post.output, "envelope output", "the first terminal output survives a late post hook");
+  assert.equal(post.durationMs, 100, "the first terminal duration survives a late post hook");
   assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
 }
 
@@ -919,7 +899,7 @@ assert.match(
     id: "toolu-next",
     name: "Bash",
     input: undefined,
-    status: "running",
+    status: "requested",
   }, "an ambiguous same-name envelope starts a distinct tool call");
   assert.equal(
     tracker.envelopeToolResult("toolu-next", "second output", false)?.id,
@@ -1007,8 +987,8 @@ assert.match(
   t = 250;
   const hookEnd = tracker.hookEnd("Bash", "hook output", false);
   assert.equal(hookEnd.id, "toolu_reordered_hook", "a late post hook updates the same tool record");
-  assert.equal(hookEnd.output, "hook output", "hook output takes precedence after full reordering");
-  assert.equal(hookEnd.durationMs, 150, "hook timing begins at the late pre hook");
+  assert.equal(hookEnd.output, "envelope output", "the first terminal output survives full reordering");
+  assert.equal(hookEnd.durationMs, 0, "late hooks do not rewrite the first terminal timing");
   assert.equal(tracker.snapshot().length, 1, "fully reordered hooks must not create an orphan bubble");
 }
 
@@ -1405,11 +1385,11 @@ assert.match(
 {
   // toPersistedTools: caps, running coercion, offset shift, empty → undefined.
   const tracker = new ToolCallTracker(() => 0);
-  tracker.hookStart("Bash", "x".repeat(3000), 10);
+  tracker.hookStart("Bash", "x ".repeat(1500), 10);
   // never ended — still running at save time
   const persisted = toPersistedTools(tracker.snapshot(), 4);
   assert.ok(persisted && persisted.length === 1);
-  assert.equal(persisted[0].status, "error", "running coerces to error at save");
+  assert.equal(persisted[0].status, "unknown", "unresolved calls stay unknown at save");
   assert.ok(
     (persisted[0].output ?? "").includes("[tool did not settle before the turn ended]"),
     "coercion is explained in the output",
@@ -1419,7 +1399,7 @@ assert.match(
 
   const longOut = new ToolCallTracker(() => 0);
   longOut.hookStart("Bash", undefined, 0);
-  longOut.hookEnd("Bash", "HEAD" + "y".repeat(9000), false);
+  longOut.hookEnd("Bash", "HEAD" + "y ".repeat(4500), false);
   const capped = toPersistedTools(longOut.snapshot(), 0);
   assert.equal(capped?.[0].output?.length, 4000, "output tail-capped at 4000");
   assert.ok(
@@ -1452,8 +1432,10 @@ assert.match(
     9,
   );
   assert.equal(started?.id, "openclaw:call-1");
-  assert.equal(started?.status, "running");
-  assert.equal(tracker.consumePendingEnvelopeProgress("call-1")?.output, '{\n  "partial": "working"\n}');
+  assert.equal(started?.status, "requested");
+  const running = tracker.consumePendingEnvelopeProgress("call-1");
+  assert.equal(running?.status, "running");
+  assert.equal(running?.output, undefined, "unclassified progress payloads remain private");
   t = 25;
   const ended = tracker.envelopeToolResult(
     "call-1",
@@ -1498,14 +1480,14 @@ assert.match(
 {
   const tracker = new ToolCallTracker(() => 40, "openclaw:");
   tracker.envelopeToolUse("cancelled", "exec");
-  assert.deepEqual(tracker.failOpenCalls("[tool cancelled by user]"), [{
+  assert.deepEqual(tracker.failOpenCalls("[tool outcome unknown after cancellation request]"), [{
     id: "openclaw:cancelled",
     name: "exec",
-    output: "[tool cancelled by user]",
-    status: "error",
+    output: "[tool outcome unknown after cancellation request]",
+    status: "unknown",
     durationMs: 0,
   }]);
-  assert.deepEqual(tracker.failOpenCalls("[tool cancelled by user]"), []);
+  assert.deepEqual(tracker.failOpenCalls("[tool outcome unknown after cancellation request]"), []);
 }
 
 {
@@ -1517,10 +1499,10 @@ assert.match(
       id: "openclaw:unfinished",
       name: "read",
       output: "[tool did not settle before the Gateway turn ended]",
-      status: "error",
+      status: "unknown",
       durationMs: 0,
     }],
   );
-  assert.equal(toPersistedTools(tracker.snapshot(), 0)?.[0]?.status, "error");
+  assert.equal(toPersistedTools(tracker.snapshot(), 0)?.[0]?.status, "unknown");
 }
 console.log("tool persistence tracker tests passed");

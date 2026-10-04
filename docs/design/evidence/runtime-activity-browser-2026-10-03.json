@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T23:26:07.392768+00:00",
+  "classification": "Production Cave plus isolated real Coven daemon in headed Dia, synthetic external Hermes API only; actual browser UI with no network route mocks. One bounded scenario, not full #5765/#5767 acceptance.",
+  "candidate": {
+    "head": "18f6e327addc63707736c91040524bdc734a323c",
+    "buildId": "6XYEdeTQkmA3gETWacT7s"
+  },
+  "builtSource": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+  "finalSource": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+  "sourceDelta": "browser-reasoning-source-delta.json",
+  "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+  "runtime": "coven v0.4.7 (engine coven-code 0.8.0, pinned 0.8.0)",
+  "newestMenu": [
+    "Runtime default",
+    "openai/gpt-6.1",
+    "anthropic/claude-opus-5-5",
+    "served-fixture-v3"
+  ],
+  "optIn": {
+    "preference": "1",
+    "samples": 149,
+    "wrong": 0,
+    "summaries": [
+      {
+        "open": true,
+        "text": "REASONING SUMMARY\n4 words\n\nhermes \u00b7 provider report\n\nInspect the marker file.",
+        "inActivity": false
+      },
+      {
+        "open": true,
+        "text": "REASONING SUMMARY\n4 words\n\nhermes \u00b7 provider report\n\nThe marker was read.",
+        "inActivity": false
+      }
+    ],
+    "activityOpen": false,
+    "identity": "Response model. Runtime: hermes \u00b7 Version not reported. Runtime-reported model: served-fixture-v3. Requested model: Runtime default. Model: applied. Source: runtime-default. Runtime path: API. Tool details: supported on this path. Reasoning summaries: supported on this path"
+  },
+  "optOut": {
+    "samples": 176,
+    "preference": "0",
+    "wrong": 0,
+    "open": [
+      false,
+      false
+    ]
+  },
+  "keyboard": {
+    "open": [
+      false,
+      true
+    ],
+    "focus": "Reasoning summary4 words",
+    "activityOpen": false
+  },
+  "browserObservations": [
+    "Fresh preference absent: first summary open during live tool, independently collapsed Activity.",
+    "After history reload: both summaries open with Activity collapsed.",
+    "Saved tool card exposes exact name, safe input/output, runtime report and unavailable approval/effect evidence.",
+    "390 by 844 viewport: no document overflow, summary width 296; reduced-motion media active."
+  ],
+  "limits": [
+    "Synthetic inventory does not establish current provider offerings.",
+    "Light and Ember attempts changed root attributes directly, but screenshots remained Coven dark; theme matrix is not verified.",
+    "Loopback desktop-token ingress; no real Hermes, remote HTTPS, native desktop, human keyboard-only or VoiceOver qualification.",
+    "Interleaving of summaries with prose/tools and the full golden scenario matrix remain incomplete.",
+    "Console contains auxiliary mobile-handoff 400 and journal-generation 501 responses in this isolated fixture.",
+    "No baseline performance comparison or CI/commit/push/PR/merge proof."
+  ],
+  "issue": "https://github.com/OpenCoven/coven-cave/issues/5765",
+  "relatedIssue": "https://github.com/OpenCoven/coven-cave/issues/5767",
+  "status": "Verified synthetic-provider production-browser slice; broader goal incomplete and uncommitted",
+  "fixtureCounts": {
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "modelInventoryRequests": 5,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true
+  },
+  "regression": "Reasoning was not mounted until the outer Activity disclosure opened, despite absent/default-on preference. Main Chat now supplies a separate reasoningContent slot; tool details retain lazy disclosure.",
+  "verification": {
+    "vitest": {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "src/components/streaming-turn-response.test.tsx"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:13:31.349197+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-vitest.log",
+      "finishedAt": "2026-10-03T23:13:32.846500+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "contract": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/components/chat-view-polish-tools-activity.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:13:32.484230+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-contract.log",
+      "finishedAt": "2026-10-03T23:13:32.729375+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:13:39.745179+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-typecheck.log",
+      "finishedAt": "2026-10-03T23:13:51.754624+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:13:39.745773+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-build.log",
+      "finishedAt": "2026-10-03T23:14:06.891008+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "full-lint": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:17:47.758169+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-full-lint.log",
+      "finishedAt": "2026-10-03T23:18:13.257433+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "wiring": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:17:47.758286+00:00",
+      "sourceBefore": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-wiring.log",
+      "finishedAt": "2026-10-03T23:17:48.298152+00:00",
+      "exitCode": 0,
+      "sourceAfter": "1ba32f71fa4176be24448e7c2ce53ef814cf5a0b20fa030c6af4519d26c41a3a",
+      "sourceUnchanged": true
+    },
+    "wiring-contract": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/components/streaming-chat-wiring.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:19:50.102720+00:00",
+      "sourceBefore": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-wiring-contract.log",
+      "finishedAt": "2026-10-03T23:19:50.432000+00:00",
+      "exitCode": 0,
+      "sourceAfter": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "sourceUnchanged": true
+    },
+    "app": {
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:19:50.102242+00:00",
+      "sourceBefore": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-slot-app-final.log",
+      "finishedAt": "2026-10-03T23:24:52.555901+00:00",
+      "exitCode": 0,
+      "sourceAfter": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "sourceUnchanged": true,
+      "passedTestFiles": 1492
+    },
+    "finalTestLint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/components/streaming-chat-wiring.test.ts",
+        "--max-warnings=0"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:26:06.255385+00:00",
+      "sourceBefore": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/browser-reasoning-final-test-lint-stable.log",
+      "finishedAt": "2026-10-03T23:26:06.925514+00:00",
+      "exitCode": 0,
+      "sourceAfter": "5f1caca8ae20446bd8412b174693dcaec94c5db74f3703563a900ba1cea00d8b",
+      "sourceUnchanged": true
+    }
+  },
+  "evidenceRoot": "/Users/buns/.coven/cave/verification/issue-5761",
+  "screenshots": {
+    "history": "runtime-activity-browser-2026-10-03.png",
+    "narrow": "runtime-activity-browser-narrow-2026-10-03.png"
+  },
+  "screenshotsSha256": {
+    "history": "b2f69f8efd0878df6fbd096c5981a3e1e02f3e8e5e4a2a1ef0fdd555aa7ec901",
+    "narrow": "1c201550118757424c7e3bfa287a8fc6360c5c9a9ad9aeadc5cd3f2f9d447b0e"
+  }
+}

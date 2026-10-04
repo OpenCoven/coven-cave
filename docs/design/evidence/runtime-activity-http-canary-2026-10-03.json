@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "harness": "claude",
+  "permission": "read",
+  "transport": "http",
+  "startedAt": "2026-10-03T15:56:37.814Z",
+  "finishedAt": "2026-10-03T15:57:37.887Z",
+  "candidate": {
+    "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+    "patchSha256": "c72b3145b676b24965bf6ddc04dd71205fe714f5240a73f943a5bef39e0d2359",
+    "changedSourceSha256": "7089947206860f4de69a1635342e58568d6201d8cad79d8a39a9a9a9a1b4b069"
+  },
+  "runtimeVersion": "2.1.288 (Claude Code)",
+  "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+  "limitations": [
+    "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+    "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+    "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+  ],
+  "build": {
+    "id": "OMC3GInbK_Gxr6xBnPS1b",
+    "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+    "sendRouteSha256": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+  },
+  "profile": "claude-stream-json-v2",
+  "ingress": {
+    "missingCredential": 401,
+    "invalidCredential": 401
+  },
+  "httpStatus": 200,
+  "identity": {
+    "schemaVersion": 1,
+    "harness": "claude",
+    "version": "2.1.288",
+    "model": "claude-opus-5-5",
+    "activity": {
+      "schemaVersion": 1,
+      "path": "coven",
+      "tools": "supported",
+      "reasoning": "unknown"
+    }
+  },
+  "path": "coven",
+  "done": {
+    "isError": false,
+    "cancelled": false,
+    "persisted": true
+  },
+  "answerContainsMarker": true,
+  "historyHttpStatus": 200,
+  "saved": {
+    "exists": true,
+    "answerContainsMarker": true,
+    "identityMatches": true,
+    "toolCount": 1
+  },
+  "replayHttpStatus": 200,
+  "replay": {
+    "finished": true,
+    "toolsMatch": true,
+    "answerContainsMarker": true
+  },
+  "passed": true,
+  "serverStopped": true,
+  "daemonStopped": true,
+  "sourceUnchanged": true,
+  "tools": [
+    {
+      "name": "Read",
+      "status": "requested",
+      "outputContainsMarker": false
+    },
+    {
+      "name": "Read",
+      "status": "ok",
+      "outputContainsMarker": true
+    }
+  ]
+}

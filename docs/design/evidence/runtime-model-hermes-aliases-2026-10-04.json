@@ -1,0 +1,451 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T04:32:07.098870+00:00",
+  "issue": 5761,
+  "candidate": {
+    "head": "18f6e327addc63707736c91040524bdc734a323c",
+    "sourceFingerprint": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+    "buildId": "kv8FenOX2f9mApbjXkoMk",
+    "artifacts": {
+      "server.mjs": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+      ".next/server/app/api/chat/send/route.js": "76326b6f561f7bc053d05b7aa756d5c689cbfc303052065d027ab56ed0cbc60d",
+      ".next/server/app/api/runtime-models/[runtime]/route.js": "0a4b2d116c1c221caf4dff56891cb2fc2b7faf3bdb320574163ea8dfd2cfe1af"
+    },
+    "nativeDelta": "45 changed iOS files byte-match the preceding native-provider-source-final-20261004 archive. Native/Release evidence retains its recorded source and web build; no new native run."
+  },
+  "requirement": "Only the newest discovered model in each family, including provider-declared aliases.",
+  "finding": "Hermes /v1/models root metadata was discarded, allowing arbitrary aliases for older recognized releases to survive filtering.",
+  "behavior": [
+    "Validate root into configuredModelId for a distinct alias; preserve it through shared inventory sanitization.",
+    "Use configuredModelId for newest-family selection; label it explicitly as configured.",
+    "Keep the exact alias for launch. Never use configuredModelId as a served-runtime identity report.",
+    "Preserve custom models with unknown ordering; withhold invalid root metadata."
+  ],
+  "checks": {
+    "hermes-alias-red": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/hermes-models.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:02.577688+00:00",
+      "sourceBefore": "9f3eadcfdbbc4ceea350fe7dc8bbb77ddf4b1297eeb87d918966a9f426005dde",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-red.log",
+      "finishedAt": "2026-10-04T04:28:02.938572+00:00",
+      "exitCode": 1,
+      "sourceAfter": "9f3eadcfdbbc4ceea350fe7dc8bbb77ddf4b1297eeb87d918966a9f426005dde",
+      "sourceUnchanged": true,
+      "receiptSHA256": "ad13eabbd69cd99a64180a600e0c98d8e52d8b1d4da79d2588a9a1f5f934a88a",
+      "logSHA256": "cb6e346c5ee3f884093b7973da42e23d139340303615f9e773fd175e32165868"
+    },
+    "hermes-alias-green": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/hermes-models.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:21.059285+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-green.log",
+      "finishedAt": "2026-10-04T04:28:21.404217+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "571f02bbb38184c7b76e7d2473d141f0b7b79d4dfd33254528460d075037b3a2",
+      "logSHA256": "7a5bd259c571327b8810e64423cb7fd1f2e39f246a3cddb98cdb8146bcf2a3d9"
+    },
+    "hermes-alias-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.708104+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-typecheck.log",
+      "finishedAt": "2026-10-04T04:29:25.412092+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "9f5175fb5c5af1bd47bf3de30a2e8b9dc491893a1cfd9c50de9c2f36978cea4a",
+      "logSHA256": "5bdaef12ca46a8e785744fa3d3ded7bfdba8c60af61d9af69054a0b367a9ad04"
+    },
+    "hermes-alias-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/lib/runtime-models.ts",
+        "src/lib/runtime-model-families.ts",
+        "src/lib/server/runtime-model-options.ts",
+        "src/lib/server/hermes-models.ts",
+        "src/lib/server/hermes-models.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.708243+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-lint.log",
+      "finishedAt": "2026-10-04T04:28:55.054549+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "0d463b87359ce3cd3972accba5084c792af2e2d544200317603e73feb120f540",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "hermes-alias-family": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.708132+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-family.log",
+      "finishedAt": "2026-10-04T04:28:54.204826+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "f33550894176f68616487c1cad34dc24c5534658bfaaa748d3b22e8742a394af",
+      "logSHA256": "663716c44933d03c3a39e32190efea8fccf46b91b8dc51d3b83b550cc7c79948"
+    },
+    "hermes-alias-shared-inventory": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/runtime-model-options.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.708100+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-shared-inventory.log",
+      "finishedAt": "2026-10-04T04:28:54.293879+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "6e62634dfe18bcb45b40a39221d9537ec3ed367a121ab21fd00f7ae6b09c2899",
+      "logSHA256": "dd29f746c0add15220d1fcc368c7264dc6b30db4ad0c106f54af6aab41f463a2"
+    },
+    "hermes-alias-hook": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/use-runtime-model-options-behavior.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.709077+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-hook.log",
+      "finishedAt": "2026-10-04T04:28:54.278003+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "1a3e9575c6d8a1ad5967cc849313b7f9747cc4dea6677d729ab17d1457f9d5ef",
+      "logSHA256": "c8d7542529a4d4c51eb4b34132a489fdeaa2abe41bdcb2c4ce8d1c3ee3e867fb"
+    },
+    "hermes-alias-identity": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/hermes-responses-stream.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:28:53.709509+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-identity.log",
+      "finishedAt": "2026-10-04T04:28:54.234551+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "25eef0b50b72137582ac7f499db9a876ce686d0cf9ebfea6b43880ebc09f9c68",
+      "logSHA256": "3615597c081467a19887162503589d953ed2921eaf9ba6dbb12a19fedc503b83"
+    },
+    "hermes-alias-api": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/runtime-models/[runtime]/route.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:29:19.104452+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-api.log",
+      "finishedAt": "2026-10-04T04:29:19.517640+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "55e7da4f187b4b920f9ac6796f07864b63fd89476eb325daae4eff721b67a397",
+      "logSHA256": "60ba5b5baaa4c91002b8afdbb8306e0ca33b1a2a389c82158f98fe03caea90f6"
+    },
+    "hermes-alias-model-state": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/model-state/route.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:29:19.104382+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-model-state.log",
+      "finishedAt": "2026-10-04T04:29:19.517640+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "822b4102f6f494f384bdb20cdc357cab7c2c9e21c719b9e175e129e247dc26fa",
+      "logSHA256": "71ab0d32d7264c9afd0cbdc06dd9b04a158c558381acf1aec1006a98139770e4"
+    },
+    "hermes-alias-served-identity": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:29:19.104353+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-served-identity.log",
+      "finishedAt": "2026-10-04T04:29:24.008420+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "4736fce938066e025ac674f0917875491b480f41d0a90f1724c70a8f3a53a2c9",
+      "logSHA256": "cce386ada685fd285b7de281d68f7bfc8ad7676e9d510215f7cdfd15d79ed8a2"
+    },
+    "hermes-alias-runtime-launch": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/runtime-models.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:29:19.103978+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-runtime-launch.log",
+      "finishedAt": "2026-10-04T04:29:19.537224+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "7895c151f12af9e36686ba015982c43f69eedc0c63c2a860bcee4da1a782340f",
+      "logSHA256": "4099c17cd2dc5bcb7d14d2065ac1e81744e2a4ed9239b76320b12283e5a1a135"
+    },
+    "hermes-alias-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:29:32.143488+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-build.log",
+      "finishedAt": "2026-10-04T04:30:20.995919+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "a57c31e8aa0907f9505240949026ddb34eaebf60ddaa73de2fa53ce53b01da28",
+      "logSHA256": "2b79c582347c35c0b5b80651f9944dc0f6ab19be86e0a1e3da6ac36106e0557e"
+    },
+    "hermes-alias-live-first": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "/Users/buns/.coven/cave/verification/issue-5761/hermes-inventory-live.mjs"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T04:30:45.526671+00:00",
+      "sourceBefore": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/hermes-alias-live-first.log",
+      "finishedAt": "2026-10-04T04:30:49.027343+00:00",
+      "exitCode": 0,
+      "sourceAfter": "637cb8a7955b5dd75135c3ae10a953e7a6d01e75b45161713c952e4b8d4d8cf8",
+      "sourceUnchanged": true,
+      "receiptSHA256": "5466deac6584df1a3d28705e2e3f8b88974f01206e2b52221ddbb19b90032583",
+      "logSHA256": "4da6b16edb479c9d49943dc1ac2e6b7e7cd534c1102e2e50005027dc01e75486"
+    }
+  },
+  "installedContract": {
+    "revision": "830165473e0920c2baf8c2a6863976edb0c52943",
+    "files": {
+      "gateway/platforms/api_server.py": "d819f04f4f3a7d2c7f2d3b5befb13aa50dc0df7ca8416909f65f6d214e8c7b66",
+      "acp_adapter/server.py": "f53d20853688ef41dea41d24722bec0ca41dc2f35a7fbbfd6a8b64ff90e3ff07",
+      "website/docs/user-guide/features/api-server.md": "029ffc47013be52a9d01a636f11b0770a9241489ae10195643462b19068d244b"
+    },
+    "observations": {
+      "responsesModel": "Echoed request alias; no served runtime model in terminal SSE envelope at this installed revision. Existing Cave parser refuses to confirm it.",
+      "modelInventory": "GET /v1/models emits alias id plus configured backing model root; no provider credentials.",
+      "acp": "hermes acp --check succeeded; modes are edit-approval policies, not a Read-only sandbox.",
+      "caveReadOnly": "Existing Hermes direct/API send gate returns 501 for permissionMode read. No provider turn attempted."
+    }
+  },
+  "liveInventory": {
+    "startedAt": "2026-10-04T04:30:45.765Z",
+    "passed": true,
+    "classification": "Real installed Hermes API-server inventory with an explicit isolated route configuration; production Cave inventory GET. No provider turn, tool or runtime identity qualification.",
+    "hermes": {
+      "pid": 47921,
+      "origin": "http://127.0.0.1:63233",
+      "revision": "830165473e0920c2baf8c2a6863976edb0c52943"
+    },
+    "unauthenticatedHermesStatus": 401,
+    "upstream": {
+      "object": "list",
+      "data": [
+        {
+          "id": "hermes-agent",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "hermes-agent",
+          "parent": null
+        },
+        {
+          "id": "old-fast",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "openai/gpt-5.6-sol",
+          "parent": "hermes-agent"
+        },
+        {
+          "id": "current-fast",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "openai/gpt-6.1-sol",
+          "parent": "hermes-agent"
+        },
+        {
+          "id": "gpt-99-sol",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "openai/gpt-5.6-sol",
+          "parent": "hermes-agent"
+        },
+        {
+          "id": "sonnet",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "anthropic/claude-sonnet-5",
+          "parent": "hermes-agent"
+        },
+        {
+          "id": "custom",
+          "object": "model",
+          "created": 1791088246,
+          "owned_by": "hermes",
+          "permission": [],
+          "root": "private/custom-deployment",
+          "parent": "hermes-agent"
+        }
+      ]
+    },
+    "health": {
+      "status": "ok",
+      "platform": "hermes-agent",
+      "version": "0.18.0"
+    },
+    "cave": {
+      "pid": 47924,
+      "origin": "http://127.0.0.1:63237",
+      "buildId": "kv8FenOX2f9mApbjXkoMk",
+      "inventoryRouteSHA256": "0a4b2d116c1c221caf4dff56891cb2fc2b7faf3bdb320574163ea8dfd2cfe1af"
+    },
+    "inventory": {
+      "ok": true,
+      "runtime": "hermes",
+      "models": [
+        {
+          "id": "hermes-agent",
+          "label": "hermes-agent"
+        },
+        {
+          "id": "current-fast",
+          "label": "current-fast (configured: openai/gpt-6.1-sol)",
+          "configuredModelId": "openai/gpt-6.1-sol"
+        },
+        {
+          "id": "sonnet",
+          "label": "sonnet (configured: anthropic/claude-sonnet-5)",
+          "configuredModelId": "anthropic/claude-sonnet-5"
+        },
+        {
+          "id": "custom",
+          "label": "custom (configured: private/custom-deployment)",
+          "configuredModelId": "private/custom-deployment"
+        }
+      ],
+      "defaultOwner": "runtime",
+      "allowCustom": true,
+      "scope": {
+        "familiarId": null,
+        "runtime": "hermes",
+        "provider": "openai",
+        "credentialScope": "global",
+        "providerConfiguration": "global"
+      },
+      "provenance": "live",
+      "freshness": "fresh",
+      "refreshState": "ready",
+      "availability": "available"
+    },
+    "caveStopped": true,
+    "hermesStopped": true,
+    "finishedAt": "2026-10-04T04:30:49.023Z"
+  },
+  "cleanup": {
+    "recordedAt": "2026-10-04T04:31:28.775909+00:00",
+    "pidsAbsent": [
+      47921,
+      47924
+    ],
+    "daemonStateAbsent": true,
+    "responseStoreRows": {
+      "responses": 0,
+      "conversations": 0
+    },
+    "rootRetained": "/Users/buns/.coven/cave/verification/issue-5761/hermes-inventory-live-first",
+    "limits": "Zero stored response rows is not a provider invocation or protected-effect receipt."
+  },
+  "verificationScripts": {
+    "hermes-inventory-server.py": "f24646cd4b9bb1e7bdb748acd1feac62d08d150b54d99499fea581f4552c2324",
+    "hermes-inventory-live.mjs": "79f484ec8c3094252d0a0d03b85ef99fddb3f2edb54ebb0514da379848f56651"
+  },
+  "limits": [
+    "Actual installed API-server inventory under isolated explicit test routes; no provider or tool execution.",
+    "Health version 0.18.0 describes that inventory listener, not a completed chat turn.",
+    "Existing Hermes Responses served-model gap and Read-only refusal remain. ACP edit-approval modes are not a Read-only sandbox.",
+    "No UI screenshot, human accessibility, packaged release or physical-device acceptance is claimed.",
+    "Other runtime provider packets refer to the previous build and are not silently promoted to this one."
+  ],
+  "disposition": "Uncommitted, same owned worktree/session, no owner/Project change, permission escalation, installed configuration change, commit/push/PR/merge/release or trust publication."
+}

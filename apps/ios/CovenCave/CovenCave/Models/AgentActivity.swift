@@ -16,7 +16,15 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     /// warning, a rate-limit note — and is terminal on arrival, so it must not
     /// decode as `running` or it spins for the rest of the turn.
     enum Status: String, Codable {
-        case running, ok, error, notice
+        case requested, running, ok, error, rejected, notice, unknown
+
+        var isActive: Bool { self == .requested || self == .running }
+        var isKnownOutcome: Bool { self == .ok || self == .error || self == .rejected }
+
+        init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer().decode(String.self)
+            self = Status(rawValue: value) ?? .unknown
+        }
     }
 
     var id: String
@@ -24,15 +32,34 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     /// Tool name ("Bash", "Edit") or progress label ("Thinking…").
     var title: String
     /// Short input/detail line — a command head, a file path. Capped at fold
-    /// time; chips are tiny, payloads stay on the desktop.
+    /// time; full projected output is loaded separately in a transient sheet.
     var detail: String?
     var status: Status = .running
     /// Wall-clock duration the server reported when the step settled.
     var durationMs: Int?
     /// Why a failed step failed — the tail of the tool's output, kept only for
-    /// `.error` steps. A successful call's output belongs on the desktop; a
-    /// failure with no reason is the one case a chip has to carry itself.
+    /// `.error` steps. Full results stay out of persisted activity snapshots;
+    /// a failure preview remains readable without opening the detail sheet.
     var errorOutput: String?
+    var activity: ToolActivity? = nil
+    var textOffset: Int? = nil
+}
+
+extension ActivityStep {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        kind = try values.decode(Kind.self, forKey: .kind)
+        title = try values.decode(String.self, forKey: .title)
+        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        status = try values.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
+        durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs)
+        errorOutput = try values.decodeIfPresent(String.self, forKey: .errorOutput)
+        activity = kind == .tool ? (try? values.decodeIfPresent(ToolActivity.self, forKey: .activity))?.validated(callId: id, status: status.rawValue) : nil
+        if let offset = try? values.decode(Int.self, forKey: .textOffset), offset >= 0, offset <= 9_007_199_254_740_991 {
+            textOffset = offset
+        }
+    }
 }
 
 /// Folds raw stream events into a message's activity list. Pure functions so
@@ -54,11 +81,11 @@ enum ActivityFold {
 
     /// Fold one event into `steps`. Returns the updated list, or nil when the
     /// event doesn't change the activity (callers skip the mutation + notify).
-    static func fold(_ steps: [ActivityStep], event: StreamEvent) -> [ActivityStep]? {
+    static func fold(_ steps: [ActivityStep], event: StreamEvent, textOffset: Int? = nil) -> [ActivityStep]? {
         switch event {
-        case .toolUse(let id, let name, let input, let output, let status, let durationMs):
+        case .toolUse(let id, let name, let input, let output, let status, let durationMs, let activity):
             return foldTool(steps, id: id, name: name, input: input, output: output,
-                            status: status, durationMs: durationMs)
+                            status: status, durationMs: durationMs, activity: activity, textOffset: textOffset)
         case .progress(let id, let label, let detail, let status, let durationMs):
             return foldProgress(steps, id: id, label: label, detail: detail,
                                 status: status, durationMs: durationMs)
@@ -69,13 +96,14 @@ enum ActivityFold {
 
     /// Settle every still-running step when the turn ends. The stream is the
     /// only writer, so a persisted "running" badge would spin forever after
-    /// reload — successful turns settle to `ok`, failed ones to `error`.
+    /// reload. Turn completion does not establish an unfinished tool's outcome.
     static func settle(_ steps: [ActivityStep], success: Bool) -> [ActivityStep]? {
-        guard steps.contains(where: { $0.status == .running }) else { return nil }
+        guard steps.contains(where: { $0.status.isActive }) else { return nil }
         return steps.map { step in
-            guard step.status == .running else { return step }
+            guard step.status.isActive else { return step }
             var settled = step
-            settled.status = success ? .ok : .error
+            settled.status = step.kind == .tool ? .unknown : (success ? .ok : .error)
+            settled.activity = nil
             return settled
         }
     }
@@ -88,8 +116,8 @@ enum ActivityFold {
     /// so they simply append.
     private static func foldTool(_ steps: [ActivityStep], id: String?, name: String,
                                  input: String?, output: String?, status: String?,
-                                 durationMs: Int?) -> [ActivityStep]? {
-        let parsedStatus = ActivityStep.Status(rawValue: status ?? "") ?? .running
+                                 durationMs: Int?, activity: ToolActivity?, textOffset: Int?) -> [ActivityStep]? {
+        let parsedStatus = ActivityStep.Status(rawValue: status ?? "running") ?? .unknown
         // Only a failure earns its output a place in the trail. Intermediate
         // `running` frames carry partial output too, which would churn the
         // snapshot for a call that is about to succeed anyway.
@@ -97,18 +125,30 @@ enum ActivityFold {
         if let id, let idx = steps.lastIndex(where: { $0.kind == .tool && $0.id == id }) {
             var step = steps[idx]
             var changed = false
-            if step.status != parsedStatus { step.status = parsedStatus; changed = true }
+            // Replay may deliver the start after a result. Keep the first
+            // known outcome; a later result can resolve an unknown outcome.
+            let knownOutcome = step.status.isKnownOutcome
+            let staleStart = (step.status == .unknown && parsedStatus.isActive)
+                || (step.status == .running && parsedStatus == .requested)
+            if !knownOutcome && !staleStart && step.status != parsedStatus {
+                step.status = parsedStatus
+                changed = true
+            }
             if step.detail == nil, let detail = argSummary(name: name, input: input) {
                 step.detail = detail
                 changed = true
             }
-            if let failure, step.errorOutput != failure {
+            if !knownOutcome, !staleStart, step.status == .error, let failure, step.errorOutput != failure {
                 step.errorOutput = failure
                 changed = true
             }
-            if let durationMs, step.durationMs != durationMs {
+            if !knownOutcome, !staleStart, let durationMs, step.durationMs != durationMs {
                 step.durationMs = durationMs
                 changed = true
+            }
+            if !knownOutcome, !staleStart {
+                let observation = activity?.validated(callId: step.id, status: step.status.rawValue)
+                if step.activity != observation { step.activity = observation; changed = true }
             }
             guard changed else { return nil }
             var updated = steps
@@ -118,7 +158,9 @@ enum ActivityFold {
         let step = ActivityStep(id: id ?? UUID().uuidString, kind: .tool, title: name,
                                 detail: argSummary(name: name, input: input),
                                 status: parsedStatus, durationMs: durationMs,
-                                errorOutput: failure)
+                                errorOutput: failure,
+                                activity: id.flatMap { activity?.validated(callId: $0, status: parsedStatus.rawValue) },
+                                textOffset: textOffset)
         return append(step, to: steps)
     }
 
@@ -203,17 +245,21 @@ enum ActivityFold {
     }
 
     /// Map a persisted conversation turn's tool calls into activity steps so
-    /// history loads keep the trail. Persisted calls are settled by
-    /// definition — anything not marked "error" reads as ok, never running.
+    /// history loads keep the trail. Missing or unrecognized outcomes remain
+    /// unknown; persistence is not proof of successful execution.
     static func steps(fromTools tools: [ToolCall]?) -> [ActivityStep]? {
         guard let tools, !tools.isEmpty else { return nil }
         return tools.suffix(maxSteps).map { tool in
             let failed = tool.status == "error"
+            let observed = ActivityStep.Status(rawValue: tool.status ?? "") ?? .unknown
+            let status: ActivityStep.Status = observed.isKnownOutcome ? observed : .unknown
             return ActivityStep(id: tool.id, kind: .tool, title: tool.name,
                                 detail: argSummary(name: tool.name, input: tool.input),
-                                status: failed ? .error : .ok,
+                                status: status,
                                 durationMs: tool.durationMs,
-                                errorOutput: failed ? capErrorOutput(tool.output) : nil)
+                                errorOutput: failed ? capErrorOutput(tool.output) : nil,
+                                activity: tool.activity?.validated(callId: tool.id, status: status.rawValue),
+                                textOffset: tool.textOffset)
         }
     }
 }
@@ -222,21 +268,26 @@ extension Array where Element == ActivityStep {
     /// The step a live chip should narrate: the newest still-running one,
     /// falling back to the newest overall while the server settles.
     var currentStep: ActivityStep? {
-        last(where: { $0.status == .running }) ?? last
+        last(where: { $0.status.isActive }) ?? last
     }
 
-    /// Collapsed one-line summary for a finished turn — "Ran 4 tools",
-    /// "Ran 1 tool · 1 failed", or "4 steps" for progress-only turns.
+    /// Count observed calls without asserting that every request executed.
     var summaryLabel: String {
         let tools = filter { $0.kind == .tool }
         let failed = filter { $0.status == .error }.count
+        let unknown = tools.filter { $0.status == .unknown }.count
+        let requested = tools.filter { $0.status == .requested }.count
+        let rejected = tools.filter { $0.status == .rejected }.count
         var label: String
         if tools.isEmpty {
             label = count == 1 ? "1 step" : "\(count) steps"
         } else {
-            label = tools.count == 1 ? "Ran 1 tool" : "Ran \(tools.count) tools"
+            label = tools.count == 1 ? "1 tool call" : "\(tools.count) tool calls"
         }
         if failed > 0 { label += " · \(failed) failed" }
+        if unknown > 0 { label += " · \(unknown) outcome unknown" }
+        if requested > 0 { label += " · \(requested) requested" }
+        if rejected > 0 { label += " · \(rejected) rejected" }
         return label
     }
 }

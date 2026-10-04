@@ -47,6 +47,7 @@ const shim = [
   "const local = args.includes('--local');",
   "record({ args, local, mode: process.env.OPENCLAW_TEST_MODE });",
   "const mode = process.env.OPENCLAW_TEST_MODE;",
+  "if (mode === 'private-stderr') { process.stderr.write('PRIVATE_DIAGNOSTIC private.person@example.com signature=opaque-provider-state'); process.exit(1); }",
   "if (mode === 'gateway-legacy') {",
   "  if (local) { process.stderr.write('unexpected embedded run'); process.exit(1); }",
   "  process.stdout.write(JSON.stringify({ result: { payloads: [{ text: 'legacy Gateway reply' }], sessionId: 'gateway-session' } })); process.exit(0);",
@@ -151,6 +152,7 @@ try {
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
+  const { subscribeRunStream } = await import("@/lib/server/chat-stream-buffer");
   const { POST } = await import("./route.ts");
   // OpenClaw owns model selection and cannot accept a Cave model override;
   // keep this bridge fixture on the explicit runtime-default sentinel.
@@ -192,6 +194,25 @@ try {
   assert.deepEqual((await calls()).map((call) => call.local), [true], "an explicit local selection uses one embedded child");
 
   delete process.env.OPENCLAW_EMBEDDED_LOCAL;
+
+  process.env.OPENCLAW_TEST_MODE = "private-stderr";
+  await clearCalls();
+  const diagnosticRunId = "openclaw-private-diagnostic";
+  const diagnosticEvents = await readSse(await send("empty response diagnostic", { runId: diagnosticRunId }));
+  const diagnosticDone = diagnosticEvents.findLast((event) => event.kind === "done");
+  assert.equal(diagnosticDone?.isError, true);
+  const diagnosticText = diagnosticEvents.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
+  assert.match(diagnosticText, /returned no text/);
+  assert.match(diagnosticText, /diagnostic output was withheld/i);
+  const diagnosticSaved = await loadConversation(diagnosticDone.sessionId);
+  assert.equal(diagnosticSaved.turns.at(-1).text, diagnosticText);
+  const diagnosticReplay = subscribeRunStream(diagnosticRunId, 0, () => {}, () => {});
+  assert.ok(diagnosticReplay?.done);
+  assert.equal(diagnosticReplay.replay.map((entry) => JSON.parse(entry.json))
+    .filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join(""), diagnosticText);
+  assert.doesNotMatch(JSON.stringify([diagnosticEvents, diagnosticSaved, diagnosticReplay]), /PRIVATE_DIAGNOSTIC|private\.person|opaque-provider-state/);
+  assert.equal((await calls()).length, 1, "unclassified stderr cannot authorize another launch");
+
   process.env.OPENCLAW_TEST_MODE = "attention-reasoning";
   const reasoningOnlyEvents = await readSse(await send("do not request attention from hidden reasoning"));
   const reasoningOnlySessionId = reasoningOnlyEvents.findLast((event) => event.kind === "done")?.sessionId;
@@ -199,7 +220,7 @@ try {
   const reasoningOnlyTurn = reasoningOnlyConversation?.turns.at(-1);
   assert.equal(reasoningOnlyEvents.findLast((event) => event.kind === "done")?.persistedTurnId, reasoningOnlyTurn?.id);
   assert.equal(reasoningOnlyTurn?.text, "Visible answer.");
-  assert.equal(reasoningOnlyTurn?.reasoning, "private", "reload keeps the reasoning content without its control marker");
+  assert.equal(reasoningOnlyTurn?.reasoning, undefined, "unclassified reasoning is withheld on reload");
   assert.equal(
     reasoningOnlyTurn?.responseMetadata?.attentionRequest,
     undefined,
@@ -214,7 +235,7 @@ try {
   const visibleAndReasoningConversation = await loadConversation(visibleAndReasoningSessionId);
   const visibleAndReasoningTurn = visibleAndReasoningConversation?.turns.at(-1);
   assert.equal(visibleAndReasoningTurn?.text, "Visible answer.");
-  assert.equal(visibleAndReasoningTurn?.reasoning, "private plan");
+  assert.equal(visibleAndReasoningTurn?.reasoning, undefined);
   assert.equal(visibleAndReasoningTurn?.responseMetadata?.attentionRequest?.reason, "approval");
   assert.doesNotMatch(visibleAndReasoningTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
   assert.doesNotMatch(visibleAndReasoningTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
@@ -225,7 +246,7 @@ try {
   const visibleMarkerConversation = await loadConversation(visibleMarkerSessionId);
   const visibleMarkerTurn = visibleMarkerConversation?.turns.at(-1);
   assert.equal(visibleMarkerTurn?.text, "Visible question.");
-  assert.equal(visibleMarkerTurn?.reasoning, "private notes", "visible-marker turns still persist reloadable reasoning");
+  assert.equal(visibleMarkerTurn?.reasoning, undefined, "visible markers do not grant disclosure to legacy reasoning");
   assert.equal(
     visibleMarkerTurn?.responseMetadata?.attentionRequest?.reason,
     "decision",
@@ -233,6 +254,18 @@ try {
   );
   assert.doesNotMatch(visibleMarkerTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
   assert.doesNotMatch(visibleMarkerTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  for (const [sessionId, events] of [
+    [reasoningOnlySessionId, reasoningOnlyEvents],
+    [visibleAndReasoningSessionId, visibleAndReasoningEvents],
+    [visibleMarkerSessionId, visibleMarkerEvents],
+  ]) {
+    const assistantEvents = events.filter((event) => event.kind === "assistant_chunk" || event.kind === "assistant_replace");
+    assert.doesNotMatch(JSON.stringify(assistantEvents), /private/, "OpenClaw SSE withholds legacy reasoning");
+    const replay = subscribeRunStream(sessionId, 0, () => {}, () => {});
+    assert.ok(replay?.done);
+    assert.deepEqual(replay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "assistant_chunk" || event.kind === "assistant_replace"), assistantEvents);
+    replay.unsubscribe();
+  }
 
   const questionTurnId = visibleMarkerEvents.findLast((event) => event.kind === "done")?.persistedTurnId;
   assert.equal(typeof questionTurnId, "string");
