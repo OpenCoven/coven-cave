@@ -1,11 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  authRecoveryHarness,
   harnessFixCommand,
   harnessSwitchTargets,
   parseHarnessAuthFailure,
   parseHarnessFailure,
 } from "./harness-failure.ts";
+
+assert.equal(authRecoveryHarness("codex", "copilot", "claude"), "codex", "the failed run wins over a changed familiar default");
+assert.equal(authRecoveryHarness(null, "copilot", "claude"), "copilot", "a resumed session wins when older events lack a harness");
+assert.equal(authRecoveryHarness("untrusted", "codex", "claude"), "codex", "unknown event ids cannot become shell commands");
 
 // ── The canonical daemon message ─────────────────────────────────────────────
 {
@@ -111,11 +116,20 @@ import {
   const auth = parseHarnessAuthFailure("Error: not logged in. Please run /login to continue.", "claude");
   assert.ok(auth, "claude sign-in failure detected");
   assert.equal(auth.harness, "claude");
-  assert.equal(auth.loginCommand, "claude /login", "claude login command offered");
+  assert.equal(auth.loginCommand, "claude", "claude opens its interactive sign-in");
+  assert.equal(auth.kind, "login");
 
   const codex = parseHarnessAuthFailure("stream error: invalid API key — run `codex login`", "codex");
   assert.ok(codex);
-  assert.equal(codex.loginCommand, "codex login");
+  assert.equal(codex.kind, "configuration", "key-specific failures take priority over generic login advice");
+  assert.equal(codex.loginCommand, null, "a shell login cannot repair a scoped API key");
+  assert.equal(parseHarnessAuthFailure("api key missing", "copilot")?.kind, "configuration");
+  assert.equal(parseHarnessAuthFailure("invalid x-api-key", "claude")?.kind, "configuration");
+  assert.equal(parseHarnessAuthFailure("credentials expired", "claude")?.kind, "login", "expired CLI credentials still need sign-in");
+
+  const copilot = parseHarnessAuthFailure("Not logged in. Use /login to continue.", "copilot");
+  assert.ok(copilot);
+  assert.equal(copilot.loginCommand, "copilot", "copilot opens its interactive sign-in");
 
   // OpenCode (registry runtime): its sign-in flow is `opencode auth login`,
   // and the package alias must canonicalize before the command lookup.

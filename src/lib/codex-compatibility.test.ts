@@ -146,6 +146,21 @@ assert.equal(unknownTool?.kind, "unknown", "known outer events with an unknown t
 assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never render" }, selected.schema), { kind: "failure" }, "terminal turn failures retain no payload");
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
 assert.deepEqual(
+  parseCodexStreamEvent({ type: "error", message: "Not logged in. Run codex login. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL" }, selected.schema),
+  { kind: "failure", authKind: "login" },
+  "top-level auth errors retain only a verdict",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", error: { message: "Invalid API key: secret" } }, selected.schema),
+  { kind: "failure", authKind: "configuration" },
+  "nested turn failures distinguish key configuration without exposing text",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", message: "turn failed", error: { message: "Invalid API key: secret" } }, selected.schema),
+  { kind: "failure", authKind: "configuration" },
+  "a generic outer message cannot hide the nested credential verdict",
+);
+assert.deepEqual(
   parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } }, selected.schema),
   { kind: "usage", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } },
   "turn.completed forwards its raw usage object for the route to validate",

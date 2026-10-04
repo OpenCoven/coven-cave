@@ -65,6 +65,15 @@ function knownAdapterId(raw: string | null | undefined): string | null {
     : null;
 }
 
+/** Prefer the server's actual run over a resumed session or edited familiar. */
+export function authRecoveryHarness(
+  failedHarness: string | null | undefined,
+  sessionHarness: string | null | undefined,
+  familiarHarness: string | null | undefined,
+): string | null {
+  return knownAdapterId(failedHarness) ?? knownAdapterId(sessionHarness) ?? knownAdapterId(familiarHarness);
+}
+
 /**
  * Parse a harness/runtime failure out of error text. Returns null when the
  * text doesn't look like a harness problem (so surfaces render nothing extra).
@@ -150,24 +159,29 @@ export type HarnessAuthFailure = {
   harnessLabel: string | null;
   /** Copyable terminal command that starts the sign-in flow, when known. */
   loginCommand: string | null;
+  /** API-key failures need the familiar's scoped Vault, not a CLI login. */
+  kind: "login" | "configuration";
 };
 
-const AUTH_FAILURE_PATTERNS: RegExp[] = [
+const LOGIN_FAILURE_PATTERNS: RegExp[] = [
   /\bnot (?:signed|logged) in\b/i,
   /\bplease (?:run )?[`'"]?\/?login\b/i,
   /\brun [`'"]?(?:codex login|claude \/login|copilot \/login|gh auth login|opencode auth login)[`'"]?/i,
-  /\binvalid api key\b/i,
-  /\bapi key (?:not set|missing|not found|expired)\b/i,
   /\bauthentication (?:error|failed|required)\b/i,
-  /\bcredentials? (?:missing|not found|expired|invalid|required)\b/i,
   /\bauthentication[_-]error\b/i,
+  /\bcredentials? (?:missing|not found|expired|invalid|required)\b/i,
+];
+const CONFIGURATION_FAILURE_PATTERNS: RegExp[] = [
+  /\binvalid (?:x[-_])?api[-_ ]key\b/i,
+  /\b(?:x[-_])?api[-_ ]key (?:not set|missing|not found|expired|invalid|required)\b/i,
 ];
 
-/** Terminal sign-in command per runtime (mirrors the onboarding install prose). */
+/** Start each runtime's interactive sign-in from a shell. Claude Code and
+ * Copilot accept /login inside their TUI, after the CLI has started. */
 const LOGIN_COMMANDS: Record<string, string> = {
-  claude: "claude /login",
+  claude: "claude",
   codex: "codex login",
-  copilot: "copilot /login",
+  copilot: "copilot",
   opencode: "opencode auth login",
 };
 
@@ -181,12 +195,18 @@ export function parseHarnessAuthFailure(
   harnessId?: string | null,
 ): HarnessAuthFailure | null {
   if (!text || typeof text !== "string") return null;
-  if (!AUTH_FAILURE_PATTERNS.some((re) => re.test(text))) return null;
+  // A key-specific verdict wins even when the same diagnostic also suggests
+  // /login: a generic PTY cannot repair a familiar-scoped Vault credential.
+  const kind = CONFIGURATION_FAILURE_PATTERNS.some((re) => re.test(text))
+    ? "configuration"
+    : LOGIN_FAILURE_PATTERNS.some((re) => re.test(text)) ? "login" : null;
+  if (!kind) return null;
   const harness = knownAdapterId(harnessId);
   return {
     harness,
     harnessLabel: harness ? adapterLabel(harness) : null,
-    loginCommand: harness ? LOGIN_COMMANDS[harness] ?? null : null,
+    loginCommand: kind === "login" && harness ? LOGIN_COMMANDS[harness] ?? null : null,
+    kind,
   };
 }
 
