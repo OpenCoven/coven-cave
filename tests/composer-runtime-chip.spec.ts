@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  catalogForRuntime,
   runtimeModelInventoryAvailability,
   runtimeModelInventoryFreshness,
   runtimeModelInventoryRefreshState,
@@ -29,6 +28,9 @@ const FAMILIAR_BASE = {
   icon: "ph:sparkle-fill",
 };
 
+const CODEX_MODEL = { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol" };
+const CLAUDE_MODEL = { id: "claude-sonnet-5", label: "Claude Sonnet 5" };
+
 type Mutable = {
   harness: string;
   effectiveModel: string;
@@ -37,10 +39,10 @@ type Mutable = {
   configPatches: Array<Record<string, unknown>>;
 };
 
-async function seed(page: Page): Promise<Mutable> {
+async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
   const state: Mutable = {
     harness: "codex",
-    effectiveModel: "openai/gpt-5.5",
+    effectiveModel: CODEX_MODEL.id,
     familiarsServed: 0,
     modelStateServed: 0,
     configPatches: [],
@@ -61,22 +63,21 @@ async function seed(page: Page): Promise<Mutable> {
     expect(route.request().method()).toBe("GET");
     const url = new URL(route.request().url());
     const runtime = decodeURIComponent(url.pathname.split("/").pop() ?? "");
-    const catalog = catalogForRuntime(runtime);
-    if (!catalog) {
-      return route.fulfill({ status: 404, json: { ok: false, error: "runtime not found" } });
-    }
-    const provenance = "fallback" as const;
+    const models = inventoryAvailable
+      ? runtime === "codex" ? [CODEX_MODEL] : runtime === "claude" ? [CLAUDE_MODEL] : []
+      : [];
+    const provenance = models.length > 0 ? "live" : "unavailable";
     return route.fulfill({
       json: {
         ok: true,
         runtime,
-        models: catalog.models,
+        models,
         provenance,
         freshness: runtimeModelInventoryFreshness(provenance),
         refreshState: runtimeModelInventoryRefreshState(provenance),
         availability: runtimeModelInventoryAvailability(provenance),
-        defaultOwner: catalog.defaultOwner,
-        allowCustom: catalog.allowCustom,
+        defaultOwner: "runtime",
+        allowCustom: false,
         scope: runtimeModelInventoryScope(runtime, url.searchParams.get("familiarId")),
       },
     });
@@ -135,7 +136,7 @@ test.describe("composer runtime picker (context chips)", () => {
     const modelChip = page.getByRole("button", { name: /change model/ });
     await expect(modelChip).toBeVisible({ timeout: 45_000 });
     // toContainText retries — the chip settles once model-state hydrates.
-    await expect(modelChip).toContainText("GPT-5.5", { timeout: 15_000 });
+    await expect(modelChip).toContainText(CODEX_MODEL.id, { timeout: 15_000 });
 
     // Split chips (cave-g21f): the model chip opens the picker directly.
     await modelChip.click();
@@ -146,8 +147,8 @@ test.describe("composer runtime picker (context chips)", () => {
       await expect(menu.getByRole("menuitemradio", { name, exact: true })).toBeVisible();
     }
     await expect(menu.getByRole("menuitemradio", { name: "Codex", exact: true })).toHaveAttribute("aria-checked", "true");
-    // Model group: the active runtime's catalog with the effective model checked.
-    await expect(menu.getByRole("menuitemradio", { name: "GPT-5.5", exact: true })).toHaveAttribute("aria-checked", "true");
+    // Model group: the active runtime's reported inventory with the effective model checked.
+    await expect(menu.getByRole("menuitemradio", { name: `${CODEX_MODEL.label} · ${CODEX_MODEL.id}`, exact: true })).toHaveAttribute("aria-checked", "true");
   });
 
   test("picking a runtime rebinds via /api/config, flips the chip, and refreshes the roster", async ({ page }) => {
@@ -155,7 +156,7 @@ test.describe("composer runtime picker (context chips)", () => {
     await page.goto("/?mode=chat");
     const pill = page.getByRole("button", { name: /change model/ });
     await expect(pill).toBeVisible({ timeout: 45_000 });
-    await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
+    await expect(pill).toContainText(CODEX_MODEL.id, { timeout: 15_000 });
     // The landing identity line reads the roster's familiar.harness. Scoped
     // to the primary chat panel — the shell also mounts a persistent,
     // closed-by-default auxiliary Chat panel (data-testid="right-chat") that
@@ -171,12 +172,12 @@ test.describe("composer runtime picker (context chips)", () => {
 
     // The menu stays open for the model step — the switch isn't done until a
     // model is picked, and the Model group re-lists to the new runtime's
-    // catalog in place (cave-bfwk).
+    // reported inventory in place (cave-bfwk).
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true })).toBeVisible();
 
     // The PATCH carries the harness + explicit runtime-default intent. A
-    // curated catalog is a picker seed, never an implicit launch override.
+    // reported model is selectable, never an implicit launch override.
     await expect(() => {
       const fam = state.configPatches.at(-1)?.familiars as
         | Record<string, { harness?: string; model?: string }>
@@ -200,8 +201,27 @@ test.describe("composer runtime picker (context chips)", () => {
     await expect(() => expect(state.modelStateServed).toBeGreaterThan(modelStateGetsBefore)).toPass({ timeout: 10_000 });
 
     // Picking a model completes the runtime→model switch and closes the menu.
-    await menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true }).click();
+    await menu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true }).click();
     await expect(menu).not.toBeVisible();
-    await expect(pill).toContainText("Claude Sonnet 5", { timeout: 10_000 });
+    await expect(pill).toContainText(CLAUDE_MODEL.id, { timeout: 10_000 });
+  });
+
+  test("unavailable inventory preserves the stored ID without offering it as a model", async ({ page }) => {
+    await seed(page, false);
+    await page.goto("/?mode=chat");
+    const chip = page.getByRole("button", { name: /change model/ });
+    await expect(chip).toContainText(CODEX_MODEL.id, { timeout: 45_000 });
+    await chip.click();
+    const menu = page.getByRole("menu", { name: "Runtime and model" });
+    await expect(menu.getByText("No models reported · use runtime default", { exact: true })).toBeVisible();
+    const selection = menu.getByRole("menuitemradio", {
+      name: `Current selection · ${CODEX_MODEL.id} (not in current inventory)`, exact: true,
+    });
+    await expect(selection).toHaveAttribute("aria-checked", "true");
+    await expect(selection).toBeDisabled();
+    await expect(menu.getByRole("menuitemradio", {
+      name: `${CODEX_MODEL.label} · ${CODEX_MODEL.id}`, exact: true,
+    })).toHaveCount(0);
+    await expect(menu.getByRole("menuitemradio", { name: "Runtime default", exact: true })).toBeEnabled();
   });
 });
