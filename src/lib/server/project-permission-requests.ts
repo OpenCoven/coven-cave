@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { loadProjects } from "@/lib/cave-projects";
@@ -24,13 +25,37 @@ function isWithinRoot(candidate: string, root: string): boolean {
   );
 }
 
-function projectRootForPath(value: string, projects: CaveProject[]): CaveProject | null {
-  const candidate = path.resolve(value);
+function projectRootForPath(value: string, projects: CaveProject[], resolve: (p: string) => string = path.resolve): CaveProject | null {
+  const candidate = resolve(value);
   const matches = projects
-    .map((project) => ({ project, root: path.resolve(project.root) }))
+    .map((project) => ({ project, root: resolve(project.root) }))
     .filter(({ root }) => isWithinRoot(candidate, root))
     .sort((a, b) => b.root.length - a.root.length);
   return matches[0]?.project ?? null;
+}
+
+/** Where a path really is: its real path, or, for one not yet made, its
+ *  nearest existing folder's real path plus the rest. */
+function realPathOrNearest(value: string): string {
+  let current = path.resolve(value);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(/* turbopackIgnore: true */ current), ...rest.reverse());
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(value);
+      rest.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** True when a path's real location is another project's, or no project's
+ *  (#5795). A grant on project A was checked against the path as spelled,
+ *  while the write followed a symlink: `A/link` into project B wrote B's file. */
+function leadsOutOfProject(value: string, project: CaveProject, projects: CaveProject[]): boolean {
+  return projectRootForPath(value, projects, realPathOrNearest)?.id !== project.id;
 }
 
 /**
@@ -124,9 +149,15 @@ export async function assertProjectApiAccess(args: {
       return;
     }
     if (await isHumanMobileWrite(args.request, surface)) {
+      if (leadsOutOfProject(requestedPath, project, projects)) {
+        throw new ProjectAccessDeniedError("this path leads outside its project");
+      }
       return;
     }
     throw new ProjectAccessDeniedError("missing familiarId for project access");
+  }
+  if (leadsOutOfProject(requestedPath, project, projects)) {
+    throw new ProjectAccessDeniedError("this path leads outside its project");
   }
   await assertProjectAccess({ familiarId }, project.id, surface);
 }
