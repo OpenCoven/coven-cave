@@ -561,10 +561,6 @@
 .cnav__thread[data-status="running"]:not(.is-active):not(:hover):not(:focus-within) .cnav__thread-title {
   color: var(--text-muted);
 }
-.cnav__thread[data-status="running"]:not(.is-active):not(:hover):not(:focus-within) .cnav__thread-project,
-.cnav__thread[data-status="running"]:not(.is-active):not(:hover):not(:focus-within) .cnav__thread-branch {
-  color: color-mix(in oklch, var(--text-muted) 75%, transparent);
-}
 .cnav__thread-line {
   display: flex;
   align-items: center;
