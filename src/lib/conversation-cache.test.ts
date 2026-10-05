@@ -351,13 +351,14 @@ test("chat-list rows prefetch on hover, pointer down, and keyboard focus", () =>
 });
 
 
-test("chat-view paints cached payloads and shares revalidation with prefetch", () => {
+test("chat-view paints cached payloads and shares revalidation with prefetch", async () => {
   // Cached paint (fresh, or kept past its TTL while it revalidates) goes
   // through the same apply path as a fresh fetch…
-  assert.match(chatView, /readConversationForPaint\(sessionId\)/);
-  assert.match(chatView, /applyConversationPayload\(cachedConversation\)/);
+  const sources = await readFile(new URL("./chat/history-sources.ts", import.meta.url), "utf8");
+  assert.match(sources, /readConversationForPaint\(/);
+  // Cache paint/unchanged identity execute in chat/history-load.test.ts.
   // …the network revalidation joins any row prefetch already in progress.
-  assert.match(chatView, /loadConversation\(sessionId\)/);
+  assert.match(sources, /loadConversation\(/);
   // …and mutations drop the entry so stale history can't be painted.
   assert.match(chatView, /invalidateConversation\(liveGeneration\.sessionId\)/);
   assert.match(chatView, /invalidateConversation\(sessionId\)/);

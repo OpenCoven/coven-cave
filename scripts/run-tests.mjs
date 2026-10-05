@@ -899,6 +899,9 @@ export const SUITES = {
     "src/components/chat-context-navigation.test.ts",
     "src/lib/chat-transcript-window.test.ts",
     "src/lib/chat-transcript-load.test.ts",
+    "src/lib/chat/history-load.test.ts",
+    "src/lib/chat/history-sources.test.ts",
+    "scripts/eslint/chat-history-boundary.test.mjs",
     "src/lib/use-composer-history.test.ts",
     "src/lib/use-attachment-staging.test.ts",
     "src/lib/slash-command-inline.test.ts",
@@ -2199,6 +2202,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // saved-history mapping uses the existing shared chat-turn-state contract
+  "src/lib/chat/history-load.test.ts",
   // drives the real changes route against real repositories (#5781)
   "src/app/api/changes/route-git-states.test.ts",
   // imports the datetime helpers through the @/ alias (#5756)

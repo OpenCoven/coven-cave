@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { pendingHistorySystemTurns, startChatTranscriptLoad } from "./chat-transcript-load.ts";
 
 test("pending history may retain informational notices, but not replace sends, edits or resets", () => {
@@ -104,17 +105,59 @@ test("caller ownership guards can refuse cache paint after a live generation or 
   }
 });
 
-test("ChatView keeps cancellation, generation/reset and equality guards around concurrent loads", () => {
+test("ChatView binds saved-history loading to current owner refs and keeps all reset surfaces fenced", () => {
   const source = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-  assert.match(source, /hasLiveGeneration\(\) \|\| pendingHistorySystemTurns\(paintedTurns, turnsRef\.current\) === null/);
-  assert.match(source, /transcriptResetRevisionRef\.current !== resetRevision/);
-  assert.equal((source.match(/transcriptResetRevisionRef\.current \+= 1/g) ?? []).length, 3, "every explicit clear surface fences history");
-  assert.match(source, /localSystemTurns = \[\.\.\.localSystemTurns, \.\.\.additions\];/);
-  assert.match(source, /applyConversationPayload\(payload, localSystemTurns\)/);
-  assert.match(source, /if \(cancelled \|\| hasNewerGeneration\(\)\) return;/);
-  assert.match(source, /const emptyTurns: Turn\[\] = \[\];\s*setTurns\(emptyTurns\);\s*turnsRef\.current = emptyTurns;/);
-  assert.match(source, /paintedConversation &&\s*sameConversationRevision\(/);
-  assert.match(source, /onPendingDurable: paintDurable/);
-  assert.match(source, /if \(!\(error instanceof ConversationLoadError && error\.status === 404\)\) \{\s*const durable = await historyLoad\.durable;/);
-  assert.match(source, /return \(\) => \{\s*cancelled = true;/);
+  const parsed = ts.createSourceFile("chat-view.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let effect: ts.Block | undefined;
+  let resets = 0;
+  function visit(node: ts.Node) {
+    if (ts.isCallExpression(node) && node.expression.getText(parsed) === "useEffect") {
+      const callback = node.arguments[0];
+      if (callback && ts.isArrowFunction(callback) && ts.isBlock(callback.body) && callback.body.statements.some(statement =>
+        ts.isReturnStatement(statement) && statement.expression && ts.isCallExpression(statement.expression) && statement.expression.expression.getText(parsed) === "startChatHistoryLoad"
+      )) effect = callback.body;
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken && node.left.getText(parsed) === "transcriptResetRevisionRef.current") resets += 1;
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  assert.ok(effect, "the admitted history effect delegates to the coordinator");
+  assert.equal(resets, 3, "each of the three explicit clear surfaces fences pending history");
+  const start = effect.statements.findIndex(statement => ts.isVariableStatement(statement) && statement.declarationList.declarations.some(declaration => declaration.name.getText(parsed) === "endThreadSpan"));
+  assert.ok(start >= 0, "the owning view starts the existing thread-open span");
+  const body = ts.transpile(effect.statements.slice(start).map(statement => statement.getText(parsed)).join("\n"), { target: ts.ScriptTarget.ESNext });
+  const turnsRef = { current: [{ id: "saved" }] };
+  const resetRef = { current: 7 };
+  const sources = {};
+  let captured: Record<string, unknown> | undefined;
+  const cleanup = () => {};
+  const spanCalls: string[] = [];
+  let settled = 0;
+  let active = false;
+  const setters = Array.from({ length: 5 }, () => () => {});
+  const keepLiveSession = () => true;
+  const run = new Function("startChatHistoryLoad", "sessionId", "isThreadSwitch", "flowBackedSession", "chatHistorySources", "turnsRef", "transcriptResetRevisionRef", "readLiveChatGeneration", "isLiveSnapshotActive", "keepLiveSession", "setTurns", "setActiveLeafId", "setHistoryState", "setLinkedContext", "setFlowTranscriptFallback", "startSpan", "THREAD_OPEN_SPAN", "markStartupSettled", body);
+  const returned = run((options: Record<string, unknown>) => { captured = options; return cleanup; }, "chat", true, false, sources, turnsRef, resetRef,
+    (id: string) => { assert.equal(id, "chat"); return active ? {} : null; }, () => active, keepLiveSession, ...setters,
+    (name: string) => { spanCalls.push(name); return () => { spanCalls.push("painted"); }; }, "chat:thread-open", () => { settled += 1; });
+  assert.equal(returned, cleanup, "React cleanup fences the delegated loader");
+  assert.equal(captured?.sessionId, "chat");
+  assert.equal(captured?.isThreadSwitch, true);
+  assert.equal(captured?.flowBackedSession, false);
+  assert.equal(captured?.sources, sources);
+  const view = captured?.view as import("./chat/history-load.ts").ChatHistoryView;
+  assert.equal(view.readTurns(), turnsRef.current);
+  const next = [{ id: "new", role: "user" as const, text: "New", createdAt: "2026-10-05T00:00:00.000Z" }];
+  view.syncTurns(next);
+  assert.equal(turnsRef.current, next);
+  resetRef.current += 1;
+  assert.equal(view.readResetRevision(), 8, "reads live reset ownership rather than a snapshot");
+  assert.equal(view.hasLiveGeneration(), false);
+  active = true;
+  assert.equal(view.hasLiveGeneration(), true);
+  assert.equal(view.keepLiveSession, keepLiveSession);
+  assert.deepEqual([view.setTurns, view.setActiveLeafId, view.setState, view.setContext, view.setFallback], setters);
+  view.onPaint();
+  assert.deepEqual(spanCalls, ["chat:thread-open", "painted"]);
+  assert.equal(settled, 1);
 });
