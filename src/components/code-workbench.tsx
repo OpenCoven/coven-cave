@@ -48,7 +48,9 @@ import { relativeTime } from "@/lib/relative-time";
 import { CodeComposer } from "@/components/code-composer";
 import { CodeOpenFileTabs, codeOpenFileTabId } from "@/components/code-open-file-tabs";
 import { codeTablistKeyTarget } from "@/lib/code-tablist-keys";
-import { fileEditDrafts } from "@/lib/file-edit-drafts";
+import { fileEditDrafts, isDraftDirty } from "@/lib/file-edit-drafts";
+import { copyText } from "@/lib/clipboard";
+import { describeHiddenUnicode } from "@/lib/hidden-unicode";
 import { CodeReviewRail } from "@/components/code-review-rail";
 import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
@@ -88,6 +90,7 @@ import {
   cycleCodeFile,
   emptyCodeOpenFiles,
   openCodeFile,
+  sameCodePath,
   withDraftTabs,
   type CodeOpenFiles,
 } from "@/lib/code-open-files";
@@ -115,6 +118,17 @@ const LazyPrReader = dynamic(
   () => import("@/components/github-pr-reader").then((m) => m.GitHubPrReader),
   { ssr: false },
 );
+
+/**
+ * Is a modal dialog open anywhere on the page (#5795)? Closed ones can stay
+ * mounted, hidden (the phone layout's chat drawer), so a dialog counts only
+ * while it is shown.
+ */
+function modalDialogOpen(): boolean {
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].some(
+    (dialog) => !dialog.closest('[hidden], [aria-hidden="true"], [inert]') && dialog.getClientRects().length > 0,
+  );
+}
 
 const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
   files: "Files",
@@ -281,6 +295,56 @@ export function CodeWorkbench({
     announce(CODE_STEP_ANNOUNCEMENT[step]);
   }, [announce, fitsSplit, step]);
 
+  // Where focus lands in a step (#5795): the active file tab or the viewer's
+  // header for Source, the rail's selected tab for Review, the tree for Files.
+  // Looked up for a few frames, since the step mounts after this call and the
+  // tree lists itself only after its first load. ⌘⇧F `force`s it: that key
+  // says "focus the tree". Otherwise it acts only while focus is on the page.
+  const landStepFocus = useCallback((target: CodeWorkbenchStep, force = false) => {
+    let frames = 0;
+    const attempt = () => {
+      const active = document.activeElement;
+      if (!force && active && active !== document.body) return;
+      const room = roomRef.current;
+      let element: HTMLElement | null | undefined;
+      if (target === "files") {
+        // The tree, or the changed-only list when that filter is on. Looked
+        // up one at a time: a combined selector returns the first match in
+        // document order, which is always the filter button above both
+        // (#5737 review).
+        const column = room?.querySelector<HTMLElement>(".code-room__tree");
+        element =
+          column?.querySelector<HTMLElement>('[role="tree"]') ??
+          column?.querySelector<HTMLElement>(".code-tree__changed-row");
+      } else if (target === "source") {
+        element =
+          room?.querySelector<HTMLElement>('[data-testid="code-open-file-tabs"] [role="tab"][aria-selected="true"]') ??
+          room?.querySelector<HTMLElement>(".code-room__viewer .workspace-rail__preview-head");
+      } else {
+        element = room?.querySelector<HTMLElement>('[data-testid="code-review-rail"] [role="tab"][aria-selected="true"]');
+      }
+      if (element) element.focus();
+      else if (++frames < 30) requestAnimationFrame(attempt);
+      else if (target === "files") room?.querySelector<HTMLElement>(".code-room__tree .code-tree__filter")?.focus();
+      else stepTabRefs.current.get(target)?.focus();
+    };
+    requestAnimationFrame(attempt);
+  }, []);
+  // A step change made from inside a step (#5795): the narrow desk unmounts
+  // the step that held focus, and choosing a file, ⌘⇧C or ⌘⇧R, hiding the
+  // rail and Next unviewed each left keyboard users on <body>. When the
+  // control that last had focus in the columns went with its step, focus
+  // lands in the new one. The step tabs sit outside the columns and keep it.
+  const lastBodyFocusRef = useRef<HTMLElement | null>(null);
+  const shownStepRef = useRef(step);
+  useEffect(() => {
+    if (shownStepRef.current === step) return;
+    shownStepRef.current = step;
+    const last = lastBodyFocusRef.current;
+    if (fitsSplit || !last || last.isConnected) return;
+    landStepFocus(step);
+  }, [fitsSplit, landStepFocus, step]);
+
   // ── Selected file ──────────────────────────────────────────────────────────
   // Tabs, viewed ticks and the draft are remembered per session (#5718):
   // CodeView remounts this workbench for every session it shows, so without
@@ -322,9 +386,18 @@ export function CodeWorkbench({
       openTarget && handledOpenRef.current === openTarget ? undefined : openTarget,
   });
 
+  const openFilesRef = useRef(openFiles);
+  openFilesRef.current = openFiles;
   const openPath = useCallback(
     (path: string) => {
-      const absolute = path.startsWith("/") ? path : absolutePath(workRoot, path);
+      const given = path.startsWith("/") ? path : absolutePath(workRoot, path);
+      // One file, one tab and one draft (#5795): the tree spells a name as
+      // the disk stores it (decomposed on macOS), the change list as git
+      // reports it (precomposed), and the two opened twice, each with its
+      // own edit. A tab or an edit already open under the other spelling is
+      // the one used; the spelling itself is what reads and writes the file.
+      const absolute =
+        openFilesRef.current.paths.find((open) => sameCodePath(open, given)) ?? fileEditDrafts.get(given)?.path ?? given;
       setSelectedPath(absolute);
       setFocusLine(null);
       setRangeLabel(null);
@@ -344,7 +417,7 @@ export function CodeWorkbench({
   const closeTab = useCallback((path: string) => {
     // Closing keeps an unsaved edit (#5745); say so, since the tab that showed
     // its marker is gone.
-    if (fileEditDrafts.dirtyPaths().has(path)) {
+    if (isDraftDirty(fileEditDrafts.get(path))) {
       announce(`Closed ${path.split("/").pop() ?? path}. Its unsaved changes are kept; open it again to continue.`);
     }
     setOpenFiles((current) => {
@@ -436,21 +509,82 @@ export function CodeWorkbench({
       : null;
   // The tree and the tabs resolve change paths against the same base.
   const changesBase = changes.repoRoot || workRoot;
+  // Keyed by each tab's own spelling, matched in one Unicode form (#5795): a
+  // tab opened from the tree's decomposed name lost its letter.
   const tabStatus = useMemo(() => {
+    const byFile = new Map<string, string>();
+    for (const file of changes.files) {
+      byFile.set(absolutePath(changesBase, file.path).normalize("NFC"), STATUS_LETTER[file.status] ?? "M");
+    }
     const map = new Map<string, string>();
-    for (const file of changes.files) map.set(absolutePath(changesBase, file.path), STATUS_LETTER[file.status] ?? "M");
+    for (const path of openFiles.paths) {
+      const letter = byFile.get(path.normalize("NFC"));
+      if (letter) map.set(path, letter);
+    }
     return map;
-  }, [changes.files, changesBase]);
+  }, [changes.files, changesBase, openFiles.paths]);
   const activeTabIndex = openFiles.active ? openFiles.paths.indexOf(openFiles.active) : -1;
   // The open file's version in the live changes list. When the agent rewrites
   // it (or a revert restores it), the viewer reads it again (#5745).
   const selectedChangeVersion = useMemo(() => {
     if (!selectedPath) return null;
-    const hit = changes.files.find((file) => absolutePath(changesBase, file.path) === selectedPath);
+    // Either spelling (#5795): a file opened by its decomposed name never read
+    // the agent's rewrite again.
+    const hit = changes.files.find((file) => sameCodePath(absolutePath(changesBase, file.path), selectedPath));
     return hit?.changeVersion ?? null;
   }, [changes.files, changesBase, selectedPath]);
-  // Files with unsaved edits, for the tab marker.
-  const dirtyPaths = useSyncExternalStore(fileEditDrafts.subscribe, fileEditDrafts.dirtyPaths, fileEditDrafts.dirtyPaths);
+  // Files with unsaved edits, for the tab marker: the tabs' own spellings
+  // of the drafts' files (#5795).
+  const draftPaths = useSyncExternalStore(fileEditDrafts.subscribe, fileEditDrafts.dirtyPaths, fileEditDrafts.dirtyPaths);
+  const dirtyPaths = useMemo(() => {
+    const drafted = new Set([...draftPaths].map((path) => path.normalize("NFC")));
+    return new Set(openFiles.paths.filter((path) => drafted.has(path.normalize("NFC"))));
+  }, [draftPaths, openFiles.paths]);
+
+  // Unsaved edits under a folder that's gone (#5795). The notice replaces the
+  // tree, the tabs and the viewer, so an edit open when the folder went had no
+  // editor and no Copy edit, and ⌘S said to open a file that couldn't be. The
+  // notice lists them, each with Copy edit and Discard.
+  const goneDrafts = useMemo(() => {
+    if (!changes.missingRoot || !workRoot.trim()) return [];
+    const prefix = `${workRoot.replace(/\/+$/, "")}/`.normalize("NFC");
+    return [...draftPaths].filter((path) => path.normalize("NFC").startsWith(prefix));
+  }, [changes.missingRoot, draftPaths, workRoot]);
+  const goneDraftsRef = useRef(goneDrafts);
+  goneDraftsRef.current = goneDrafts;
+  const [copiedDraft, setCopiedDraft] = useState<string | null>(null);
+  const goneDraftLabel = useCallback(
+    (path: string) => {
+      const root = `${workRoot.replace(/\/+$/, "")}/`;
+      return path.startsWith(root) ? path.slice(root.length) : path;
+    },
+    [workRoot],
+  );
+  const copyGoneDraft = useCallback((path: string) => {
+    const draft = fileEditDrafts.get(path);
+    if (!draft) return;
+    void copyText(draft.content).then((ok) => {
+      if (!ok) return;
+      setCopiedDraft(path);
+      window.setTimeout(() => setCopiedDraft((current) => (current === path ? null : current)), 1500);
+    });
+  }, []);
+  const discardGoneDraft = useCallback(
+    (path: string, index: number) => {
+      fileEditDrafts.discard(path);
+      announce(`Discarded the unsaved edit to ${goneDraftLabel(path)}.`);
+      // Its row goes with the button that had focus: the next edit's Copy,
+      // or Check again when none is left.
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (active && active !== document.body) return;
+        const rows = roomRef.current?.querySelectorAll<HTMLElement>(".code-room__gone-draft") ?? [];
+        const row = rows[Math.min(index, rows.length - 1)];
+        (row?.querySelector<HTMLElement>("button") ?? roomRef.current?.querySelector<HTMLElement>(".ui-empty-state-actions button"))?.focus();
+      });
+    },
+    [announce, goneDraftLabel],
+  );
   const selectedRelative = useMemo(() => {
     if (!selectedPath) return null;
     const base = changesBase.replace(/\/$/, "");
@@ -545,6 +679,19 @@ export function CodeWorkbench({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      // Nothing behind a dialog, and nothing from outside the desk (#5795):
+      // with the Keyboard shortcuts dialog open, Alt+↑ switched the file
+      // behind it, ⌘P opened the picker over it, and ⌘⇧F took focus out of
+      // it to a tree row. A key pressed with focus on the page itself (it
+      // fell to <body>) is still the desk's.
+      if (keysOpen || modalDialogOpen()) return;
+      const origin = event.target;
+      if (
+        origin instanceof Node &&
+        origin !== document.body &&
+        origin !== document.documentElement &&
+        !deskRef.current?.contains(origin)
+      ) return;
       // Never steal a keystroke from a field — the composer, the picker's
       // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
       // and Ctrl+C belong to the shell. The one exception is the drawer's own
@@ -574,23 +721,9 @@ export function CodeWorkbench({
         if (!fitsSplit) setStep("review");
       } else if (action === "files") {
         if (!fitsSplit) setStep("files");
-        // The tree, or the changed-only list when that filter is on. Looked up
-        // one at a time: a combined selector returns the first match in
-        // document order, which is always the filter button above both
-        // (#5737 review). The tree lists itself only after its first load, and
-        // on a narrow room it mounts with this step, so give it a few frames
-        // before settling on the filter.
-        let frames = 0;
-        const focusTree = () => {
-          const column = roomRef.current?.querySelector<HTMLElement>(".code-room__tree");
-          const target =
-            column?.querySelector<HTMLElement>('[role="tree"]') ??
-            column?.querySelector<HTMLElement>(".code-tree__changed-row");
-          if (target) target.focus();
-          else if (++frames < 30) requestAnimationFrame(focusTree);
-          else column?.querySelector<HTMLElement>(".code-tree__filter")?.focus();
-        };
-        requestAnimationFrame(focusTree);
+        // The tree, or the changed-only list, or at last the filter above
+        // them, from wherever focus is.
+        landStepFocus("files", true);
       } else if (action === "outline") {
         roomRef.current
           ?.querySelector<HTMLElement>('.workspace-rail__preview-action[aria-expanded]')
@@ -607,7 +740,7 @@ export function CodeWorkbench({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cycleTab, fitsSplit, keymap, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
+  }, [cycleTab, fitsSplit, keymap, keysOpen, landStepFocus, onReviewOpenChange, onTerminalOpenChange, panels.terminalOpen]);
 
   // ⌘S with the viewer away (#5781): the narrow Files and Review steps and
   // the full PR view unmount it, and ⌘S opened the browser's Save page even
@@ -618,7 +751,10 @@ export function CodeWorkbench({
       if (event.defaultPrevented) return;
       if (deskRef.current?.querySelector(".code-room__viewer")) return; // the viewer's own handler saves
       event.preventDefault();
-      if (fileEditDrafts.hasDirty()) announce("Open the edited file to save it.");
+      // Not "open it" when it can't be (#5795): the folder is gone.
+      if (goneDraftsRef.current.length > 0) {
+        announce("This session's folder is no longer on disk, so its unsaved edits can't be saved. Copy them from the list.");
+      } else if (fileEditDrafts.hasDirty()) announce("Open the edited file to save it.");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -794,16 +930,61 @@ export function CodeWorkbench({
         </div>
       )}
 
-      <div className="code-room__body" ref={roomRef} data-split={fitsSplit ? "true" : undefined}>
+      <div
+        className="code-room__body"
+        ref={roomRef}
+        data-split={fitsSplit ? "true" : undefined}
+        onFocus={(event) => { lastBodyFocusRef.current = event.target; }}
+      >
         {rootNotice ? (
-          <EmptyState
-            icon={rootNotice.icon}
-            headline={rootNotice.headline}
-            subtitle={rootNotice.subtitle}
-            actions={rootNotice.retry ? (
-              <Button variant="secondary" size="xs" onClick={changes.refresh}>Check again</Button>
-            ) : undefined}
-          />
+          <div className="code-room__root-notice">
+            <EmptyState
+              icon={rootNotice.icon}
+              headline={rootNotice.headline}
+              subtitle={rootNotice.subtitle}
+              actions={rootNotice.retry ? (
+                <Button variant="secondary" size="xs" onClick={changes.refresh}>Check again</Button>
+              ) : undefined}
+            />
+            {rootNotice.retry && goneDrafts.length > 0 ? (
+              <section className="code-room__gone-drafts" aria-labelledby={`${deskId}-gone-drafts`} data-testid="code-gone-drafts">
+                <p className="code-room__gone-drafts-title" id={`${deskId}-gone-drafts`}>
+                  {goneDrafts.length === 1
+                    ? "One unsaved edit in this folder is kept. Copy it before you discard it."
+                    : `${goneDrafts.length} unsaved edits in this folder are kept. Copy them before you discard them.`}
+                </p>
+                <ul className="code-room__gone-drafts-list">
+                  {goneDrafts.map((path, index) => {
+                    const label = goneDraftLabel(path);
+                    return (
+                      <li key={path} className="code-room__gone-draft">
+                        <span className="code-room__gone-draft-name" title={describeHiddenUnicode(path)}>
+                          <bdi className="[direction:ltr] [unicode-bidi:isolate]"><HiddenUnicodeText text={label} /></bdi>
+                        </span>
+                        {/* Named for their file, the visible word first. */}
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          aria-label={`${copiedDraft === path ? "Copied" : "Copy edit"}, ${describeHiddenUnicode(label)}`}
+                          onClick={() => copyGoneDraft(path)}
+                        >
+                          {copiedDraft === path ? "Copied" : "Copy edit"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          aria-label={`Discard, ${describeHiddenUnicode(label)}`}
+                          onClick={() => discardGoneDraft(path, index)}
+                        >
+                          Discard
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+          </div>
         ) : (
         <>
         {prFull ? (

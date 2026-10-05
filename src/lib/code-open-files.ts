@@ -23,15 +23,29 @@ export function emptyCodeOpenFiles(): CodeOpenFiles {
   return { paths: [], active: null };
 }
 
-/** Open `path` (or re-activate it) — appends new tabs, keeps existing order. */
+/**
+ * Do two paths name one file (#5795)? Compared in one Unicode form: the disk
+ * stores a name decomposed on macOS and git reports it precomposed, so the
+ * tree and the change list spelled one file two ways, and it opened twice.
+ * The spelling itself is kept for reading and writing, since a Linux disk
+ * holds exactly the bytes it was given.
+ */
+export function sameCodePath(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return a === b || a.normalize("NFC") === b.normalize("NFC");
+}
+
+/** Open `path` (or re-activate it) — appends new tabs, keeps existing order.
+ *  A tab already open under another spelling of the path is the one used. */
 export function openCodeFile(
   state: CodeOpenFiles,
   path: string,
   limit = CODE_OPEN_FILES_LIMIT,
 ): CodeOpenFiles {
   if (!path) return state;
-  if (state.paths.includes(path)) {
-    return state.active === path ? state : { paths: state.paths, active: path };
+  const open = state.paths.find((candidate) => sameCodePath(candidate, path));
+  if (open) {
+    return state.active === open ? state : { paths: state.paths, active: open };
   }
   let paths = [...state.paths, path];
   while (paths.length > Math.max(1, limit)) {
@@ -59,7 +73,7 @@ export function withDraftTabs(
   const prefix = root.endsWith("/") ? root : `${root}/`;
   let next = state;
   for (const path of dirtyPaths) {
-    if (!path.startsWith(prefix) || next.paths.includes(path)) continue;
+    if (!path.normalize("NFC").startsWith(prefix.normalize("NFC")) || next.paths.some((open) => sameCodePath(open, path))) continue;
     const active = next.active;
     next = openCodeFile(next, path, Number.POSITIVE_INFINITY);
     if (active) next = { ...next, active };

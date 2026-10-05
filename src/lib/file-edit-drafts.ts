@@ -47,7 +47,17 @@ export type FileEditDraft = {
   /** The file's line break. The editor works in "\n"; a file whose every
    *  break is CRLF is saved back as CRLF, not rewritten line by line (#5745). */
   eol: "\n" | "\r\n";
+  /** The text of a save that failed or never answered (#5795). It may have
+   *  reached the disk anyway, and a disk found holding it is this edit's own
+   *  earlier save, not someone else's change. */
+  unconfirmed?: string | null;
 };
+
+/** One file, one key (#5795): the disk stores a name decomposed on macOS, git
+ *  reports it precomposed, and the two spellings made two drafts of one file. */
+export function fileEditDraftKey(path: string): string {
+  return path.normalize("NFC");
+}
 
 /** CRLF only when every line break is: a mixed file keeps the editor's "\n". */
 export function fileLineBreak(content: string): "\n" | "\r\n" {
@@ -86,28 +96,58 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     for (const listener of listeners) listener();
   };
   const put = (draft: FileEditDraft) => {
-    drafts.delete(draft.path);
-    drafts.set(draft.path, draft);
+    const key = fileEditDraftKey(draft.path);
+    drafts.delete(key);
+    drafts.set(key, draft);
     if (drafts.size > limit) {
-      for (const [path, entry] of drafts) {
+      for (const [entryKey, entry] of drafts) {
         if (drafts.size <= limit) break;
-        if (!isDraftDirty(entry) && !entry.saving) drafts.delete(path);
+        if (!isDraftDirty(entry) && !entry.saving) drafts.delete(entryKey);
       }
     }
     emit();
   };
   const patch = (path: string, change: Partial<FileEditDraft>) => {
-    const draft = drafts.get(path);
+    const key = fileEditDraftKey(path);
+    const draft = drafts.get(key);
     if (!draft) return null;
     const next = { ...draft, ...change };
-    drafts.set(path, next);
+    drafts.set(key, next);
     emit();
     return next;
+  };
+  /** Text as the file holds it, in the draft's own line break. */
+  const asOnDisk = (draft: FileEditDraft, text: string) => (draft.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text);
+  /** The disk holds the draft's unconfirmed save (#5795): that text is now
+   *  what the edit started from, at the disk's version, and what was typed
+   *  since stays the edit. */
+  const rebase = (draft: FileEditDraft, version: string) =>
+    patch(draft.path, {
+      baseContent: draft.unconfirmed ?? draft.baseContent,
+      baseVersion: version,
+      unconfirmed: null,
+      saving: false,
+      error: null,
+      conflict: false,
+      diskVersion: null,
+    });
+  const noteDiskVersion = (path: string, version: string | null) => {
+    const draft = drafts.get(fileEditDraftKey(path));
+    if (!draft || draft.saving || !version || !draft.baseVersion) return;
+    if (version === draft.baseVersion) {
+      // Back to the bytes the edit started from: the precondition holds
+      // again, so the conflict is over (#5746 review).
+      if (draft.conflict) patch(path, { conflict: false, error: null });
+      return;
+    }
+    if (!draft.conflict || draft.diskVersion !== version) {
+      patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK, diskVersion: version });
+    }
   };
 
   return {
     get(path: string | null | undefined): FileEditDraft | null {
-      return path ? drafts.get(path) ?? null : null;
+      return path ? drafts.get(fileEditDraftKey(path)) ?? null : null;
     },
     /** Paths whose draft differs from the text it started from. Stable between changes. */
     dirtyPaths(): ReadonlySet<string> {
@@ -130,7 +170,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     },
     /** Start editing `path` from `content` (no-op when a draft already exists). */
     begin(path: string, content: string, version: string | null): FileEditDraft {
-      const existing = drafts.get(path);
+      const existing = drafts.get(fileEditDraftKey(path));
       if (existing) return existing;
       const eol = fileLineBreak(content);
       const text = eol === "\r\n" ? content.replace(/\r\n/g, "\n") : content;
@@ -141,23 +181,24 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
       return draft;
     },
     update(path: string, content: string) {
-      const draft = drafts.get(path);
+      const draft = drafts.get(fileEditDraftKey(path));
       if (!draft || draft.content === content) return;
       patch(path, { content });
     },
     /** Throw the edit away (Cancel, or Reload after a conflict). */
     discard(path: string) {
-      if (drafts.delete(path)) emit();
+      if (drafts.delete(fileEditDraftKey(path))) emit();
     },
     /** Mark a save as started. Returns the edit's identity, the edited text
      *  (`content`, for `settle`), the bytes to write (`body`, in the file's own
-     *  line break), or null when no save may start. */
-    startSave(path: string): { id: number; content: string; body: string; baseVersion: string | null } | null {
-      const draft = drafts.get(path);
+     *  line break), whether an earlier save of it is unconfirmed, or null when
+     *  no save may start. */
+    startSave(path: string): { id: number; content: string; body: string; baseVersion: string | null; unconfirmed: boolean } | null {
+      const draft = drafts.get(fileEditDraftKey(path));
       if (!draft || draft.saving) return null;
       patch(path, { saving: true, error: null });
       const body = draft.eol === "\r\n" ? draft.content.replace(/\n/g, "\r\n") : draft.content;
-      return { id: draft.id, content: draft.content, body, baseVersion: draft.baseVersion };
+      return { id: draft.id, content: draft.content, body, baseVersion: draft.baseVersion, unconfirmed: draft.unconfirmed != null };
     },
     /**
      * A save of `sent` succeeded at `version`. The draft is done unless it was
@@ -165,37 +206,71 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
      * what reached the disk. Returns whether the draft is still open.
      */
     settle(path: string, id: number, sent: string, version: string | null): boolean {
-      const draft = drafts.get(path);
+      const key = fileEditDraftKey(path);
+      const draft = drafts.get(key);
       if (!draft || draft.id !== id) return false;
       if (draft.content === sent) {
-        drafts.delete(path);
+        drafts.delete(key);
         emit();
         return false;
       }
-      patch(path, { baseContent: sent, baseVersion: version, saving: false, error: null, conflict: false });
+      patch(path, { baseContent: sent, baseVersion: version, saving: false, error: null, conflict: false, unconfirmed: null });
       return true;
     },
-    /** A save failed. A conflict names the disk's version, when the server said. */
-    fail(path: string, id: number, error: string, conflict = false, diskVersion: string | null = null) {
-      if (drafts.get(path)?.id !== id) return;
-      patch(path, conflict ? { saving: false, error, conflict, diskVersion } : { saving: false, error, conflict });
+    /** A save failed. A conflict names the disk's version, when the server
+     *  said. Any other failure keeps the text it sent (`sent`, #5795): the
+     *  write may have landed after all. */
+    fail(path: string, id: number, error: string, conflict = false, diskVersion: string | null = null, sent: string | null = null) {
+      const draft = drafts.get(fileEditDraftKey(path));
+      if (draft?.id !== id) return;
+      patch(
+        path,
+        conflict
+          ? { saving: false, error, conflict, diskVersion }
+          : { saving: false, error, conflict, unconfirmed: sent ?? draft.unconfirmed ?? null },
+      );
     },
     /**
      * The viewer read the file again. If it is no longer the version the
      * draft started from, say so before a save is attempted.
      */
-    noteDiskVersion(path: string, version: string | null) {
-      const draft = drafts.get(path);
-      if (!draft || draft.saving || !version || !draft.baseVersion) return;
-      if (version === draft.baseVersion) {
-        // Back to the bytes the edit started from: the precondition holds
-        // again, so the conflict is over (#5746 review).
-        if (draft.conflict) patch(path, { conflict: false, error: null });
-        return;
+    noteDiskVersion,
+    /**
+     * The viewer read the file again, text and version (#5795). A disk that
+     * holds the whole edit means a save landed after its time ran out
+     * (#5781): the draft is done ("saved"). A disk that holds an unconfirmed
+     * save's text means that save landed and more was typed since: the draft
+     * is rebased onto it ("rebased"), not called a conflict, and Reload is no
+     * longer the only way out. Anything else goes to `noteDiskVersion`.
+     */
+    noteDiskRead(path: string, content: string, version: string | null): "saved" | "rebased" | null {
+      const key = fileEditDraftKey(path);
+      const draft = drafts.get(key);
+      if (!draft || draft.saving) return null;
+      if (isDraftDirty(draft) && asOnDisk(draft, draft.content) === content) {
+        drafts.delete(key);
+        emit();
+        return "saved";
       }
-      if (!draft.conflict || draft.diskVersion !== version) {
-        patch(path, { conflict: true, error: FILE_CHANGED_ON_DISK, diskVersion: version });
+      if (draft.unconfirmed != null && version && asOnDisk(draft, draft.unconfirmed) === content) {
+        rebase(draft, version);
+        return "rebased";
       }
+      noteDiskVersion(path, version);
+      return null;
+    },
+    /**
+     * A save from draft `id` was refused as a conflict, and the disk holds
+     * `content` at `version` (#5795). When that is an earlier unconfirmed
+     * save's text, the conflict was with this edit's own write: the draft is
+     * rebased onto it and the caller saves again. Returns whether it was.
+     */
+    rebaseOnEarlierSave(path: string, id: number, content: string, version: string | null): boolean {
+      const draft = drafts.get(fileEditDraftKey(path));
+      if (!draft || draft.id !== id || draft.unconfirmed == null || !version) return false;
+      if (asOnDisk(draft, draft.unconfirmed) !== content) return false;
+      rebase(draft, version);
+      return true;
     },
     /**
      * Keep my edit and write it over the newer file. The save is pinned to the
@@ -204,7 +279,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
      * save of this draft unchecked.
      */
     acceptDisk(path: string) {
-      const draft = drafts.get(path);
+      const draft = drafts.get(fileEditDraftKey(path));
       if (!draft) return;
       patch(path, { baseVersion: draft.diskVersion ?? null, conflict: false, error: null, diskVersion: null });
     },
@@ -216,8 +291,9 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     restore(saved: readonly SavedFileEditDraft[]) {
       let changed = false;
       for (const { savedAt: _savedAt, ...entry } of saved) {
-        if (drafts.has(entry.path)) continue;
-        drafts.set(entry.path, { ...entry, id: nextId++, saving: false, error: null, conflict: false });
+        const key = fileEditDraftKey(entry.path);
+        if (drafts.has(key)) continue;
+        drafts.set(key, { ...entry, id: nextId++, saving: false, error: null, conflict: false });
         changed = true;
       }
       if (changed) emit();
@@ -347,8 +423,17 @@ export function persistFileEditDrafts(
       // Unchanged here since this page last wrote it: rewritten only when
       // its copy is gone. Another window that saved or discarded the file
       // removed it, and this page still holds the edit (#5781). A different
-      // copy is another window's newer edit, and is left alone.
-      if (written.get(draft.path) === entry && storedKey(draft.path) !== null) continue;
+      // copy is another window's newer edit, and is left alone, but it isn't
+      // this page's text, so this page's edit reads as not backed up (#5795):
+      // it said "backed up" while a relaunch would bring back the other's.
+      if (written.get(draft.path) === entry) {
+        const stored = storedKey(draft.path);
+        if (stored === entry) continue;
+        if (stored !== null) {
+          unbacked.add(draft.path);
+          continue;
+        }
+      }
       try {
         storage.setItem(
           FILE_EDIT_DRAFT_STORAGE_PREFIX + draft.path,
@@ -411,6 +496,12 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flush();
+  });
+  // Another desktop window wrote or removed a stored draft (#5795). Checked
+  // now, not at this window's next keystroke: an idle window whose copy was
+  // overwritten kept saying it was backed up until it quit.
+  window.addEventListener("storage", (event) => {
+    if (event.key === null || event.key.startsWith(FILE_EDIT_DRAFT_STORAGE_PREFIX)) flush();
   });
   window.addEventListener("beforeunload", (event) => {
     flush();

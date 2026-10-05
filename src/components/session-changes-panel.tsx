@@ -25,6 +25,8 @@ import { isCodeRailFileViewed, type CodeRailViewedState,
   codeRailShapeOf,
 } from "@/lib/code-side-rail";
 import { ChangesSkeleton, CheckpointSection, FileRow, confirmRowKey } from "./session-changes-rows";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { CHANGES_IDLE_POLL_MS } from "@/lib/use-worktree-changes";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -228,7 +230,7 @@ export function SessionChangesInner({
 
   // Load when the panel becomes visible: on mount (the tab mounts the panel)
   // and when the document regains visibility. No polling while hidden — the
-  // interval below only ticks for visible documents on a running session.
+  // poll below only ticks for visible documents.
   useEffect(() => {
     void load({ shared: true });
     void loadCheckpoints();
@@ -242,13 +244,10 @@ export function SessionChangesInner({
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load, loadCheckpoints]);
 
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load({ shared: true });
-    }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [load, running]);
+  // An idle session is read too, more slowly, and the list is read again when
+  // the window regains focus (#5795). Shared: the desk's hook polls the same
+  // summary, and both join one request.
+  usePausablePoll(() => load({ shared: true }), running ? POLL_MS : CHANGES_IDLE_POLL_MS);
 
   // An inline "Undo" on a transcript edit card reverts a file via /api/changes
   // and fires `cave:changes-refresh` so this panel reflects the reverted file
@@ -522,10 +521,10 @@ export function SessionChangesInner({
     const message = commitMsg.trim();
     if (!message || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
-    setOutbound({ pending: "commit", error: null, prUrl: null });
+    setOutbound({ pending: "commit", error: null, prUrl: null, commitWarning: null });
     try {
       const json = await mutateSessionChanges<{
-        ok?: boolean; sha?: string; headOid?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
+        ok?: boolean; sha?: string; headOid?: string; branch?: string; onDefaultBranch?: boolean; error?: string; warning?: string;
       }>(fetch, projectRoot, "commit", {
         message,
         // The list as reviewed (#5745): the server refuses when the working
@@ -544,8 +543,13 @@ export function SessionChangesInner({
         prOpen: false,
         commitMessage: "",
         pending: null,
+        // What went wrong after it landed (#5795): a hook cut off at the time
+        // limit read as a plain success, though one that pushes or notifies
+        // never finished.
+        commitWarning: typeof json.warning === "string" && json.warning ? json.warning : null,
       });
-      announce("Changes committed.");
+      if (json.warning) announce(`Changes committed, but ${json.warning.replace(/^the commit landed, but /, "")}.`);
+      else announce("Changes committed.");
       setDiffs({});
       setExpandedPath(null);
       await Promise.all([load(), loadCheckpoints()]);
@@ -578,6 +582,9 @@ export function SessionChangesInner({
         },
       );
       setOutbound({ prUrl: json.url ?? null, prOpen: false, postCommit: null, pending: null });
+      // The branch has a pull request now (#5795): the composer's PR chip
+      // reads it again, as it does after a merge from the PR tab.
+      window.dispatchEvent(new CustomEvent("cave:branch-pr-changed"));
       if (json.url) announce("Pull request opened.");
     } catch (err) {
       const error = { action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) };
@@ -899,6 +906,26 @@ export function SessionChangesInner({
               >
                 Open PR <Icon name="ph:arrow-square-out" width={11} aria-hidden />
               </button>
+            </div>
+          ) : null}
+
+          {outbound.commitWarning ? (
+            <div
+              data-testid="commit-warning"
+              className="flex items-start justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
+            >
+              <span className="flex min-w-0 items-start gap-1.5">
+                <Icon name="ph:warning" width={12} aria-hidden className="mt-0.5 shrink-0 text-[var(--color-warning)]" />
+                {/* Wrapped, not cut: the end says what didn't finish. */}
+                <span className="min-w-0 break-words">Committed with a warning: {outbound.commitWarning}.</span>
+              </span>
+              <IconButton
+                icon="ph:x-bold"
+                size="xs"
+                className="shrink-0"
+                aria-label="Dismiss commit warning"
+                onClick={() => setOutbound({ commitWarning: null })}
+              />
             </div>
           ) : null}
 

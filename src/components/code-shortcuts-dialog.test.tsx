@@ -86,3 +86,57 @@ test("reserved queue combos are refused during rebinding", () => {
   expect(onChange).not.toHaveBeenCalled();
   expect(announce).toHaveBeenCalledWith("That shortcut is reserved for the session queue.");
 });
+
+// #5795: capture took Tab, Enter, Space and the arrows as bindings.
+function startCapture(onChange: () => void) {
+  let renderer;
+  act(() => {
+    renderer = create(
+      <CodeShortcutsDialog open onClose={() => {}} keymap={defaultCodeKeymap()} onChange={onChange} />,
+    );
+  });
+  const rebind = renderer.root.findAll(
+    (node) => node.type === "button" && node.props["aria-label"] === "Rebind Switch session",
+  )[0];
+  act(() => rebind.props.onClick());
+  const capturing = () =>
+    renderer.root.findAll((node) => node.type === "button" && node.props["aria-label"] === "Cancel rebinding Switch session").length === 1;
+  return { capturing };
+}
+
+test("Tab ends the capture and moves on, binding nothing", () => {
+  const onChange = vi.fn();
+  const { capturing } = startCapture(onChange);
+  expect(capturing()).toBe(true);
+  let event;
+  act(() => {
+    event = dispatchKey({ key: "Tab" });
+  });
+  expect(onChange).not.toHaveBeenCalled();
+  expect(event.defaultPrevented, "the browser still moves focus").toBe(false);
+  expect(capturing()).toBe(false);
+  expect(announce).toHaveBeenCalledWith("Rebinding cancelled.");
+});
+
+test("Enter, Space and the arrows on their own are refused, with a reason", () => {
+  const onChange = vi.fn();
+  const { capturing } = startCapture(onChange);
+  for (const key of ["Enter", " ", "ArrowDown", "PageUp"]) {
+    let event;
+    act(() => {
+      event = dispatchKey({ key });
+    });
+    expect(event.defaultPrevented, `${key} doesn't press the focused control`).toBe(true);
+  }
+  expect(onChange).not.toHaveBeenCalled();
+  expect(capturing(), "still waiting for a usable combo").toBe(true);
+  expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Enter is how the desk is used from the keyboard, so a shortcut with it needs/));
+  expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^An arrow key is how the desk/));
+  expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Page Up is how the desk/));
+  // With a modifier the same key binds.
+  act(() => {
+    dispatchKey({ key: "Enter", altKey: true });
+  });
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange.mock.calls[0][0].picker).toBe("Alt+Enter");
+});

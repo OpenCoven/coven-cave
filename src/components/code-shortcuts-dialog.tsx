@@ -10,8 +10,9 @@
  * binding turning visibly `unbound` in the same list is what makes the trade
  * legible instead of mysterious.
  *
- * While capturing, every keydown is swallowed: a rebind that also fired the
- * action it was rebinding would be a trap.
+ * While capturing, every keydown but Tab is swallowed: a rebind that also
+ * fired the action it was rebinding would be a trap. Tab ends the capture and
+ * moves on, and the other keys that move around the page are refused (#5795).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -30,6 +31,7 @@ import {
   codeComboFromEvent,
   codeReservedComboOwner,
   defaultCodeKeymap,
+  isCodeNavigationCombo,
   type CodeShortcutId,
 } from "@/lib/code-shortcuts";
 
@@ -53,15 +55,31 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
   useEffect(() => {
     if (!capturing) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      // Swallow everything while capturing, including Escape — Escape is a
-      // bindable key, and letting it close the dialog would make it unbindable.
+      const combo = codeComboFromEvent(event);
+      // Tab and Shift+Tab end the capture and move on as they always do
+      // (#5795): capture took Tab as the binding, and from then on every Tab
+      // on the desk opened the session picker.
+      if (combo === "Tab" || combo === "Shift+Tab") {
+        setCapturing(null);
+        announce("Rebinding cancelled.");
+        return;
+      }
+      // Swallow everything else while capturing, including Escape — Escape is
+      // a bindable key, and letting it close the dialog would make it unbindable.
       event.preventDefault();
       event.stopPropagation();
-      const combo = codeComboFromEvent(event);
       if (!combo) return;
       if (combo === "Escape") {
         setCapturing(null);
         announce("Rebinding cancelled.");
+        return;
+      }
+      // Enter, Space, the arrows, Home, End and the page keys press and move
+      // through the desk's controls; on their own they'd take that away.
+      if (isCodeNavigationCombo(combo)) {
+        const key = combo.slice(combo.lastIndexOf("+") + 1);
+        const named = key.startsWith("Arrow") ? "An arrow key" : key.replace(/^Page(Up|Down)$/, "Page $1");
+        announce(`${named} is how the desk is used from the keyboard, so a shortcut with it needs ${apple ? "⌘" : "Ctrl"} or ${apple ? "⌥" : "Alt"} too.`);
         return;
       }
       const reservedOwner = codeReservedComboOwner(combo);
@@ -86,7 +104,7 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [announce, capturing, keymap, onChange]);
+  }, [announce, apple, capturing, keymap, onChange]);
 
   const reset = useCallback(() => {
     onChange(defaultCodeKeymap());
@@ -125,7 +143,7 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
               <span className="code-keys__label">{shortcut.label}</span>
               <span className="code-keys__combo">
                 {isCapturing ? (
-                  <span className="code-keys__capturing">Press keys… (Esc cancels)</span>
+                  <span className="code-keys__capturing">Press keys… (Esc or Tab cancels)</span>
                 ) : combo ? (
                   codeComboChips(combo, apple).map((chip, i) => (
                     <kbd key={`${chip}-${i}`} className="code-keys__kbd">

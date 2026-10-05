@@ -76,10 +76,11 @@ assert.match(
   /<IconButton[\s\S]{0,120}icon="ph:archive"[\s\S]{0,220}saveCheckpoint\(\)/,
   "header Save is an IconButton wired to saveCheckpoint()",
 );
+// Four since #5795: the commit warning's row has one too.
 assert.equal(
   (src.match(/<IconButton[\s\S]{0,60}icon="ph:x-bold"/g) ?? []).length,
-  3,
-  "all three alert dismiss × are IconButtons",
+  4,
+  "all four alert dismiss × are IconButtons",
 );
 // The bordered icon-button recipe is gone (normalized to the borderless primitive).
 assert.doesNotMatch(src, /const btn =/, "the bordered icon-button recipe (const btn) is removed");

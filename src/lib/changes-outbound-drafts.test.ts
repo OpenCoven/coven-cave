@@ -66,4 +66,15 @@ const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND } = await import("./c
   assert.equal(store.get("b"), EMPTY_CHANGES_OUTBOUND);
 }
 
+// A commit's warning is kept on its own (#5795): the rail used to drop it, so a
+// post-commit hook cut off at the time limit read as a plain success.
+{
+  const store = createChangesOutboundStore();
+  store.patch("s1", { commitWarning: "the commit landed, but a hook after it was still running after 60 seconds" });
+  assert.equal(store.get("s1").commitWarning, "the commit landed, but a hook after it was still running after 60 seconds", "a warning alone keeps the entry");
+  store.patch("s1", { commitWarning: null });
+  assert.equal(store.get("s1"), EMPTY_CHANGES_OUTBOUND);
+  assert.equal(EMPTY_CHANGES_OUTBOUND.commitWarning, null);
+}
+
 console.log("changes-outbound-drafts: ok");

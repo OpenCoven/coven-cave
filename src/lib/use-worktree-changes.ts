@@ -10,18 +10,24 @@
  * makes that agreement structural rather than coincidental: three subscribers
  * on the same root collapse onto one request per poll window.
  *
- * Polling only runs while the document is visible and the session is running.
- * A hidden tab that keeps shelling out to `git status` every five seconds is a
- * background CPU cost with nobody looking at the result.
+ * Polling only runs while the document is visible: every five seconds while
+ * the session runs, and every twenty while it is idle (#5795). A hidden tab
+ * that keeps shelling out to `git status` is a background CPU cost with nobody
+ * looking at the result.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { createChangesLedger, type ChangesLedger } from "@/lib/worktree-changes-ledger";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { ChangedFile } from "@/lib/session-changes-api";
 
 const POLL_MS = 5000;
+/** An idle session's poll (#5795). Nothing re-read an idle session's working
+ *  tree while the page was visible, so an edit from its own terminal or an
+ *  outside editor stayed invisible, and the next commit met a stale list. */
+export const CHANGES_IDLE_POLL_MS = 20_000;
 
 export type WorktreeChanges = {
   files: ChangedFile[];
@@ -140,13 +146,10 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
     };
   }, [ledger, load, projectRoot]);
 
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load({ shared: true });
-    }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [load, running]);
+  // Shared, so the changes panel's own poll joins the same request. The
+  // helper skips a hidden page, and reads again when the window regains
+  // focus (#5795): switching apps on the desktop fires no visibilitychange.
+  usePausablePoll(() => load({ shared: true }), running ? POLL_MS : CHANGES_IDLE_POLL_MS);
 
   let additions = 0;
   let deletions = 0;

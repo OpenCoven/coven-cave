@@ -36,6 +36,9 @@ export type ChangesOutbound = {
   pending: "commit" | "create-pr" | null;
   /** Why the last commit or Create PR failed. */
   error: { action: string; message: string } | null;
+  /** What went wrong after the last commit landed (#5795): a hook after it
+   *  that was cut off, say. Kept until dismissed or the next commit. */
+  commitWarning: string | null;
 };
 
 export const EMPTY_CHANGES_OUTBOUND: ChangesOutbound = Object.freeze({
@@ -47,6 +50,7 @@ export const EMPTY_CHANGES_OUTBOUND: ChangesOutbound = Object.freeze({
   prUrl: null,
   pending: null,
   error: null,
+  commitWarning: null,
 }) as ChangesOutbound;
 
 export const CHANGES_OUTBOUND_LIMIT = 24;
@@ -59,7 +63,7 @@ export function createChangesOutboundStore(limit = CHANGES_OUTBOUND_LIMIT) {
   };
   const isEmpty = (entry: ChangesOutbound) =>
     !entry.commitMessage && !entry.postCommit && !entry.prOpen && !entry.prTitle && !entry.prBody && !entry.prUrl &&
-    !entry.pending && !entry.error;
+    !entry.pending && !entry.error && !entry.commitWarning;
 
   return {
     get(key: string | null | undefined): ChangesOutbound {
