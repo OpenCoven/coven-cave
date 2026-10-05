@@ -85,8 +85,10 @@ function TurnActivityDisclosure({
 }) {
   // The turn's activity (tool groups, their cards and highlighted payloads)
   // mounts on the disclosure's first open, not with the transcript (#5572):
-  // every finished turn starts closed, and a long thread would otherwise build
-  // all of it up front. Once opened it stays mounted, so closing is free.
+  // ordinary finished turns start closed, and a long thread would otherwise
+  // build all of it up front. A cancelled turn with tool activity opens its
+  // retained calls so an interrupted outcome is inspectable without another
+  // interaction. Once opened it stays mounted, so closing is free.
   const [detailsMounted, setDetailsMounted] = useState(activityOpen);
   if (activityOpen && !detailsMounted) setDetailsMounted(true);
   return (
@@ -146,7 +148,10 @@ export function StreamingTurnResponse({
   onCopyCompleted,
 }: StreamingTurnResponseProps) {
   const live = isLive(model);
-  const [activityOpen, setActivityOpen] = useState(false);
+  const hasToolActivity = model.activity.some((event) => event.source === "tool");
+  const [activityOpen, setActivityOpen] = useState(
+    () => model.status === "interrupted" && hasToolActivity,
+  );
   const [copied, setCopied] = useState(false);
   const [announceFailure, setAnnounceFailure] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -185,12 +190,21 @@ export function StreamingTurnResponse({
       previousStatusRef.current !== "complete" && model.status === "complete";
     const enteredFailure =
       previousStatusRef.current !== "failed" && model.status === "failed";
+    const enteredInterrupted =
+      previousStatusRef.current !== "interrupted" && model.status === "interrupted";
     if (enteredComplete && !userToggledActivityRef.current) {
       setActivityOpen(false);
     }
+    if (
+      enteredInterrupted &&
+      !userToggledActivityRef.current &&
+      hasToolActivity
+    ) {
+      setActivityOpen(true);
+    }
     setAnnounceFailure(announceLifecycle && enteredFailure);
     previousStatusRef.current = model.status;
-  }, [announceLifecycle, model.status]);
+  }, [announceLifecycle, hasToolActivity, model.status]);
 
   useEffect(() => {
     if (!live || !startedAt) return;

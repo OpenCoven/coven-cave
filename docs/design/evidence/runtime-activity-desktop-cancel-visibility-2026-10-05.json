@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "scenario": "packaged-native-stop-before-effects-with-cancelled-tool-visibility",
+  "capturedAt": "2026-10-05",
+  "sourceHead": "471107bb7e4322bdd02aaeead170cdebc3c9e4cd",
+  "classification": "Actual unsigned packaged macOS desktop composer send, deliberate Stop before effects, immediate CUA observation, normal app quit, restart, history reopening, and durable counter verification. The provider is a controlled external Hermes-compatible fixture; no protected-effect authority or human accessibility claim.",
+  "build": {
+    "identifier": "ai.opencoven.cave.qualification5767parallel",
+    "executableSha256": "4a1212a118ae8a1180f97a5f64de28e83a4f5888c8133a48d2158ea477b59874",
+    "identity": "v0.5.7+development",
+    "cargoTarget": "/private/tmp/cave-5767-cancelled-cargo-target",
+    "buildMode": "release app bundle, unsigned, updater disabled, Discord disabled"
+  },
+  "result": {
+    "passed": true,
+    "providerRequests": 1,
+    "providerCancelled": true,
+    "counterBeforeStop": 0,
+    "counterAfterRestart": 0,
+    "negativeControlCounter": 2,
+    "appLaunches": [
+      { "quitExitCode": 0 },
+      { "quitExitCode": 0 }
+    ],
+    "installedServiceUnchanged": true,
+    "ownFixtureCleanup": true
+  },
+  "immediateCuaObservation": {
+    "beforeStop": "Two increment_counter calls were visible as Running alongside the provider reasoning summary and Unicode text.",
+    "afterStop": "The turn was Cancelled by user and Stopped. The activity disclosure opened automatically and exposed the cancelled-by-user row plus the Tool activity summary: 2 calls, 2 outcome unknown.",
+    "honesty": "Both calls remained unknown with effect authority unavailable; no result, approval, or committed effect was fabricated.",
+    "recovery": "After restart and history reopening, both original call IDs were visible as Outcome unknown with the same Cave-observation and unavailable-approval detail."
+  },
+  "sourceFix": {
+    "file": "src/components/streaming-turn-response.tsx",
+    "sha256": "3c2541d396e37d07ec07f1ebb101669986500053b61fa1311f9ace5eb9a0c903",
+    "behavior": "When a response enters interrupted with tool activity, the existing activity disclosure opens so retained unknown calls remain inspectable. Ordinary completed turns remain lazy and collapsed; an explicit user collapse is preserved.",
+    "provenanceBoundary": "The fix changes presentation only. It does not restore producer activity, invent chronology, change unknown status, or expose withheld unknown output."
+  },
+  "verification": {
+    "focusedTest": "pnpm vitest run src/components/streaming-turn-response.test.tsx",
+    "focusedTestResult": "47 passed",
+    "appSuite": "pnpm test:app — 1506 test files passed",
+    "lint": "pnpm lint passed",
+    "typecheck": "pnpm typecheck passed",
+    "productionBuild": "pnpm build passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "omissions": [
+    "Human VoiceOver observations remain pending for the requested human pass.",
+    "Physical-device performance evidence remains pending for the requested human pass.",
+    "Retry after effects start, approval, scope revocation, large traces, interrupted reconnect, real Hermes service, and protected execution authority remain unqualified."
+  ]
+}

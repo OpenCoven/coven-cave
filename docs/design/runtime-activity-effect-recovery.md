@@ -130,3 +130,14 @@ probe separately validates its public projection and the unchanged stored turn.
 It does not qualify interrupted live reconnect, native iOS actual-client effects,
 the full retry/cancel/approval/revocation corpus, comparative performance or human
 accessibility. All original criteria remain required.
+
+The rebuilt alternate-ID packaged app also qualifies the cancellation display
+seam at producer head `471107b`. An actual Stop before any effect opened the
+existing activity disclosure immediately, retaining the cancelled-by-user row
+and the two `Outcome unknown` tool calls while preserving zero durable effects.
+After normal quit, restart and history reopening, both call IDs remained
+visible with Cave-observation provenance and unavailable effect/approval
+authority. The fix is presentation-only: ordinary completed turns remain
+collapsed and local cancellation never restores producer activity or withheld
+unknown output. See
+`docs/design/evidence/runtime-activity-desktop-cancel-visibility-2026-10-05.json`.
