@@ -175,7 +175,10 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(desktop)]
-    if let Some(code) = run_sidecar_daemon_if_requested() {
+    let context = tauri::generate_context!();
+
+    #[cfg(desktop)]
+    if let Some(code) = run_sidecar_daemon_if_requested(&context.config().identifier) {
         std::process::exit(code);
     }
 
@@ -943,6 +946,6 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

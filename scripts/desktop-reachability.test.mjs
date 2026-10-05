@@ -166,8 +166,8 @@ assert.match(
 );
 assert.match(
   setup,
-  /run_sidecar_daemon_if_requested\(\)[\s\S]*tauri::Builder::default/,
-  "the background entrypoint must exit before constructing a GUI",
+  /run_sidecar_daemon_if_requested\(&context\.config\(\)\.identifier\)[\s\S]*tauri::Builder::default/,
+  "the background entrypoint must check the compiled app identifier and exit before constructing a GUI",
 );
 const reachabilityCall = setup.indexOf("prepare_gui_reachability(app.handle())?");
 assert.ok(reachabilityCall !== -1, "the setup hook must still prepare GUI reachability");
