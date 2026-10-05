@@ -911,6 +911,7 @@
       "head": "57fff724656b0e22ab470c45d395b96dff39448f",
       "codeqlRunnerFailure": "Actions/Rust jobs did not acquire a hosted runner after multiple attempts; marked cancelled.",
       "retryDisposition": "Both exact-job and failed-run retries refused by GitHub with HTTP403 for the dynamic workflow. No merge or protection change."
-    }
+    },
+    "recoveryNegatives": "docs/design/evidence/runtime-activity-recovery-negatives-2026-10-05.json"
   }
 }

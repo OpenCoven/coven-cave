@@ -14,6 +14,16 @@ node scripts/runtime-activity-effect-counter.test.mjs
 node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
   scripts/runtime-activity-effect-recovery.mjs \
   --execute --evidence /absolute/new/evidence-directory --include-expiry
+
+# Real ring eviction followed by exact saved-history recovery:
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
+  scripts/runtime-activity-effect-recovery.mjs \
+  --execute --evidence /absolute/new/eviction-evidence --ring-eviction
+
+# Save failure after the durable effect; run separately from eviction/expiry:
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
+  scripts/runtime-activity-effect-recovery.mjs \
+  --execute --evidence /absolute/new/save-failure-evidence --persistence-failure
 ```
 
 The evidence directory must not exist. The runner creates private temporary
@@ -34,10 +44,25 @@ unverified. Results retain source digests, base head, build ID, runtime version,
 checkpoints, omissions and cleanup state; credentials and provider payloads are
 not included in the report.
 
+The eviction mode supplies an 864 KB Unicode answer through the controlled
+provider, exceeds the production 512 KB ring, and requires the `resume-gap`
+event before checking complete saved history and restart recovery. The save
+failure mode temporarily denies writes to only the fixture's conversation
+directory after the tool effect. It requires an explicit save error, an error
+terminal response with no persisted turn ID, and no saved assistant response
+through repeated reads and restart. The original user stub must remain intact.
+Permissions are restored before cleanup. Both modes keep the same real counter
+at one and run the independent second-invocation negative control.
+
+Every mode probes missing and invalid credentials on reconnect, history and
+lazy tool-output reads before and after server restart. Forwarded ingress is
+simulated with headers; these refusals do not prove physical remote ingress,
+principal/project scoping, revocation or cache invalidation.
+
 The shared scenario lives alongside the native corpus, but this runner is an
 HTTP client. It does not exercise the browser composer, desktop Activity view,
 iOS decoder or renderer, real provider availability, process-crash durability,
-ring eviction, access revocation, persistence failure, protected receipts or
+access revocation, protected receipts or
 human accessibility. The normal Release `.app` startup smoke has separate,
 limited evidence. #5761–#5767 retain their full criteria; human VoiceOver and
 physical-device performance remain pending at Val's request.

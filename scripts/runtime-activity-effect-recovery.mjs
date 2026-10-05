@@ -6,14 +6,17 @@ import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { randomUUID, createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 const args = process.argv.slice(2);
-const includeExpiry = args[3] === "--include-expiry";
-assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && args.length === (includeExpiry ? 4 : 3), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry]");
+const flags = args.slice(3);
+const includeExpiry = flags.includes("--include-expiry");
+const ringEviction = flags.includes("--ring-eviction");
+const persistenceFailure = flags.includes("--persistence-failure");
+assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] OR --persistence-failure");
 assert.ok(["darwin", "linux"].includes(process.platform), "POSIX counter fixture only; other platforms remain unverified.");
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), evidence = args[2];
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -32,7 +35,12 @@ process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 const report = { schemaVersion: 1, scenario: "hermes-durable-effect-recovery", startedAt: (new Date()).toISOString(), omissions: ["HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.", "Coven-specific state is isolated; HOME is unchanged.", "Ring eviction, access revocation and persistence-failure injection remain unverified."], head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: repo }).trim(), buildId: (await readFile(path.join(repo, ".next/BUILD_ID"), "utf8")).trim(), classification: "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.", passed: false, checkpoints: [], providerRequests: 0, host: { node: process.version, platform: process.platform, architecture: process.arch } };
 report.sourceHashes = await sourceHashes();
-let cave, provider, daemon = false, releaseTool, releaseFinal;
+report.options = { includeExpiry, ringEviction, persistenceFailure };
+report.scenario = persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : report.scenario;
+report.omissions[2] = "Access revocation and process-crash durability remain unverified.";
+if (!ringEviction) report.omissions.push("Ring eviction not run; use --ring-eviction.");
+if (!persistenceFailure) report.omissions.push("Persistence failure not injected; use --persistence-failure separately.");
+let cave, provider, daemon = false, releaseTool, releaseFinal, blockedDirectory;
 const toolGate = new Promise((r) => releaseTool = r), finalGate = new Promise((r) => releaseFinal = r);
 const ledger = path.join(projectRoot, "effect-invocations.jsonl");
 const toolFile = path.join(repo, "scripts/runtime-activity-effect-counter.mjs");
@@ -61,6 +69,12 @@ try {
   Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, "coven.sock"), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: projectRoot, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, "vault.yaml"), COVEN_CAVE_ENV_FILE: path.join(root, ".env.local"), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, "vault.enc.json"), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, "vault.key"), COVEN_PREFERENCES_PATH: path.join(root, "preferences.json"), COVEN_THEME_PATH: path.join(root, "theme.json"), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, "projects.json"), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, "permissions.json"), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, "queue.json") });
   delete process.env.COVEN_CAVE_E2E;
   const scenario = JSON.parse(await readFile(path.join(repo, "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json"), "utf8"));
+  if (ringEviction) {
+    const padding = "Large trace 🧙 café.\n".repeat(3000);
+    scenario.beforeRelease.splice(5, 0, ...Array.from({ length: 12 }, () => ["response.output_text.delta", { delta: padding }]));
+    scenario.expected.answer = "Inspecting 🧙 café.\n" + padding.repeat(12) + "Done: {{COUNTER}}";
+    report.largeTrace = { chunks: 12, answerUtf8Bytes: Buffer.byteLength(scenario.expected.answer), ringLimitBytes: 512 * 1024 };
+  }
   provider = createServer(async (req, res) => {
     try {
       if (req.headers.authorization !== "Bearer " + providerToken) {
@@ -151,22 +165,71 @@ try {
   tailController.abort();
   const final = await request("/api/chat/stream?runId=" + runId + "&cursor=0");
   assert.equal(final.status, 200);
+  if (persistenceFailure) {
+    blockedDirectory = path.join(caveHome, "conversations");
+    await chmod(blockedDirectory, 0o500);
+    report.injectedFault = "Own fixture conversation directory denies writes after the real effect.";
+  }
   releaseFinal();
   const wire = await final.text();
   const events = parse(wire), done = events.findLast((e) => e.kind === "done");
   assertPublic(wire);
-  assert.ok(done?.persistedTurnId && !done.isError);
+  report.stage = "terminal-persistence-state";
+  if (persistenceFailure) {
+    assert.ok(done?.isError, "unsaved terminal response must be marked error");
+    assert.equal(done.persistedTurnId, undefined, "unsaved response cannot mint a persisted turn id");
+    assert.ok(events.some(event => event.kind === "error" && event.code === "transcript_save_failed"));
+    assert.ok(events.some(event => event.kind === "progress" && event.id === "save-transcript" && event.status === "error"));
+    assert.equal(events.filter(event => event.kind === "assistant_chunk").map(event => event.text).join(""), "Inspecting 🧙 café.\nDone: 1");
+    await chmod(blockedDirectory, 0o700);
+    blockedDirectory = undefined;
+    report.visiblePersistenceFailureVerified = true;
+  } else {
+    assert.ok(done?.persistedTurnId && !done.isError);
+  }
+  if (ringEviction) {
+    assert.ok(events.some(event => event.kind === "progress" && event.id === "resume-gap"), "real production ring must report the evicted cursor gap");
+    report.ringEvictionGapVerified = true;
+  }
   const terminalTool = events.findLast(event => event.kind === "tool_use" && event.id === scenario.expected.toolId && event.status === "ok");
   assert.ok(terminalTool?.activity?.runId, "live tool observation identity must exist");
   report.transportRunId = runId;
   report.observationRunId = terminalTool.activity.runId;
-  let savedAssistant;
+  report.negativeReadCredentials = [];
+  const refuseReadCredentials = async label => {
+    for (const [surface, url] of [
+      ["reconnect", "/api/chat/stream?runId=" + runId + "&cursor=0"],
+      ["history", "/api/chat/conversation/" + done.sessionId],
+      ["tool-output", "/api/chat/conversation/" + done.sessionId + "/tool-output?toolId=" + encodeURIComponent(scenario.expected.toolId)],
+    ]) {
+      for (const credential of ["", "invalid-fixture-credential"]) {
+        const response = await request(url, { headers: { "x-coven-cave-token": credential, origin: cave.origin, "x-forwarded-for": "203.0.113.9" } });
+        assert.ok([401, 403].includes(response.status), label + " " + surface + " must refuse missing/invalid forwarded credentials");
+        const body = await response.text();
+        assertPublic(body);
+        for (const text of ["Run the controlled isolated counter tool once.", "Inspecting 🧙 café.", scenario.expected.toolName, ...scenario.expected.summaries]) assert.ok(!body.includes(text), "refused read leaked fixture content");
+        report.negativeReadCredentials.push({ label, surface, credential: credential ? "invalid" : "missing", status: response.status });
+      }
+    }
+  };
+  await refuseReadCredentials("finished-ring-retained");
+  let savedAssistant, savedUser;
   const assertHistory = value => {
     assertPublic(value);
     report.stage = 'history: assert.equal(value.conversation?.sessionId';
     assert.equal(value.conversation?.sessionId, done.sessionId);
     report.stage = 'history: assert.equal(value.conversation.harness';
     assert.equal(value.conversation.harness, scenario.expected.harness);
+    if (persistenceFailure) {
+      assert.equal(value.conversation.familiarId, "effectfixture");
+      const user = value.conversation.turns.find(turn => turn.role === "user");
+      assert.ok(user, "first user-turn stub must remain available");
+      assert.equal(user.text, "Run the controlled isolated counter tool once.");
+      assert.equal(value.conversation.turns.filter(turn => turn.role === "assistant").length, 0, "failed save cannot appear as a durable assistant response");
+      if (savedUser) assert.deepEqual(user, savedUser, "recovered first user turn changed");
+      else savedUser = structuredClone(user);
+      return;
+    }
     const assistant = value.conversation.turns.find(turn => turn.id === done.persistedTurnId);
     report.stage = 'history: assert.ok(assistant';
     assert.ok(assistant, "the exact persisted assistant turn must survive recovery");
@@ -211,7 +274,7 @@ try {
     assert.equal(history2.status, 200);
     const value = await history2.json();
     assertHistory(value);
-    if (i === 0) {
+    if (i === 0 && !persistenceFailure) {
       assert.throws(() => assertHistory({ conversation: null }), "missing history must fail");
       const corrupted = structuredClone(value);
       corrupted.conversation.turns.find(turn => turn.id === done.persistedTurnId).text = "wrong answer";
@@ -244,6 +307,7 @@ try {
   const history = await request("/api/chat/conversation/" + done.sessionId);
   assert.equal(history.status, 200);
   assertHistory(await history.json());
+  await refuseReadCredentials("after-server-restart");
   await expectedCount("server restart: ring absent, authorized history readable");
   assert.equal(report.providerFailure, void 0);
   await writeFile(path.join(evidence, "durable-invocations.jsonl"), await readFile(ledger));
@@ -257,12 +321,25 @@ try {
   await expectedCount("final qualification counter after independent negative control");
   assert.deepEqual(await sourceHashes(), report.sourceHashes, "qualification sources changed while running");
   report.privateSentinelsAbsentFromRecoveryAndHistory = true;
-  report.exactPersistedAssistantAndActivityRecovered = true;
+  report.exactPersistedAssistantAndActivityRecovered = !persistenceFailure;
+  if (persistenceFailure) report.originalAssistantNotDurablySaved = true;
   report.passed = true;
 } catch (error) {
   report.failure = { stage: report.stage ?? "setup-or-http", name: error.name, code: error.code ?? null };
   process.exitCode = 1;
 } finally {
+  if (blockedDirectory) {
+    try {
+      await chmod(blockedDirectory, 0o700);
+      report.fixturePermissionsRestored = true;
+    } catch {
+      report.fixturePermissionsRestored = false;
+      report.passed = false;
+      process.exitCode = 1;
+    }
+  } else if (persistenceFailure && report.visiblePersistenceFailureVerified) {
+    report.fixturePermissionsRestored = true;
+  }
   clearTimeout(deadlineTimer);
   process.off("SIGINT", onInterrupt);
   process.off("SIGTERM", onInterrupt);
@@ -284,11 +361,16 @@ try {
   if (daemon) {
     try {
       native(["daemon", "stop"]);
-      try {
-        process.kill(report.daemonPid, 0);
-        report.daemonStopped = false;
-      } catch (e) {
-        report.daemonStopped = e.code === "ESRCH";
+      report.daemonStopped = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        try {
+          process.kill(report.daemonPid, 0);
+        } catch (e) {
+          if (e.code !== "ESRCH") throw e;
+          report.daemonStopped = true;
+          break;
+        }
+        await delay(100);
       }
     } catch {
       report.daemonStopped = false;
