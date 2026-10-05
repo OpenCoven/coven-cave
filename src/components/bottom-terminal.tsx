@@ -275,6 +275,7 @@ export function BottomTerminal({
   onUserInput,
   writerRef,
   onHealthChange,
+  onReady,
   disposeOnUnmount = false,
   releaseKey,
 }: {
@@ -296,6 +297,9 @@ export function BottomTerminal({
   /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
   writerRef?: React.Ref<TerminalWriterHandle>;
   onHealthChange?: (health: TerminalHealth) => void;
+  /** Runs once per attachment attempt (including Retry), after its writer is
+   * ready. Automatic socket reconnects do not repeat startup input. */
+  onReady?: (writer: TerminalWriterHandle) => void;
   /** Temporary dialogs own their shell, including late startup/reconnect. */
   disposeOnUnmount?: boolean;
   /** Keys the host handles even while this terminal has focus (its own
@@ -323,6 +327,8 @@ export function BottomTerminal({
   const sendToPtyRef = useRef<((data: string) => void) | null>(null);
   const onUserInputRef = useRef(onUserInput);
   onUserInputRef.current = onUserInput;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   useImperativeHandle(
     writerRef,
     () => ({ write: (data: string) => sendToPtyRef.current?.(data) }),
@@ -742,6 +748,7 @@ export function BottomTerminal({
         setReady(true);
         setHealth("healthy");
       }
+      onReadyRef.current?.({ write: writeToPty });
       if (mayTakeStartupFocus(wrap)) term.focus();
 
       healthTimer = setInterval(() => {
@@ -1002,6 +1009,7 @@ export function BottomTerminal({
         bridge.write(new TextEncoder().encode(out));
       };
       sendToPtyRef.current = writeToPty;
+      onReadyRef.current?.({ write: writeToPty });
       const onDataDispose = term.onData((data) => {
         // The key bar's sticky Ctrl folds here too — this is the transport
         // iOS, Android and the browser use, which is where that bar lives.
