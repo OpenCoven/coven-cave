@@ -722,6 +722,19 @@ describe("StreamingTurnResponse", () => {
     expect(renderer.root.findByProps({ "data-turn-activity": true }).props.open).toBeUndefined();
   });
 
+  it("opens retained tool activity when a response is cancelled", async () => {
+    const renderer = await render(
+      response({
+        model: model({ status: "interrupted", activeBlock: null }),
+        activityDetails: <div>Retained tool activity</div>,
+      }),
+    );
+
+    const disclosure = renderer.root.findByProps({ "data-turn-activity": true });
+    expect(disclosure.props.open).toBe(true);
+    expect(textContent(disclosure)).toContain("Retained tool activity");
+  });
+
   it("starts compact activity collapsed while working", async () => {
     const renderer = await render(
       response({
