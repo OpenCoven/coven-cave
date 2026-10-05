@@ -294,6 +294,120 @@ final class ChatListSnapshotTests: XCTestCase {
         XCTAssertEqual(Set(archivedShown.entries.map(\.id)), ["local:alpha", "local:beta", "local:gamma"])
     }
 
+    func testProjectFilterKeepsOnlyConversationsBoundToThatProject() {
+        let projects = [project("alpha", root: "/repos/alpha"), project("beta", root: "/repos/beta")]
+        let alpha = chat("alpha chat", root: "/repos/alpha")
+        // A project's worktree checkout belongs to that project.
+        let worktree = chat("alpha worktree", root: "/repos/alpha/.worktrees/fix-login/")
+        let beta = chat("beta chat", root: "/repos/beta")
+        let loose = chat("loose", root: nil)
+        let unknown = chat("unknown root", root: "/repos/gone")
+        var server = SessionRow(id: "server-1", title: "Desktop beta", familiarId: "lyra")
+        server.projectRoot = "/repos/beta"
+
+        let snapshot = ChatListSnapshot(
+            threads: [alpha, worktree, beta, loose, unknown], sessions: [server],
+            familiars: [], projects: projects
+        )
+        XCTAssertEqual(snapshot.entries.count, 6)
+        XCTAssertEqual(snapshot.projectIds, ["alpha", "beta"])
+        XCTAssertTrue(snapshot.hasUnassigned)
+
+        XCTAssertEqual(
+            Set(snapshot.filtered(query: "", includeArchived: false, projectFilter: .project(id: "alpha")).entries.map(\.id)),
+            ["local:alpha chat", "local:alpha worktree"]
+        )
+        XCTAssertEqual(
+            Set(snapshot.filtered(query: "", includeArchived: false, projectFilter: .project(id: "beta")).entries.map(\.id)),
+            ["local:beta chat", "server:server-1"]
+        )
+        XCTAssertEqual(
+            Set(snapshot.filtered(query: "", includeArchived: false, projectFilter: .unassigned).entries.map(\.id)),
+            ["local:loose", "local:unknown root"],
+            "Unassigned holds chats without a root and roots no registered project resolves"
+        )
+        let filtered = snapshot.filtered(query: "", includeArchived: false, projectFilter: .project(id: "beta"))
+        XCTAssertEqual(filtered.projectIds, ["alpha", "beta"], "the filter roster is not narrowed by the filter itself")
+        XCTAssertTrue(filtered.hasUnassigned)
+    }
+
+    func testProjectFilterComposesWithFamiliarSearchArchiveAndReflections() {
+        let projects = [project("alpha", root: "/repos/alpha"), project("beta", root: "/repos/beta")]
+        let nyxAlpha = chat("Build alpha", root: "/repos/alpha", familiars: ["nyx"])
+        let lyraAlpha = chat("Build lyra", root: "/repos/alpha", familiars: ["lyra"])
+        let archivedAlpha = chat("Build archived", root: "/repos/alpha", familiars: ["nyx"])
+        archivedAlpha.archived = true
+        let nyxBeta = chat("Build beta", root: "/repos/beta", familiars: ["nyx"])
+        var alphaReview = SessionRow(id: "alpha-review", title: "Thread you just completed a", familiarId: "nyx")
+        alphaReview.origin = "enhance"
+        alphaReview.projectRoot = "/repos/alpha"
+        var betaReview = SessionRow(id: "beta-review", title: "Thread you just completed b", familiarId: "nyx")
+        betaReview.origin = "enhance"
+        betaReview.projectRoot = "/repos/beta"
+
+        let snapshot = ChatListSnapshot(
+            threads: [nyxAlpha, lyraAlpha, archivedAlpha, nyxBeta], sessions: [],
+            familiars: [], projects: projects, reflectionSessions: [alphaReview, betaReview],
+            includeArchived: true
+        )
+        let alpha = ChatListSnapshot.ProjectFilter.project(id: "alpha")
+
+        XCTAssertEqual(
+            snapshot.filtered(query: "build", includeArchived: false, familiarId: "nyx", projectFilter: alpha)
+                .entries.map(\.id),
+            ["local:Build alpha"]
+        )
+        XCTAssertEqual(
+            snapshot.filtered(query: "build", includeArchived: true, familiarId: "nyx", projectFilter: alpha)
+                .entries.count, 2
+        )
+        XCTAssertEqual(
+            snapshot.filtered(query: "", includeArchived: false, projectFilter: alpha).reflections.map(\.id),
+            ["reflection:alpha-review"],
+            "reflections narrow with the project filter like live chats"
+        )
+        XCTAssertTrue(
+            snapshot.filtered(query: "", includeArchived: true, projectFilter: .unassigned).entries.isEmpty
+        )
+        XCTAssertEqual(snapshot.archivedCount, 1)
+    }
+
+    func testWithoutAProjectCatalogEveryConversationIsUnassigned() {
+        let snapshot = ChatListSnapshot(
+            threads: [chat("alpha", root: "/repos/alpha"), chat("beta", root: "/repos/beta")],
+            sessions: [], familiars: []
+        )
+        XCTAssertTrue(snapshot.projectIds.isEmpty, "no catalog means there is nothing to choose between")
+        XCTAssertTrue(snapshot.hasUnassigned)
+    }
+
+    func testCacheRebuildsWhenProjectRootsOrABindingChange() {
+        let cache = ChatListSnapshotCache()
+        let alpha = chat("alpha", root: "/repos/alpha")
+        let beta = chat("beta", root: "/repos/beta")
+        func resolve(_ projects: [ProjectInfo], _ filter: ChatListSnapshot.ProjectFilter?) -> Set<String> {
+            Set(cache.resolve(threads: [alpha, beta], sessions: [], familiars: [], projects: projects,
+                              query: "", includeArchived: false, projectFilter: filter).entries.map(\.id))
+        }
+
+        XCTAssertEqual(resolve([], .unassigned), ["local:alpha", "local:beta"])
+        let catalog = [project("alpha", root: "/repos/alpha"), project("beta", root: "/repos/beta")]
+        XCTAssertEqual(resolve(catalog, .unassigned), [], "a loaded catalog re-resolves every root")
+        XCTAssertEqual(resolve(catalog, .project(id: "alpha")), ["local:alpha"])
+
+        var renamed = catalog
+        renamed[0].name = "Alpha renamed"
+        XCTAssertEqual(resolve(renamed, .project(id: "alpha")), ["local:alpha"], "a rename keeps the filter")
+
+        beta.projectRoot = "/repos/alpha"
+        XCTAssertEqual(resolve(renamed, .project(id: "alpha")), ["local:alpha", "local:beta"],
+                       "a recovered binding drops memoized projections")
+    }
+
+    private func project(_ id: String, root: String) -> ProjectInfo {
+        ProjectInfo(id: id, name: id, root: root, color: nil, updatedAt: nil, access: .write)
+    }
+
     private func chat(
         _ id: String,
         root: String?,
