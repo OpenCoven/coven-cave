@@ -381,7 +381,7 @@ imply remote deletion.`),
   assert.ok(
     manual.includes(`It still must acquire and
 retain the local maintenance lease, rerun every GitHub issue/comment ownership,
-legacy disposition, PR, workflow, process, worktree, ref, recency, archive, and
+legacy disposition, PR, workflow, process, worktree, ref, archive, and
 recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
@@ -475,8 +475,6 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
     exactTips,
     /test "\$cleanup_profile" = manual[\s\S]*test "\$remote_cleanup_authorized" -eq 1/,
   );
-  assert.match(exactTips, /server-authoritative ref-update timestamp/);
-  assert.match(exactTips, /Commit age is never used as ref\s+recency/);
   assert.match(exactTips, /every observable[\s\S]*proof still runs/);
 
   const mutation = section(
@@ -555,7 +553,6 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
       ["process", /process/],
       ["worktree", /worktree/],
       ["ref, OID, and destination", /ref, OID, and\s+destination/],
-      ["recency", /recency/],
       ["archive", /archive/],
       ["recovery and admin", /recovery and\s+admin/],
     ]) {
@@ -749,7 +746,6 @@ test("evals cover every new authorization and race boundary", () => {
     /preserves the same-named remote or only proposes it/i,
   );
   assert.match(eval39.expected_output, /never mutates the remote/i);
-  assert.match(eval39.expected_output, /Commit age is not remote-ref recency/);
 
   assert.match(byId.get(43).expected_output, /28-worktree budget/i);
   assert.match(byId.get(43).expected_output, /issue-recorded owner\/reason\/expiry\/path exception/i);

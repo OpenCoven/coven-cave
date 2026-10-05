@@ -10,7 +10,7 @@
     {
       "id": 2,
       "prompt": "I am the current maintainer. For the exact squash-merged branch feature/cave-123, I authorize removal of its local ref, clean worktree, and same-named origin branch after fresh proof. The exact authorized candidate is safe: both its local and recovery timestamps are older than 24h; configuration-independent inspection finds no staged, unstaged, untracked, ignored, submodule, assume-unchanged, or skip-worktree state; it has no active process, session, claim, unresolved issue or legacy ownership, open-or-draft PR, or active workflow; local, remote, and recovery OIDs are stable and durably retained on refreshed main or an exact retained archive; and the origin fetch/push destination is unchanged.",
-      "expected_output": "Records a bounded current-task authorization for the exact local and remote candidate, selects the manual cleanup profile, retains every normal ownership, unique-work, recovery, and recency proof, uses the local maintenance lease and worktree guard, and deletes each ref only after the stated facts are freshly reverified with its expected OID followed by exact absence verification.",
+      "expected_output": "Records a bounded current-task authorization for the exact local and remote candidate, selects the manual cleanup profile, retains every normal ownership, unique-work, and recovery proof, uses the local maintenance lease and worktree guard, and deletes each ref only after the stated facts are freshly reverified with its expected OID followed by exact absence verification.",
       "files": []
     },
     {
@@ -52,7 +52,7 @@
     {
       "id": 9,
       "prompt": "Delete merged branches that are attached only to blocked or deferred tasks, plus a branch committed this morning whose known owner has not answered.",
-      "expected_output": "Treats unresolved GitHub issue or execution ownership and every branch inside the defined recency window as unconditional preservation signals; neither owner identity nor blocked or deferred status overrides recency.",
+      "expected_output": "Treats unresolved GitHub issue or execution ownership as an unconditional preservation signal; blocked or deferred status doesn't override it. The branch committed this morning is judged by the same proofs: its age neither preserves nor clears it, and a known owner who hasn't answered leaves its ownership unresolved, so it is preserved.",
       "files": []
     },
     {
@@ -70,7 +70,7 @@
     {
       "id": 12,
       "prompt": "The branch passed deletion proof before the maintenance gate was acquired. The gate is held now, so delete it using the old evidence.",
-      "expected_output": "While holding the cross-system gate, resolves and fetches the exact remote main OID into FETCH_HEAD without trusting a stale tracking ref, verifies every authorized remote archive OID, and reruns recency, full reflog disposition, and explicitly guarded ancestry or merged-PR proof before mutation.",
+      "expected_output": "While holding the cross-system gate, resolves and fetches the exact remote main OID into FETCH_HEAD without trusting a stale tracking ref, verifies every authorized remote archive OID, and reruns full reflog disposition, and explicitly guarded ancestry or merged-PR proof before mutation.",
       "files": []
     },
     {
@@ -81,8 +81,8 @@
     },
     {
       "id": 14,
-      "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 3 hours.",
-      "expected_output": "Reads every raw reflog record, validates its numeric epoch, and compares the latest timestamp to a numeric 3-hour cutoff under the exclusive gate rather than trusting an undated display or stale pre-gate result.",
+      "prompt": "The branch's PR merged a minute ago. Wait three hours before retiring it, to be safe.",
+      "expected_output": "Does not wait on age: there is no recency window (#5809). Under the exclusive gate it reruns every proof (the exact merged head retained on origin, every raw reflog record retained, a clean worktree, and no claim, session, process, open PR, or running CI) and retires as soon as they pass; a branch still being committed to fails the exact merged-head proof.",
       "files": []
     },
     {
@@ -105,8 +105,8 @@
     },
     {
       "id": 18,
-      "prompt": "The branch passed the 3-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
-      "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 3-hour cutoff and preserves on empty, malformed, or recent timestamps.",
+      "prompt": "The branch passed every proof before the maintenance gate. Now that the gate is held, use the old result and delete it.",
+      "expected_output": "Reruns every proof under the gate rather than trusting the pre-gate result: the exact local tip, every raw reflog record and its retention, ownership, claims, sessions, processes, PRs, and CI. It preserves on any empty, malformed, changed, or uncertain evidence.",
       "files": []
     },
     {
@@ -232,7 +232,7 @@
     {
       "id": 39,
       "prompt": "An unattended automatic retirement run holds the complete repository-wide gate; an old clean local branch passes local retirement proof and has a same-named remote; delete both.",
-      "expected_output": "The automatic profile may retire only proven local state. It preserves the same-named remote or only proposes it for separately authorized manual cleanup. It never mutates the remote, even under the complete repository-wide gate. Commit age is not remote-ref recency.",
+      "expected_output": "The automatic profile may retire only proven local state. It preserves the same-named remote or only proposes it for separately authorized manual cleanup. It never mutates the remote, even under the complete repository-wide gate.",
       "files": []
     },
     {
@@ -274,7 +274,7 @@
     {
       "id": 46,
       "prompt": "An issue-owned branch-only local ref is old and landed, and its owner has recorded an exact idle disposition. Evaluate its legacy automatic-retirement eligibility without running the retired patrol.",
-      "expected_output": "Inventories the direct full local ref even without a worktree, applies the same issue/comment ownership, runtime, recency, recovery, and exact-OID proof, and makes automatic retirement eligible only under the complete maintenance transaction. Does not manufacture legacy metadata; missing evidence preserves the ref.",
+      "expected_output": "Inventories the direct full local ref even without a worktree, applies the same issue/comment ownership, runtime, recovery, and exact-OID proof, and makes automatic retirement eligible only under the complete maintenance transaction. Does not manufacture legacy metadata; missing evidence preserves the ref.",
       "files": []
     },
     {
@@ -352,7 +352,7 @@
     {
       "id": 59,
       "prompt": "I explicitly authorize remote deletion of feature/cave-remote. GitHub cannot report the ref update timestamp, but all observable activity is old and the audited remote OID is R.",
-      "expected_output": "Uses current bounded remote authority only as the disposition for the unavailable server-side ref timestamp, never substitutes commit age for ref recency, reruns every observable proof, requires the audited and immediately reverified identical origin fetch/push destination, deletes only with force-with-lease bound to the fully qualified expected lease refs/heads/feature/cave-remote:R and delete refspec :refs/heads/feature/cave-remote, stops on destination or OID drift, and verifies exact remote absence with ls-remote status 2.",
+      "expected_output": "Uses current bounded remote authority only as the disposition for the exact remote candidate, reruns every observable proof, requires the audited and immediately reverified identical origin fetch/push destination, deletes only with force-with-lease bound to the fully qualified expected lease refs/heads/feature/cave-remote:R and delete refspec :refs/heads/feature/cave-remote, stops on destination or OID drift, and verifies exact remote absence with ls-remote status 2.",
       "files": []
     },
     {
