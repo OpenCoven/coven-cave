@@ -10,7 +10,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { captureCommitStart, commitSubject, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "./commit-rollback.ts";
+import { existsSync } from "node:fs";
+import { captureCommitStart, commitSubject, createPrivateIndex, deskCommitLanded, gitWithHooks, rollbackCommitStart } from "./commit-rollback.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "commit-rollback-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
@@ -91,8 +92,21 @@ function makeRepo() {
   git("reset", "-q");
   const start = await captureCommitStart(repo, "main", tree);
   assert.equal(start.index, tree);
-  await rollbackCommitStart(repo, start, null);
+  assert.equal(await rollbackCommitStart(repo, start, null), null, "a rollback that worked says nothing");
   assert.equal(git("diff", "--cached", "--name-only"), "a.txt");
+}
+
+// ── 5b. An index that can't be put back is reported (#5795) ────────────────
+// The failed `read-tree` was ignored, and the files stayed staged unsaid.
+{
+  const { repo, git } = makeRepo();
+  const start = await captureCommitStart(repo, "main");
+  git("add", "-A");
+  writeFileSync(path.join(repo, ".git", "index.lock"), "");
+  const problem = await rollbackCommitStart(repo, start, null);
+  assert.match(problem ?? "", /index\.lock/, "what git said comes back");
+  rmSync(path.join(repo, ".git", "index.lock"));
+  assert.equal(git("diff", "--cached", "--name-only"), "a.txt\nnew.txt", "and the files are indeed still staged");
 }
 
 // ── 6. Another process's commit on the new branch keeps the checkout (#5795)
@@ -143,6 +157,30 @@ function makeRepo() {
   } finally {
     index.dispose();
   }
+}
+
+// ── 8. A time limit stops git's hooks with it (#5795) ──────────────────────
+// It killed git alone, and the orphaned hook changed the repository after.
+{
+  const { repo, git } = makeRepo();
+  const marker = path.join(scratch, "hook-ran-on");
+  writeFileSync(path.join(repo, ".git", "hooks", "pre-commit"), `#!/bin/sh\nsleep 2\ntouch "${marker}"\n`, { mode: 0o755 });
+  git("add", "-A");
+  const options = { env: process.env, timeoutMs: 400, maxBuffer: 1024 * 1024 };
+  const failure = await gitWithHooks(repo, ["commit", "-q", "-m", "secret message"], options).then(() => null, (err) => err);
+  assert.equal(failure?.killed, true, "stopped by the limit");
+  assert.equal(failure.cmd, "git");
+  assert.doesNotMatch(failure.message, /secret message/, "no command line in the error");
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+  assert.ok(!existsSync(marker), "the hook was stopped too");
+  assert.equal(git("log", "-1", "--format=%s"), "init", "and nothing was committed");
+
+  const done = await gitWithHooks(repo, ["rev-parse", "--abbrev-ref", "HEAD"], options);
+  assert.equal(done.stdout, "main\n", "a command within the limit answers as execFile does");
+  const refused = await gitWithHooks(repo, ["rev-parse", "--verify", "no-such-ref"], options).then(() => null, (err) => err);
+  assert.equal(refused?.code, 128);
+  assert.equal(refused.killed, false);
+  assert.match(refused.stderr, /no-such-ref|Needed a single revision/);
 }
 
 console.log("commit-rollback: ok");

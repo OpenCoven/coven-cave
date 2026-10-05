@@ -6,7 +6,7 @@ import os from "node:os";
 import { invalidateChangeSummaries, sharedChangeSummary, stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
-import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
+import { daemonSessionRoots, resolveWithinSessionRoots, SESSION_ROOTS_KEPT_MS } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert, type ChangedFile } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
@@ -29,8 +29,8 @@ import {
   type CheckpointRestoreOutcome,
 } from "@/lib/server/checkpoint-restore";
 import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
-import { captureCommitStart, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "@/lib/server/commit-rollback";
-import { prCreateArgs, resolvePrTarget } from "@/lib/github-pr-target";
+import { captureCommitStart, createPrivateIndex, deskCommitLanded, gitWithHooks, rollbackCommitStart } from "@/lib/server/commit-rollback";
+import { createdPullRequestUrl, ghHostState, isGitHubRemoteUrl, prCreateArgs, remoteUrlHost, resolvePrTarget } from "@/lib/github-pr-target";
 import { githubCliSpawnEnvAsync, scrubSidecarInternalEnv } from "@/lib/coven-bin";
 import { assertMobileGitWriteAllowed, projectAccessDeniedBody } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
@@ -117,35 +117,45 @@ function gitWithInput(cwd: string, args: string[], input: string, env?: Record<s
 /** Run `git diff` without repository-configured command hooks, and in the
  *  standard patch shape whatever the user's colour and prefix config (#5781).
  *  Paths are literal (#5756): `app/[id]/page.tsx` is that file, not a glob
- *  that also matches `app/i/page.tsx`. */
+ *  that also matches `app/i/page.tsx`. Read-only (#5795): with stat-dirty
+ *  files, a diff rewrote the index, `--no-optional-locks` or not, unless its
+ *  refresh is off, and held the index lock an agent's `git add` needs. */
 function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return git(cwd, ["--literal-pathspecs", "diff", ...PATCH_DIFF_ARGS, ...args]);
+  return git(cwd, ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "--literal-pathspecs", "diff", ...PATCH_DIFF_ARGS, ...args]);
 }
 
-/** Run `git status` without repository-configured fsmonitor commands. */
+/** Run `git status` without repository-configured fsmonitor commands, and
+ *  without the index refresh that takes the index lock (#5795): every poll
+ *  with stat-dirty files rewrote the index, where an agent's `git add` or
+ *  `git commit` meeting it fails with "index.lock: File exists". */
 function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return git(cwd, ["-c", "core.fsmonitor=false", "status", ...args]);
+  return git(cwd, ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", ...args]);
 }
 
 /** Network git (push), `gh` and a commit's hooks can take longer than the
  *  read-only 10s budget. Tests shorten it (`COVEN_CAVE_GIT_LONG_TIMEOUT_MS`)
- *  to drive a hook past it. */
-const NET_TIMEOUT_MS = Number(process.env.COVEN_CAVE_GIT_LONG_TIMEOUT_MS) || 60_000;
+ *  to drive a hook past it, read per call so one test can set it per case. */
+function netTimeoutMs(): number {
+  return Number(process.env.COVEN_CAVE_GIT_LONG_TIMEOUT_MS) || 60_000;
+}
+
+/** Whether a long command was stopped by its time limit. */
+function timedOut(err: unknown): boolean {
+  return (err as { killed?: boolean } | null)?.killed === true;
+}
+
+/** Commits, pushes and their read-backs: their hooks are stopped with them
+ *  at the time limit (#5795), as a group, where the limit killed git alone
+ *  and a hook went on changing the repository after the answer. */
 function gitLong(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, {
-    windowsHide: true,
-    cwd,
-    timeout: NET_TIMEOUT_MS,
-    maxBuffer: MAX_GIT_BUFFER,
-    env: childEnv(env),
-  });
+  return gitWithHooks(cwd, args, { env: childEnv(env), timeoutMs: netTimeoutMs(), maxBuffer: MAX_GIT_BUFFER });
 }
 /** Run the GitHub CLI (argument array, no shell) for PR creation: found on
  *  the user's tool PATH (#5795), where the desktop app's own PATH missed a
  *  Homebrew `gh`, and with the PR lookup's scrubbed environment. */
 async function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   const env = await githubCliSpawnEnvAsync();
-  return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER, env });
+  return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: netTimeoutMs(), maxBuffer: MAX_GIT_BUFFER, env });
 }
 
 const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
@@ -210,7 +220,7 @@ const remoteHeadCache = new Map<string, { branch: string | null; at: number }>()
  *  default and Create PR pushed to it. Null with no `origin`, or when it
  *  can't be asked without a prompt. */
 async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
-  const url = await git(repoRoot, ["remote", "get-url", "origin"]).then(({ stdout }) => stdout.trim(), () => "");
+  const url = await originUrl(repoRoot);
   if (!url) return null;
   const key = `${repoRoot}\0${url}`;
   const hit = remoteHeadCache.get(key);
@@ -272,6 +282,46 @@ async function isGitBranchName(repoRoot: string, name: string): Promise<boolean>
 /** Where `git push origin` sends (#5795); "origin" when it can't be read. */
 async function originPushUrl(repoRoot: string): Promise<string> {
   return git(repoRoot, ["remote", "get-url", "--push", "origin"]).then(({ stdout }) => stdout.trim() || "origin", () => "origin");
+}
+
+/** origin's URL as git and `gh` read it (`insteadOf` applied), or "" with no origin. */
+async function originUrl(repoRoot: string): Promise<string> {
+  return git(repoRoot, ["remote", "get-url", "origin"]).then(({ stdout }) => stdout.trim(), () => "");
+}
+
+/** Whether origin is a GitHub repository, for the panel's Create PR (#5795):
+ *  it was offered for a GitLab, a bare or no remote, and pushed there. */
+async function originOnGitHub(repoRoot: string): Promise<boolean> {
+  const url = await originUrl(repoRoot);
+  return url ? isGitHubRemoteUrl(repoRoot, url).catch(() => false) : false;
+}
+
+/**
+ * Why a pull request can't be opened from this checkout, asked before
+ * anything is pushed (#5795), or null when it can. With `gh` missing or
+ * signed out, or origin on GitLab or in a folder, Create PR pushed the
+ * branch first and failed after, leaving it there, and gh's "gh auth login"
+ * advice misled a GitLab user. The URL itself is never echoed: it can hold
+ * a token.
+ */
+async function pullRequestRefusal(repoRoot: string): Promise<{ status: number; error: string } | null> {
+  const url = await originUrl(repoRoot);
+  if (!url) {
+    return { status: 400, error: "this project has no origin remote, so there's nowhere to open a pull request; add a GitHub remote first" };
+  }
+  const host = remoteUrlHost(url);
+  if (!host) {
+    return { status: 400, error: "origin is a folder on this machine, not a GitHub repository, so a pull request can't be opened from here" };
+  }
+  const state = await ghHostState(repoRoot, host);
+  if (state === "signed-in") return null;
+  if (state === "no-gh") return { status: 409, error: "GitHub CLI (gh) not found — install it to open PRs" };
+  return host === "github.com"
+    ? { status: 409, error: "gh isn't signed in to github.com; run `gh auth login` in a terminal, then open the PR" }
+    : {
+        status: 400,
+        error: `origin is on ${host}, which gh isn't signed in to, so a pull request can't be opened there; if it's GitHub Enterprise, run \`gh auth login --hostname ${host}\` in a terminal`,
+      };
 }
 
 type BranchRow = {
@@ -341,9 +391,17 @@ function featureBranchName(message: string, nowMs: number): string {
   return `cave/${slug}-${nowMs.toString(36)}`;
 }
 
+/** What a failed command said: its stderr, else its stdout. Never execFile's
+ *  "Command failed: <the command line>" (#5795), which held the whole PR
+ *  body or commit message; a command that said nothing gets its exit. */
 function stderrOf(err: unknown): string {
-  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
-  return String(e?.stderr || e?.stdout || e?.message || err).trim();
+  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown; cmd?: unknown; code?: unknown; signal?: unknown };
+  const said = String(e?.stderr || e?.stdout || "").trim();
+  if (said) return said;
+  if (typeof e?.cmd === "string" && String(e.message).startsWith("Command failed")) {
+    return e.signal ? `stopped by ${String(e.signal)}` : `exited with status ${String(e.code)}`;
+  }
+  return String(e?.message || err).trim();
 }
 
 type RootResolution =
@@ -360,11 +418,19 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
   // directory the daemon has an active session for (the daemon already spawned
   // a harness there, so it's user-sanctioned). The session-root list is fetched
   // once and reused for the post-`rev-parse` repo-toplevel re-check below.
+  // A read from the last few seconds answers (#5795): every poll downloaded
+  // the daemon's whole session list. A folder it doesn't hold is asked about
+  // afresh, once, for a session started since.
   let sessionRoots: string[] | null = null;
+  let freshRoots = false;
   const isAllowed = async (candidate: string): Promise<string | null> => {
     const staticAllowed = resolveAllowedProjectPath(candidate);
     if (staticAllowed) return staticAllowed;
-    if (sessionRoots === null) sessionRoots = await daemonSessionRoots();
+    if (sessionRoots === null) sessionRoots = await daemonSessionRoots({ maxAgeMs: SESSION_ROOTS_KEPT_MS });
+    const within = resolveWithinSessionRoots(candidate, sessionRoots);
+    if (within || freshRoots) return within;
+    freshRoots = true;
+    sessionRoots = await daemonSessionRoots();
     return resolveWithinSessionRoots(candidate, sessionRoots);
   };
 
@@ -575,9 +641,10 @@ async function readChanges(repoRoot: string) {
   // don't need a second git endpoint. Unborn repos have no HEAD — omit.
   // Linked-worktree name rides along too (composer git chip) — null in the
   // primary checkout, the checkout dir's basename in a `git worktree`.
-  const { branch, worktree } = await branchAndWorktree(repoRoot);
+  // So does whether origin is on GitHub, for the panel's Create PR (#5795).
+  const [{ branch, worktree }, githubOrigin] = await Promise.all([branchAndWorktree(repoRoot), originOnGitHub(repoRoot)]);
 
-  return { ok: true, repo: true, repoRoot, branch, worktree, files };
+  return { ok: true, repo: true, repoRoot, branch, worktree, githubOrigin, files };
 }
 
 /** PR context for the current branch (composer git chip): the pull request
@@ -882,13 +949,17 @@ export async function POST(req: NextRequest) {
 async function postAction(root: { repoRoot: string }, body: PostBody): Promise<NextResponse> {
   const action = body.action ?? "revert";
   if (action === "checkpoint") {
-    try {
-      const { path: checkpointPath, skipped } = await checkpointChanges(root.repoRoot);
-      return NextResponse.json({ ok: true, checkpointPath, skipped });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ ok: false, error: message }, { status: 500 });
-    }
+    // Under the repository lock (#5795): its pruning could remove the
+    // checkpoint a queued restore names.
+    return withRepositoryMutation(root.repoRoot, async () => {
+      try {
+        const { path: checkpointPath, skipped } = await checkpointChanges(root.repoRoot);
+        return NextResponse.json({ ok: true, checkpointPath, skipped });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return NextResponse.json({ ok: false, error: message }, { status: 500 });
+      }
+    });
   }
   // Stage all working-tree changes and commit them. To keep the default branch
   // clean (and set up the PR flow), a commit made while on the default branch
@@ -996,7 +1067,12 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
         : await captureCommitStart(root.repoRoot, cur, verified?.indexTree);
       let branch = cur;
       let branchCreated = false;
-      const rollback = () => rollbackCommitStart(root.repoRoot, start, branchCreated ? branch : null);
+      // What the rollback couldn't undo is said (#5795): an index another
+      // process had locked left the files staged under "nothing was committed".
+      const rollback = async () => {
+        const problem = await rollbackCommitStart(root.repoRoot, start, branchCreated ? branch : null);
+        return problem ? `; the files the desk staged are still staged, because the index couldn't be put back: ${problem}` : "";
+      };
       // Every step before the commit rolls back on failure too (#5775
       // review): a failed `git add` used to strand the new branch and any
       // partial staging. Nothing after a commit that landed is undone.
@@ -1043,8 +1119,8 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
           }
         }
       } catch (err) {
-        await rollback();
-        throw err;
+        const left = await rollback();
+        throw left ? new Error(`${stderrOf(err)}${left}`) : err;
       }
       let warning: string | undefined;
       try {
@@ -1056,34 +1132,34 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
           privateIndex?.env,
         );
       } catch (err) {
-        const timedOut = (err as { killed?: boolean }).killed === true;
+        const overTime = timedOut(err);
         // A commit that landed is a commit (#5781), but only the desk's own
         // (#5795): an agent's commit in the session's terminal moves HEAD
         // too, and was reported as the desk's.
         const landed = await deskCommitLanded(root.repoRoot, start, { indexEnv: privateIndex?.env, message });
         if (landed) {
-          warning = timedOut
-            ? `the commit landed, but a hook after it was still running after ${NET_TIMEOUT_MS / 1000} seconds`
+          warning = overTime
+            ? `the commit landed, but a hook after it was still running after ${netTimeoutMs() / 1000} seconds`
             : `the commit landed, but git reported: ${stderrOf(err)}`;
         } else {
           // Nothing staged, no new branch, HEAD where it was, unless another
           // process committed meanwhile, which is said and left alone.
-          await rollback();
+          const left = await rollback();
           const head = await git(root.repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
             .then(({ stdout }) => stdout.trim(), () => null);
           const foreign = head !== start.oid
             ? `; another commit landed on ${branch} while the desk was committing, and it isn't the desk's`
             : "";
-          if (timedOut) {
+          if (overTime) {
             return NextResponse.json(
-              { ok: false, error: `the commit didn't finish within ${NET_TIMEOUT_MS / 1000} seconds, so nothing was committed; a commit hook may be slow${foreign}` },
+              { ok: false, error: `the commit didn't finish within ${netTimeoutMs() / 1000} seconds, so nothing was committed; a commit hook may be slow${foreign}${left}` },
               { status: 504 },
             );
           }
           const detail = stderrOf(err);
           const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
           return NextResponse.json(
-            { ok: false, error: `${signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}`}${foreign}` },
+            { ok: false, error: `${signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}`}${foreign}${left}` },
             { status: 500 },
           );
         }
@@ -1166,24 +1242,41 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
           );
         }
       }
+      // Only a name git takes as a branch is pushed (#5795): one starting
+      // with `-` reached `git push` as options, `-fo` as a forced push.
+      if (!(await isGitBranchName(root.repoRoot, branch))) {
+        return NextResponse.json(
+          { ok: false, error: `git doesn't take ${JSON.stringify(branch)} as a branch name; rename the branch in a terminal, then open the PR` },
+          { status: 400 },
+        );
+      }
+      // A push past its time limit, said as one (#5795): it read "Command
+      // failed: git push …", and its pre-push hook went on running.
+      const pushTimeout = (rest: string) =>
+        NextResponse.json(
+          { ok: false, error: `git push didn't finish within ${netTimeoutMs() / 1000} seconds${rest}; a pre-push hook or the network may be slow` },
+          { status: 504 },
+        );
+      const refusal = await pullRequestRefusal(root.repoRoot);
+      if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
+      // What the push sends, to read back after a push that timed out.
+      const sentOid = expectedHead || (await git(root.repoRoot, ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`])).stdout.trim();
       // The pushed commit is read back where the push went (#5795): origin's
       // push URL, which can differ from the fetch URL `ls-remote origin`
       // asks. With https to fetch and ssh to push, every pushed branch read
       // as a failed push, and a lagging fetch mirror as "the remote branch
-      // changed". A push that reported a failure but landed counts as landed.
+      // changed". A push that reported a failure but landed counts as landed,
+      // and so does one that timed out behind a slow server hook (#5795).
       const pushSource = expectedHead || branch;
       let pushFailure: string | null = null;
+      let pushTimedOut = false;
       try {
-        await gitLong(root.repoRoot, [
-          "push",
-          "-u",
-          "origin",
-          exactBranchPushRef(branch, pushSource),
-        ]);
+        await gitLong(root.repoRoot, ["push", "origin", exactBranchPushRef(branch, pushSource)]);
       } catch (err) {
+        pushTimedOut = timedOut(err);
         pushFailure = stderrOf(err);
       }
-      if (expectedHead) {
+      if (expectedHead || pushTimedOut) {
         let remoteTip: string;
         try {
           ({ stdout: remoteTip } = await gitLong(root.repoRoot, [
@@ -1195,6 +1288,7 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
           ]));
         } catch (err) {
           const detail = stderrOf(err);
+          if (pushTimedOut) return pushTimeout(", and reading the branch back from origin failed too");
           return NextResponse.json(
             {
               ok: false,
@@ -1205,7 +1299,8 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
             { status: 502 },
           );
         }
-        if (!remoteBranchMatchesExpectedHead(remoteTip, expectedHead)) {
+        if (!remoteBranchMatchesExpectedHead(remoteTip, sentOid)) {
+          if (pushTimedOut) return pushTimeout(", and origin doesn't have the commit");
           if (pushFailure) return NextResponse.json({ ok: false, error: `git push failed: ${pushFailure}` }, { status: 502 });
           return NextResponse.json(
             { ok: false, error: "the remote branch changed before the pull request could be opened" },
@@ -1215,6 +1310,11 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
       } else if (pushFailure) {
         return NextResponse.json({ ok: false, error: `git push failed: ${pushFailure}` }, { status: 502 });
       }
+      // The branch tracks what it was pushed to (#5795), as `push -u` does:
+      // pushing a commit by its id set no upstream, so `git status` and
+      // `git pull` in a terminal had none.
+      await git(root.repoRoot, ["config", `branch.${branch}.remote`, "origin"]).catch(() => {});
+      await git(root.repoRoot, ["config", `branch.${branch}.merge`, `refs/heads/${branch}`]).catch(() => {});
       // In origin's parent when origin is a fork, from origin's branch, and
       // always named (#5795): left to itself, gh picked the fork, or an
       // `upstream` remote where the branch was never pushed.
@@ -1223,21 +1323,40 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
       const base = prArgs[prArgs.indexOf("--base") + 1]!;
       try {
         const { stdout } = await ghCli(root.repoRoot, prArgs);
-        const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
         // The lookup cached "no PR" for this branch (#5795), for a minute.
         branchPrCache.invalidate(root.repoRoot, branch);
+        // A success is its link (#5795): without one the form closed with
+        // nothing said, and a GitHub Enterprise link came back as raw output.
+        const url = createdPullRequestUrl(stdout);
+        if (!url) {
+          return NextResponse.json(
+            { ok: false, error: "gh pr create finished without giving a pull request link; check the repository on GitHub before trying again" },
+            { status: 502 },
+          );
+        }
         return NextResponse.json({ ok: true, url, branch, base });
       } catch (err) {
         const e = err as NodeJS.ErrnoException & { stderr?: string };
         if (e.code === "ENOENT") {
           return NextResponse.json({ ok: false, error: "GitHub CLI (gh) not found — install it to open PRs" }, { status: 500 });
         }
+        if (timedOut(err)) {
+          // It may have opened the PR before the limit: the lookup asks again.
+          branchPrCache.invalidate(root.repoRoot, branch);
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `gh pr create didn't finish within ${netTimeoutMs() / 1000} seconds; the pull request may have been opened anyway, so check GitHub before trying again`,
+            },
+            { status: 504 },
+          );
+        }
         const detail = stderrOf(err);
         // gh exits non-zero when a PR already exists; its message includes the URL.
-        const existing = detail.match(PR_URL_RE);
+        const existing = createdPullRequestUrl(detail);
         if (existing) {
           branchPrCache.invalidate(root.repoRoot, branch);
-          return NextResponse.json({ ok: true, url: existing[0], branch, base, existed: true });
+          return NextResponse.json({ ok: true, url: existing, branch, base, existed: true });
         }
         return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
       }
@@ -1300,15 +1419,19 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
       return NextResponse.json({ ok: false, error: "checkpoint name is required" }, { status: 400 });
     }
     const abs = await resolveCheckpointPath(root.repoRoot, body.checkpoint);
-    if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) {
-      return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
-    }
+    const notFound = () => NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+    if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) return notFound();
     try {
-      if (action === "delete-checkpoint") {
-        fs.unlinkSync(/* turbopackIgnore: true */ abs);
-        return NextResponse.json({ ok: true, deleted: body.checkpoint });
-      }
+      // Both under the repository lock (#5795): a delete ran outside it, and
+      // a revert's pruning could remove the checkpoint a queued restore
+      // names, which then failed with a raw ENOENT path. Looked for again
+      // once the lock is held.
       return await withRepositoryMutation(root.repoRoot, async () => {
+        if (!fs.existsSync(/* turbopackIgnore: true */ abs)) return notFound();
+        if (action === "delete-checkpoint") {
+          fs.unlinkSync(/* turbopackIgnore: true */ abs);
+          return NextResponse.json({ ok: true, deleted: body.checkpoint });
+        }
         const outcome = await restoreCheckpoint(root.repoRoot, abs);
         return NextResponse.json({
           ok: true,
@@ -1334,7 +1457,11 @@ async function postAction(root: { repoRoot: string }, body: PostBody): Promise<N
   const abs = resolveContainedFile(root.repoRoot, body.path);
   if (!abs) return pathNotAllowed();
   const entry = await changedEntry(root.repoRoot, body.path);
-  if (!entry) return pathNotAllowed();
+  // Not changed any more (#5795): another tab committed or reverted it. That
+  // read as "path not allowed", and every retry failed the same way.
+  if (!entry) {
+    return NextResponse.json({ ok: false, stale: true, error: "this file no longer has changes" }, { status: 409 });
+  }
   const from = entry.renamedFrom && resolveContainedFile(root.repoRoot, entry.renamedFrom) ? entry.renamedFrom : undefined;
   // The file as the desk decides on it (#5795): the version the user reviewed
   // when the client sends it, and again after the safety checkpoint, which

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { callDaemon } from "@/lib/coven-daemon";
+import { callDaemonConditional } from "@/lib/coven-daemon";
 import { realpathOrResolve } from "@/lib/server/canonical-path";
 
 /**
@@ -25,23 +25,57 @@ function isWithinRoot(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
 }
 
+/** How long a read of the roots answers callers that accept a kept one. */
+export const SESSION_ROOTS_KEPT_MS = 5_000;
+
+let kept: { roots: string[]; at: number } | null = null;
+let reading: Promise<string[]> | null = null;
+/** Roots per session list the daemon sent, so an unchanged list (a 304)
+ *  isn't canonicalized again, one real path per session. */
+const rootsOfList = new WeakMap<object, string[]>();
+
 /**
  * Fetch the set of session `project_root`s the daemon currently knows about,
  * canonicalized through the filesystem. Returns an empty array when the daemon
  * is offline or reports nothing — callers then fall back to the static
  * allow-list only (no widening).
+ *
+ * Every poll of a repository outside the static allow-list read the daemon's
+ * whole session list (#5795): 9.2 MB and 390 ms a poll with 20,000 sessions.
+ * The read is conditional (ETag), so an unchanged list is neither sent nor
+ * parsed, and callers passing `maxAgeMs` take a read that recent. Reads in
+ * flight are shared. A failed read is never kept.
  */
-export async function daemonSessionRoots(): Promise<string[]> {
-  const res = await callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" });
-  if (!res.ok || !res.data) return [];
-  const roots = new Set<string>();
-  for (const session of res.data) {
-    const root = session.project_root?.trim();
-    if (root && path.isAbsolute(root)) {
-      roots.add(realpathOrResolve(root));
+export async function daemonSessionRoots({ maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<string[]> {
+  if (kept && maxAgeMs > 0 && Date.now() - kept.at < maxAgeMs) return kept.roots;
+  reading ??= readDaemonSessionRoots().finally(() => {
+    reading = null;
+  });
+  return reading;
+}
+
+async function readDaemonSessionRoots(): Promise<string[]> {
+  const res = await callDaemonConditional<DaemonSession[]>({ path: "/api/v1/sessions" });
+  if (!res.ok || !Array.isArray(res.data)) return [];
+  let roots = rootsOfList.get(res.data);
+  if (!roots) {
+    const unique = new Set<string>();
+    for (const session of res.data) {
+      const root = session.project_root?.trim();
+      if (root && path.isAbsolute(root)) {
+        unique.add(realpathOrResolve(root));
+      }
     }
+    roots = [...unique];
+    rootsOfList.set(res.data, roots);
   }
-  return [...roots];
+  kept = { roots, at: Date.now() };
+  return roots;
+}
+
+/** Test seam: forget the kept roots. */
+export function clearDaemonSessionRoots(): void {
+  kept = null;
 }
 
 /**
