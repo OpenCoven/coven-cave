@@ -9,9 +9,10 @@ import "@/styles/cave-composer.css";
 //
 // Branch / worktree / dirty count ride the existing /api/changes status poll
 // via useChangesSummary (5s, visibility-gated, single-flight). The PR lookup
-// is network-bound (`gh pr view`), so it's fetched once per (root, branch)
-// through the separate `?pr=1` query instead of riding the poll. Chats whose
-// root isn't a repo (or have no project root at all) render nothing.
+// is network-bound (`gh pr view`), so it's fetched per (root, branch) through
+// the separate `?pr=1` query instead of riding the poll, then again after a
+// desk action changes the PR and on a slow poll (#5795). Chats whose root
+// isn't a repo (or have no project root at all) render nothing.
 //
 // The branch segment is also a menu: it lists the repo's local branches
 // (?branches=1), switches the checkout with POST action=switch-branch, and can
@@ -20,6 +21,7 @@ import "@/styles/cave-composer.css";
 // `cave:agents-new-chat` hand-off the GitHub safe-merge flow uses.
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -27,6 +29,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import { useChangesSummary } from "@/lib/use-changes-summary";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import {
   Popover,
@@ -58,24 +61,25 @@ type BranchRow = {
   worktreePath?: string | null;
 };
 
-/** The branch's PR, fetched once per (projectRoot, branch) — null when the
- *  branch has no PR (or gh is unavailable), undefined while unresolved. */
+/** How often a shown branch PR is read again while the window is visible. */
+const BRANCH_PR_POLL_MS = 60_000;
+
+/** The branch's PR — null when the branch has no PR (or gh is unavailable).
+ *  Read when the (projectRoot, branch) pair changes, again whenever a desk
+ *  action changes the branch's PR (`cave:branch-pr-changed`), and slowly
+ *  while visible (#5795): it was read once per pair, so after Create PR the
+ *  chip kept saying there was none, and after a merge, "open". */
 export function useBranchPr(projectRoot: string | undefined, branch: string | null): BranchPr | null {
-  const [pr, setPr] = useState<BranchPr | null>(null);
-  // One fetch per (root, branch) pair — a branch switch refetches, the 5s
-  // status poll does not.
-  const fetchedKey = useRef<string | null>(null);
+  const key = projectRoot && branch && branch !== "HEAD" ? `${projectRoot}\n${branch}` : null;
+  // The answer names the pair it's for, so a branch switch never shows the
+  // previous branch's PR while the new one is read.
+  const [answer, setAnswer] = useState<{ key: string; pr: BranchPr | null } | null>(null);
+  // Only these re-read it: the 5s status poll does not.
+  const [tick, setTick] = useState(0);
+  const reread = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
-    if (!projectRoot || !branch || branch === "HEAD") {
-      fetchedKey.current = null;
-      setPr(null);
-      return;
-    }
-    const key = `${projectRoot}\n${branch}`;
-    if (fetchedKey.current === key) return;
-    fetchedKey.current = key;
-    setPr(null);
+    if (!key || !projectRoot) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -85,18 +89,30 @@ export function useBranchPr(projectRoot: string | undefined, branch: string | nu
         );
         const json = (await res.json()) as PrResponse;
         if (cancelled) return;
-        const got = json.ok && json.pr && typeof json.pr.number === "number" ? json.pr : null;
-        setPr(got);
+        // A failed re-read keeps the last answer; a failed first read is no PR.
+        if (!res.ok || !json.ok) {
+          setAnswer((prev) => (prev?.key === key ? prev : { key, pr: null }));
+          return;
+        }
+        const got = json.pr && typeof json.pr.number === "number" ? json.pr : null;
+        setAnswer({ key, pr: got });
       } catch {
-        /* transient — leave as no-PR */
+        /* transient — keep what's shown */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [projectRoot, branch]);
+  }, [key, projectRoot, tick]);
 
-  return pr;
+  useEffect(() => {
+    if (!key) return;
+    window.addEventListener("cave:branch-pr-changed", reread);
+    return () => window.removeEventListener("cave:branch-pr-changed", reread);
+  }, [key, reread]);
+  usePausablePoll(reread, BRANCH_PR_POLL_MS, { enabled: key !== null });
+
+  return answer && answer.key === key ? answer.pr : null;
 }
 
 /**

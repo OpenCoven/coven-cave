@@ -239,6 +239,18 @@ export type TerminalWriterHandle = {
   write: (data: string) => void;
 };
 
+/** How many mounted terminals show each PTY thread. */
+const mountedThreads = new Map<string, number>();
+
+/**
+ * Whether a terminal on this page shows the thread now (#5795). The Coding
+ * Desk's cap on live shells stops only shells nobody is looking at: Chat's
+ * rail shows the same `cave.rail.<id>` shell, and its own owner stops it.
+ */
+export function terminalThreadMounted(threadId: string): boolean {
+  return (mountedThreads.get(threadId) ?? 0) > 0;
+}
+
 /**
  * Whether a terminal that starts may take focus (#5781): when nothing else
  * has it, or it's already in the terminal's own host (the Coding Desk's
@@ -291,6 +303,14 @@ export function BottomTerminal({
 }) {
   const releaseKeyRef = useRef(releaseKey);
   releaseKeyRef.current = releaseKey;
+  useEffect(() => {
+    mountedThreads.set(threadId, (mountedThreads.get(threadId) ?? 0) + 1);
+    return () => {
+      const left = (mountedThreads.get(threadId) ?? 1) - 1;
+      if (left > 0) mountedThreads.set(threadId, left);
+      else mountedThreads.delete(threadId);
+    };
+  }, [threadId]);
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
   // them to the shared assertive live region so AT interrupts with the status.
@@ -783,7 +803,8 @@ export function BottomTerminal({
         // to a shell that was about to be SIGHUPed, a dead pane that ate
         // keystrokes. The shell is killed exactly once, by the OWNER of the
         // thread id — the chat code rail stops `cave.rail.<id>` shells on
-        // session switch (chat-surface.tsx, cave-c3yt).
+        // session switch (chat-surface.tsx, cave-c3yt), and the Coding Desk's
+        // drawer stops the least recently used session's past its cap (#5795).
       };
       made.length = 0; // `cleanup` disposes everything from here on
 

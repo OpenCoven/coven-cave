@@ -595,7 +595,8 @@ assert.match(
 // A local boolean here would be free to say "clear" when nothing verified it.
 assert.match(
   prReader,
-  /const gates = prLandingGates\(\{ counts, reviews, mergeable, mergeableState \}\);\s*\n\s*const verdict = prMergeVerdict\(gates\);/,
+  // The checks gate also reads the route's rollup over runs and statuses (#5795).
+  /const gates = prLandingGates\(\{ counts, rollup: state\.rollup, reviews, mergeable, mergeableState \}\);\s*\n\s*const verdict = prMergeVerdict\(gates\);/,
   "gates and the merge verdict come from the shared model, never a local boolean",
 );
 // Skipped runs are named, never folded into the passing count — a rollup that

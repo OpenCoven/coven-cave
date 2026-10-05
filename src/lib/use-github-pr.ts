@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { CheckSummary } from "@/lib/github-checks";
-import type { PrCheckRun } from "@/lib/github-pr-reader";
+import { prReviewEvidence, type PrCheckRun, type PrCommitStatus } from "@/lib/github-pr-reader";
 import { fetchGitHubItem } from "@/lib/github-item-fetch";
 
 const CHECKS_POLL_MS = 30_000;
@@ -37,7 +37,9 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 export type PrChecksState =
   | { phase: "loading" }
-  | { phase: "ready"; rollup: CheckSummary; runs: PrCheckRun[] }
+  /** `statuses` are the legacy commit statuses; `rollup` covers both
+   *  (#5795), and is what the checks gate reads. */
+  | { phase: "ready"; rollup: CheckSummary; runs: PrCheckRun[]; statuses: PrCommitStatus[] }
   | { phase: "error" };
 
 export function useGitHubPrChecks(repo: string, number: number): PrChecksState {
@@ -46,7 +48,7 @@ export function useGitHubPrChecks(repo: string, number: number): PrChecksState {
   useEffect(() => {
     let cancelled = false;
     setState((prev) => (prev.phase === "ready" ? prev : { phase: "loading" }));
-    void getJson<{ rollup: CheckSummary; runs: PrCheckRun[] }>(
+    void getJson<{ rollup: CheckSummary; runs: PrCheckRun[]; statuses?: PrCommitStatus[] }>(
       `/api/github/checks?repo=${encodeURIComponent(repo)}&number=${number}`,
     ).then((data) => {
       if (cancelled) return;
@@ -54,7 +56,7 @@ export function useGitHubPrChecks(repo: string, number: number): PrChecksState {
         setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
         return;
       }
-      setState({ phase: "ready", rollup: data.rollup, runs: data.runs ?? [] });
+      setState({ phase: "ready", rollup: data.rollup, runs: data.runs ?? [], statuses: data.statuses ?? [] });
     });
     return () => {
       cancelled = true;
@@ -79,7 +81,9 @@ export type PrReviewThread = {
 
 export type PrThreadsState =
   | { phase: "loading" }
-  | { phase: "ready"; threads: PrReviewThread[]; authed: boolean }
+  /** `complete` is false when some threads couldn't be read (#5795):
+   *  `evidenceError` says why, and the list is only what was read. */
+  | { phase: "ready"; threads: PrReviewThread[]; authed: boolean; complete: boolean; evidenceError: string | null }
   | { phase: "error" };
 
 export function useGitHubPrThreads(
@@ -93,7 +97,12 @@ export function useGitHubPrThreads(
     // A manual refresh keeps the current list on screen; only the first load
     // shows the skeleton.
     setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
-    void getJson<{ authed: boolean; reviewThreads: PrReviewThread[] }>(
+    void getJson<{
+      authed: boolean;
+      reviewThreads: PrReviewThread[];
+      reviewEvidenceComplete?: boolean;
+      reviewEvidenceError?: string | null;
+    }>(
       `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${number}&isPull=1`,
     ).then((data) => {
       if (cancelled) return;
@@ -101,7 +110,14 @@ export function useGitHubPrThreads(
         setState({ phase: "error" });
         return;
       }
-      setState({ phase: "ready", threads: data.reviewThreads ?? [], authed: Boolean(data.authed) });
+      const evidence = prReviewEvidence(data);
+      setState({
+        phase: "ready",
+        threads: data.reviewThreads ?? [],
+        authed: Boolean(data.authed),
+        complete: evidence.complete,
+        evidenceError: evidence.error,
+      });
     });
     return () => {
       cancelled = true;

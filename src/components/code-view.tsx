@@ -65,6 +65,7 @@ import type { SessionRow } from "@/lib/types";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMeasuredWidth } from "@/lib/use-measured-width";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { stopArchivedDeskTerminals } from "@/components/code-terminal-drawer";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
 // GitHub tabs, and github-view is a 3k-line surface (same split posture as
@@ -298,6 +299,11 @@ export function CodeView({
     () => codeReviewQueue(sessions, queueMode, queueSelectedId),
     [queueMode, queueSelectedId, sessions],
   );
+  // An archived session's desk shells stop (#5795): on desktop they ran until
+  // the app quit.
+  useEffect(() => {
+    stopArchivedDeskTerminals(sessions);
+  }, [sessions]);
   const setSessionReviewRailOpen = useCallback((sessionId: string, open: boolean) => {
     const states = reviewRailOpenBySessionRef.current;
     if (states.get(sessionId) === open) return;

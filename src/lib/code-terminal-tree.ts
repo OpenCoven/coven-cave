@@ -205,6 +205,31 @@ export function terminalPaneThreadId(sessionId: string, paneId: string): string 
     : `cave.code.${sessionId}.${paneId}`;
 }
 
+/** Every PTY thread a session's desk terminal owns in this layout: the
+ *  primary's rail shell, then one per split pane. */
+export function terminalThreadIds(sessionId: string, node: TerminalLayoutNode): string[] {
+  return listTerminalPanes(node).map((pane) => terminalPaneThreadId(sessionId, pane.id));
+}
+
+/** Sessions whose desk shells may keep running at once (#5795). */
+export const MAX_LIVE_TERMINAL_SESSIONS = 4;
+
+/**
+ * Mark `sessionId` as the most recently used desk terminal (#5795). Returns the
+ * new order, most recent first, and the sessions pushed past the cap, oldest
+ * first, whose shells the caller stops. Nothing stopped a desk shell before:
+ * every session whose drawer was opened kept its shell until the app quit.
+ */
+export function touchTerminalSession(
+  order: readonly string[],
+  sessionId: string,
+  cap: number = MAX_LIVE_TERMINAL_SESSIONS,
+): { order: string[]; evicted: string[] } {
+  const next = [sessionId, ...order.filter((id) => id !== sessionId)];
+  const keep = Math.max(1, Math.floor(cap));
+  return { order: next.slice(0, keep), evicted: next.slice(keep).reverse() };
+}
+
 /**
  * Panes that should receive input typed into `focusedPaneId` while broadcast is
  * on — every OTHER visible leaf. The source is excluded so a broadcast keystroke
