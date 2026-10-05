@@ -25,6 +25,11 @@ node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
   scripts/runtime-activity-effect-recovery.mjs \
   --execute --evidence /absolute/new/disclosure-evidence --split-secrets
 
+# Three same-name calls, result-before-start and contradictory duplicates:
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
+  scripts/runtime-activity-effect-recovery.mjs \
+  --execute --evidence /absolute/new/parallel-evidence --parallel-calls --include-expiry
+
 # Save failure after the durable effect; run separately from eviction/expiry:
 node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
   scripts/runtime-activity-effect-recovery.mjs \
@@ -44,10 +49,11 @@ buffer expiry (130 seconds), and a real server restart. Each history checkpoint
 checks the exact saved assistant turn, Unicode answer, tool result, reasoning
 summaries and reported runtime identity. Null and corrupted history must fail.
 The separate negative-control ledger must reach two while the qualification
-ledger remains one. Omitting `--include-expiry` explicitly records that leg as
+ledger remains one (three in parallel mode). Omitting `--include-expiry` explicitly records that leg as
 unverified. Results retain source digests, base head, build ID, runtime version,
 checkpoints, omissions and cleanup state; credentials and provider payloads are
-not included in the report.
+not included in the report. Product source digests and an explicit uncommitted
+source flag distinguish precommit validation from the base Git head.
 
 The eviction mode supplies an 864 KB Unicode answer through the controlled
 provider, exceeds the production 512 KB ring, and requires the `resume-gap`
@@ -58,6 +64,18 @@ terminal response with no persisted turn ID, and no saved assistant response
 through repeated reads and restart. The original user stub must remain intact.
 Permissions are restored before cleanup. Both modes keep the same real counter
 at one and run the independent second-invocation negative control.
+
+The parallel mode uses the same versioned reordered-result corpus as the Hermes
+source integration test. Three fresh child processes concurrently append distinct
+invocation records. Their same-name calls retain separate native IDs; a result
+before its call announcement settles when announced, and contradictory duplicate
+results or late running progress cannot replace that first terminal result.
+Live/replayed terminal states and all three saved cards must match their expected
+outputs and activity. Repeated recovery keeps the ledger at three; the independent
+negative control reaches two. Run parallel mode separately from eviction,
+split-secret and save-failure modes. It may include real finished-buffer expiry.
+See `docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json` for the
+production failure, source red-to-green regression and rebuilt HTTP receipts.
 
 Every mode probes missing and invalid credentials on reconnect, history and
 lazy tool-output reads before and after server restart. Forwarded ingress is
@@ -81,6 +99,8 @@ renderer observations, including redacted raw JSON and automation keyboard focus
 and disclosure activation. Its durable ledger stayed one after history reopening.
 See `docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json` for
 source/build provenance, a retained terminal failure and the successful retry.
+That retained app predates the Hermes ordering fix; it is prior-candidate rendering
+evidence and does not qualify the newly rebuilt producer or a new desktop build.
 These observations do not qualify native iOS, desktop live send/reconnect/reload,
 comparative performance, human keyboard-only use or VoiceOver.
 

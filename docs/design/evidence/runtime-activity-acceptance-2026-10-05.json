@@ -913,6 +913,7 @@
       "retryDisposition": "Both exact-job and failed-run retries refused by GitHub with HTTP403 for the dynamic workflow. No merge or protection change."
     },
     "recoveryNegatives": "docs/design/evidence/runtime-activity-recovery-negatives-2026-10-05.json",
-    "disclosureAndDesktopPartial": "docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json"
+    "disclosureAndDesktopPartial": "docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json",
+    "hermesReorderedResults": "docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json"
   }
 }

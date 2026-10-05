@@ -2,7 +2,8 @@
 // controlled; the counter is a fresh child process with an fsynced append.
 // This does not establish browser/native rendering or protected-effect authority.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -17,7 +18,9 @@ const includeExpiry = flags.includes("--include-expiry");
 const ringEviction = flags.includes("--ring-eviction");
 const persistenceFailure = flags.includes("--persistence-failure");
 const splitSecrets = flags.includes("--split-secrets");
-assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure", "--split-secrets"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry || splitSecrets)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] [--split-secrets] OR --persistence-failure");
+const parallelCalls = flags.includes("--parallel-calls");
+const invokeChild = promisify(execFile);
+assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure", "--split-secrets", "--parallel-calls"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry || splitSecrets || parallelCalls)) && !(parallelCalls && (ringEviction || splitSecrets)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] [--split-secrets] OR [--include-expiry] --parallel-calls OR --persistence-failure");
 assert.ok(["darwin", "linux"].includes(process.platform), "POSIX counter fixture only; other platforms remain unverified.");
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), evidence = args[2];
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -27,7 +30,7 @@ const imp = (f) => import(pathToFileURL(path.join(repo, f)).href);
 const { startCave, stopCave, freePort } = await imp("scripts/client-v1-conformance.mjs");
 const binary = execFileSync("which", ["coven"], { encoding: "utf8" }).trim();
 const adminToken = randomUUID(), providerToken = randomUUID(), mobileToken = randomUUID();
-const sourceFiles = ["scripts/runtime-activity-effect-recovery.mjs", "scripts/runtime-activity-effect-counter.mjs", "scripts/runtime-activity-effect-counter.test.mjs", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json"];
+const sourceFiles = ["scripts/runtime-activity-effect-recovery.mjs", "scripts/runtime-activity-effect-counter.mjs", "scripts/runtime-activity-effect-counter.test.mjs", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json", "src/app/api/chat/send/route.ts", "src/lib/chat-tool-events.ts", "src/lib/hermes-responses-stream.ts"];
 const sourceHashes = async () => Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, createHash("sha256").update(await readFile(path.join(repo, file))).digest("hex")])));
 const deadline = new AbortController();
 const deadlineTimer = setTimeout(() => deadline.abort(new Error("qualification deadline exceeded")), includeExpiry ? 480_000 : 240_000);
@@ -36,8 +39,9 @@ process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 const report = { schemaVersion: 1, scenario: "hermes-durable-effect-recovery", startedAt: (new Date()).toISOString(), omissions: ["HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.", "Coven-specific state is isolated; HOME is unchanged.", "Ring eviction, access revocation and persistence-failure injection remain unverified."], head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: repo }).trim(), buildId: (await readFile(path.join(repo, ".next/BUILD_ID"), "utf8")).trim(), classification: "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.", passed: false, checkpoints: [], providerRequests: 0, host: { node: process.version, platform: process.platform, architecture: process.arch } };
 report.sourceHashes = await sourceHashes();
-report.options = { includeExpiry, ringEviction, persistenceFailure, splitSecrets };
-report.scenario = persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : splitSecrets ? "hermes-durable-effect-split-secrets" : report.scenario;
+report.options = { includeExpiry, ringEviction, persistenceFailure, splitSecrets, parallelCalls };
+report.productSourceUncommitted = Boolean(execFileSync("git", ["status", "--porcelain", "--", "src/app/api/chat/send/route.ts", "src/lib/chat-tool-events.ts", "src/lib/hermes-responses-stream.ts"], { encoding: "utf8", cwd: repo }).trim());
+report.scenario = parallelCalls ? "hermes-durable-effect-parallel-reordered-results" : persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : splitSecrets ? "hermes-durable-effect-split-secrets" : report.scenario;
 report.omissions[2] = "Access revocation and process-crash durability remain unverified.";
 if (!ringEviction) report.omissions.push("Ring eviction not run; use --ring-eviction.");
 if (!persistenceFailure) report.omissions.push("Persistence failure not injected; use --persistence-failure separately.");
@@ -57,7 +61,7 @@ const ledger = path.join(projectRoot, "effect-invocations.jsonl");
 const toolFile = path.join(repo, "scripts/runtime-activity-effect-counter.mjs");
 const count = async () => (await readFile(ledger, "utf8")).split("\n").filter(Boolean).length;
 const native = (args2) => execFileSync(binary, args2, { env: process.env, cwd: projectRoot, encoding: "utf8", timeout: 2e4, stdio: ["ignore", "pipe", "pipe"] });
-const expectedCount = async (label, n = 1) => {
+const expectedCount = async (label, n = parallelCalls ? 3 : 1) => {
   report.stage = label;
   const value = await count();
   assert.equal(value, n, label);
@@ -85,6 +89,18 @@ try {
   Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, "coven.sock"), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: projectRoot, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, "vault.yaml"), COVEN_CAVE_ENV_FILE: path.join(root, ".env.local"), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, "vault.enc.json"), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, "vault.key"), COVEN_PREFERENCES_PATH: path.join(root, "preferences.json"), COVEN_THEME_PATH: path.join(root, "theme.json"), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, "projects.json"), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, "permissions.json"), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, "queue.json") });
   delete process.env.COVEN_CAVE_E2E;
   const scenario = JSON.parse(await readFile(path.join(repo, "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json"), "utf8"));
+  let reordered;
+  if (parallelCalls) {
+    reordered = JSON.parse(await readFile(path.join(repo, "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json"), "utf8"));
+    assert.equal(reordered.schemaVersion, 1);
+    assert.equal(reordered.expected.tools.length, 3);
+    const firstResult = reordered.events.findIndex(([, data]) => data.item?.type === "function_call_output");
+    assert.ok(firstResult > 0);
+    // Keep the reasoning/Unicode prefix, then use the shared call-order corpus.
+    scenario.beforeRelease = [...scenario.beforeRelease.slice(0, 5), ...reordered.events.slice(1, firstResult)];
+    scenario.expected.counter = 3;
+    reordered.resultEvents = reordered.events.slice(firstResult, -1);
+  }
   if (splitSecrets) {
     const secret = "sk-" + randomBytes(24).toString("hex");
     const signed = "https://fixture.invalid/result?X-Amz-Signature=PRIVATE_SIGNED_URL_SENTINEL&expires=1";
@@ -132,10 +148,25 @@ try {
         await frame(res, event, data);
       }
       await toolGate;
-      const effect = execFileSync(process.execPath, [toolFile, "--execute", projectRoot, "effect-invocations.jsonl"], { encoding: "utf8", timeout: 5e3 });
-      assert.equal(effect, "1");
-      const output = scenario.afterRelease[0];
-      await frame(res, output[0], JSON.parse(JSON.stringify(output[1]).replaceAll("{{COUNTER}}", effect)));
+      deadline.signal.throwIfAborted();
+      let effect;
+      if (parallelCalls) {
+        const invocations = await Promise.all(reordered.expected.tools.map(() => invokeChild(process.execPath, [toolFile, "--execute", projectRoot, "effect-invocations.jsonl"], { encoding: "utf8", timeout: 5e3 })));
+        assert.ok(invocations.every(({ stdout }) => ["1", "2", "3"].includes(stdout)));
+        assert.equal(await count(), 3);
+        effect = "3";
+        for (const [event, data] of reordered.resultEvents) {
+          const rendered = structuredClone(data);
+          const expected = reordered.expected.tools.find(tool => tool.id === rendered.item?.call_id);
+          if (expected && rendered.item?.type === "function_call_output" && rendered.item.output[0].text === expected.output) rendered.item.output[0].text += ":" + effect;
+          await frame(res, event, rendered);
+        }
+      } else {
+        effect = execFileSync(process.execPath, [toolFile, "--execute", projectRoot, "effect-invocations.jsonl"], { encoding: "utf8", timeout: 5e3 });
+        assert.equal(effect, "1");
+        const output = scenario.afterRelease[0];
+        await frame(res, output[0], JSON.parse(JSON.stringify(output[1]).replaceAll("{{COUNTER}}", effect)));
+      }
       await finalGate;
       for (const [event, data] of scenario.afterRelease.slice(1)) await frame(res, event, JSON.parse(JSON.stringify(data).replaceAll("{{COUNTER}}", effect)));
       res.end();
@@ -185,7 +216,7 @@ try {
   const sent = new AbortController();
   const response = await request("/api/chat/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ familiarId: "effectfixture", sessionId: randomUUID(), runId, startNewConversation: true, projectRoot, permissionMode: "write", prompt: "Run the controlled isolated counter tool once." }), signal: sent.signal });
   assert.equal(response.status, 200);
-  const initialWire = await until(response.body.getReader(), (e) => e.some((x) => x.kind === "tool_use" && x.status === "running"));
+  const initialWire = await until(response.body.getReader(), (e) => parallelCalls ? reordered.expected.tools.slice(0, 2).every(tool => e.some(x => x.kind === "tool_use" && x.id === tool.id && x.status === "running")) : e.some(x => x.kind === "tool_use" && x.status === "running"));
   assertPublic(initialWire);
   assert.equal(await count(), 0);
   sent.abort();
@@ -194,7 +225,7 @@ try {
   const tail = await request("/api/chat/stream?runId=" + runId + "&cursor=0", { signal: tailController.signal });
   assert.equal(tail.status, 200);
   releaseTool();
-  await until(tail.body.getReader(), (e) => e.some((x) => x.kind === "tool_use" && x.status === "ok"));
+  await until(tail.body.getReader(), (e) => parallelCalls ? reordered.expected.tools.slice(0, 2).every(tool => e.some(x => x.kind === "tool_use" && x.id === tool.id && x.status === "ok")) : e.some(x => x.kind === "tool_use" && x.status === "ok"));
   await expectedCount("effect after initial transport drop");
   tailController.abort();
   const final = await request("/api/chat/stream?runId=" + runId + "&cursor=0");
@@ -240,6 +271,15 @@ try {
   }
   const terminalTool = events.findLast(event => event.kind === "tool_use" && event.id === scenario.expected.toolId && event.status === "ok");
   assert.ok(terminalTool?.activity?.runId, "live tool observation identity must exist");
+  if (parallelCalls) {
+    for (const expected of reordered.expected.tools) {
+      const latest = events.findLast(event => event.kind === "tool_use" && event.id === expected.id);
+      assert.equal(latest?.status, expected.status, "late progress must not reopen a settled call");
+      assert.equal(latest.output, expected.output + ":3", "first terminal result must win under its call ID");
+      assert.equal(latest.name, expected.name);
+      assert.equal(latest.activity.authority.effect, "unavailable");
+    }
+  }
   report.transportRunId = runId;
   report.observationRunId = terminalTool.activity.runId;
   report.negativeReadCredentials = [];
@@ -306,7 +346,21 @@ try {
     if (splitSecrets) {
       assert.deepEqual(JSON.parse(tool.output), { count: "1", authorization: "[redacted]", url: "[redacted signed URL]", email: "[redacted email]", ssn: "[redacted identifier]", phone: "[redacted phone]", signature: "[withheld provider state]" });
       assert.deepEqual(JSON.parse(tool.input), { path: "effect-invocations.jsonl", authorization: "[redacted]", url: "[redacted signed URL]", email: "[redacted email]", ssn: "[redacted identifier]", phone: "[redacted phone]", encrypted_content: "[withheld provider state]" });
-    } else assert.equal(tool.output, String(scenario.expected.counter));
+    } else if (!parallelCalls) assert.equal(tool.output, String(scenario.expected.counter));
+    if (parallelCalls) {
+      assert.equal(assistant.tools.length, 3, "duplicate calls must not create extra cards");
+      assert.deepEqual(new Set(assistant.tools.map(tool => tool.id)), new Set(reordered.expected.tools.map(tool => tool.id)));
+      for (const expected of reordered.expected.tools) {
+        const tool = assistant.tools.find(tool => tool.id === expected.id);
+        const latest = events.findLast(event => event.kind === "tool_use" && event.id === expected.id);
+        assert.equal(tool.name, expected.name);
+        assert.equal(tool.status, expected.status);
+        assert.equal(tool.output, expected.output + ":3");
+        assert.deepEqual(tool.activity, latest.activity);
+        assert.equal(tool.activity.authority.effect, "unavailable");
+      }
+      report.parallelCallChecks = { separateCards: 3, lateResultBeforeStartRetained: true, duplicateChangedResultIgnored: true, latestLiveTerminalPreserved: true, sharedFixture: reordered.id };
+    }
     report.stage = 'history: assert.equal(tool.activity?.runId';
     assert.deepEqual(tool.activity, terminalTool.activity, "saved activity must match the live observation");
     assert.ok(assistant.reasoningBlocks.every(block => block.observation.runId === terminalTool.activity.runId));
@@ -378,7 +432,11 @@ try {
     report.disclosureSurfaces = { providerWriteChunkBytes: 7, providerUtf8SplitBoundaries: report.providerUtf8SplitBoundaries, argumentDeltaCharacters: 1, liveReplayAndHistoryChecked: true, lazyOutputChecked: true, rawPersistedConversationChecked: true, serverLogBytesChecked: Buffer.byteLength(serverLogs), knownDaemonLogBytesChecked: daemonLogBytes, rawPayloadRetained: false };
     assert.ok(report.providerUtf8SplitBoundaries > 0, "provider writes must split a Unicode code point");
   }
-  await writeFile(path.join(evidence, "durable-invocations.jsonl"), await readFile(ledger));
+  const invocationLedger = await readFile(ledger, "utf8");
+  const invocationIds = invocationLedger.trim().split("\n").map(line => JSON.parse(line).invocationId);
+  assert.equal(new Set(invocationIds).size, parallelCalls ? 3 : 1, "each durable effect must have a distinct invocation ID");
+  report.uniqueDurableInvocationIds = new Set(invocationIds).size;
+  await writeFile(path.join(evidence, "durable-invocations.jsonl"), invocationLedger);
   const negative = "negative-control-invocations.jsonl";
   await writeFile(path.join(projectRoot, negative), "", { flag: "wx", mode: 0o600 });
   assert.equal(execFileSync(process.execPath, [toolFile, "--execute", projectRoot, negative], { encoding: "utf8" }), "1");
@@ -411,6 +469,7 @@ try {
   clearTimeout(deadlineTimer);
   process.off("SIGINT", onInterrupt);
   process.off("SIGTERM", onInterrupt);
+  deadline.abort(new Error("qualification cleanup"));
   releaseTool();
   releaseFinal();
   if (cave) {
