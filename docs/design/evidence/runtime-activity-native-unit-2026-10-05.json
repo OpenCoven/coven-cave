@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "qualificationIssue": 5767,
+  "classification": "Full native XCTest unit suite plus production TCP recovery with a controlled Hermes provider. Marker-read count is not durable effect evidence. No rendered UI, human VoiceOver or physical-device performance claim.",
+  "attempts": [
+    {
+      "schemaVersion": 1,
+      "startedAt": "2026-10-05T19:25:28.563Z",
+      "destination": "C85E1FF6-F03D-4F6E-9E72-542B422F4F6E",
+      "fixtureId": "60bba9ba-660c-452b-a6a4-6c44c18735ad",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "sourceBefore": "aa481b6c95b707afe6920b8fe700c34b7dc109fb3a507d323f34688a46aab7af",
+        "buildId": "coZcWmCnRo0JEjKUxXR1B",
+        "sourceAfter": "aa481b6c95b707afe6920b8fe700c34b7dc109fb3a507d323f34688a46aab7af"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "xcode": "Xcode 26.6\nBuild version 17F113"
+      },
+      "scenario": "full-unit-suite-with-native-tcp-recovery",
+      "classification": "full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+      "passed": false,
+      "providerRequests": 0,
+      "toolInvocations": 0,
+      "limitations": [
+        "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+        "Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.",
+        "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+      ],
+      "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+      "daemon": {
+        "pid": 54436,
+        "version": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)"
+      },
+      "serverPid": 54440,
+      "ingressRefusalsVerified": true,
+      "realDaemonRosterVerified": true,
+      "failure": "install-native-app failed; see its retained log\n\n149 !== 0\n",
+      "serverStopped": true,
+      "providerStopped": true,
+      "daemonStopped": true,
+      "noDaemonState": true,
+      "fixtureRootRemoved": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:27:14.201Z"
+    },
+    {
+      "schemaVersion": 1,
+      "startedAt": "2026-10-05T19:28:33.349Z",
+      "destination": "C85E1FF6-F03D-4F6E-9E72-542B422F4F6E",
+      "fixtureId": "bc828bb3-7fb0-4b8a-9522-dcbab92951cc",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "sourceBefore": "aa481b6c95b707afe6920b8fe700c34b7dc109fb3a507d323f34688a46aab7af",
+        "buildId": "coZcWmCnRo0JEjKUxXR1B",
+        "sourceAfter": "aa481b6c95b707afe6920b8fe700c34b7dc109fb3a507d323f34688a46aab7af"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "xcode": "Xcode 26.6\nBuild version 17F113"
+      },
+      "scenario": "full-unit-suite-with-native-tcp-recovery",
+      "classification": "full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+      "passed": true,
+      "providerRequests": 1,
+      "toolInvocations": 1,
+      "limitations": [
+        "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+        "Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.",
+        "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+      ],
+      "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+      "daemon": {
+        "pid": 96801,
+        "version": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)"
+      },
+      "serverPid": 96806,
+      "ingressRefusalsVerified": true,
+      "realDaemonRosterVerified": true,
+      "restart": {
+        "previousPid": 96806,
+        "newPid": 1988,
+        "previousStopped": true,
+        "sameOrigin": true,
+        "ingressRefusalsVerified": true
+      },
+      "savedConversations": 1,
+      "fullUnitSuiteExecuted": true,
+      "serverStopped": true,
+      "providerStopped": true,
+      "daemonStopped": true,
+      "noDaemonState": true,
+      "fixtureRootRemoved": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:30:21.684Z"
+    }
+  ],
+  "failureExplanation": "First attempt built successfully but the newly created simulator was Shutdown. Booted the same owned simulator and retried without changing sources or weakening the suite.",
+  "executionGate": "iOS XCTest execution report\n  source test methods    996\n  executed               996\n  passed                 996\n  failed                 0\n  deferred               0 of 0 quarantined\n  skipped                0\n  expected failures      0\n  result                 Passed\n  xcodebuild             success\n✓ 996 iOS XCTest case(s) executed and passed (floor 996)\n",
+  "ownedSimulator": {
+    "uuid": "C85E1FF6-F03D-4F6E-9E72-542B422F4F6E",
+    "name": "Cave5767Qualification20261005",
+    "disposition": "Shutdown, intentionally preserved for ongoing qualification under session01a10d39-3567-7413-ae63-2dfffe58a85d.",
+    "existingDevicePreserved": "8E08D33E-D46E-40D6-921C-6B8475046CFC"
+  },
+  "humanAcceptance": "VoiceOver and physical-device performance pending at Val's request."
+}

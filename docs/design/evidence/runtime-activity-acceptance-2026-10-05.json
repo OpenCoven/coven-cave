@@ -903,6 +903,14 @@
       "status": "pending-human-pass",
       "source": "Val explicitly requested leaving VoiceOver and physical-device performance pending.",
       "scope": "#5766 reasoning disclosure, tool details, approval/rejection, error/retry, reconnect, history and physical-device performance."
+    },
+    "runtimeRefresh": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json",
+    "nativeUnits": "docs/design/evidence/runtime-activity-native-unit-2026-10-05.json",
+    "browserPartial": "docs/design/evidence/runtime-activity-browser-partial-2026-10-05.json",
+    "checksAtPriorHead": {
+      "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+      "codeqlRunnerFailure": "Actions/Rust jobs did not acquire a hosted runner after multiple attempts; marked cancelled.",
+      "retryDisposition": "Both exact-job and failed-run retries refused by GitHub with HTTP403 for the dynamic workflow. No merge or protection change."
     }
   }
 }

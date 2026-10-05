@@ -1,0 +1,480 @@
+{
+  "schemaVersion": 1,
+  "qualificationIssue": 5767,
+  "scope": "Refreshed real-provider production HTTP read-only vertical slices; no full golden corpus or renderer/human acceptance.",
+  "productionBuildHead": "4a81fe165aa7d0c17eb5af2eceb4d9f115fb1f8b",
+  "results": [
+    {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-5H2Dkk",
+      "harness": "claude",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-05T19:22:31.290Z",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "runtimeVersion": "2.1.289 (Claude Code)",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "coZcWmCnRo0JEjKUxXR1B",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+      },
+      "daemon": {
+        "pid": 9848,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-5H2Dkk/coven/coven.sock"
+      },
+      "profile": "claude-stream-json-v2",
+      "server": {
+        "pid": 11935,
+        "port": 62874
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "829791ff-26d4-46d9-a7f6-72e170f07226",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "reasoning",
+        "tool_use",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.289",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "path": "coven",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "id": "toolu_01GxJ9yY8FD3r3xU1xVoAxni",
+          "name": "Read",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01GxJ9yY8FD3r3xU1xVoAxni",
+          "name": "Read",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "answerComparison": {
+        "liveLength": 50,
+        "savedLength": 50,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 0,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:22:49.676Z"
+    },
+    {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-QfPVcc",
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-05T19:23:19.279Z",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "coZcWmCnRo0JEjKUxXR1B",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+      },
+      "daemon": {
+        "pid": 18627,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-QfPVcc/coven/coven.sock"
+      },
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.88",
+        "probeExecutable": "copilot",
+        "launchCommand": {
+          "command": "/Users/buns/.nvm/versions/node/v24.13.0/lib/node_modules/@github/copilot/npm-loader.js",
+          "fixedArgs": [],
+          "requiredFiles": []
+        },
+        "spawnPathWarmed": true,
+        "scope": "canonical-launch-preflight"
+      },
+      "profile": "copilot-jsonl-v1",
+      "server": {
+        "pid": 21213,
+        "port": 63096
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "a3f97ad3-cb7a-49a7-bdec-b45affbda7ce",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "tool_use",
+        "assistant_replace",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.88",
+        "model": "claude-sonnet-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "path": "direct",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "id": "toolu_01769fsrwaD3SsfiMHG6quHz",
+          "name": "view",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01769fsrwaD3SsfiMHG6quHz",
+          "name": "view",
+          "status": "running",
+          "outputContainsMarker": false
+        },
+        {
+          "id": "toolu_01769fsrwaD3SsfiMHG6quHz",
+          "name": "view",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": false,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "answerComparison": {
+        "liveLength": 261,
+        "savedLength": 260,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 1,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:23:44.036Z"
+    }
+  ],
+  "unqualifiedAdmissionRuns": [
+    {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-SJEm8G",
+      "harness": "codex",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-05T19:39:51.855Z",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "runtimeVersion": "codex-cli 0.160.1",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "coZcWmCnRo0JEjKUxXR1B",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+      },
+      "daemon": {
+        "pid": 65995,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-SJEm8G/coven/coven.sock"
+      },
+      "routing": {
+        "mode": "fallback",
+        "diagnostic": "unsupported-version",
+        "version": "0.160.1"
+      },
+      "server": {
+        "pid": 66016,
+        "port": 50833
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "1022d72c-f44d-4400-b0e4-7cd4ae9dc3d3",
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "codex-compatibility",
+          "status": "notice"
+        },
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "codex",
+        "version": null,
+        "model": null,
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "unknown",
+          "reasoning": "unknown"
+        }
+      },
+      "path": "coven",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "tools": [],
+      "answerContainsMarker": true,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 0,
+        "toolOutputContainsMarker": false
+      },
+      "answerComparison": {
+        "liveLength": 108,
+        "savedLength": 108,
+        "savedMatchesTrimmedLive": true,
+        "liveLeadingWhitespace": 0,
+        "liveTrailingWhitespace": 0
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": "successful native tool output must include the marker",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:40:09.221Z"
+    },
+    {
+      "schemaVersion": 1,
+      "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-Q9HhB5",
+      "harness": "opencode",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-05T19:40:27.702Z",
+      "candidate": {
+        "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "runtimeVersion": "0.0.52",
+      "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification.",
+        "OpenCode currently refuses Cave Read-only mode. Preserve that refusal; do not switch this canary to Full access to obtain tool evidence."
+      ],
+      "build": {
+        "id": "coZcWmCnRo0JEjKUxXR1B",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+      },
+      "daemon": {
+        "pid": 74691,
+        "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-Q9HhB5/coven/coven.sock"
+      },
+      "routing": {
+        "mode": "plain",
+        "diagnostic": "json-format-unavailable",
+        "version": "0.0.52",
+        "probeStatus": "verified",
+        "scope": "passive-launch-probe-only"
+      },
+      "profile": null,
+      "server": {
+        "pid": 74711,
+        "port": 51035
+      },
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "runId": "697787c3-888e-4b35-8e47-93fcb98656c3",
+      "httpStatus": 501,
+      "refusal": {
+        "code": null
+      },
+      "passed": false,
+      "failure": "send refused with HTTP 501",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "finishedAt": "2026-10-05T19:40:29.944Z"
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "qualificationIssue": 5767,
+  "classification": "Real Claude provider, real Coven daemon, production HTTP and actual default Dia browser composer; incomplete restored-client acceptance.",
+  "uiObservations": [
+    "Initial submission without selected project was refused by the UI before a new chat; selecting the isolated project allowed one composer turn.",
+    "Running view showed Claude2.1.289, model not yet reported, Read access and connecting/tool activity.",
+    "Completed view rendered a succeeded Read card, reported Claude2.1.289/claude-opus-5-5, final marker, explicit unverified reasoning support and Summary unavailable.",
+    "Tool expansion was offscreen initially; later browser window changes interrupted detail/reload checks. No restored-renderer pass."
+  ],
+  "backend": {
+    "startedAt": "2026-10-05T19:33:52.719Z",
+    "client": "web",
+    "harness": "claude",
+    "passed": false,
+    "expectedIdentity": {
+      "schemaVersion": 1,
+      "harness": "claude",
+      "version": "2.1.289",
+      "model": "claude-opus-5-5",
+      "activity": {
+        "schemaVersion": 1,
+        "path": "coven",
+        "tools": "supported",
+        "reasoning": "unknown"
+      }
+    },
+    "uiRenderingVerified": false,
+    "limitations": [
+      "UI observations must be recorded separately; these assertions inspect saved history and replay.",
+      "Conversation counts are not tool-invocation or protected-effect receipts."
+    ],
+    "live": {
+      "sessionId": "20a3363d-d40c-4555-aab0-5d2217d15938",
+      "runId": "6f643a58-e093-4ac7-b311-e7e34901833f",
+      "userTurnId": "140552c7-97ac-49b8-b77b-33e5551e75e5",
+      "assistantTurnId": "faf5a7ad-66af-4e8e-b94a-89965d21746d",
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.289",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "tool": {
+        "id": "toolu_01HToepKWDGtacYitHHFbXQs",
+        "name": "Read",
+        "status": "ok"
+      },
+      "outputContainsMarker": true,
+      "replayMatchesSavedAnswerIdentityAndTool": true,
+      "conversationCount": 2
+    },
+    "failure": "Error",
+    "stopRequests": [
+      {
+        "runId": "6f643a58-e093-4ac7-b311-e7e34901833f",
+        "stopped": false
+      }
+    ],
+    "temporaryConnectionRemoved": true,
+    "finishedAt": "2026-10-05T19:37:59.714Z"
+  },
+  "parent": {
+    "schemaVersion": 1,
+    "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-EvTMzd",
+    "harness": "claude",
+    "permission": "read",
+    "transport": "http",
+    "startedAt": "2026-10-05T19:33:36.674Z",
+    "candidate": {
+      "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runtimeVersion": "2.1.289 (Claude Code)",
+    "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+    "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+    "limitations": [
+      "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+      "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+      "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+    ],
+    "build": {
+      "id": "coZcWmCnRo0JEjKUxXR1B",
+      "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+      "sendRouteSha256": "1283c82f333b71845480967cd9caa40070fdc8d7414d2429a15dcaa5f934548d"
+    },
+    "daemon": {
+      "pid": 37416,
+      "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-runtime-canary-EvTMzd/coven/coven.sock"
+    },
+    "profile": "claude-stream-json-v2",
+    "server": {
+      "pid": 38968,
+      "port": 49494
+    },
+    "ingress": {
+      "missingCredential": 401,
+      "invalidCredential": 401
+    },
+    "runId": "875f09d9-1749-4e35-9dc1-cc3fb76dcbcf",
+    "httpStatus": 200,
+    "eventKinds": [
+      "user",
+      "response_metadata",
+      "progress",
+      "session",
+      "reasoning",
+      "tool_use",
+      "assistant_chunk",
+      "done"
+    ],
+    "errors": [],
+    "diagnostics": [
+      {
+        "id": "harness-start",
+        "status": "running"
+      },
+      {
+        "id": "harness-start",
+        "status": "done"
+      },
+      {
+        "id": "save-transcript",
+        "status": "running"
+      },
+      {
+        "id": "save-transcript",
+        "status": "done"
+      }
+    ],
+    "identity": {
+      "schemaVersion": 1,
+      "harness": "claude",
+      "version": "2.1.289",
+      "model": "claude-opus-5-5",
+      "activity": {
+        "schemaVersion": 1,
+        "path": "coven",
+        "tools": "supported",
+        "reasoning": "unknown"
+      }
+    },
+    "path": "coven",
+    "done": {
+      "isError": false,
+      "cancelled": false,
+      "persisted": true
+    },
+    "tools": [
+      {
+        "id": "toolu_01Y8C122fF1VsLQju3AZRm1R",
+        "name": "Read",
+        "status": "requested",
+        "outputContainsMarker": false
+      },
+      {
+        "id": "toolu_01Y8C122fF1VsLQju3AZRm1R",
+        "name": "Read",
+        "status": "ok",
+        "outputContainsMarker": true
+      }
+    ],
+    "answerContainsMarker": true,
+    "historyHttpStatus": 200,
+    "saved": {
+      "exists": true,
+      "answerContainsMarker": true,
+      "answerMatches": true,
+      "answerMatchesPersistencePolicy": true,
+      "identityMatches": true,
+      "toolCount": 1,
+      "toolOutputContainsMarker": true
+    },
+    "answerComparison": {
+      "liveLength": 50,
+      "savedLength": 50,
+      "savedMatchesTrimmedLive": true,
+      "liveLeadingWhitespace": 0,
+      "liveTrailingWhitespace": 0
+    },
+    "replayHttpStatus": 200,
+    "replay": {
+      "finished": true,
+      "toolsMatch": true,
+      "answerContainsMarker": true,
+      "answerMatches": true,
+      "identityMatches": true
+    },
+    "passed": false,
+    "failure": "Error",
+    "serverStopped": true,
+    "daemonStopped": true,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-05T19:37:59.945Z"
+  },
+  "scope": "Computer-use observations and saved/replay backend check; not human keyboard-only/VoiceOver, durable effects or full golden corpus.",
+  "retention": "Screenshots remain in the computer-use conversation; no standalone exported screenshot. Existing user tabs/windows preserved. Own fixture tab could not be safely closed after concurrent browser activity; its server/daemon stopped.",
+  "reasoningProjection": "Owned saved turn has phase unavailable, disclosure withheld, no summary text; displayed Summary unavailable is a placeholder, not invented thinking."
+}
