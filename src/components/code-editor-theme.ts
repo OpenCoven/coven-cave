@@ -96,7 +96,10 @@ export const caveEditorFrame = EditorView.theme(
       backgroundColor: "var(--code-surface)",
       color: moodInk,
       height: "100%",
-      fontSize: "12px",
+      // The type token, so the editor follows the Screen scale where a
+      // surface scales its tokens, as the Coding Desk does (#5795). 12px
+      // everywhere else, as before.
+      fontSize: "var(--text-sm, 12px)",
     },
     ".cm-content": {
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
@@ -120,6 +123,20 @@ export const caveEditorFrame = EditorView.theme(
   },
   { dark: true },
 );
+
+/**
+ * The app's 2px focus ring on a focused editor (#5795). Without it the caret
+ * was the only sign of focus: CodeMirror's own dotted outline measured about
+ * 1.2:1 on the dark code surface. Inset, so a pane that clips its overflow
+ * doesn't cut it off. For a full editor; a code block inside other editable
+ * text doesn't take it.
+ */
+export const caveEditorFocusRing = EditorView.theme({
+  "&.cm-focused": {
+    outline: "var(--ring-width) solid var(--ring-focus)",
+    outlineOffset: "calc(-1 * var(--ring-width))",
+  },
+});
 
 /** Frame + syntax highlighting in one extension, for consumers that take a
  *  single `theme` slot (e.g. Milkdown Crepe's code-block feature). */

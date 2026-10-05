@@ -1062,7 +1062,7 @@ assert.match(
 );
 assert.match(
   workbench,
-  /if \(event\.defaultPrevented\) return;[\s\S]*const action = codeShortcutForCombo\(keymap, codeComboFromEvent\(event\)\);/,
+  /if \(event\.defaultPrevented\) return;[\s\S]*const combo = codeComboFromEvent\(event\);\s*const action = codeShortcutForCombo\(keymap, combo\);/,
   "the workbench shortcut handler honors fixed-key owners before consulting the rebindable keymap",
 );
 

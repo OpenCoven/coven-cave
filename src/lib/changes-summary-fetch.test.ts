@@ -133,6 +133,37 @@ try {
     assert.equal(result.json.error, "boom");
   }
 
+  // ── 8. forced callers reacting to one event share one request (#5795) ─────
+  // Returning to the tab, or one cave:changes-refresh, reached the desk's hook
+  // and the changes panel, and each forced its own summary read.
+  {
+    reset();
+    await fetchChangesSummary("/repo"); // an older, cached read
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    responder = async () => {
+      await gate;
+      return { ok: true, status: 200, json: async () => ({ ok: true, files: [] }) };
+    };
+    const before = calls.length;
+    const event = new Event("cave:changes-refresh");
+    const a = fetchChangesSummary("/repo", { force: true, cause: event });
+    const b = fetchChangesSummary("/repo", { force: true, cause: event });
+    assert.equal(b, a, "the second forced caller for the same event joins the first's request");
+    const shared = fetchChangesSummary("/repo");
+    release();
+    await Promise.all([a, b, shared]);
+    assert.equal(calls.length, before + 1, "one request for the event, joined by a later shared poll");
+    // Another event, or a forced caller without one, never reuses it.
+    await fetchChangesSummary("/repo", { force: true, cause: new Event("visibilitychange") });
+    assert.equal(calls.length, before + 2, "a new event is a new request");
+    await fetchChangesSummary("/repo", { force: true });
+    assert.equal(calls.length, before + 3, "a forced caller with no cause still reads fresh");
+    // The same event for another root is that root's own request.
+    await fetchChangesSummary("/other", { force: true, cause: event });
+    assert.equal(calls.length, before + 4, "roots never share");
+  }
+
   console.log("changes-summary-fetch.test.ts: all assertions passed");
 } finally {
   globalThis.fetch = realFetch;

@@ -103,6 +103,7 @@ import {
   isCodeShortcutAllowed,
   codeComboChips,
   defaultCodeKeymap,
+  isCodeDeskKeyOrigin,
   mergeCodeKeymap,
   type CodeShortcutId,
 } from "@/lib/code-shortcuts";
@@ -118,17 +119,6 @@ const LazyPrReader = dynamic(
   () => import("@/components/github-pr-reader").then((m) => m.GitHubPrReader),
   { ssr: false },
 );
-
-/**
- * Is a modal dialog open anywhere on the page (#5795)? Closed ones can stay
- * mounted, hidden (the phone layout's chat drawer), so a dialog counts only
- * while it is shown.
- */
-function modalDialogOpen(): boolean {
-  return [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].some(
-    (dialog) => !dialog.closest('[hidden], [aria-hidden="true"], [inert]') && dialog.getClientRects().length > 0,
-  );
-}
 
 const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
   files: "Files",
@@ -684,21 +674,17 @@ export function CodeWorkbench({
       // behind it, ⌘P opened the picker over it, and ⌘⇧F took focus out of
       // it to a tree row. A key pressed with focus on the page itself (it
       // fell to <body>) is still the desk's.
-      if (keysOpen || modalDialogOpen()) return;
-      const origin = event.target;
-      if (
-        origin instanceof Node &&
-        origin !== document.body &&
-        origin !== document.documentElement &&
-        !deskRef.current?.contains(origin)
-      ) return;
-      // Never steal a keystroke from a field — the composer, the picker's
-      // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
-      // and Ctrl+C belong to the shell. The one exception is the drawer's own
-      // toggle, which a focused terminal hands back (#5729); both rules live
-      // in one predicate so the room and the terminal cannot disagree.
-      const action = codeShortcutForCombo(keymap, codeComboFromEvent(event));
-      if (!isCodeShortcutAllowed(event.target, action)) return;
+      if (keysOpen || !isCodeDeskKeyOrigin(event.target, deskRef.current)) return;
+      // Never steal a plain keystroke from a field — the composer, the
+      // picker's filter, the editor — nor anything from a focused TERMINAL
+      // pane, where Ctrl+P and Ctrl+C belong to the shell. The exceptions are
+      // the drawer's own toggle, which a focused terminal hands back (#5729),
+      // and a ⌘ chord in a field, which the browser otherwise took (#5795);
+      // the rules live in one predicate so the room and the terminal cannot
+      // disagree.
+      const combo = codeComboFromEvent(event);
+      const action = codeShortcutForCombo(keymap, combo);
+      if (!isCodeShortcutAllowed(event.target, action, combo)) return;
       event.preventDefault();
       if (action === "help") setKeysOpen((open) => !open);
       else if (action === "terminal") {
@@ -750,6 +736,8 @@ export function CodeWorkbench({
       if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
       if (event.defaultPrevented) return;
       if (deskRef.current?.querySelector(".code-room__viewer")) return; // the viewer's own handler saves
+      // The desk's key only from the desk (#5795), as the viewer's is.
+      if (!isCodeDeskKeyOrigin(event.target, deskRef.current)) return;
       event.preventDefault();
       // Not "open it" when it can't be (#5795): the folder is gone.
       if (goneDraftsRef.current.length > 0) {
@@ -762,6 +750,11 @@ export function CodeWorkbench({
 
   const changedFiles = useMemo(() => changes.files, [changes.files]);
   const identity = codeDeskIdentity(row, changes);
+  // Nothing of the old changes while the notice shows (#5795): with the
+  // folder gone, the header still read "+17 −3 · 0 of 2 viewed", and the dock
+  // offered to review changes that were no longer anywhere. The session
+  // list's figure is no better a witness then.
+  const diffChip = rootNotice ? null : identity.diff;
 
   return (
     <div className="code-room" data-testid="code-workbench" ref={deskRef}>
@@ -789,7 +782,13 @@ export function CodeWorkbench({
           </div>
           <div className="code-room__chips" data-testid="code-desk-chips">
             {identity.branch ? (
-              <span className="code-room__chip" title={workRoot} data-testid="code-desk-branch">
+              // The whole name in its tooltip (#5795): a long one is cut
+              // short with an ellipsis rather than running over the actions.
+              <span
+                className="code-room__chip"
+                title={`${describeHiddenUnicode(identity.branch.name)}\n${workRoot}`}
+                data-testid="code-desk-branch"
+              >
                 <Icon name="ph:git-branch" width={11} height={11} aria-hidden />
                 <span className="code-room__chip-value"><HiddenUnicodeText text={identity.branch.name} /></span>
                 {identity.branch.worktree ? <span className="code-room__chip-note">worktree</span> : null}
@@ -823,19 +822,19 @@ export function CodeWorkbench({
                 </span>
               )
             ) : null}
-            {identity.diff ? (
+            {diffChip ? (
               <span
                 className="code-room__chip"
                 data-testid="code-desk-diffstat"
                 // The tooltip reads the same figure the chip prints (#5720 review).
-                title={`${identity.diff.additions} added, ${identity.diff.deletions} removed`}
+                title={`${diffChip.additions} added, ${diffChip.deletions} removed`}
               >
                 <Icon name="ph:git-diff" width={11} height={11} aria-hidden />
-                <span className="code-rail__add">+{identity.diff.additions}</span>
-                <span className="code-rail__del">&minus;{identity.diff.deletions}</span>
+                <span className="code-rail__add">+{diffChip.additions}</span>
+                <span className="code-rail__del">&minus;{diffChip.deletions}</span>
               </span>
             ) : null}
-            {reviewProgress ? (
+            {reviewProgress && !rootNotice ? (
               <span className="code-room__chip" data-testid="code-desk-progress" data-complete={viewedCount === changes.files.length ? "true" : undefined}>
                 <Icon name="ph:eye" width={11} height={11} aria-hidden />
                 {reviewProgress}
@@ -892,7 +891,9 @@ export function CodeWorkbench({
           only control that can bring a hidden column back, so it renders
           BEFORE the body — reachable by tab from the header, not after a
           full-height file list. */}
-      {fitsSplit || prFull ? null : (
+      {/* Not over the folder notice either (#5795): it replaces every step,
+          so the tabs switched nothing and named a panel that wasn't there. */}
+      {fitsSplit || prFull || rootNotice ? null : (
         <div role="tablist" aria-label="Workbench step" className="code-room__steps">
           {CODE_WORKBENCH_STEPS.map((id, index) => (
             <button
@@ -1095,10 +1096,12 @@ export function CodeWorkbench({
         initialDraft={codeDeskMemory.read(row.id)?.draft ?? ""}
         onDraftChange={(draft) => codeDeskMemory.write(row.id, { draft })}
         onJumpToSession={onJumpToSession}
-        contextPath={selectedRelative}
+        // No file and no changes to offer while the notice shows (#5795).
+        contextPath={rootNotice ? null : selectedRelative}
         rangeLabel={rangeLabel}
-        hasChanges={changedFiles.length > 0}
+        hasChanges={!rootNotice && changedFiles.length > 0}
         hasPr={Boolean(pr)}
+        hasProject={!rootNotice}
       />
 
       <CodeShortcutsDialog

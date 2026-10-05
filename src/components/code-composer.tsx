@@ -50,6 +50,8 @@ export type CodeComposerProps = {
   rangeLabel?: string | null;
   hasChanges?: boolean;
   hasPr?: boolean;
+  /** False while the session has no folder, or its folder is gone (#5795). */
+  hasProject?: boolean;
   /** An unsent draft restored for this session (#5718). */
   initialDraft?: string;
   /** Reports every edit so the desk can keep the draft across session switches. */
@@ -63,6 +65,7 @@ export function CodeComposer({
   rangeLabel = null,
   hasChanges = false,
   hasPr = false,
+  hasProject = true,
   initialDraft = "",
   onDraftChange,
 }: CodeComposerProps) {
@@ -86,8 +89,8 @@ export function CodeComposer({
   const fileName = contextPath ? baseName(contextPath) : null;
   const attached = includeContext && Boolean(contextPath);
   const suggestions = useMemo(
-    () => codeComposerSuggestions({ fileName, hasChanges, hasPr }),
-    [fileName, hasChanges, hasPr],
+    () => codeComposerSuggestions({ fileName, hasChanges, hasPr, hasProject }),
+    [fileName, hasChanges, hasPr, hasProject],
   );
 
   useEffect(() => {

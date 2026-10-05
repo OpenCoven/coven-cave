@@ -74,7 +74,8 @@ assert.match(composer, /role="status" data-phase=\{phase\}[\s\S]{0,600}\{CODE_CO
 assert.match(composer, /placeholder=\{busy \? "The familiar is working…" : "Ask for follow-up changes…"\}/, "the placeholder is unchanged");
 assert.match(
   workbench,
-  /<CodeComposer[\s\S]{0,400}contextPath=\{selectedRelative\}[\s\S]{0,200}hasChanges=\{[^}]*\}[\s\S]{0,100}hasPr=\{Boolean\(pr\)\}/,
+  // Neither while the folder notice shows (#5795).
+  /<CodeComposer[\s\S]{0,400}contextPath=\{rootNotice \? null : selectedRelative\}[\s\S]{0,200}hasChanges=\{!rootNotice && [^}]*\}[\s\S]{0,100}hasPr=\{Boolean\(pr\)\}/,
   "the workbench hands the composer the open file and the session's state",
 );
 
@@ -149,8 +150,9 @@ assert.match(workbench, /useRef<PendingCodeOpen \| null>\(null\)/, "the handled 
 assert.match(workbench, /setReviewFocus\(\(current\) => \(\{ path: focusPath, nonce: \(current\?\.nonce \?\? 0\) \+ 1 \}\)\)/, "rail focus counts its own requests, so two routed diffs never share a focus nonce");
 
 // A focused terminal hands back exactly the drawer toggle.
-assert.match(shortcuts, /export function isCodeShortcutAllowed\(target: EventTarget \| null, action: CodeShortcutId \| null\): boolean \{[\s\S]{0,300}action === "terminal" && typeof el\?\.closest === "function" && Boolean\(el\.closest\("\.xterm"\)\)/, "only the terminal toggle may act from inside xterm");
-assert.match(workbench, /const action = codeShortcutForCombo\(keymap, codeComboFromEvent\(event\)\);\s*if \(!isCodeShortcutAllowed\(event\.target, action\)\) return;/, "the desk asks the shared predicate before acting");
+// The combo rides along since #5795: a ⌘ chord may act from a field too.
+assert.match(shortcuts, /export function isCodeShortcutAllowed\(\s*target: EventTarget \| null,\s*action: CodeShortcutId \| null,\s*combo: string \| null = null,\s*\): boolean \{[\s\S]{0,300}const inTerminal = typeof el\?\.closest === "function" && Boolean\(el\.closest\("\.xterm"\)\);\s*if \(inTerminal\) return action === "terminal";/, "only the terminal toggle may act from inside xterm");
+assert.match(workbench, /const combo = codeComboFromEvent\(event\);\s*const action = codeShortcutForCombo\(keymap, combo\);\s*if \(!isCodeShortcutAllowed\(event\.target, action, combo\)\) return;/, "the desk asks the shared predicate before acting");
 assert.match(terminalSrc, /term\.attachCustomKeyEventHandler\(\(e\) => \{\s*if \(handlers\.releaseKey\?\.\(e\)\) return false;/, "xterm skips the host-owned key so it reaches the page");
 assert.equal((terminalSrc.match(/releaseKey: \(event\) => releaseKeyRef\.current\?\.\(event\) \?\? false,/g) ?? []).length, 2, "both transports (Tauri and the WebSocket bridge) pass the release key to xterm");
 assert.match(drawer, /releaseKey=\{releaseKey\}/, "the drawer passes the release key to its panes");
@@ -169,7 +171,7 @@ assert.match(roomCss, /:root\[data-mode="light"\] \.code-room__viewer \{ backgro
 const changesHook = await readFile(new URL("../lib/use-worktree-changes.ts", import.meta.url), "utf8");
 const shortcutsDialog = await readFile(new URL("./code-shortcuts-dialog.tsx", import.meta.url), "utf8");
 assert.match(changesHook, /const ticket = ledger\.begin\(opts\);\s*if \(!ticket\) return;/, "requests go through the ledger: one in flight, forced asks queued (worktree-changes-ledger.test.ts)");
-assert.match(changesHook, /await fetchChangesSummary\(root, \{ force: !opts\?\.shared \}\);\s*if \(!ledger\.accepts\(ticket\)\) return;/, "an answer from an ended generation is dropped — root alone is not enough after A → B → A");
+assert.match(changesHook, /await fetchChangesSummary\(root, \{ force: !opts\?\.shared, cause: opts\?\.cause \}\);\s*if \(!ledger\.accepts\(ticket\)\) return;/, "an answer from an ended generation is dropped — root alone is not enough after A → B → A");
 assert.match(changesHook, /reload = ledger\.end\(ticket\)\.reload;\s*\}\s*if \(reload\) void loadRef\.current\(\);/, "only the current request's end frees the slot and runs a queued reload");
 assert.match(changesHook, /const view = snapshot\.root === projectRoot \? snapshot : emptySnapshot\(projectRoot\);/, "until the snapshot is this root's, the hook reports an empty, unloaded summary — no stale first render");
 assert.match(changesHook, /useEffect\(\(\) => \{\s*\/\/ A new root is a new generation[^\n]*\n\s*ledger\.newGeneration\(\);/, "every root change starts a new generation");
@@ -267,7 +269,8 @@ assert.match(panelSrc, /if \(expandedPath !== file\.path && !diffIsCurrent\(file
 assert.match(panelSrc, /const outbound = useSyncExternalStore\(\s*changesOutbound\.subscribe,/, "commit and PR drafts come from the outbound store");
 assert.match(reviewRail, /draftKey=\{`session:\$\{row\.id\}`\}/, "the desk keys the drafts by session");
 // 6. Commit and Create PR are pinned to what was reviewed.
-assert.match(panelSrc, /expectedChanges: files\.map\(\(file\) => \(\{ path: file\.path, changeVersion: file\.changeVersion \?\? "" \}\)\)/, "a commit names the list it reviewed");
+// Named once since #5795: a commit that times out is watched for by it.
+assert.match(panelSrc, /const expectedChanges = files\.map\(\(file\) => \(\{ path: file\.path, changeVersion: file\.changeVersion \?\? "" \}\)\);[\s\S]{0,300}"commit", \{ message, expectedChanges \}\)/, "a commit names the list it reviewed");
 assert.match(panelSrc, /expectedHead: postCommit\.headOid[\s\S]{0,120}expectedBranch: postCommit\.branch/, "Create PR names the commit and branch");
 // 7. The rail merges only on passing checks, pinned to their head.
 assert.match(prPanelSrc, /disabled=\{busy != null \|\| mergeBlocked != null\}/, "merge waits for passing checks");
@@ -470,6 +473,12 @@ assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)
     /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key === null \|\| event\.key\.startsWith\(FILE_EDIT_DRAFT_STORAGE_PREFIX\)\) flush\(\);/,
     "a stored draft changed by another window flushes, and so marks this window's edit unbacked",
   );
+}
+
+// Under the folder notice the dock offers no checks to run (#5795, item 34).
+{
+  const workbenchLow7 = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
+  assert.match(workbenchLow7, /hasProject=\{!rootNotice\}/);
 }
 
 console.log("code-desk-overhaul pins ok");

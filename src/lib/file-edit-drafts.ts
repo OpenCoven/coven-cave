@@ -87,6 +87,12 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
   let nextId = 1;
   let dirtyPaths: ReadonlySet<string> = new Set();
   let unbacked: ReadonlySet<string> = new Set();
+  // Saves that have ended, by file (#5795), kept after its draft goes.
+  const savesEnded = new Map<string, number>();
+  const noteSaveEnded = (path: string) => {
+    const key = fileEditDraftKey(path);
+    savesEnded.set(key, (savesEnded.get(key) ?? 0) + 1);
+  };
 
   const emit = () => {
     // The same set while its members are the same (#5756): a new Set on every
@@ -156,6 +162,16 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
     hasDirty(): boolean {
       return dirtyPaths.size > 0;
     },
+    /**
+     * How many saves of `path` have ended, either way (#5795). A read of the
+     * file issued before a save ended can land after it, with the text from
+     * before the save: older text on screen, or a false "changed on disk".
+     * The viewer notes this count when it reads, and drops a read that
+     * lands after it moved.
+     */
+    savesEnded(path: string): number {
+      return savesEnded.get(fileEditDraftKey(path)) ?? 0;
+    },
     /** Unsaved drafts whose latest text isn't kept in storage (#5781): too
      *  large, past the storage budget, or refused by the storage. They are
      *  still held here; a reload or a quit would lose what changed since the
@@ -206,6 +222,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
      * what reached the disk. Returns whether the draft is still open.
      */
     settle(path: string, id: number, sent: string, version: string | null): boolean {
+      noteSaveEnded(path);
       const key = fileEditDraftKey(path);
       const draft = drafts.get(key);
       if (!draft || draft.id !== id) return false;
@@ -221,6 +238,7 @@ export function createFileEditDraftStore(limit = FILE_EDIT_DRAFT_LIMIT) {
      *  said. Any other failure keeps the text it sent (`sent`, #5795): the
      *  write may have landed after all. */
     fail(path: string, id: number, error: string, conflict = false, diskVersion: string | null = null, sent: string | null = null) {
+      noteSaveEnded(path);
       const draft = drafts.get(fileEditDraftKey(path));
       if (draft?.id !== id) return;
       patch(

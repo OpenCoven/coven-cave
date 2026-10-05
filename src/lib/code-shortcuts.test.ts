@@ -130,6 +130,24 @@ assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? 
   assert.equal(isCodeShortcutAllowed(el("DIV"), null), false, "no bound action, nothing to allow");
 }
 
+// In a field, the desk's ⌘ chords act (#5795): left to the browser, ⌘⇧R in
+// the follow-up box was a hard reload and ⌘P opened Print. Keys without ⌘,
+// and the field's own editing chords, stay the field's.
+{
+  const field = el("TEXTAREA");
+  assert.equal(isCodeShortcutAllowed(field, "pr", "Mod+Shift+R"), true, "⌘⇧R in a field switches the rail");
+  assert.equal(isCodeShortcutAllowed(el("INPUT"), "picker", "Mod+P"), true, "⌘P in a field opens the picker");
+  assert.equal(isCodeShortcutAllowed(el("DIV", { isContentEditable: true }), "terminal", "Mod+`"), true, "the editor's text box too");
+  assert.equal(isCodeShortcutAllowed(field, "next-file", "Alt+ArrowDown"), false, "Alt+↓ still moves the caret");
+  assert.equal(isCodeShortcutAllowed(field, "picker", null), false, "no chord, no exception");
+  for (const combo of ["Mod+C", "Mod+V", "Mod+X", "Mod+A", "Mod+Z", "Mod+Shift+Z", "Mod+ArrowLeft", "Mod+Backspace", "Mod+Enter"]) {
+    assert.equal(isCodeShortcutAllowed(field, "picker", combo), false, `${combo} stays the field's, even rebound`);
+  }
+  const inXterm = el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) });
+  assert.equal(isCodeShortcutAllowed(inXterm, "picker", "Mod+P"), false, "a terminal's chords stay the shell's");
+  assert.equal(isCodeShortcutAllowed(inXterm, "terminal", "Mod+`"), true);
+}
+
 // ── Rebinding ────────────────────────────────────────────────────────────────
 
 // The frame's stated rule: a duplicate takes the key from the older binding,

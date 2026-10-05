@@ -41,7 +41,8 @@ assert.match(changes, /setFiles\(\(prev\) => \(arrayContentEqual\(prev, nextFile
 // ── 2026-07-03 code a11y batch ────────────────────────────────────────────────
 assert.match(changes, /const \{ announce \} = useAnnouncer\(\)/, "the changes panel consumes the announcer");
 assert.match(changes, /announce\("Changes committed\."\)/, "committing announces");
-assert.match(changes, /announce\("Pull request opened\."\)/, "opening a PR announces");
+// Not "opened" for one that was already there (#5795).
+assert.match(changes, /announce\(existed \? "A pull request already exists for this branch\." : "Pull request opened\."\)/, "opening a PR announces");
 assert.match(changes, /announce\("File reverted/, "reverting announces");
 
 console.log("session-changes-inner.test.ts: ok");

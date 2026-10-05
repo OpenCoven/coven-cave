@@ -193,6 +193,23 @@ async function base(
   return { sends };
 }
 
+/** Every live-region message, as it's set (#5795): the announcer clears each
+ *  one 250 ms later, too soon to find it there after the checks before it. */
+async function recordAnnouncements(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __announced: string[] };
+    w.__announced = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const node = record.target instanceof Element ? record.target : record.target.parentElement;
+        const text = node?.closest("[aria-live]")?.textContent?.trim();
+        if (text) w.__announced.push(text);
+      }
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  return () => page.evaluate(() => (window as unknown as { __announced: string[] }).__announced);
+}
+
 async function openDesk(page: Page) {
   await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
   const desk = page.getByTestId("code-workbench");
@@ -3498,6 +3515,534 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await expect(viewer.locator(".workspace-rail__preview-name")).toHaveText(".ENV");
     await expect(viewer.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
     await expect(viewer.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  });
+
+  // ── Pass 7 low fixes (#5795) ───────────────────────────────────────────────
+
+  test("114. while the folder is gone, the header and the follow-up dock show none of its old changes", async ({ page }) => {
+    await base(page);
+    let gone = false;
+    await page.route("**/api/changes**", (route) => {
+      const url = new URL(route.request().url());
+      if (!gone || route.request().method() !== "GET" || url.searchParams.get("projectRoot") !== WORK_ROOT) return route.fallback();
+      return route.fulfill({ status: 404, json: { ok: false, error: "projectRoot does not exist", missingRoot: true } });
+    });
+    const desk = await openDesk(page);
+    await expect(page.getByTestId("code-desk-diffstat")).toContainText("+17");
+    await expect(page.getByTestId("code-desk-progress")).toHaveText("0 of 2 viewed");
+    const dock = page.getByTestId("code-composer");
+    await expect(dock.getByRole("button", { name: "Review my changes" })).toBeVisible();
+    gone = true;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect(desk.getByText("This session's folder is no longer on disk")).toBeVisible();
+    await expect(page.getByTestId("code-desk-diffstat")).toHaveCount(0);
+    await expect(page.getByTestId("code-desk-progress")).toHaveCount(0);
+    await expect(dock.getByRole("button", { name: "Review my changes" })).toHaveCount(0);
+  });
+
+  test("115. on a narrow desk, the no-folder notice has no step tabs", async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    const rootless = mkSession({ id: "s-rootless", title: "No folder session", project_root: "", updated_at: NEW_ISO, familiarWorkspace: false });
+    await base(page, [rootless, NEWEST, OLDER]);
+    await page.goto("/?mode=code&session=s-rootless", { waitUntil: "domcontentloaded" });
+    const desk = page.getByTestId("code-workbench");
+    await expect(desk.getByText("This session has no project folder")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("tablist", { name: "Workbench step" })).toHaveCount(0);
+    // A session with a folder still has them.
+    await page.goto("/?mode=code&session=s-new", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("tablist", { name: "Workbench step" })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("116. ⌘S saves the desk's edit only from the desk, and with the edit on another tab says to open it", async ({ page }) => {
+    await base(page);
+    const saves: unknown[] = [];
+    await page.route("**/api/project-file", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saves.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true, size: 40, version: "v2" } });
+    });
+    const desk = await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await tree.getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// EDITED");
+    await page.keyboard.press("Escape");
+    const commandS = (selector: string | null) =>
+      page.evaluate((sel) => {
+        const target = sel ? document.querySelector<HTMLElement>(sel)! : (document.activeElement as HTMLElement);
+        const event = new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+        return event.defaultPrevented;
+      }, selector);
+    // From outside the desk: not the desk's key.
+    await page.evaluate(() => {
+      const outside = document.createElement("button");
+      outside.id = "outside-the-desk";
+      outside.textContent = "Outside the desk";
+      document.body.appendChild(outside);
+    });
+    expect(await commandS("#outside-the-desk"), "left to whoever owns it").toBe(false);
+    // Behind a dialog: not the desk's either.
+    await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await commandS(null);
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await page.waitForTimeout(300);
+    expect(saves, "nothing was saved from outside the desk").toHaveLength(0);
+    // The edit on another tab: said, not swallowed.
+    await tree.getByText("README.md", { exact: true }).click();
+    await tabs.getByRole("tab", { name: /README\.md/ }).focus();
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(page.locator("[aria-live]").filter({ hasText: "Open the edited file to save it." })).toHaveCount(1);
+    expect(saves).toHaveLength(0);
+    // On its own tab, from the desk, it saves.
+    await tabs.getByRole("tab", { name: /flux\.ts/ }).click();
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect.poll(() => saves.length).toBe(1);
+  });
+
+  test("117. a commit that outlives the client's time limit but lands gets its result and Create PR", async ({ page }) => {
+    // The client gives up at 180 s; here, at once.
+    await page.addInitScript(() => {
+      const native = AbortSignal.timeout.bind(AbortSignal);
+      AbortSignal.timeout = (ms: number) => {
+        if (ms !== 180_000) return native(ms);
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException("signal timed out", "TimeoutError")), 600);
+        return controller.signal;
+      };
+    });
+    const announced = await recordAnnouncements(page);
+    const worktree: ChangesFixture = { current: CHANGED_FILES };
+    await base(page, [NEWEST, OLDER], worktree);
+    let branch = "main";
+    let committed = 0;
+    await page.route("**/api/changes**", (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === "POST") {
+        if ((request.postDataJSON() as { action?: string }).action !== "commit") return route.fallback();
+        // It lands behind the repository lock, and the answer never comes.
+        committed += 1;
+        branch = "cave/wire-the-flux-capacitor-mx1";
+        worktree.current = [];
+        return;
+      }
+      const listing = !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (!listing) return route.fallback();
+      return route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, branch, files: worktree.current } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("textbox", { name: "Commit message" }).fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect.poll(() => committed).toBe(1);
+    await expect(rail.getByText("committed · cave/wire-the-flux-capacitor-mx1")).toBeVisible({ timeout: 10_000 });
+    await expect(rail.getByRole("button", { name: "Create PR" })).toBeVisible();
+    await expect(rail.getByText(/Couldn't commit/)).toHaveCount(0);
+    await expect.poll(announced).toContain("The commit landed after all, on cave/wire-the-flux-capacitor-mx1.");
+  });
+
+  test("118. Create PR says when the pull request already existed, and an answer without one is an error", async ({ page }) => {
+    await base(page);
+    let prAnswer: Record<string, unknown> = { ok: true };
+    await page.route("**/api/changes", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { action?: string };
+      if (body.action === "commit") return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "a".repeat(40), branch: "feat/flux", onDefaultBranch: false } });
+      if (body.action === "create-pr") return route.fulfill({ json: prAnswer });
+      return route.fallback();
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("textbox", { name: "Commit message" }).fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await rail.getByRole("button", { name: "Create PR" }).click();
+    const create = rail.getByRole("button", { name: "Create pull request" });
+    await create.click();
+    // A success that names no pull request: an error, and the form stays.
+    await expect(rail.getByText(/Couldn't create the pull request: GitHub didn't say where the pull request is/)).toBeVisible();
+    await expect(create).toBeVisible();
+    await expect(rail.getByText("Pull request opened.")).toHaveCount(0);
+    // One that was already there is not "opened".
+    prAnswer = { ok: true, url: "https://github.com/acme/alpha/pull/7", existed: true };
+    await create.click();
+    await expect(rail.getByText("A pull request already exists for this branch.")).toBeVisible();
+    await expect(rail.getByText("Pull request opened.")).toHaveCount(0);
+    await expect(page.locator("[aria-live]").filter({ hasText: "A pull request already exists for this branch." })).toHaveCount(1);
+  });
+
+  test("119. with no GitHub origin, a commit's result says so instead of offering Create PR", async ({ page }) => {
+    await base(page);
+    await page.route("**/api/changes**", (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === "POST") {
+        if ((request.postDataJSON() as { action?: string }).action !== "commit") return route.fallback();
+        return route.fulfill({ json: { ok: true, sha: "abc1234", headOid: "a".repeat(40), branch: "feat/flux", onDefaultBranch: false } });
+      }
+      const listing = !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (!listing) return route.fallback();
+      return route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, branch: "feat/flux", githubOrigin: false, files: CHANGED_FILES } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("textbox", { name: "Commit message" }).fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    await expect(rail.getByText("abc1234 · feat/flux")).toBeVisible();
+    await expect(rail.getByTestId("create-pr-unavailable")).toHaveText("No pull request from here: this repository’s origin isn’t on GitHub.");
+    await expect(rail.getByRole("button", { name: "Create PR" })).toHaveCount(0);
+  });
+
+  test("120. the desk's ⌘ chords act from a field too, and plain keys stay the field's", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await tree.getByText("README.md", { exact: true }).click();
+    await tree.getByText("flux.ts", { exact: true }).click();
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail.getByRole("tab", { selected: true })).toHaveText(/Changes/);
+    await page.evaluate(() => { (window as unknown as { __sameDocument: boolean }).__sameDocument = true; });
+    const followUp = page.locator(".code-composer textarea");
+    await followUp.focus();
+    // ⌘⇧R: the rail's Pull request tab, not a hard reload.
+    const prevented = await followUp.evaluate((element) => {
+      const event = new KeyboardEvent("keydown", { key: "R", shiftKey: true, metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prevented, "the browser never gets it").toBe(true);
+    await expect(rail.getByRole("tab", { selected: true })).toHaveText(/Pull request/);
+    expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)).toBe(true);
+    // ⌘P from the commit box opens the picker, not Print.
+    await rail.getByRole("tab", { name: /Changes/ }).click();
+    await rail.getByRole("textbox", { name: "Commit message" }).focus();
+    await page.keyboard.press("ControlOrMeta+p");
+    await expect(page.locator("[data-code-picker-panel]")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // Alt+↓ in a field still moves the caret, not the open file.
+    await followUp.focus();
+    await page.keyboard.press("Alt+ArrowDown");
+    await page.waitForTimeout(300);
+    await expect(tabs.getByRole("tab", { selected: true })).toContainText("flux.ts");
+  });
+
+  test("121. the editor's text box is named for its file", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await expect(desk.getByRole("textbox", { name: "Edit flux.ts" })).toBeFocused();
+  });
+
+  test("122. in forced colours, the selected file tab, rail tab and step tab are underlined in Highlight", async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await page.emulateMedia({ forcedColors: "active" });
+    await base(page);
+    const steps = await openNarrowDesk(page);
+    const highlight = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "Highlight";
+      document.body.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    const underline = (locator: Locator) =>
+      locator.evaluate((element) => {
+        const cs = getComputedStyle(element);
+        return `${cs.borderBottomWidth} ${cs.borderBottomStyle} ${cs.borderBottomColor}`;
+      });
+    await steps.getByRole("tab", { name: "Files" }).click();
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await steps.getByRole("tab", { name: "Files" }).click();
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const tabs = page.getByTestId("code-open-file-tabs");
+    await expect(tabs.locator(".code-tabs__item")).toHaveCount(2);
+    const selectedFile = tabs.locator('.code-tabs__item[data-selected="true"]');
+    const otherFile = tabs.locator('.code-tabs__item:not([data-selected="true"])');
+    expect(await underline(selectedFile)).toBe(`3px solid ${highlight}`);
+    expect(await underline(otherFile)).not.toContain(highlight);
+    const selectedStep = steps.getByRole("tab", { selected: true });
+    const otherStep = steps.getByRole("tab", { selected: false }).first();
+    expect(await underline(selectedStep)).toBe(`3px solid ${highlight}`);
+    expect(await underline(otherStep)).not.toContain(highlight);
+    await steps.getByRole("tab", { name: "Review" }).click();
+    const rail = page.getByTestId("code-review-rail");
+    expect(await underline(rail.getByRole("tab", { selected: true }))).toBe(`3px solid ${highlight}`);
+    expect(await underline(rail.getByRole("tab", { selected: false }).first())).not.toContain(highlight);
+  });
+
+  test("123. the editor and the picker's search field show the desk's focus ring", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    const ring = (locator: Locator) =>
+      locator.evaluate((element) => {
+        const cs = getComputedStyle(element);
+        return `${cs.outlineStyle} ${cs.outlineWidth}`;
+      });
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    await expect(desk.locator(".cm-content")).toBeFocused();
+    expect(await ring(desk.locator(".cm-editor"))).toBe("solid 2px");
+    await page.locator(".code-picker__trigger").click();
+    await expect(page.locator(".code-picker__search-input")).toBeFocused();
+    expect(await ring(page.locator(".code-picker__search"))).toBe("solid 2px");
+  });
+
+  test("124. a long branch name ends in an ellipsis inside the header, with the whole name in its tooltip", async ({ page }) => {
+    const LONG_BRANCH = "feature/very-long-branch-name-for-the-flux-capacitor-wiring-and-retry-handling";
+    const long = mkSession({ ...NEWEST, id: "s-long", workBranch: LONG_BRANCH, git: { ...(NEWEST as unknown as { git: object }).git, branch: LONG_BRANCH } });
+    await base(page, [long, OLDER]);
+    for (const width of [720, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/?mode=code&session=s-long", { waitUntil: "domcontentloaded" });
+      const branch = page.getByTestId("code-desk-branch");
+      await expect(branch).toBeVisible({ timeout: 30_000 });
+      await expect(branch).toHaveAttribute("title", new RegExp(`^${LONG_BRANCH}\\n`));
+      const layout = await branch.evaluate((chip) => {
+        const value = chip.querySelector<HTMLElement>(".code-room__chip-value")!;
+        const box = chip.getBoundingClientRect();
+        const identity = chip.closest(".code-room__identity")!.getBoundingClientRect();
+        const overlaps = [...document.querySelectorAll(".code-room__header-actions button")].some((button) => {
+          const b = button.getBoundingClientRect();
+          return !(box.right <= b.left || box.left >= b.right || box.bottom <= b.top || box.top >= b.bottom);
+        });
+        return { inside: box.right <= identity.right + 1 && box.right <= window.innerWidth, overlaps, cut: value.scrollWidth > value.clientWidth };
+      });
+      expect(layout, `at ${width}px`).toEqual({ inside: true, overlaps: false, cut: true });
+    }
+  });
+
+  test("125. in light mode the running pill reads at 4.5:1 on the narrow desk", async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await base(page);
+    await openNarrowDesk(page);
+    const pill = page.getByTestId("code-desk-activity");
+    await expect(pill).toHaveText(/running/);
+    await page.evaluate(() => document.documentElement.setAttribute("data-mode", "light"));
+    await page.waitForTimeout(300);
+    const ratio = await pill.evaluate((element) => {
+      // Canvas round-trip: computed colours arrive as oklch / color-mix.
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      const rgba = (c: string) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = c;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        return [r, g, b, a / 255];
+      };
+      // The pill's tint over whatever is under it, down to the first opaque layer.
+      const layers: number[][] = [];
+      for (let el: Element | null = element; el; el = el.parentElement) {
+        const c = rgba(getComputedStyle(el).backgroundColor);
+        if (c[3] > 0) layers.push(c);
+        if (c[3] >= 1) break;
+      }
+      let under = [255, 255, 255];
+      for (const [r, g, b, a] of layers.reverse()) under = [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)];
+      const lum = ([r, g, b]: number[]) => {
+        const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      const ink = rgba(getComputedStyle(element).color);
+      const a = lum(ink);
+      const b = lum(under);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    });
+    // It measured 4.26:1 before the fix.
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("126. background polls leave the Refresh button alone; a refresh you ask for still shows", async ({ page }) => {
+    test.setTimeout(90_000);
+    await base(page);
+    let hold: Promise<void> | null = null;
+    await page.route("**/api/changes**", async (route) => {
+      const url = new URL(route.request().url());
+      const listing = route.request().method() === "GET" && !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (listing && hold) await hold;
+      return route.fallback();
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    const refresh = rail.getByRole("button", { name: "Refresh working tree changes" });
+    await expect(refresh).toBeEnabled();
+    await refresh.evaluate((element) => {
+      const w = window as unknown as { __flips: number };
+      w.__flips = 0;
+      new MutationObserver((records) => { w.__flips += records.length; }).observe(element, { attributes: true, attributeFilter: ["disabled"] });
+    });
+    // Two of a running session's five-second polls.
+    await page.waitForTimeout(11_000);
+    expect(await page.evaluate(() => (window as unknown as { __flips: number }).__flips), "no flicker from a background poll").toBe(0);
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => { release = resolve; });
+    await refresh.click();
+    await expect(refresh).toBeDisabled();
+    hold = null;
+    release();
+    await expect(refresh).toBeEnabled();
+  });
+
+  test("127. returning to the tab, or one refresh signal, reads the change list once", async ({ page }) => {
+    // Idle, so its slow poll doesn't land in the count.
+    await base(page, [mkSession({ ...NEWEST, status: "idle" }), OLDER]);
+    const reads: number[] = [];
+    await page.route("**/api/changes**", (route) => {
+      const url = new URL(route.request().url());
+      const listing = route.request().method() === "GET" && !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (listing && url.searchParams.get("projectRoot") === WORK_ROOT) reads.push(Date.now());
+      return route.fallback();
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail.locator('tr[data-grid-row="src/flux.ts"]')).toBeVisible();
+    await page.waitForTimeout(1_500);
+    let before = reads.length;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await page.waitForTimeout(1_500);
+    expect(reads.length - before, "the desk and its changes panel share one read").toBe(1);
+    before = reads.length;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.waitForTimeout(1_500);
+    expect(reads.length - before, "and once on returning to the tab").toBe(1);
+  });
+
+  test("128. a file read sent before a save, answering after it, doesn't put back the older text", async ({ page }) => {
+    const worktree: ChangesFixture = { current: CHANGED_FILES };
+    await base(page, [mkSession({ ...NEWEST, status: "idle" }), OLDER], worktree);
+    const disk = { content: "export const flux = 1;\n", version: "v1" };
+    let hold: Promise<void> | null = null;
+    let heldReads = 0;
+    await page.route("**/api/project-file**", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        disk.content = (request.postDataJSON() as { content: string }).content;
+        disk.version = "v2";
+        return route.fulfill({ json: { ok: true, size: disk.content.length, version: disk.version } });
+      }
+      if (!(new URL(request.url()).searchParams.get("path") ?? "").endsWith("/src/flux.ts")) return route.fallback();
+      // What the disk held when the read was sent.
+      const snapshot = { ...disk };
+      if (hold) {
+        heldReads += 1;
+        await hold;
+      }
+      return route.fulfill({ json: { ok: true, kind: "text", content: snapshot.content, size: snapshot.content.length, version: snapshot.version } });
+    });
+    const desk = await openDesk(page);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const viewer = desk.locator(".code-room__viewer");
+    await expect(viewer).toContainText("export const flux = 1;");
+    await viewer.getByRole("button", { name: "Edit" }).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("// SAVED");
+    // The agent touches the file: the viewer reads it again, and that read is slow.
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => { release = resolve; });
+    worktree.current = CHANGED_FILES.map((file) => (file.path === "src/flux.ts" ? { ...file, changeVersion: "200:200:401" } : file));
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect.poll(() => heldReads).toBe(1);
+    // The save lands first.
+    await desk.locator(".cm-content").focus();
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(viewer.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(viewer).toContainText("// SAVED");
+    // Then the read sent before it answers, with the text from before.
+    hold = null;
+    release();
+    await page.waitForTimeout(1_000);
+    await expect(viewer).toContainText("// SAVED");
+    await expect(viewer.getByText(/changed on disk/)).toHaveCount(0);
+  });
+
+  test("129. the Screen scale magnifies the desk's text and its editor", async ({ page }) => {
+    await base(page);
+    const desk = await openDesk(page);
+    const fontSize = (locator: Locator) => locator.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+    const chips = page.getByTestId("code-desk-chips");
+    expect(await fontSize(chips), "unchanged at 100%").toBe(10);
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    await desk.getByRole("button", { name: "Edit" }).click();
+    const editor = desk.locator(".cm-editor");
+    expect(await fontSize(editor)).toBe(12);
+    await page.evaluate(() => document.documentElement.setAttribute("data-screen-scale", "150"));
+    await expect.poll(() => fontSize(chips)).toBe(15);
+    await expect.poll(() => fontSize(editor)).toBe(18);
+  });
+
+  test("130. with the viewer away, ⌘S from outside the desk is left alone, and from the desk says to open the edit", async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await base(page);
+    const steps = await openNarrowDesk(page);
+    await steps.getByRole("tab", { name: "Files" }).click();
+    await page.getByTestId("code-workbench-tree").getByText("flux.ts", { exact: true }).click();
+    const viewer = page.locator(".code-room__viewer");
+    await viewer.getByRole("button", { name: "Edit" }).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n// EDITED");
+    await steps.getByRole("tab", { name: "Review" }).click();
+    await expect(viewer).toHaveCount(0);
+    const commandS = (selector: string) =>
+      page.evaluate((sel) => {
+        const event = new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+        document.querySelector<HTMLElement>(sel)!.dispatchEvent(event);
+        return event.defaultPrevented;
+      }, selector);
+    await page.evaluate(() => {
+      const outside = document.createElement("button");
+      outside.id = "outside-the-desk";
+      document.body.appendChild(outside);
+    });
+    expect(await commandS("#outside-the-desk"), "not the desk's key").toBe(false);
+    await expect(page.locator("[aria-live]").filter({ hasText: "Open the edited file to save it." })).toHaveCount(0);
+    expect(await commandS('[data-testid="code-review-rail"] [role="tab"][aria-selected="true"]'), "the desk's key").toBe(true);
+    await expect(page.locator("[aria-live]").filter({ hasText: "Open the edited file to save it." })).toHaveCount(1);
+  });
+
+  test("131. a commit that outlives the client's limit and lands on its feature branch gets Create PR", async ({ page }) => {
+    await page.addInitScript(() => {
+      const native = AbortSignal.timeout.bind(AbortSignal);
+      AbortSignal.timeout = (ms: number) => {
+        if (ms !== 180_000) return native(ms);
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException("signal timed out", "TimeoutError")), 600);
+        return controller.signal;
+      };
+    });
+    const worktree: ChangesFixture = { current: CHANGED_FILES };
+    await base(page, [NEWEST, OLDER], worktree);
+    let branchReads = 0;
+    await page.route("**/api/changes**", (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === "POST") {
+        if ((request.postDataJSON() as { action?: string }).action !== "commit") return route.fallback();
+        worktree.current = [];
+        return;
+      }
+      if (url.searchParams.get("branches") === "1") branchReads += 1;
+      const listing = !url.searchParams.has("path") && !url.searchParams.has("branches") && !url.searchParams.has("checkpoints");
+      if (!listing) return route.fallback();
+      return route.fulfill({ json: { ok: true, repo: true, repoRoot: WORK_ROOT, branch: "feat/flux", files: worktree.current } });
+    });
+    await openDesk(page);
+    const rail = page.getByTestId("code-review-rail");
+    await rail.getByRole("textbox", { name: "Commit message" }).fill("Wire the flux capacitor");
+    await rail.getByRole("button", { name: "Commit", exact: true }).click();
+    // Same branch: the branch list (main and feat/flux) says it isn't the
+    // repository's only one, so it isn't a first commit on the default.
+    await expect(rail.getByText("committed · feat/flux")).toBeVisible({ timeout: 10_000 });
+    await expect(rail.getByRole("button", { name: "Create PR" })).toBeVisible();
+    expect(branchReads).toBeGreaterThanOrEqual(1);
   });
 });
 

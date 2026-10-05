@@ -22,6 +22,9 @@ export type CodeComposerSuggestionInput = {
   fileName: string | null;
   hasChanges: boolean;
   hasPr: boolean;
+  /** False while the session has no folder, or its folder is gone (#5795):
+   *  there's nothing to run the checks in. */
+  hasProject?: boolean;
 };
 
 /**
@@ -56,11 +59,13 @@ export function codeComposerSuggestions(input: CodeComposerSuggestionInput): Cod
       prompt: "Summarize this pull request for a reviewer: what changed, why, and what to check.",
     });
   }
-  out.push({
-    id: "run-checks",
-    label: "Run the checks",
-    prompt: "Run the project's lint, typecheck and tests, then fix what fails.",
-  });
+  if (input.hasProject !== false) {
+    out.push({
+      id: "run-checks",
+      label: "Run the checks",
+      prompt: "Run the project's lint, typecheck and tests, then fix what fails.",
+    });
+  }
   return out.slice(0, CODE_COMPOSER_MAX_SUGGESTIONS);
 }
 

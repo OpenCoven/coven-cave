@@ -80,14 +80,16 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
   const ledger = ledgerRef.current;
 
   const load = useCallback(
-    async (opts?: { shared?: boolean }) => {
+    async (opts?: { shared?: boolean; cause?: Event }) => {
       const root = projectRoot;
       if (!root) return;
       const ticket = ledger.begin(opts);
       if (!ticket) return;
       let reload = false;
       try {
-        const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared });
+        // `cause`: the event that asked for a forced read, so the changes
+        // panel, reacting to the same one, shares the request (#5795).
+        const { httpOk, json } = await fetchChangesSummary(root, { force: !opts?.shared, cause: opts?.cause });
         if (!ledger.accepts(ticket)) return;
         const payload = json as { ok?: boolean; files?: ChangedFile[]; repoRoot?: string | null; missingRoot?: boolean };
         if (!httpOk || !payload.ok) {
@@ -134,10 +136,10 @@ export function useWorktreeChanges(projectRoot: string, running: boolean): Workt
     // Shared on mount (#5745): the changes panel and the viewer's launchpad
     // read the same list at the same moment, and one request answers all.
     void load({ shared: true });
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
+    const onVisible = (event: Event) => {
+      if (document.visibilityState === "visible") void load({ cause: event });
     };
-    const onRefresh = () => void load();
+    const onRefresh = (event: Event) => void load({ cause: event });
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("cave:changes-refresh", onRefresh);
     return () => {
