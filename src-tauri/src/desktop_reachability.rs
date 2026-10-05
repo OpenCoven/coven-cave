@@ -1,5 +1,9 @@
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+#[cfg(desktop)]
+use super::desktop_reachability_policy::owns_shared_reachability;
+#[cfg(all(desktop, target_os = "macos"))]
+use super::desktop_reachability_policy::{reconcile_launch_agent, run_owned_daemon, LaunchAgentAction};
 use super::*;
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1586,6 +1590,25 @@ fn suspend_background_launch_agent(app_data_dir: &Path) -> Result<(), String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
+fn reconcile_app_launch_agent(
+    app: &tauri::AppHandle,
+    app_data_dir: &Path,
+    config: &DesktopReachabilityConfig,
+) -> Result<(), String> {
+    reconcile_launch_agent(
+        &app.config().identifier,
+        config.daemon_mode,
+        background_availability_supported(app),
+        launch_agent_present(),
+        |action| match action {
+            LaunchAgentAction::Install => install_launch_agent(app, app_data_dir),
+            LaunchAgentAction::Suspend => suspend_background_launch_agent(app_data_dir),
+            LaunchAgentAction::Uninstall => uninstall_launch_agent(app_data_dir),
+        },
+    )
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
 fn launch_agent_installed() -> bool {
     launch_agent_configuration_is_current() && launch_agent_loaded()
 }
@@ -1696,20 +1719,11 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<GuiReac
 
     let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
     let config = read_reachability_config(&config_path);
-    if config.daemon_mode {
-        if background_availability_supported() {
-            install_launch_agent(app, &app_data_dir)?;
-        } else {
-            // A development executable cannot be launched by launchd. Preserve
-            // the user's packaged-build opt-in, but stop any old packaged
-            // daemon before this GUI sidecar takes ownership.
-            suspend_background_launch_agent(&app_data_dir)?;
-            log::info!(
-                "[cave] background availability is unavailable in this development build; preserving its saved setting"
-            );
-        }
-    } else if launch_agent_present() {
-        uninstall_launch_agent(&app_data_dir)?;
+    reconcile_app_launch_agent(app, &app_data_dir, &config)?;
+    if config.daemon_mode && !background_availability_supported(app) {
+        log::info!(
+            "[cave] background availability is unavailable in this build; preserving its saved setting"
+        );
     }
     Ok(GuiReachability::Acquired)
 }
@@ -1731,7 +1745,7 @@ pub(super) fn handoff_to_background_daemon(app: &tauri::AppHandle) {
         return;
     };
     let config = read_reachability_config(&app_data_dir.join(REACHABILITY_CONFIG_FILE));
-    if !config.daemon_mode || !background_availability_supported() {
+    if !config.daemon_mode || !background_availability_supported(app) {
         if let Ok(owner) = current_process_lease() {
             remove_gui_ownership_if_owned(&app_data_dir, &owner);
         }
@@ -1760,6 +1774,11 @@ pub(super) fn sidecar_reachability_ready(app: &tauri::AppHandle, port: u16, pid:
     #[cfg(target_os = "macos")]
     if let Err(error) = record_gui_sidecar(app, pid, port) {
         log::warn!("[cave] could not record GUI sidecar ownership: {error}");
+    }
+    // Serve routes and paired-phone state belong to the installed app, just
+    // like its LaunchAgent. A separate GUI must not retarget that phone route.
+    if !owns_shared_reachability(&app.config().identifier) {
+        return;
     }
     repair_tailscale_serve_for_port(port);
     let Some(runtime) = app.try_state::<Arc<DesktopReachabilityRuntime>>() else {
@@ -2073,15 +2092,22 @@ fn status_for_app(app: &tauri::AppHandle) -> Result<DesktopReachabilityStatus, S
     let config = read_reachability_config(&config_path);
     let runtime = app.try_state::<Arc<DesktopReachabilityRuntime>>();
     Ok(DesktopReachabilityStatus {
-        supported: cfg!(target_os = "macos"),
-        background_availability_supported: background_availability_supported(),
+        supported: cfg!(target_os = "macos") && owns_shared_reachability(&app.config().identifier),
+        background_availability_supported: background_availability_supported(app),
         config,
-        paired_phone_seen: paired_phone_seen(&paired_phone_path()),
-        launch_agent_installed: launch_agent_installed(),
+        paired_phone_seen: owns_shared_reachability(&app.config().identifier)
+            && paired_phone_seen(&paired_phone_path()),
+        launch_agent_installed: owns_shared_reachability(&app.config().identifier)
+            && launch_agent_installed(),
         prevent_sleep_active: runtime
             .as_ref()
             .is_some_and(|runtime| runtime.power_active()),
-        detail: if cfg!(target_os = "macos") && !background_availability_supported() {
+        detail: if !owns_shared_reachability(&app.config().identifier) {
+            Some(
+                "Desktop reachability controls are available in the installed CovenCave app."
+                    .to_string(),
+            )
+        } else if cfg!(target_os = "macos") && !background_availability_supported(app) {
             Some(
                 "Background availability is available in packaged macOS builds; this development build preserves the saved setting."
                     .to_string(),
@@ -2110,6 +2136,12 @@ pub(super) fn desktop_reachability_configure(
 ) -> Result<DesktopReachabilityStatus, String> {
     #[cfg(target_os = "macos")]
     {
+        if !owns_shared_reachability(&app.config().identifier) {
+            return Err(
+                "Desktop reachability controls are available in the installed CovenCave app."
+                    .to_string(),
+            );
+        }
         let app_data_dir = app
             .path()
             .app_data_dir()
@@ -2126,7 +2158,7 @@ pub(super) fn desktop_reachability_configure(
         // toggled; this also preserves the prior service if launchd is
         // temporarily unavailable.
         let installing_background_availability =
-            config.daemon_mode && background_availability_supported();
+            config.daemon_mode && background_availability_supported(&app);
         let launch_agent_result = if !launch_agent_reconciliation_required(
             &previous,
             &config,
@@ -2143,7 +2175,7 @@ pub(super) fn desktop_reachability_configure(
         };
         if let Err(error) = launch_agent_result {
             let _ = write_private_json(&config_path, &previous);
-            let restore_result = if previous.daemon_mode && background_availability_supported() {
+            let restore_result = if previous.daemon_mode && background_availability_supported(&app) {
                 install_launch_agent(&app, &app_data_dir)
             } else if previous.daemon_mode {
                 suspend_background_launch_agent(&app_data_dir)
@@ -2194,15 +2226,16 @@ fn daemon_resource_dir(executable: &Path) -> Result<PathBuf, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn background_availability_supported() -> bool {
-    !cfg!(debug_assertions)
+fn background_availability_supported(app: &tauri::AppHandle) -> bool {
+    owns_shared_reachability(&app.config().identifier)
+        && !cfg!(debug_assertions)
         && std::env::current_exe()
             .ok()
             .is_some_and(|executable| daemon_resource_dir(&executable).is_ok())
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
-fn background_availability_supported() -> bool {
+fn background_availability_supported(_app: &tauri::AppHandle) -> bool {
     false
 }
 
@@ -2550,11 +2583,11 @@ fn run_sidecar_daemon() -> Result<i32, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-pub(super) fn run_sidecar_daemon_if_requested() -> Option<i32> {
+pub(super) fn run_sidecar_daemon_if_requested(identifier: &str) -> Option<i32> {
     if !std::env::args().any(|arg| arg == "--cave-sidecar-daemon") {
         return None;
     }
-    Some(match run_sidecar_daemon() {
+    Some(match run_owned_daemon(identifier, run_sidecar_daemon) {
         Ok(code) => code,
         Err(error) => {
             eprintln!("[cave] background sidecar failed: {error}");
@@ -2564,7 +2597,7 @@ pub(super) fn run_sidecar_daemon_if_requested() -> Option<i32> {
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
-pub(super) fn run_sidecar_daemon_if_requested() -> Option<i32> {
+pub(super) fn run_sidecar_daemon_if_requested(_identifier: &str) -> Option<i32> {
     None
 }
 
