@@ -285,6 +285,33 @@ export type GitEnrichOptions = {
   onLateEnrichment?: () => void;
 };
 
+/** The desk's commit from the default branch makes and checks out one of
+ *  these (`cave/<slug>-<stamp>`, the changes route's featureBranchName). */
+const DESK_BRANCH_PREFIX = "cave/";
+
+/**
+ * The rows a desk branch checked out in their folder belongs to (#5795): the
+ * folder is on a `cave/` branch, and the row's recorded branch is the
+ * default, which the desk branches from. Of the rows sharing one folder,
+ * only the most recently active gets it: stamping every chat that once ran
+ * on the default with the desk's PR would let its merge archive them all
+ * (cave-9q24).
+ */
+function deskBranchSessions(sessions: SessionRow[], byRoot: Map<string, RootEnrichment>): Set<SessionRow> {
+  const owners = new Map<string, SessionRow>();
+  for (const session of sessions) {
+    const root = session.project_root?.trim();
+    const entry = root ? byRoot.get(root) : undefined;
+    const branch = entry?.gitContext?.branch;
+    const defaultBranch = entry?.base?.replace(/^origin\//, "") ?? null;
+    if (!root || !branch?.startsWith(DESK_BRANCH_PREFIX) || !defaultBranch) continue;
+    if (!session.workBranch || session.workBranch !== defaultBranch) continue;
+    const current = owners.get(root);
+    if (!current || Date.parse(session.updated_at) > Date.parse(current.updated_at)) owners.set(root, session);
+  }
+  return new Set(owners.values());
+}
+
 /**
  * Enrich session rows with git context (branch/worktree), a committed-diff
  * stat vs the repo base ref, and cached PR context. All git work is async and
@@ -434,6 +461,7 @@ export async function enrichSessionsWithGitContext(
   }
 
   const snapshot = new Map(enrichmentByRoot);
+  const deskSessions = deskBranchSessions(sessions, snapshot);
   return sessions.map((session) => {
     const root = session.project_root?.trim();
     const entry = root ? snapshot.get(root) : undefined;
@@ -452,9 +480,17 @@ export async function enrichSessionsWithGitContext(
     // to the root's branch only when the root is a WORKTREE — worktrees are
     // branch-stable, so root-branch ≈ session-branch there. A shared checkout
     // without a recorded branch gets no PR context (and is never PR-swept).
+    //
+    // A branch the desk made for this chat's commit is the chat's (#5795): the
+    // desk commits from the default branch onto a new `cave/` branch, and
+    // workBranch keeps naming the default until another chat turn, so the PR
+    // opened from it was never found. Only that branch is looked up then,
+    // never the default's own PR, which isn't this chat's work.
+    const deskBranch = deskSessions.has(session) ? entry?.gitContext?.branch : null;
     const attributedBranch =
-      session.workBranch ??
-      (entry?.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null);
+      deskBranch ||
+      (session.workBranch ??
+        (entry?.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null));
     if (root && attributedBranch) {
       const pr = prCache.get(root, attributedBranch);
       if (pr) enriched.pullRequest = { ...pr, attribution: "branch" };

@@ -238,7 +238,8 @@ assert.match(preview, /const cancelEditing = useCallback\(\(\) => \{\s*if \(path
 assert.match(tabs, /dirty\?\.has\(path\) \? \([\s\S]{0,200}data-testid="code-tab-unsaved"[\s\S]{0,200}, unsaved changes/, "a tab with an unsaved edit says so, in sight and in words");
 assert.match(workbench, /dirty=\{dirtyPaths\}/, "the workbench hands the dirty set to the tabs");
 // 2. A save settles the file it was sent for, and keeps keys typed meanwhile.
-assert.match(preview, /const target = pathRef\.current;[\s\S]{0,200}const sending = fileEditDrafts\.startSave\(target\);/, "a save captures the file it is for");
+// Since #5795 a retried save names its file (`again`).
+assert.match(preview, /const target = again \?\? pathRef\.current;[\s\S]{0,200}const sending = fileEditDrafts\.startSave\(target\);/, "a save captures the file it is for");
 assert.match(preview, /if \(pathRef\.current === target\) \{\s*setFile\(/, "only the file the save was for, if still on screen, takes the saved text");
 // 3. A save names its starting version; a changed file is a conflict.
 assert.match(preview, /expectedVersion: sending\.baseVersion \?\? undefined/, "a save sends the version its edit started from");
@@ -311,7 +312,8 @@ const treeCssLow = await readFile(new URL("../styles/project-tree.css", import.m
 // 15. The tree re-reads folders whose files came or went.
 assert.match(workbenchTreeSrc, /const STRUCTURAL_STATUSES = new Set<FileStatus>\(\["added", "untracked", "deleted", "renamed"\]\);/, "only adds, deletes and renames change the tree's folders");
 assert.match(workbenchTreeSrc, /refreshDirs=\{refreshDirs\}/, "the desk hands the changed folders to the tree");
-assert.match(treeSrc, /setRefetchSignal\(\(prev\) => \(\{ dirs: new Set\(refreshDirs\.dirs\), nonce: prev\.nonce \+ 1 \}\)\);/, "the tree re-reads the folders it is told about");
+// Since #5795 the folders are compared in one Unicode form.
+assert.match(treeSrc, /setRefetchSignal\(\(prev\) => \(\{ dirs: new Set\(\[\.\.\.refreshDirs\.dirs\]\.map\(nfc\)\), nonce: prev\.nonce \+ 1 \}\)\);/, "the tree re-reads the folders it is told about");
 assert.match(workbenchTreeSrc, /lastStructureRef\.current = structureKey;\s*if \(previous === structureKey\) return;/, "the first ready list also refreshes the folders it names (#5753 review)");
 // 16. The changes table is a one-stop grid of memoized rows.
 assert.match(panelSrc, /role="grid"\s*aria-label="Changed files"/, "the changes table is a grid");
@@ -368,7 +370,8 @@ assert.match(panelSrc, /if \(!title \|\| !postCommit[^\n]*\) return;/, "Create P
 assert.match(panelSrc, /onClick=\{\(\) => setOutbound\(\{ postCommit: null, prOpen: false \}\)\}/, "dismissing the commit result closes the PR form");
 assert.match(panelSrc, /err instanceof ChangesRequestError && err\.stale[\s\S]{0,400}postCommit: null, prOpen: false/, "a moved branch ends the attempt");
 // 9. A terminal starts on the drawer's first open; a mid-start teardown disposes what exists.
-assert.match(drawerMed, /const \[started, setStarted\] = useState\(\(\) => open \|\| terminalStarted\(sessionId\)\);/, "no shell until the drawer opens");
+// …and a session whose shells the live-shell cap stopped starts none until it opens again (#5795).
+assert.match(drawerMed, /const \[started, setStarted\] = useState\(\s*\(\) => open \|\| \(terminalStarted\(sessionId\) && !stoppedSessions\.has\(sessionId\)\),\s*\);/, "no shell until the drawer opens");
 assert.match(drawerMed, /\{started \? \(\s*<CodeTerminalWorkspace/, "the workspace mounts once started");
 assert.equal((terminalMed.match(/else for \(const dispose of made\.splice\(0\)\.reverse\(\)\) dispose\(\);/g) ?? []).length, 2, "both startup paths dispose a partial start");
 // Ordinary desk shells remain owned by the workspace; temporary auth shells
@@ -453,6 +456,20 @@ assert.match(panelSrc, /if \(!panel \|\| \(active && active !== document\.body\)
   // 37. Start-truncated paths are isolated.
   assert.match(treeLow6b, /<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]"><HiddenUnicodeText text=\{file\.path\} \/><\/bdi>/);
   assert.equal(previewLow6.match(/<bdi className="\[direction:ltr\] \[unicode-bidi:isolate\]">/g)?.length, 2, "the launchpad's name and folder");
+}
+
+// ── Pass 7 medium fixes (#5795) ──────────────────────────────────────────────
+{
+  const draftsMed7 = await readFile(new URL("../lib/file-edit-drafts.ts", import.meta.url), "utf8");
+  // 16. Another desktop window's write to a stored draft re-checks this
+  // window's backup at once, not at its next keystroke or its quit. The
+  // check itself is file-edit-drafts.test.ts's two-window case; a browser
+  // tab's sessionStorage is never shared, so this can't be driven there.
+  assert.match(
+    draftsMed7,
+    /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key === null \|\| event\.key\.startsWith\(FILE_EDIT_DRAFT_STORAGE_PREFIX\)\) flush\(\);/,
+    "a stored draft changed by another window flushes, and so marks this window's edit unbacked",
+  );
 }
 
 console.log("code-desk-overhaul pins ok");

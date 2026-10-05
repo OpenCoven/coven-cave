@@ -156,6 +156,7 @@ assert.match(
   "Canvas commits only its connected source file",
 );
 assert.match(editor, /action: "create-pr"/, "a committed Canvas change can open a pull request");
+assert.match(editor, /setAnnouncement\("Pull request opened\."\);[\s\S]{0,120}window\.dispatchEvent\(new CustomEvent\("cave:branch-pr-changed"\)\);/, "the composer chip re-reads its PR after Canvas opens one (#5795)");
 assert.match(
   editor,
   /expectedBranch: commitResult\.branch,[\s\S]{0,80}?expectedHead: commitResult\.headOid/,

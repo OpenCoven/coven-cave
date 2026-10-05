@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, type CheckSummary } from "@/lib/github-checks";
+import { prCheckRows, prReviewEvidence, type PrCommitStatus } from "@/lib/github-pr-reader";
 import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib/stage-model";
 import { codeSessionBranch, codeSessionWorkRoot } from "@/lib/code-surface";
 import type { PullRequestSummary } from "@/lib/pr-management";
@@ -193,15 +194,29 @@ type CheckRunDetail = {
 
 type ChecksState =
   | { phase: "loading" }
-  | { phase: "ready"; rollup: CheckSummary; runs: CheckRunDetail[]; sha: string | null }
+  | {
+      phase: "ready";
+      /** The `${repo}#${number}` these checks are for (#5795). */
+      prKey: string;
+      rollup: CheckSummary;
+      runs: CheckRunDetail[];
+      /** Legacy commit statuses, listed and counted with the runs (#5795). */
+      statuses: PrCommitStatus[];
+      sha: string | null;
+    }
   | { phase: "error" };
 
 function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
+  const prKey = `${repo}#${number}`;
   const [state, setState] = useState<ChecksState>({ phase: "loading" });
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setState((prev) => (prev.phase === "ready" ? prev : { phase: "loading" }));
+    // A re-read keeps the last answer on screen, but only for the same PR
+    // (#5795): when the session's PR changed, the old PR's checks and head
+    // stayed up, and merge was armed against them.
+    const samePr = (prev: ChecksState) => prev.phase === "ready" && prev.prKey === prKey;
+    setState((prev) => (samePr(prev) ? prev : { phase: "loading" }));
     (async () => {
       try {
         const res = await fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${number}`, {
@@ -209,28 +224,37 @@ function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
           signal: AbortSignal.timeout(CHECKS_TIMEOUT_MS),
         });
         const data = (await res.json().catch(() => null)) as
-          | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[]; sha?: string | null }
+          | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[]; statuses?: PrCommitStatus[]; sha?: string | null }
           | { ok: false }
           | null;
         if (cancelled) return;
         if (!res.ok || !data || data.ok !== true) {
-          setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
+          setState((prev) => (samePr(prev) ? prev : { phase: "error" }));
           return;
         }
-        setState({ phase: "ready", rollup: data.rollup, runs: data.runs, sha: data.sha ?? null });
+        setState({
+          phase: "ready",
+          prKey,
+          rollup: data.rollup,
+          runs: data.runs ?? [],
+          statuses: data.statuses ?? [],
+          sha: data.sha ?? null,
+        });
       } catch {
-        if (!cancelled) setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
+        if (!cancelled) setState((prev) => (samePr(prev) ? prev : { phase: "error" }));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [repo, number, tick]);
-  const pending = state.phase === "ready" && state.rollup === "pending";
+  }, [repo, number, prKey, tick]);
+  // The render before that effect runs still holds the old PR's answer.
+  const current: ChecksState = state.phase === "ready" && state.prKey !== prKey ? { phase: "loading" } : state;
+  const pending = current.phase === "ready" && current.rollup === "pending";
   const reread = useCallback(() => setTick((t) => t + 1), []);
   usePausablePoll(reread, CHECKS_POLL_MS, { enabled: pending });
   usePausablePoll(reread, SETTLED_CHECKS_POLL_MS, { enabled: !pending && state.phase !== "loading" });
-  return [state, reread];
+  return [current, reread];
 }
 
 function checkGlyph(run: CheckRunDetail): { glyph: string; cls: string } {
@@ -242,6 +266,10 @@ function checkGlyph(run: CheckRunDetail): { glyph: string; cls: string } {
 }
 
 function ChecksSection({ state, onRetry }: { state: ChecksState; onRetry: () => void }) {
+  // Runs and legacy commit statuses are one list (#5795): a failing Vercel
+  // status read "3/3 passed" beside "Merge is off: checks are failing", and a
+  // statuses-only repository read "0/0 passed".
+  const rows: CheckRunDetail[] = state.phase === "ready" ? prCheckRows(state.runs, state.statuses) : [];
   return (
     <section aria-label="Checks">
       <h3 className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -249,7 +277,7 @@ function ChecksSection({ state, onRetry }: { state: ChecksState; onRetry: () => 
         {state.phase === "ready" ? (
           <span className="ml-2 font-normal normal-case tracking-normal">
             {(() => {
-              const c = countChecks(state.runs);
+              const c = countChecks(rows);
               return `${c.passed}/${c.total} passed${c.failed ? ` · ${c.failed} failed` : ""}${c.pending ? ` · ${c.pending} running` : ""}`;
             })()}
           </span>
@@ -265,11 +293,11 @@ function ChecksSection({ state, onRetry }: { state: ChecksState; onRetry: () => 
             Retry
           </button>
         </p>
-      ) : state.runs.length === 0 ? (
-        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No check runs reported.</p>
+      ) : rows.length === 0 ? (
+        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No checks reported.</p>
       ) : (
         <ul className="flex flex-col gap-0.5">
-          {state.runs.map((run) => {
+          {rows.map((run) => {
             const v = checkGlyph(run);
             const inner = (
               <>
@@ -320,7 +348,8 @@ type ReviewThreadDetail = {
 
 type ThreadsState =
   | { phase: "loading" }
-  | { phase: "ready"; threads: ReviewThreadDetail[]; authed: boolean }
+  /** `complete` is false when some threads couldn't be read (#5795). */
+  | { phase: "ready"; threads: ReviewThreadDetail[]; authed: boolean; complete: boolean; evidenceError: string | null }
   | { phase: "error" };
 
 function usePrThreads(repo: string, number: number): ThreadsState & { refresh: () => void } {
@@ -336,7 +365,13 @@ function usePrThreads(repo: string, number: number): ThreadsState & { refresh: (
           { cache: "no-store" },
         );
         const data = (await res.json().catch(() => null)) as
-          | { ok: true; authed: boolean; reviewThreads: ReviewThreadDetail[] }
+          | {
+              ok: true;
+              authed: boolean;
+              reviewThreads: ReviewThreadDetail[];
+              reviewEvidenceComplete?: boolean;
+              reviewEvidenceError?: string | null;
+            }
           | { ok: false }
           | null;
         if (cancelled) return;
@@ -344,7 +379,14 @@ function usePrThreads(repo: string, number: number): ThreadsState & { refresh: (
           setState({ phase: "error" });
           return;
         }
-        setState({ phase: "ready", threads: data.reviewThreads ?? [], authed: Boolean(data.authed) });
+        const evidence = prReviewEvidence(data);
+        setState({
+          phase: "ready",
+          threads: data.reviewThreads ?? [],
+          authed: Boolean(data.authed),
+          complete: evidence.complete,
+          evidenceError: evidence.error,
+        });
       } catch {
         if (!cancelled) setState({ phase: "error" });
       }
@@ -360,10 +402,13 @@ function usePrThreads(repo: string, number: number): ThreadsState & { refresh: (
 function ThreadsSection({
   repo,
   number,
+  url,
   allowResolve,
 }: {
   repo: string;
   number: number;
+  /** Where the threads that couldn't be read are (#5795). */
+  url: string;
   allowResolve: boolean;
 }) {
   const state = usePrThreads(repo, number);
@@ -409,11 +454,29 @@ function ThreadsSection({
       ) : null}
       <h3 className="mb-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
         Review threads
-        <span className="ml-2 font-normal normal-case tracking-normal">
-          {open.length} open{resolved ? ` · ${resolved} resolved` : ""}
-        </span>
+        {state.complete ? (
+          <span className="ml-2 font-normal normal-case tracking-normal">
+            {open.length} open{resolved ? ` · ${resolved} resolved` : ""}
+          </span>
+        ) : null}
       </h3>
-      {open.length === 0 ? (
+      {/* Threads that couldn't all be read get the route's reason, not a
+          count (#5795): without a token the tab said "No review threads", and
+          past the first hundred, "All threads resolved". */}
+      {!state.complete ? (
+        <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          {state.evidenceError}{" "}
+          <a
+            className="focus-ring rounded underline decoration-dotted underline-offset-2 hover:text-[var(--text-primary)]"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open on GitHub
+          </a>
+        </p>
+      ) : null}
+      {!state.complete && open.length === 0 ? null : open.length === 0 ? (
         <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {state.threads.length === 0 ? "No review threads." : "All threads resolved."}
         </p>
@@ -472,7 +535,7 @@ function ActionsSection({
   number,
   prState,
   checks,
-  onActed,
+  onMerged,
   onRecheck,
 }: {
   repo: string;
@@ -482,7 +545,9 @@ function ActionsSection({
    *  pinned to, and merge waits for them to pass, as the full reader does
    *  (#5745). */
   checks: ChecksState;
-  onActed: () => void;
+  /** The merge landed. The panel says so and treats the PR as merged: this
+   *  section remounts right after, so a notice set here was lost (#5795). */
+  onMerged: () => void;
   /** Read the checks again: after a refusal, the head has likely moved. */
   onRecheck: () => void;
 }) {
@@ -569,8 +634,7 @@ function ActionsSection({
     setBusy(null);
     setConfirmMerge(false);
     if (result.ok) {
-      setNotice({ kind: "ok", text: `PR #${number} squash-merged.` });
-      onActed();
+      onMerged();
     } else {
       setNotice({ kind: "err", text: result.error ?? "Merge failed." });
       onRecheck();
@@ -648,23 +712,25 @@ function ActionsSection({
 function PrReviewBlock({
   repo,
   number,
+  url,
   prState,
   trustedForActions,
-  onActed,
+  onMerged,
 }: {
   repo: string;
   number: number;
+  url: string;
   prState: string | undefined;
   trustedForActions: boolean;
-  onActed: () => void;
+  onMerged: () => void;
 }) {
   const [checks, recheck] = usePrChecks(repo, number);
   return (
     <>
       <ChecksSection state={checks} onRetry={recheck} />
-      <ThreadsSection repo={repo} number={number} allowResolve={trustedForActions} />
+      <ThreadsSection repo={repo} number={number} url={url} allowResolve={trustedForActions} />
       {trustedForActions ? (
-        <ActionsSection repo={repo} number={number} prState={prState} checks={checks} onActed={onActed} onRecheck={recheck} />
+        <ActionsSection repo={repo} number={number} prState={prState} checks={checks} onMerged={onMerged} onRecheck={recheck} />
       ) : null}
     </>
   );
@@ -676,10 +742,20 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
   const snapshot = useStageSnapshot(workRoot, branch);
   // Force-refresh key after merge so checks/threads re-fetch against the new state.
   const [actedTick, setActedTick] = useState(0);
+  // The PR this panel merged (#5795). The sessions poll can say "open" for a
+  // while after, and Squash merge was offered again; a second click got
+  // GitHub's "not mergeable".
+  const [mergedPrKey, setMergedPrKey] = useState<string | null>(null);
 
   const pr = row.pullRequest;
   const hasPr = Boolean(pr?.repo && pr?.number != null);
   const trustedForActions = hasPr && isTrustedPrAttribution(pr?.attribution);
+  // The PR block is keyed by PR (#5795): when the sessions poll moved the
+  // session to another PR, the old one's checks, head and armed merge
+  // confirmation stayed on screen for the new one.
+  const prKey = hasPr && pr ? `${pr.repo}#${pr.number}` : null;
+  const mergedHere = prKey !== null && mergedPrKey === prKey;
+  const prState = mergedHere ? "merged" : pr?.state;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -691,14 +767,14 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
         </p>
       ) : null}
 
-      {hasPr && pr ? (
-        <div key={actedTick} className="flex flex-col gap-4">
+      {hasPr && pr && prKey ? (
+        <div key={`${prKey}:${actedTick}`} className="flex flex-col gap-4">
           <div className="flex items-center gap-2 text-[length:var(--text-sm)]">
             <Icon name="ph:git-pull-request" width={14} height={14} />
             <span className="font-semibold text-[var(--text-primary)]">
               {pr.repo}#{pr.number}
             </span>
-            {pr.state ? <span className="text-[var(--text-muted)]">{pr.state}</span> : null}
+            {prState ? <span className="text-[var(--text-muted)]">{prState}</span> : null}
             {pr.draft ? <span className="text-[var(--text-muted)]">draft</span> : null}
             {pr.url ? (
               <a
@@ -714,9 +790,16 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
           <PrReviewBlock
             repo={pr.repo}
             number={pr.number as number}
-            prState={pr.state}
+            url={pr.url ?? `https://github.com/${pr.repo}/pull/${pr.number}`}
+            prState={prState}
             trustedForActions={trustedForActions}
-            onActed={() => setActedTick((t) => t + 1)}
+            onMerged={() => {
+              setMergedPrKey(prKey);
+              setActedTick((t) => t + 1);
+              // The branch's PR changed: the composer's chip reads it again
+              // (#5795), rather than keeping "open" until its next poll.
+              window.dispatchEvent(new CustomEvent("cave:branch-pr-changed"));
+            }}
           />
           {trustedForActions ? null : (
             <section aria-label="Review and merge" className="flex flex-col gap-2">
@@ -736,6 +819,11 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
           <p>Commit your changes in the Diff tab and use Create PR there — this tab lights up once the PR exists.</p>
         </div>
       )}
+      {/* Outside the keyed block (#5795): the merge remounts it, and the
+          notice set inside it never showed. Always present, so it's read. */}
+      <p role="status" className="text-[length:var(--text-xs)] text-[var(--color-success)]">
+        {mergedHere && pr ? `PR #${pr.number} squash-merged.` : null}
+      </p>
     </div>
   );
 }

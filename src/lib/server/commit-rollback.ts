@@ -15,16 +15,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { scrubSidecarInternalEnv } from "../child-spawn-env.ts";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
 
+/** Without Cave's own secrets (#5795): the rollback's checkout runs the
+ *  repository's post-checkout hook, as the commit runs its commit hooks. */
 function git(repoRoot: string, args: string[], env?: Record<string, string>) {
   return execFileAsync("git", args, {
     windowsHide: true,
     cwd: repoRoot,
     timeout: GIT_TIMEOUT_MS,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: { ...scrubSidecarInternalEnv({ ...process.env }), ...env },
   });
 }
 

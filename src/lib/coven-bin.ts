@@ -1253,6 +1253,17 @@ export async function caveToolSpawnEnvAsync(): Promise<NodeJS.ProcessEnv> {
   return spawnEnv(pathState.cachedToolPath, false);
 }
 
+/**
+ * Environment for running the GitHub CLI (#5795): the tool environment above,
+ * so `gh` is found wherever the user's shell finds it, with its prompts off.
+ * The desktop sidecar's own PATH holds only node's and coven's folders, so a
+ * Homebrew `gh` in /opt/homebrew/bin read as missing: Create PR pushed, then
+ * said "gh not found", and the PR lookup quietly cached "no PR".
+ */
+export async function githubCliSpawnEnvAsync(): Promise<NodeJS.ProcessEnv> {
+  return { ...(await caveToolSpawnEnvAsync()), GH_PROMPT_DISABLED: "1" };
+}
+
 export function refreshCovenSpawnEnv(
   options: CovenSpawnEnvOptions = {},
 ): NodeJS.ProcessEnv {

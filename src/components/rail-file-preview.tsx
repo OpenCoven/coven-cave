@@ -44,6 +44,19 @@ function saveFailureReason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** The file's text and version as the disk holds them now, or null. */
+async function readDiskText(path: string, familiarId?: string | null): Promise<{ content: string; version: string | null } | null> {
+  try {
+    const params = new URLSearchParams({ path });
+    if (familiarId) params.set("familiarId", familiarId);
+    const res = await fetch(`/api/project-file?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+    const json = (await res.json()) as ProjectFileBody;
+    return json.ok && json.kind === "text" ? { content: json.content, version: json.version ?? null } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** How many changed files the empty-state launchpad lists. */
 const LAUNCHPAD_CAP = 6;
 
@@ -137,10 +150,14 @@ export function RailFilePreview({
     () => fileEditDrafts.get(path),
     () => null,
   );
-  // Whether this edit's latest text is kept for a reload (#5781).
+  // Whether this edit's latest text is kept for a reload (#5781). Asked by
+  // the draft's own path (#5795), which may be another Unicode spelling.
   const unbacked = useSyncExternalStore(
     fileEditDrafts.subscribe,
-    () => (path ? fileEditDrafts.unbackedPaths().has(path) : false),
+    () => {
+      const own = fileEditDrafts.get(path);
+      return own ? fileEditDrafts.unbackedPaths().has(own.path) : false;
+    },
     () => false,
   );
   const editing = Boolean(draft);
@@ -159,7 +176,8 @@ export function RailFilePreview({
   const headerRef = useRef<HTMLElement | null>(null);
   const editButtonRef = useRef<HTMLButtonElement | null>(null);
   // A save that closes the editor gives focus to Edit (#5781): the editor and
-  // Save unmount with the draft, and focus fell to the page.
+  // Save unmount with the draft, and focus fell to the page. Cancel does the
+  // same (#5795).
   const [focusAfterSave, setFocusAfterSave] = useState(0);
   useEffect(() => {
     if (focusAfterSave === 0) return;
@@ -261,15 +279,13 @@ export function RailFilePreview({
         } else {
           setFile({ kind: "text", content: json.content, size: json.size, version: json.version ?? null, utf8: json.utf8 });
           // A save that landed after its time ran out reads as the disk
-          // holding the edit exactly (#5781). That isn't someone else's
-          // change, and calling it a conflict made Reload drop what was
-          // typed since. The edit is the file now: nothing is lost.
-          const open = fileEditDrafts.get(path);
-          const asSaved = open ? (open.eol === "\r\n" ? open.content.replace(/\n/g, "\r\n") : open.content) : null;
-          if (open && isDraftDirty(open) && !open.saving && asSaved === json.content) fileEditDrafts.discard(path);
-          // An open edit that started from an older version hears about it
-          // now, before Save is tried.
-          else fileEditDrafts.noteDiskVersion(path, json.version ?? null);
+          // holding the edit exactly (#5781), and one that landed before
+          // more was typed as the disk holding that save's text (#5795).
+          // Neither is someone else's change: calling it a conflict made
+          // Reload, the only way out, drop what was typed since. An open
+          // edit that started from an older version hears about it now,
+          // before Save is tried.
+          fileEditDrafts.noteDiskRead(path, json.content, json.version ?? null);
         }
         setLoading(false);
       })
@@ -289,17 +305,29 @@ export function RailFilePreview({
   // Not UTF-8 means read-only (#5756): the editor would save every byte it
   // can't show as U+FFFD. The server refuses such a save as well.
   const notUtf8 = file?.kind === "text" && file.utf8 === false;
-  const editable = file?.kind === "text" && !fileName(path ?? "").startsWith(".env") && !notUtf8 && !missingOnDisk;
+  // Any spelling of `.env` (#5795): the server reads `.ENV` or `.Env` as
+  // `.env` (NFKC, lowercased) and refuses the write, so it isn't offered.
+  const envFile = fileName(path ?? "").normalize("NFKC").toLowerCase().startsWith(".env");
+  const editable = file?.kind === "text" && !envFile && !notUtf8 && !missingOnDisk;
 
+  // The file whose editor takes focus when it is created (#5795): Edit
+  // unmounted itself and focused nothing, so typing after Enter went
+  // nowhere. Only Edit asks; a draft resumed by switching tabs leaves focus
+  // on the tab.
+  const [focusEditorFor, setFocusEditorFor] = useState<string | null>(null);
   const startEditing = useCallback(() => {
     if (!path || !file || file.kind !== "text") return;
     fileEditDrafts.begin(path, file.content, file.version ?? null);
+    setFocusEditorFor(path);
     setJustSaved(false);
   }, [file, path]);
+  const clearEditorFocus = useCallback(() => setFocusEditorFor(null), []);
 
   // Cancel discards the edit; it is the only control that does.
   const cancelEditing = useCallback(() => {
     if (path) fileEditDrafts.discard(path);
+    // Back to Edit (#5795), as after a save: Cancel unmounts with the editor.
+    setFocusAfterSave((count) => count + 1);
   }, [path]);
 
   // Escape leaves the editor and keeps the edit (#5745). Discarding on Escape
@@ -329,8 +357,10 @@ export function RailFilePreview({
   // Single flight per file comes from the store: Cmd-S and the Save button
   // both go through `startSave`, which refuses while a save is in flight.
   // Every write below names `target`, the file the save was sent for.
-  const saveEdit = useCallback(async () => {
-    const target = pathRef.current;
+  // `again` names the file of a save being retried (#5795): the reader may
+  // have moved to another file while it waited.
+  const saveEdit = useCallback(async (again?: string) => {
+    const target = again ?? pathRef.current;
     if (!target || missingOnDiskRef.current) return;
     const sending = fileEditDrafts.startSave(target);
     if (!sending) return;
@@ -351,6 +381,17 @@ export function RailFilePreview({
       const json = (await res.json()) as { ok: boolean; size?: number; version?: string | null; error?: string; conflict?: boolean };
       if (!res.ok || !json.ok) {
         const conflict = json.conflict === true;
+        // A conflict with this edit's own earlier save (#5795): a save that
+        // never answered but landed moved the file's version, so this one,
+        // named for the old version, was refused. When the disk holds that
+        // save's text, the edit is rebased onto it and saved again.
+        if (conflict && sending.unconfirmed) {
+          const disk = await readDiskText(target, familiarId);
+          if (disk && fileEditDrafts.rebaseOnEarlierSave(target, sending.id, disk.content, disk.version)) {
+            void saveEditRef.current(target);
+            return;
+          }
+        }
         fileEditDrafts.fail(
           target,
           sending.id,
@@ -358,6 +399,8 @@ export function RailFilePreview({
           conflict,
           // The disk's version, so Overwrite writes over exactly that (#5756).
           conflict ? json.version ?? null : null,
+          // Kept in case it was written anyway (#5795).
+          conflict ? null : sending.content,
         );
         // Once (#5781): a conflict is said by its own alert row.
         if (!conflict) announce(`Couldn't save ${label}: ${json.error ?? res.status}`, "assertive");
@@ -380,10 +423,13 @@ export function RailFilePreview({
       window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
     } catch (err) {
       const reason = saveFailureReason(err);
-      fileEditDrafts.fail(target, sending.id, `Couldn't save: ${reason}.`);
+      // No answer: the text may be on disk, and a later read can tell (#5795).
+      fileEditDrafts.fail(target, sending.id, `Couldn't save: ${reason}.`, false, null, sending.content);
       announce(`Couldn't save ${label}: ${reason}.`, "assertive");
     }
   }, [familiarId, announce]);
+  const saveEditRef = useRef(saveEdit);
+  saveEditRef.current = saveEdit;
 
   const onEditorSave = useCallback(() => void saveEdit(), [saveEdit]);
 
@@ -733,6 +779,8 @@ export function RailFilePreview({
               onChange={onEditorChange}
               onSave={onEditorSave}
               onCancel={leaveEditor}
+              autoFocus={focusEditorFor === path}
+              onReady={clearEditorFocus}
             />
           </div>
         ) : loading ? (

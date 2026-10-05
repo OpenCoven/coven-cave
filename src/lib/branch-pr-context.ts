@@ -17,12 +17,13 @@
 // fields, and PR-URL lookups hit `GET /repos/:owner/:repo/pulls/:number`.
 
 import { execFile } from "node:child_process";
-import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { githubCliSpawnEnvAsync, scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { prLookupArgs, resolvePrTarget } from "./github-pr-target.ts";
 import type { SessionPullRequestContext } from "@/lib/types";
 
 const PR_URL_RE = /https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/;
-const GH_ENV = () => scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLED: "1" });
 
 /** stdout of the branch PR lookup (REST list JSON) in `root`. */
 export type BranchPrRunner = (root: string, branch: string) => Promise<string>;
@@ -98,12 +99,54 @@ export function parseBranchPr(
 const defaultRunner: BranchPrRunner = async (root, branch) => {
   const target = await resolvePrTarget(root);
   if (!target) throw new Error("origin is not a github remote");
+  // `gh` as the user's shell finds it (#5795): on the desktop sidecar's own
+  // PATH a Homebrew `gh` was missing, and every lookup cached "no PR".
+  const env = await githubCliSpawnEnvAsync();
   return new Promise((resolve, reject) => {
-    execFile("gh", prLookupArgs(target, branch), { windowsHide: true, cwd: root, timeout: 10_000, env: GH_ENV() }, (err, stdout) =>
+    execFile("gh", prLookupArgs(target, branch), { windowsHide: true, cwd: root, timeout: 10_000, env }, (err, stdout) =>
       err ? reject(err) : resolve(stdout),
     );
   });
 };
+
+/** The newest commit on a local branch: its id and commit time (ms). */
+export type BranchTipReader = (root: string, branch: string) => Promise<{ oid: string; committedAt: number } | null>;
+
+const defaultBranchTip: BranchTipReader = (root, branch) =>
+  new Promise((resolve) => {
+    execFile(
+      "git",
+      ["log", "-1", "--format=%H %ct", `refs/heads/${branch}`, "--"],
+      { windowsHide: true, cwd: root, timeout: 10_000, env: scrubSidecarInternalEnv({ ...process.env }) },
+      (err, stdout) => {
+        const [oid, seconds] = String(stdout ?? "").trim().split(" ");
+        resolve(err || !oid || !seconds ? null : { oid, committedAt: Number(seconds) * 1000 });
+      },
+    );
+  });
+
+/** The commit a settled (merged or closed) PR ended at, and when it settled,
+ *  from the lookup's REST (or GraphQL) answer. */
+function settledPullOf(stdout: string): { headSha: string | null; settledAt: number | null } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return { headSha: null, settledAt: null };
+  }
+  const pull = (Array.isArray(parsed) ? parsed[0] : parsed) as {
+    head?: { sha?: unknown } | null;
+    headRefOid?: unknown;
+    merged_at?: unknown;
+    mergedAt?: unknown;
+    closed_at?: unknown;
+    closedAt?: unknown;
+  } | undefined;
+  const headSha = typeof pull?.head?.sha === "string" ? pull.head.sha : typeof pull?.headRefOid === "string" ? pull.headRefOid : null;
+  const at = [pull?.merged_at, pull?.mergedAt, pull?.closed_at, pull?.closedAt].find((value) => typeof value === "string" && value);
+  const settledAt = typeof at === "string" ? Date.parse(at) : NaN;
+  return { headSha, settledAt: Number.isFinite(settledAt) ? settledAt : null };
+}
 
 /** stdout of the PR-URL lookup (REST single-PR JSON; repo + number inferred
  *  from the URL, so no project cwd is needed). */
@@ -114,19 +157,22 @@ const defaultUrlRunner: UrlPrRunner = (url) => {
   if (!match) return Promise.reject(new Error("not a github PR url"));
   const slug = match[1]!;
   const number = match[2]!;
-  return new Promise((resolve, reject) => {
+  return githubCliSpawnEnvAsync().then((env) => new Promise((resolve, reject) => {
     execFile(
       "gh",
       ["api", "-X", "GET", `repos/${slug}/pulls/${number}`],
-      { windowsHide: true, timeout: 10_000, env: GH_ENV() },
+      { windowsHide: true, timeout: 10_000, env },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
-  });
+  }));
 };
 
 type CacheEntry = {
   value: SessionPullRequestContext | null;
   fetchedAt: number;
+  /** A merged or closed PR whose branch has commits newer than its end
+   *  (#5795): checked again at the open-PR pace, not left for 15 minutes. */
+  unsettled?: boolean;
 };
 
 export type BranchPrCache = {
@@ -139,10 +185,38 @@ export type BranchPrCache = {
    * result of the one shared lookup for this (root, branch).
    */
   resolve(root: string, branch: string): Promise<SessionPullRequestContext | null>;
+  /**
+   * Forget (root, branch), and any lookup for it in flight, so the next read
+   * asks GitHub (#5795). Create PR calls it: the lookup kept answering "no
+   * PR" for a minute after the desk opened one. Entries keyed by a folder
+   * inside `root` go too, since the sessions list keys by the chat's folder.
+   */
+  invalidate(root: string, branch: string): void;
+  /** Forget every entry that answered with this pull request (#5795). The
+   *  merge route knows the PR, not the checkout: a merge kept reading as
+   *  open, with Squash merge on offer again. */
+  invalidatePullRequest(repo: string, number: number): void;
 };
+
+function realOrResolved(dir: string): string {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+/** Whether `candidate` is `root`, or a folder inside it. */
+function inCheckout(candidate: string, root: string): boolean {
+  const real = realOrResolved(candidate);
+  const top = realOrResolved(root);
+  return real === top || real.startsWith(top + path.sep);
+}
 
 export function createBranchPrCache(options?: {
   runner?: BranchPrRunner;
+  /** Reads a local branch's newest commit, to tell a reused branch (#5795). */
+  branchTip?: BranchTipReader;
   ttlMs?: number;
   /** Merged/closed PRs are terminal — cache them longer. */
   settledTtlMs?: number;
@@ -150,32 +224,52 @@ export function createBranchPrCache(options?: {
   now?: () => number;
 }): BranchPrCache {
   const runner = options?.runner ?? defaultRunner;
+  const branchTip = options?.branchTip ?? defaultBranchTip;
   const ttlMs = options?.ttlMs ?? 60_000;
   const settledTtlMs = options?.settledTtlMs ?? 15 * 60_000;
   const maxConcurrent = options?.maxConcurrent ?? 3;
   const now = options?.now ?? Date.now;
 
   const entries = new Map<string, CacheEntry>();
-  const inFlight = new Map<string, Promise<void>>();
+  const inFlight = new Map<string, Promise<SessionPullRequestContext | null>>();
+  // Bumped by invalidation: a lookup that started before it never lands.
+  const generations = new Map<string, number>();
 
   function ttlFor(entry: CacheEntry): number {
     const state = entry.value?.state;
-    return state === "merged" || state === "closed" ? settledTtlMs : ttlMs;
+    return (state === "merged" || state === "closed") && !entry.unsettled ? settledTtlMs : ttlMs;
   }
 
-  function lookup(key: string, root: string, branch: string): Promise<void> {
+  /** True when the branch moved on after its PR settled (#5795): a reused
+   *  branch name showed its old PR as merged for 15 minutes. */
+  async function movedSinceSettled(root: string, branch: string, stdout: string): Promise<boolean> {
+    const { headSha, settledAt } = settledPullOf(stdout);
+    if (!headSha) return false;
+    const tip = await branchTip(root, branch).catch(() => null);
+    if (!tip || tip.oid === headSha) return false;
+    return settledAt === null || tip.committedAt > settledAt;
+  }
+
+  function lookup(key: string, root: string, branch: string): Promise<SessionPullRequestContext | null> {
     const pending = inFlight.get(key);
     if (pending) return pending;
-    const request = runner(root, branch)
-      .then((stdout) => {
-        entries.set(key, { value: parseBranchPr(stdout, branch), fetchedAt: now() });
+    const generation = generations.get(key) ?? 0;
+    const current = () => (generations.get(key) ?? 0) === generation;
+    const request: Promise<SessionPullRequestContext | null> = runner(root, branch)
+      .then(async (stdout) => {
+        const value = parseBranchPr(stdout, branch);
+        const settled = value?.state === "merged" || value?.state === "closed";
+        const unsettled = settled && (await movedSinceSettled(root, branch, stdout));
+        if (current()) entries.set(key, { value, fetchedAt: now(), ...(unsettled ? { unsettled } : {}) });
+        return value;
       })
       .catch(() => {
         // No PR for this branch, or gh missing/unauthenticated — negative-cache.
-        entries.set(key, { value: null, fetchedAt: now() });
+        if (current()) entries.set(key, { value: null, fetchedAt: now() });
+        return null;
       })
       .finally(() => {
-        inFlight.delete(key);
+        if (inFlight.get(key) === request) inFlight.delete(key);
       });
     inFlight.set(key, request);
     return request;
@@ -185,6 +279,12 @@ export function createBranchPrCache(options?: {
   function refresh(key: string, root: string, branch: string): void {
     if (inFlight.has(key) || inFlight.size >= maxConcurrent) return;
     void lookup(key, root, branch);
+  }
+
+  function forget(key: string): void {
+    entries.delete(key);
+    inFlight.delete(key);
+    generations.set(key, (generations.get(key) ?? 0) + 1);
   }
 
   return {
@@ -201,8 +301,20 @@ export function createBranchPrCache(options?: {
         if (now() - entry.fetchedAt >= ttlFor(entry)) refresh(key, root, branch);
         return entry.value;
       }
-      await lookup(key, root, branch);
-      return entries.get(key)?.value ?? null;
+      return lookup(key, root, branch);
+    },
+    invalidate(root, branch) {
+      for (const key of [...new Set([...entries.keys(), ...inFlight.keys()])]) {
+        const split = key.indexOf("\u0000");
+        if (key.slice(split + 1) === branch && inCheckout(key.slice(0, split), root)) forget(key);
+      }
+    },
+    invalidatePullRequest(repo, number) {
+      for (const [key, entry] of [...entries]) {
+        if (entry.value?.number === number && entry.value.repo.toLowerCase() === repo.toLowerCase()) forget(key);
+      }
+      // A lookup in flight may have read the PR before the merge.
+      for (const key of [...inFlight.keys()]) forget(key);
     },
   };
 }

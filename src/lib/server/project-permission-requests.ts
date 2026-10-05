@@ -111,6 +111,22 @@ async function isHumanMobileWrite(
   return allowMobileFileWrites;
 }
 
+/**
+ * Refuse a Git write from the paired phone unless the desktop allows the
+ * phone's file edits (#5795). The changes route's revert, commit, push and
+ * pull request, branch switch, worktree and checkpoint actions ignored the
+ * opt-in that keeps the phone's saves off by default, so a phone that got 403
+ * saving a file could delete it with Revert. One switch covers both, so off
+ * keeps the phone read-only. Requests from the desktop pass.
+ */
+export async function assertMobileGitWriteAllowed(req: Request): Promise<void> {
+  if (req.headers.get(MOBILE_ACCESS_HEADER) !== "1") return;
+  if (await isHumanMobileWrite(req, "file-write")) return;
+  throw new ProjectAccessDeniedError(
+    "Git changes from the phone are disabled — enable “Allow file edits from phone” in desktop Settings",
+  );
+}
+
 export async function assertProjectApiAccess(args: {
   familiarId: string | null | undefined;
   path: string | null | undefined;

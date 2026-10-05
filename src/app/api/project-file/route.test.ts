@@ -40,10 +40,11 @@ assert.match(
   "writes must reject image and unknown extensions",
 );
 
-// .env stays un-writable (it is read-redacted; saving would clobber secrets).
+// .env stays un-writable (it is read-redacted; saving would clobber secrets),
+// by any spelling of its name (#5795).
 assert.match(
   source,
-  /path\.basename\(resolved\)\.startsWith\("\.env"\)[\s\S]*?not editable[\s\S]*?status: 403/,
+  /if \(isEnvFileName\(resolved\)\) \{\s*return \{ body: \{ ok: false, error: "\.env files are not editable" \}, status: 403 \};/,
   "writes must refuse .env files",
 );
 
@@ -88,7 +89,7 @@ assert.match(source, /export function projectFileVersion\(bytes: Buffer \| strin
 assert.match(source, /const bytes = fs\.readFileSync\(resolved\);[\s\S]{0,200}version: projectFileVersion\(bytes\)/, "text reads return the version of the bytes they decoded");
 assert.match(
   source,
-  /withRepositoryMutation\(lockKey[\s\S]*?if \(typeof expectedVersion === "string"\) \{[\s\S]*?projectFileVersion\(fs\.readFileSync\(resolved\)\)[\s\S]*?if \(current !== expectedVersion\)[\s\S]*?conflict: true[\s\S]*?status: 409[\s\S]*?fs\.writeFileSync\(resolved/,
+  /withRepositoryMutation\(lockKey[\s\S]*?onDisk = fs\.readFileSync\(resolved\);[\s\S]*?if \(typeof expectedVersion === "string"\) \{\s*const current = projectFileVersion\(onDisk\);\s*if \(current !== expectedVersion\)[\s\S]*?conflict: true[\s\S]*?status: 409[\s\S]*?fs\.writeFileSync\(resolved/,
   "a stale expectedVersion is refused with a 409 conflict before the write, under the lock",
 );
 assert.match(source, /expectedVersion !== undefined && expectedVersion !== null && typeof expectedVersion !== "string"[\s\S]{0,120}status: 400/, "a malformed expectedVersion is a 400");
@@ -103,7 +104,7 @@ assert.match(source, /export function isUtf8RoundTrip\(bytes: Buffer\): boolean 
 assert.match(source, /utf8: isUtf8RoundTrip\(bytes\),/, "reads say whether the file is UTF-8");
 assert.match(
   source,
-  /if \(!isUtf8RoundTrip\(fs\.readFileSync\(resolved\)\)\) return \{ body: \{ ok: false, error: NOT_UTF8_ERROR \}, status: 422 \};[\s\S]*?Optimistic concurrency/,
+  /if \(!isUtf8RoundTrip\(onDisk\)\) return \{ body: \{ ok: false, error: NOT_UTF8_ERROR \}, status: 422 \};[\s\S]*?Optimistic concurrency/,
   "a save over a non-UTF-8 file is refused under the lock, before the version check, so Overwrite can't skip it",
 );
 

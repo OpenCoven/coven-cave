@@ -124,6 +124,17 @@ function parentDir(p: string): string {
   return idx <= 0 ? p : p.slice(0, idx);
 }
 
+/**
+ * A path in one Unicode form, for comparing (#5795). The tree lists names as
+ * the disk stores them (decomposed on macOS) while a host's selection and its
+ * changed folders come from git, precomposed: the open file wasn't selected or
+ * revealed, and a new file in an accented folder never appeared. Rows keep
+ * the disk's spelling for reading and moving.
+ */
+function nfc(p: string): string {
+  return p.normalize("NFC");
+}
+
 // ─── File-type icon ───────────────────────────────────────────────────────────
 
 type FileIcon =
@@ -208,6 +219,11 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     // refresh: keep the existing tree mounted (TreeRows are keyed by path, so
     // their expansion state survives) instead of blanking to skeletons.
     const loadedKeyRef = useRef<string | null>(null);
+    // The newest load (#5795). A host's root can change on the same mount
+    // (the Coding Desk learns a session's worktree on a later poll), and the
+    // old root's slow answer, landing last, showed the primary checkout's
+    // files under the worktree's session, where an edit saved to them.
+    const loadIdRef = useRef(0);
 
     // Drag-and-drop move is enabled in browse mode (not folder-picker mode).
     const dndEnabled = onDirSelect == null;
@@ -234,10 +250,11 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
       // Skeleton only on the first load or a project/familiar switch — a refresh
       // of the same tree refetches in place so expanded folders don't collapse.
       const isRefresh = loadedKeyRef.current === key;
+      const id = ++loadIdRef.current;
       if (!isRefresh) setLoading(true);
       if (r) {
         const tree = await fetchChildren(r, familiarId, 1);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || id !== loadIdRef.current) return;
         setRoot(r);
         if (tree === null) {
           setLoadError(true);
@@ -266,9 +283,10 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     loadRef.current = load;
     useEffect(() => {
       if (!refreshDirs || refreshDirs.dirs.size === 0) return;
-      setRefetchSignal((prev) => ({ dirs: new Set(refreshDirs.dirs), nonce: prev.nonce + 1 }));
-      const top = (rootProp ?? "").replace(/\/+$/, "");
-      if (refreshDirs.dirs.has(top)) void loadRef.current();
+      // In one Unicode form, as the rows compare them (#5795).
+      setRefetchSignal((prev) => ({ dirs: new Set([...refreshDirs.dirs].map(nfc)), nonce: prev.nonce + 1 }));
+      const top = nfc((rootProp ?? "").replace(/\/+$/, ""));
+      if ([...refreshDirs.dirs].some((dir) => nfc(dir) === top)) void loadRef.current();
     }, [refreshDirs, rootProp]);
 
     const handleMove = useCallback(async (fromPath: string, toDirPath: string) => {
@@ -290,7 +308,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
       // Refetch the source folder (item left) and destination (item arrived).
       const srcParent = parentDir(fromPath);
       setRefetchSignal((prev) => ({
-        dirs: new Set([srcParent, toDirPath]),
+        dirs: new Set([nfc(srcParent), nfc(toDirPath)]),
         nonce: prev.nonce + 1,
       }));
       // Top-level changes aren't covered by row refetch — reload the root.
@@ -446,8 +464,9 @@ function sameTreeRow(prev: TreeRowProps, next: TreeRowProps): boolean {
     if (key !== "selectedPath" && prev[key] !== next[key]) return false;
   }
   if (prev.selectedPath === next.selectedPath) return true;
+  const own = nfc(next.entry.path);
   const touches = (selected: string | null | undefined) =>
-    selected != null && (selected === next.entry.path || selected.startsWith(`${next.entry.path}/`));
+    selected != null && (nfc(selected) === own || nfc(selected).startsWith(`${own}/`));
   return !touches(prev.selectedPath) && !touches(next.selectedPath);
 }
 
@@ -501,7 +520,7 @@ function TreeRowView({
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState(false);
 
-  const isSelected = !entry.isDir && entry.path === selectedPath;
+  const isSelected = !entry.isDir && selectedPath != null && nfc(entry.path) === nfc(selectedPath);
   const isHidden = HIDDEN_BY_DEFAULT.has(entry.name);
   const added = entry.isDir && (selectedDirs?.has(entry.path) ?? false);
 
@@ -536,7 +555,9 @@ function TreeRowView({
   const revealedRef = useRef(false);
   useEffect(() => {
     if (!entry.isDir || !selectedPath) return;
-    if (selectedPath === entry.path || !selectedPath.startsWith(`${entry.path}/`)) return;
+    // As spelled, then in one Unicode form (#5795).
+    const under = selectedPath.startsWith(`${entry.path}/`) || nfc(selectedPath).startsWith(`${nfc(entry.path)}/`);
+    if (!under) return;
     setExpanded(true);
     if (children !== null || revealedRef.current) return;
     revealedRef.current = true;
@@ -559,7 +580,7 @@ function TreeRowView({
   // answer in flight, leaving the folder stale and its spinner on for good.
   const refetchIdRef = useRef(0);
   useEffect(() => {
-    if (!entry.isDir || !refetchSignal.dirs.has(entry.path) || children === null) return;
+    if (!entry.isDir || !refetchSignal.dirs.has(nfc(entry.path)) || children === null) return;
     const id = ++refetchIdRef.current;
     setFetching(true);
     void fetchChildren(entry.path, familiarId).then((fetched) => {

@@ -2,7 +2,7 @@
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { BottomTerminal } from "./bottom-terminal";
+import { BottomTerminal, terminalThreadMounted } from "./bottom-terminal";
 
 const fixture = vi.hoisted(() => ({ platform: "desktop", start: null, stop: vi.fn(), invoke: vi.fn(), announce: vi.fn() }));
 vi.mock("@/lib/tauri-platform", () => ({ useTauriPlatform: () => fixture.platform }));
@@ -89,4 +89,22 @@ test("ordinary desktop terminals keep their shell on unmount", async () => {
   await act(async () => renderer.unmount());
   renderer = undefined;
   expect(fixture.stop).not.toHaveBeenCalled();
+});
+
+// The Coding Desk's cap on live shells leaves a shell another terminal shows,
+// such as Chat's rail, to that terminal's owner (#5795).
+test("a terminal says which thread it shows while mounted, and only then", async () => {
+  fixture.platform = "desktop";
+  expect(terminalThreadMounted("cave.rail.shown")).toBe(false);
+  let second;
+  await act(async () => {
+    renderer = create(<BottomTerminal threadId="cave.rail.shown" />, { createNodeMock: () => ({}) });
+    second = create(<BottomTerminal threadId="cave.rail.shown" />, { createNodeMock: () => ({}) });
+  });
+  expect(terminalThreadMounted("cave.rail.shown")).toBe(true);
+  await act(async () => second.unmount());
+  expect(terminalThreadMounted("cave.rail.shown"), "one of two still shows it").toBe(true);
+  await act(async () => renderer.unmount());
+  renderer = undefined;
+  expect(terminalThreadMounted("cave.rail.shown")).toBe(false);
 });

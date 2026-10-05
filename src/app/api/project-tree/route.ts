@@ -8,6 +8,7 @@ import {
   projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { invalidateChangeSummaries } from "@/lib/server/change-file-versions";
 
 type TreeEntry = {
   name: string;
@@ -96,6 +97,10 @@ export async function GET(req: NextRequest) {
  * Both `from` and `toDir` are validated against the project-root allowlist;
  * the basename is preserved. Refuses no-ops, moving a folder into its own
  * subtree, and overwriting an existing entry.
+ *
+ * The entry moved is the one named (#5795): only its folder is resolved to a
+ * real path, so a symlink moves as itself. Resolving `from` followed the
+ * link, moved the file it points to, and left the link dangling.
  */
 export async function POST(req: NextRequest) {
   let body: { from?: unknown; toDir?: unknown; familiarId?: unknown };
@@ -123,11 +128,14 @@ export async function POST(req: NextRequest) {
     throw error;
   }
 
-  const sourcePath = resolveAllowedProjectPath(from);
+  const named = path.resolve(from);
+  const entryName = path.basename(named);
+  const sourceDir = resolveAllowedProjectPath(path.dirname(named));
   const destDir = resolveAllowedProjectPath(toDir);
-  if (!sourcePath || !destDir) {
+  if (!sourceDir || !destDir || !entryName || entryName === "." || entryName === "..") {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
+  const sourcePath = path.join(sourceDir, entryName);
 
   let sourceStat: fs.Stats;
   try {
@@ -155,7 +163,8 @@ export async function POST(req: NextRequest) {
   if (sourceStat.isDirectory() && (destDir === sourcePath || destDir.startsWith(sourcePath + path.sep))) {
     return NextResponse.json({ ok: false, error: "can't move a folder into itself" }, { status: 400 });
   }
-  if (fs.existsSync(target)) {
+  // A dangling link there is an entry too, which existsSync can't see.
+  if (fs.lstatSync(target, { throwIfNoEntry: false })) {
     return NextResponse.json(
       { ok: false, error: `"${name}" already exists in that folder` },
       { status: 409 },
@@ -169,6 +178,8 @@ export async function POST(req: NextRequest) {
       { ok: false, error: err instanceof Error ? err.message : "move failed" },
       { status: 500 },
     );
+  } finally {
+    invalidateChangeSummaries(sourcePath, target);
   }
   return NextResponse.json({ ok: true, from: sourcePath, to: target });
 }

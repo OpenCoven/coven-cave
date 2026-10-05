@@ -147,7 +147,9 @@ export function mergeCodeKeymap(stored: unknown): Record<CodeShortcutId, string>
   if (!stored || typeof stored !== "object") return map;
   for (const shortcut of CODE_SHORTCUTS) {
     const value = (stored as Record<string, unknown>)[shortcut.id];
-    if (typeof value === "string" && !isCodeReservedCombo(value)) map[shortcut.id] = value;
+    // A bare navigation key saved before it was refused (#5795) is ignored:
+    // a picker bound to Tab took every Tab on the desk.
+    if (typeof value === "string" && !isCodeReservedCombo(value) && !isCodeNavigationCombo(value)) map[shortcut.id] = value;
   }
   // A required action never loads unbound — not even from a keymap saved
   // before the rule existed (#5729).
@@ -177,6 +179,26 @@ export function codeRequiredComboHolder(
 ): CodeShortcutId | null {
   if (!combo) return null;
   return CODE_REQUIRED_SHORTCUTS.find((required) => required !== id && keymap[required] === combo) ?? null;
+}
+
+/**
+ * Keys that move around the page and press its controls (#5795). Capture took
+ * them like any other: Tab pressed to move on from Rebind became the binding,
+ * and from then on Tab from any desk button opened the session picker. Enter
+ * or Space would have stopped every desk button working.
+ */
+const NAVIGATION_KEYS = new Set([
+  "Tab", "Enter", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown",
+]);
+
+/** A navigation key without ⌘/Ctrl or Alt (Shift alone doesn't count: it
+ *  selects, or reverses Tab). Never a desk shortcut. */
+export function isCodeNavigationCombo(combo: string): boolean {
+  if (!combo) return false;
+  const parts = combo.split("+");
+  const modifiers = parts.slice(0, -1);
+  if (modifiers.includes("Mod") || modifiers.includes("Alt")) return false;
+  return NAVIGATION_KEYS.has(parts[parts.length - 1]);
 }
 
 export function isCodeReservedCombo(combo: string): boolean {
@@ -241,7 +263,7 @@ export function bindCodeShortcut(
   id: CodeShortcutId,
   combo: string,
 ): Record<CodeShortcutId, string> {
-  if (combo && isCodeReservedCombo(combo)) return { ...keymap };
+  if (combo && (isCodeReservedCombo(combo) || isCodeNavigationCombo(combo))) return { ...keymap };
   // A required action keeps a key: it can't be unbound, and its key can't be
   // taken by another action (#5729).
   if (!combo && isCodeShortcutRequired(id)) return { ...keymap };

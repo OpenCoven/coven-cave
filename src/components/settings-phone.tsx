@@ -89,7 +89,7 @@ const WRITE_ACCESS_ROWS: Array<{
   {
     key: "fileWrites",
     label: "Allow file edits from phone",
-    hint: "Save files in the Code tab from your phone. Off keeps phone access read-only.",
+    hint: "Save files, revert, commit and open pull requests in the Code tab from your phone. Off keeps phone access read-only.",
   },
   {
     key: "canvasWrites",

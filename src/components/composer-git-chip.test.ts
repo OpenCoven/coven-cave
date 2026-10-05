@@ -79,12 +79,15 @@ assert.match(
   "the changes summary carries the linked-worktree name",
 );
 
-// ── PR lookup is once-per-(root, branch), never on the 5s poll ──────────────
+// ── PR lookup is per-(root, branch), never on the 5s poll ───────────────────
+// It is read again after a desk action changes the PR, and slowly while
+// visible (#5795); useBranchPr's behaviour is in composer-git-chip.behavior.test.tsx.
 assert.match(
   chip,
-  /const key = `\$\{projectRoot\}\\n\$\{branch\}`;\s*\n\s*if \(fetchedKey\.current === key\) return;/,
+  /const key = projectRoot && branch && branch !== "HEAD" \? `\$\{projectRoot\}\\n\$\{branch\}` : null;/,
   "the PR fetch is keyed by (projectRoot, branch) so the status poll can't re-trigger it",
 );
+assert.match(chip, /\}, \[key, projectRoot, tick\]\);/, "only the pair and an explicit re-read fetch the PR");
 assert.match(
   chip,
   /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(projectRoot\)\}&pr=1/,

@@ -64,6 +64,9 @@ type Props = {
   onCancel: () => void;
   /** Called once CodeMirror has created its scrollable view. */
   onReady?: () => void;
+  /** Take focus once the view exists (#5795): pressing Edit from the
+   *  keyboard left focus on the page, so the next keystrokes went nowhere. */
+  autoFocus?: boolean;
 };
 
 /**
@@ -72,7 +75,7 @@ type Props = {
  * plain textarea. Cmd/Ctrl+S saves and Escape cancels via an editor keymap so
  * the shortcuts work with the editor focused.
  */
-export function CodeEditor({ value, filename, onChange, onSave, onCancel, onReady }: Props) {
+export function CodeEditor({ value, filename, onChange, onSave, onCancel, onReady, autoFocus = false }: Props) {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
 
   const extensions = useMemo<Extension[]>(() => {
@@ -97,7 +100,10 @@ export function CodeEditor({ value, filename, onChange, onSave, onCancel, onRead
     <CodeMirror
       value={value}
       onChange={onChange}
-      onCreateEditor={() => onReady?.()}
+      onCreateEditor={(view) => {
+        if (autoFocus) view.focus();
+        onReady?.();
+      }}
       theme={appTheme}
       height="100%"
       className="cave-code-editor h-full"

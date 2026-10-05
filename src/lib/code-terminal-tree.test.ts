@@ -16,6 +16,9 @@ import {
   splitTerminalPane,
   terminalBroadcastTargets,
   terminalPaneThreadId,
+  terminalThreadIds,
+  touchTerminalSession,
+  MAX_LIVE_TERMINAL_SESSIONS,
 } from "./code-terminal-tree.ts";
 
 /** Deterministic pane ids so assertions read as layouts, not uuids. */
@@ -190,6 +193,44 @@ assert.notEqual(
     PRIMARY_TERMINAL_PANE_ID,
     "alone, next is a no-op rather than a throw",
   );
+}
+
+// ── Live desk shells are capped, least recently used first (#5795) ─────────
+// Nothing stopped a desk shell on desktop: every session whose drawer opened
+// kept its shell until the app quit.
+{
+  assert.equal(MAX_LIVE_TERMINAL_SESSIONS, 4);
+  let order = [];
+  const evictions = [];
+  for (const id of ["a", "b", "c", "d"]) {
+    const touched = touchTerminalSession(order, id);
+    order = touched.order;
+    evictions.push(...touched.evicted);
+  }
+  assert.deepEqual(order, ["d", "c", "b", "a"], "most recent first");
+  assert.deepEqual(evictions, [], "four sessions fit");
+
+  // Using "a" again saves it; the next new session pushes out "b", the oldest.
+  order = touchTerminalSession(order, "a").order;
+  const fifth = touchTerminalSession(order, "e");
+  assert.deepEqual(fifth.order, ["e", "a", "d", "c"]);
+  assert.deepEqual(fifth.evicted, ["b"], "the least recently used session's shells stop");
+
+  // The session just used is never the one stopped, whatever the cap.
+  const tiny = touchTerminalSession(["x", "y", "z"], "w", 1);
+  assert.deepEqual(tiny.order, ["w"]);
+  assert.deepEqual(tiny.evicted, ["z", "y", "x"], "oldest first");
+  assert.deepEqual(touchTerminalSession(["x"], "x", 0).order, ["x"], "a cap below one still keeps the current session");
+  assert.deepEqual(touchTerminalSession([], "x").evicted, []);
+}
+
+// Every thread a session's desk terminal owns: its rail shell and each split's.
+{
+  const next = idFactory();
+  const fresh = createTerminalLayout();
+  assert.deepEqual(terminalThreadIds("s1", fresh), ["cave.rail.s1"]);
+  const split = splitTerminalPane(fresh, PRIMARY_TERMINAL_PANE_ID, "horizontal", next).layout;
+  assert.deepEqual(terminalThreadIds("s1", split), ["cave.rail.s1", "cave.code.s1.p1"]);
 }
 
 console.log("code-terminal-tree.test.ts ok");

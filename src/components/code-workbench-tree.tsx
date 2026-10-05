@@ -21,6 +21,7 @@ import { ProjectTree, type TreeDecoration } from "@/components/project-tree";
 import type { ChangedFile, FileStatus } from "@/lib/session-changes-api";
 import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { describeHiddenUnicode } from "@/lib/hidden-unicode";
+import { sameCodePath } from "@/lib/code-open-files";
 
 /** Porcelain letters, matching what `git status --short` prints. Shared with
  *  the viewer's open-file tabs (#5705) so both print the same letter. */
@@ -170,7 +171,8 @@ export function CodeWorkbenchTree({
           <ul className="code-tree__changed" aria-label="Changed files">
             {changes.map((file) => {
               const path = absolutePath(base, file.path);
-              const selected = path === selectedPath;
+              // Either spelling of the open file (#5795).
+              const selected = sameCodePath(path, selectedPath);
               return (
                 <li key={file.path}>
                   <button

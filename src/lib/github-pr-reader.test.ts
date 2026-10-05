@@ -9,6 +9,9 @@ const {
   prLandingGates,
   prMergeVerdict,
   prStatBlocks,
+  prStatusAsCheckRun,
+  prCheckRows,
+  prReviewEvidence,
 } = await import("./github-pr-reader.ts");
 
 const run = (over = {}) => ({ id: "1", name: "x", status: "completed", conclusion: "success", ...over });
@@ -136,6 +139,73 @@ assert.equal(
   gatesFor({ reviews: { approved: 0, changesRequested: 0 } }).find((g) => g.id === "review").state,
   "pending",
 );
+
+// ── Commit statuses count, and the rollup holds the gate (#5795) ──────────────
+// The PR tab and this view listed check runs only: a failing Vercel status
+// beside passing runs read "3/3 passed" and "Every gate is clear".
+{
+  const status = (state, context = "vercel") => ({ context, state, description: null, targetUrl: `https://ci/${context}` });
+  assert.deepEqual(prStatusAsCheckRun(status("failure")), {
+    id: "status:vercel", name: "vercel", status: "completed", conclusion: "failure",
+    startedAt: null, completedAt: null, detailsUrl: "https://ci/vercel",
+  });
+  assert.equal(prStatusAsCheckRun(status("error")).conclusion, "failure", "an errored status is a failure, as in the route's rollup");
+  assert.equal(prStatusAsCheckRun(status("success")).conclusion, "success");
+  assert.equal(prStatusAsCheckRun(status("pending")).status, "pending");
+  assert.equal(prStatusAsCheckRun(status("pending")).conclusion, null);
+
+  const rows = prCheckRows([run({ id: "1" }), run({ id: "2" }), run({ id: "3" })], [status("failure")]);
+  assert.equal(rows.length, 4);
+  const counts = summarizePrChecks(rows);
+  assert.deepEqual(counts, { failing: 1, passing: 3, pending: 0, neutral: 0, total: 4 });
+  const gates = gatesFor({ counts, rollup: "failing" });
+  assert.equal(gates.find((g) => g.id === "checks").state, "blocked");
+  assert.match(gates.find((g) => g.id === "checks").detail, /1 failing/);
+  assert.notEqual(prMergeVerdict(gates).reason, "Every gate is clear.");
+
+  // A statuses-only repository shows its statuses, not "No checks reported".
+  const only = summarizePrChecks(prCheckRows([], [status("pending", "ci/jenkins")]));
+  assert.deepEqual(only, { failing: 0, passing: 0, pending: 1, neutral: 0, total: 1 });
+  assert.equal(prChecksHeadline(only), "Checks are still running");
+  assert.equal(prCheckRows(undefined, undefined).length, 0);
+}
+// The route's rollup covers what the list can't show: a status past the first
+// page, or a run page that couldn't be read. The worse answer wins.
+{
+  const passing = summarizePrChecks([run()]);
+  const failingRollup = gatesFor({ counts: passing, rollup: "failing" });
+  assert.equal(failingRollup.find((g) => g.id === "checks").state, "blocked");
+  assert.equal(failingRollup.find((g) => g.id === "checks").detail, "a check is failing");
+  assert.equal(prMergeVerdict(failingRollup).canMerge, false);
+
+  const pendingRollup = gatesFor({ counts: passing, rollup: "pending" });
+  assert.equal(pendingRollup.find((g) => g.id === "checks").state, "pending");
+  assert.equal(pendingRollup.find((g) => g.id === "checks").detail, "not every check has reported");
+
+  // A rollup that passes never clears a run the list shows failing.
+  const listed = gatesFor({ counts: summarizePrChecks([run({ conclusion: "cancelled" })]), rollup: "passing" });
+  assert.equal(listed.find((g) => g.id === "checks").state, "blocked");
+
+  assert.equal(gatesFor({ counts: passing, rollup: "passing" }).find((g) => g.id === "checks").state, "pass");
+  assert.equal(gatesFor({ counts: summarizePrChecks([]), rollup: null }).find((g) => g.id === "checks").state, "unknown");
+}
+
+// ── Review evidence (#5795) ──────────────────────────────────────────────────
+// Threads that couldn't be read, or were cut off, are not "No review threads".
+{
+  assert.deepEqual(prReviewEvidence({ authed: true, reviewEvidenceComplete: true, reviewEvidenceError: null }), { complete: true, error: null });
+  assert.deepEqual(
+    prReviewEvidence({ authed: false, reviewEvidenceComplete: false, reviewEvidenceError: "Review threads require GitHub authentication." }),
+    { complete: false, error: "Review threads require GitHub authentication." },
+  );
+  assert.deepEqual(prReviewEvidence({ authed: true, reviewEvidenceComplete: false, reviewEvidenceError: "  " }), {
+    complete: false,
+    error: "Not every review thread could be read.",
+  });
+  // An answer without the field is complete only when authenticated.
+  assert.equal(prReviewEvidence({ authed: true }).complete, true);
+  assert.equal(prReviewEvidence({ authed: false }).complete, false);
+}
 
 // ── Stat blocks ──────────────────────────────────────────────────────────────
 

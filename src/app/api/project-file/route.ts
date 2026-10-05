@@ -11,6 +11,8 @@ import {
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 import { repositoryLockKey } from "@/lib/server/repository-lock-key";
+import { isEnvFileName } from "@/lib/server/checkpoint-restore";
+import { invalidateChangeSummaries } from "@/lib/server/change-file-versions";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 
@@ -153,8 +155,9 @@ export function projectFileResult(filePath: string | null): ProjectFileResult {
     };
   }
 
-  // Redact .env files
-  if (path.basename(resolved).startsWith(".env")) {
+  // Redact .env files, by any spelling of the name (#5795): `.ENV` opened
+  // the same file on APFS and returned its secrets.
+  if (isEnvFileName(resolved)) {
     return {
       status: 200,
       body: {
@@ -262,8 +265,8 @@ export async function projectFileWrite(
     return { body: { ok: false, error: `extension ${ext} is not editable` }, status: 400 };
   }
   // .env is read-redacted, so saving would clobber real secrets with the
-  // redaction placeholder — refuse.
-  if (path.basename(resolved).startsWith(".env")) {
+  // redaction placeholder — refuse, by any spelling of the name (#5795).
+  if (isEnvFileName(resolved)) {
     return { body: { ok: false, error: ".env files are not editable" }, status: 403 };
   }
 
@@ -288,23 +291,26 @@ export async function projectFileWrite(
 
   // Never write UTF-8 over a file that isn't (#5756), whatever the client
   // thinks: this holds under the lock, so Overwrite can't slip past it.
+  let onDisk: Buffer;
   try {
-    if (!isUtf8RoundTrip(fs.readFileSync(resolved))) return { body: { ok: false, error: NOT_UTF8_ERROR }, status: 422 };
+    onDisk = fs.readFileSync(resolved);
+    if (!isUtf8RoundTrip(onDisk)) return { body: { ok: false, error: NOT_UTF8_ERROR }, status: 422 };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { body: { ok: false, error: message }, status: 500 };
   }
 
+  // Already on disk (#5795): a save that timed out but landed, sent again or
+  // checked by the client, names the version from before it. Refusing it as
+  // a conflict reported the user's own write as someone else's.
+  if (onDisk.equals(Buffer.from(content, "utf-8"))) {
+    return { body: { ok: true, size: byteLength, version: projectFileVersion(onDisk) }, status: 200 };
+  }
+
   // Optimistic concurrency (#5745): checked under the repository mutation
   // lock, so nothing can write between this read and the write below.
   if (typeof expectedVersion === "string") {
-    let current: string;
-    try {
-      current = projectFileVersion(fs.readFileSync(resolved));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { body: { ok: false, error: message }, status: 500 };
-    }
+    const current = projectFileVersion(onDisk);
     if (current !== expectedVersion) {
       return {
         body: { ok: false, error: "file changed on disk", conflict: true, version: current },
@@ -318,6 +324,9 @@ export async function projectFileWrite(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { body: { ok: false, error: message }, status: 500 };
+  } finally {
+    // The desk's change list, kept for polls, predates the save (#5795).
+    invalidateChangeSummaries(resolved);
   }
     return { body: { ok: true, size: byteLength, version: projectFileVersion(content) }, status: 200 };
   });

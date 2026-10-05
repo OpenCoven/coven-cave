@@ -35,6 +35,7 @@ import { openExternalUrl } from "@/lib/open-external";
 import { pullRequestReviewWorkItem } from "@/lib/review-landing";
 import {
   PR_READER_TABS,
+  prCheckRows,
   prChecksHeadline,
   prLandingGates,
   prMergeVerdict,
@@ -89,14 +90,18 @@ function ChecksCard({ repo, number, reviews, mergeable, mergeableState, compact 
     return <ErrorState headline="Couldn’t load checks" subtitle="GitHub did not answer for this pull request." />;
   }
 
-  const counts = summarizePrChecks(state.runs);
-  const gates = prLandingGates({ counts, reviews, mergeable, mergeableState });
+  // Runs and commit statuses together, and the gate from the route's rollup
+  // (#5795): a failing Vercel status beside passing runs read "Every gate is
+  // clear", with the status nowhere on the card.
+  const rows = prCheckRows(state.runs, state.statuses);
+  const counts = summarizePrChecks(rows);
+  const gates = prLandingGates({ counts, rollup: state.rollup, reviews, mergeable, mergeableState });
   const verdict = prMergeVerdict(gates);
-  const failing = state.runs.filter(
+  const failing = rows.filter(
     (run) => run.status === "completed" && run.conclusion !== "success" && run.conclusion !== "skipped" && run.conclusion !== "neutral",
   );
-  const passing = state.runs.filter((run) => run.status === "completed" && run.conclusion === "success");
-  const running = state.runs.filter((run) => run.status !== "completed");
+  const passing = rows.filter((run) => run.status === "completed" && run.conclusion === "success");
+  const running = rows.filter((run) => run.status !== "completed");
 
   return (
     <section className="pr-reader__checks" aria-label="Checks">
@@ -237,9 +242,12 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
 
   const unresolvedThreads =
     threads.phase === "ready" ? threads.threads.filter((thread) => !thread.isResolved).length : 0;
+  // Threads that couldn't all be read get no count and no "No review
+  // threads" (#5795): the list is only what was read.
+  const threadsComplete = threads.phase === "ready" && threads.complete;
 
   const tabCount: Record<PrReaderTab, number | null> = {
-    conversation: threads.phase === "ready" ? threads.threads.length : null,
+    conversation: threadsComplete ? threads.threads.length : null,
     commits: pull?.commits ?? null,
     checks: null,
     files: pull?.changedFiles ?? null,
@@ -376,22 +384,38 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
                 <section className="pr-reader__threads" aria-label="Review threads">
                   <h2 className="pr-reader__section-title">
                     Review threads
-                    {threads.phase === "ready" ? (
+                    {threadsComplete ? (
                       <span className="pr-reader__section-meta">
                         {threads.threads.length} total · {unresolvedThreads} unresolved
                       </span>
                     ) : null}
                   </h2>
+                  {threads.phase === "ready" && !threads.complete ? (
+                    <p className="pr-reader__notice">
+                      {threads.evidenceError}{" "}
+                      <button
+                        type="button"
+                        className="focus-ring pr-reader__external"
+                        onClick={() =>
+                          openExternalUrl(detail.detail.htmlUrl ?? `https://github.com/${repo}/pull/${number}`)
+                        }
+                      >
+                        Open on GitHub
+                      </button>
+                    </p>
+                  ) : null}
                   {threads.phase === "loading" ? (
                     <LoadingRows rows={3} />
                   ) : threads.phase === "error" ? (
                     <ErrorState headline="Couldn’t load review threads" subtitle="GitHub did not answer." />
                   ) : threads.threads.length === 0 ? (
-                    <EmptyState
-                      icon="ph:check-circle"
-                      headline="No review threads"
-                      subtitle="Nobody has left a line comment on this pull request."
-                    />
+                    threads.complete ? (
+                      <EmptyState
+                        icon="ph:check-circle"
+                        headline="No review threads"
+                        subtitle="Nobody has left a line comment on this pull request."
+                      />
+                    ) : null
                   ) : (
                     <ul className="pr-reader__thread-list">
                       {threads.threads.map((thread) => (

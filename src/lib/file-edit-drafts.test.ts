@@ -469,6 +469,134 @@ const B = "/repo/src/b.ts";
     assert.equal(content(storage, left).length, Math.floor(BUDGET / 3), "with its last good copy kept");
     persist.flush();
   }
+
+  // Two windows on one file's draft (#5795): the window whose stored copy the
+  // other overwrote says its edit isn't backed up, and gets it back when the
+  // other's copy goes.
+  {
+    const storage = shared();
+    const a = createFileEditDraftStore();
+    const manual = () => {};
+    const persistA = persistFileEditDrafts(a, storage, manual);
+    a.begin(A, "base\n", "v1");
+    a.update(A, "base\nA1\n");
+    persistA.flush();
+    const b = createFileEditDraftStore();
+    const persistB = persistFileEditDrafts(b, storage, manual);
+    assert.equal(b.get(A).content, "base\nA1\n", "B restores A's copy");
+    a.update(A, "base\nA1\nA2\n");
+    persistA.flush();
+    b.update(A, "base\nA1\nB1\n");
+    persistB.flush();
+    assert.equal(content(storage, A), "base\nA1\nB1\n");
+    persistA.flush(); // A is idle: a storage event or its quit flushes
+    assert.equal(content(storage, A), "base\nA1\nB1\n", "A leaves B's newer copy alone");
+    assert.ok(a.unbackedPaths().has(A), "but A no longer says its edit is backed up");
+    assert.ok(!b.unbackedPaths().has(A), "B's copy is the stored one");
+    b.discard(A); // B cancels, and removes its own copy
+    persistB.flush();
+    persistA.flush();
+    assert.equal(content(storage, A), "base\nA1\nA2\n", "A writes its edit back once the copy is gone");
+    assert.ok(!a.unbackedPaths().has(A));
+  }
+}
+
+// ── A save that landed after its time ran out, then more typing (#5795) ─────
+{
+  // A failed save keeps the text it sent. A re-read that finds the disk
+  // holding that text rebases the draft onto it: no conflict, and what was
+  // typed since stays the edit.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "one\n", "v1");
+    store.update(A, "one\ntwo\n");
+    const save = store.startSave(A);
+    assert.equal(save.unconfirmed, false);
+    store.fail(A, save.id, "Couldn't save: no answer in 60 seconds.", false, null, save.content);
+    assert.equal(store.get(A).unconfirmed, "one\ntwo\n", "the sent text is kept");
+    store.update(A, "one\ntwo\nthree\n");
+    assert.equal(store.noteDiskRead(A, "one\ntwo\n", "v2"), "rebased");
+    const draft = store.get(A);
+    assert.equal(draft.conflict, false, "the user's own write is not a conflict");
+    assert.equal(draft.baseContent, "one\ntwo\n");
+    assert.equal(draft.baseVersion, "v2", "the next save names the disk's version");
+    assert.equal(draft.content, "one\ntwo\nthree\n", "what was typed since is kept");
+    assert.equal(draft.unconfirmed, null);
+    assert.equal(isDraftDirty(draft), true);
+    // A later read of someone else's change is still a conflict.
+    assert.equal(store.noteDiskRead(A, "theirs\n", "v3"), null);
+    assert.equal(store.get(A).conflict, true);
+  }
+
+  // The disk holding the whole edit is a save that landed: the draft is done.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "one", "v1");
+    store.update(A, "one two");
+    assert.equal(store.noteDiskRead(A, "one two", "v2"), "saved");
+    assert.equal(store.get(A), null);
+  }
+
+  // A CRLF file compares in its own line breaks.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "a\r\nb\r\n", "v1");
+    store.update(A, "a\nb\nc\n");
+    const save = store.startSave(A);
+    store.fail(A, save.id, "no answer", false, null, save.content);
+    store.update(A, "a\nb\nc\nd\n");
+    assert.equal(store.noteDiskRead(A, "a\r\nb\r\nc\r\n", "v2"), "rebased");
+    assert.equal(store.get(A).baseContent, "a\nb\nc\n");
+  }
+
+  // Saving again names the old version, and the server's 409 is about the
+  // earlier save's own write: the draft is rebased and the caller saves again.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "one\n", "v1");
+    store.update(A, "one\ntwo\n");
+    const first = store.startSave(A);
+    store.fail(A, first.id, "no answer", false, null, first.content);
+    store.update(A, "one\ntwo\nthree\n");
+    const second = store.startSave(A);
+    assert.equal(second.unconfirmed, true, "the save knows an earlier one is unconfirmed");
+    assert.equal(second.baseVersion, "v1");
+    assert.equal(store.rebaseOnEarlierSave(A, second.id, "someone else's\n", "v9"), false, "another change stays a conflict");
+    assert.equal(store.rebaseOnEarlierSave(A, second.id, "one\ntwo\n", "v2"), true);
+    const draft = store.get(A);
+    assert.equal(draft.saving, false, "free to save again");
+    assert.equal(draft.baseVersion, "v2");
+    assert.equal(draft.content, "one\ntwo\nthree\n");
+    const third = store.startSave(A);
+    assert.equal(third.baseVersion, "v2");
+    assert.equal(third.unconfirmed, false);
+    assert.equal(store.settle(A, third.id, third.content, "v3"), false, "and the save completes the edit");
+  }
+
+  // A conflict refusal never records its text: nothing was written.
+  {
+    const store = createFileEditDraftStore();
+    store.begin(A, "x", "v1");
+    store.update(A, "y");
+    const save = store.startSave(A);
+    store.fail(A, save.id, FILE_CHANGED_ON_DISK, true, "v2", save.content);
+    assert.equal(store.get(A).unconfirmed ?? null, null);
+  }
+}
+
+// ── One file, one draft, whatever its Unicode form (#5795) ─────────────────
+{
+  const nfd = "/repo/src/café.ts";
+  const nfc = "/repo/src/café.ts";
+  const store = createFileEditDraftStore();
+  store.begin(nfd, "x", "v1");
+  store.update(nfc, "x2");
+  assert.equal(store.get(nfc).content, "x2", "the precomposed name finds the decomposed draft");
+  assert.equal(store.begin(nfc, "other", "v9").content, "x2", "and resumes it instead of starting a second");
+  assert.deepEqual([...store.dirtyPaths()], [nfd], "one dirty file, by the name it was opened with");
+  const save = store.startSave(nfc);
+  assert.equal(store.settle(nfd, save.id, save.content, "v2"), false);
+  assert.equal(store.hasDirty(), false);
 }
 
 console.log("file-edit-drafts: ok");

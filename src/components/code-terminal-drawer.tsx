@@ -26,17 +26,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
+import { terminalThreadMounted } from "@/components/bottom-terminal";
 import {
   PRIMARY_TERMINAL_PANE_ID,
   closeTerminalPane,
   countTerminalPanes,
+  createTerminalLayout,
   resolveFocusedPane,
   splitTerminalPane,
   terminalPaneThreadId,
+  terminalThreadIds,
+  touchTerminalSession,
   type TerminalLayoutNode,
   type TerminalSplitDirection,
 } from "@/lib/code-terminal-tree";
 import { markTerminalStarted, readTerminalLayout, terminalStarted, writeTerminalLayout } from "@/lib/code-terminal-layouts";
+import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { stopTerminalThread } from "@/lib/terminal-thread-stop";
 import {
   CODE_TERMINAL_DEFAULT_HEIGHT_PX,
@@ -60,6 +65,103 @@ function safeStorage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+// ── Live desk shells (#5795) ─────────────────────────────────────────────────
+// On desktop nothing stopped a desk shell: every session whose drawer was
+// opened kept its shell, and whatever ran in it, until the app quit. The
+// drawer now keeps the few most recently used sessions' shells and stops the
+// rest. In a browser a detached shell is reaped by the server after five
+// minutes anyway, and the stop below is a no-op there for an unmounted pane.
+
+const LIVE_TERMINALS_KEY = "cave.code.terminal-live";
+/** Sessions whose desk shells this page stopped: coming back to one starts
+ *  no shell until its drawer opens again. */
+const stoppedSessions = new Set<string>();
+let liveOrder: string[] | null = null;
+
+function tabStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Most recent first; kept for reloads, as the shells outlive one on desktop. */
+function liveSessions(): string[] {
+  if (liveOrder) return liveOrder;
+  try {
+    const parsed = JSON.parse(tabStorage()?.getItem(LIVE_TERMINALS_KEY) ?? "[]") as unknown;
+    liveOrder = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    liveOrder = [];
+  }
+  return liveOrder;
+}
+
+function writeLiveSessions(order: string[]): void {
+  liveOrder = order;
+  try {
+    tabStorage()?.setItem(LIVE_TERMINALS_KEY, JSON.stringify(order));
+  } catch {
+    /* blocked storage: the in-memory order still covers this page */
+  }
+}
+
+/** The rail shell's stop, as Chat's rail owner does it. Not stopTerminalThread:
+ *  its mark is for pane ids that are never reused, and `cave.rail.<id>` comes
+ *  back whenever this drawer or Chat's rail opens for the session again. */
+function stopRailShell(threadId: string): void {
+  const internals =
+    typeof window === "undefined" ? undefined : (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  if (internals) {
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("pty_stop", { threadId }))
+      .catch(() => {});
+  }
+  killPtyBridge(threadId);
+}
+
+/**
+ * Stop every shell a session's desk terminal owns: its `cave.rail.<id>` shell
+ * and each split pane's, through the same stop closing a pane uses (#5795).
+ * A shell another terminal on the page shows (Chat's rail) is left to that
+ * owner, unless `evenIfShown`, which archive and delete pass: the session is
+ * gone either way.
+ */
+export function stopDeskTerminals(sessionId: string, { evenIfShown = false }: { evenIfShown?: boolean } = {}): void {
+  const { layout } = readTerminalLayout(sessionId);
+  const primary = terminalPaneThreadId(sessionId, PRIMARY_TERMINAL_PANE_ID);
+  for (const threadId of terminalThreadIds(sessionId, layout)) {
+    if (!evenIfShown && terminalThreadMounted(threadId)) continue;
+    if (threadId === primary) stopRailShell(threadId);
+    else stopTerminalThread(threadId);
+  }
+  // A stopped pane's id never starts again, so the session comes back with one pane.
+  const fresh = createTerminalLayout();
+  writeTerminalLayout(sessionId, { layout: fresh, focusedPaneId: resolveFocusedPane(fresh, null) });
+  stoppedSessions.add(sessionId);
+  writeLiveSessions(liveSessions().filter((id) => id !== sessionId));
+}
+
+/** Stop the desk shells of sessions that were archived (#5795): on desktop
+ *  they ran until the app quit. Only sessions with live desk shells are
+ *  touched, so a poll of the session list costs nothing otherwise. */
+export function stopArchivedDeskTerminals(rows: readonly { id: string; archived_at?: string | null }[]): void {
+  const live = liveSessions();
+  if (live.length === 0) return;
+  const archived = new Set(rows.filter((row) => row.archived_at).map((row) => row.id));
+  for (const id of [...live]) if (archived.has(id)) stopDeskTerminals(id, { evenIfShown: true });
+}
+
+/** The session's desk terminal was used: it becomes the most recent, and the
+ *  sessions past the cap have their shells stopped. */
+function noteTerminalUse(sessionId: string): void {
+  stoppedSessions.delete(sessionId);
+  const { order, evicted } = touchTerminalSession(liveSessions(), sessionId);
+  writeLiveSessions(order);
+  for (const id of evicted) stopDeskTerminals(id);
 }
 
 export type CodeTerminalDrawerProps = {
@@ -99,13 +201,19 @@ export function CodeTerminalDrawer({
   }, [focusedPaneId, layout, sessionId]);
   const [broadcast, setBroadcast] = useState(false);
   // The shell starts the first time the drawer opens for this session, then
-  // keeps running while it is closed (#5756).
-  const [started, setStarted] = useState(() => open || terminalStarted(sessionId));
+  // keeps running while it is closed (#5756), until the cap on live desk
+  // shells stops it (#5795).
+  const [started, setStarted] = useState(
+    () => open || (terminalStarted(sessionId) && !stoppedSessions.has(sessionId)),
+  );
   useEffect(() => {
     if (!open) return;
     markTerminalStarted(sessionId);
     setStarted(true);
   }, [open, sessionId]);
+  useEffect(() => {
+    if (open || started) noteTerminalUse(sessionId);
+  }, [open, sessionId, started]);
   // The region the drawer and the columns share: the body plus the drawer's
   // own height while open. Opening or resizing moves height between the two,
   // so their sum is stable and the 70% ceiling cannot chase itself.

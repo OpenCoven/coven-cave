@@ -717,4 +717,53 @@ const REPO_SCRIPT = {
   }
 }
 
+// ── 15. A branch the desk made is its chat's (#5795) ───────────────────────
+// The desk's commit from main checks out a new `cave/` branch, and the chat's
+// recorded branch stays main until its next turn, so the PR opened from the
+// desk branch was never attributed.
+{
+  const lookupsOf = (byBranch) => {
+    const lookups = [];
+    return { lookups, get: (root, branch) => (lookups.push(branch), byBranch[branch] ?? null) };
+  };
+  const deskPr = { repo: "acme/app", number: 77, url: "https://github.com/acme/app/pull/77", state: "open", branch: "cave/fix-the-widget-mh2x" };
+  const mainPr = { repo: "acme/app", number: 5, url: "https://github.com/acme/app/pull/5", state: "open", branch: "main" };
+  const script = { ...REPO_SCRIPT, "branch --show-current": "cave/fix-the-widget-mh2x" };
+  const row = (id, workBranch, updatedAt) => ({ ...session(id, root), workBranch, updated_at: updatedAt });
+  const root = makeRoot("repo-desk-branch");
+
+  // 15a. The chat most recently active on main gets the desk branch's PR.
+  {
+    const prs = lookupsOf({ "cave/fix-the-widget-mh2x": deskPr, main: mainPr });
+    const rows = await enrichSessionsWithGitContext(
+      [
+        row("desk", "main", "2026-10-04T10:00:00Z"),
+        row("earlier", "main", "2026-10-03T10:00:00Z"),
+        row("feature", "feat/other", "2026-10-04T11:00:00Z"),
+      ],
+      fakeGit(script).runner,
+      prs,
+    );
+    assert.deepEqual(rows[0].pullRequest, { ...deskPr, attribution: "branch" });
+    assert.notEqual(rows[1].pullRequest?.number, 77, "one chat gets it, not every chat that ran on main (cave-9q24)");
+    assert.equal(rows[2].pullRequest, undefined, "a chat on its own branch keeps its own");
+  }
+
+  // 15b. Before the desk branch has a PR, main's own PR isn't the chat's.
+  {
+    const prs = lookupsOf({ main: mainPr });
+    const rows = await enrichSessionsWithGitContext([row("desk", "main", "2026-10-04T10:00:00Z")], fakeGit(script).runner, prs);
+    assert.equal(rows[0].pullRequest, undefined);
+    assert.deepEqual(prs.lookups, ["cave/fix-the-widget-mh2x"], "only the desk branch is looked up");
+  }
+
+  // 15c. A root on main itself, or on another branch, attributes as before.
+  {
+    const prs = lookupsOf({ "feat/thing": deskPr });
+    const rows = await enrichSessionsWithGitContext([row("chat", "main", "2026-10-04T10:00:00Z")], fakeGit(REPO_SCRIPT).runner, prs);
+    assert.equal(rows[0].pullRequest, undefined, "feat/thing isn't a desk branch");
+    assert.deepEqual(prs.lookups, ["main"]);
+  }
+}
+
 console.log("session-git-enrich.test.ts: all assertions passed");

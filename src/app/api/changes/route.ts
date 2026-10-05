@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
-import { stampChangedFiles } from "@/lib/server/change-file-versions";
+import { invalidateChangeSummaries, sharedChangeSummary, stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
@@ -20,7 +20,10 @@ import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 import {
   CHECKPOINT_MAX_UNTRACKED_BYTES,
+  ENV_FILE_DIFF_PLACEHOLDER,
+  isEnvFileName,
   PATCH_DIFF_ARGS,
+  redactEnvFilePatches,
   restoreCheckpointPatch,
   writeCheckpointPatch,
   type CheckpointRestoreOutcome,
@@ -28,6 +31,9 @@ import {
 import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
 import { captureCommitStart, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "@/lib/server/commit-rollback";
 import { prCreateArgs, resolvePrTarget } from "@/lib/github-pr-target";
+import { githubCliSpawnEnvAsync, scrubSidecarInternalEnv } from "@/lib/coven-bin";
+import { assertMobileGitWriteAllowed, projectAccessDeniedBody } from "@/lib/server/project-permission-requests";
+import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +76,17 @@ const DIFF_CAP_CHARS = 200 * 1024;
 
 // ── git helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * The environment git and `gh` run with: the server's own without Cave's
+ * secrets and token keys (#5795), as every other child process gets it.
+ * Repository hooks run under these commands, and a pre-push hook recorded
+ * `COVEN_CAVE_AUTH_TOKEN` and `COVEN_CAVE_ACCESS_TOKEN` from them. `extra`
+ * adds to it, for a commit's private index.
+ */
+function childEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
+  return { ...scrubSidecarInternalEnv({ ...process.env }), ...extra };
+}
+
 /** Run git via execFile (argument array, no shell interpolation). `env`
  *  adds to the server's own, for a commit's private index (#5795). */
 function git(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
@@ -78,7 +95,7 @@ function git(cwd: string, args: string[], env?: Record<string, string>): Promise
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: childEnv(env),
   });
 }
 
@@ -91,7 +108,7 @@ function gitWithInput(cwd: string, args: string[], input: string, env?: Record<s
     cwd,
     timeout: GIT_TIMEOUT_MS * 3,
     maxBuffer: MAX_GIT_BUFFER,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: childEnv(env),
   });
   pending.child.stdin?.end(input);
   return pending;
@@ -120,12 +137,15 @@ function gitLong(cwd: string, args: string[], env?: Record<string, string>): Pro
     cwd,
     timeout: NET_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: childEnv(env),
   });
 }
-/** Run the GitHub CLI (argument array, no shell) for PR creation. */
-function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+/** Run the GitHub CLI (argument array, no shell) for PR creation: found on
+ *  the user's tool PATH (#5795), where the desktop app's own PATH missed a
+ *  Homebrew `gh`, and with the PR lookup's scrubbed environment. */
+async function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  const env = await githubCliSpawnEnvAsync();
+  return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER, env });
 }
 
 const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
@@ -152,12 +172,31 @@ async function worktreeName(repoRoot: string): Promise<string | null> {
   try {
     const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"]);
     const [gitDir, commonDir] = stdout.trim().split("\n");
-    if (!gitDir || !commonDir) return null;
-    if (path.resolve(repoRoot, gitDir) === path.resolve(repoRoot, commonDir)) return null;
-    return path.basename(repoRoot);
+    return worktreeNameOf(repoRoot, gitDir, commonDir);
   } catch {
     return null;
   }
+}
+
+function worktreeNameOf(repoRoot: string, gitDir: string | undefined, commonDir: string | undefined): string | null {
+  if (!gitDir || !commonDir) return null;
+  if (path.resolve(repoRoot, gitDir) === path.resolve(repoRoot, commonDir)) return null;
+  return path.basename(repoRoot);
+}
+
+/** The current branch and linked-worktree name from one process (#5795):
+ *  each summary poll ran a rev-parse for each. Before the first commit
+ *  `--abbrev-ref HEAD` fails the whole call, and the two reads above answer. */
+async function branchAndWorktree(repoRoot: string): Promise<{ branch: string | null; worktree: string | null }> {
+  try {
+    const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir", "--abbrev-ref", "HEAD"]);
+    const [gitDir, commonDir, branch] = stdout.trim().split("\n");
+    if (gitDir && commonDir && branch) return { branch, worktree: worktreeNameOf(repoRoot, gitDir, commonDir) };
+  } catch {
+    /* no commit yet */
+  }
+  const branch = await currentBranch(repoRoot).catch(() => null);
+  return { branch, worktree: await worktreeName(repoRoot) };
 }
 
 /** The repo's default branch: origin/HEAD when known, else main/master, else main. */
@@ -181,7 +220,7 @@ async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
     cwd: repoRoot,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: childEnv({ GIT_TERMINAL_PROMPT: "0" }),
   }).then(({ stdout }) => /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(stdout)?.[1] ?? null, () => null);
   remoteHeadCache.set(key, { branch, at: Date.now() });
   return branch;
@@ -213,6 +252,26 @@ async function refExists(repoRoot: string, ref: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Whether git takes `name` as a branch name (#5795), and it can't be read
+ *  as an option. The desk's stricter allow-list refused `fix/café` and
+ *  `feature/issue#12`, which git took, so Create PR answered "invalid
+ *  expected branch" after every commit on one. `@{-1}` and the like expand to
+ *  another name, so only a name git echoes back unchanged passes. */
+async function isGitBranchName(repoRoot: string, name: string): Promise<boolean> {
+  if (!name || name.startsWith("-")) return false;
+  try {
+    const { stdout } = await git(repoRoot, ["check-ref-format", "--branch", name]);
+    return stdout.replace(/\n$/, "") === name;
+  } catch {
+    return false;
+  }
+}
+
+/** Where `git push origin` sends (#5795); "origin" when it can't be read. */
+async function originPushUrl(repoRoot: string): Promise<string> {
+  return git(repoRoot, ["remote", "get-url", "--push", "origin"]).then(({ stdout }) => stdout.trim() || "origin", () => "origin");
 }
 
 type BranchRow = {
@@ -377,19 +436,36 @@ function withinRepo(repoRoot: string, real: string): boolean {
 
 /** Async containment for the polling loop; filesystem checks share its bound.
  *  The same rule: folders followed, the file itself not (#5781). */
-async function resolveContainedFileMetadata(repoRoot: string, relPath: string): Promise<string | null> {
+async function resolveContainedFileMetadata(
+  repoRoot: string,
+  relPath: string,
+  realpaths?: Map<string, Promise<string>>,
+): Promise<string | null> {
   const resolved = lexicallyContained(repoRoot, relPath);
   if (!resolved) return null;
   let parent = path.dirname(resolved);
   for (;;) {
     try {
-      return withinRepo(repoRoot, await fs.promises.realpath(parent)) ? resolved : null;
+      let real = realpaths?.get(parent);
+      if (!real) {
+        real = fs.promises.realpath(parent);
+        realpaths?.set(parent, real);
+      }
+      return withinRepo(repoRoot, await real) ? resolved : null;
     } catch (error) {
       // Missing paths still receive the helper's stable "missing" stamp.
       if ((error as NodeJS.ErrnoException).code !== "ENOENT" || parent === repoRoot) throw error;
       parent = path.dirname(parent);
     }
   }
+}
+
+/** resolveContainedFileMetadata for one pass over a list (#5795): each
+ *  folder's real path is read once, where every changed file read its own
+ *  folder's again on every poll. */
+function containedMetadata(repoRoot: string): (relPath: string) => Promise<string | null> {
+  const realpaths = new Map<string, Promise<string>>();
+  return (relPath) => resolveContainedFileMetadata(repoRoot, relPath, realpaths);
 }
 
 function pathNotAllowed(): NextResponse {
@@ -439,7 +515,7 @@ async function changedEntry(repoRoot: string, relPath: string): Promise<ChangedF
 async function changeSnapshot(repoRoot: string): Promise<{ files: ChangedFile[]; keys: string[] }> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
-  await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
+  await stampChangedFiles(files, containedMetadata(repoRoot));
   return { files, keys: files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`).sort() };
 }
 
@@ -466,12 +542,18 @@ function expectedChangeKeys(raw: unknown): string[] | null | "invalid" | "too-ma
   return keys.sort();
 }
 
+/** The change list, shared by every caller polling this repository (#5795):
+ *  one read at a time, kept for a moment; every write drops it. */
 async function listChanges(repoRoot: string): Promise<NextResponse> {
+  return NextResponse.json(await sharedChangeSummary(repoRoot, () => readChanges(repoRoot)));
+}
+
+async function readChanges(repoRoot: string) {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
   // A rewrite can keep the same path/status/diffstat. Cheap filesystem stamps
   // let the collapsed Code tab notice it without fetching full diffs on polls.
-  await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
+  await stampChangedFiles(files, containedMetadata(repoRoot));
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.
@@ -491,18 +573,11 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
 
   // Current branch rides along so callers (the Projects hub's Git section)
   // don't need a second git endpoint. Unborn repos have no HEAD — omit.
-  let branch: string | null = null;
-  try {
-    branch = await currentBranch(repoRoot);
-  } catch {
-    /* no HEAD yet */
-  }
-
   // Linked-worktree name rides along too (composer git chip) — null in the
   // primary checkout, the checkout dir's basename in a `git worktree`.
-  const worktree = await worktreeName(repoRoot);
+  const { branch, worktree } = await branchAndWorktree(repoRoot);
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
+  return { ok: true, repo: true, repoRoot, branch, worktree, files };
 }
 
 /** PR context for the current branch (composer git chip): the pull request
@@ -541,6 +616,11 @@ async function branchPr(repoRoot: string): Promise<NextResponse> {
 
 async function diffFile(repoRoot: string, entry: ChangedFile): Promise<NextResponse> {
   const relPath = entry.path;
+  // A .env file's diff showed the secrets project-file redacts (#5795): it
+  // says the file changed, and nothing of what's in it.
+  if ([entry.path, entry.renamedFrom].some((name) => name && isEnvFileName(name))) {
+    return NextResponse.json({ ok: true, diff: `${ENV_FILE_DIFF_PLACEHOLDER}\n`, truncated: false });
+  }
   let diff = "";
   if (entry.status !== "untracked") {
     // Against HEAD so staged edits show up too, or before the first commit
@@ -612,7 +692,8 @@ export async function GET(req: NextRequest) {
       if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
       let patch: string;
       try {
-        patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
+        // Without .env files' contents (#5795); the file keeps them for a restore.
+        patch = redactEnvFilePatches(fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8"));
       } catch {
         return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
       }
@@ -744,26 +825,37 @@ async function restoreCheckpoint(repoRoot: string, abs: string): Promise<Checkpo
 
 // ── POST: revert one file / checkpoint changes ───────────────────────────────
 
+type PostBody = {
+  projectRoot?: string;
+  path?: string;
+  confirmUntracked?: boolean;
+  /** The reverted row's version, as the user reviewed it (#5795). */
+  expectedChangeVersion?: string;
+  action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
+  checkpoint?: string;
+  message?: string;
+  title?: string;
+  prBody?: string;
+  paths?: unknown;
+  expectedChanges?: unknown;
+  expectedBranch?: string;
+  expectedHead?: string;
+  requireDefaultBranch?: boolean;
+  branch?: string;
+  baseRef?: string;
+};
+
 export async function POST(req: NextRequest) {
-  let body: {
-    projectRoot?: string;
-    path?: string;
-    confirmUntracked?: boolean;
-    /** The reverted row's version, as the user reviewed it (#5795). */
-    expectedChangeVersion?: string;
-    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
-    checkpoint?: string;
-    message?: string;
-    title?: string;
-    prBody?: string;
-    paths?: unknown;
-    expectedChanges?: unknown;
-    expectedBranch?: string;
-    expectedHead?: string;
-    requireDefaultBranch?: boolean;
-    branch?: string;
-    baseRef?: string;
-  };
+  // Every action here writes (#5795): from the paired phone only behind the
+  // desktop's opt-in for its file edits. Reading stays open to it.
+  try {
+    await assertMobileGitWriteAllowed(req);
+  } catch (error) {
+    if (!(error instanceof ProjectAccessDeniedError)) throw error;
+    const denied = projectAccessDeniedBody(error);
+    return NextResponse.json(denied.body, { status: denied.status });
+  }
+  let body: PostBody;
   try {
     body = await req.json();
   } catch {
@@ -775,12 +867,20 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const action = body.action ?? "revert";
-
   const root = await resolveRepoRoot(body.projectRoot);
   if (!root.ok) {
     return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
   }
+  try {
+    return await postAction(root, body);
+  } finally {
+    // The change list kept for polls predates this (#5795).
+    invalidateChangeSummaries(root.repoRoot);
+  }
+}
+
+async function postAction(root: { repoRoot: string }, body: PostBody): Promise<NextResponse> {
+  const action = body.action ?? "revert";
   if (action === "checkpoint") {
     try {
       const { path: checkpointPath, skipped } = await checkpointChanges(root.repoRoot);
@@ -936,7 +1036,7 @@ export async function POST(req: NextRequest) {
           // reached the index. Then the index goes back as it was and the
           // commit is refused rather than committing content nobody saw.
           const restamped: ChangedFile[] = verified.files.map((file) => ({ path: file.path, status: file.status }));
-          await stampChangedFiles(restamped, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+          await stampChangedFiles(restamped, containedMetadata(root.repoRoot));
           if (restamped.some((file, index) => file.changeVersion !== verified.files[index].changeVersion)) {
             await rollback();
             return staleCommit();
@@ -1030,7 +1130,7 @@ export async function POST(req: NextRequest) {
     const prBody = typeof body.prBody === "string" ? body.prBody : "";
     const expectedBranch = typeof body.expectedBranch === "string" ? body.expectedBranch.trim() : "";
     const expectedHead = typeof body.expectedHead === "string" ? body.expectedHead.trim() : "";
-    if (expectedBranch && !isSafeBranchName(expectedBranch)) {
+    if (expectedBranch && !(await isGitBranchName(root.repoRoot, expectedBranch))) {
       return NextResponse.json({ ok: false, error: "invalid expected branch" }, { status: 400 });
     }
     if (expectedHead && !/^[0-9a-f]{40}$/i.test(expectedHead)) {
@@ -1066,30 +1166,54 @@ export async function POST(req: NextRequest) {
           );
         }
       }
+      // The pushed commit is read back where the push went (#5795): origin's
+      // push URL, which can differ from the fetch URL `ls-remote origin`
+      // asks. With https to fetch and ssh to push, every pushed branch read
+      // as a failed push, and a lagging fetch mirror as "the remote branch
+      // changed". A push that reported a failure but landed counts as landed.
+      const pushSource = expectedHead || branch;
+      let pushFailure: string | null = null;
       try {
-        const pushSource = expectedHead || branch;
         await gitLong(root.repoRoot, [
           "push",
           "-u",
           "origin",
           exactBranchPushRef(branch, pushSource),
         ]);
-        if (expectedHead) {
-          const { stdout } = await gitLong(root.repoRoot, [
+      } catch (err) {
+        pushFailure = stderrOf(err);
+      }
+      if (expectedHead) {
+        let remoteTip: string;
+        try {
+          ({ stdout: remoteTip } = await gitLong(root.repoRoot, [
             "ls-remote",
             "--heads",
-            "origin",
+            "--end-of-options",
+            await originPushUrl(root.repoRoot),
             `refs/heads/${branch}`,
-          ]);
-          if (!remoteBranchMatchesExpectedHead(stdout, expectedHead)) {
-            return NextResponse.json(
-              { ok: false, error: "the remote branch changed before the pull request could be opened" },
-              { status: 409 },
-            );
-          }
+          ]));
+        } catch (err) {
+          const detail = stderrOf(err);
+          return NextResponse.json(
+            {
+              ok: false,
+              error: pushFailure
+                ? `git push failed: ${pushFailure}`
+                : `the push finished, but reading the branch back from origin failed: ${detail}`,
+            },
+            { status: 502 },
+          );
         }
-      } catch (err) {
-        return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
+        if (!remoteBranchMatchesExpectedHead(remoteTip, expectedHead)) {
+          if (pushFailure) return NextResponse.json({ ok: false, error: `git push failed: ${pushFailure}` }, { status: 502 });
+          return NextResponse.json(
+            { ok: false, error: "the remote branch changed before the pull request could be opened" },
+            { status: 409 },
+          );
+        }
+      } else if (pushFailure) {
+        return NextResponse.json({ ok: false, error: `git push failed: ${pushFailure}` }, { status: 502 });
       }
       // In origin's parent when origin is a fork, from origin's branch, and
       // always named (#5795): left to itself, gh picked the fork, or an
@@ -1100,6 +1224,8 @@ export async function POST(req: NextRequest) {
       try {
         const { stdout } = await ghCli(root.repoRoot, prArgs);
         const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
+        // The lookup cached "no PR" for this branch (#5795), for a minute.
+        branchPrCache.invalidate(root.repoRoot, branch);
         return NextResponse.json({ ok: true, url, branch, base });
       } catch (err) {
         const e = err as NodeJS.ErrnoException & { stderr?: string };
@@ -1109,7 +1235,10 @@ export async function POST(req: NextRequest) {
         const detail = stderrOf(err);
         // gh exits non-zero when a PR already exists; its message includes the URL.
         const existing = detail.match(PR_URL_RE);
-        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base, existed: true });
+        if (existing) {
+          branchPrCache.invalidate(root.repoRoot, branch);
+          return NextResponse.json({ ok: true, url: existing[0], branch, base, existed: true });
+        }
         return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
       }
       } catch (err) {
@@ -1213,7 +1342,7 @@ export async function POST(req: NextRequest) {
   // no checkpoint.
   const stamp = async () => {
     const files: ChangedFile[] = [body.path as string, ...(from ? [from] : [])].map((p) => ({ path: p, status: entry.status }));
-    await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+    await stampChangedFiles(files, containedMetadata(root.repoRoot));
     return files.map((file) => file.changeVersion ?? "").join("\n");
   };
   const changedSinceReview = () =>

@@ -19,6 +19,7 @@
  *    reader never mistakes "we could not tell" for "clear".
  */
 
+import type { CheckSummary } from "./github-checks.ts";
 import { deriveReviewLandingState } from "./review-landing.ts";
 
 /** Reader tabs, in the frame's order. */
@@ -37,6 +38,47 @@ export type PrCheckRun = {
   completedAt?: string | null;
   detailsUrl?: string | null;
 };
+
+/** A legacy commit status, as `/api/github/checks` returns it. */
+export type PrCommitStatus = {
+  context: string;
+  /** GitHub's status state: success, failure, error or pending. */
+  state: string;
+  description?: string | null;
+  targetUrl?: string | null;
+};
+
+/**
+ * A legacy commit status as a check row (#5795). The PR tab and the full view
+ * listed and counted check runs only, so a failing Vercel or Jenkins status
+ * read "3/3 passed" beside a merge gate that said checks were failing, and a
+ * repository reporting only statuses read "0/0 passed". `error` is a failure
+ * here, as it is in the route's rollup.
+ */
+export function prStatusAsCheckRun(status: PrCommitStatus): PrCheckRun & {
+  startedAt: null;
+  completedAt: null;
+  detailsUrl: string | null;
+} {
+  const state = status.state.toLowerCase();
+  return {
+    id: `status:${status.context}`,
+    name: status.context,
+    status: state === "pending" ? "pending" : "completed",
+    conclusion: state === "success" ? "success" : state === "pending" ? null : "failure",
+    startedAt: null,
+    completedAt: null,
+    detailsUrl: status.targetUrl ?? null,
+  };
+}
+
+/** Check runs and commit statuses as one list of rows. */
+export function prCheckRows<Run extends PrCheckRun>(
+  runs: readonly Run[] | null | undefined,
+  statuses: readonly PrCommitStatus[] | null | undefined,
+): (Run | ReturnType<typeof prStatusAsCheckRun>)[] {
+  return [...(runs ?? []), ...(statuses ?? []).map(prStatusAsCheckRun)];
+}
 
 export type PrCheckCounts = {
   failing: number;
@@ -74,6 +116,30 @@ export function summarizePrChecks(runs: readonly PrCheckRun[]): PrCheckCounts {
   return { failing, passing, pending, neutral, total: runs.length };
 }
 
+/**
+ * Whether a comments answer read every review thread and review (#5795).
+ * Without a token, after a GraphQL error, or past the first hundred threads,
+ * the route answers with what it read and says the rest is missing; the PR
+ * tab said "No review threads" or "All threads resolved" over that. An older
+ * answer without the field is complete only when it was authenticated, since
+ * threads need a token.
+ */
+export function prReviewEvidence(data: {
+  authed?: boolean;
+  reviewEvidenceComplete?: boolean;
+  reviewEvidenceError?: string | null;
+}): { complete: boolean; error: string | null } {
+  const complete =
+    typeof data.reviewEvidenceComplete === "boolean" ? data.reviewEvidenceComplete : Boolean(data.authed);
+  return {
+    complete,
+    error: complete
+      ? null
+      : (typeof data.reviewEvidenceError === "string" && data.reviewEvidenceError.trim()) ||
+        "Not every review thread could be read.",
+  };
+}
+
 /** The frame's headline over the donut. */
 export function prChecksHeadline(counts: PrCheckCounts): string {
   if (counts.total === 0) return "No checks reported";
@@ -94,6 +160,11 @@ export type PrLandingGate = {
 
 export type PrGateInput = {
   counts: PrCheckCounts;
+  /** The checks route's rollup over runs AND commit statuses, every page of
+   *  them (#5795). The counts cover only the rows listed, so a status the
+   *  list didn't show, or a run page that couldn't be read, still holds the
+   *  gate. The worse of the two answers wins. */
+  rollup?: CheckSummary;
   /** Review tally from `/api/github/item?pull=1`. */
   reviews?: { approved: number; changesRequested: number } | null;
   /** GitHub's `mergeable` — null while it is still computing the merge commit. */
@@ -110,18 +181,23 @@ export type PrGateInput = {
  * single most dangerous thing on this surface.
  */
 export function prLandingGates(input: PrGateInput): PrLandingGate[] {
-  const { counts, reviews, mergeable, mergeableState } = input;
+  const { counts, rollup, reviews, mergeable, mergeableState } = input;
+  const fromCounts: CheckSummary =
+    counts.total === 0
+      ? null
+      : counts.failing > 0
+        ? "failing"
+        : counts.pending > 0
+          ? "pending"
+          : "passing";
+  const checksSummary: CheckSummary =
+    rollup === undefined
+      ? fromCounts
+      : (["failing", "pending", "passing"] as const).find((summary) => rollup === summary || fromCounts === summary) ?? null;
   const canonical = deriveReviewLandingState({
     state: "open",
     draft: false,
-    checks:
-      counts.total === 0
-        ? null
-        : counts.failing > 0
-          ? "failing"
-          : counts.pending > 0
-            ? "pending"
-            : "passing",
+    checks: checksSummary,
     reviews,
     mergeable,
     mergeableState,
@@ -138,14 +214,15 @@ export function prLandingGates(input: PrGateInput): PrLandingGate[] {
             id: "checks",
             label: "checks",
             state: "blocked",
-            detail: `${counts.failing} failing`,
+            // The rollup can fail on a status the list didn't show.
+            detail: counts.failing > 0 ? `${counts.failing} failing` : "a check is failing",
           }
         : canonical.checks === "pending"
           ? {
               id: "checks",
               label: "checks",
               state: "pending",
-              detail: `${counts.pending} still running`,
+              detail: counts.pending > 0 ? `${counts.pending} still running` : "not every check has reported",
             }
           : { id: "checks", label: "checks", state: "pass", detail: `${counts.passing} passed` };
 

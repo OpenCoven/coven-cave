@@ -18,6 +18,7 @@ const {
   CODE_APP_RESERVED_SHORTCUTS,
   isAppClaimedCombo,
   isCodeReservedCombo,
+  isCodeNavigationCombo,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -238,4 +239,29 @@ console.log("code-shortcuts: ok");
   assert.equal(bindCodeShortcut(moved, "picker", "Mod+\`").picker, "Mod+\`", "its old key is free once it moved");
   assert.equal(mergeCodeKeymap({ terminal: "" }).terminal, defaultCodeKeymap().terminal, "a saved empty binding loads as the default");
   assert.equal(bindCodeShortcut(keymap, "picker", "").picker, "", "ordinary actions can still be unbound");
+}
+
+// ── Navigation keys are never shortcuts on their own (#5795) ────────────────
+{
+  for (const combo of ["Tab", "Shift+Tab", "Enter", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Shift+ArrowDown"]) {
+    assert.equal(isCodeNavigationCombo(combo), true, `${combo} moves around the desk`);
+  }
+  for (const combo of ["Mod+Enter", "Alt+ArrowDown", "Mod+Shift+ArrowUp", "Alt+Tab", "P", "Mod+P", ""]) {
+    assert.equal(isCodeNavigationCombo(combo), false, `${combo || "(unbound)"} is not a bare navigation key`);
+  }
+  // The events capture sees map to those combos.
+  assert.equal(isCodeNavigationCombo(codeComboFromEvent(ev({ key: "Tab" }))), true);
+  assert.equal(isCodeNavigationCombo(codeComboFromEvent(ev({ key: "Tab", shiftKey: true }))), true);
+  assert.equal(isCodeNavigationCombo(codeComboFromEvent(ev({ key: " " }))), true);
+  assert.equal(isCodeNavigationCombo(codeComboFromEvent(ev({ key: "ArrowDown", altKey: true }))), false);
+  // Binding one is refused, and nothing is displaced.
+  const keymap = defaultCodeKeymap();
+  assert.deepEqual(bindCodeShortcut(keymap, "picker", "Tab"), keymap);
+  assert.deepEqual(bindCodeShortcut(keymap, "next-file", "Enter"), keymap);
+  // A keymap saved with one is loaded without it: the shortcut keeps its default.
+  const loaded = mergeCodeKeymap({ ...keymap, picker: "Tab", files: "Space", "next-file": "Alt+ArrowRight" });
+  assert.equal(loaded.picker, "Mod+P", "a stored Tab is ignored");
+  assert.equal(loaded.files, "Mod+Shift+F", "a stored Space is ignored");
+  assert.equal(loaded["next-file"], "Alt+ArrowRight", "a modified arrow is a fine binding");
+  assert.equal(codeShortcutForCombo(loaded, "Tab"), null, "Tab belongs to the page again");
 }

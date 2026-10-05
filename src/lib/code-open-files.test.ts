@@ -6,6 +6,7 @@ import {
   cycleCodeFile,
   emptyCodeOpenFiles,
   openCodeFile,
+  sameCodePath,
   withDraftTabs,
 } from "./code-open-files.ts";
 
@@ -78,4 +79,20 @@ test("unsaved drafts under the session's root get tabs; the active tab stays (#5
   // More drafts than the tab limit (#5760 review): every one keeps a tab.
   const many = Array.from({ length: 15 }, (_, i) => `/r/f${i}.ts`);
   assert.deepEqual(withDraftTabs(emptyCodeOpenFiles(), many, "/r").paths, many);
+});
+
+test("one file is one tab, whichever Unicode form opens it (#5795)", () => {
+  const nfd = "/r/src/cafe\u0301.ts";
+  const nfc = "/r/src/caf\u00e9.ts";
+  assert.equal(sameCodePath(nfd, nfc), true);
+  assert.equal(sameCodePath(nfc, "/r/src/cafe.ts"), false);
+  assert.equal(sameCodePath(null, nfc), false);
+  let state = openCodeFile(emptyCodeOpenFiles(), nfc);
+  state = openCodeFile(state, "/r/README.md");
+  state = openCodeFile(state, nfd);
+  assert.deepEqual(state, { paths: [nfc, "/r/README.md"], active: nfc }, "the tab already open is activated, by its own spelling");
+  const drafts = withDraftTabs(openCodeFile(emptyCodeOpenFiles(), nfc), [nfd], "/r");
+  assert.deepEqual(drafts.paths, [nfc], "a recovered draft under another spelling gets no second tab");
+  const underDecomposedRoot = withDraftTabs(emptyCodeOpenFiles(), ["/r/re\u0301sume\u0301/a.ts"], "/r/r\u00e9sum\u00e9");
+  assert.deepEqual(underDecomposedRoot.paths, ["/r/re\u0301sume\u0301/a.ts"], "a root spelled the other way still holds its drafts");
 });

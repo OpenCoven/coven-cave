@@ -273,6 +273,11 @@
      alone sized the desk to its content and left dead space under the
      composer (#5705). The desk owns its host's full height. */
   height: 100%;
+  /* A host shorter than the desk's chrome plus a usable body scrolls the
+     desk (#5795): at 200% zoom on a laptop the header, steps, terminal bar
+     and composer took all of it, the columns got 0px, and the follow-up
+     field sat under the bottom bar with nothing to scroll. */
+  overflow: hidden auto;
 }
 
 /* ── Header ── */
@@ -380,12 +385,18 @@
   display: flex;
   flex: 1;
   min-width: 0;
-  min-height: 0;
+  /* Never squeezed to nothing (#5795): the tree, the source and the rail
+     keep a readable height, and the desk scrolls instead. */
+  min-height: 12rem;
   /* Columns never paint outside their own box: squeezed by a tall terminal
      drawer, the review rail's content overflowed onto the drawer's pane bar
      and took its clicks (#5718). Each column scrolls inside itself. */
   overflow: hidden;
 }
+/* An open terminal drawer shares the body's height by its own rule, at most
+   70% of the two together; a floor here turned that into a sum that grew as
+   the drawer did. The floor is for the closed drawer's short host. */
+.code-room__body:has(~ .code-term[data-open="true"]) { min-height: 0; }
 .code-room__tree {
   display: flex;
   /* The frame's fixed tree column. A layout constant belongs in the
@@ -399,6 +410,57 @@
 }
 /* Narrow (drill-in) steps each take the whole room. */
 .code-room__body:not([data-split]) > * { flex: 1; width: auto; min-width: 0; }
+/* The no-folder and gone-folder notice, with the unsaved edits a gone folder
+   still holds (#5795): the notice replaces the tree, the tabs and the viewer,
+   so it is the only place they can be copied from. */
+.code-room__root-notice {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+.code-room__gone-drafts { width: min(100%, 32rem); padding: 0 var(--space-4); }
+.code-room__gone-drafts-title {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+.code-room__gone-drafts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.code-room__gone-draft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+.code-room__gone-draft-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Start truncation: the file's own name stays visible. */
+  direction: rtl;
+  text-align: left;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
 .code-room__viewer {
   container: code-viewer / inline-size;
   display: flex;
