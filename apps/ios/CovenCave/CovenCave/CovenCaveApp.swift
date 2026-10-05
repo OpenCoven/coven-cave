@@ -21,17 +21,29 @@ struct CovenCaveApp: App {
     @MainActor
     init() {
         let fixtureEnabled = CavePerformanceFixture.shouldEnable(arguments: ProcessInfo.processInfo.arguments)
-        let fixtureDefaults = fixtureEnabled ? CavePerformanceFixture.makeIsolatedDefaults() : nil
+        #if DEBUG
+        let recovery = NativeActivityRecoveryPreview.configuration
+        let recoveryDefaults = recovery.map { NativeActivityRecoveryPreview.makeDefaults($0) }
+        let recoveryStoreURL = recovery?.threadStoreURL
+        let recoverySession = NativeActivityRecoveryPreview.sessionIfRequested()
+        #else
+        let recoveryDefaults: UserDefaults? = nil
+        let recoveryStoreURL: URL? = nil
+        let recoverySession: URLSession? = nil
+        #endif
+        let isolatedState = fixtureEnabled || recoveryDefaults != nil
+        let fixtureDefaults = fixtureEnabled ? CavePerformanceFixture.makeIsolatedDefaults() : recoveryDefaults
         let defaults = fixtureDefaults ?? .standard
         _appearanceRaw = AppStorage(wrappedValue: AppearanceMode.desktop.rawValue,
                                     AppearanceMode.storageKey, store: defaults)
         let app = AppModel(
             defaults: defaults,
-            restoreLocalState: !fixtureEnabled,
-            loadPersistedConnection: !fixtureEnabled,
+            restoreLocalState: !isolatedState,
+            loadPersistedConnection: !isolatedState,
             isPerformanceFixture: fixtureEnabled,
-            threadStoreURL: fixtureEnabled ? CavePerformanceFixture.threadStoreURL : nil,
-            widgetSnapshotDefaults: fixtureDefaults
+            threadStoreURL: fixtureEnabled ? CavePerformanceFixture.threadStoreURL : recoveryStoreURL,
+            widgetSnapshotDefaults: fixtureDefaults,
+            coreResourceClientFactory: { CaveClient(connection: $0, session: recoverySession) }
         )
         if fixtureEnabled { CavePerformanceFixture.install(in: app) }
         self.performanceFixtureEnabled = fixtureEnabled

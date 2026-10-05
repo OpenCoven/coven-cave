@@ -64,7 +64,7 @@ enum ChatModelInventoryProvenancePresentation {
         case nil: return "Loading inventory…"
         case "live": return "Live inventory"
         case "cached": return "Cached inventory"
-        case "fallback": return "Fallback inventory"
+        case "fallback": return "Inventory unavailable"
         case "runtime-managed": return "Runtime-managed inventory"
         case "unavailable": return "Inventory unavailable"
         default: return "Inventory unavailable"
@@ -76,7 +76,7 @@ enum ChatModelInventoryProvenancePresentation {
         case nil: return "Loading…"
         case "live": return "Live"
         case "cached": return "Cached"
-        case "fallback": return "Fallback"
+        case "fallback": return "Unavailable"
         case "runtime-managed": return "Runtime-managed"
         case "unavailable": return "Unavailable"
         default: return "Unavailable"
@@ -87,9 +87,7 @@ enum ChatModelInventoryProvenancePresentation {
         switch normalized(provenance) {
         case "cached":
             return "Model choices may be out of date."
-        case "fallback":
-            return "Showing built-in model choices."
-        case "unavailable":
+        case "fallback", "unavailable":
             return "Couldn’t refresh model choices."
         default:
             return nil
@@ -113,6 +111,13 @@ struct ChatModelStateResponse: Codable {
     /// Opaque, non-secret server scope distinguishing local, SSH, and explicit
     /// runtime-profile bindings that may share one harness/session.
     var bindingScope: String?
+
+    /// Model menus use the server's supported inventory. Older servers can
+    /// still send built-in fallback options; these are not support evidence.
+    var selectableOptions: [ChatModelOption] {
+        guard let inventory, ["live", "cached"].contains(inventory.provenance) else { return [] }
+        return inventory.models
+    }
 
     var presentationBindingScope: String {
         let scope = bindingScope?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -195,9 +200,9 @@ struct ChatModelBar: View {
     }
 
     private var label: String {
-        guard let model = presentedState?.effectiveModel else { return "Model" }
-        if model.isEmpty { return "Runtime default" }
-        return presentedOptions.first(where: { $0.id == model })?.label ?? shortModel(model)
+        guard let state = presentedState else { return "Model" }
+        let model = state.effectiveModel.isEmpty ? "Runtime default (unresolved)" : state.effectiveModel
+        return "\(state.harness) · \(model)"
     }
 
     var body: some View {
@@ -222,7 +227,7 @@ struct ChatModelBar: View {
             Button { showPicker = true } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "cpu").font(.system(size: 11, weight: .medium))
-                    Text(label).font(.caption.weight(.medium)).lineLimit(1)
+                    Text(label).font(.caption.weight(.medium)).fixedSize(horizontal: false, vertical: true)
                     if busy {
                         ProgressView().controlSize(.mini)
                     } else {
@@ -270,7 +275,7 @@ struct ChatModelBar: View {
             responseBindingScope = resp.presentationBindingScope
             guard requestTarget == responseTarget else { return }
             state = resp.state
-            options = resp.options ?? []
+            options = resp.selectableOptions
             allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? false
             inventoryProvenance = resp.inventory?.provenance ?? "unavailable"
         } catch {
@@ -310,7 +315,7 @@ struct ChatModelBar: View {
                     currentTarget: self.requestTarget
                 ) else { return }
                 self.state = resp.state
-                if let opts = resp.options { self.options = opts }
+                self.options = resp.selectableOptions
                 self.allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? self.allowsRuntimeDefault
                 self.inventoryProvenance = resp.inventory?.provenance ?? self.inventoryProvenance
                 Haptics.tap()
@@ -321,9 +326,6 @@ struct ChatModelBar: View {
         await mutation.value
     }
 
-    private func shortModel(_ id: String) -> String {
-        id.split(separator: "/").last.map(String.init) ?? id
-    }
 }
 
 enum ModelPickerApplication {
@@ -400,11 +402,11 @@ struct ModelPickerSheet: View {
                             }
                         }
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Current model: \(currentOption.label)")
+                        .accessibilityLabel("Selected model: \(currentOption.id)")
                     }
                 } else if allowsRuntimeDefault {
                     Section("Current") {
-                        Label("Runtime default", systemImage: "cpu")
+                        Label("Runtime default (unresolved)", systemImage: "cpu")
                             .font(.body.weight(.semibold))
                             .accessibilityLabel("Current model: Runtime default")
                     }

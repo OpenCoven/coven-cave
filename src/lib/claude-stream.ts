@@ -1,6 +1,9 @@
 import type { RuntimeCompatibilityProfile } from "./runtime-compatibility.ts";
+import { cleanModelId } from "./chat-model-state.ts";
 
 export type ClaudeMessageEvent =
+  | { kind: "reasoning"; id: string; phase: "complete" | "unavailable"; text?: string; unavailableReason?: "provider-withheld" }
+  | { kind: "model"; model: string | null }
   | { kind: "text"; text: string }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; toolUseId: string; content: unknown; isError: boolean };
@@ -63,8 +66,25 @@ export function parseClaudeMessageEnvelope(
 
   const events: ClaudeMessageEvent[] = [];
   if (envelope.type === profile.eventTypes.assistant) {
-    for (const value of content) {
+    // Missing reports preserve the prior observation; explicit invalid reports
+    // must reach the identity reducer so they cannot retain stale confirmation.
+    if (message?.model !== undefined) {
+      events.push({ kind: "model", model: cleanModelId(message.model) });
+    }
+    for (const [index, value] of content.entries()) {
       const block = record(value);
+      if (block?.type === "thinking" || block?.type === "redacted_thinking") {
+        // The accepted profiles describe tool envelopes, not the thinking
+        // display mode. The same native field can carry a summary, progress
+        // update, or omitted content. Model names cannot establish which one.
+        // Keep metadata until an accepted producer contract distinguishes it;
+        // signatures/encrypted continuation state never enter this projection.
+        const id = typeof message?.id === "string" ? `${message.id}:${index}` : null;
+        if (id) events.push({ kind: "reasoning", id,
+          phase: "unavailable",
+          ...(block.type === "redacted_thinking" ? { unavailableReason: "provider-withheld" as const } : {}) });
+        continue;
+      }
       if (!block) continue;
       if (block.type === "text" && typeof block.text === "string" && block.text) {
         events.push({ kind: "text", text: block.text });
@@ -148,6 +168,8 @@ export function hasUnsupportedClaudeToolFrame(
       const block = record(value);
       if (!block) return true;
       if (block.type === "text") return typeof block.text !== "string";
+      if (block.type === "thinking") return typeof block.thinking !== "string";
+      if (block.type === "redacted_thinking") return false;
       if (block.type !== profile.eventTypes.toolUse) return true;
       return typeof block.id !== "string" ||
         !block.id ||

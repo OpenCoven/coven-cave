@@ -391,3 +391,46 @@ assert.deepEqual(
   "a signed schema can read a root tool ID while retaining a nested payload envelope",
 );
 console.log("opencode-stream.test.ts: ok");
+
+for (const status of ["pending", "running"]) {
+  const event = parseOpenCodeRunEvent({
+    type: "tool_use", sessionID: "ses_123", part: {
+      type: "tool", id: "request-to-execution", tool: "bash", state: { input: { command: "pwd" }, status },
+    },
+  }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]);
+  assert.equal(event.kind, "tool_start");
+  assert.equal(event.executionObserved === false, status === "pending", "a pending tool snapshot is not execution evidence");
+  const withPreview = parseOpenCodeRunEvent({
+    type: "tool_use", sessionID: "ses_123", part: {
+      type: "tool", id: "request-to-execution", tool: "bash", state: {
+        input: { command: "pwd" }, status, output: "incomplete preview", error: "not a terminal error",
+      },
+    },
+  }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]);
+  assert.deepEqual(withPreview, event, "an explicit nonterminal status cannot become a result merely because output/error text exists");
+}
+
+for (const status of ["future-state", "", null, 17, [], ["completed"], {}]) {
+  const malformed = typeof status !== "string";
+  const frame = { type: "tool_use", sessionID: "untrusted-session", part: {
+    type: "tool", id: "future-tool", tool: "bash", state: { status, output: "private preview" },
+  } };
+  assert.deepEqual(parseOpenCodeRunEvent(frame, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]),
+    { kind: "other", sessionId: "untrusted-session", diagnostic: malformed ? "malformed-event" : "unknown-event" });
+  const outcomes: unknown[] = [];
+  const sessions: string[] = [];
+  handleOpenCodeJsonLine(JSON.stringify(frame), BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], {
+    onSession: (id) => sessions.push(id), onTool: (event) => outcomes.push(event),
+    onToolStart: (event) => outcomes.push(event), onToolEnd: (event) => outcomes.push(event),
+  });
+  assert.deepEqual(outcomes, [], "an undeclared/malformed status supplies no execution or outcome evidence");
+  assert.deepEqual(sessions, [], "the rejected frame cannot change the native continuation token");
+}
+
+assert.deepEqual(parseOpenCodeRunEvent({
+  type: "tool_output", sessionId: "ses_legacy", data: {
+    type: "tool", toolCallId: "legacy_1", state: { status: "running", output: "partial" },
+  },
+}, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1]),
+{ kind: "other", sessionId: "ses_legacy", diagnostic: "malformed-event" },
+"an end-frame label cannot override its explicitly nonterminal state");

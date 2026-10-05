@@ -308,3 +308,20 @@ test("failure preserves passed rows, trusted failures, and downgrades unrelated 
     { id: "build", label: "Production build failed", state: "failed", source: "verified-event" },
   ]);
 });
+
+test("requested and unknown tools never become execution results", () => {
+const uncertainTools = createStreamingTurnViewModel({
+  turnId: "uncertain-tools", visibleText: "", pending: true,
+  tools: [
+    { id: "requested", name: "Bash", status: "requested" },
+    { id: "unknown", name: "Read", status: "unknown" },
+    { id: "rejected", name: "Bash", status: "rejected", input: '{"command":"pnpm test"}' },
+  ],
+});
+assert.equal(uncertainTools.activity[0]?.label, "Tool call requested");
+assert.equal(uncertainTools.activity[1]?.label, "Tool outcome unknown");
+assert.equal(uncertainTools.activity[1]?.state, "notice");
+assert.equal(uncertainTools.activity[2]?.label, "Tool request rejected");
+assert.equal(uncertainTools.activity[2]?.state, "notice");
+assert.deepEqual(uncertainTools.results, []);
+});

@@ -11,6 +11,11 @@ assert.match(source, /const recoveryText = useMemo/, "raw context is isolated fo
 assert.match(source, /const detailText = useMemo[\s\S]{0,700}Chat request did not complete/, "copied detail uses a fixed safe summary");
 assert.match(source, /onClick=\{\(\) => copy\(detailText\)\}/, "copy only receives the safe detail summary");
 assert.match(source, /parseHarnessFailure\(recoveryText\)/, "recovery can classify raw failures without rendering them");
+assert.match(source, /harnessId=\{authRecoveryHarness\(debugError\?\.harness, session\?\.harness, familiar\.harness\)\}/, "a failed send uses the server-selected harness before the familiar default");
+assert.match(source, /raiseDebugError\(\{ turnId: assistantId, code: ev\.code, harness: ev\.harness \}\)/, "auth error keeps the selected harness with its failure");
+assert.match(source, /authFamiliarId=\{familiar\.id\}/, "key recovery targets the failing familiar");
+assert.match(source, /<HarnessAuthVaultButton familiarId=\{authFamiliarId\}/, "key recovery keeps the mounted Chat retry request");
+assert.doesNotMatch(source, /openFamiliarStudioSettingsTab/, "auth recovery must not hard-navigate away from Chat");
 assert.match(source, /input and output are withheld to protect project data/, "tool I/O is explicitly withheld in the UI");
 assert.match(source, /detail is withheld to protect project data/, "step detail is explicitly withheld in the UI");
 assert.match(

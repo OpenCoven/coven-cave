@@ -4,6 +4,8 @@ import {
   listHermesModelInventory,
   listHermesModels,
 } from "./hermes-models.ts";
+import { listRuntimeModelInventory } from "./runtime-model-options.ts";
+import { runtimeModelIdForLaunch } from "../runtime-models.ts";
 
 let apiKey = "secret-token";
 const scopedEnv = () => ({
@@ -207,5 +209,41 @@ assert.deepEqual(
   [],
   "a hung model endpoint is bounded by the resolver timeout",
 );
+
+// Hermes /v1/models exposes a route alias as id and its configured model as
+// root. The alias must remain the launch value, but cannot hide an old release.
+clearHermesModelCache();
+const aliased = await listHermesModelInventory("aliased", {
+  scopedEnv,
+  fetchImpl: (async () => new Response(JSON.stringify({ data: [
+    { id: "hermes-agent", root: "hermes-agent" },
+    { id: "old-fast", root: "openai/gpt-5.6-sol", parent: "hermes-agent" },
+    { id: "current-fast", root: "openai/gpt-6.1-sol", parent: "hermes-agent" },
+    { id: "gpt-99-sol", root: "openai/gpt-5.6-sol", parent: "hermes-agent" },
+    { id: "sonnet", root: "anthropic/claude-sonnet-5", parent: "hermes-agent" },
+    { id: "custom", root: "private/custom-deployment", parent: "hermes-agent" },
+    { id: "bad-root", root: "unsafe\nmodel", parent: "hermes-agent" },
+    { id: "object-root", root: { model: "openai/gpt-6.1-sol" } },
+  ] }))) as typeof fetch,
+});
+const aliasedMenu = await listRuntimeModelInventory("hermes", "aliased", {
+  allowHermesInventory: true,
+  listHermesInventory: async () => aliased,
+});
+assert.deepEqual(aliasedMenu.models.map(({ id }) => id), [
+  "hermes-agent", "current-fast", "sonnet", "custom", "bad-root", "object-root",
+], "known backing models drive the family policy, not arbitrary alias spelling");
+assert.deepEqual(aliasedMenu.models.find(({ id }) => id === "current-fast"), {
+  id: "current-fast", label: "current-fast (configured: openai/gpt-6.1-sol)",
+  configuredModelId: "openai/gpt-6.1-sol",
+});
+assert.deepEqual(aliasedMenu.models.find(({ id }) => id === "hermes-agent"), {
+  id: "hermes-agent", label: "hermes-agent",
+}, "the default model name does not fabricate a backing model");
+assert.deepEqual(aliasedMenu.models.find(({ id }) => id === "bad-root"), {
+  id: "bad-root", label: "bad-root",
+}, "malformed root metadata is not displayed or used for filtering");
+assert.equal(runtimeModelIdForLaunch("hermes", aliasedMenu.models[1]!.id), "current-fast",
+  "launch uses the discovered alias rather than replacing it with a configured model");
 
 console.log("server/hermes-models.test.ts: ok");

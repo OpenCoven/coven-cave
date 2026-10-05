@@ -63,6 +63,16 @@ function baseReply(overrides: Partial<GroupReply> = {}): GroupReply {
   };
 }
 
+test("tool requests are visible and counted once across execution and replay", () => {
+  let reply = applyGroupEvent(baseReply(), { kind: "tool_use", id: "one", name: "read", status: "requested" });
+  assert.equal(reply.activity, "read · Requested");
+  for (const status of ["requested", "running", "unknown"] as const) {
+    reply = applyGroupEvent(reply, { kind: "tool_use", id: "one", name: "read", status });
+  }
+  assert.deepEqual(reply.toolCalls, ["read"]);
+  assert.equal(reply.activity, "read · Outcome unknown");
+});
+
 test("applyGroupEvent: session captures the session id", () => {
   const next = applyGroupEvent(baseReply(), { kind: "session", sessionId: "sess-1" });
   assert.equal(next.sessionId, "sess-1");

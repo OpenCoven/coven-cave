@@ -9,9 +9,11 @@ import {
   CodexJsonlDecoder,
   CodexSchemaCache,
   codexProbeEnv,
+  codexSchemaSupportsReasoning,
   codexProbeTimeoutMs,
   discoverCodexRuntime,
   codexSchemaSignatureVerifierFromEnv,
+  isValidCodexSchema,
   parseCodexVersionOutput,
   parseCodexStreamEvent,
   productionCodexSchemaSources,
@@ -24,6 +26,7 @@ import {
   validateCodexSchemaDocument,
   writeCodexSchemaCache,
 } from "./codex-compatibility.ts";
+import { ToolCallTracker, LIVE_TOOL_OUTPUT_CAP } from "./chat-tool-events.ts";
 import { codexLaunchCommand } from "./codex-bin.ts";
 
 const current = { version: "0.145.0", capabilities: { jsonEvents: true, resume: true } };
@@ -91,8 +94,11 @@ assert.equal(exitTwo?.kind === "tool_end" && exitTwo.isError, true, "all nonzero
 const exitCamel = parseCodexStreamEvent({ type: "item.completed", item: { id: "call-a", type: "command_execution", exitCode: 127 } }, selected.schema);
 assert.equal(exitCamel?.kind === "tool_end" && exitCamel.isError, true, "camel-case nonzero exit codes settle as errors");
 const declined = parseCodexStreamEvent({ type: "item.completed", item: { id: "call-a", type: "command_execution", status: "declined" } }, selected.schema);
-assert.equal(declined?.kind === "tool_end" && declined.isError, true, "declined Codex commands settle as failed activity even without an exit code");
-for (const controlType of ["reasoning", "todo_list", "error"]) {
+assert.equal(declined?.kind === "tool_end" && declined.outcome, "rejected", "a native declined command is a rejected request, not an execution failure");
+assert.equal(declined?.kind === "tool_end" && declined.isError, false);
+assert.equal(parseCodexStreamEvent({ type: "item.completed", item: { id: "future", type: "mcp_tool_call", status: "declined" } }, selected.schema)?.kind, "unknown", "declined is documented for commands only");
+assert.equal(parseCodexStreamEvent({ type: "item.completed", item: { id: "future", type: "command_execution", status: "cancelled" } }, selected.schema)?.kind, "unknown", "an unrecognized native status cannot establish cancellation or success");
+for (const controlType of ["todo_list", "error"]) {
   assert.deepEqual(
     parseCodexStreamEvent({ type: "item.completed", item: { id: `control-${controlType}`, type: controlType } }, selected.schema),
     { kind: "ignored" },
@@ -135,8 +141,11 @@ assert.deepEqual(
   "collaboration lifecycle bubbles retain the actual tool and prompt",
 );
 const hugeOutput = parseCodexStreamEvent({ type: "item.completed", item: { id: "large-a", type: "command_execution", aggregated_output: "x".repeat(20_000) } }, selected.schema);
-assert.equal(hugeOutput?.kind === "tool_end" && hugeOutput.output?.includes("[output truncated]"), true, "tool display output is bounded before live SSE emission");
-assert.equal(hugeOutput?.kind === "tool_end" && hugeOutput.output!.length <= 16_405, true, "bounded tool output has a stable live size limit");
+assert.ok(hugeOutput?.kind === "tool_end");
+const boundedTracker = new ToolCallTracker();
+boundedTracker.envelopeToolUse("bounded", "shell");
+assert.ok(Buffer.byteLength(boundedTracker.envelopeToolResult("bounded", hugeOutput.output, hugeOutput.isError)?.output ?? "") <= LIVE_TOOL_OUTPUT_CAP, "tool display output is bounded after projection, before live SSE emission");
+assert.equal(hugeOutput.output?.length, 20_000, "the complete value reaches the classifier before capping");
 assert.equal(parseCodexStreamEvent({ type: "item.started", item: { id: "", type: "command_execution" } }, selected.schema)?.kind, "unknown", "empty native tool ids cannot merge distinct tool bubbles");
 const unknown = parseCodexStreamEvent({ type: "item.new_shape", item: { id: "secret-id", type: "unknown", prompt: "never log this" } }, selected.schema);
 assert.equal(unknown?.kind, "unknown");
@@ -145,6 +154,21 @@ const unknownTool = parseCodexStreamEvent({ type: "item.completed", item: { id: 
 assert.equal(unknownTool?.kind, "unknown", "known outer events with an unknown tool type fail closed too");
 assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never render" }, selected.schema), { kind: "failure" }, "terminal turn failures retain no payload");
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "error", message: "Not logged in. Run codex login. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL" }, selected.schema),
+  { kind: "failure", authKind: "login" },
+  "top-level auth errors retain only a verdict",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", error: { message: "Invalid API key: secret" } }, selected.schema),
+  { kind: "failure", authKind: "configuration" },
+  "nested turn failures distinguish key configuration without exposing text",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", message: "turn failed", error: { message: "Invalid API key: secret" } }, selected.schema),
+  { kind: "failure", authKind: "configuration" },
+  "a generic outer message cannot hide the nested credential verdict",
+);
 assert.deepEqual(
   parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } }, selected.schema),
   { kind: "usage", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } },
@@ -289,6 +313,47 @@ const unsignedPayload = {
   provenance: { registry: "OpenCoven/coven-runtimes" as const, revision: "abc", sequence: 1, fetchedAt: "2026-07-24T00:00:00.000Z", expiresAt: "2026-07-25T00:00:00.000Z" },
   schemas: CODEX_BOOTSTRAP_SCHEMAS,
 };
+
+// Recorded from the installed 0.160.0 binary with a controlled read-only
+// command. This proposal is parser qualification, not registry admission.
+const proposed160 = JSON.parse(await readFile(new URL("./fixtures/codex/0.160.0-schema-proposal.json", import.meta.url), "utf8"));
+assert.ok(isValidCodexSchema(proposed160), "the proposal has a valid data-only schema shape");
+const report160 = { version: "0.160.0", capabilities: { jsonEvents: true, resume: true } };
+assert.equal(resolveCodexSchema(report160).ok, false, "a local proposal cannot activate a new runtime version");
+const selected160 = resolveCodexSchema(report160, [{ source: "registry", schemas: [proposed160] }]);
+assert.ok(selected160.ok, "the explicitly supplied proposal covers 0.160.0");
+if (!selected160.ok) throw new Error("unreachable");
+for (const version of ["0.159.0", "0.161.0", "0.160.0-beta.1"]) {
+  assert.equal(resolveCodexSchema({ ...report160, version }, [{ source: "registry", schemas: [proposed160] }]).ok, false, `${version} remains outside the qualified proposal`);
+}
+const recorded160 = await readFile(new URL("./fixtures/codex/0.160.0-tool-lifecycle.jsonl", import.meta.url), "utf8");
+const decoder160 = new CodexJsonlDecoder({ trustThreadPreamble: true });
+const events160 = [];
+for (let offset = 0; offset < recorded160.length; offset += 7) {
+  const decoded = decoder160.push(recorded160.slice(offset, offset + 7), selected160.schema);
+  assert.equal(decoded.passthrough, "", "native JSONL never becomes plain assistant text");
+  events160.push(...decoded.events);
+}
+assert.equal(events160.length, 8);
+assert.equal(events160.some((event) => event.kind === "unknown"), false);
+const start160 = events160.find((event) => event.kind === "tool_start");
+const end160 = events160.find((event) => event.kind === "tool_end");
+assert.ok(start160?.kind === "tool_start" && end160?.kind === "tool_end");
+assert.equal(start160.id, end160.id);
+assert.equal(start160.name, "Bash");
+assert.equal(end160.isError, false);
+assert.equal(end160.output, "CAVE_ACTIVITY_CANARY\n");
+assert.ok(events160.some((event) => event.kind === "text" && event.text.trim() === "CAVE_ACTIVITY_CANARY"));
+assert.equal(events160.filter((event) => event.kind === "ignored").length, 3, "two nonfatal diagnostic items and turn.started do not fabricate tool failures");
+assert.equal(codexSchemaSupportsReasoning(proposed160), true, "the pinned Rust and SDK contracts designate reasoning.text as a summary");
+// Synthetic contract case: this summary was not present in the recorded turn.
+assert.deepEqual(parseCodexStreamEvent({ type: "item.completed", item: { id: "summary-160", type: "reasoning", text: "Contract summary", signature: "OPAQUE_STATE" } }, proposed160), {
+  kind: "reasoning", id: "summary-160", phase: "complete", text: "Contract summary",
+});
+const proposalDocument = { ...unsignedPayload, schemas: [proposed160] };
+assert.equal(codexSchemaSignatureVerifierFromEnv()({
+  ...proposalDocument, contentHash: schemaContentHash(proposalDocument), signature: { keyId: "unsigned-proposal", value: "" },
+}), false, "valid proposal bytes still require a canonical registry signature");
 const document = { ...unsignedPayload, contentHash: schemaContentHash(unsignedPayload), signature: { keyId: "test", value: "verified-by-host" } };
 assert.equal(codexSchemaSignatureVerifierFromEnv()(document), false, "the default verifier rejects an untrusted signature");
 assert.equal(validateCodexSchemaDocument(document, new Date("2026-07-24T12:00:00.000Z")).ok, true);
@@ -527,3 +592,24 @@ try {
 }
 
 console.log("codex-compatibility: ok");
+
+for (const type of ["item.started", "item.updated", "item.completed"]) {
+  const event = parseCodexStreamEvent({ type, item: { id: "summary-1", type: "reasoning", text: "Provider summary", encrypted_content: "opaque" } }, selected.schema);
+  assert.deepEqual(event, { kind: "reasoning", id: "summary-1", phase: type === "item.completed" ? "complete" : "running", ...(type === "item.completed" ? { text: "Provider summary" } : {}) });
+}
+assert.deepEqual(parseCodexStreamEvent({ type: "item.completed", item: { id: "summary-1", type: "reasoning", text: "not admitted" } }, { ...selected.schema, id: "unknown-profile" }), { kind: "reasoning", id: "summary-1", phase: "unavailable" });
+
+const projectedMcp = parseCodexStreamEvent({ type: "item.completed", item: { id: "projected-mcp", type: "mcp_tool_call", result: {
+  _meta: "PRIVATE_META_SENTINEL", unknown: "UNKNOWN_SENTINEL",
+  content: [{ type: "text", text: "Safe MCP result", private: "PRIVATE_BLOCK_SENTINEL" }, { type: "reasoning", text: "OPAQUE_SENTINEL" }],
+} } }, selected.schema);
+assert.equal(projectedMcp?.kind === "tool_end" && projectedMcp.output, '{"content":[{"type":"text","text":"Safe MCP result"}]}');
+const fullBeforeProjection = parseCodexStreamEvent({ type: "item.completed", item: { id: "full-before-projection", type: "command_execution", aggregated_output: `https://example.com/${"path/".repeat(4000)}?sig=SIGNED_SENTINEL` } }, selected.schema);
+assert.ok(fullBeforeProjection?.kind === "tool_end" && fullBeforeProjection.output?.endsWith("?sig=SIGNED_SENTINEL"), "adapters must not cut off the disclosure classifier's suffix before projection");
+
+if (fullBeforeProjection?.kind === "tool_end") {
+  const disclosureTracker = new ToolCallTracker();
+  disclosureTracker.envelopeToolUse(fullBeforeProjection.id, fullBeforeProjection.name);
+  const safe = disclosureTracker.envelopeToolResult(fullBeforeProjection.id, fullBeforeProjection.output, fullBeforeProjection.isError);
+  assert.equal(safe?.output, "[redacted signed URL]", "a signing parameter beyond the old preview cap still withholds the entire URL");
+}

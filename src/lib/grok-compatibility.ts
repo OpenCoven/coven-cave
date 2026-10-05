@@ -14,12 +14,25 @@ import { covenHomePath } from "./coven-home.ts";
 export type GrokRunCapabilities = {
   version: string | null;
   streamingJson: boolean;
+  /** ACP output requires an exact-version schema, including text-only decoding. */
+  nativeAcp?: true;
   options: string[];
   valueOptions: string[];
 };
 
+const optionDeclaration = /^([ \t]*)(?:-[A-Za-z],?[ \t]+)?(--[a-z][a-z0-9-]*)(?=[ \t=<]|$)/i;
+
 function optionStanza(help: string, option: string): string {
-  return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
+  const lines = help.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.match(optionDeclaration)?.[2] === option);
+  if (start < 0) return "";
+  const indent = lines[start].match(optionDeclaration)![1].length;
+  let end = start + 1;
+  for (; end < lines.length; end++) {
+    const line = lines[end];
+    if (optionDeclaration.test(line) || (line.trim() && line.search(/\S/) <= indent)) break;
+  }
+  return lines.slice(start, end).join("\n");
 }
 
 function optionTakesValue(help: string, option: string): boolean {
@@ -31,7 +44,10 @@ function optionTakesValue(help: string, option: string): boolean {
 }
 
 export function grokRunCapabilitiesFromHelp(help: string, version: string | null = null): GrokRunCapabilities {
-  const options = [...help.matchAll(/^\s*(--[a-z][a-z0-9-]*)\b/gim)].map((match) => match[1]);
+  const options = help.split(/\r?\n/).flatMap((line) => {
+    const option = line.match(optionDeclaration)?.[2];
+    return option ? [option] : [];
+  });
   const unique = [...new Set(options)];
   const valueOptions = unique.filter((option) => optionTakesValue(help, option));
   return {
@@ -41,6 +57,7 @@ export function grokRunCapabilitiesFromHelp(help: string, version: string | null
     streamingJson: unique.includes("--output-format")
       && valueOptions.includes("--output-format")
       && /\bstreaming-json\b/i.test(optionStanza(help, "--output-format")),
+    ...(/\bACP\b/i.test(optionStanza(help, "--output-format")) ? { nativeAcp: true as const } : {}),
     options: unique,
     valueOptions,
   };
@@ -133,6 +150,8 @@ export type GrokEventSchema = {
     toolProgress?: string[];
     toolEnd: string[];
     toolComplete: string[];
+    /** ACP status-tagged calls/updates; pending is a request, never execution. */
+    toolLifecycle?: string[];
   };
   fields: {
     type: string[];
@@ -186,6 +205,7 @@ export type GrokParsedEvent =
   | { kind: "text"; text: string }
   | { kind: "end"; sessionId?: string; usage?: unknown; totalCostUsd?: unknown }
   | { kind: "error"; message: string; usage?: unknown; totalCostUsd?: unknown }
+  | { kind: "tool_request"; id: string; name: string; input: unknown }
   | { kind: "tool_start"; id: string; name: string; input: unknown }
   | { kind: "tool_progress"; id: string; output: unknown }
   | { kind: "tool_end"; id: string; output: unknown; isError: boolean }
@@ -277,6 +297,23 @@ export function parseGrokCompatibilityEvent(raw: unknown, schema?: GrokEventSche
     || errorValue === true
     || (typeof errorValue === "string" && errorValue.length > 0)
     || (isRecord(errorValue) && Object.keys(errorValue).length > 0);
+  if ((schema.eventTypes.toolLifecycle ?? []).includes(type)) {
+    const state = stringField(raw, fields.state);
+    const name = stringField(raw, fields.name);
+    // ACP location/content-only updates omit status. They provide no evidence
+    // of execution and must not move a pending call to running.
+    if (state === undefined) return name === undefined ? { kind: "ignore" } : { kind: "unknown" };
+    if (state === "pending") return name
+      ? { kind: "tool_request", id, name, input: valueField(raw, fields.input) }
+      : { kind: "ignore" };
+    if (state === "in_progress") return name
+      ? { kind: "tool_start", id, name, input: valueField(raw, fields.input) }
+      : { kind: "tool_progress", id, output: valueField(raw, fields.output) };
+    if (!fields.terminalStates.includes(state)) return { kind: "unknown" };
+    return name
+      ? { kind: "tool_complete", id, name, input: valueField(raw, fields.input), output: valueField(raw, fields.output), isError }
+      : { kind: "tool_end", id, output: valueField(raw, fields.output), isError };
+  }
   if (schema.eventTypes.toolEnd.includes(type)) return { kind: "tool_end", id, output: valueField(raw, fields.output), isError };
   if (schema.eventTypes.toolComplete.includes(type)) {
     const name = stringField(raw, fields.name);
@@ -304,8 +341,8 @@ function validName(value: unknown): value is string {
   return typeof value === "string" && /^[a-z][a-z0-9_-]{0,95}$/i.test(value);
 }
 
-function validAliases(value: unknown, allowEmpty = false): value is string[] {
-  return Array.isArray(value) && (allowEmpty || value.length > 0) && value.length <= 8 && value.every(validName) && new Set(value).size === value.length;
+function validAliases(value: unknown, allowEmpty = false, maxItems = 8): value is string[] {
+  return Array.isArray(value) && (allowEmpty || value.length > 0) && value.length <= maxItems && value.every(validName) && new Set(value).size === value.length;
 }
 
 function validOptions(value: unknown): value is string[] {
@@ -331,7 +368,7 @@ function validSchema(value: unknown): value is GrokEventSchema {
   if (!isRecord(value) || !validName(value.id) || !isRecord(value.requires) || value.requires.streamingJson !== true || !isRecord(value.eventTypes) || !isRecord(value.fields) || !isRecord(value.launch)) return false;
   if (!Object.keys(value).every((key) => ["id", "priority", "requires", "eventTypes", "fields", "launch"].includes(key))) return false;
   if (!Object.keys(value.requires).every((key) => key === "streamingJson" || key === "options" || key === "versions")) return false;
-  if (!Object.keys(value.eventTypes).every((key) => ["ignored", "text", "end", "error", "toolStart", "toolProgress", "toolEnd", "toolComplete"].includes(key))) return false;
+  if (!Object.keys(value.eventTypes).every((key) => ["ignored", "text", "end", "error", "toolStart", "toolProgress", "toolEnd", "toolComplete", "toolLifecycle"].includes(key))) return false;
   if (!Object.keys(value.fields).every((key) => ["type", "text", "sessionId", "message", "usage", "totalCostUsd", "id", "name", "input", "output", "state", "error", "terminalStates", "errorStates"].includes(key))) return false;
   if (!Object.keys(value.launch).every((key) => key === "outputOption" || key === "outputValue")) return false;
   if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isSafeInteger(value.priority) || Math.abs(value.priority) > 1_000)) return false;
@@ -339,8 +376,8 @@ function validSchema(value: unknown): value is GrokEventSchema {
   if (value.requires.versions !== undefined && (!Array.isArray(value.requires.versions) || value.requires.versions.length < 1 || value.requires.versions.length > 8 || new Set(value.requires.versions).size !== value.requires.versions.length || !value.requires.versions.every((version) => typeof version === "string" && /^\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?$/.test(version)))) return false;
   if (value.launch.outputOption !== "--output-format" || value.launch.outputValue !== "streaming-json") return false;
   const events = value.eventTypes;
-  const eventGroups = [events.ignored, events.text, events.end, events.error, events.toolStart, events.toolProgress ?? [], events.toolEnd, events.toolComplete];
-  if (!eventGroups.every((items) => validAliases(items, true))) return false;
+  const eventGroups = [events.ignored, events.text, events.end, events.error, events.toolStart, events.toolProgress ?? [], events.toolEnd, events.toolComplete, events.toolLifecycle ?? []];
+  if (!eventGroups.every((items) => validAliases(items, true, 32))) return false;
   // A signed schema is still untrusted input: reject ambiguous event names and
   // incomplete tool envelopes before selection rather than quarantining only
   // after a real user's stream reaches the parser.
@@ -351,11 +388,12 @@ function validSchema(value: unknown): value is GrokEventSchema {
   const typedFields = f as GrokEventSchema["fields"];
   if (!typedFields.type.length) return false;
   if (typedEvents.text.length && !typedFields.text.length) return false;
-  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0)) && !typedFields.id.length) return false;
+  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0) || (typedEvents.toolLifecycle?.length ?? 0)) && !typedFields.id.length) return false;
   // Tool envelopes are version-sensitive protocol claims. A publisher must
   // bind them to the exact locally probed launcher revisions rather than
   // allowing a signed alias to match every future Grok Build version.
-  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0)) && !value.requires.versions?.length) return false;
+  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0) || (typedEvents.toolLifecycle?.length ?? 0)) && !value.requires.versions?.length) return false;
+  if (typedEvents.toolLifecycle?.length && (!typedFields.state.length || !typedFields.terminalStates.length || !typedFields.name.length)) return false;
   return !(typedEvents.toolStart.length || typedEvents.toolComplete.length) || typedFields.name.length > 0;
 }
 
@@ -398,7 +436,10 @@ export function selectGrokSchema(schemas: GrokEventSchema[], capabilities: GrokR
   const options = new Set(capabilities.options);
   const valueOptions = new Set(capabilities.valueOptions);
   const matches = schemas.filter((schema) =>
-    (schema.requires.options?.every((option) => options.has(option)) ?? true)
+    // An advertised protocol transition cannot silently select the legacy
+    // unversioned baseline. Signed publishers must qualify the exact binary.
+    (!capabilities.nativeAcp || schema.requires.versions !== undefined)
+    && (schema.requires.options?.every((option) => options.has(option)) ?? true)
     && (schema.requires.versions === undefined || (capabilities.version !== null && schema.requires.versions.includes(capabilities.version)))
     && options.has(schema.launch.outputOption)
     && valueOptions.has(schema.launch.outputOption),

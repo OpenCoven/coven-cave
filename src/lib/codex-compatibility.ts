@@ -14,6 +14,7 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { parseHarnessAuthFailure } from "./harness-failure.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCHEMA_DOCUMENT_BYTES = 1_048_576;
@@ -24,7 +25,6 @@ const MAX_SCHEMA_STRING_LENGTH = 160;
 const MAX_SCHEMA_FUTURE_SKEW_MS = 5 * 60_000;
 const CACHE_LOCK_TIMEOUT_MS = 2_000;
 const CACHE_LOCK_RETRY_MS = 25;
-const MAX_TOOL_DISPLAY_CHARS = 16_384;
 const MAX_JSONL_PENDING_CHARS = 256 * 1024;
 // Canonicalization runs before signature verification, so it needs its own
 // structural limits instead of relying only on the transport byte cap.
@@ -32,7 +32,7 @@ const MAX_SCHEMA_CANONICAL_DEPTH = 40;
 const MAX_SCHEMA_CANONICAL_NODES = 20_000;
 const CODEX_SCHEMA_REGISTRY_ORIGIN = "https://raw.githubusercontent.com";
 const CODEX_SCHEMA_REGISTRY_PATH_PREFIX = "/OpenCoven/coven-runtimes/";
-const KNOWN_CODEX_CONTROL_ITEM_TYPES = new Set(["reasoning", "todo_list", "error"]);
+const KNOWN_CODEX_CONTROL_ITEM_TYPES = new Set(["todo_list", "error"]);
 
 export type CodexCapabilities = {
   jsonEvents: boolean;
@@ -1063,13 +1063,20 @@ export function peekCachedCodexRuntime(
   return cached.report;
 }
 
+export function codexSchemaSupportsReasoning(schema: Pick<CodexEventSchema, "id">): boolean {
+  // Parser support does not admit a runtime version: the resolver must still
+  // select this profile from a bootstrap or verified registry source.
+  return ["codex-jsonl-v1", "codex-jsonl-legacy-v1", "codex-jsonl-0.160-v1"].includes(schema.id);
+}
+
 export type CodexStreamEvent =
+  | { kind: "reasoning"; id: string; phase: "running" | "complete" | "unavailable"; text?: string }
   | { kind: "text"; text: string }
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
-  | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
-  /** Terminal Codex failure with no untrusted payload attached. */
-  | { kind: "failure" }
+  | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean; outcome?: "rejected" }
+  /** Terminal Codex failure with only a classified auth verdict. */
+  | { kind: "failure"; authKind?: "login" | "configuration" }
   /** `turn.completed` token usage. The raw `usage` object is passed through
    *  untouched; the chat route validates it with parseStreamJsonUsage. */
   | { kind: "usage"; usage: unknown }
@@ -1092,15 +1099,47 @@ function safeOutput(value: unknown): string | undefined {
     try { output = JSON.stringify(value); } catch { return undefined; }
   }
   if (!output) return undefined;
-  return output.length <= MAX_TOOL_DISPLAY_CHARS
-    ? output
-    : `${output.slice(0, MAX_TOOL_DISPLAY_CHARS)}\n[output truncated]`;
+  // Preserve the complete value until the server disclosure projection. A
+  // display cap here could cut off a credential marker or signed URL suffix.
+  return output;
+}
+
+/** Select the documented MCP display fields before serializing. Provider
+ * metadata, unknown block kinds and arbitrary sibling keys stay private. */
+function codexToolOutput(item: Record<string, unknown>): string | undefined {
+  if (item.type !== "mcp_tool_call") return safeOutput(item.aggregated_output || item.output || item.result || item.error);
+  const result = record(item.result);
+  if (result) {
+    const content = Array.isArray(result.content) ? result.content.flatMap((value) => {
+      const block = record(value);
+      return block?.type === "text" && typeof block.text === "string" ? [{ type: "text", text: block.text }] : [];
+    }) : [];
+    const structured = result.structured_content;
+    return content.length || structured != null ? safeOutput({
+      ...(content.length ? { content } : {}),
+      ...(structured != null ? { structured_content: structured } : {}),
+    }) : undefined;
+  }
+  const error = record(item.error);
+  return typeof error?.message === "string" ? safeOutput({ message: error.message }) : undefined;
 }
 
 function eventFingerprint(value: Record<string, unknown>): string {
   // Event shape only: no payload values are included in the diagnostic.
   const shape = JSON.stringify({ type: value.type, keys: Object.keys(value).sort(), itemType: record(value.item)?.type });
   return createHash("sha256").update(shape).digest("hex").slice(0, 12);
+}
+
+function codexFailureEvent(value: Record<string, unknown>): CodexStreamEvent {
+  // Codex uses both top-level `message` (error) and `error.message`
+  // (turn.failed). Inspect only these schema fields, then discard the text.
+  const nestedError = record(value.error);
+  const messages = [value.message, nestedError?.message, value.error]
+    .filter((candidate): candidate is string => typeof candidate === "string");
+  const verdicts = messages.map((message) => parseHarnessAuthFailure(message, "codex")?.kind);
+  const authKind = verdicts.includes("configuration") ? "configuration"
+    : verdicts.includes("login") ? "login" : null;
+  return authKind ? { kind: "failure", authKind } : { kind: "failure" };
 }
 
 export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema): CodexStreamEvent | null {
@@ -1113,7 +1152,7 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
     return id ? { kind: "session", sessionId: id } : { kind: "unknown", fingerprint: eventFingerprint(event) };
   }
   if (event.type === "turn.failed" || event.type === "error") {
-    return { kind: "failure" };
+    return codexFailureEvent(event);
   }
   if (event.type === "turn.started") {
     return { kind: "ignored" };
@@ -1127,6 +1166,17 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   }
   const item = record(event.item);
   if (!item) return { kind: "unknown", fingerprint: eventFingerprint(event) };
+  if (item.type === "reasoning") {
+    if (typeof item.id !== "string" || !item.id || item.id.length > MAX_SCHEMA_STRING_LENGTH) return { kind: "ignored" };
+    // The pinned 0.144.2/0.145 SDK and 0.160 Rust/SDK contracts designate this
+    // text as a summary. See fixtures/codex/README.md for 0.160 provenance.
+    // Unknown/text-only profiles never inherit that content permission.
+    const knownSummary = codexSchemaSupportsReasoning(schema);
+    const phase = !knownSummary || event.type === "item.failed" ? "unavailable"
+      : event.type === "item.completed" ? "complete" : "running";
+    return { kind: "reasoning", id: item.id, phase,
+      ...(knownSummary && phase === "complete" && typeof item.text === "string" ? { text: item.text } : {}) };
+  }
   if (typeof item.type === "string" && schema.textItemTypes.includes(item.type)) {
     return event.type === "item.completed" && typeof item.text === "string"
       ? { kind: "text", text: item.text }
@@ -1176,17 +1226,24 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
       : typeof item.exitCode === "number"
         ? item.exitCode
         : null;
-    const isError = event.type === "item.failed"
+    // The pinned Rust command status includes declined (the SDK declaration
+    // omits it). Other item types do not admit that status. Future statuses
+    // must not become successful results or invented cancellation receipts.
+    const rejected = item.type === "command_execution" && item.status === "declined";
+    if (item.status !== undefined && item.status !== "completed" && item.status !== "failed" && !rejected) {
+      return { kind: "unknown", fingerprint: eventFingerprint(event) };
+    }
+    const isError = !rejected && (event.type === "item.failed"
       || item.status === "failed"
-      || item.status === "declined"
-      || (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0);
+      || (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0));
     return {
       kind: "tool_end",
       id: item.id,
       name,
       ...(input !== undefined ? { input } : {}),
-      output: safeOutput(item.aggregated_output || item.output || item.result || item.error),
+      output: codexToolOutput(item),
       isError,
+      ...(rejected ? { outcome: "rejected" as const } : {}),
     };
   }
   return null;
@@ -1337,7 +1394,7 @@ export class CodexJsonlDecoder {
           const event = (this.protocolArmed || this.protocolActive)
             ? parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" }
             : rawType === "turn.failed" || rawType === "error"
-              ? { kind: "failure" as const }
+              ? codexFailureEvent(frame ?? {})
               : { kind: "unknown" as const, fingerprint: "prelude-control-frame" };
           events.push(event);
           tokens.push(event);

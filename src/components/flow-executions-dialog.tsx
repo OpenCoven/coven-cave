@@ -50,6 +50,7 @@ export function FlowExecutionsDialog({
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId ?? null);
   const [runs, setRuns] = useState<FlowRunRecord[]>([]);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcriptUnavailable, setTranscriptUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -85,6 +86,7 @@ export function FlowExecutionsDialog({
     setLoading(true);
     setError(null);
     setTranscript(null);
+    setTranscriptUnavailable(false);
     const url = selectedSessionId
       ? `/api/flows/session-transcript?${new URLSearchParams({ sessionId: selectedSessionId })}`
       : "/api/flows/runs";
@@ -92,13 +94,14 @@ export function FlowExecutionsDialog({
       try {
         const response = await fetch(url, { cache: "no-store", signal: controller.signal });
         const result = await response.json() as {
-          ok?: boolean; runs?: FlowRunRecord[]; transcript?: string; error?: string;
+          ok?: boolean; runs?: FlowRunRecord[]; transcript?: string; availability?: string; error?: string;
         };
         if (!response.ok || !result.ok) throw new Error(result.error || "Try again.");
         if (controller.signal.aborted) return;
         if (selectedSessionId) {
           if (typeof result.transcript !== "string") throw new Error("The transcript response was incomplete. Try again.");
           setTranscript(result.transcript);
+          setTranscriptUnavailable(result.availability === "unavailable");
         } else {
           if (!Array.isArray(result.runs)) throw new Error("The history response was incomplete. Try again.");
           setRuns(result.runs);
@@ -157,7 +160,11 @@ export function FlowExecutionsDialog({
               {transcript}
             </pre>
           ) : (
-            <EmptyState compact headline="No transcript yet" subtitle="The execution hasn’t reported output. Refresh to check again."
+            <EmptyState compact
+              headline={transcriptUnavailable ? "Transcript unavailable" : "No transcript yet"}
+              subtitle={transcriptUnavailable
+                ? "No assistant output is available to display. Refresh to check for a saved transcript."
+                : "The execution hasn’t reported output. Refresh to check again."}
               actions={<Button size="sm" onClick={() => setRevision((value) => value + 1)}>Refresh transcript</Button>} />
           )
         ) : selectedRunId && groups.length === 0 ? (

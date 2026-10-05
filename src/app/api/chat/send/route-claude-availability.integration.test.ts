@@ -46,6 +46,10 @@ const shim = [
   "    process.stderr.write('spawn claude ENOENT\\n');",
   "    process.exit(1);",
   "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'auth') {",
+  "    process.stderr.write('Not logged in. Run /login. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL\\n');",
+  "    process.exit(1);",
+  "  }",
   "  process.exit(1);",
   "}",
   "process.exit(0);",
@@ -222,6 +226,16 @@ try {
       (await covenCalls()).slice(raceCallsBefore).some((args) => args[0] === "run" && args[1] === "claude"),
       "the race case DID pass preflight and start Coven",
     );
+  }
+
+  process.env.COVEN_TEST_MODE = "auth";
+  {
+    const { body, events } = await send("claude needs sign-in");
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, "harness_auth_required");
+    assert.match(error?.message ?? "", /Claude Code needs sign-in/);
+    assert.doesNotMatch(body, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|secret|Not logged in/);
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
   }
 
   console.log("route-claude-availability.integration.test.ts OK");

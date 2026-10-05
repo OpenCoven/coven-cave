@@ -29,6 +29,7 @@ import type { ChatTurn, ConversationFile, ConversationSummary } from "../../cave
 import type { CaveProject } from "../../cave-projects-types.ts";
 import type { FlowSessionReference } from "../../flow-session.ts";
 import { resolveActivePath } from "../../conversation-tree.ts";
+import { projectLegacyAssistantText } from "../legacy-reasoning-projection.ts";
 import type { VisibleFamiliarRosterEntry } from "../familiar-roster.ts";
 import {
   compareClientV1AscendingKeys,
@@ -271,6 +272,7 @@ export function projectClientV1Message(
   conversationId: string,
   turn: ChatTurn,
 ): ClientV1MessageRecord {
+  const text = requiredText(turn.text, "message text");
   return {
     id: requiredId(turn.id, "message id"),
     conversationId: requiredId(conversationId, "message conversationId"),
@@ -278,7 +280,7 @@ export function projectClientV1Message(
     // and only one of them is a value the envelope can carry.
     parentId: turn.parentId ?? null,
     role: requiredRole(turn.role),
-    text: requiredText(turn.text, "message text"),
+    text: turn.role === "assistant" ? projectLegacyAssistantText(text, turn.cancelled || turn.isError) : text,
     createdAt: requiredText(turn.createdAt, "message createdAt"),
     // Counts, not contents. `reasoning` is the harness's private scratchpad and
     // a tool call carries whatever the tool was pointed at — a path, a command,

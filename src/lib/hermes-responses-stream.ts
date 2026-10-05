@@ -1,3 +1,4 @@
+import { cleanModelId } from "./chat-model-state.ts";
 // Hermes Agent Responses API stream compatibility.
 //
 // Hermes exposes a documented OpenAI-compatible Responses SSE endpoint.  The
@@ -11,11 +12,12 @@
 
 export type HermesResponsesEvent =
   | { kind: "text"; text: string }
-  | { kind: "tool_start"; id: string; name: string; input?: unknown; itemId?: string }
+  | { kind: "reasoning"; id: string; phase: "running" | "complete" | "unavailable"; text?: string }
+  | { kind: "tool_start"; id: string; name: string; input?: unknown; itemId?: string; executionObserved?: true }
   | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
-  | { kind: "done"; isError: boolean; id?: string; message?: string; invalidPreviousResponseId?: boolean }
+  | { kind: "done"; isError: boolean; model?: string; id?: string; message?: string; invalidPreviousResponseId?: boolean }
   | { kind: "error"; message: string; invalidPreviousResponseId?: boolean }
   | { kind: "ignore" };
 
@@ -68,7 +70,14 @@ function toolName(value: RecordValue): string | undefined {
 
 function toolInput(value: RecordValue): unknown {
   const item = record(value.item);
-  return value.arguments ?? value.input ?? item?.arguments ?? item?.input;
+  const input = value.arguments ?? value.input ?? item?.arguments ?? item?.input;
+  // Function-call items can be announced with a partial JSON argument string.
+  // Keep the call visible, but withhold partial values until the final snapshot.
+  return typeof input === "string" && input && !completeJson(input) ? undefined : input;
+}
+
+function completeJson(input: string): boolean {
+  try { JSON.parse(input); return true; } catch { return false; }
 }
 
 function toolOutput(value: RecordValue): unknown {
@@ -77,11 +86,28 @@ function toolOutput(value: RecordValue): unknown {
 }
 
 function toolFailed(value: RecordValue, item: RecordValue | null): boolean {
-  const failedStatuses = new Set(["error", "failed", "cancelled", "canceled", "incomplete"]);
+  const failedStatuses = new Set(["error", "failed"]);
   const hasError = (error: unknown) => error !== undefined && error !== null && error !== false;
   return hasError(value.error) || hasError(item?.error) ||
     failedStatuses.has(string(value.status) ?? "") ||
     failedStatuses.has(string(item?.status) ?? "");
+}
+
+function knownToolOutcome(value: RecordValue, item: RecordValue | null): boolean {
+  return [value.status, item?.status].every((status) => status === undefined ||
+    typeof status === "string" && ["completed", "complete", "error", "failed"].includes(status));
+}
+
+function reasoningSummary(item: RecordValue): string | undefined {
+  if (!Array.isArray(item.summary) || !item.summary.length || item.summary.length > 64) return undefined;
+  const parts: string[] = [];
+  for (const part of item.summary) {
+    const value = record(part);
+    if (value?.type !== "summary_text" || typeof value.text !== "string") return undefined;
+    parts.push(value.text);
+  }
+  const text = parts.join("\n");
+  return text.length <= 64 * 1024 ? text : undefined;
 }
 
 /** A fresh retry is safe only when the API explicitly rejects the stored
@@ -136,6 +162,32 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     return id ? { kind: "session", id } : { kind: "ignore" };
   }
 
+  if (type === "response.output_item.added" || type === "response.output_item.done") {
+    const item = record(value.item);
+    if (item?.type === "reasoning") {
+      const id = string(item.id);
+      if (!id) return { kind: "ignore" };
+      if (type === "response.output_item.added") return { kind: "reasoning", id, phase: "running" };
+      if (item.status !== "completed") return { kind: "reasoning", id, phase: "unavailable" };
+      const text = reasoningSummary(item);
+      return { kind: "reasoning", id, phase: "complete", ...(text ? { text } : {}) };
+    }
+    // Message, reasoning, and future item ids must never settle tool calls.
+    if (item?.type !== "function_call" && item?.type !== "function_call_output") return { kind: "ignore" };
+    const id = toolId(value);
+    if (!id) return { kind: "ignore" };
+    if (item.type === "function_call") {
+      // Completion here describes a model output item, not execution.
+      const name = toolName(value);
+      return name ? { kind: "tool_start", id, name, input: toolInput(value),
+        ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) } : { kind: "ignore" };
+    }
+    if (type === "response.output_item.added" && item.status !== "completed") return { kind: "ignore" };
+    return knownToolOutcome(value, item)
+      ? { kind: "tool_end", id, output: toolOutput(value), isError: toolFailed(value, item) }
+      : { kind: "ignore" };
+  }
+
   // A function-call item is the canonical Responses announcement. Hermes can
   // also emit its progress extension before the item is finalised; both map to
   // the same native call id and ToolCallTracker deduplicates them.
@@ -158,7 +210,7 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     const input = string(value.arguments) ?? string(value.delta);
     const id = string(value.call_id);
     const itemId = toolItemId(value);
-    return input
+    return input && completeJson(input)
       ? {
           kind: "tool_input",
           ...(id ? { id } : {}),
@@ -169,47 +221,40 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
       : { kind: "ignore" };
   }
 
-  if (type === "response.output_item.added" || type === "hermes.tool.progress") {
+  if (type === "hermes.tool.progress") {
     const id = toolId(value);
     const name = toolName(value);
     const status = string(value.status);
+    if (value.status !== undefined && !status) return { kind: "ignore" };
     if (id && (status === "completed" || status === "complete" || status === "error" || status === "failed")) {
+      if (!knownToolOutcome(value, record(value.item))) return { kind: "ignore" };
       return { kind: "tool_end", id, output: toolOutput(value), isError: toolFailed(value, record(value.item)) };
     }
+    if (status !== undefined && !["running", "in_progress", "pending", "queued"].includes(status)) return { kind: "ignore" };
     return id && name
-      ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
+      ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}), ...(type === "hermes.tool.progress" && (status === "running" || status === "in_progress") ? { executionObserved: true as const } : {}) }
       : { kind: "ignore" };
   }
 
   if (
-    type === "response.output_item.done" ||
     type === "response.function_call_output" ||
     type === "hermes.tool.completed"
   ) {
     const id = toolId(value);
     if (!id) return { kind: "ignore" };
     const item = record(value.item);
-    // `output_item.done` with a function_call marks a completed model output,
-    // not necessarily completed tool execution. Do not settle that bubble
-    // until an output/progress completion arrives.
-    if (
-      type === "response.output_item.done" &&
-      string(item?.type) === "function_call" &&
-      toolOutput(value) === undefined &&
-      !toolFailed(value, item)
-    ) {
-      const name = toolName(value);
-      return name
-        ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
-        : { kind: "ignore" };
-    }
+    if (!knownToolOutcome(value, item)) return { kind: "ignore" };
     const failed = toolFailed(value, item);
     return { kind: "tool_end", id, output: toolOutput(value), isError: failed };
   }
 
   if (type === "response.completed") {
     const id = responseId(value);
-    return { kind: "done", isError: false, ...(id ? { id } : {}) };
+    // `response.model` echoes the request, including ignored aliases. Only
+    // the documented terminal runtime report identifies the served model
+    // after fallback. Producers that omit it cannot confirm model identity.
+    const model = cleanModelId(record(record(value.response)?.runtime)?.model);
+    return { kind: "done", isError: false, ...(id ? { id } : {}), ...(model ? { model } : {}) };
   }
   if (type === "response.failed" || type === "response.incomplete") {
     const response = record(value.response);

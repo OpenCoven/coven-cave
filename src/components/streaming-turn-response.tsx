@@ -22,6 +22,8 @@ export type StreamingTurnResponseProps = {
   model: StreamingTurnViewModel;
   density: "full" | "compact";
   proseContent?: ReactNode;
+  reasoningContent?: ReactNode;
+  transcriptContent?: ReactNode;
   activityDetails?: ReactNode;
   supplementaryContent?: ReactNode;
   announceLifecycle?: boolean;
@@ -130,6 +132,8 @@ export function StreamingTurnResponse({
   model,
   density,
   proseContent,
+  reasoningContent,
+  transcriptContent,
   activityDetails,
   supplementaryContent,
   announceLifecycle = true,
@@ -313,6 +317,9 @@ export function StreamingTurnResponse({
         ) : null}
       </div>
 
+      {transcriptContent !== undefined ? transcriptContent : <>
+      {reasoningContent}
+
       <div className="streaming-turn-prose">
         {transientPreamble ? null : proseContent !== undefined ? (
           proseContent
@@ -324,6 +331,7 @@ export function StreamingTurnResponse({
           />
         )}
       </div>
+      </>}
 
       <TurnResults model={model} />
 

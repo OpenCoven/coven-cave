@@ -101,13 +101,13 @@ test("editing E2E's own browser installer runs E2E (#5722)", () => {
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).e2e, false);
 });
 
-test("bumping the pinned Coven release runs the Automations release canary lane (#5217)", () => {
+test("bumping the pinned Coven release runs Automations and native TCP gates (#5217)", () => {
   assert.deepEqual(
     classifyCiPaths([
       "fixtures/coven-automations-release/package.json",
       "fixtures/coven-automations-release/package-lock.json",
     ]),
-    { frontend: true, rust: false, e2e: false, ios: false, docs: false },
+    { frontend: true, rust: false, e2e: false, ios: true, docs: false },
   );
   assert.equal(classifyCiPaths(["fixtures/phase-4/weaves.json"]).frontend, false);
 });
@@ -172,6 +172,11 @@ test("iOS sources and generators request the macOS build", () => {
     "scripts/ios-xctest-summary.mjs",
     "scripts/ios-xctest-summary.test.mjs",
     "scripts/ios-build-ci.test.mjs",
+    "scripts/runtime-activity-native-transport.mjs",
+    "scripts/client-v1-conformance.mjs",
+    "scripts/coven-automations-release-canary.ts",
+    "fixtures/coven-automations-release/package.json",
+    "fixtures/coven-automations-release/package-lock.json",
   ]) {
     assert.equal(classifyCiPaths([path]).ios, true, path);
   }

@@ -1,5 +1,8 @@
 "use client";
 
+import type { ToolStatus } from "./chat-tool-state.ts";
+
+
 import {
   useEffect,
   useRef,
@@ -8,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 
-export type ToolRunStatus = "running" | "ok" | "error";
+export type ToolRunStatus = ToolStatus;
 
 export type ToolRunDisclosure = {
   open: boolean;
@@ -36,7 +39,7 @@ export function useToolRunDisclosure(
   statuses: readonly ToolRunStatus[],
   collapsible = true,
 ): ToolRunDisclosure {
-  const isRunning = statuses.some((s) => s === "running");
+  const isRunning = statuses.some((s) => s === "running" || s === "requested");
   const [open, setOpen] = useState(!collapsible || isRunning);
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const prevRunning = useRef(isRunning);

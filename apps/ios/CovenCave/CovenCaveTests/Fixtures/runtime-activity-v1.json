@@ -1,0 +1,942 @@
+{
+  "schemaVersion": 1,
+  "scope": "Shared display contract fixtures. No provider admission, server authorization, rendered-client or effect receipt qualification.",
+  "identityScenarios": [
+    {
+      "id": "native-exact-report",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5"
+      }
+    },
+    {
+      "id": "legacy-intent-is-not-identity",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "confirmedModel": "legacy-inferred-model"
+      },
+      "expected": null
+    },
+    {
+      "id": "missing-context-is-not-bound",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": null,
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5"
+        }
+      },
+      "expected": null
+    },
+    {
+      "id": "mismatched-harness-is-not-bound",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "codex",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5"
+        }
+      },
+      "expected": null
+    },
+    {
+      "id": "future-schema-is-unavailable",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 2,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5"
+        }
+      },
+      "expected": null
+    },
+    {
+      "id": "selection-alias-and-invalid-version",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "invented-version",
+          "model": "anthropic/auto"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": null,
+        "model": null
+      }
+    },
+    {
+      "id": "synthetic-local-model-is-not-reported",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-local"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": null
+      }
+    },
+    {
+      "id": "unsafe-model-is-unavailable",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "provider/--option"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": null
+      }
+    },
+    {
+      "id": "malformed-optional-fields-retain-harness",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": [],
+          "model": 42
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": null,
+        "model": null
+      }
+    },
+    {
+      "id": "exact-custom-model-is-preserved",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": " v2.1.288+fixture ",
+          "model": "custom/~deploy:stable@id+v1"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "v2.1.288+fixture",
+        "model": "custom/~deploy:stable@id+v1"
+      }
+    },
+    {
+      "id": "historical-model-is-not-menu-filtered",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-4-8"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-4-8"
+      }
+    },
+    {
+      "id": "oversized-model-is-unavailable",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": null
+      }
+    },
+    {
+      "id": "invalid-activity-is-optional",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 99,
+            "path": "direct",
+            "tools": "supported",
+            "reasoning": "supported"
+          }
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5"
+      }
+    },
+    {
+      "id": "path-availability-preserved",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "claude",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "claude",
+          "version": "2.1.288",
+          "model": "claude-opus-5-5",
+          "activity": {
+            "schemaVersion": 1,
+            "path": "ssh",
+            "tools": "unknown",
+            "reasoning": "unknown"
+          }
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.288",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "ssh",
+          "tools": "unknown",
+          "reasoning": "unknown"
+        }
+      }
+    },
+    {
+      "id": "native-unknown-is-not-model-evidence",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "grok",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "grok",
+          "version": "1.0.46",
+          "model": "unknown"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "grok",
+        "version": "1.0.46",
+        "model": null
+      }
+    },
+    {
+      "id": "native-namespaced-unknown-is-not-model-evidence",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "grok",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "grok",
+          "version": "1.0.46",
+          "model": "provider/unknown"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "grok",
+        "version": "1.0.46",
+        "model": null
+      }
+    },
+    {
+      "id": "native-uppercase-unknown-is-not-model-evidence",
+      "metadata": {
+        "familiarId": "fixture",
+        "harness": "grok",
+        "model": "selected-never-reported",
+        "runtime": "local:/fixture",
+        "runtimeIdentity": {
+          "schemaVersion": 1,
+          "harness": "grok",
+          "version": "1.0.46",
+          "model": "UNKNOWN"
+        }
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "harness": "grok",
+        "version": "1.0.46",
+        "model": null
+      }
+    }
+  ],
+  "toolScenarios": [
+    {
+      "id": "parallel-same-name-first-outcome-wins",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "two",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "two",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 10
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "error",
+          "durationMs": 20
+        },
+        {
+          "kind": "tool_use",
+          "id": "two",
+          "name": "Read",
+          "status": "error",
+          "durationMs": 12
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 10
+        },
+        {
+          "id": "two",
+          "name": "Read",
+          "status": "error",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "result-before-start",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "error",
+          "durationMs": 7
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "running"
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "error",
+          "durationMs": 7
+        }
+      ]
+    },
+    {
+      "id": "late-result-resolves-unknown",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "unknown"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 9
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 9
+        }
+      ]
+    },
+    {
+      "id": "rejection-is-not-execution",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "rejected"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "ok"
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "rejected"
+        }
+      ]
+    },
+    {
+      "id": "future-status-is-unknown",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "future-status"
+        },
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "running"
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "unknown"
+        }
+      ]
+    },
+    {
+      "id": "disconnect-does-not-prove-results",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "one",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "two",
+          "name": "Read",
+          "status": "running"
+        }
+      ],
+      "expected": [
+        {
+          "id": "one",
+          "name": "Read",
+          "status": "unknown"
+        },
+        {
+          "id": "two",
+          "name": "Read",
+          "status": "unknown"
+        }
+      ]
+    }
+  ],
+  "reasoningScenarios": [
+    {
+      "id": "summaries-retain-order-and-first-terminal",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "running",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "text": "Compare 🧪 café results."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "running",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:two",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "text": "Confirm the remaining result."
+        }
+      ],
+      "expected": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "text": "Compare 🧪 café results."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:two",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "text": "Confirm the remaining result."
+        }
+      ]
+    },
+    {
+      "id": "provider-withheld-has-no-text",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:hidden",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld"
+        }
+      ],
+      "expected": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:hidden",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld"
+        }
+      ]
+    },
+    {
+      "id": "unknown-summary-schema-is-ignored",
+      "blocks": [
+        {
+          "schemaVersion": 99,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "text": "Compare 🧪 café results."
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "summary-display-positions-survive-replay-and-history",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "running",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable",
+            "sequence": 0
+          },
+          "textOffset": 0
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable",
+            "sequence": 0
+          },
+          "text": "Compare 🧪 café results.",
+          "textOffset": 0
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "running",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable",
+            "sequence": 0
+          },
+          "textOffset": 0
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:two",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable",
+            "sequence": 2
+          },
+          "text": "Confirm the remaining result.",
+          "textOffset": 19
+        }
+      ],
+      "expected": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:one",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable",
+            "sequence": 0
+          },
+          "text": "Compare 🧪 café results.",
+          "textOffset": 0
+        },
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:two",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable",
+            "sequence": 2
+          },
+          "text": "Confirm the remaining result.",
+          "textOffset": 19
+        }
+      ]
+    }
+  ]
+}

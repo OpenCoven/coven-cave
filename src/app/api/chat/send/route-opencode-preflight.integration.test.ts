@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -52,6 +52,7 @@ assert.ok(
   "the fixture must stay above Windows' command-line limit",
 );
 const failPrompt = "FAIL_AUTH_EXIT";
+const outcomeCallLog = path.join(home, "outcome-calls.log");
 
 // The shim is a Node script behind the same launcher shape npm installs use
 // (shell wrapper on POSIX, parsed `.cmd` on Windows), so it can reflect the
@@ -59,11 +60,13 @@ const failPrompt = "FAIL_AUTH_EXIT";
 // without any shell re-parsing.
 const shimScript = path.join(bin, "opencode-shim.mjs");
 await writeFile(shimScript, [
+  "import { appendFileSync } from 'node:fs';",
   "const args = process.argv.slice(2);",
   "if (args[0] === \"--version\") { console.log(\"1.2.3\"); process.exit(0); }",
   "if (args[0] === \"run\" && args[1] === \"--help\") {",
   "  console.log(\"  --format <format>  Output format: text, json\");",
   "  console.log(\"  --session <id>     Session to continue\");",
+  "  console.log(\"  --model <id>       Model to use\");",
   "  process.exit(0);",
   "}",
   "if (args[0] !== \"run\" || args[1] !== \"--format\" || args[2] !== \"json\") process.exit(9);",
@@ -73,6 +76,19 @@ await writeFile(shimScript, [
   "if (input.includes(\"FAIL_AUTH_EXIT\")) {",
   "  console.error(\"opencode: authentication required for provider\");",
   "  process.exit(3);",
+  "}",
+  "if (input.includes('TOOL_OUTCOME_FIXTURE')) {",
+  `  appendFileSync(${JSON.stringify(outcomeCallLog)}, 'turn\\n');`,
+  "  const emit = (event) => console.log(JSON.stringify(event));",
+  "  const tool = (id, status, output, sessionID = 'native_outcome_session') => emit({ type: 'tool_use', sessionID, part: { type: 'tool', id, tool: 'bash', state: { status, input: { command: 'pwd' }, output } } });",
+  "  tool('finished', 'pending', 'PRIVATE_PENDING_PREVIEW');",
+  "  tool('finished', 'running', 'PRIVATE_RUNNING_PREVIEW');",
+  "  tool('finished', 'completed', 'safe outcome');",
+  "  tool('unresolved', 'running', 'PRIVATE_RUNNING_PREVIEW');",
+  "  tool('unresolved', 'future-state', 'PRIVATE_UNKNOWN_OUTCOME', 'forged_native_session');",
+  "  tool('unresolved', 'completed', 'PRIVATE_QUARANTINED_RESULT');",
+  "  emit({ type: 'text', sessionID: 'native_outcome_session', part: { type: 'text', text: 'Answer remains available.' } });",
+  "  process.exit(0);",
   "}",
   "console.log(JSON.stringify({ type: \"text\", sessionID: \"native_preflight_session\", part: { type: \"text\", text: `STDIN:${input}@ARGC=${args.length}@ARGS=${JSON.stringify(args)}@` } }));",
 ].join("\n"));
@@ -105,14 +121,15 @@ try {
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
+  const { subscribeRunStream } = await import("@/lib/server/chat-stream-buffer");
   await saveConfig({ familiars: { opal: { harness: "opencode" } } });
   const project = await createProject({ name: "Preflight fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
 
-  const send = (prompt) => POST(new Request("http://localhost/api/chat/send", {
+  const send = (prompt, extra = {}) => POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "opal", prompt, projectRoot: familiarWorkspace }),
+    body: JSON.stringify({ familiarId: "opal", prompt, projectRoot: familiarWorkspace, ...extra }),
   }));
 
   // Scenario 1 — a large hostile prompt is stdin data through preflight AND
@@ -137,6 +154,17 @@ try {
       !events.some((event) => event.kind === "error"),
       "a ready runner with a hostile prompt launches without availability errors",
     );
+  }
+
+  {
+    const { events } = await readSse(await send("identity fixture", { modelOverride: "openai/gpt-6.1-sol", modelOverrideScope: "next-message" }));
+    const done = events.findLast((event) => event.kind === "done");
+    assert.deepEqual(done.responseMetadata?.runtimeIdentity, { schemaVersion: 1, harness: "opencode", version: "1.2.3", model: null,
+      activity: { schemaVersion: 1, path: "direct", tools: "supported", reasoning: "unsupported" } });
+    assert.equal(done.responseMetadata?.confirmedModel, undefined, "OpenCode success cannot prove which model actually ran");
+    assert.equal(done.responseMetadata?.modelApplicationState, "pending");
+    const saved = await loadConversation(done.sessionId);
+    assert.deepEqual(saved?.turns.at(-1)?.responseMetadata?.runtimeIdentity, done.responseMetadata.runtimeIdentity);
   }
 
   // Scenario 2 — a CLI that STARTS and fails keeps its existing
@@ -169,6 +197,37 @@ try {
       /harness errored/,
       "a started CLI's failure diagnostic is persisted, unlike a launch failure",
     );
+  }
+  // Explicit nonterminal/unknown states cannot be upgraded by preview text.
+  // Keep this last: the incompatible frame quarantines the selected schema.
+  {
+    const { body, events } = await readSse(await send("TOOL_OUTCOME_FIXTURE", { runId: "opencode-outcome-run" }));
+    assert.doesNotMatch(body, /PRIVATE_|forged_native_session/);
+    const tools = events.filter((event) => event.kind === "tool_use");
+    assert.deepEqual(tools.filter((tool) => tool.id === "finished").map((tool) => tool.status), ["requested", "running", "ok"]);
+    assert.deepEqual(tools.filter((tool) => tool.id === "unresolved").map((tool) => tool.status), ["running", "unknown"]);
+    assert.equal(tools.find((tool) => tool.status === "ok")?.output, "safe outcome");
+    assert.equal(events.filter((event) => event.kind === "progress" && event.id === "opencode-compatibility").length, 1,
+      "an unsupported status produces one compatibility notice");
+    const done = events.findLast((event) => event.kind === "done");
+    assert.notEqual(done.isError, true, "unknown tool detail does not suppress a valid assistant answer");
+    assert.deepEqual(done.responseMetadata.runtimeIdentity.activity, { schemaVersion: 1, path: "direct", tools: "disabled", reasoning: "unsupported" });
+    assert.equal(events.find((event) => event.kind === "response_metadata").responseMetadata.runtimeIdentity.activity.tools, "supported",
+      "later quarantine must not mutate the initial retained capability report");
+    const saved = await loadConversation(done.sessionId);
+    const turn = saved.turns.at(-1);
+    assert.equal(saved.harnessSessionId, "native_outcome_session");
+    assert.deepEqual(saved.turns.at(-1).responseMetadata.runtimeIdentity.activity, done.responseMetadata.runtimeIdentity.activity);
+    assert.equal(turn.text, "Answer remains available.");
+    assert.deepEqual(turn.tools.map((tool) => tool.status), ["ok", "unknown"]);
+    assert.doesNotMatch(JSON.stringify(turn), /PRIVATE_|forged_native_session/);
+    const replay = subscribeRunStream("opencode-outcome-run", 0, () => {}, () => {});
+    assert.ok(replay?.done);
+    assert.deepEqual(replay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "tool_use"), tools);
+    assert.deepEqual(replay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "response_metadata"),
+      events.filter((event) => event.kind === "response_metadata"), "replay retains availability transitions exactly");
+    replay.unsubscribe();
+    assert.equal(await readFile(outcomeCallLog, "utf8"), "turn\n", "replay never starts another native turn");
   }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;

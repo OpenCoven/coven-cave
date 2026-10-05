@@ -110,8 +110,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: assignee\)/,
-  "initial server-history hydration restores retry controls from the complete transcript",
+  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: assignee,\s*toolOutputReference: ToolOutputReference\(sessionId: sessionId, connection: client\.connection\)\)/,
+  "initial history restores retry controls and the output reference from the actual conversation client",
 );
 assert.doesNotMatch(
   home,
@@ -559,8 +559,8 @@ assert.match(
 );
 assert.match(
   thread,
-  /DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: familiarId\)/,
-  "server reload restores applied controls and the retry model from the complete transcript",
+  /DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: familiarId,\s*toolOutputReference: ToolOutputReference\(sessionId: sessionId, connection: client\.connection\)\)/,
+  "server reload restores controls, retry model, and the actual conversation's output reference",
 );
 assert.match(
   appModel,
@@ -606,7 +606,7 @@ assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model me
 assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
 assert.match(
   messageBubble,
-  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Applied model:/,
+  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Recorded model:/,
   "iOS renders requested and applied model status separately",
 );
 assert.match(

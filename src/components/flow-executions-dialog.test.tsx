@@ -168,6 +168,19 @@ describe("Flow execution history", () => {
     ]);
   });
 
+  test("unavailable display output is explicit and can become readable after refresh", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response({ ok: true, transcript: "", found: false, availability: "unavailable" }))
+      .mockResolvedValueOnce(response({ ok: true, transcript: "Saved assistant output", found: true, availability: "available" })));
+    const renderer = await mount({ initialSessionId: "terminal-only" });
+    expect(textOf(renderer.toJSON())).toContain("Transcript unavailable");
+    expect(textOf(renderer.toJSON())).not.toContain("hasn’t reported output");
+    expect(renderer.root.findAllByType("pre")).toHaveLength(0);
+    await act(async () => buttons(renderer, "Refresh transcript")[0].props.onClick());
+    expect(textOf(renderer.toJSON())).toContain("Saved assistant output");
+    expect(textOf(renderer.toJSON())).not.toContain("Transcript unavailable");
+  });
+
   test("an exact engine-run link selects and expands only that run", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response({
       ok: true, runs: [run("unrelated"), run("target", { sessionId: undefined })],

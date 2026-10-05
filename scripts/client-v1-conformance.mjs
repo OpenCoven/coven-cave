@@ -767,6 +767,7 @@ export function buildCaveEnvironment({
   caveHomeDir,
   covenHomeDir,
   adminToken,
+  mobileAccessToken = null,
   authorityMode = "off",
 }, inherited = process.env) {
   const env = {
@@ -783,6 +784,7 @@ export function buildCaveEnvironment({
   };
   delete env.COVEN_CAVE_BUNDLE;
   delete env.COVEN_CAVE_ACCESS_TOKEN;
+  if (mobileAccessToken) env.COVEN_CAVE_ACCESS_TOKEN = mobileAccessToken;
   delete env.COVEN_CAVE_PASSKEY_REQUIRED;
   delete env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
   delete env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID;

@@ -28,7 +28,7 @@ test("2a ④ — the work line states the compact activity summary, trouble stay
   );
   assert.match(
     toolGroup,
-    /<span className="cave-work-line__label">\{summary\}<\/span>[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
+    /<span className="cave-work-line__label">\{summary\}<\/span>[\s\S]{0,400}requested[\s\S]{0,200}outcome unknown[\s\S]{0,200}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
     "the compact summary precedes the tinted running and error counters",
   );
   assert.doesNotMatch(

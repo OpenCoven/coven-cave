@@ -15,6 +15,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { stripTypeScriptTypes } from "node:module";
 import { protectApproveMarkers } from "../../../../lib/approve-blocks.ts";
+import { projectLegacyAssistantText } from "../../../../lib/server/legacy-reasoning-projection.ts";
 import { splitReasoning } from "../../../../lib/chat-reasoning.ts";
 import { extractChatAttentionMarker, extractIncompleteChatAttentionMarker } from "../../../../lib/chat-attention-marker.ts";
 
@@ -60,13 +61,13 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{\s*text: string;\s*reasoning\?: string;\s*request: ChatResponseMetadata\["attentionRequest"\] \| null;\s*\} \{/,
-    "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned visible text, optional persisted reasoning, and a nullable stamped request",
+    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{\s*text: string;\s*request: ChatResponseMetadata\["attentionRequest"\] \| null;\s*\} \{/,
+    "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned visible text, no legacy reasoning payload, and a nullable stamped request",
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\([\s\S]{0,400}const approveSplit = protectApproveMarkers\(args\.text\);\s*const \{ visible: visibleBody, reasoning: reasoningBody \} = splitReasoning\(approveSplit\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);[\s\S]{0,320}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(reasoningBody\)\s*:\s*extractChatAttentionMarker\(reasoningBody\)/,
-    "the helper must parse markers only from visible text while separately scrubbing reasoning for persisted reloads; incomplete mode uses the shared pending-tail sanitizer in both places",
+    /function prepareAttentionRequest\([\s\S]{0,400}const approveSplit = protectApproveMarkers\(projectLegacyAssistantText\(args\.text, args\.incomplete\)\);\s*const \{ visible: visibleBody \} = splitReasoning\(approveSplit\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);/,
+    "legacy reasoning must be withheld before extracting attention from visible text",
   );
 });
 
@@ -111,34 +112,41 @@ test("the OpenClaw gateway persistence path prepares and persists the attention 
   );
   assert.match(
     route,
-    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(gatewayAttention\.reasoning \? \{ reasoning: gatewayAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata,/,
-    "the gateway persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata,/,
+    "the gateway persisted turn should use the cleaned text, withhold unclassified reasoning, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
 test("the native OpenClaw stub/direct persistence path prepares and persists the attention request", () => {
   assert.match(
     route,
-    /const reportedPrUrl = latestPrUrlFromText\(assistantText\);\s*if \(reportedPrUrl\) conv\.prUrl = reportedPrUrl;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const nativeAttention = prepareAttentionRequest\(\{\s*text: assistantText,\s*sessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| isError,\s*\}\);/,
+    /const reportedPrUrl = latestPrUrlFromText\(projectLegacyAssistantText\(assistantText, cancelledByUser \|\| isError\)\);\s*if \(reportedPrUrl\) conv\.prUrl = reportedPrUrl;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const nativeAttention = prepareAttentionRequest\(\{\s*text: assistantText,\s*sessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| isError,\s*\}\);/,
     "the native stub/direct path should derive the attention request from the actual assistant turn id and one stamped createdAt",
   );
   assert.match(
     route,
-    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(nativeAttention\.reasoning \? \{ reasoning: nativeAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata,/,
-    "the native persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata,/,
+    "the native persisted turn should use the cleaned text, withhold unclassified reasoning, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
 test("the general Coven transport persistence path prepares and persists the attention request", () => {
+  // Bound this contract by the actual persistence section, rather than a
+  // character budget that changes when additive display fields are persisted.
+  const start = route.indexOf("const covenAttention = prepareAttentionRequest({");
+  const end = route.indexOf("const conv = existing ?? {", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const persistence = route.slice(start, end);
   assert.match(
     route,
     /const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText\s*\?\s*launchFailure!\.message\s*:\s*cleanedAssistantText;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const covenAttention = prepareAttentionRequest\(\{\s*text: persistedAssistantText,\s*sessionId: finalSessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| result\.is_error,\s*\}\);/,
     "the general Coven transport path should derive the attention request from the final marker-bearing text after failure-message fallback resolves",
   );
   assert.match(
-    route,
-    /const covenAttention = prepareAttentionRequest\(\{[\s\S]{0,600}text: covenAttention\.text,[\s\S]{0,200}\.\.\.\(covenAttention\.reasoning \? \{ reasoning: covenAttention\.reasoning \} : \{\}\),[\s\S]{0,300}createdAt: assistantCreatedAt,[\s\S]{0,900}responseMetadata: covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata,/,
-    "the coven transport persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    persistence,
+    /const assistantTurn: ChatTurn = \{[\s\S]*text: covenAttention\.text,[\s\S]*createdAt: assistantCreatedAt,[\s\S]*responseMetadata: covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata,/,
+    "the coven transport persisted turn should use the cleaned text, withhold unclassified reasoning, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
@@ -290,16 +298,16 @@ for (const incomplete of [false, true]) {
     const start = route.indexOf("function prepareAttentionRequest(");
     const end = route.indexOf("\nfunction attentionClearOperationForTurn", start);
     const prepare = new Function(
-      "protectApproveMarkers", "splitReasoning", "extractChatAttentionMarker", "extractIncompleteChatAttentionMarker",
+      "protectApproveMarkers", "splitReasoning", "extractChatAttentionMarker", "extractIncompleteChatAttentionMarker", "projectLegacyAssistantText",
       `${stripTypeScriptTypes(route.slice(start, end))}; return prepareAttentionRequest;`,
-    )(protectApproveMarkers, splitReasoning, extractChatAttentionMarker, extractIncompleteChatAttentionMarker);
+    )(protectApproveMarkers, splitReasoning, extractChatAttentionMarker, extractIncompleteChatAttentionMarker, projectLegacyAssistantText);
     const marker = '<coven:approve kind="questions" prompt="Use ` here?" options="Yes|No" />';
     const result = prepare({
       text: `${marker}\n<thinking>private reasoning</thinking>\n<coven:attention reason="decision" />`,
       sessionId: "session", turnId: "turn", requestedAt: "2026-09-09T00:00:00.000Z", incomplete,
     });
     assert.equal(result.text.trim(), marker);
-    assert.equal(result.reasoning, "private reasoning");
+    assert.equal(result.reasoning, undefined, "unclassified reasoning is not persisted");
     assert.deepEqual(result.request, { sessionId: "session", turnId: "turn", requestedAt: "2026-09-09T00:00:00.000Z", reason: "decision" });
   });
 }

@@ -1,3 +1,6 @@
+import type { ChatReasoningBlock } from "./chat-reasoning-blocks.ts";
+import type { ToolStatus } from "./chat-tool-state.ts";
+import type { ToolActivity } from "./chat-activity.ts";
 import { createHash } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { mkdir, readFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
@@ -49,12 +52,14 @@ export type ChatTurn = {
   text: string;
   attachments?: import("./chat-attachments").ChatAttachment[];
   reasoning?: string;
+  reasoningBlocks?: ChatReasoningBlock[];
   tools?: Array<{
+    activity?: ToolActivity;
     id: string;
     name: string;
     input?: string;
     output?: string;
-    status: "running" | "ok" | "error";
+    status: ToolStatus;
     durationMs?: number;
     /** CHAT-D4-01: length of the turn text when the tool's first event
      *  arrived — drives inline (chronological) tool placement in the chat

@@ -1018,6 +1018,9 @@ struct CaveClient {
         /// run buffer under this, so a NEW chat (no sessionId yet) is still
         /// re-attachable after a transport drop.
         var runId: String? = nil
+        /// Optional existing server permission contract; omission preserves
+        /// the caller's current behavior. The owned provider canary uses read.
+        var permissionMode: String? = nil
         /// Real per-send controls consumed by `/api/chat/send`.
         /// Legacy fields remain decodable/encodable for older callers and
         /// persisted turns, but new capability-aware sends leave them nil.

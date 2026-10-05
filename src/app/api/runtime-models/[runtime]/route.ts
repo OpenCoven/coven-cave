@@ -58,7 +58,13 @@ export async function GET(
       !binding.hasInvalidHermesProfileBinding &&
       !isSshRuntime(binding.runtime);
   }
+  let allowCliInventory = localInventoryRequest;
+  if (allowCliInventory && familiarId && (runtime === "codex" || runtime === "claude")) {
+    const binding = bindingFor(await loadConfig(), familiarId);
+    allowCliInventory = canonicalHarnessId(binding.harness) === runtime && !isSshRuntime(binding.runtime);
+  }
   const inventory = await listRuntimeModelInventory(runtime, familiarId, {
+    allowCliInventory,
     allowOpenCodeInventory: runtime === "opencode" && localInventoryRequest,
     allowHermesInventory,
   });

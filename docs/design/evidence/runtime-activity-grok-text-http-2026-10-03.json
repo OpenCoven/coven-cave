@@ -1,0 +1,38 @@
+{
+  "mode": "built-http-grok-text-only-fixture",
+  "startedAt": "2026-10-03T17:51:17.590Z",
+  "buildId": "x1EmHHa6-8fPmWeC1HzWv",
+  "sourceSha256": "c13d23a6f0bf24112fb80908f162dabc9a31f5fd5ca3bd6e31e00576a6aad789",
+  "limitations": [
+    "Deterministic launcher with packaged builtin text schema; no installed Grok/provider protocol or signed tool-schema qualification",
+    "No rendered/native client or human accessibility acceptance",
+    "No protected-effect receipt qualification"
+  ],
+  "checks": [
+    "built-in structured text remains readable over built HTTP",
+    "tool details unsupported when the selected schema has no named call events",
+    "probed runtime versions retained without confirming selected model intent",
+    "HTTP response and saved history retain identical availability and identity"
+  ],
+  "status": "passed",
+  "caveStopped": true,
+  "finishedAt": "2026-10-03T17:51:22.613Z",
+  "initialAttempt": {
+    "mode": "built-http-grok-fixture",
+    "startedAt": "2026-10-03T17:50:24.035Z",
+    "buildId": "x1EmHHa6-8fPmWeC1HzWv",
+    "sourceSha256": "c13d23a6f0bf24112fb80908f162dabc9a31f5fd5ca3bd6e31e00576a6aad789",
+    "limitations": [
+      "Deterministic launcher and signed test registry; no installed Grok/provider protocol qualification",
+      "No rendered/native client or human accessibility acceptance",
+      "No protected-effect receipt qualification"
+    ],
+    "status": "failed",
+    "errorCode": "ERR_ASSERTION",
+    "caveStopped": true,
+    "finishedAt": "2026-10-03T17:50:29.272Z",
+    "diagnosis": "The fixture expected a development-only signed registry to be admitted by a production build. Production ignores mutable development keyring/checkpoint overrides. The revised check removes the owned test cache and qualifies only the bundled text schema; no trust policy was changed."
+  },
+  "source": "src/app/api/chat/send/route-grok-compatibility.integration.test.ts adapted outside the repository to call the built HTTP listener with an isolated mode-file launcher.",
+  "command": "node --experimental-strip-types --import ./scripts/test-alias-register.mjs /tmp/cave-5761-grok-text-only-http.ts"
+}

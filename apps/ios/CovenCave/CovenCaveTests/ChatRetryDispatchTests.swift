@@ -4,7 +4,15 @@ import XCTest
 @MainActor
 final class ChatRetryDispatchTests: XCTestCase {
     private func thread() -> ChatThread {
-        ChatThread(
+        let attemptId = UUID().uuidString
+        let summary = ChatReasoningBlock(
+            schemaVersion: 1, id: "\(attemptId):summary", representation: "provider-summary",
+            phase: "complete", text: "Previous attempt summary", disclosure: "display-safe",
+            observation: .init(runId: UUID().uuidString, attemptId: attemptId,
+                source: "runtime-report", producer: .init(harness: "claude", version: "2.1.288"),
+                firstObservedAt: 1, updatedAt: 2, completedAt: 2, binding: "unavailable")
+        )
+        return ChatThread(
             title: "Retry",
             familiarIds: ["nova", "ember"],
             sessionIds: ["nova": "session-nova"],
@@ -17,7 +25,9 @@ final class ChatRetryDispatchTests: XCTestCase {
                     familiarId: "nova",
                     text: "The original reply",
                     isError: true,
-                    requestedModel: "chosen-model"
+                    requestedModel: "chosen-model",
+                    runtimeIdentity: .init(schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5"),
+                    reasoningBlocks: [summary]
                 ),
             ]
         )
@@ -42,6 +52,9 @@ final class ChatRetryDispatchTests: XCTestCase {
             onChange: {}
         ))
         XCTAssertTrue(thread.messages[1].streaming)
+        XCTAssertNotNil(original[1].reasoningBlocks?.first?.validated)
+        XCTAssertNil(thread.messages[1].runtimeIdentity, "A new attempt cannot claim the previous runtime report.")
+        XCTAssertNil(thread.messages[1].reasoningBlocks, "The previous attempt's summaries must not survive into the retry.")
         current = false
         await task.value
         XCTAssertEqual(thread.messages, original)
@@ -71,6 +84,34 @@ final class ChatRetryDispatchTests: XCTestCase {
         XCTAssertEqual(preflights, 2)
         XCTAssertEqual(refusals, 1)
         XCTAssertEqual(thread.messages, original)
+    }
+
+    func testQueuedReplayClearsPreviousAttemptEvidenceBeforeCheckpoint() async {
+        let thread = thread()
+        thread.messages[0].queued = true
+        thread.messages[0].queuedTargetFamiliarIds = ["nova"]
+        thread.messages[0].queuedContext = .init(projectRoot: thread.projectRoot, sessionIds: thread.sessionIds)
+        thread.messages[1].serverTurnId = nil
+        var checkpoints = 0
+        await thread.replayQueued(
+            client: client,
+            onConnectionFailure: { XCTFail("No network request should start: \($0)") },
+            dispatchLeaseIsCurrent: { true },
+            targetAccessIsCurrent: { _, target in target == "nova" },
+            onAccessRefused: { _ in XCTFail("The original project binding remains valid.") },
+            persistBeforeDispatch: {
+                checkpoints += 1
+                XCTAssertTrue(thread.messages[1].streaming)
+                XCTAssertNil(thread.messages[1].runtimeIdentity)
+                XCTAssertNil(thread.messages[1].reasoningBlocks)
+                return false
+            },
+            persistAfterRollback: { true }, onChange: {}
+        )
+        XCTAssertEqual(checkpoints, 1)
+        XCTAssertTrue(thread.messages[0].isQueued)
+        XCTAssertNil(thread.messages[1].runtimeIdentity)
+        XCTAssertNil(thread.messages[1].reasoningBlocks)
     }
 
     func testRootSessionAndRosterDriftBeforeDeferredPOSTFailClosed() async throws {

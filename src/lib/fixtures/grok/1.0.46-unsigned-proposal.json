@@ -1,0 +1,104 @@
+{
+  "format": 1,
+  "runtime": "grok-build",
+  "sequence": 2,
+  "issuedAt": "2026-10-03T00:00:00.000Z",
+  "expiresAt": "2026-11-03T00:00:00.000Z",
+  "schemas": [
+    {
+      "id": "grok-build-acp-1-0-46",
+      "priority": 1,
+      "requires": {
+        "streamingJson": true,
+        "options": [
+          "--output-format"
+        ],
+        "versions": [
+          "1.0.46"
+        ]
+      },
+      "eventTypes": {
+        "ignored": [
+          "thought",
+          "usage",
+          "plan",
+          "available_commands",
+          "max_turns_reached",
+          "auto_compact_started",
+          "auto_compact_completed",
+          "auto_compact_failed",
+          "auto_compact_cancelled",
+          "auto_continue_completed",
+          "image_compressed",
+          "memory_flush_started",
+          "memory_flush_completed",
+          "memory_capture_activity"
+        ],
+        "text": [
+          "text"
+        ],
+        "end": [
+          "end"
+        ],
+        "error": [
+          "error"
+        ],
+        "toolStart": [],
+        "toolProgress": [],
+        "toolEnd": [],
+        "toolComplete": [],
+        "toolLifecycle": [
+          "tool_call",
+          "tool_call_update"
+        ]
+      },
+      "fields": {
+        "type": [
+          "type"
+        ],
+        "text": [
+          "data"
+        ],
+        "sessionId": [
+          "sessionId"
+        ],
+        "message": [
+          "message"
+        ],
+        "usage": [
+          "usage"
+        ],
+        "totalCostUsd": [
+          "total_cost_usd"
+        ],
+        "id": [
+          "toolCallId"
+        ],
+        "name": [
+          "toolName"
+        ],
+        "input": [
+          "rawInput"
+        ],
+        "output": [
+          "rawOutput"
+        ],
+        "state": [
+          "status"
+        ],
+        "error": [],
+        "terminalStates": [
+          "completed",
+          "failed"
+        ],
+        "errorStates": [
+          "failed"
+        ]
+      },
+      "launch": {
+        "outputOption": "--output-format",
+        "outputValue": "streaming-json"
+      }
+    }
+  ]
+}

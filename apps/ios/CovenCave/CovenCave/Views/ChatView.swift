@@ -60,6 +60,7 @@ struct ChatView: View {
     @State private var permissionsFamiliar: Familiar?
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
+    @AppStorage("cave.chat.showReasoningSummaries") private var showReasoningSummaries = true
     @State private var showSessionPicker = false
     @State private var voiceCall: LiveVoiceCallModel?
     /// Inert navigation path handed to the session picker to satisfy its
@@ -99,6 +100,12 @@ struct ChatView: View {
     @State private var showCamera = false
     @State private var showFileImporter = false
     @State private var responseReader: ResponseReaderItem?
+    @State private var toolOutputTarget: ToolOutputTarget?
+
+    private var toolOutputScope: ToolOutputScope {
+        ToolOutputScope(threadId: thread.id, familiarIds: thread.familiarIds,
+                        sessionIds: thread.sessionIds, connection: app.connection)
+    }
     @State private var projectResolved = false
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
@@ -314,6 +321,15 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .groupedBackNavigation(canGoBack: $canGoBack)
         .toolbar {
+            if app.isPerformanceFixture && CaveTimelinePerformanceFixture.isEnabled {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Capture metrics") {
+                        CaveTimelinePerformanceFixture.capture(threadID: thread.id,
+                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder)
+                    }
+                    .accessibilityIdentifier("Capture timeline metrics")
+                }
+            }
             if app.isPerformanceFixture && CavePerformanceFixture.isTranscriptRecoveryFixture
                 && thread.id == "performance-fixture-chat-0000" {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -441,6 +457,18 @@ struct ChatView: View {
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
         }
+        .sheet(item: $toolOutputTarget) { target in
+            if target.scope == toolOutputScope {
+                ToolOutputDetailView(target: target)
+                    .id(target.id)
+            }
+        }
+        .onChange(of: toolOutputScope) { _, _ in toolOutputTarget = nil }
+        .onChange(of: thread.messages.map(\.id)) { _, ids in
+            if let target = toolOutputTarget, !ids.contains(target.messageId) {
+                toolOutputTarget = nil
+            }
+        }
         .fullScreenCover(item: $voiceCall) { model in
             LiveVoiceCallView(model: model,
                               avatarSource: app.client?.familiarAvatarSource(for: model.familiar))
@@ -545,6 +573,18 @@ struct ChatView: View {
 
     private var sessionDetailsCard: some View {
         VStack(spacing: 0) {
+            sessionControlRow(systemImage: "brain") {
+                Toggle("Show reasoning summaries", isOn: Binding(
+                    get: { showReasoningSummaries },
+                    set: { value in
+                        app.reasoningDisclosureState.reset()
+                        showReasoningSummaries = value
+                        UIAccessibility.post(notification: .announcement,
+                                             argument: value ? "Reasoning summaries shown." : "Reasoning summaries hidden.")
+                    }
+                ))
+            }
+            Divider()
             sessionDetailRow(
                 "Harness",
                 value: sessionHarnessLabel,
@@ -703,16 +743,14 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
-            if pendingModelOverride.isEmpty { return "Runtime default" }
-            return presentedModelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
-                ?? conciseModelName(pendingModelOverride)
+            if pendingModelOverride.isEmpty { return "Runtime default (unresolved)" }
+            return pendingModelOverride
         }
         guard let state = presentedSessionModelState else {
             return thread.isGroup ? "Per familiar" : "Loading…"
         }
-        if state.effectiveModel.isEmpty { return "Runtime default" }
-        return presentedModelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
-            ?? conciseModelName(state.effectiveModel)
+        if state.effectiveModel.isEmpty { return "Runtime default (unresolved)" }
+        return state.effectiveModel
     }
 
     private var chatPresence: (color: Color, label: String) {
@@ -834,10 +872,6 @@ struct ChatView: View {
             confirmedState: presentedSessionModelState,
             hasSession: modelSessionId(familiarId) != nil
         )
-    }
-
-    private func conciseModelName(_ id: String) -> String {
-        id.split(separator: "/").last.map(String.init) ?? id
     }
 
     private func sessionDetailRow(
@@ -1118,6 +1152,9 @@ struct ChatView: View {
             let bubbleOpenReader: ((String) -> Void)? = {
                 openReader(text: $0, familiar: bubbleFamiliar)
             }
+            let outputScope = toolOutputScope
+            let outputReference = message.toolOutputReference
+            let outputClient = app.client
             let bubbleRetry: (() -> Void)? = canRetry(message)
                 ? { retryAssistant(message) }
                 : nil
@@ -1150,6 +1187,13 @@ struct ChatView: View {
                           onContentHeightChange: {
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
+                          },
+                          toolOutputScope: outputScope,
+                          onShowToolOutput: { step in
+                              toolOutputTarget = ToolOutputTarget(
+                                  messageId: message.id, reference: outputReference,
+                                  step: step, scope: outputScope, client: outputClient
+                              )
                           })
                 .equatable()
                 // New bubbles settle in with a soft rise-and-fade
@@ -1888,7 +1932,7 @@ struct ChatView: View {
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
                   rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
-            modelPickerOptions = resp.options ?? []
+            modelPickerOptions = resp.selectableOptions
             modelPickerAllowsRuntimeDefault =
                 resp.inventory?.allowsRuntimeDefault ?? false
             modelPickerProvenance = resp.inventory?.provenance ?? "unavailable"
@@ -1912,7 +1956,7 @@ struct ChatView: View {
             app.touch(thread)
             return
         }
-        let options = resp.options ?? []
+        let options = resp.selectableOptions
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
@@ -2050,7 +2094,7 @@ struct ChatView: View {
             modelControlValues = modelControlValues.filter {
                 allowed[$0.key]?.contains($0.value) == true
             }
-            modelPickerOptions = response.options ?? []
+            modelPickerOptions = response.selectableOptions
             modelPickerAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
             modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
             modelPickerCurrent = model
@@ -2159,7 +2203,7 @@ struct ChatView: View {
                 ($0.family, Set($0.values.map(\.value)))
             })
             modelControlValues = modelControlValues.filter { allowed[$0.key]?.contains($0.value) == true }
-            modelPickerOptions = response.options ?? []
+            modelPickerOptions = response.selectableOptions
             modelPickerAllowsRuntimeDefault =
                 response.inventory?.allowsRuntimeDefault ?? false
             modelPickerProvenance = response.inventory?.provenance ?? "unavailable"

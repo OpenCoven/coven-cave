@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-03T23:53:15.489846+00:00",
+  "issues": [
+    5761,
+    5762,
+    5765,
+    5766,
+    5767
+  ],
+  "status": "Verified display-order data foundation; chronological UI remains incomplete and uncommitted",
+  "scope": {
+    "sequence": "Cave first-observation order shared by tool and reasoning trackers across attempts; updates retain it",
+    "textOffset": "Optional UTF-16 answer position; legacy private tags projected before stream/history disclosure",
+    "corrections": "Web/native tool and reasoning anchors rebase with authoritative answer replacements",
+    "legacy": "Missing fields remain absent; malformed supplied sequence or summary offset is rejected",
+    "authority": "Display observation only; not producer execution order, approval or committed-effect evidence"
+  },
+  "transport": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-03T23:40:47.379Z",
+    "destination": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "candidate": {
+      "head": "18f6e327addc63707736c91040524bdc734a323c",
+      "sourceBefore": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "buildId": "o0i9VizMmT3EX8HfL6ZPE",
+      "sourceAfter": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba"
+    },
+    "host": {
+      "node": "v24.18.1",
+      "xcode": "Xcode 26.6\nBuild version 17F113"
+    },
+    "scenario": "hermes-summary-tool-reconnect-history",
+    "classification": "real built Cave and native TCP; synthetic external Hermes provider",
+    "passed": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "limitations": [
+      "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+      "Native client/decoder/fold/history checks; not rendered UI, human VoiceOver, physical-device performance or a real provider.",
+      "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+    ],
+    "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+    "serverPid": 84041,
+    "ingressRefusalsVerified": true,
+    "savedConversations": 1,
+    "serverStopped": true,
+    "providerStopped": true,
+    "noDaemonState": true,
+    "fixtureRootRemoved": true,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-03T23:41:11.112Z"
+  },
+  "nativeTests": {
+    "unitTests": 102,
+    "tcpTests": 2,
+    "tcpSkipped": 0,
+    "failed": 0,
+    "displaySequence": [
+      0,
+      1,
+      2
+    ],
+    "utf16Offsets": [
+      0,
+      20,
+      20
+    ]
+  },
+  "sharedCorpus": {
+    "identity": 17,
+    "tool": 6,
+    "reasoning": 4
+  },
+  "passedTestFiles": {
+    "app": 1492,
+    "api": 506,
+    "mobile": 106
+  },
+  "sourceDeltaFromBuild": {
+    "currentSource": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+    "appAndNativeTransportSource": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+    "reconstructedAppAndNativeTransportSource": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+    "buildSource": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+    "reconstructedBuildSource": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+    "changedSinceAppAndNativeTransport": [
+      "src/app/api/chat/send/chat-attention-persistence.test.ts"
+    ],
+    "changedSinceBuild": [
+      "src/app/api/chat/send/chat-attention-persistence.test.ts",
+      "apps/ios/CovenCave/CovenCaveTests/ActivityTransportTests.swift"
+    ],
+    "classification": "Only test assertions/comments changed after production build. Only the bounded persistence source contract changed after full app/native TCP checks."
+  },
+  "checks": [
+    {
+      "label": "chronology-tracker-green",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/lib/chat-reasoning-blocks.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:29:49.471296+00:00",
+      "sourceBefore": "e9819560b9f78375e0d3bb39e3d06c46e14b1d02d18ab432035a09d934038f06",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-tracker-green.log",
+      "finishedAt": "2026-10-03T23:29:49.739865+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e9819560b9f78375e0d3bb39e3d06c46e14b1d02d18ab432035a09d934038f06",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-projection",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/server/legacy-reasoning-projection.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:33:08.554847+00:00",
+      "sourceBefore": "d9d0ddc6d156ad4103e637541367a330e6dc6e836f95f351840d7a89be76bd46",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-projection.log",
+      "finishedAt": "2026-10-03T23:33:08.963776+00:00",
+      "exitCode": 0,
+      "sourceAfter": "d9d0ddc6d156ad4103e637541367a330e6dc6e836f95f351840d7a89be76bd46",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-hermes-route",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:33:08.554528+00:00",
+      "sourceBefore": "d9d0ddc6d156ad4103e637541367a330e6dc6e836f95f351840d7a89be76bd46",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-hermes-route.log",
+      "finishedAt": "2026-10-03T23:33:12.869493+00:00",
+      "exitCode": 0,
+      "sourceAfter": "d9d0ddc6d156ad4103e637541367a330e6dc6e836f95f351840d7a89be76bd46",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-shared-tests",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--test",
+        "src/lib/chat-reasoning-blocks.test.ts",
+        "src/lib/chat-tool-provenance.test.ts",
+        "src/lib/chat-activity-corpus.test.ts",
+        "src/lib/server/legacy-reasoning-projection.test.ts",
+        "src/lib/tool-offset-correction.test.ts",
+        "src/lib/chat-tool-events.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:34:53.362598+00:00",
+      "sourceBefore": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-shared-tests.log",
+      "finishedAt": "2026-10-03T23:34:54.019077+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-typecheck-final",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:43:11.777136+00:00",
+      "sourceBefore": "4b5fe9b82da759baf55e1dc7c43e113a108d918003906c61e4197a917695aa4d",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-typecheck-final.log",
+      "finishedAt": "2026-10-03T23:43:17.288059+00:00",
+      "exitCode": 0,
+      "sourceAfter": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "sourceUnchanged": false
+    },
+    {
+      "label": "chronology-build",
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:34:53.360376+00:00",
+      "sourceBefore": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-build.log",
+      "finishedAt": "2026-10-03T23:35:45.518762+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-lint",
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:35:28.254344+00:00",
+      "sourceBefore": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-lint.log",
+      "finishedAt": "2026-10-03T23:35:55.180015+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-wiring",
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:35:28.254345+00:00",
+      "sourceBefore": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-wiring.log",
+      "finishedAt": "2026-10-03T23:35:28.805952+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-native-unit",
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/chronology-native-unit.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:34:53.362549+00:00",
+      "sourceBefore": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-native-unit.log",
+      "finishedAt": "2026-10-03T23:36:18.482965+00:00",
+      "exitCode": 0,
+      "sourceAfter": "fa86da29b8660aca30d6a32628397d45c0e960939763a4f8c0a14f53e30f4025",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-native-transport-verified-run",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-native-transport.mjs",
+        "--execute",
+        "--destination",
+        "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "--derived-data",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "--evidence",
+        "/Users/buns/.coven/cave/verification/issue-5761/chronology-native-transport-verified"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:40:47.129334+00:00",
+      "sourceBefore": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-native-transport-verified-run.log",
+      "finishedAt": "2026-10-03T23:41:11.120197+00:00",
+      "exitCode": 0,
+      "sourceAfter": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-app",
+      "command": [
+        "pnpm",
+        "test:app"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:41:14.382172+00:00",
+      "sourceBefore": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-app.log",
+      "finishedAt": "2026-10-03T23:46:35.205670+00:00",
+      "exitCode": 0,
+      "sourceAfter": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-api-final",
+      "command": [
+        "pnpm",
+        "test:api"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:47:10.262656+00:00",
+      "sourceBefore": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-api-final.log",
+      "finishedAt": "2026-10-03T23:53:08.339481+00:00",
+      "exitCode": 0,
+      "sourceAfter": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-mobile",
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:42:48.159282+00:00",
+      "sourceBefore": "6f6e91c592629b374120e1ef528aed16a8002bbe92b6087b2b6d00ce961a7fba",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-mobile.log",
+      "finishedAt": "2026-10-03T23:43:12.041390+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b2e691bcfd277f783f2e342ca71bef3053c2497a406dee347d4d345b907620e3",
+      "sourceUnchanged": false
+    },
+    {
+      "label": "chronology-attention-contract",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "src/app/api/chat/send/chat-attention-persistence.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:46:57.177150+00:00",
+      "sourceBefore": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-attention-contract.log",
+      "finishedAt": "2026-10-03T23:46:57.452265+00:00",
+      "exitCode": 0,
+      "sourceAfter": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "chronology-attention-lint",
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "src/app/api/chat/send/chat-attention-persistence.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-03T23:47:11.418663+00:00",
+      "sourceBefore": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/chronology-attention-lint.log",
+      "finishedAt": "2026-10-03T23:47:12.194551+00:00",
+      "exitCode": 0,
+      "sourceAfter": "69f1be6c15a1011dfab71f4ca0a975e8d83cbebe7fe2517e0eb68a026ff38f16",
+      "sourceUnchanged": true
+    }
+  ],
+  "checkNotes": [
+    "The final typecheck and mobile suite overlapped app regression tests that owned temporary source fixtures. Typecheck ended at the app/native fingerprint; mobile began at it. Their recorded intermediate fingerprint differences are retained, not described as immutable-source checks. The only later change is the API source-contract assertion, qualified separately by API, focused test and lint."
+  ],
+  "retainedFailedAttempts": [
+    {
+      "label": "chronology-tracker-red",
+      "classification": "Expected failing test before shared sequence implementation"
+    },
+    {
+      "label": "chronology-native-transport-run",
+      "classification": "Test expected 19 UTF-16 units after omitting the scenario trailing newline; actual live/history offset 20 was correct"
+    },
+    {
+      "label": "chronology-api",
+      "classification": "232 files passed, then a source contract exceeded its fixed 900-character match window. Scoped the assertion to the persistence section and reran the full suite."
+    }
+  ],
+  "cleanup": {
+    "ownedSimulator": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "simulatorState": "Shutdown",
+    "serverStopped": true,
+    "providerStopped": true,
+    "fixtureRootRemoved": true,
+    "worktrees": "Intentionally preserved for actor 01a100a2-2a9b-7681-bdbe-994106f4ba12; staged state unchanged"
+  },
+  "preservation": {
+    "cave": {
+      "stagedPatchUnchanged": true,
+      "stagedPatchSha256": "70e4b738fa7285c94ce287726d73e02086f20b488c76559229508d920e6f6a9a"
+    },
+    "runtimes": {
+      "stagedPatchUnchanged": true,
+      "stagedPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archivedWorkingFilesUnchanged": true,
+      "workingFileCount": 9
+    }
+  },
+  "localEvidenceRoot": "/Users/buns/.coven/cave/verification/issue-5761",
+  "sourceArchive": "/Users/buns/.coven/cave/verification/issue-5761/chronology-source-final-20261003",
+  "artifactSha256": {
+    "chronology-native-transport-verified/result.json": "b3dc5f6f0cb7ae2fb8664405a3bcbaa7e2ccc3f76ba0c52a707c7f30bf0e7e72",
+    "chronology-native-transport-verified/native-transport.log": "24dc563a88057123ab8a18680742e9ed62c65834ef904d23bfd10f55ba3c27f1",
+    "chronology-source-delta-final.json": "8e1f754ec0340386fd20a1cdcede236575121b98090557de7ed7839cf43bd558",
+    "chronology-preservation.json": "46845dc1a111f362b3e2d761191e5f6102877637b85f8568bae6dfde8f478c5f"
+  },
+  "builtArtifactSha256": {
+    "server.mjs": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+    ".next/server/app/api/chat/send/route.js": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+  },
+  "limitations": [
+    "No chronological UI renderer or expansion/focus/performance qualification in this slice.",
+    "Attachment and control-marker transformations need position mapping or an honest fallback before rich transcript interleaving.",
+    "Loopback HTTP and synthetic external Hermes provider; no remote HTTPS, real-provider, rendered native UI or human accessibility claim.",
+    "Canonical signed runtime admission, protected effects and the remaining golden matrix are incomplete.",
+    "No commit, push, PR, merge, release, issue closure or Project mutation."
+  ]
+}

@@ -136,8 +136,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?text-overflow\s*:\s*ellipsis/,
-  "Meta string should truncate instead of wrapping the header taller",
+  /\.cave-chat-meta-line__meta\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal/,
+  "Exact runtime/model identity wraps instead of hiding the ID behind ellipsis",
 );
 
 assert.match(

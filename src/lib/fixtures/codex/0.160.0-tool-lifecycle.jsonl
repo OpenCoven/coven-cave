@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000160"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"[Recorded nonfatal diagnostic omitted from fixture]"}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"[Recorded nonfatal diagnostic omitted from fixture]"}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"/bin/zsh -lc 'cat marker.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"/bin/zsh -lc 'cat marker.txt'","aggregated_output":"CAVE_ACTIVITY_CANARY\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"CAVE_ACTIVITY_CANARY"}}
+{"type":"turn.completed","usage":{"input_tokens":49284,"cached_input_tokens":37504,"cache_write_input_tokens":0,"output_tokens":84,"reasoning_output_tokens":0}}

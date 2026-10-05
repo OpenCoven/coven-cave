@@ -22,6 +22,7 @@ await mkdir(familiarWorkspace, { recursive: true });
 
 const codexLog = path.join(home, "codex-calls.jsonl");
 const covenLog = path.join(home, "coven-calls.jsonl");
+const authMode = path.join(home, "auth-mode");
 const fixturePath = fileURLToPath(
   new URL("../../../../lib/fixtures/codex/0.145.0-tool-lifecycle.jsonl", import.meta.url),
 );
@@ -73,8 +74,18 @@ process.env.COVEN_SOCKET = daemonSocket;
 // `exec --json` run that replays the conformance fixture. Every argv is
 // logged so the test can assert the exact launch contract. Paths are baked in
 // because the capability probe deliberately scrubs custom environment keys.
+// Synthetic reasoning and rejection cases augment the captured tool fixture.
+const reasoningFrames = [
+  { type: "item.completed", item: { id: "declined-1", type: "command_execution", command: "denied command", status: "declined" } },
+  { type: "item.completed", item: { id: "declined-1", type: "command_execution", command: "denied command", status: "completed", aggregated_output: "CONFLICTING_RESULT" } },
+  { type: "item.started", item: { id: "summary-1", type: "reasoning", text: "PRIVATE_PARTIAL token=summary-secret" } },
+  { type: "item.updated", item: { id: "summary-1", type: "reasoning", text: "PRIVATE_PARTIAL token=summary-secret" } },
+  { type: "item.completed", item: { id: "summary-1", type: "reasoning", text: "Compare café results. token=summary-secret user@example.com", encrypted_content: "OPAQUE_STATE_SENTINEL" } },
+  { type: "item.completed", item: { id: "summary-1", type: "reasoning", text: "CONFLICTING_REPLAY" } },
+  { type: "item.started", item: { id: "summary-2", type: "reasoning", text: "PRIVATE_UNFINISHED" } },
+];
 const codexShimSource = (version) => [
-  "const { appendFileSync, readFileSync } = require('node:fs');",
+  "const { appendFileSync, existsSync, readFileSync } = require('node:fs');",
   "const args = process.argv.slice(2);",
   `appendFileSync(${JSON.stringify(codexLog)}, JSON.stringify(args) + "\\n");`,
   "if (args.includes('--version')) {",
@@ -90,8 +101,20 @@ const codexShimSource = (version) => [
   "  process.exit(0);",
   "}",
   "if (args[0] === 'exec') {",
-  `  process.stdout.write(readFileSync(${JSON.stringify(fixturePath)}, 'utf8'));`,
-  "  process.exit(0);",
+  `  if (existsSync(${JSON.stringify(authMode)})) {`,
+  `    const mode = readFileSync(${JSON.stringify(authMode)}, 'utf8');`,
+  "    if (mode === 'turn') console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-auth' }));",
+  "    const diagnostic = 'Not logged in. Run codex login. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL';",
+  "    console.log(JSON.stringify(mode === 'turn' ? { type: 'turn.failed', error: { message: diagnostic } } : { type: 'error', message: diagnostic }));",
+  "    process.exit(1);",
+  "  }",
+  `  const frames = readFileSync(${JSON.stringify(fixturePath)}, 'utf8').trim().split('\\n').map(JSON.parse);`,
+  `  frames.splice(1, 0, ...${JSON.stringify(reasoningFrames)});`,
+  "  const bytes = Buffer.from(frames.map((frame) => JSON.stringify(frame)).join('\\n') + '\\n');",
+  "  for (let i = 0; i < bytes.length; i += 7) process.stdout.write(bytes.subarray(i, i + 7));",
+  // POSIX pipe writes can remain buffered. Preserve the seven-byte framing
+  // stress without exiting before the terminal tool/turn frames are flushed.
+  "  return process.stdout.end(() => process.exit(0));",
   "}",
   "process.exit(9);",
 ].join("\n");
@@ -180,10 +203,11 @@ try {
     body: JSON.stringify({
       familiarId: "opal",
       prompt: "codex direct fixture prompt",
+      runId: "codex-summary-fixture",
       projectRoot: familiarWorkspace,
     }),
   }));
-  const { events } = await readSse(response);
+  const { body, events } = await readSse(response);
 
   // Diagnose path selection before asserting bubbles: if the capability
   // probe timed out or failed, the route silently serves the turn through
@@ -194,6 +218,21 @@ try {
     directExecCalls.length > 0,
     `the verified CLI must serve this turn directly, not fall back (coven argv: ${JSON.stringify(await loggedCalls(covenLog))})`,
   );
+
+  const summaryEvents = events.filter((event) => event.kind === "reasoning");
+  assert.deepEqual(summaryEvents.map((event) => event.block.phase), ["running", "running", "complete", "running", "unavailable"]);
+  assert.ok(summaryEvents.filter((event) => event.block.phase !== "complete").every((event) => event.block.text === undefined));
+  assert.match(summaryEvents[2].block.text, /Compare café results/);
+  assert.equal(summaryEvents[2].block.observation.producer.harness, "codex");
+  assert.equal(summaryEvents[2].block.observation.producer.version, "0.145.0");
+  assert.equal(summaryEvents[2].block.observation.producer.protocol, "codex-jsonl-v1");
+  assert.doesNotMatch(body, /PRIVATE_|OPAQUE_|CONFLICTING_REPLAY|summary-secret|user@example/);
+  const { subscribeRunStream } = await import("@/lib/server/chat-stream-buffer");
+  const replay = subscribeRunStream("codex-summary-fixture", 0, () => {}, () => {});
+  assert.ok(replay?.done);
+  assert.deepEqual(replay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "reasoning"), summaryEvents);
+  replay.unsubscribe();
+  assert.equal((await loggedCalls(codexLog)).filter((args) => args[0] === "exec" && !args.includes("--help")).length, 1, "replay does not launch another turn");
 
   const toolEvents = events.filter((event) => event.kind === "tool_use");
   assert.ok(
@@ -235,14 +274,23 @@ try {
   const conversation = await loadConversation(done.sessionId);
   const assistantTurn = conversation?.turns.at(-1);
   assert.equal(assistantTurn?.role, "assistant");
+  assert.deepEqual(assistantTurn.reasoningBlocks, [summaryEvents[2].block, summaryEvents[4].block]);
   assert.equal(assistantTurn?.text, "Fixture assistant response.");
   assert.equal(conversation?.harnessSessionId, "thread-current", "the native thread id persists for resume");
   const persistedTools = assistantTurn?.tools ?? [];
   assert.deepEqual(
     persistedTools.map((tool) => [tool.name, tool.status]).sort(),
-    [["Bash", "ok"], ["example.lookup", "error"]],
+    [["Bash", "ok"], ["Bash", "rejected"], ["example.lookup", "error"]],
     `the tool lifecycle persists on the saved turn: ${JSON.stringify(persistedTools)}`,
   );
+  const rejectedTool = persistedTools.find((tool) => tool.status === "rejected");
+  assert.ok(rejectedTool);
+  assert.equal(rejectedTool.activity?.executionObservedAt, null, "a rejected command never invents execution");
+  assert.equal(typeof rejectedTool.activity?.terminalObservedAt, "number");
+  assert.deepEqual(rejectedTool.activity?.authority, { binding: "unavailable", approval: "unavailable", effect: "unavailable" });
+  assert.equal(events.filter((event) => event.kind === "tool_use" && event.status === "rejected").length, 1);
+  assert.doesNotMatch(body, /CONFLICTING_RESULT/);
+  assert.deepEqual(replay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "tool_use"), events.filter((event) => event.kind === "tool_use"));
   assert.doesNotMatch(
     assistantTurn?.text ?? "",
     /thread\.started|command_execution/,
@@ -268,6 +316,23 @@ try {
     !(await loggedCalls(covenLog)).some((args) => args[0] === "run" && args[1] === "codex"),
     "a verified direct turn never starts `coven run codex`",
   );
+
+  // Native Codex may send its auth verdict only in a JSONL failure frame.
+  // Both supported shapes must preserve the verdict and discard the payload.
+  for (const mode of ["error", "turn"]) {
+    await writeFile(authMode, mode);
+    const authResponse = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: `auth ${mode}`, projectRoot: familiarWorkspace }),
+    }));
+    const { body, events: authEvents } = await readSse(authResponse);
+    assert.equal(authEvents.find((event) => event.kind === "error")?.code, "harness_auth_required", `${mode} frame offers sign-in`);
+    assert.equal(authEvents.find((event) => event.kind === "error")?.harness, "codex");
+    assert.doesNotMatch(body, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|secret|Not logged in/, "native auth payload never reaches SSE");
+    assert.equal(authEvents.findLast((event) => event.kind === "done")?.isError, true);
+    await rm(authMode);
+  }
 
   // A project grant approved between turns changes process authority. Codex
   // resume cannot widen an already-created sandbox reliably, so Cave must

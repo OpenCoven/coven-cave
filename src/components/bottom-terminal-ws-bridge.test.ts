@@ -9,7 +9,7 @@ assert.doesNotMatch(src, /platform === "browser"[\s\S]{0,120}setUnavailable\(tru
 assert.doesNotMatch(src, /platform === "ios" \|\| platform === "android"[\s\S]{0,120}setUnavailable\(true\)/, "mobile native must not hard-render the unavailable placeholder — it rides the WS bridge");
 assert.match(src, /if \(platform !== "desktop"\) return;/, "Tauri IPC path remains desktop-only");
 assert.match(src, /if \(platform !== "browser" && platform !== "ios" && platform !== "android"\) return;/, "WS bridge path covers browser and Tauri-mobile");
-assert.match(src, /bridge\.connect\(threadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
+assert.match(src, /bridge\.connect\(ptyThreadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
 assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(out\)\)/, "terminal input flows to WS bridge");
 assert.match(src, /bridge\.resize\(cols,\s*rows\)/, "terminal resize flows to WS bridge (throttled via makeResizer)");
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
@@ -44,18 +44,15 @@ assert.match(
   /sendToPtyRef\.current = null;/,
   "teardown drops the writer so a broadcast can't write into an unmounted pane",
 );
-assert.match(src, /if \(!bridge\.hasReplayCursor\) \{[\s\S]{0,260}term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "older full-replay servers reset before reattach");
+assert.match(src, /if \(!bridge\.hasReplayCursor\) \{[\s\S]{0,260}term\.reset\(\);[\s\S]{0,400}await lifetime\.run\(\(\) => bridge\.reconnect\(\)/, "older full-replay servers reset before reattach");
 assert.match(src, /bridge\.onReplayReset\(\(\) => \{[\s\S]{0,300}term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "expired cursor fallback resets the terminal and decoder before bounded full replay");
 assert.match(src, /reason === "replaced"[\s\S]{0,260}srAnnounce/, "a take-over by another window is announced, not fought with reconnects");
 
 // ── PTY lifetime is decoupled from view lifetime ──────────────────────────────
 // Unmount is usually a keepalive tab-switch remount; killing the PTY there
 // raced the next mount's pty_list and left a dead pane that ate keystrokes.
-assert.doesNotMatch(
-  src,
-  /invoke\("pty_stop"/,
-  "desktop cleanup must NOT stop the PTY — the thread-id owner kills the shell (chat-surface stops cave.rail.<id> on session switch, cave-c3yt)",
-);
+assert.match(src, /disposeOnUnmount = false/, "ordinary terminals retain their PTY by default");
+assert.match(src, /createTerminalPtyLifetime\(threadId, disposeOnUnmount\)/, "temporary terminals opt into effect-owned lifetime");
 // The one deliberate kill site: the chat code rail stops the PREVIOUS
 // session's shell on session switch — native IPC via pty_stop AND the WS
 // transport via an explicit kill frame (otherwise the old shell leaks for
@@ -85,7 +82,7 @@ assert.match(
 );
 assert.match(
   src,
-  /const attachToRunning = running\.includes\(threadId\);[\s\S]{0,900}unlistenData/,
+  /const attachToRunning = running\.includes\(ptyThreadId\);[\s\S]{0,900}unlistenData/,
   "snapshot replay happens before the live data listener registers",
 );
 console.log("bottom-terminal disconnect-recovery assertions: ok");

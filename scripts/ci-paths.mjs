@@ -23,7 +23,7 @@ const E2E_PATH =
 // here, editing the gate's own machinery ran everything except the job that
 // would have exercised it.
 const IOS_PATH =
-  /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
+  /^(?:apps\/ios\/|fixtures\/coven-automations-release\/package(?:-lock)?\.json$|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|runtime-activity-native-transport\.mjs|client-v1-conformance\.mjs|coven-automations-release-canary\.ts|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 const CLIENT_V1_PATH =
   /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-(?:contract|hpke-vectors)|client-v1-(?:release-smoke|conformance|authority-takeover))(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change

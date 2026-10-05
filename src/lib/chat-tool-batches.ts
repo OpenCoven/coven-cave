@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 // Pure model for the tool-activity card the Chat.dc.html hybrid draws (2a ④,
 // "Tool use, skills and capabilities as components"):
 //
@@ -25,7 +26,7 @@ export type BatchTool = {
   id: string;
   name: string;
   input?: string;
-  status: "running" | "ok" | "error";
+  status: ToolStatus;
   durationMs?: number;
   textOffset?: number;
 };

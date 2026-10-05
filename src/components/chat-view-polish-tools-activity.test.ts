@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   activityCss,
   attachmentsLib,
@@ -46,30 +47,29 @@ assert.match(
   "Assistant turns should use the shared current projection for reasoning, results, and control-marker stripping",
 );
 
-assert.match(
-  source,
-  /function ReasoningBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Thinking[\s\S]*<RichText text=\{reasoning\}/,
-  "ReasoningBlock should render thinking in a collapsed disclosure with formatted text",
-);
-
-// Thinking is togglable: the global Show-thinking preference opens every
-// reasoning block at once via a controlled `open` (default-collapsed in markup).
-assert.match(
-  source,
-  /function ReasoningBlock[\s\S]*const \[showThinking\] = useShowThinking\(\)[\s\S]*open=\{pending \|\| showThinking \|\| undefined\}/,
-  "ReasoningBlock settles to the global Show-thinking preference after live streaming",
-);
-
-assert.match(
-  source,
-  /function ReasoningBlock\(\{ reasoning, durationMs, pending \}[\s\S]*open=\{pending \|\| showThinking \|\| undefined\}/,
-  "live reasoning stays open while a turn is pending, then returns to the Show-thinking preference",
-);
+const reasoningDisclosure = readFileSync(new URL("./chat-reasoning-disclosure.tsx", import.meta.url), "utf8");
+assert.match(source, /function ReasoningBlock[\s\S]*<ChatReasoningDisclosure pending=\{pending\}[\s\S]*<RichText text=\{reasoning\}/,
+  "reasoning keeps its existing presentation through the shared disclosure");
+assert.match(reasoningDisclosure, /useShowThinking\(\)[\s\S]*if \(!ready\) return null[\s\S]*open=\{open \|\| undefined\}/,
+  "reasoning waits for the saved preference and keeps local expansion state");
+assert.doesNotMatch(reasoningDisclosure, /open=\{pending \|\|/,
+  "pending reasoning cannot override an explicit opt-out");
+assert.match(turnRow, /chatActivityTimeline\(pending \? presentedRawText : turn\.text, turn\.tools, reasoningBlocks\)/,
+  "timeline anchors use source text before rich marker projection");
+assert.match(turnRow, /<ChatTurnTimeline entries=\{timeline\}[\s\S]*renderTool=\{\(tool\) => <ToolBlock tool=\{tool\}/,
+  "ordered calls retain the existing lazy authenticated tool component");
+assert.match(turnRow, /transcriptContent=\{transcriptContent\}/);
 assert.match(
   turnRow,
-  /const activityDetails =[\s\S]*?<ReasoningBlock[\s\S]*?reasoning=\{reasoning\}[\s\S]*?durationMs=\{turn\.durationMs\}[\s\S]*?pending=\{pending\}/,
-  "assistant reasoning remains available through the shared activityDetails slot",
+  /const reasoningContent =[\s\S]*?<ReasoningBlock[\s\S]*?reasoning=\{reasoning\}[\s\S]*?durationMs=\{turn\.durationMs\}[\s\S]*?pending=\{pending\}/,
+  "assistant reasoning has its own slot outside the collapsed activity rollup",
 );
+assert.doesNotMatch(
+  turnRow.match(/const activityDetails =[\s\S]*?const proseContent/)?.[0] ?? "",
+  /<ReasoningBlock/,
+  "the lazy activity disclosure must not hide reasoning regardless of the saved preference",
+);
+assert.match(turnRow, /reasoningContent=\{reasoningContent\}/);
 assert.match(
   sessionHeader,
   /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*setShowThinking\(!showThinking\)/,
@@ -87,7 +87,7 @@ assert.match(
 // tinted (color-only) chip.
 assert.match(
   source,
-  /function toolGroupAriaLabel\(summary: string, running: number, errors: number\): string \{[\s\S]*?Tool activity: \$\{summary\}/,
+  /function toolGroupAriaLabel\(summary: string, running: number, errors: number, requested = 0, unknown = 0\): string \{[\s\S]*?Tool activity: \$\{summary\}/,
   "toolGroupAriaLabel states the compact summary as the disclosure's accessible name",
 );
 
@@ -99,7 +99,7 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors, requested, unknown\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
 const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
@@ -141,8 +141,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
-  "a repeated run's accessible name includes its call, running, and error counts",
+  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{requested \? `, \$\{requested\} requested` : ""\}\$\{unknown \? `, \$\{unknown\} outcome unknown` : ""\}\$\{rejected \? `, \$\{rejected\} rejected` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
+  "a repeated run's accessible name includes requested, rejected, unknown, running, and error counts",
 );
 
 // Task 3 cont.: Status spans are scoped to their <summary> and wrap the chip markup.
@@ -250,7 +250,7 @@ assert.match(
 assert.match(
   turnRow,
   /renderSegments = split\.some\(\((segment|s)\) => (?:segment|s)\.kind === "block"\) \? split : undefined/,
-  "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
+  "legacy settled turns retain their rich projection while the timeline reuses its splitters",
 );
 const supplementary = turnRow.match(
   /const supplementaryContent = \([\s\S]*?\n  \);\n\n  return \(/,

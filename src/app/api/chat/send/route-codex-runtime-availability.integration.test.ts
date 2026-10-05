@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -60,10 +60,12 @@ const shim = [
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
   "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
-  "  if (process.env.COVEN_TEST_MODE === 'silent-stderr') { console.error('model gpt-5.6-sol is unsupported at /private/fixture/secret ghp_1234567890abcdefghijklmnopqrstuv'); process.exit(1); }",
+  "  if (process.env.COVEN_TEST_MODE === 'silent-stderr') { console.error('model gpt-5.6-sol is unsupported at /private/fixture/secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL'); process.exit(1); }",
   // Coven relays Codex's own failure reason in the result frame's `error`
   // and writes nothing to stderr. These match its real stream-json shape.
   "  const resultErrors = {",
+  "    'result-auth-login': 'Not logged in. Run codex login. /private/fixture/secret',",
+  "    'result-auth-key': 'Invalid API key: /private/fixture/secret',",
   "    'result-error': \"Codex ran out of room in the model's context window at /private/fixture/secret\",",
   "    'result-error-exit-0': 'Codex failed reading /private/fixture/secret with ' + ['ghp', '1234567890abcdefghijklmnopqrstuv'].join('_'),",
   "    'result-bare-exit': 'Codex exited with 1',",
@@ -78,6 +80,8 @@ const shim = [
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
   "    process.exit(process.env.COVEN_TEST_MODE === 'result-error-exit-0' ? 0 : 1);",
   "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'auth-stderr') { console.error('Not logged in. Run `codex login` to continue. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL'); process.exit(1); }",
+  "  if (process.env.COVEN_TEST_MODE === 'auth-key') { console.error('Invalid API key for this familiar. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL'); process.exit(1); }",
   "  if (process.env.COVEN_TEST_MODE === 'cancel') {",
   "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
   "    setInterval(() => {}, 1000);",
@@ -287,7 +291,8 @@ try {
     const reasoningConversation = await loadConversation("coven-envelope-reasoning-session");
     const reasoningTurn = reasoningConversation?.turns.at(-1);
     assert.equal(reasoningTurn?.text.trim(), "Visible answer.");
-    assert.equal(reasoningTurn?.reasoning, "private notes", "reasoning survives reload without control markers");
+    assert.equal(reasoningTurn?.reasoning, undefined, "legacy tags do not designate a display-safe provider summary");
+    assert.doesNotMatch(JSON.stringify(events), /private notes/, "unclassified content never crosses the SSE boundary");
     assert.equal(
       reasoningTurn?.responseMetadata?.attentionRequest?.reason,
       "approval",
@@ -365,7 +370,7 @@ try {
   const stderrExitError = stderrExitEvents.find((event) => event.kind === "error");
   assert.match(stderrExitError?.message ?? "", /exit code 1/);
   assert.match(stderrExitError?.message ?? "", /diagnostic output, which Cave withheld/);
-  assert.doesNotMatch(stderrExitBody, /ghp_|\/private\/fixture|unsupported at/i);
+  assert.doesNotMatch(stderrExitBody, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|\/private\/fixture|unsupported at/i);
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.confirmedModel, undefined);
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
 
@@ -410,14 +415,18 @@ try {
   }
   {
     // A relayed error that exits 0 (as an SSH run also does) skips the
-    // process-failure path and reaches the empty-response diagnostic, which
-    // copies the renderable tail into persisted assistant text. Only the
-    // fixed withheld line may get there, never the relayed payload.
+    // process-failure path and reaches the empty-response diagnostic.
+    // Only the fixed diagnostic-presence message may be streamed or saved,
+    // never the relayed payload or any renderable-tail copy.
     const { body, events } = await postResultFailure("result-error-exit-0", "relayed failure, exit 0");
     assert.equal(events.find((event) => event.kind === "error")?.code, undefined, "exit 0 is not a process failure");
     assert.doesNotMatch(body, /\/private\/fixture|ghp_|failed reading/i, "the relayed reason is never rendered or persisted");
-    assert.match(body, /details were withheld to protect local data/, "chat says Codex reported an error without repeating it");
-    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
+    const answer = events.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
+    assert.match(answer, /Runtime diagnostic output was withheld to protect local data/, "chat reports diagnostic presence without repeating its contents");
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true);
+    const saved = await loadConversation(done.sessionId);
+    assert.equal(saved?.turns.findLast((turn) => turn.role === "assistant")?.text, answer, "history retains the same fixed diagnostic as the live stream");
   }
   {
     // Coven's bare wrapper restates the exit code; it is not Codex output.
@@ -436,6 +445,58 @@ try {
     assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "failed");
     assert.doesNotMatch(body, /ChatGPT account/, "the provider payload is not copied into chat");
   }
+  for (const [mode, code] of [
+    ["result-auth-login", "harness_auth_required"],
+    ["result-auth-key", "harness_auth_configuration_required"],
+  ]) {
+    const { body, events } = await postResultFailure(mode, "relayed auth failure");
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, code, "relayed diagnostics produce the same recovery as stderr");
+    assert.equal(error?.harness, "codex");
+    assert.doesNotMatch(body, /\/private\/fixture|secret|Not logged in|Invalid API key/);
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
+  }
+
+  process.env.COVEN_TEST_MODE = "auth-stderr";
+  const authResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "needs sign-in", projectRoot: familiarWorkspace }),
+  }));
+  const { body: authBody, events: authEvents } = await readSse(authResponse);
+  assert.equal(authEvents.find((event) => event.kind === "error")?.code, "harness_auth_required");
+  assert.equal(authEvents.find((event) => event.kind === "error")?.harness, "codex");
+  assert.match(authEvents.find((event) => event.kind === "error")?.message ?? "", /Codex needs sign-in/);
+  assert.doesNotMatch(authBody, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|secret|Not logged in/);
+  assert.equal(authEvents.findLast((event) => event.kind === "done")?.isError, true);
+
+  // A resumed conversation keeps its bound Codex runtime even if the familiar
+  // default changes before the retry. The SSE recovery target must match it.
+  const authSessionId = envelopeEvents.findLast((event) => event.kind === "done")?.sessionId;
+  assert.ok(authSessionId && await loadConversation(authSessionId));
+  await saveConfig({ familiars: { opal: { harness: "claude" } } });
+  const resumedAuth = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", sessionId: authSessionId, prompt: "retry sign-in" }),
+  }));
+  const { events: resumedEvents } = await readSse(resumedAuth);
+  assert.equal(resumedEvents.find((event) => event.kind === "error")?.code, "harness_auth_required");
+  assert.equal(resumedEvents.find((event) => event.kind === "error")?.harness, "codex");
+  await saveConfig({ familiars: { opal: { harness: "codex" } } });
+
+  process.env.COVEN_TEST_MODE = "auth-key";
+  const keyResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "key needs repair", projectRoot: familiarWorkspace }),
+  }));
+  const { body: keyBody, events: keyEvents } = await readSse(keyResponse);
+  const keyError = keyEvents.find((event) => event.kind === "error");
+  assert.equal(keyError?.code, "harness_auth_configuration_required");
+  assert.equal(keyError?.harness, "codex");
+  assert.match(keyError?.message ?? "", /familiar's Vault/);
+  assert.doesNotMatch(keyBody, /SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|ghp_|secret|Invalid API key/);
 
   // Stop is an expected interruption, not evidence that Coven or Codex
   // failed. Its child commonly closes with a null exit code after SIGTERM;

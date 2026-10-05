@@ -6,7 +6,7 @@ import path from "node:path";
 
 const dir = mkdtempSync(path.join(tmpdir(), "coven-hfr-export-"));
 
-function writeConversation(sessionId, familiarId, text) {
+function writeConversation(sessionId, familiarId, text, telemetry = {}) {
   writeFileSync(
     path.join(dir, `${sessionId}.json`),
     JSON.stringify({
@@ -21,6 +21,7 @@ function writeConversation(sessionId, familiarId, text) {
           role: "assistant",
           text,
           createdAt: "2026-07-04T10:00:01.000Z",
+          ...telemetry,
         },
       ],
     }),
@@ -35,7 +36,11 @@ function run(args) {
 }
 
 try {
-  writeConversation("sess-a", "cody", "answer a");
+  const runtimeIdentity = { schemaVersion: 1, harness: "copilot", version: "1.0.82", model: "claude-sonnet-5" };
+  writeConversation("sess-a", "cody", "answer a<thinking>PRIVATE_REASONING</thinking>", {
+    responseMetadata: { harness: "copilot", runtimeIdentity },
+    tools: [{ id: "call-a", name: "view", input: "reader@example.com", output: '{"text":"safe","signature":"PRIVATE_SIGNATURE"}', status: "ok" }],
+  });
   writeConversation("sess-b", "cody", "answer b");
 
   const ambiguous = run(["--dir", dir, "--familiar", "cody"]);
@@ -56,6 +61,12 @@ try {
   assert.equal(lines.at(-1).hook, "post_llm_call");
   assert.equal(lines.at(-1).assistant_response, "answer a");
   assert.equal(lines.at(-1).output, "answer a");
+  assert.equal(lines[0].model, undefined);
+  assert.equal(lines[0].recorded_model, "gpt");
+  assert.equal(lines.at(-1).model, "claude-sonnet-5");
+  assert.deepEqual(lines.at(-1).runtime_identity, runtimeIdentity);
+  assert.deepEqual(lines.find((line) => line.hook === "post_tool_call").runtime_identity, runtimeIdentity);
+  assert.doesNotMatch(selected.stdout, /PRIVATE_REASONING|PRIVATE_SIGNATURE|reader@example\.com/);
   assert.match(selected.stderr, /events from session sess-a/);
 } finally {
   rmSync(dir, { force: true, recursive: true });

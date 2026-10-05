@@ -4,17 +4,9 @@ import { callDaemon } from "@/lib/coven-daemon";
 import { isOwnedSession } from "@/lib/cave-config";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidSessionId } from "@/lib/server/session-security";
+import { projectSessionEventPage } from "@/lib/server/session-event-display";
 
 export const dynamic = "force-dynamic";
-
-type CovenEvent = {
-  seq: number;
-  id: string;
-  session_id: string;
-  kind: string;
-  payload_json: string;
-  created_at: string;
-};
 
 function intParam(value: string | null, fallback: number, min: number, max: number): number | null {
   if (value === null) return fallback;
@@ -49,7 +41,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "invalid event query" }, { status: 400 });
   }
 
-  const res = await callDaemon<{ events: CovenEvent[] }>({
+  const res = await callDaemon<{ events?: unknown }>({
     path: `/api/v1/events?sessionId=${encodeURIComponent(daemonSessionId)}&afterSeq=${afterSeq}&limit=${limit}`,
     timeoutMs: 4000,
   });
@@ -64,9 +56,13 @@ export async function GET(
   }
   if (!res.ok || !res.data) {
     return NextResponse.json(
-      { ok: false, error: res.error ?? `daemon http ${res.status}` },
+      { ok: false, error: "event_timeline_unavailable" },
       { status: 502 },
     );
   }
-  return NextResponse.json({ ok: true, events: res.data.events ?? [] });
+  const events = projectSessionEventPage(res.data.events, daemonSessionId, afterSeq, limit);
+  if (events === null) {
+    return NextResponse.json({ ok: false, error: "invalid_event_timeline" }, { status: 502 });
+  }
+  return NextResponse.json({ ok: true, events });
 }

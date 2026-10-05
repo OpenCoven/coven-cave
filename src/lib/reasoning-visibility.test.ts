@@ -88,5 +88,6 @@ test("readShowThinking returns the default without a window", async () => {
 test("the hook's initial state is the shared default, not a hard-coded false", () => {
   const source = readFileSync(new URL("./reasoning-visibility.ts", import.meta.url), "utf8");
   assert.match(source, /useState\(DEFAULT_SHOW_THINKING\)/);
-  assert.doesNotMatch(source, /useState\(false\)/);
+  assert.doesNotMatch(source, /\[show, setShow\] = useState\(false\)/);
+  assert.match(source, /\[ready, setReady\] = useState\(false\)/, "SSR cannot assume a saved browser preference");
 });

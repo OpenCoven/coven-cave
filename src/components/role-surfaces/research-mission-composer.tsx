@@ -413,7 +413,7 @@ export function ResearchMissionComposer({
       })),
     ];
     if (model && !options.some((option) => option.value === model)) {
-      options.push({ value: model, label: model, detail: "Selected model" });
+      options.push({ value: model, label: model, detail: "Saved selection · not in current inventory", disabled: true });
     }
     return options;
   }, [

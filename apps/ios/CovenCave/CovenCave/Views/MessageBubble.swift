@@ -31,6 +31,8 @@ struct MessageBubble: View {
     /// Rich markdown rows report height settlement so ChatView can preserve
     /// bottom-follow without treating WebKit measurement as a reader gesture.
     var onContentHeightChange: (() -> Void)? = nil
+    var toolOutputScope: ToolOutputScope? = nil
+    var onShowToolOutput: ((ActivityStep) -> Void)? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -43,14 +45,8 @@ struct MessageBubble: View {
     // the markdown so they match the selected theme instead of a fixed lavender.
     @Environment(\.chrome) private var chrome
 
-    @State private var mdHeight: CGFloat = 0
     /// Brief "copied" confirmation on the action row (design: copy → check).
     @State private var justCopied = false
-    /// Set when the markdown WebView can't render (missing/stale bundle, JS
-    /// error) — flips this bubble back to plain `Text` so the reply is never
-    /// shown as a blank sliver.
-    @State private var markdownFailed = false
-
     private var isUser: Bool { message.role == .user }
 
     /// Compact send time under the bubble — time only for today, with an
@@ -122,16 +118,6 @@ struct MessageBubble: View {
             )
         }
         return AssistantResponseProjection.parse(message.text, streaming: message.streaming)
-    }
-
-    /// Render the desktop-parity markdown WebView. Assistant replies always do —
-    /// now including while streaming (the WebView renders live, throttled). A
-    /// *user* message only renders markdown when it actually contains some, so
-    /// plain chatter stays fast native Text. Error messages stay native Text.
-    private func rendersMarkdown(_ projection: AssistantResponseProjection) -> Bool {
-        guard !message.isError, !projection.visible.isEmpty, !markdownFailed else { return false }
-        if isUser { return MarkdownDetect.hasMarkdown(message.text) }
-        return true
     }
 
     private var canOpenReader: Bool {
@@ -238,6 +224,8 @@ struct MessageBubble: View {
 
     private var chatBubble: some View {
         let projection = parsed
+        let timeline = isUser ? nil : ChatActivityTimeline.entries(text: message.text,
+            steps: message.activitySteps, reasoning: message.reasoningBlocks ?? [])
         return HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 48) }
 
@@ -265,17 +253,32 @@ struct MessageBubble: View {
                     attachmentImages
                         .contextMenu { messageActions }
                 }
+                if let timeline {
+                    // Keep row geometry and tool state mounted. Only earlier
+                    // prose WebViews may unload outside the viewport; nesting
+                    // a lazy stack here can leave blank space on reopening.
+                    ForEach(timeline) { entry in
+                        timelineEntry(entry, isTail: entry.id == timeline.last?.id)
+                    }
+                } else if !isUser, let blocks = message.reasoningBlocks {
+                    ForEach(blocks.compactMap(\.validated)) { block in
+                        ReasoningSummaryView(block: block, streaming: message.streaming,
+                                             messageId: message.id, onContentHeightChange: onContentHeightChange)
+                    }
+                }
                 // What the familiar is doing (tool calls / progress) — live
                 // while streaming, a collapsed summary once finished.
-                if !isUser, !message.activitySteps.isEmpty {
-                    AgentActivityView(steps: message.activitySteps,
+                let remainingActivity = timeline == nil ? message.activitySteps : message.activitySteps.filter { $0.kind == .progress }
+                if !isUser, !remainingActivity.isEmpty {
+                    AgentActivityView(steps: remainingActivity,
                                       streaming: message.streaming,
-                                      messageId: message.id)
+                                      messageId: message.id,
+                                      onShowToolOutput: onShowToolOutput)
                         .padding(.leading, 2)
                 }
                 // Hide empty settled bubbles, including image-only and
                 // control-only assistant responses.
-                if !projection.visible.isEmpty || (message.streaming && message.attachmentDataUrls.isEmpty) {
+                if timeline == nil && (!projection.visible.isEmpty || (message.streaming && message.attachmentDataUrls.isEmpty)) {
                     bubble(projection)
                         .contextMenu { messageActions }
                 }
@@ -385,6 +388,7 @@ struct MessageBubble: View {
     }
 
     @ViewBuilder private var responseModelStatus: some View {
+        let identity = message.runtimeIdentity?.validated()
         let requested = message.requestedModel
         let desired = message.desiredModel
         let forwarded = message.forwardedModel
@@ -392,8 +396,31 @@ struct MessageBubble: View {
         let state = message.modelApplicationState
         let source = message.modelSource
         let reason = message.modelApplicationReason
-        if requested != nil || desired != nil || confirmed != nil || state != nil {
+        if !isUser {
             VStack(alignment: .leading, spacing: 3) {
+                if let identity {
+                    Text("Runtime: \(identity.harness) \(identity.version ?? "version not reported")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Runtime-reported model: \(identity.model ?? "unavailable")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    ForEach(identity.activity?.statusLines ?? ["Activity support: not recorded"], id: \.self) { line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Runtime: not recorded")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Runtime-reported model: unavailable")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Activity support: not recorded")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 if let requested {
                     let requestedLabel = requested.isEmpty ? "Runtime default" : requested
                     Text("Requested model: \(requestedLabel)")
@@ -401,7 +428,7 @@ struct MessageBubble: View {
                         .foregroundStyle(.secondary)
                 }
                 if let desired, !desired.isEmpty, desired != confirmed {
-                    Text("Resolved model: \(desired)")
+                    Text("Selected model: \(desired)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -410,8 +437,8 @@ struct MessageBubble: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if let confirmed, !confirmed.isEmpty {
-                    Text("Applied model: \(confirmed)")
+                if let confirmed, !confirmed.isEmpty, identity == nil {
+                    Text("Recorded model: \(confirmed)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else if let state, !state.isEmpty {
@@ -431,7 +458,6 @@ struct MessageBubble: View {
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Model application status")
         }
     }
 
@@ -483,109 +509,38 @@ struct MessageBubble: View {
         }
     }
 
-    @ViewBuilder private func bubble(_ projection: AssistantResponseProjection) -> some View {
-        if message.text.isEmpty && message.streaming {
-            VStack(alignment: .leading, spacing: 8) {
-                TypingIndicator()
-                    .padding(.horizontal, 14).padding(.vertical, 11)
-                    .background(bubbleBackground, in: bubbleShape)
-                // While the newest reply gathers itself, surface one rotating
-                // grimoire tip (design's thinking-hint card).
-                if isLast {
-                    GrimoireHintCard()
-                }
-            }
-        } else if rendersMarkdown(projection) {
-            let ready = mdHeight > 1
-            ZStack(alignment: .topLeading) {
-                MarkdownWebView(markdown: projection.visible, height: $mdHeight,
-                                streaming: message.streaming && !isUser,
-                                theme: colorScheme == .light ? .light : .dark,
-                                accentHex: chrome.accentHex,
-                                onFailure: { markdownFailed = true },
-                                measureFirstRichRender: message.role == .assistant)
-                    .frame(height: max(mdHeight, 1))
-                    .opacity(ready ? 1 : 0)
-                    .accessibilityHidden(!ready)
-                if !ready {
-                    markdownLoadingPlaceholder(projection)
-                }
-            }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(bubbleBackground, in: bubbleShape)
-                .overlay(alignment: .topTrailing) {
-                    if canOpenReader(projection) {
-                        Button {
-                            onOpenReader?(projection.visible)
-                            Haptics.tap()
-                        } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(7)
-                                .glassFill(.control, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(6)
-                        .accessibilityLabel("Open response in reader")
-                    }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if message.streaming && !isUser { StreamingDot().padding(6) }
-                }
-                .onChange(of: mdHeight) { _, newHeight in
-                    guard newHeight > 1 else { return }
-                    onContentHeightChange?()
-                }
-        } else {
-            Text(projection.visible.isEmpty ? " " : projection.visible)
-                .textSelection(.enabled)
-                .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(bubbleBackground, in: bubbleShape)
-                .overlay(alignment: .bottomTrailing) {
-                    if message.streaming {
-                        StreamingDot().padding(6)
-                    }
-                }
+    private func bubble(_ projection: AssistantResponseProjection) -> some View {
+        MessageProseView(message: message, projection: projection, isLast: isLast,
+                         onOpenReader: onOpenReader, onContentHeightChange: onContentHeightChange)
+    }
+
+    @ViewBuilder private func timelineEntry(_ entry: ChatTimelineEntry, isTail: Bool) -> some View {
+        switch entry {
+        case .text(_, let text):
+            timelineProse(text, streaming: message.streaming && isTail, deferOffscreenMarkdown: !isTail)
+                .contextMenu { messageActions }
+        case .tool(let step):
+            AgentActivityView(steps: [step], streaming: message.streaming,
+                              messageId: "\(message.id):\(entry.id)",
+                              onShowToolOutput: onShowToolOutput, inlineTool: true)
+        case .reasoning(let block):
+            ReasoningSummaryView(block: block, streaming: message.streaming,
+                                 messageId: message.id, onContentHeightChange: onContentHeightChange)
         }
     }
 
-    private func markdownLoadingPlaceholder(_ projection: AssistantResponseProjection) -> some View {
-        Text(projection.visible)
-            .textSelection(.enabled)
-            .foregroundStyle(Color.primary)
-            .lineLimit(12)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel(projection.visible)
+    private func timelineProse(_ text: String, streaming: Bool, deferOffscreenMarkdown: Bool) -> some View {
+        var span = message
+        span.text = text
+        span.streaming = streaming
+        let projection = AssistantResponseProjection.parse(text, streaming: message.streaming)
+        return MessageProseView(message: span, projection: projection, isLast: isLast,
+                                preferNativePlainText: true,
+                                deferOffscreenMarkdown: deferOffscreenMarkdown,
+                                onOpenReader: message.streaming ? nil : onOpenReader.map { open in { _ in open(parsed.visible) } },
+                                onContentHeightChange: onContentHeightChange)
     }
 
-    private var bubbleShape: UnevenRoundedRectangle {
-        if isUser {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 18, bottomLeadingRadius: 18,
-                bottomTrailingRadius: 6, topTrailingRadius: 18,
-                style: .continuous
-            )
-        } else {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 18, bottomLeadingRadius: 6,
-                bottomTrailingRadius: 18, topTrailingRadius: 18,
-                style: .continuous
-            )
-        }
-    }
-
-    /// Bubble fills: errors stay red; the user's bubble is a soft vertical
-    /// accent gradient (readable text comes from `chrome.accentForeground`);
-    /// the assistant's bubble sits on the theme's raised surface so it tracks
-    /// the desktop palette — the fallback palette resolves to the same
-    /// `secondarySystemBackground` as before.
-    private var bubbleBackground: AnyShapeStyle {
-        if message.isError { return AnyShapeStyle(Color.red.opacity(0.85)) }
-        if isUser { return AnyShapeStyle(chrome.accentGradient) }
-        return AnyShapeStyle(chrome.bgRaised)
-    }
 }
 
 @MainActor
@@ -803,6 +758,8 @@ extension MessageBubble: Equatable {
             && lhs.familiarAvatarSource == rhs.familiarAvatarSource
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
+            && lhs.toolOutputScope == rhs.toolOutputScope
+            && (lhs.onShowToolOutput == nil) == (rhs.onShowToolOutput == nil)
             && (lhs.onDelete == nil) == (rhs.onDelete == nil)
             && (lhs.onSuggestion == nil) == (rhs.onSuggestion == nil)
             && (lhs.onRetry == nil) == (rhs.onRetry == nil)
@@ -811,5 +768,64 @@ extension MessageBubble: Equatable {
             && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
             && (lhs.onForward == nil) == (rhs.onForward == nil)
             && (lhs.onContentHeightChange == nil) == (rhs.onContentHeightChange == nil)
+    }
+}
+
+
+private struct ReasoningSummaryView: View {
+    let block: ChatReasoningBlock
+    let streaming: Bool
+    let messageId: String
+    var onContentHeightChange: (() -> Void)? = nil
+    @Environment(AppModel.self) private var app
+    @AppStorage("cave.chat.showReasoningSummaries") private var showSummaries = true
+    private var key: String { "\(messageId):reasoning:\(block.id)" }
+    private var expanded: Bool { app.reasoningDisclosureState.isExpanded(key, defaultValue: showSummaries) }
+
+    private var label: String {
+        switch block.representation {
+        case "provider-progress": "Provider progress"
+        case "application-activity": "Activity description"
+        case "legacy-unverified": "Unverified reasoning text"
+        default: "Reasoning summary"
+        }
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: Binding(
+            get: { expanded },
+            set: { app.reasoningDisclosureState.setExpanded($0, for: key) }
+        )) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let observation = block.observation {
+                    Text("\(observation.producer.harness) · \(observation.source == "runtime-report" ? "provider report" : "Cave observation")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text(block.text ?? (block.unavailableReason == "provider-withheld" ? "Provider withheld this summary." : block.phase == "running" && streaming ? "Summary in progress." : "Summary unavailable."))
+                    .font(.caption)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "brain")
+                    .accessibilityHidden(true)
+                Text(label)
+                    .lineLimit(nil)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.caption.weight(.medium))
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("Reasoning summary \(block.id)")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+        .onChange(of: showSummaries) { _, _ in app.reasoningDisclosureState.reset() }
+        .onChange(of: expanded) { _, _ in onContentHeightChange?() }
     }
 }

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-04",
+  "candidateBase": "00873d94f914b94225412edcd77b64634e77fee3",
+  "buildId": "AqT-aXfJnzdCfS-VOZhSf",
+  "executionSourceFingerprint": "a6779610e5e0d96139362a852e5c5a941c61e72aa25948788c3ceb048baeed85",
+  "transportRunnerSha256": "b2f83d4d96c9f636ea5f146d7dae2d63ddbaf56413726e592c5382ea606ecfce",
+  "scope": "full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+  "native": {
+    "sourceMethods": 991,
+    "executed": 991,
+    "passed": 991,
+    "failed": 0,
+    "skipped": 0,
+    "expectedFailures": 0,
+    "verifier": "scripts/ios-xctest-summary.mjs unchanged",
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "savedConversations": 1,
+    "restartAndIngressRefusalsVerified": true
+  },
+  "verification": {
+    "productionBuild": "pass",
+    "wiringRegression": "failed before, passed after",
+    "pathSelectionRegression": "failed before, passed after; 14 tests pass",
+    "summaryVerifierTests": "30 pass",
+    "actionlint": "pass",
+    "testWiring": "2131 files wired",
+    "cleanup": "server, replacement server and daemon PIDs absent; fixture home removed; owned simulator shutdown"
+  },
+  "limitations": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt.",
+    "Hosted Linux/macOS verification of the final commit is pending.",
+    "CI path selection was updated after native execution and separately verified; the transport runner and native sources are unchanged."
+  ]
+}

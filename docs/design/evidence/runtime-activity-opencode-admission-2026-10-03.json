@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-03T21:42:20.821099+00:00",
+  "issue": 5763,
+  "parentIssue": 5761,
+  "classification": "launch-probe-verified; HTTP read-only refusal; tool-visibility-unqualified",
+  "sourceDelta": "Only the opt-in runtime-activity-canary.mjs helper changed after the native tool-output source checkpoint. The built production server is unchanged.",
+  "checks": {
+    "opencode-passive-retry": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "--input-type=module",
+        "-e",
+        "import { openCodeRunCapabilities } from \"./src/app/api/chat/send/chat-send-capabilities.ts\"; import { grokProbeEnvironment } from \"./src/lib/grok-compatibility.ts\"; const startedAt = new Date().toISOString(); const capabilities = await openCodeRunCapabilities(\"issue5761probe\", undefined, grokProbeEnvironment(process.env)); console.log(JSON.stringify({startedAt, finishedAt: new Date().toISOString(), capabilities, scope: \"Canonical bounded installed launcher help/version probe with credential environment scrubbed. No provider turn or registry refresh.\"}));"
+      ],
+      "startedAt": "2026-10-03T21:40:21.068793+00:00",
+      "sourceBefore": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "log": "opencode-passive-retry.log",
+      "finishedAt": "2026-10-03T21:40:22.128670+00:00",
+      "exitCode": 0,
+      "sourceAfter": "10f36e64d1b25bee8b8f4b6a2a72ee825ecb234b66205a40e22feb7dc2c84c60",
+      "sourceUnchanged": true
+    },
+    "opencode-canary-helper-lint": {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "scripts/runtime-activity-canary.mjs"
+      ],
+      "startedAt": "2026-10-03T21:41:13.899301+00:00",
+      "sourceBefore": "b9b914b551d2e4b01fd56a18b4dd6e216d765fd67da946344f2471ad8e9173ad",
+      "log": "opencode-canary-helper-lint.log",
+      "finishedAt": "2026-10-03T21:41:17.343074+00:00",
+      "exitCode": 0,
+      "sourceAfter": "b9b914b551d2e4b01fd56a18b4dd6e216d765fd67da946344f2471ad8e9173ad",
+      "sourceUnchanged": true
+    },
+    "opencode-http-read-admission": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "scripts/runtime-activity-canary.mjs",
+        "--harness",
+        "opencode",
+        "--execute",
+        "--http"
+      ],
+      "startedAt": "2026-10-03T21:41:21.052073+00:00",
+      "sourceBefore": "b9b914b551d2e4b01fd56a18b4dd6e216d765fd67da946344f2471ad8e9173ad",
+      "log": "opencode-http-read-admission.log",
+      "finishedAt": "2026-10-03T21:41:23.762552+00:00",
+      "exitCode": 1,
+      "sourceAfter": "b9b914b551d2e4b01fd56a18b4dd6e216d765fd67da946344f2471ad8e9173ad",
+      "sourceUnchanged": true
+    }
+  },
+  "passiveProbe": {
+    "startedAt": "2026-10-03T21:40:21.697Z",
+    "finishedAt": "2026-10-03T21:40:22.118Z",
+    "capabilities": {
+      "version": "1.17.16",
+      "json": true,
+      "model": true,
+      "session": true,
+      "protocols": [
+        "json"
+      ],
+      "options": [
+        "--help",
+        "--version",
+        "--print-logs",
+        "--log-level",
+        "--pure",
+        "--command",
+        "--continue",
+        "--session",
+        "--fork",
+        "--share",
+        "--model",
+        "--agent",
+        "--format",
+        "--file",
+        "--title",
+        "--attach",
+        "--password",
+        "--username",
+        "--dir",
+        "--port",
+        "--variant",
+        "--thinking",
+        "--interactive",
+        "--auto"
+      ],
+      "valueOptions": [
+        "--help",
+        "--version",
+        "--print-logs",
+        "--log-level",
+        "--pure",
+        "--command",
+        "--continue",
+        "--session",
+        "--fork",
+        "--share",
+        "--model",
+        "--agent",
+        "--format",
+        "--file",
+        "--title",
+        "--attach",
+        "--password",
+        "--username",
+        "--dir",
+        "--port",
+        "--variant",
+        "--thinking",
+        "--interactive",
+        "--auto"
+      ],
+      "noValueOptions": [],
+      "endOfOptions": false,
+      "structuredSwitches": [],
+      "structuredOutputs": [
+        {
+          "option": "--format",
+          "values": [
+            "json"
+          ]
+        }
+      ],
+      "probeStatus": "verified"
+    },
+    "scope": "Canonical bounded installed launcher help/version probe with credential environment scrubbed. No provider turn or registry refresh."
+  },
+  "httpCanary": {
+    "schemaVersion": 1,
+    "harness": "opencode",
+    "permission": "read",
+    "transport": "http",
+    "startedAt": "2026-10-03T21:41:21.327Z",
+    "candidate": {
+      "head": "18f6e327addc63707736c91040524bdc734a323c",
+      "patchSha256": "7d3dacca8ddca44e0f9c207a510d3b42c66cc5b623a462b0e3c0edd75aa3e844",
+      "changedSourceSha256": "84a2206548815565365de3f88fab00696802a489f007fcfdf1b48b99acd05e96"
+    },
+    "runtimeVersion": "1.17.16",
+    "runtimeVersionScope": "Shell inventory; the send-route identity records Cave's selected launch version.",
+    "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+    "limitations": [
+      "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+      "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+      "Read-only scenario; no protected-effect receipt or side-effect counter qualification.",
+      "OpenCode currently refuses Cave Read-only mode. Preserve that refusal; do not switch this canary to Full access to obtain tool evidence."
+    ],
+    "build": {
+      "id": "uU2a0itiYsBuLIip74vff",
+      "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+      "sendRouteSha256": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+    },
+    "daemon": {
+      "pid": 99839
+    },
+    "routing": {
+      "mode": "structured",
+      "diagnostic": null,
+      "version": "1.17.16",
+      "probeStatus": "verified",
+      "scope": "passive-launch-probe-only"
+    },
+    "profile": "opencode-run-json-v1",
+    "server": {
+      "pid": 99853,
+      "port": 49649
+    },
+    "ingress": {
+      "missingCredential": 401,
+      "invalidCredential": 401
+    },
+    "runId": "35229283-8578-486d-9333-75f4108306d3",
+    "httpStatus": 501,
+    "refusal": {
+      "code": null
+    },
+    "passed": false,
+    "failure": "send refused with HTTP 501",
+    "serverStopped": true,
+    "daemonStopped": true,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-03T21:41:23.754Z"
+  },
+  "findings": [
+    "Canonical bounded OpenCode help/version probe now succeeds with 1.17.16, JSON format, model and session options; the earlier unavailable result is retained.",
+    "The builtin resolver selects opencode-run-json-v1 from those capabilities; this is passive schema selection, not a native protocol capture or successful provider turn.",
+    "Production HTTP ingress refuses missing and invalid forwarded credentials with 401; the authenticated Read-only request returns 501, matching the existing explicit no-sandbox admission boundary.",
+    "The canary intentionally remains failed and unqualified. It never switches permission to Full access or bypasses the guard to obtain tool evidence.",
+    "Both owned server and daemon stopped. No production source, registry trust, user access setting or provider credentials changed."
+  ],
+  "nextStep": "Obtain a supported enforceable read-only runtime path or a separately authorized Full-access qualification before a positive OpenCode provider/tool canary; preserve the current refusal."
+}

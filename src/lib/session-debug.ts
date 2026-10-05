@@ -1,6 +1,8 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
+import { normalizeRuntimeIdentity } from "./chat-runtime-identity.ts";
 import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
 import type {
   ChatStreamClientHealth,
@@ -8,7 +10,7 @@ import type {
   RunBufferStatus,
 } from "./chat-stream-health.ts";
 
-/** Raw daemon event as returned by GET /api/sessions/[id]/events.
+/** Projected daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
 export type CovenEvent = {
   seq: number;
@@ -31,7 +33,7 @@ export type DebugTurn = {
     name: string;
     input?: string;
     output?: string;
-    status: "running" | "ok" | "error";
+    status: ToolStatus;
     durationMs?: number;
   }>;
   progress?: Array<{
@@ -52,28 +54,37 @@ export type DebugTurn = {
    *  harness emitted none. */
   usage?: TurnUsage;
   costUsd?: number;
-  /** Structural subset of ChatResponseMetadata — enough to tell the model
-   *  that actually served the turn from the familiar's configured one. */
-  responseMetadata?: { model?: string; confirmedModel?: string };
+  /** Legacy intent remains inspectable; only runtimeIdentity supplies a
+   *  native model report. */
+  responseMetadata?: { harness?: string; model?: string; confirmedModel?: string; runtimeIdentity?: unknown };
   attachments?: ChatAttachment[];
 };
 
-/** The model that actually served a turn, when the harness reported one —
- *  `confirmedModel` (post-application truth) over the requested `model`.
- *  Distinct from the familiar's configured model shown in the Session
- *  section: harness routing and model application can diverge from it. */
-export function turnActualModel(turn: DebugTurn): string | null {
+function turnRuntimeIdentity(turn: DebugTurn) {
   const meta = turn.responseMetadata;
-  const model = meta?.confirmedModel || meta?.model;
-  return model?.trim() ? model : null;
+  return turn.role === "assistant" && typeof meta?.harness === "string"
+    ? normalizeRuntimeIdentity(meta.runtimeIdentity, meta.harness)
+    : undefined;
 }
 
-/** One-line diagnostic meta for a turn row: "opus-4 · 12.4k tok · $0.08".
- *  Null when the turn carries neither a served model nor usage/cost. */
+/** Native identity only. Historical confirmedModel values could be inferred
+ * from argv and successful exit, so they cannot supply this report. */
+export function turnActualModel(turn: DebugTurn): string | null {
+  return turnRuntimeIdentity(turn)?.model ?? null;
+}
+
+/** Exact runtime/model observations followed by usage. Missing assistant
+ * identity remains explicit rather than falling back to selected settings. */
 export function turnMetaSummary(turn: DebugTurn): string | null {
   const parts: string[] = [];
-  const model = turnActualModel(turn);
-  if (model) parts.push(model);
+  if (turn.role === "assistant") {
+    const identity = turnRuntimeIdentity(turn);
+    if (identity) {
+      parts.push(`${identity.harness}${identity.version ? ` ${identity.version}` : ""}`);
+      if (!identity.version) parts.push("Version not reported");
+    } else parts.push("Runtime not recorded");
+    parts.push(identity?.model ?? "Model not reported");
+  }
   const usage = usageSummary(turn.usage, turn.costUsd);
   if (usage) parts.push(usage);
   return parts.length ? parts.join(" · ") : null;
