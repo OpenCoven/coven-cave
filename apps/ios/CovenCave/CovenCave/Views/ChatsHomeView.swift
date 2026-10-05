@@ -56,6 +56,10 @@ struct ChatsHomeView: View {
     /// Like search and the archive toggle, this is list organisation only —
     /// it never changes a chat's project binding or selection.
     @State private var familiarFilter: String?
+    /// Narrow the home list to conversations bound to one registered project
+    /// (or to Unassigned history). List organisation only, like the familiar
+    /// filter: it never changes a chat's binding or the app's scope.
+    @State private var projectFilter: ChatListSnapshot.ProjectFilter?
     /// The Reflections section starts collapsed so review runs never push
     /// live chats down; opening it once is remembered across launches. It is
     /// read once and written on toggle rather than held in `@AppStorage`, so
@@ -160,16 +164,18 @@ struct ChatsHomeView: View {
                 threads: app.chatThreads,
                 sessions: app.chatServerSessions + app.chatArchivedServerSessions,
                 familiars: app.familiars,
+                projects: app.projects,
                 reflections: app.threadReflectionSessions,
                 query: query,
                 includeArchived: showArchived,
-                familiarId: familiarFilter
+                familiarId: familiarFilter,
+                projectFilter: projectFilter
             )
         }
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
                 if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
-                    && snapshot.archivedCount == 0 && snapshot.reflections.isEmpty {
+                    && snapshot.archivedCount == 0 && projectFilter == nil && snapshot.reflections.isEmpty {
                     if let error = app.familiarsError ?? app.sessionsError {
                         loadFailure(error)
                     } else {
@@ -178,8 +184,8 @@ struct ChatsHomeView: View {
                 } else if snapshot.entries.isEmpty && !query.isEmpty && snapshot.reflections.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else if snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
-                          let familiarId = familiarFilter {
-                    familiarFilterEmptyState(familiarId, snapshot: snapshot)
+                          familiarFilter != nil || projectFilter != nil {
+                    filterEmptyState(snapshot)
                 } else {
                     homeList(snapshot)
                 }
@@ -449,6 +455,10 @@ struct ChatsHomeView: View {
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            let projectChoices = projectFilterChoices(snapshot)
+            if projectChoices.count > 1 || projectFilter != nil {
+                projectFilterStrip(projectChoices)
+            }
             if let familiarId = familiarFilter {
                 familiarFilterChip(familiarId)
             }
@@ -514,22 +524,129 @@ struct ChatsHomeView: View {
         .accessibilityIdentifier("Familiar filter chip")
     }
 
-    /// Nothing left once the familiar filter applies (search, if any, already
-    /// matched nothing on its own branch).
-    private func familiarFilterEmptyState(_ familiarId: String, snapshot: ChatListSnapshot) -> some View {
-        let name = familiarDisplayName(familiarId)
+    /// Projects offered by the filter: every registered project bound to at
+    /// least one conversation (active or archived), by name, then Unassigned
+    /// history when there is any. A filter that names a project with no chats
+    /// left, or one no longer registered, stays listed so it can be cleared.
+    private func projectFilterChoices(_ snapshot: ChatListSnapshot) -> [ChatListSnapshot.ProjectFilter] {
+        var ids = snapshot.projectIds
+        if case .project(let id)? = projectFilter { ids.insert(id) }
+        var choices: [ChatListSnapshot.ProjectFilter] = ids
+            .sorted {
+                let order = projectDisplayName($0).localizedCaseInsensitiveCompare(projectDisplayName($1))
+                return order == .orderedSame ? $0 < $1 : order == .orderedAscending
+            }
+            .map { .project(id: $0) }
+        if snapshot.hasUnassigned || projectFilter == .unassigned {
+            choices.append(.unassigned)
+        }
+        return choices
+    }
+
+    private func projectDisplayName(_ projectId: String) -> String {
+        app.project(projectId)?.name ?? "Unavailable project"
+    }
+
+    private func projectFilterName(_ filter: ChatListSnapshot.ProjectFilter) -> String {
+        switch filter {
+        case .project(let id): return projectDisplayName(id)
+        case .unassigned: return "Unassigned"
+        }
+    }
+
+    /// One-tap project filter: "All" first, then each project with chats. It
+    /// appears only when there is more than one place to choose between.
+    private func projectFilterStrip(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                projectFilterChip(nil, label: "All projects", systemImage: "square.grid.2x2")
+                ForEach(choices, id: \.self) { choice in
+                    projectFilterChip(
+                        choice,
+                        label: projectFilterName(choice),
+                        systemImage: choice == .unassigned ? "tray" : "folder"
+                    )
+                }
+            }
+            // Inset to the header's text edge, but scroll edge to edge.
+            .padding(.horizontal, 14)
+        }
+        .padding(.horizontal, -14)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Filter by project")
+        .accessibilityIdentifier("Project filter")
+    }
+
+    private func projectFilterChip(
+        _ choice: ChatListSnapshot.ProjectFilter?,
+        label: String,
+        systemImage: String
+    ) -> some View {
+        let selected = projectFilter == choice
+        return Button {
+            Haptics.tap()
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+                projectFilter = choice
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .accessibilityHidden(true)
+                Text(label)
+                    .lineLimit(1)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(selected ? chrome.accentForeground : chrome.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background {
+                if selected {
+                    Capsule().fill(chrome.accentGradient)
+                }
+            }
+            .glass(.control, in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.glassPress)
+        .accessibilityLabel(choice == nil ? "All projects" : "Project, \(label)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(choice == nil ? "Project filter All" : "Project filter \(label)")
+    }
+
+    /// Nothing left once the familiar or project filter applies (search, if
+    /// any, already matched nothing on its own branch).
+    private func filterEmptyState(_ snapshot: ChatListSnapshot) -> some View {
+        let familiarName = familiarFilter.map(familiarDisplayName)
+        let projectName = projectFilter.map(projectFilterName)
+        let title: String
+        switch (familiarName, projectName) {
+        case let (familiar?, project?): title = "No chats with \(familiar) in \(project)"
+        case let (familiar?, nil): title = "No chats with \(familiar)"
+        case let (nil, project?): title = "No chats in \(project)"
+        case (nil, nil): title = "No chats"
+        }
+        let clearHint = familiarName != nil && projectName != nil ? "clear a filter" : "clear the filter"
         return ContentUnavailableView {
-            Label("No chats with \(name)", systemImage: "line.3.horizontal.decrease.circle")
+            Label(title, systemImage: "line.3.horizontal.decrease.circle")
         } description: {
             Text(
                 snapshot.archivedCount > 0 && !showArchived
-                    ? "Archived chats are hidden. Show archived, or clear the filter."
-                    : "Start a new chat with \(name), or clear the filter."
+                    ? "Archived chats are hidden. Show archived, or \(clearHint)."
+                    : familiarName.map { "Start a new chat with \($0), or \(clearHint)." }
+                        ?? "Choose another project, or \(clearHint)."
             )
         } actions: {
-            Button("Show all familiars") { familiarFilter = nil }
-            if let familiar = app.familiars.first(where: { $0.id == familiarId }) {
-                Button("New chat with \(name)") { startNewChat(with: familiar) }
+            if projectFilter != nil {
+                Button("Show all projects") { projectFilter = nil }
+            }
+            if familiarFilter != nil {
+                Button("Show all familiars") { familiarFilter = nil }
+            }
+            if let familiarId = familiarFilter,
+               let familiar = app.familiars.first(where: { $0.id == familiarId }),
+               let familiarName {
+                Button("New chat with \(familiarName)") { startNewChat(with: familiar) }
             }
         }
     }

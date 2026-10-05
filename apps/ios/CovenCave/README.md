@@ -14,8 +14,10 @@ implementation plans are historical lineage, not active priority queues.
 ## Chat-only experience
 
 Chats lists direct and group conversations across projects and devices, with
-pinning, archives, unread state, and chat search. An imported server session
-appears once, alongside locally created chats. iPhone starts at the conversation
+pinning, archives, unread state, and chat search. When chats span more than one
+project, a chip strip under the title narrows the list to one project, or to
+Unassigned history, in one tap; it never changes a chat's project binding. An
+imported server session appears once, alongside locally created chats. iPhone starts at the conversation
 list; iPad keeps a conversation sidebar and detail pane.
 
 The drawer contains Chats, recent conversations, New chat, Search chats, and

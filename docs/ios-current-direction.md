@@ -37,8 +37,11 @@ until intentionally migrated by the active program.
   within chat, permissions, and configuration that enables or customizes chat.
 - Chats opens to global conversations, including direct and group chats and
   sessions started on other devices. Hydrated sessions appear once, not once
-  as a local thread and again as a server row. Pins, archive visibility, and
-  title/familiar search organize the list without a global project filter.
+  as a local thread and again as a server row. Pins, archive visibility,
+  title/familiar search, and the familiar and project filters organize the
+  list without a global project filter. The project strip appears when chats
+  span more than one project; it narrows only the visible list and never
+  changes a chat's binding or the application's scope.
 - The drawer contains Chats, recent conversations, New chat, Search chats, and
   Settings. There is no Tasks, Automations, Projects, Needs You, standalone
   Familiar hub, workspace browser, global search, or terminal destination.
