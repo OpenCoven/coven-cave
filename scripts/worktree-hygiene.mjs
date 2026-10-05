@@ -16,6 +16,10 @@ export const SOFT_TARGETS = Object.freeze({
 export const DISPOSABLE_ROOTS = Object.freeze([
   ".next",
   ".turbo",
+  // XcodeGen output (#5816), regenerated from project.yml by
+  // `pnpm mobile:ios:xcodegen`. The sibling build/ folder is not listed: it
+  // can hold evidence screenshots as well as derived data.
+  "apps/ios/CovenCave/CovenCave.xcodeproj",
   "artifacts",
   "coverage",
   "dist",
@@ -34,6 +38,12 @@ export const DISPOSABLE_FILES = Object.freeze([
   // regenerate on the next dev run or typecheck, so they hold no work.
   "next-env.d.ts",
   "tsconfig.tsbuildinfo",
+  // The iOS markdown bundle (#5816), written by scripts/build-ios-markdown.mjs
+  // on every `pnpm mobile:ios:xcodegen`.
+  "apps/ios/CovenCave/CovenCave/Resources/markdown.html",
+  "apps/ios/CovenCave/CovenCave/Resources/markdown.css",
+  "apps/ios/CovenCave/CovenCave/Resources/markdown-mermaid.js",
+  "apps/ios/CovenCave/CovenCave/Resources/markdown-highlight.js",
   "public/pdf.worker.min.mjs",
   ".claude/worktree-autolock.stamp",
   ".claude/worktree-autolock.log",

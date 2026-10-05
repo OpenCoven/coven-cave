@@ -77,6 +77,32 @@ assert.equal(isDisposableRelative("src/next-env.d.ts"), false, "only the root ne
 assert.equal(isDisposableRelative("packages/app/tsconfig.tsbuildinfo"), false, "only the root build cache is declared");
 assert.equal(isDisposableRelative("src/types.d.ts"), false, "ordinary declaration files are never disposable");
 
+// Generated iOS output (#5816) is disposable at its exact paths. The build
+// folder can hold evidence screenshots, and the sources XcodeGen reads are work.
+const iosApp = "apps/ios/CovenCave";
+for (const generated of [
+  `${iosApp}/CovenCave.xcodeproj`,
+  `${iosApp}/CovenCave.xcodeproj/project.pbxproj`,
+  `${iosApp}/CovenCave/Resources/markdown.html`,
+  `${iosApp}/CovenCave/Resources/markdown.css`,
+  `${iosApp}/CovenCave/Resources/markdown-mermaid.js`,
+  `${iosApp}/CovenCave/Resources/markdown-highlight.js`,
+]) {
+  assert.equal(isDisposableRelative(generated), true, `${generated} is generated iOS output`);
+}
+for (const kept of [
+  `${iosApp}/build`,
+  `${iosApp}/build/project-filter-shots/1-all.png`,
+  `${iosApp}/project.yml`,
+  `${iosApp}/CovenCave/Resources`,
+  `${iosApp}/CovenCave/Resources/notes.md`,
+  `${iosApp}/CovenCave/CovenCaveApp.swift`,
+  "apps/ios/markdown/markdown.css",
+  `${iosApp}/Other.xcodeproj`,
+]) {
+  assert.equal(isDisposableRelative(kept), false, `${kept} is not disposable`);
+}
+
 assert.equal(SOFT_TARGETS.attachedWorktrees, 10);
 assert.equal(SOFT_TARGETS.detachedWorktrees, 2);
 assert.equal(SOFT_TARGETS.localBranches, 15);
