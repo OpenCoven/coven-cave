@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "id": "hermes-parallel-reordered-results",
+  "classification": "controlled external-provider frames; source integration fixture, not execution authority",
+  "expected": {
+    "harness": "hermes",
+    "model": "served-fixture-v3",
+    "tools": [
+      {
+        "id": "effect-once-1",
+        "name": "increment_counter",
+        "status": "ok",
+        "output": "effect-once-1-result"
+      },
+      {
+        "id": "effect-parallel-2",
+        "name": "increment_counter",
+        "status": "ok",
+        "output": "effect-parallel-2-result"
+      },
+      {
+        "id": "effect-late-3",
+        "name": "increment_counter",
+        "status": "ok",
+        "output": "effect-late-3-result"
+      }
+    ]
+  },
+  "events": [
+    [
+      "response.created",
+      {
+        "response": {
+          "id": "native-reordered-response",
+          "model": "requested-alias"
+        }
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "function_call",
+          "id": "effect-once-1-item",
+          "call_id": "effect-once-1",
+          "name": "increment_counter",
+          "arguments": "{\"path\":\"effect-invocations.jsonl\",\"branch\":\"effect-once-1\"}"
+        }
+      }
+    ],
+    [
+      "hermes.tool.progress",
+      {
+        "tool_call_id": "effect-once-1",
+        "tool_name": "increment_counter",
+        "status": "running"
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "function_call",
+          "id": "effect-parallel-2-item",
+          "call_id": "effect-parallel-2",
+          "name": "increment_counter",
+          "arguments": "{\"path\":\"effect-invocations.jsonl\",\"branch\":\"effect-parallel-2\"}"
+        }
+      }
+    ],
+    [
+      "hermes.tool.progress",
+      {
+        "tool_call_id": "effect-parallel-2",
+        "tool_name": "increment_counter",
+        "status": "running"
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "function_call",
+          "id": "effect-once-1-item",
+          "call_id": "effect-once-1",
+          "name": "increment_counter",
+          "arguments": "{\"path\":\"effect-invocations.jsonl\",\"branch\":\"effect-once-1\"}"
+        }
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-late-3-output",
+          "call_id": "effect-late-3",
+          "status": "completed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "effect-late-3-result"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-late-3-output",
+          "call_id": "effect-late-3",
+          "status": "failed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "wrong-before-start"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "function_call",
+          "id": "effect-late-3-item",
+          "call_id": "effect-late-3",
+          "name": "increment_counter",
+          "arguments": "{\"path\":\"effect-invocations.jsonl\",\"branch\":\"effect-late-3\"}"
+        }
+      }
+    ],
+    [
+      "hermes.tool.progress",
+      {
+        "tool_call_id": "effect-late-3",
+        "tool_name": "increment_counter",
+        "status": "running"
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-parallel-2-output",
+          "call_id": "effect-parallel-2",
+          "status": "completed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "effect-parallel-2-result"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-parallel-2-output",
+          "call_id": "effect-parallel-2",
+          "status": "failed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "wrong-after-result"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-once-1-output",
+          "call_id": "effect-once-1",
+          "status": "completed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "effect-once-1-result"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.completed",
+      {
+        "response": {
+          "id": "native-reordered-response",
+          "model": "requested-alias",
+          "runtime": {
+            "model": "served-fixture-v3",
+            "provider": "local-fixture",
+            "route_source": "fixture"
+          }
+        }
+      }
+    ]
+  ]
+}

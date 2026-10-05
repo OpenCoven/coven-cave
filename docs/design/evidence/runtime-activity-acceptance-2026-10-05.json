@@ -711,8 +711,8 @@
           "status": "not-fully-qualified"
         }
       ],
-      "primaryBlocker": "Full native matrix, physical-device performance and human VoiceOver observations remain unverified.",
-      "nextStep": "Run generated-Xcode native tests and obtain device performance and human VoiceOver observations."
+      "primaryBlocker": "Full native matrix remains unverified; physical-device performance and human VoiceOver are explicitly pending at Val's request.",
+      "nextStep": "Complete the remaining automated native matrix; retain the named VoiceOver and physical-device criteria for a human pass."
     },
     {
       "issue": 5767,
@@ -892,5 +892,28 @@
       "primaryBlocker": "Full exact-candidate golden corpus, durable controlled action and packaged/native evidence remain unverified.",
       "nextStep": "Retain an exact-candidate sanitized packet for every golden scenario and support claim."
     }
-  ]
+  ],
+  "continuationEvidence": {
+    "baseCommit": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+    "scope": "Controlled durable-counter HTTP recovery and limited local alternate-ID Release app smoke. Every original requirement remains required; no issue becomes fully qualified from this continuation.",
+    "guide": "docs/design/runtime-activity-effect-recovery.md",
+    "packagedSmoke": "docs/design/evidence/runtime-activity-packaged-smoke-2026-10-05.json",
+    "durableRecovery": "docs/design/evidence/runtime-activity-effect-recovery-2026-10-05.json",
+    "humanAcceptance": {
+      "status": "pending-human-pass",
+      "source": "Val explicitly requested leaving VoiceOver and physical-device performance pending.",
+      "scope": "#5766 reasoning disclosure, tool details, approval/rejection, error/retry, reconnect, history and physical-device performance."
+    },
+    "runtimeRefresh": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json",
+    "nativeUnits": "docs/design/evidence/runtime-activity-native-unit-2026-10-05.json",
+    "browserPartial": "docs/design/evidence/runtime-activity-browser-partial-2026-10-05.json",
+    "checksAtPriorHead": {
+      "head": "57fff724656b0e22ab470c45d395b96dff39448f",
+      "codeqlRunnerFailure": "Actions/Rust jobs did not acquire a hosted runner after multiple attempts; marked cancelled.",
+      "retryDisposition": "Both exact-job and failed-run retries refused by GitHub with HTTP403 for the dynamic workflow. No merge or protection change."
+    },
+    "recoveryNegatives": "docs/design/evidence/runtime-activity-recovery-negatives-2026-10-05.json",
+    "disclosureAndDesktopPartial": "docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json",
+    "hermesReorderedResults": "docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json"
+  }
 }

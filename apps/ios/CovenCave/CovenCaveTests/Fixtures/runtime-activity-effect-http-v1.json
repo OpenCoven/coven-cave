@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "id": "hermes-durable-effect-recovery",
+  "classification": "synthetic external provider and controlled POSIX append tool; production Cave HTTP recovery",
+  "expected": {
+    "harness": "hermes",
+    "model": "served-fixture-v3",
+    "toolId": "effect-once-1",
+    "toolName": "increment_counter",
+    "answer": "Inspecting 🧙 café.\nDone: {{COUNTER}}",
+    "summaries": [
+      "Increment the isolated counter once.",
+      "The isolated counter was incremented."
+    ],
+    "privateSentinels": [
+      "PRIVATE_OPAQUE_STATE",
+      "PRIVATE_PARTIAL_SUMMARY",
+      "PRIVATE_RAW_THOUGHT"
+    ],
+    "counter": 1
+  },
+  "beforeRelease": [
+    [
+      "response.created",
+      {
+        "response": {
+          "id": "native-http-response",
+          "model": "requested-alias"
+        }
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "reasoning",
+          "id": "summary-before",
+          "status": "in_progress",
+          "summary": []
+        }
+      }
+    ],
+    [
+      "response.reasoning_summary_text.delta",
+      {
+        "item_id": "summary-before",
+        "delta": "PRIVATE_PARTIAL_SUMMARY"
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "reasoning",
+          "id": "summary-before",
+          "status": "completed",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Increment the isolated counter once."
+            }
+          ],
+          "encrypted_content": "PRIVATE_OPAQUE_STATE",
+          "text": "PRIVATE_RAW_THOUGHT"
+        }
+      }
+    ],
+    [
+      "response.output_text.delta",
+      {
+        "delta": "Inspecting 🧙 café.\n"
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "function_call",
+          "id": "effect-once-item",
+          "call_id": "effect-once-1",
+          "name": "increment_counter",
+          "arguments": "{\"path\":\"effect-invocations.jsonl\"}"
+        }
+      }
+    ],
+    [
+      "hermes.tool.progress",
+      {
+        "tool_call_id": "effect-once-1",
+        "tool_name": "increment_counter",
+        "status": "running"
+      }
+    ]
+  ],
+  "afterRelease": [
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "function_call_output",
+          "id": "effect-once-output",
+          "call_id": "effect-once-1",
+          "status": "completed",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "{{COUNTER}}"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_item.added",
+      {
+        "item": {
+          "type": "reasoning",
+          "id": "summary-after",
+          "status": "in_progress",
+          "summary": []
+        }
+      }
+    ],
+    [
+      "response.output_item.done",
+      {
+        "item": {
+          "type": "reasoning",
+          "id": "summary-after",
+          "status": "completed",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "The isolated counter was incremented."
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "response.output_text.delta",
+      {
+        "delta": "Done: {{COUNTER}}"
+      }
+    ],
+    [
+      "response.completed",
+      {
+        "response": {
+          "id": "native-http-response",
+          "model": "requested-alias",
+          "runtime": {
+            "model": "served-fixture-v3",
+            "provider": "local-fixture",
+            "route_source": "fixture"
+          }
+        }
+      }
+    ]
+  ]
+}

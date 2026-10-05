@@ -5284,6 +5284,10 @@ async function postAdmittedChat(
                   const updated = toolTracker.envelopeToolInput(event.id, input);
                   if (updated) push({ kind: "tool_use", ...updated });
                 }
+                // The Responses output may precede its function-call item.
+                // Keep the first result and settle it under the announced ID.
+                const reorderedEnd = toolTracker.consumePendingEnvelopeResult(event.id);
+                if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
                 return false;
               }
               case "tool_input": {
