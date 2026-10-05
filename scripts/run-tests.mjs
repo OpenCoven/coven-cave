@@ -1560,6 +1560,7 @@ export const SUITES = {
     "scripts/secret-preflight.test.mjs",
     "scripts/uninstall-app.test.mjs",
     "scripts/desktop-reachability.test.mjs",
+    "scripts/runtime-activity-effect-counter.test.mjs",
     "scripts/ci-paths.test.mjs",
     "scripts/rust-doctest-ci.test.mjs",
     "scripts/check-merge-tree-freshness.test.mjs",

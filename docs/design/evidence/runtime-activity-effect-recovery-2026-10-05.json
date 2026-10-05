@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "qualificationIssue": 5767,
+  "completionDisposition": "Partial controlled-provider HTTP evidence only; all original acceptance criteria retained. No epic, native-complete, real-provider or protected-effect claim.",
+  "productionBuildProvenance": {
+    "buildId": "coZcWmCnRo0JEjKUxXR1B",
+    "builtHead": "4a81fe165aa7d0c17eb5af2eceb4d9f115fb1f8b",
+    "testedBaseHead": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+    "sourceRelationship": "git diff builtHead testedBaseHead -- src src-tauri scripts/sidecar-bundle.sh package.json pnpm-lock.yaml was empty. New changes are test harness/scenario/docs only."
+  },
+  "predecessorAttempts": [
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-recovery",
+      "startedAt": "2026-10-05T19:12:05.108Z",
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Ring eviction, access revocation and persistence-failure injection remain unverified."
+      ],
+      "head": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+      "buildId": "coZcWmCnRo0JEjKUxXR1B",
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "passed": true,
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 1
+        },
+        {
+          "label": "finished ring expired: authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "host": {
+        "node": "v24.18.1",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "2c64f6e1c8896fa0cd65420ed501804ade246d1037fa5d2b3f55db9276c27d69",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589"
+      },
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "daemonPid": 79320,
+      "runId": "28ad3b79-9f5c-4ccc-8d74-802feffc4998",
+      "stage": "final qualification counter after independent negative control",
+      "finishedBufferExpiryVerified": true,
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "finishedAt": "2026-10-05T19:14:25.080Z",
+      "acceptanceDisposition": "Superseded: reviewer found history checks could accept missing/misprojected history; not qualified recovery evidence."
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-recovery",
+      "startedAt": "2026-10-05T19:15:29.703Z",
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Ring eviction, access revocation and persistence-failure injection remain unverified."
+      ],
+      "head": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+      "buildId": "coZcWmCnRo0JEjKUxXR1B",
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "passed": false,
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "host": {
+        "node": "v24.18.1",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "d862db6e3b853af7d52d8176fd93291bdc44c3c277154507db319ab641e47e12",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589"
+      },
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "daemonPid": 25868,
+      "runId": "25e5f660-9b6f-4421-ba18-bdfa7382aff7",
+      "stage": "transport drop after effect and final replay",
+      "failure": {
+        "stage": "transport drop after effect and final replay",
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION"
+      },
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "finishedAt": "2026-10-05T19:15:35.290Z"
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-recovery",
+      "startedAt": "2026-10-05T19:16:14.966Z",
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Ring eviction, access revocation and persistence-failure injection remain unverified."
+      ],
+      "head": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+      "buildId": "coZcWmCnRo0JEjKUxXR1B",
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "passed": false,
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "host": {
+        "node": "v24.18.1",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "85c6ec87c037bce5986d85141f7e4fd14b20e2c12a0634d641fecec7563ff3ce",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589"
+      },
+      "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+      "daemonPid": 34283,
+      "runId": "ccd92fca-90d6-4d15-8584-41d280e3cec3",
+      "stage": "history: assert.equal(tool.activity?.runId",
+      "failure": {
+        "stage": "history: assert.equal(tool.activity?.runId",
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION"
+      },
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "finishedAt": "2026-10-05T19:16:20.141Z"
+    }
+  ],
+  "failureExplanation": "Stricter checks exposed a harness assumption: production intentionally generates a distinct activity observationRunId. Compare persisted activity with the actual terminal streamed observation, not the transport lookup ID.",
+  "counterRedGreen": {
+    "red": "An overwrite implementation reported one after a second fresh process; expected two assertion failed.",
+    "green": "Append/fsync implementation reports two unique records and rejects symlink/hard-link counter aliases."
+  },
+  "qualifiedRun": {
+    "schemaVersion": 1,
+    "scenario": "hermes-durable-effect-recovery",
+    "startedAt": "2026-10-05T19:17:01.326Z",
+    "omissions": [
+      "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+      "Coven-specific state is isolated; HOME is unchanged.",
+      "Ring eviction, access revocation and persistence-failure injection remain unverified."
+    ],
+    "head": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+    "buildId": "coZcWmCnRo0JEjKUxXR1B",
+    "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+    "passed": true,
+    "checkpoints": [
+      {
+        "label": "transport drop before effect",
+        "counter": 0
+      },
+      {
+        "label": "effect after initial transport drop",
+        "counter": 1
+      },
+      {
+        "label": "transport drop after effect and final replay",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 0",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 1",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 2",
+        "counter": 1
+      },
+      {
+        "label": "finished ring expired: authorized history readable",
+        "counter": 1
+      },
+      {
+        "label": "server restart: ring absent, authorized history readable",
+        "counter": 1
+      },
+      {
+        "label": "final qualification counter after independent negative control",
+        "counter": 1
+      }
+    ],
+    "providerRequests": 1,
+    "host": {
+      "node": "v24.18.1",
+      "platform": "darwin",
+      "architecture": "arm64"
+    },
+    "sourceHashes": {
+      "scripts/runtime-activity-effect-recovery.mjs": "ccd68e3f6c86cdf0bed4a6cc88ca60f891a4b06758b50469fe0ec8a25162ac45",
+      "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+      "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+      "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589"
+    },
+    "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+    "daemonPid": 41132,
+    "runId": "90d34417-e465-4c0d-b0ec-ce8e28e9e0fe",
+    "stage": "final qualification counter after independent negative control",
+    "transportRunId": "90d34417-e465-4c0d-b0ec-ce8e28e9e0fe",
+    "observationRunId": "02eae91b-9ce7-476a-8960-cae3a0a742a4",
+    "historyNegativeControls": {
+      "missingConversationRejected": true,
+      "wrongAnswerRejected": true
+    },
+    "finishedBufferExpiryVerified": true,
+    "negativeControl": {
+      "secondRealInvocationDetected": true,
+      "counter": 2
+    },
+    "privateSentinelsAbsentFromRecoveryAndHistory": true,
+    "exactPersistedAssistantAndActivityRecovered": true,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true,
+    "finishedAt": "2026-10-05T19:19:17.700Z"
+  },
+  "qualificationLedger": {
+    "invocationId": "f0fbf618-967b-4fa6-abbc-ad9b86faeb63"
+  },
+  "interruptionRun": {
+    "schemaVersion": 1,
+    "scenario": "hermes-durable-effect-recovery",
+    "startedAt": "2026-10-05T19:18:00.928Z",
+    "omissions": [
+      "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+      "Coven-specific state is isolated; HOME is unchanged.",
+      "Ring eviction, access revocation and persistence-failure injection remain unverified."
+    ],
+    "head": "93c5680c220f88c35dec5729b9771ac95242e7bb",
+    "buildId": "coZcWmCnRo0JEjKUxXR1B",
+    "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+    "passed": false,
+    "checkpoints": [
+      {
+        "label": "transport drop before effect",
+        "counter": 0
+      },
+      {
+        "label": "effect after initial transport drop",
+        "counter": 1
+      },
+      {
+        "label": "transport drop after effect and final replay",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 0",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 1",
+        "counter": 1
+      },
+      {
+        "label": "repeat replay/history 2",
+        "counter": 1
+      }
+    ],
+    "providerRequests": 1,
+    "host": {
+      "node": "v24.18.1",
+      "platform": "darwin",
+      "architecture": "arm64"
+    },
+    "sourceHashes": {
+      "scripts/runtime-activity-effect-recovery.mjs": "ccd68e3f6c86cdf0bed4a6cc88ca60f891a4b06758b50469fe0ec8a25162ac45",
+      "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+      "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+      "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589"
+    },
+    "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+    "daemonPid": 54059,
+    "runId": "9b174725-5431-41e3-b7a9-14f1c838e8fc",
+    "stage": "finished-buffer-expiry",
+    "transportRunId": "9b174725-5431-41e3-b7a9-14f1c838e8fc",
+    "observationRunId": "e308a44c-9170-4a70-94c2-9d1cb9a16d07",
+    "historyNegativeControls": {
+      "missingConversationRejected": true,
+      "wrongAnswerRejected": true
+    },
+    "failure": {
+      "stage": "finished-buffer-expiry",
+      "name": "AbortError",
+      "code": "ABORT_ERR"
+    },
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true,
+    "finishedAt": "2026-10-05T19:18:05.033Z"
+  },
+  "targetedChecks": {
+    "counterTest": "passed",
+    "testRegistry": "2141 test files wired",
+    "hermesResponsesDecoder": "7 passed",
+    "streamBuffer": "11 passed",
+    "mobileContracts": "106 files passed",
+    "diffCheck": "passed"
+  },
+  "review": "Independent read-only review: no remaining required findings after exact-history and observation identity fixes.",
+  "humanAcceptance": "VoiceOver and physical-device performance pending at Val's request."
+}

@@ -1,0 +1,30 @@
+{
+  "head": "4a81fe165aa7d0c17eb5af2eceb4d9f115fb1f8b",
+  "identifier": "ai.opencoven.cave.qualification5767",
+  "bundleExecutableSha256": "4c100ab9eea9b271c253bfe87243d734c62ccb19b034f40a33e1c87ebdc1fd14",
+  "classification": "Local alternate-ID Release .app; existing bundle/sidecar workflow, no updater artifacts or publication. Startup and Settings navigation only; no Activity turn or human accessibility acceptance.",
+  "firstAttemptFailure": "Tauri rejected symlink-containing executable path /tmp with unknown path; canonical /private/tmp launch succeeded.",
+  "observations": [
+    "Native Home accessibility tree loaded; first Home screenshot was blank in its content area, so it is not credited as visible Home proof.",
+    "Native navigation opened Settings; Phone Settings visibly rendered in computer-use screenshot.",
+    "Daemon page reported the owned socket and PID 39279.",
+    "Phone page refused the existing Tailscale Serve owner on port 3020; no pairing or permission action was taken.",
+    "Installed LaunchAgent plist hash, PID 46137 and run count 1 unchanged before and after.",
+    "Native app quit with exit 0; owned daemon stopped; port verification recorded separately."
+  ],
+  "installedService": {
+    "plistExists": true,
+    "plistSha256": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+    "launchctlExit": 0,
+    "serviceFields": [
+      "state = running",
+      "runs = 1",
+      "pid = 46137",
+      "last exit code = (never exited)",
+      "state = active",
+      "state = active"
+    ]
+  },
+  "humanVoiceOverAndPhysicalPerformance": "pending at user request",
+  "screenshotRetention": "Computer-use screenshot is retained in the conversation; standalone screenshot export still unverified."
+}
