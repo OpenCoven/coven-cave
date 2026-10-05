@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, rm, realpath, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,7 +16,8 @@ const flags = args.slice(3);
 const includeExpiry = flags.includes("--include-expiry");
 const ringEviction = flags.includes("--ring-eviction");
 const persistenceFailure = flags.includes("--persistence-failure");
-assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] OR --persistence-failure");
+const splitSecrets = flags.includes("--split-secrets");
+assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure", "--split-secrets"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry || splitSecrets)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] [--split-secrets] OR --persistence-failure");
 assert.ok(["darwin", "linux"].includes(process.platform), "POSIX counter fixture only; other platforms remain unverified.");
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), evidence = args[2];
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -35,11 +36,21 @@ process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 const report = { schemaVersion: 1, scenario: "hermes-durable-effect-recovery", startedAt: (new Date()).toISOString(), omissions: ["HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.", "Coven-specific state is isolated; HOME is unchanged.", "Ring eviction, access revocation and persistence-failure injection remain unverified."], head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: repo }).trim(), buildId: (await readFile(path.join(repo, ".next/BUILD_ID"), "utf8")).trim(), classification: "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.", passed: false, checkpoints: [], providerRequests: 0, host: { node: process.version, platform: process.platform, architecture: process.arch } };
 report.sourceHashes = await sourceHashes();
-report.options = { includeExpiry, ringEviction, persistenceFailure };
-report.scenario = persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : report.scenario;
+report.options = { includeExpiry, ringEviction, persistenceFailure, splitSecrets };
+report.scenario = persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : splitSecrets ? "hermes-durable-effect-split-secrets" : report.scenario;
 report.omissions[2] = "Access revocation and process-crash durability remain unverified.";
 if (!ringEviction) report.omissions.push("Ring eviction not run; use --ring-eviction.");
 if (!persistenceFailure) report.omissions.push("Persistence failure not injected; use --persistence-failure separately.");
+let serverLogs = "";
+let serverLogOverflow = false;
+const captureLogs = server => {
+  if (!splitSecrets) return;
+  for (const pipe of [server.child.stdout, server.child.stderr]) pipe.on("data", chunk => {
+    if (serverLogOverflow) return;
+    if (Buffer.byteLength(serverLogs) + chunk.length > 1024 * 1024) { serverLogOverflow = true; deadline.abort(new Error("fixture logs exceeded bound")); return; }
+    serverLogs += chunk.toString();
+  });
+};
 let cave, provider, daemon = false, releaseTool, releaseFinal, blockedDirectory;
 const toolGate = new Promise((r) => releaseTool = r), finalGate = new Promise((r) => releaseFinal = r);
 const ledger = path.join(projectRoot, "effect-invocations.jsonl");
@@ -54,10 +65,15 @@ const expectedCount = async (label, n = 1) => {
   report.checkpoints.push({ label, counter: value });
   console.log(JSON.stringify({ phase: label, counter: value }));
 };
-const frame = (res, event, data) => res.write(`event: ${event}
-data: ${JSON.stringify(data)}
-
-`);
+const frame = async (res, event, data) => {
+  const bytes = Buffer.from(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (!splitSecrets) { res.write(bytes); return; }
+  for (let offset = 0; offset < bytes.length; offset += 7) {
+    if (offset > 0 && (bytes[offset] & 0xc0) === 0x80) report.providerUtf8SplitBoundaries++;
+    if (!res.write(bytes.subarray(offset, offset + 7))) await once(res, "drain", { signal: deadline.signal });
+    await delay(1, undefined, { signal: deadline.signal });
+  }
+};
 const parse = (wire) => wire.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)));
 let caveInput;
 try {
@@ -69,6 +85,22 @@ try {
   Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, "coven.sock"), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: projectRoot, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, "vault.yaml"), COVEN_CAVE_ENV_FILE: path.join(root, ".env.local"), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, "vault.enc.json"), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, "vault.key"), COVEN_PREFERENCES_PATH: path.join(root, "preferences.json"), COVEN_THEME_PATH: path.join(root, "theme.json"), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, "projects.json"), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, "permissions.json"), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, "queue.json") });
   delete process.env.COVEN_CAVE_E2E;
   const scenario = JSON.parse(await readFile(path.join(repo, "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json"), "utf8"));
+  if (splitSecrets) {
+    const secret = "sk-" + randomBytes(24).toString("hex");
+    const signed = "https://fixture.invalid/result?X-Amz-Signature=PRIVATE_SIGNED_URL_SENTINEL&expires=1";
+    const opaque = "PRIVATE_ENCRYPTED_TOOL_SENTINEL";
+    const email = "fixture.person@example.invalid";
+    const ssn = "123-45-6789", phone = "+1 202-555-0123";
+    const unsafe = JSON.stringify({ count: "{{COUNTER}}", authorization: "Bearer " + secret, url: signed, email, ssn, phone, signature: opaque });
+    const rawArguments = JSON.stringify({ path: "effect-invocations.jsonl", authorization: "Bearer " + secret, url: signed, email, ssn, phone, encrypted_content: opaque });
+    scenario.expected.privateSentinels.push(secret, signed, "PRIVATE_SIGNED_URL_SENTINEL", opaque, email, ssn, phone);
+    const call = scenario.beforeRelease.find(([event, data]) => event === "response.output_item.added" && data.item?.type === "function_call")[1].item;
+    call.arguments = "";
+    const deltas = Array.from(rawArguments).map(delta => ["response.function_call_arguments.delta", { item_id: call.id, call_id: call.call_id, delta }]);
+    scenario.beforeRelease.splice(scenario.beforeRelease.length - 1, 0, ...deltas, ["response.function_call_arguments.done", { item_id: call.id, call_id: call.call_id, arguments: rawArguments }]);
+    scenario.afterRelease[0][1].item.output[0].text = unsafe;
+    report.providerUtf8SplitBoundaries = 0;
+  }
   if (ringEviction) {
     const padding = "Large trace 🧙 café.\n".repeat(3000);
     scenario.beforeRelease.splice(5, 0, ...Array.from({ length: 12 }, () => ["response.output_text.delta", { delta: padding }]));
@@ -97,15 +129,15 @@ try {
       assert.equal(report.providerRequests, 1, "no recovery may redispatch");
       res.writeHead(200, { "content-type": "text/event-stream" });
       for (const [event, data] of scenario.beforeRelease) {
-        frame(res, event, data);
+        await frame(res, event, data);
       }
       await toolGate;
       const effect = execFileSync(process.execPath, [toolFile, "--execute", projectRoot, "effect-invocations.jsonl"], { encoding: "utf8", timeout: 5e3 });
       assert.equal(effect, "1");
       const output = scenario.afterRelease[0];
-      frame(res, output[0], JSON.parse(JSON.stringify(output[1]).replaceAll("{{COUNTER}}", effect)));
+      await frame(res, output[0], JSON.parse(JSON.stringify(output[1]).replaceAll("{{COUNTER}}", effect)));
       await finalGate;
-      for (const [event, data] of scenario.afterRelease.slice(1)) frame(res, event, JSON.parse(JSON.stringify(data).replaceAll("{{COUNTER}}", effect)));
+      for (const [event, data] of scenario.afterRelease.slice(1)) await frame(res, event, JSON.parse(JSON.stringify(data).replaceAll("{{COUNTER}}", effect)));
       res.end();
     } catch (error) {
       report.providerFailure = { name: error.name, code: error.code ?? null };
@@ -129,6 +161,7 @@ try {
   report.daemonPid = JSON.parse(await readFile(path.join(covenHome, "daemon.json"), "utf8")).pid;
   caveInput = { port: await freePort(), caveHomeDir: caveHome, covenHomeDir: covenHome, adminToken, mobileAccessToken: mobileToken };
   cave = await startCave(caveInput);
+  captureLogs(cave);
   const assertPublic = value => {
     const text = typeof value === "string" ? value : JSON.stringify(value);
     for (const sentinel of scenario.expected.privateSentinels) assert.ok(!text.includes(sentinel), "private provider sentinel escaped");
@@ -152,7 +185,8 @@ try {
   const sent = new AbortController();
   const response = await request("/api/chat/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ familiarId: "effectfixture", sessionId: randomUUID(), runId, startNewConversation: true, projectRoot, permissionMode: "write", prompt: "Run the controlled isolated counter tool once." }), signal: sent.signal });
   assert.equal(response.status, 200);
-  await until(response.body.getReader(), (e) => e.some((x) => x.kind === "tool_use" && x.status === "running"));
+  const initialWire = await until(response.body.getReader(), (e) => e.some((x) => x.kind === "tool_use" && x.status === "running"));
+  assertPublic(initialWire);
   assert.equal(await count(), 0);
   sent.abort();
   report.checkpoints.push({ label: "transport drop before effect", counter: 0 });
@@ -190,6 +224,19 @@ try {
   if (ringEviction) {
     assert.ok(events.some(event => event.kind === "progress" && event.id === "resume-gap"), "real production ring must report the evicted cursor gap");
     report.ringEvictionGapVerified = true;
+  }
+  if (splitSecrets) {
+    const inputSnapshots = [...parse(initialWire), ...events].filter(event => event.kind === "tool_use" && typeof event.input === "string");
+    const checkInputs = snapshots => {
+      assert.ok(snapshots.length > 0, "complete argument snapshot must be present");
+      for (const event of snapshots) assert.deepEqual(JSON.parse(event.input), { path: "effect-invocations.jsonl", authorization: "[redacted]", url: "[redacted signed URL]", email: "[redacted email]", ssn: "[redacted identifier]", phone: "[redacted phone]", encrypted_content: "[withheld provider state]" }, "no incomplete or unsafe argument delta may escape");
+    };
+    checkInputs(inputSnapshots);
+    assert.throws(() => checkInputs([]));
+    assert.throws(() => checkInputs([{ input: '{"authorization":"Bearer sk-partial' }]));
+    assert.throws(() => checkInputs([{ input: JSON.stringify({ ...JSON.parse(inputSnapshots[0].input), authorization: "synthetic unredacted fixture" }) }]));
+    report.inputSnapshotNegativeControls = { missingRejected: true, partialRejected: true, unsafeRejected: true };
+    report.completeSafeInputSnapshots = inputSnapshots.length;
   }
   const terminalTool = events.findLast(event => event.kind === "tool_use" && event.id === scenario.expected.toolId && event.status === "ok");
   assert.ok(terminalTool?.activity?.runId, "live tool observation identity must exist");
@@ -256,7 +303,10 @@ try {
     report.stage = 'history: assert.equal(tool.status';
     assert.equal(tool.status, "ok");
     report.stage = 'history: assert.equal(tool.output';
-    assert.equal(tool.output, String(scenario.expected.counter));
+    if (splitSecrets) {
+      assert.deepEqual(JSON.parse(tool.output), { count: "1", authorization: "[redacted]", url: "[redacted signed URL]", email: "[redacted email]", ssn: "[redacted identifier]", phone: "[redacted phone]", signature: "[withheld provider state]" });
+      assert.deepEqual(JSON.parse(tool.input), { path: "effect-invocations.jsonl", authorization: "[redacted]", url: "[redacted signed URL]", email: "[redacted email]", ssn: "[redacted identifier]", phone: "[redacted phone]", encrypted_content: "[withheld provider state]" });
+    } else assert.equal(tool.output, String(scenario.expected.counter));
     report.stage = 'history: assert.equal(tool.activity?.runId';
     assert.deepEqual(tool.activity, terminalTool.activity, "saved activity must match the live observation");
     assert.ok(assistant.reasoningBlocks.every(block => block.observation.runId === terminalTool.activity.runId));
@@ -301,6 +351,7 @@ try {
   const oldPid = cave.child.pid;
   await stopCave(cave, cave.port);
   cave = await startCave(caveInput);
+  captureLogs(cave);
   assert.notEqual(cave.child.pid, oldPid);
   const unavailable = await request("/api/chat/stream?runId=" + runId + "&cursor=0");
   assert.equal(unavailable.status, 404);
@@ -310,6 +361,23 @@ try {
   await refuseReadCredentials("after-server-restart");
   await expectedCount("server restart: ring absent, authorized history readable");
   assert.equal(report.providerFailure, void 0);
+  if (splitSecrets) {
+    const lazy = await request("/api/chat/conversation/" + done.sessionId + "/tool-output?toolId=" + scenario.expected.toolId);
+    assert.equal(lazy.status, 200);
+    const lazyValue = await lazy.json(); assertPublic(lazyValue);
+    assert.equal(lazyValue.output, savedAssistant.tools.find(tool => tool.id === scenario.expected.toolId).output);
+    const stored = await readFile(path.join(caveHome, "conversations", done.sessionId + ".json"), "utf8");
+    assertPublic(stored);
+    assert.equal(serverLogOverflow, false, "fixture logs exceeded bound");
+    assertPublic(serverLogs);
+    let daemonLogBytes = 0;
+    for (const name of ["daemon.log", "daemon.stderr.log", "daemon.stdout.log"]) {
+      try { const bytes = await readFile(path.join(covenHome, name), "utf8"); assert.ok(Buffer.byteLength(bytes) <= 1024 * 1024); assertPublic(bytes); daemonLogBytes += Buffer.byteLength(bytes); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    report.disclosureSurfaces = { providerWriteChunkBytes: 7, providerUtf8SplitBoundaries: report.providerUtf8SplitBoundaries, argumentDeltaCharacters: 1, liveReplayAndHistoryChecked: true, lazyOutputChecked: true, rawPersistedConversationChecked: true, serverLogBytesChecked: Buffer.byteLength(serverLogs), knownDaemonLogBytesChecked: daemonLogBytes, rawPayloadRetained: false };
+    assert.ok(report.providerUtf8SplitBoundaries > 0, "provider writes must split a Unicode code point");
+  }
   await writeFile(path.join(evidence, "durable-invocations.jsonl"), await readFile(ledger));
   const negative = "negative-control-invocations.jsonl";
   await writeFile(path.join(projectRoot, negative), "", { flag: "wx", mode: 0o600 });

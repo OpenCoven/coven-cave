@@ -20,6 +20,11 @@ node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
   scripts/runtime-activity-effect-recovery.mjs \
   --execute --evidence /absolute/new/eviction-evidence --ring-eviction
 
+# Split secrets in one-character argument deltas and seven-byte provider writes:
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
+  scripts/runtime-activity-effect-recovery.mjs \
+  --execute --evidence /absolute/new/disclosure-evidence --split-secrets
+
 # Save failure after the durable effect; run separately from eviction/expiry:
 node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
   scripts/runtime-activity-effect-recovery.mjs \
@@ -58,6 +63,26 @@ Every mode probes missing and invalid credentials on reconnect, history and
 lazy tool-output reads before and after server restart. Forwarded ingress is
 simulated with headers; these refusals do not prove physical remote ingress,
 principal/project scoping, revocation or cache invalidation.
+
+The split-secret mode supplies only synthetic credentials and PII, a signed URL
+on `fixture.invalid`, and opaque provider-state sentinels. It sends tool arguments
+one character per provider event, then a complete argument snapshot. Provider
+writes use seven-byte slices with a recorded count of UTF-8 code-point boundaries
+split between writes; TCP may coalesce writes, so this is not a guarantee of the
+receiver's chunk sizes. The checker requires complete, exactly redacted input
+snapshots and rejects absent, incomplete and unredacted negative controls.
+It checks initial/live replay, saved HTTP history, raw stored conversation and
+lazy output. Server output and three named fixture daemon log paths are checked,
+with byte counts retained; zero emitted bytes do not prove broader logging.
+The mode runs separately from save failure. It keeps the durable counter at one.
+
+A separate alternate-ID packaged Release app now has partial Activity/history
+renderer observations, including redacted raw JSON and automation keyboard focus
+and disclosure activation. Its durable ledger stayed one after history reopening.
+See `docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json` for
+source/build provenance, a retained terminal failure and the successful retry.
+These observations do not qualify native iOS, desktop live send/reconnect/reload,
+comparative performance, human keyboard-only use or VoiceOver.
 
 The shared scenario lives alongside the native corpus, but this runner is an
 HTTP client. It does not exercise the browser composer, desktop Activity view,
