@@ -10,15 +10,96 @@
  * left on the new branch.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { scrubSidecarInternalEnv } from "../child-spawn-env.ts";
+import { terminateProcessTree } from "../process-execution.ts";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
+
+/** A failed gitWithHooks run, shaped as execFile's errors are, without the
+ *  command line: a commit's carried its message. */
+export type GitRunError = Error & {
+  code: number | string | null;
+  signal: NodeJS.Signals | null;
+  killed: boolean;
+  stdout: string;
+  stderr: string;
+  cmd: string;
+};
+
+/**
+ * Run git so that its time limit stops what it started too (#5795): in a
+ * process group of its own, which is killed whole. execFile's limit killed
+ * git alone (and execFile drops `detached`), so a commit hook went on after
+ * the 504 had said nothing was committed, then staged a file, and a pre-push
+ * hook ran on after the answer. On Windows the tree goes through taskkill.
+ * Rejects with `killed: true` once the group is gone.
+ */
+export function gitWithHooks(
+  repoRoot: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; timeoutMs: number; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, {
+      windowsHide: true,
+      cwd: repoRoot,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    let size = 0;
+    const keep = (into: Buffer[]) => (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= options.maxBuffer) into.push(chunk);
+    };
+    child.stdout?.on("data", keep(out));
+    child.stderr?.on("data", keep(err));
+    let killed = false;
+    let stopping: Promise<unknown> | null = null;
+    const timer = setTimeout(() => {
+      killed = true;
+      // A process that left the group can't hold the answer open.
+      stopping = terminateProcessTree(child).finally(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      });
+    }, options.timeoutMs);
+    let settled = false;
+    const fail = (error: Error, code: number | string | null, signal: NodeJS.Signals | null) => {
+      const failure = Object.assign(error, {
+        code,
+        signal,
+        killed,
+        stdout: Buffer.concat(out).toString("utf8"),
+        stderr: Buffer.concat(err).toString("utf8"),
+        cmd: "git",
+      });
+      reject(failure as GitRunError);
+    };
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fail(error, error.code ?? null, null);
+    });
+    child.once("close", async (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (stopping) await stopping;
+      if (code === 0) return resolve({ stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
+      fail(new Error("Command failed: git"), code, signal);
+    });
+  });
+}
 
 /** Without Cave's own secrets (#5795): the rollback's checkout runs the
  *  repository's post-checkout hook, as the commit runs its commit hooks. */
@@ -54,8 +135,12 @@ export async function captureCommitStart(repoRoot: string, branch: string, index
  * the branch, and the checkout stays on it, since switching away would take
  * that commit's files out of the worktree. `start.index` null leaves the
  * index alone, for a commit made from a private index.
+ *
+ * Resolves null, or what git said when the index couldn't be put back
+ * (#5795): a failed `read-tree` was ignored, so an index locked by another
+ * process left the files staged while the answer said nothing was.
  */
-export async function rollbackCommitStart(repoRoot: string, start: CommitStart, created: string | null): Promise<void> {
+export async function rollbackCommitStart(repoRoot: string, start: CommitStart, created: string | null): Promise<string | null> {
   if (created) {
     const head = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).then(({ stdout }) => stdout.trim(), () => null);
     if (head === start.oid) {
@@ -64,7 +149,11 @@ export async function rollbackCommitStart(repoRoot: string, start: CommitStart, 
       if (start.oid) await git(repoRoot, ["update-ref", "-d", `refs/heads/${created}`, start.oid]).catch(() => {});
     }
   }
-  if (start.index) await git(repoRoot, ["read-tree", start.index]).catch(() => {});
+  if (!start.index) return null;
+  return git(repoRoot, ["read-tree", start.index]).then(
+    () => null,
+    (err: { stderr?: unknown; message?: unknown }) => String(err?.stderr || err?.message || err).trim() || "git read-tree failed",
+  );
 }
 
 /**

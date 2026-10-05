@@ -299,6 +299,22 @@ export function isCodeShortcutTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * A field's own ⌘ keys (#5795): select all, the clipboard, undo and redo, and
+ * moving or deleting by word or line. A desk action bound to one of them acts
+ * outside fields, but never takes it from one.
+ */
+const FIELD_MOD_KEYS = new Set([
+  "A", "C", "V", "X", "Z", "Y", "Backspace", "Delete", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End",
+]);
+
+/** A ⌘/Ctrl chord a text field doesn't use for editing (#5795). */
+function isFieldFreeModCombo(combo: string | null): boolean {
+  if (!combo) return false;
+  const parts = combo.split("+");
+  return parts.slice(0, -1).includes("Mod") && !FIELD_MOD_KEYS.has(parts[parts.length - 1]);
+}
+
+/**
  * May this room action act on a keystroke aimed at `target`?
  *
  * Everything `isCodeShortcutTarget` allows, plus exactly one key from inside
@@ -306,12 +322,48 @@ export function isCodeShortcutTarget(target: EventTarget | null): boolean {
  * key there still belongs to the shell. Without this exception a focused
  * terminal was a keyboard trap — xterm consumes Tab and Shift+Tab, and the
  * "close" hint on the drawer bar sent its key to the shell instead.
+ *
+ * In a field — the follow-up box, the commit box, the editor — a ⌘/Ctrl
+ * chord (`combo`) acts too (#5795). The field exemption left those keys to the
+ * browser: ⌘⇧R is a hard reload there, which dropped the follow-up draft, the
+ * open tabs and the viewed ticks, and ⌘P opened Print. Keys without ⌘ stay
+ * the field's (Alt+↑ moves the caret), and so do its own editing chords.
  */
-export function isCodeShortcutAllowed(target: EventTarget | null, action: CodeShortcutId | null): boolean {
+export function isCodeShortcutAllowed(
+  target: EventTarget | null,
+  action: CodeShortcutId | null,
+  combo: string | null = null,
+): boolean {
   if (!action) return false;
   if (isCodeShortcutTarget(target)) return true;
   const el = target as HTMLElement | null;
-  return action === "terminal" && typeof el?.closest === "function" && Boolean(el.closest(".xterm"));
+  const inTerminal = typeof el?.closest === "function" && Boolean(el.closest(".xterm"));
+  if (inTerminal) return action === "terminal";
+  return isFieldFreeModCombo(combo);
+}
+
+/** Is a modal dialog open anywhere on the page (#5795)? Closed ones can stay
+ *  mounted, hidden (the phone layout's chat drawer), so a dialog counts only
+ *  while it is shown. */
+export function isModalDialogOpen(): boolean {
+  if (typeof document === "undefined") return false;
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].some(
+    (dialog) => !dialog.closest('[hidden], [aria-hidden="true"], [inert]') && dialog.getClientRects().length > 0,
+  );
+}
+
+/**
+ * Is a key pressed with focus on `origin` the desk's to act on (#5795)? Yes
+ * from inside `desk`, from the pane that holds it (a click on the desk's own
+ * text focuses that pane), or with focus fallen to the page itself; never
+ * behind a modal dialog, nor from another pane or the chat composer. ⌘S had no
+ * such scope: pressed in the chat composer or a dialog it saved the desk's
+ * edit, and beside Settings one ⌘S saved both.
+ */
+export function isCodeDeskKeyOrigin(origin: EventTarget | null, desk: Element | null | undefined): boolean {
+  if (typeof document === "undefined" || isModalDialogOpen()) return false;
+  if (!(origin instanceof Node) || origin === document.body || origin === document.documentElement) return true;
+  return Boolean(desk && (desk.contains(origin) || origin.contains(desk)));
 }
 
 /** Which action a live keypress triggers, or null. Unbound entries never match. */

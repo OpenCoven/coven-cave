@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import CodeMirror, { EditorView, keymap, type Extension } from "@uiw/react-codemirror";
 import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-langs";
 import { syntaxHighlighting } from "@codemirror/language";
-import { caveEditorFrame, moodHighlight } from "@/components/code-editor-theme";
+import { caveEditorFocusRing, caveEditorFrame, moodHighlight } from "@/components/code-editor-theme";
 
 // The mood-c palette + editor frame live in code-editor-theme.ts so the same
 // theme drives this editor, the MdEditor MARKDOWN mode, and the Milkdown
@@ -77,11 +77,16 @@ type Props = {
  */
 export function CodeEditor({ value, filename, onChange, onSave, onCancel, onReady, autoFocus = false }: Props) {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const baseName = filename.split("/").pop() || filename;
 
   const extensions = useMemo<Extension[]>(() => {
     const list: Extension[] = [
       EditorView.lineWrapping,
       syntaxHighlighting(moodHighlight),
+      caveEditorFocusRing,
+      // The text box is named for its file (#5795): it had no name at all,
+      // so a screen reader announced only "edit text".
+      EditorView.contentAttributes.of({ "aria-label": `Edit ${baseName}` }),
       // High-precedence so Mod-s / Escape win over default bindings.
       keymap.of([
         { key: "Mod-s", preventDefault: true, run: () => { onSave(); return true; } },
@@ -94,7 +99,7 @@ export function CodeEditor({ value, filename, onChange, onSave, onCancel, onRead
       if (lang) list.push(lang);
     }
     return list;
-  }, [ext, onSave, onCancel]);
+  }, [baseName, ext, onSave, onCancel]);
 
   return (
     <CodeMirror

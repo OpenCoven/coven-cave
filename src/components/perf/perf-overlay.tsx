@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { formatWebVital, type WebVitalRating } from "@/lib/perf/web-vitals-format";
 import { getPerfMeasures, type PerfMeasure } from "@/lib/perf/marks";
-import type { CaveVital } from "@/components/perf/web-vitals-reporter";
+import { perfOverlayEnabled, type CaveVital } from "@/components/perf/web-vitals-reporter";
 
 const RATING_COLOR: Record<WebVitalRating, string> = {
   good: "var(--color-success)",
@@ -17,17 +17,6 @@ const RATING_COLOR: Record<WebVitalRating, string> = {
   unknown: "var(--text-muted)",
 };
 
-function enabledFromEnv(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const q = new URLSearchParams(window.location.search);
-    if (q.get("perf") === "1") return true;
-    return window.localStorage.getItem("cave:perf-overlay") === "1";
-  } catch {
-    return false;
-  }
-}
-
 export function PerfOverlay() {
   const [enabled, setEnabled] = useState(false);
   const [vitals, setVitals] = useState<Record<string, CaveVital>>({});
@@ -35,7 +24,8 @@ export function PerfOverlay() {
 
   // Gate read happens post-mount so SSR markup stays empty (no hydration drift).
   useEffect(() => {
-    setEnabled(enabledFromEnv());
+    // One switch with the vitals reporter (#5795), which now runs only with it.
+    setEnabled(perfOverlayEnabled());
   }, []);
 
   useEffect(() => {

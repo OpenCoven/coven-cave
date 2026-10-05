@@ -545,4 +545,37 @@ function withRemote(name, { setHead = true } = {}) {
   assert.equal(commit.json.branchCreated, true);
 }
 
+// ── 28. A commit's time limit stops its hook too (#5795) ───────────────────
+// The limit killed git alone: after the 504 said nothing was committed, the
+// orphaned pre-commit hook went on, and staged a file.
+{
+  const { dir, git } = repo();
+  const marker = path.join(scratch, "pre-commit-ran-on");
+  hook(dir, "pre-commit", `sleep 4\ntouch "${marker}"\ngit add -A`);
+  writeFileSync(path.join(dir, "f.txt"), "edited\n");
+  writeFileSync(path.join(dir, "late.txt"), "late\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "slow hook, stopped" });
+  assert.equal(commit.status, 504, JSON.stringify(commit.json));
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+  assert.ok(!existsSync(marker), "the hook was stopped with git");
+  assert.equal(git("status", "--porcelain"), " M f.txt\n?? late.txt\n", "and nothing was staged after the answer");
+}
+
+// ── 29. A rollback that can't put the index back says so (#5795) ───────────
+// Its failed `read-tree` was ignored: the files stayed staged, unsaid.
+{
+  const { dir, git } = repo();
+  git("checkout", "-q", "-b", "feature");
+  hook(dir, "pre-commit", 'touch .git/index.lock\necho "lint failed" >&2\nexit 1');
+  writeFileSync(path.join(dir, "f.txt"), "edited\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "refused, index locked" });
+  assert.equal(commit.status, 500, JSON.stringify(commit.json));
+  assert.match(
+    commit.json.error,
+    /^commit failed: lint failed; the files the desk staged are still staged, because the index couldn't be put back: .*index\.lock/s,
+  );
+  rmSync(path.join(dir, ".git", "index.lock"));
+  assert.equal(git("status", "--porcelain"), "M  f.txt\n", "which is so");
+}
+
 console.log("changes route git states: ok");

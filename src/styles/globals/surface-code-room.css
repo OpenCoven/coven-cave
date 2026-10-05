@@ -279,6 +279,23 @@
      field sat under the bottom bar with nothing to scroll. */
   overflow: hidden auto;
 }
+/* The Screen scale magnifies the desk (#5795). The setting scales the rem
+   root, and the type tokens are px, so at 150% the header, tree, viewer and
+   composer stayed the same size. Here the tokens scale with it: identical at
+   100%. The session picker and the inspector open outside the desk and are
+   part of it. */
+.code-room,
+.code-picker__panel,
+.code-room__inspector {
+  --text-2xs: calc(10px * var(--cave-screen-scale));
+  --text-xs: calc(11px * var(--cave-screen-scale));
+  --text-sm: calc(12px * var(--cave-screen-scale));
+  --text-base: calc(13px * var(--cave-screen-scale));
+  --text-md: calc(14px * var(--cave-screen-scale));
+  --text-lg: calc(16px * var(--cave-screen-scale));
+  --text-xl: calc(20px * var(--cave-screen-scale));
+  --text-display: calc(28px * var(--cave-screen-scale));
+}
 
 /* ── Header ── */
 .code-room__header {
@@ -545,6 +562,12 @@
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
+}
+/* The desk's focus ring on the field's box (#5795): the input has no outline
+   of its own, so the caret was the only sign of focus. */
+.code-picker__search:has(.code-picker__search-input:focus) {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
 }
 .code-picker__search-clear {
   flex: none;
@@ -1144,12 +1167,22 @@
   border-color: color-mix(in oklab, var(--color-success) 40%, transparent);
   background: color-mix(in oklab, var(--color-success) 10%, transparent);
 }
+/* "running" on its own tint in light mode (#5795): the light success ink
+   measured 4.26:1 there at 10px. A darker mix of the same ink, as the board's
+   light-mode pills use. */
+:root[data-mode="light"] .code-room__pill[data-tone="success"] {
+  color: color-mix(in oklch, var(--color-success) 76%, black);
+}
 .code-room__pill[data-tone="danger"] {
   border-color: color-mix(in oklab, var(--color-danger) 40%, transparent);
   background: color-mix(in oklab, var(--color-danger) 10%, transparent);
 }
 .code-room__chips {
   display: flex;
+  /* The identity column's width, not the chips' own (#5795): sized to a long
+     branch name's unbroken width, the strip ran over the header's actions,
+     and past the screen's edge on a phone. */
+  align-self: stretch;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
@@ -1177,6 +1210,7 @@
   overflow: hidden;
   font-family: var(--font-mono);
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .code-room__chip-note,
 .code-room__chip-state { color: var(--text-muted); }
@@ -1211,6 +1245,18 @@
 .code-tabs__item[data-selected="true"] {
   border-bottom-color: var(--accent-presence);
   background: var(--bg-base);
+}
+/* Forced colours drop the fills and the accent (#5795): the active file tab
+   couldn't be told apart, and the selected rail and step tabs differed only
+   by weight. Each takes a 3px Highlight underline; the others keep the same
+   width in Canvas, so nothing moves. */
+@media (forced-colors: active) {
+  .code-tabs__item,
+  .code-rail__tab,
+  .code-room__step { border-bottom: 3px solid Canvas; }
+  .code-tabs__item[data-selected="true"],
+  .code-rail__tab[data-selected="true"],
+  .code-room__step[data-selected="true"] { border-bottom-color: Highlight; }
 }
 .code-tabs__tab {
   display: inline-flex;

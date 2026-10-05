@@ -18,6 +18,12 @@ test("the push source is an immutable commit rather than the mutable local branc
   assert.equal(exactBranchPushRef("cave/update-sketch", head), `${head}:refs/heads/cave/update-sketch`);
 });
 
+test("a branch source is a full ref, so a name starting with - is never read as options (#5795)", () => {
+  assert.equal(exactBranchPushRef("-fo", "-fo"), "refs/heads/-fo:refs/heads/-fo");
+  assert.equal(exactBranchPushRef("feature/x", "feature/x"), "refs/heads/feature/x:refs/heads/feature/x");
+  assert.ok(!exactBranchPushRef("-fo", "-fo").startsWith("-"));
+});
+
 test("remote verification rejects an empty or concurrently moved branch", () => {
   const expected = "a".repeat(40);
   assert.equal(remoteBranchMatchesExpectedHead(`${expected}\trefs/heads/cave/update-sketch\n`, expected), true);

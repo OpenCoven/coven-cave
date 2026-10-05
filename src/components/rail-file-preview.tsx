@@ -13,6 +13,7 @@ import { codeOutline } from "@/lib/code-outline";
 import { FILE_CHANGED_ON_DISK, fileEditDrafts, isDraftDirty } from "@/lib/file-edit-drafts";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { handleMarkdownLinkClick } from "@/lib/markdown-doc-links";
+import { isCodeDeskKeyOrigin } from "@/lib/code-shortcuts";
 import { openExternalUrl } from "@/lib/open-external";
 import { HiddenUnicodeText } from "@/components/ui/hidden-unicode-text";
 import { describeHiddenUnicode } from "@/lib/hidden-unicode";
@@ -256,11 +257,21 @@ export function RailFilePreview({
     }
     const params = new URLSearchParams({ path });
     if (familiarId) params.set("familiarId", familiarId);
+    // Saves of this file ended so far (#5795). A save doesn't cancel a read
+    // in flight, and a read sent before the save ended can answer after it
+    // with the text from before: older text on screen, or a false "changed
+    // on disk" against the edit. Such a read is dropped, and the file read
+    // again.
+    const savesBefore = fileEditDrafts.savesEnded(path);
     // A read that never answers becomes the error state, with Retry (#5781).
     void fetch(`/api/project-file?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) })
       .then(async (res) => {
         const json = (await res.json()) as ProjectFileBody;
         if (cancelled) return;
+        if (fileEditDrafts.savesEnded(path) !== savesBefore) {
+          setReloadNonce((n) => n + 1);
+          return;
+        }
         if (!json.ok) {
           // A failed background refresh keeps the text already on screen,
           // but a 404 says the file is gone, and that is shown (#5756). So
@@ -434,20 +445,26 @@ export function RailFilePreview({
   const onEditorSave = useCallback(() => void saveEdit(), [saveEdit]);
 
   // ⌘S anywhere on the desk (#5756): outside the editor it used to open the
-  // browser's "Save page" instead. It saves the open edit when there is one,
-  // and otherwise does nothing. The editor's own keymap handles ⌘S inside it.
+  // browser's "Save page" instead. It saves the open edit when there is one.
+  // The editor's own keymap handles ⌘S inside it.
+  const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (variant !== "workbench") return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
       if (event.defaultPrevented) return;
+      // Only from the desk (#5795): ⌘S in the chat composer, another pane or
+      // a dialog saved the desk's edit, and beside Settings saved both.
+      if (!isCodeDeskKeyOrigin(event.target, rootRef.current?.closest(".code-room"))) return;
       event.preventDefault();
       const target = pathRef.current;
       if (target && isDraftDirty(fileEditDrafts.get(target))) void saveEdit();
+      // The edit is on another tab (#5795): the key was swallowed unsaid.
+      else if (fileEditDrafts.hasDirty()) announce("Open the edited file to save it.");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [saveEdit, variant]);
+  }, [announce, saveEdit, variant]);
 
   // A conflict is resolved one of two ways: keep my edit and write it over the
   // newer file, or drop my edit and read the file as it is now.
@@ -511,7 +528,7 @@ export function RailFilePreview({
 
   if (!path) {
     return (
-      <div className="workspace-rail__files-empty">
+      <div ref={rootRef} className="workspace-rail__files-empty">
         <Icon name="ph:file" width={22} aria-hidden />
         <p>Select a file from the tree to preview it here.</p>
         {onOpenPath && changed.length > 0 ? (
@@ -568,7 +585,7 @@ export function RailFilePreview({
       : absoluteDir;
 
   return (
-    <div className="workspace-rail__preview" data-variant={variant}>
+    <div ref={rootRef} className="workspace-rail__preview" data-variant={variant}>
       {/* Focusable from script only: where Escape leaves the editor when no
           action can take focus (#5756). */}
       <header ref={headerRef} tabIndex={-1} className="focus-ring-inset workspace-rail__preview-head">

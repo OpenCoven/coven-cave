@@ -11,9 +11,16 @@ import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
 import { checkpointLabel, checkpointRestoreMessage, type CheckpointRestoreResult } from "@/lib/session-changes-format";
-import { changesOutbound, EMPTY_CHANGES_OUTBOUND, type ChangesOutbound } from "@/lib/changes-outbound-drafts";
+import {
+  changesOutbound,
+  EMPTY_CHANGES_OUTBOUND,
+  TIMED_OUT_COMMIT_WATCH_MS,
+  timedOutCommitLanded,
+  type ChangesOutbound,
+} from "@/lib/changes-outbound-drafts";
 import {
   ChangesRequestError,
+  fetchSessionBranches,
   fetchSessionCheckpoints,
   fetchSessionFileDiff,
   mutateSessionChanges,
@@ -45,6 +52,8 @@ type ChangesResponse = {
   repoRoot?: string;
   files?: ChangedFile[];
   error?: string;
+  branch?: string | null;
+  githubOrigin?: boolean;
 };
 
 
@@ -93,6 +102,14 @@ export function SessionChangesInner({
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [notARepo, setNotARepo] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // The branch the list was read on, and whether `origin` is a GitHub remote
+  // a pull request can be opened on (#5795). An older server says nothing,
+  // which reads as yes.
+  const [branch, setBranch] = useState<string | null>(null);
+  const [githubOrigin, setGithubOrigin] = useState(true);
+  // Only for a refresh someone asked for (#5795): set on every background
+  // poll, it rendered the whole list twice a poll, and the Refresh button
+  // flickered off every five seconds.
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Which action failed, and why (#5729): every failure used to read
@@ -161,7 +178,9 @@ export function SessionChangesInner({
   const queuedLoadRef = useRef(false);
   const queuedRunRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
   const loadAgainRef = useRef<() => Promise<void>>(async () => {});
-  const load = useCallback(async (opts?: { shared?: boolean }): Promise<void> => {
+  // `cause` is the event a forced load reacts to: the desk's hook hears the
+  // same one, and the two share one request (#5795).
+  const load = useCallback(async (opts?: { shared?: boolean; cause?: Event }): Promise<void> => {
     if (inFlightRef.current) {
       if (opts?.shared) return;
       queuedLoadRef.current = true;
@@ -176,15 +195,17 @@ export function SessionChangesInner({
       return queuedRunRef.current.promise;
     }
     inFlightRef.current = true;
-    setRefreshing(true);
     try {
       const { httpOk, status, json: raw } = await fetchChangesSummary(projectRoot, {
         force: !opts?.shared,
+        cause: opts?.cause,
       });
       const json = raw as ChangesResponse;
       if (!httpOk || !json.ok) throw new Error(json.error ?? `http ${status}`);
       setNotARepo(json.repo === false);
       setRepoRoot(json.repoRoot ?? null);
+      setBranch(json.branch ?? null);
+      setGithubOrigin(json.githubOrigin !== false);
       // Content-guard: an unchanged 5s poll keeps the previous reference so the
       // whole diff panel (and the expanded file's diff refetch, gated by
       // filesSig) doesn't churn while an agent is actively editing.
@@ -195,7 +216,6 @@ export function SessionChangesInner({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       inFlightRef.current = false;
-      setRefreshing(false);
       setLoaded(true);
       if (queuedLoadRef.current) {
         queuedLoadRef.current = false;
@@ -206,6 +226,16 @@ export function SessionChangesInner({
     }
   }, [projectRoot]);
   loadAgainRef.current = () => load();
+  // Refresh and Retry: a forced load, shown as one until it and any run it
+  // queued behind have answered.
+  const refreshNow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   // Let a host (the Coding Desk) compare this panel's snapshot with its own.
   // Only a SUCCESSFUL load is a snapshot: the initial `[]` before the first
@@ -234,9 +264,9 @@ export function SessionChangesInner({
   useEffect(() => {
     void load({ shared: true });
     void loadCheckpoints();
-    const onVisible = () => {
+    const onVisible = (event: Event) => {
       if (document.visibilityState === "visible") {
-        void load();
+        void load({ cause: event });
         void loadCheckpoints();
       }
     };
@@ -254,8 +284,8 @@ export function SessionChangesInner({
   // (and the fresh checkpoint) without waiting for the poll — mirroring the
   // load()+loadCheckpoints() refresh that revertFile does after its own revert.
   useEffect(() => {
-    const onRefresh = () => {
-      void load();
+    const onRefresh = (event: Event) => {
+      void load({ cause: event });
       void loadCheckpoints();
     };
     window.addEventListener("cave:changes-refresh", onRefresh);
@@ -398,6 +428,8 @@ export function SessionChangesInner({
         setCheckpointMessage(message);
         announce(message);
         setDiffs({});
+        // Nor is a file a restore brought back or removed (#5795).
+        if (changesOutbound.get(outboundKey).timedOutCommit) setOutbound({ timedOutCommit: null });
         // A restore that wrote anything saved the state before it first.
         await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
@@ -406,7 +438,7 @@ export function SessionChangesInner({
         setBusyCheckpoint(null);
       }
     },
-    [announce, projectRoot, load, loadCheckpoints],
+    [announce, projectRoot, load, loadCheckpoints, outboundKey, setOutbound],
   );
 
   const deleteCheckpoint = useCallback(
@@ -504,6 +536,8 @@ export function SessionChangesInner({
           setCheckpointMessage("Reverted — a checkpoint was saved first, so you can undo it below.");
           announce("File reverted — a checkpoint was saved first.");
         }
+        // A file gone by a revert is not a sign the timed-out commit landed.
+        if (changesOutbound.get(outboundKey).timedOutCommit) setOutbound({ timedOutCommit: null });
         await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
         setActionError({ action: "Couldn't revert the file", message: err instanceof Error ? err.message : String(err) });
@@ -514,23 +548,21 @@ export function SessionChangesInner({
         setRevertFocus({ path: file.path, index: Math.max(0, index) });
       }
     },
-    [files, load, loadCheckpoints, projectRoot],
+    [announce, files, load, loadCheckpoints, outboundKey, projectRoot, setOutbound],
   );
 
   const commitChanges = useCallback(async () => {
     const message = commitMsg.trim();
     if (!message || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
-    setOutbound({ pending: "commit", error: null, prUrl: null, commitWarning: null });
+    setOutbound({ pending: "commit", error: null, prUrl: null, prExisted: false, commitWarning: null, timedOutCommit: null });
+    // The list as reviewed (#5745): the server refuses when the working
+    // tree no longer matches it, so nothing is committed unseen.
+    const expectedChanges = files.map((file) => ({ path: file.path, changeVersion: file.changeVersion ?? "" }));
     try {
       const json = await mutateSessionChanges<{
         ok?: boolean; sha?: string; headOid?: string; branch?: string; onDefaultBranch?: boolean; error?: string; warning?: string;
-      }>(fetch, projectRoot, "commit", {
-        message,
-        // The list as reviewed (#5745): the server refuses when the working
-        // tree no longer matches it, so nothing is committed unseen.
-        expectedChanges: files.map((file) => ({ path: file.path, changeVersion: file.changeVersion ?? "" })),
-      });
+      }>(fetch, projectRoot, "commit", { message, expectedChanges });
       setOutbound({
         postCommit: {
           sha: json.sha ?? "",
@@ -554,11 +586,55 @@ export function SessionChangesInner({
       setExpandedPath(null);
       await Promise.all([load(), loadCheckpoints()]);
     } catch (err) {
-      setOutbound({ pending: null, error: { action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) } });
+      setOutbound({
+        pending: null,
+        error: { action: "Couldn't commit", message: err instanceof Error ? err.message : String(err) },
+        // Given up on, not refused (#5795): waiting behind the repository
+        // lock, it can still land. The change lists that follow are watched
+        // for it, so it gets its result and its Create PR when it does.
+        timedOutCommit: err instanceof ChangesRequestError && err.timedOut
+          ? { message, branch, files: expectedChanges, at: Date.now() }
+          : null,
+      });
       // A refused commit usually means the tree moved: show the new list.
       void load();
     }
-  }, [announce, commitMsg, files, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
+  }, [announce, branch, commitMsg, files, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
+
+  // A commit the client gave up on, found landed in a later list (#5795). It
+  // gets the result a commit gets, from what the list says: its branch, but
+  // not its id, so Create PR names the branch and not the commit. Create PR is
+  // offered when the branch isn't the default. A commit from the default goes
+  // to a new branch; one that stayed on its branch was on the default only if
+  // it was the repository's first commit, and then that is its only branch.
+  const timedOutCommit = outbound.timedOutCommit;
+  useEffect(() => {
+    if (!timedOutCommit || !loaded || error) return;
+    if (Date.now() - timedOutCommit.at > TIMED_OUT_COMMIT_WATCH_MS) {
+      setOutbound({ timedOutCommit: null });
+      return;
+    }
+    const landed = timedOutCommitLanded(timedOutCommit, { branch, files });
+    if (!landed) return;
+    let cancelled = false;
+    void (async () => {
+      const feature = landed.newBranch
+        || (await fetchSessionBranches(fetch, projectRoot).then((names) => names.length > 1, () => false));
+      const current = changesOutbound.get(outboundKey);
+      if (cancelled || current.timedOutCommit !== timedOutCommit) return;
+      setOutbound({
+        timedOutCommit: null,
+        error: null,
+        postCommit: { sha: "", headOid: "", branch: landed.branch, onDefaultBranch: !feature },
+        prTitle: timedOutCommit.message.split("\n")[0].slice(0, 72),
+        prBody: "",
+        prOpen: false,
+        commitMessage: current.commitMessage.trim() === timedOutCommit.message ? "" : current.commitMessage,
+      });
+      announce(`The commit landed after all, on ${landed.branch}.`);
+    })();
+    return () => { cancelled = true; };
+  }, [announce, branch, error, files, loaded, outboundKey, projectRoot, setOutbound, timedOutCommit]);
 
   const createPr = useCallback(async () => {
     const title = prTitle.trim();
@@ -568,7 +644,7 @@ export function SessionChangesInner({
     setActionError(null);
     setOutbound({ pending: "create-pr", error: null });
     try {
-      const json = await mutateSessionChanges<{ ok?: boolean; url?: string; error?: string }>(
+      const json = await mutateSessionChanges<{ ok?: boolean; url?: string; existed?: boolean; error?: string }>(
         fetch,
         projectRoot,
         "create-pr",
@@ -581,11 +657,23 @@ export function SessionChangesInner({
           ...(postCommit?.branch ? { expectedBranch: postCommit.branch } : {}),
         },
       );
-      setOutbound({ prUrl: json.url ?? null, prOpen: false, postCommit: null, pending: null });
+      // A success that names no pull request is no success (#5795): the form
+      // vanished and nothing was shown. It may have been opened, so the form
+      // stays, and trying again finds it.
+      if (!json.url) {
+        throw new ChangesRequestError(
+          "GitHub didn't say where the pull request is. Check the branch on GitHub before trying again",
+          200,
+          false,
+        );
+      }
+      const existed = json.existed === true;
+      setOutbound({ prUrl: json.url, prExisted: existed, prOpen: false, postCommit: null, pending: null });
       // The branch has a pull request now (#5795): the composer's PR chip
       // reads it again, as it does after a merge from the PR tab.
       window.dispatchEvent(new CustomEvent("cave:branch-pr-changed"));
-      if (json.url) announce("Pull request opened.");
+      // Not "opened" when it was already there (#5795).
+      announce(existed ? "A pull request already exists for this branch." : "Pull request opened.");
     } catch (err) {
       const error = { action: "Couldn't create the pull request", message: err instanceof Error ? err.message : String(err) };
       if (err instanceof ChangesRequestError && err.stale) {
@@ -601,6 +689,9 @@ export function SessionChangesInner({
   }, [announce, load, outboundKey, postCommit, prTitle, prBody, projectRoot, setOutbound]);
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
+  // Create PR pushes to `origin` and opens the PR on GitHub (#5795): with no
+  // GitHub origin it can only fail, after pushing the branch.
+  const canOpenPr = githubOrigin;
 
   // Stable row callbacks, so the memoized rows re-render only when their own
   // props change (#5745).
@@ -722,7 +813,7 @@ export function SessionChangesInner({
             />
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void refreshNow()}
               disabled={refreshing}
               title="Refresh"
               aria-label="Refresh working tree changes"
@@ -752,7 +843,7 @@ export function SessionChangesInner({
             <button
               type="button"
               className="focus-ring shrink-0 underline"
-              onClick={() => void load()}
+              onClick={() => void refreshNow()}
             >
               Retry
             </button>
@@ -897,7 +988,9 @@ export function SessionChangesInner({
             <div className="flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--accent-presence)]">
               <span className="flex min-w-0 items-center gap-1.5">
                 <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
-                <span className="min-w-0 truncate">Pull request opened.</span>
+                <span className="min-w-0 truncate">
+                  {outbound.prExisted ? "A pull request already exists for this branch." : "Pull request opened."}
+                </span>
               </span>
               <button
                 type="button"
@@ -938,7 +1031,8 @@ export function SessionChangesInner({
                 <span className="flex min-w-0 items-center gap-1.5">
                   <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
                   <span className="min-w-0 truncate font-mono">
-                    {postCommit.sha} · {postCommit.branch}
+                    {/* No id for a commit found landed after a time-out (#5795). */}
+                    {postCommit.sha ? `${postCommit.sha} · ${postCommit.branch}` : `committed · ${postCommit.branch}`}
                   </span>
                 </span>
                 <IconButton
@@ -951,7 +1045,7 @@ export function SessionChangesInner({
                   onClick={() => setOutbound({ postCommit: null, prOpen: false })}
                 />
               </div>
-              {!prOpen && !postCommit.onDefaultBranch ? (
+              {!prOpen && !postCommit.onDefaultBranch && canOpenPr ? (
                 <Button
                   variant="secondary"
                   size="xs"
@@ -962,10 +1056,17 @@ export function SessionChangesInner({
                   Create PR
                 </Button>
               ) : null}
+              {!postCommit.onDefaultBranch && !canOpenPr ? (
+                // Said rather than offered (#5795): it pushed the branch, then
+                // failed, on a GitLab or bare remote or with none at all.
+                <p className="mt-1.5 text-[var(--text-secondary)]" data-testid="create-pr-unavailable">
+                  No pull request from here: this repository&rsquo;s origin isn&rsquo;t on GitHub.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
-          {prOpen && postCommit ? (
+          {prOpen && postCommit && canOpenPr ? (
             <div className="space-y-1.5 rounded-md border border-[var(--border-hairline)] p-2">
               <input
                 value={prTitle}
@@ -1007,7 +1108,7 @@ export function SessionChangesInner({
 
           {/* Beside a commit result too (#5756): more changes can be committed
               without first dismissing the last one. */}
-          {!prOpen ? (
+          {!(prOpen && postCommit && canOpenPr) ? (
             <div className="flex items-center gap-1.5">
               <input
                 ref={commitInputRef}

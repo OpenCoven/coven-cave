@@ -39,15 +39,18 @@ function changesUrl(projectRoot: string, params: Record<string, string> = {}) {
 }
 
 /** A refused changes request. `stale` marks a refusal because the tree or
- *  the branch moved since it was reviewed (#5756). */
+ *  the branch moved since it was reviewed (#5756). `timedOut` marks one the
+ *  client stopped waiting for (#5795): it may still land. */
 export class ChangesRequestError extends Error {
   readonly status: number;
   readonly stale: boolean;
-  constructor(message: string, status: number, stale: boolean) {
+  readonly timedOut: boolean;
+  constructor(message: string, status: number, stale: boolean, timedOut = false) {
     super(message);
     this.name = "ChangesRequestError";
     this.status = status;
     this.stale = stale;
+    this.timedOut = timedOut;
   }
 }
 
@@ -62,6 +65,13 @@ export async function fetchSessionCheckpoints(fetchImpl: ChangesFetch, projectRo
   const res = await fetchImpl(changesUrl(projectRoot, { checkpoints: "1" }), { cache: "no-store" });
   const json = await readChangesJson<{ ok?: boolean; checkpoints?: CheckpointMeta[]; error?: string }>(res);
   return json.checkpoints ?? [];
+}
+
+/** The repository's local branch names (`?branches=1`), the current one first. */
+export async function fetchSessionBranches(fetchImpl: ChangesFetch, projectRoot: string): Promise<string[]> {
+  const res = await fetchImpl(changesUrl(projectRoot, { branches: "1" }), { cache: "no-store" });
+  const json = await readChangesJson<{ ok?: boolean; branches?: { name?: unknown }[]; error?: string }>(res);
+  return (json.branches ?? []).map((branch) => branch.name).filter((name): name is string => typeof name === "string");
 }
 
 /** Fetch a single file diff, retaining the route's truncation contract. */
@@ -105,6 +115,7 @@ export async function mutateSessionChanges<T extends ChangesResponse>(
         `no answer in ${limit / 1000} seconds. It may have happened anyway: check the changes before trying again`,
         0,
         false,
+        true,
       );
     }
     throw err;

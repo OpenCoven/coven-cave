@@ -47,6 +47,63 @@ export function githubSlug(url: string): string | null {
   return match ? match[1]! : null;
 }
 
+/** The host a remote URL names (`https://`, `ssh://` or scp-like
+ *  `user@host:path`), lower-cased and without its user or port; null for a
+ *  folder on this machine or a `file://` URL. */
+export function remoteUrlHost(url: string): string | null {
+  const trimmed = url.trim();
+  const withScheme = /^([a-z][a-z0-9+.-]*):\/\/(?:[^@/]*@)?([^/:?#\s]*)/i.exec(trimmed);
+  if (withScheme) return withScheme[1]!.toLowerCase() === "file" ? null : withScheme[2]!.toLowerCase() || null;
+  // scp-like, by git's rule: a colon before any slash. `C:\…` is a drive.
+  if (/^[a-z]:[\\/]/i.test(trimmed)) return null;
+  const scpLike = /^(?:[^@/:\s]+@)?([^@/:\s]+):/.exec(trimmed);
+  return scpLike ? scpLike[1]!.toLowerCase() : null;
+}
+
+/** Whether `gh` holds a sign-in for a host: "no-gh" when it can't be found. */
+export type GhHostState = "signed-in" | "signed-out" | "no-gh";
+
+/**
+ * Asked of `gh` itself, locally (#5795): `gh auth token` reads its stored
+ * sign-in without a network call. What it prints is the token, so it's
+ * dropped unread. This is how a GitHub Enterprise host is told from GitLab
+ * or another forge: gh is signed in to one and not the other. The answer
+ * is also what isGitHubRemoteUrl keeps for the host.
+ */
+export async function ghHostState(root: string, host: string, gh: GhRunner = defaultGh): Promise<GhHostState> {
+  const state: GhHostState = await gh(root, ["auth", "token", "--hostname", host]).then(
+    () => "signed-in",
+    (err) => ((err as NodeJS.ErrnoException)?.code === "ENOENT" ? "no-gh" : "signed-out"),
+  );
+  hostStates.set(host, { state, at: Date.now() });
+  return state;
+}
+
+const HOST_STATE_TTL_MS = 60_000;
+const hostStates = new Map<string, { state: GhHostState; at: number }>();
+
+/**
+ * Whether a remote URL is a GitHub repository's (#5795), for the desk to
+ * offer Create PR: github.com, or another host `gh` is signed in to (GitHub
+ * Enterprise). A folder, a `file://` URL, GitLab and the like are not.
+ * Polled with the change list, so gh's answer for a host is kept a minute.
+ */
+export async function isGitHubRemoteUrl(root: string, url: string, gh: GhRunner = defaultGh): Promise<boolean> {
+  const host = remoteUrlHost(url);
+  if (!host) return false;
+  if (host === "github.com" || githubSlug(url)) return true;
+  const kept = hostStates.get(host);
+  if (kept && Date.now() - kept.at < HOST_STATE_TTL_MS) return kept.state === "signed-in";
+  return (await ghHostState(root, host, gh)) === "signed-in";
+}
+
+/** The pull request link in `gh pr create`'s output, on github.com or a
+ *  GitHub Enterprise host (#5795), where only github.com's were found and
+ *  an Enterprise one came back as raw output. */
+export function createdPullRequestUrl(output: string): string | null {
+  return /https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/[^\s/]+\/[^\s/]+\/pull\/\d+/.exec(output)?.[0] ?? null;
+}
+
 function originUrl(root: string): Promise<string | null> {
   return new Promise((resolve) => {
     execFile("git", ["-C", root, "remote", "get-url", "origin"], { windowsHide: true, timeout: 10_000, env: GH_ENV() }, (err, stdout) =>

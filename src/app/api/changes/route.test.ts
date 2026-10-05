@@ -10,8 +10,8 @@ assert.match(source, /function containedMetadata\(repoRoot: string\)[\s\S]{0,200
 
 assert.match(
   source,
-  /function gitDiff[\s\S]*\["--literal-pathspecs", "diff", \.\.\.PATCH_DIFF_ARGS, \.\.\.args\]/,
-  "git diff calls must disable external diff helpers and textconv filters, read paths literally (#5756), and ignore colour and prefix config (#5781)",
+  /function gitDiff[\s\S]*\["--no-optional-locks", "-c", "diff\.autoRefreshIndex=false", "--literal-pathspecs", "diff", \.\.\.PATCH_DIFF_ARGS, \.\.\.args\]/,
+  "git diff calls must disable external diff helpers and textconv filters, read paths literally (#5756), ignore colour and prefix config (#5781), and never rewrite the index (#5795)",
 );
 // Revert and the tracked check read paths literally (#5756): a bracketed
 // path was a glob that also matched, and reverted, its siblings.
@@ -39,7 +39,7 @@ assert.match(
   "a failed commit rolls back, unless the desk's own commit landed (#5781, #5795)",
 );
 // Every step between capture and commit rolls back on failure (#5775 review).
-assert.match(source, /checkout", "-b", branch\][\s\S]{0,2000}\} catch \(err\) \{\s*await rollback\(\);\s*throw err;\s*\}\s*let warning: string \| undefined;\s*try \{\s*await gitLong\(/, "a failed add or re-stamp rolls back before the commit is tried");
+assert.match(source, /checkout", "-b", branch\][\s\S]{0,2000}\} catch \(err\) \{\s*const left = await rollback\(\);\s*throw left \? new Error\(`\$\{stderrOf\(err\)\}\$\{left\}`\) : err;\s*\}\s*let warning: string \| undefined;\s*try \{\s*await gitLong\(/, "a failed add or re-stamp rolls back before the commit is tried, and says what it couldn't undo (#5795)");
 // More than the desk can name in one commit gets its own 413 (#5756), and the
 // verified paths are staged through stdin, past the OS argument limit.
 assert.match(source, /if \(raw\.length > MAX_EXPECTED_CHANGES\) return "too-many";/);
@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   source,
-  /function gitStatus[\s\S]*\["-c", "core\.fsmonitor=false", "status", \.\.\.args\]/,
-  "git status calls must disable repository-configured fsmonitor commands",
+  /function gitStatus[\s\S]*\["--no-optional-locks", "-c", "core\.fsmonitor=false", "status", \.\.\.args\]/,
+  "git status calls must disable repository-configured fsmonitor commands, and the index refresh that takes the index lock (#5795)",
 );
 
 assert.match(
@@ -98,8 +98,8 @@ assert.match(
 );
 assert.match(
   source,
-  /return \{ ok: true, repo: true, repoRoot, branch, worktree, files \};/,
-  "the change-list response includes the branch and worktree fields",
+  /return \{ ok: true, repo: true, repoRoot, branch, worktree, githubOrigin, files \};/,
+  "the change-list response includes the branch and worktree fields, and whether origin is on GitHub (#5795)",
 );
 assert.match(
   source,
@@ -222,8 +222,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const entry = await changedEntry\(root\.repoRoot, body\.path\);\s*if \(!entry\) return pathNotAllowed\(\);/,
-  "revert requests should only operate on paths present in git status",
+  /const entry = await changedEntry\(root\.repoRoot, body\.path\);[\s\S]{0,200}if \(!entry\) \{\s*return NextResponse\.json\(\{ ok: false, stale: true, error: "this file no longer has changes" \}, \{ status: 409 \}\);/,
+  "revert requests should only operate on paths present in git status; one no longer there is stale (#5795)",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
@@ -280,5 +280,12 @@ assert.match(
 );
 assert.match(source, /expectedChanges === "invalid"[\s\S]{0,200}status: 400/, "a malformed expectedChanges is a 400");
 assert.doesNotMatch(source, /after the Canvas commit/, "the create-pr head mismatch speaks for every caller, not just Canvas");
+
+// A commit's or a push's time limit stops its hooks too (#5795): they run
+// through gitWithHooks, which kills git's process group (driven in
+// route-git-states and commit-rollback). gh keeps execFile's own limit,
+// which marks the error `killed`.
+assert.match(source, /function gitLong\([\s\S]{0,160}\{\s*return gitWithHooks\(cwd, args, \{ env: childEnv\(env\), timeoutMs: netTimeoutMs\(\), maxBuffer: MAX_GIT_BUFFER \}\);/);
+assert.match(source, /execFileAsync\("gh", args, \{ windowsHide: true, cwd, timeout: netTimeoutMs\(\),/);
 
 console.log("changes route.test.ts: ok");

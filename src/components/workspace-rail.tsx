@@ -1,7 +1,7 @@
 "use client";
 
 import "@/styles/cave-chat.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { RailFilesPanel } from "@/components/rail-files-panel";
@@ -52,6 +52,19 @@ export function WorkspaceRail({
     if (activeTab === "terminal") setTerminalEverOpened(true);
   }, [activeTab]);
   const terminalVisible = activeTab === "terminal";
+  // Picking the Terminal tab is the user asking for the shell. A shell that
+  // starts takes focus only from nothing or from its host (#5781), so the
+  // first click left focus on the tab (#5795). Focus goes into the host, and
+  // the shell takes it when it starts; focus moved on before then (to the
+  // composer, say) stays where it went.
+  const terminalHostRef = useRef<HTMLDivElement | null>(null);
+  const focusTerminalHostRef = useRef(false);
+  useEffect(() => {
+    const host = terminalHostRef.current;
+    if (!focusTerminalHostRef.current || !terminalVisible || !host) return;
+    focusTerminalHostRef.current = false;
+    host.focus();
+  }, [terminalEverOpened, terminalVisible]);
   const title = TAB_TITLE[activeTab];
 
   return (
@@ -85,7 +98,10 @@ export function WorkspaceRail({
           aria-label="Terminal"
           aria-pressed={activeTab === "terminal"}
           className={`workspace-rail__tab focus-ring${activeTab === "terminal" ? " is-active" : ""}`}
-          onClick={() => onSelectTab("terminal")}
+          onClick={() => {
+            focusTerminalHostRef.current = activeTab !== "terminal";
+            onSelectTab("terminal");
+          }}
         >
           <Icon name="ph:terminal-window" width={16} aria-hidden />
         </button>
@@ -155,8 +171,12 @@ export function WorkspaceRail({
               visually hidden when another tab is active so the pty persists. */}
           {terminalEverOpened ? (
             <div
+              ref={terminalHostRef}
               className={`workspace-rail__terminal workspace-rail__panel${terminalVisible ? "" : " is-hidden"}`}
               hidden={!terminalVisible}
+              // The terminal's host: focus here lets a shell that starts take it.
+              data-terminal-host=""
+              tabIndex={-1}
             >
               <RailTerminalPanel
                 sessionId={sessionId}

@@ -599,4 +599,32 @@ const B = "/repo/src/b.ts";
   assert.equal(store.hasDirty(), false);
 }
 
+// ── Saves that have ended, by file (#5795) ──────────────────────────────────
+// The viewer drops a read sent before a save ended: it can carry the text from
+// before the save. The count moves on every end, success or failure, and
+// outlives the draft the save finished.
+{
+  const store = createFileEditDraftStore();
+  assert.equal(store.savesEnded(A), 0);
+  store.begin(A, "x", "v1");
+  store.update(A, "y");
+  const first = store.startSave(A);
+  assert.equal(store.savesEnded(A), 0, "a save in flight hasn't ended");
+  store.fail(A, first.id, "Couldn't save: the server couldn't be reached.", false, null, first.content);
+  assert.equal(store.savesEnded(A), 1, "a failed save ended");
+  const second = store.startSave(A);
+  assert.equal(store.settle(A, second.id, second.content, "v2"), false);
+  assert.equal(store.get(A), null, "the draft is done");
+  assert.equal(store.savesEnded(A), 2, "and the count outlives it");
+  assert.equal(store.savesEnded(B), 0, "per file");
+  store.settle(A, 999, "late", "v3");
+  assert.equal(store.savesEnded(A), 3, "a late answer for an older edit still ends a save");
+  const nfd = "/repo/src/cafe\u0301.ts";
+  store.begin(nfd, "x", "v1");
+  store.update(nfd, "y");
+  const save = store.startSave(nfd);
+  store.settle(nfd, save.id, save.content, "v2");
+  assert.equal(store.savesEnded("/repo/src/caf\u00e9.ts"), 1, "either Unicode spelling");
+}
+
 console.log("file-edit-drafts: ok");

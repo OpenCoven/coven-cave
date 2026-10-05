@@ -4,7 +4,8 @@
  * perf-store — make a performance number survive the page that produced it.
  *
  * Both existing capture points are amnesiac. `perf/marks.ts` keeps the last 50
- * durations in a module-level array, and `WebVitalsReporter` stashes each metric
+ * durations in a module-level array, and `WebVitalsReporter` (while the perf
+ * overlay is on, #5795) stashes each metric
  * on `window.__caveVitals` and `console.debug`s it in development. Reload the
  * tab and every one of them is gone, which means there has never been a way to
  * compare a client-side before against a client-side after — the exact thing

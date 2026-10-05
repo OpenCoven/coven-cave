@@ -19,9 +19,13 @@
  *
  * `force: true` (post-mutation refreshes: revert, commit, checkpoint restore,
  * branch switch, the `cave:changes-refresh` signal) drops the cached entry
- * first so the caller never reuses a pre-mutation response. If another
- * subscriber's request is mid-flight it is shared instead — it started after
- * the previous cached response, so it is as fresh as a new request would be.
+ * and starts a new request, so the caller never reuses a response, or joins a
+ * request, that began before whatever it is reacting to; shared callers that
+ * come after it join that new request. A forced caller that names its `cause`
+ * (the event it is reacting to) instead shares the request another forced
+ * caller started for that same event (#5795): returning to the tab, or one
+ * `cave:changes-refresh`, reached both the desk's hook and the changes panel,
+ * and each started its own.
  *
  * Network failures reject through to every awaiting caller and are never
  * cached (swr-cache only stores resolutions), so each caller's own catch
@@ -38,6 +42,9 @@ export type ChangesSummaryResponse = {
   files?: unknown[];
   branch?: string | null;
   worktree?: string | null;
+  /** Whether `origin` is a GitHub remote a pull request can be opened on.
+   *  Absent from older servers, which reads as yes. */
+  githubOrigin?: boolean;
 };
 
 export type ChangesSummaryResult = {
@@ -79,12 +86,26 @@ async function requestSummary(projectRoot: string): Promise<ChangesSummaryResult
   return { httpOk: res.ok, status: res.status, json };
 }
 
+/** The forced request each event started, by root (#5795). Held weakly: an
+ *  event is let go once its listeners have run. */
+const forcedFor = new WeakMap<object, Map<string, Promise<ChangesSummaryResult>>>();
+
 export function fetchChangesSummary(
   projectRoot: string,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; cause?: object | null },
 ): Promise<ChangesSummaryResult> {
-  if (opts?.force) cache.invalidate(projectRoot);
-  return cache.get(projectRoot, () => requestSummary(projectRoot));
+  if (!opts?.force) return cache.get(projectRoot, () => requestSummary(projectRoot));
+  const cause = opts.cause ?? null;
+  const joined = cause ? forcedFor.get(cause)?.get(projectRoot) : undefined;
+  if (joined) return joined;
+  cache.invalidate(projectRoot);
+  const request = cache.get(projectRoot, () => requestSummary(projectRoot));
+  if (cause) {
+    let byRoot = forcedFor.get(cause);
+    if (!byRoot) forcedFor.set(cause, (byRoot = new Map()));
+    byRoot.set(projectRoot, request);
+  }
+  return request;
 }
 
 /** Test-only: drop all cached summaries so cases don't leak into each other. */

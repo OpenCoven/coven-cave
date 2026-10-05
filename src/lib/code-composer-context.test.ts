@@ -10,6 +10,8 @@ import {
 } from "./code-composer-context.ts";
 
 test("suggestions are gated on desk state, most specific first, never more than four", () => {
+  // Nothing to run the checks in while the folder is missing (#5795).
+  assert.deepEqual(codeComposerSuggestions({ fileName: null, hasChanges: false, hasPr: false, hasProject: false }), []);
   const bare = codeComposerSuggestions({ fileName: null, hasChanges: false, hasPr: false });
   assert.deepEqual(bare.map((s) => s.id), ["run-checks"]);
 

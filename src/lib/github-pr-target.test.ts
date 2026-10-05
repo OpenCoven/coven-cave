@@ -11,7 +11,17 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { githubSlug, prCreateArgs, prLookupArgs, resolvePrTarget, targetFromRepo } from "./github-pr-target.ts";
+import {
+  createdPullRequestUrl,
+  ghHostState,
+  githubSlug,
+  isGitHubRemoteUrl,
+  prCreateArgs,
+  prLookupArgs,
+  remoteUrlHost,
+  resolvePrTarget,
+  targetFromRepo,
+} from "./github-pr-target.ts";
 
 assert.equal(githubSlug("https://github.com/forkuser/widget.git"), "forkuser/widget");
 assert.equal(githubSlug("git@github.com:forkuser/widget.git"), "forkuser/widget");
@@ -77,5 +87,50 @@ assert.deepEqual(
 );
 assert.equal(await resolvePrTarget(repo("gitlab", "https://gitlab.com/acme/alpha.git"), gh(forkAnswer)), null);
 assert.equal(await resolvePrTarget(repo("no-remote"), gh(forkAnswer)), null);
+
+// ── Whether origin is a GitHub repository at all (#5795) ───────────────────
+// Create PR pushed first, then found out: a GitLab or folder origin kept the
+// branch, and gh's "gh auth login" advice misled.
+assert.equal(remoteUrlHost("https://token@github.com/acme/widget.git"), "github.com", "without the user");
+assert.equal(remoteUrlHost("ssh://git@GitHub.Example.com:2222/acme/widget.git"), "github.example.com", "without the port");
+assert.equal(remoteUrlHost("git@gitlab.com:acme/widget.git"), "gitlab.com");
+assert.equal(remoteUrlHost("/srv/git/widget.git"), null, "a folder");
+assert.equal(remoteUrlHost("../widget.git"), null);
+assert.equal(remoteUrlHost("file:///srv/git/widget.git"), null);
+assert.equal(remoteUrlHost("C:\\repos\\widget.git"), null, "a Windows drive isn't a host");
+
+const hostRunner = (signedIn) => {
+  const asked = [];
+  const run = async (cwd, args) => {
+    asked.push(args.join(" "));
+    if (signedIn === "missing") throw Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" });
+    if (!signedIn.includes(args[3])) throw Object.assign(new Error("no oauth token"), { code: 1 });
+    return "gho_secret\n";
+  };
+  return { run, asked };
+};
+{
+  const { run, asked } = hostRunner(["github.com", "github.acme.example"]);
+  assert.equal(await ghHostState(scratch, "github.com", run), "signed-in");
+  assert.deepEqual(asked, ["auth token --hostname github.com"], "asked locally, by host");
+  assert.equal(await ghHostState(scratch, "gitlab.com", run), "signed-out");
+  assert.equal(await ghHostState(scratch, "github.com", hostRunner("missing").run), "no-gh");
+
+  assert.equal(await isGitHubRemoteUrl(scratch, "git@github.com:acme/widget.git", run), true);
+  assert.equal(await isGitHubRemoteUrl(scratch, "/srv/git/widget.git", run), false, "a bare remote in a folder");
+  assert.equal(await isGitHubRemoteUrl(scratch, "https://github.acme.example/acme/widget.git", run), true, "Enterprise, signed in");
+  asked.length = 0;
+  assert.equal(await isGitHubRemoteUrl(scratch, "https://gitlab.example.org/acme/widget.git", run), false, "GitLab");
+  assert.equal(await isGitHubRemoteUrl(scratch, "https://gitlab.example.org/acme/other.git", run), false);
+  assert.deepEqual(asked, ["auth token --hostname gitlab.example.org"], "a host's answer is kept");
+}
+
+// gh's own output: github.com or an Enterprise host, else nothing.
+assert.equal(createdPullRequestUrl("https://github.com/acme/widget/pull/42\n"), "https://github.com/acme/widget/pull/42");
+assert.equal(
+  createdPullRequestUrl("Warning: 1 uncommitted change\nhttps://github.acme.example/acme/widget/pull/7\n"),
+  "https://github.acme.example/acme/widget/pull/7",
+);
+assert.equal(createdPullRequestUrl("Creating pull request for cave/x into main\n"), null, "no link");
 
 console.log("github-pr-target: ok");

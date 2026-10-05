@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND } = await import("./changes-outbound-drafts.ts");
+const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND, timedOutCommitLanded } = await import("./changes-outbound-drafts.ts");
 
 // An unknown key reads as the shared empty entry, so a fresh panel renders
 // without allocating anything.
@@ -75,6 +75,50 @@ const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND } = await import("./c
   store.patch("s1", { commitWarning: null });
   assert.equal(store.get("s1"), EMPTY_CHANGES_OUTBOUND);
   assert.equal(EMPTY_CHANGES_OUTBOUND.commitWarning, null);
+}
+
+// A commit the client gave up on is watched for (#5795): behind the
+// repository lock it can land after the answer was given up on.
+{
+  const store = createChangesOutboundStore();
+  const sent = { message: "Wire it", branch: "main", files: [{ path: "a.ts", changeVersion: "1:1:1" }], at: 1 };
+  store.patch("s1", { timedOutCommit: sent });
+  assert.equal(store.get("s1").timedOutCommit, sent, "the watch alone keeps the entry");
+  store.patch("s1", { timedOutCommit: null });
+  assert.equal(store.get("s1"), EMPTY_CHANGES_OUTBOUND);
+  assert.equal(EMPTY_CHANGES_OUTBOUND.timedOutCommit, null);
+  assert.equal(EMPTY_CHANGES_OUTBOUND.prExisted, false);
+}
+
+// Did it land? Only the change list can say.
+{
+  const sent = {
+    message: "Wire it",
+    branch: "main",
+    files: [{ path: "a.ts", changeVersion: "1:1:1" }, { path: "b.ts", changeVersion: "2:2:2" }],
+    at: 1,
+  };
+  const unchanged = [{ path: "a.ts", changeVersion: "1:1:1" }, { path: "b.ts", changeVersion: "2:2:2" }];
+  assert.equal(timedOutCommitLanded(sent, { branch: "main", files: unchanged }), null, "still changed as reviewed: not yet");
+  assert.equal(
+    timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [{ path: "b.ts", changeVersion: "2:2:2" }] }),
+    null,
+    "one file still as it was: not this commit",
+  );
+  assert.deepEqual(
+    timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [] }),
+    { branch: "cave/wire-it-abc", newBranch: true },
+    "from the default branch it lands on a new cave/ branch",
+  );
+  assert.deepEqual(
+    timedOutCommitLanded({ ...sent, branch: "feat/x" }, { branch: "feat/x", files: [{ path: "a.ts", changeVersion: "9:9:9" }] }),
+    { branch: "feat/x", newBranch: false },
+    "on a feature branch it stays; a file written again since is a new change",
+  );
+  assert.equal(timedOutCommitLanded(sent, { branch: "release/2", files: [] }), null, "another branch altogether: something else happened");
+  assert.equal(timedOutCommitLanded(sent, { branch: "HEAD", files: [] }), null, "a detached head names no branch");
+  assert.equal(timedOutCommitLanded(sent, { branch: null, files: [] }), null);
+  assert.equal(timedOutCommitLanded({ ...sent, files: [] }, { branch: "cave/x", files: [] }), null, "nothing was sent");
 }
 
 console.log("changes-outbound-drafts: ok");
