@@ -214,6 +214,21 @@ export function CodeTerminalDrawer({
   useEffect(() => {
     if (open || started) noteTerminalUse(sessionId);
   }, [open, sessionId, started]);
+  // Opening the drawer is the user asking for the shell: its bar, the toggle
+  // pressed anywhere on the desk, a routed open. A shell that starts takes
+  // focus only from nothing or from this host (#5781), so ⌘` from a tree row
+  // left focus on the row (#5795). Focus goes to the bar, inside the host,
+  // and the shell takes it when it starts. A drawer mounted open (the desk
+  // coming back) moves nothing, and focus moved on before the shell starts
+  // stays where it went.
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLButtonElement | null>(null);
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    const opened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (opened && !hostRef.current?.contains(document.activeElement)) barRef.current?.focus();
+  }, [open]);
   // The region the drawer and the columns share: the body plus the drawer's
   // own height while open. Opening or resizing moves height between the two,
   // so their sum is stable and the 70% ceiling cannot chase itself.
@@ -339,8 +354,9 @@ export function CodeTerminalDrawer({
   return (
     // The terminal's host (#5781): focus on the drawer's bar or in the drawer
     // lets a shell that starts take it; focus anywhere else is kept.
-    <div className="code-term" data-open={open ? "true" : undefined} data-terminal-host="">
+    <div className="code-term" data-open={open ? "true" : undefined} data-terminal-host="" ref={hostRef}>
       <button
+        ref={barRef}
         type="button"
         className="focus-ring code-term__bar"
         aria-expanded={open}

@@ -558,3 +558,188 @@ test.describe("Coding Desk PR tab and terminal (#5795)", () => {
     expect((await calls()).some((call) => call.cmd === "pty_stop" && call.threadId === "cave.rail.s-old"), "only the archived one").toBe(false);
   });
 });
+
+// ── The seventh review's Low findings (#5795) ────────────────────────────────
+//
+//   35. a terminal the user opens takes focus when its shell starts; one that
+//       starts after focus moved on leaves it there
+//   55. keystrokes and clicks leave no visibilitychange listener behind
+
+type PtyCall = { cmd: string; threadId: string | null };
+
+/** A desktop shell's native commands, stood in for the terminals mounted from
+ *  here on. Each call is recorded on `window.__ptyCalls`; with `hold`, every
+ *  pty_start waits for `window.__startShells()`. */
+async function standInNativeShell(page: Page, { hold = false }: { hold?: boolean } = {}) {
+  await page.evaluate((hold) => {
+    const w = window as unknown as Record<string, unknown>;
+    const calls: { cmd: string; threadId: string | null }[] = [];
+    const running = new Set<string>();
+    const held: (() => void)[] = [];
+    let listener = 0;
+    w.__ptyCalls = calls;
+    w.__startShells = () => held.splice(0).forEach((start) => start());
+    w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+    w.__TAURI_INTERNALS__ = {
+      metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+      transformCallback: () => ++listener,
+      unregisterCallback() {},
+      convertFileSrc: (path: string) => path,
+      invoke: async (cmd: string, args?: Record<string, unknown>) => {
+        const options = args?.options as Record<string, unknown> | undefined;
+        const threadId = (args?.threadId as string | undefined) ?? (options?.thread_id as string | undefined) ?? null;
+        calls.push({ cmd, threadId });
+        if (cmd === "pty_diagnose") return { exit: 0, bytes: 18, output: "coven-cave-pty-ok" };
+        if (cmd === "pty_list") return [...running];
+        if (cmd === "pty_start" && threadId) {
+          if (hold) await new Promise<void>((resolve) => held.push(resolve));
+          running.add(threadId);
+        }
+        if (cmd === "pty_stop" && threadId) running.delete(threadId);
+        if (cmd === "pty_snapshot") return [];
+        if (cmd === "plugin:event|listen") return ++listener;
+        return null;
+      },
+    };
+  }, hold);
+}
+
+const ptyCalls = (page: Page) => page.evaluate(() => (window as unknown as { __ptyCalls: PtyCall[] }).__ptyCalls);
+const shellStarted = async (page: Page, threadId: string) =>
+  (await ptyCalls(page)).some((call) => call.cmd === "pty_start" && call.threadId === threadId);
+const focusIn = (page: Page, selector: string) =>
+  page.evaluate((selector) => Boolean(document.activeElement?.closest(selector)), selector);
+
+/** Chat with a repository session, for the chat rail (tests/code-rail.spec.ts). */
+const RAIL_SESSION = mkSession({ id: "s-repo", title: "Refactor auth flow", project_root: "/repo/alpha" });
+
+async function openRepoChat(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:code-rail:pinned:v1", "false");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
+  });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+  );
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [RAIL_SESSION] } }));
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({
+      json: { ok: true, projects: [{ id: "repo-alpha", name: "alpha", root: "/repo/alpha", access: "write", createdAt: OLD_ISO, updatedAt: OLD_ISO }] },
+    }),
+  );
+  await page.route("**/api/daemon/status**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { ok: true, items: [], unreadCount: 0 } }));
+  await page.route("**/api/chat/conversation/**", (route) =>
+    route.fulfill({
+      json: { ok: true, conversation: { turns: [{ id: "t1", role: "assistant", text: "On it.", createdAt: OLD_ISO }] }, context: {} },
+    }),
+  );
+  await page.route("**/api/changes**", (route) =>
+    route.fulfill({ json: { ok: true, repo: true, repoRoot: "/repo/alpha", files: [] } }),
+  );
+  await page.goto("/?mode=chat");
+  await page.waitForTimeout(500);
+  await page.keyboard.press("Meta+2");
+  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
+  await page.locator(".chat-sidebar").getByText("Refactor auth flow", { exact: false }).first().click();
+  await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
+  const rail = page.locator(".workspace-rail");
+  await expect(rail).toBeVisible({ timeout: 60_000 });
+  return rail;
+}
+
+test.describe("Coding Desk terminal focus and long-session listeners (#5795)", () => {
+  test("35. ⌘` from a tree row opens the shell with focus in it", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await standInNativeShell(page);
+    const tree = page.getByTestId("code-workbench-tree");
+    await tree.getByText("README.md", { exact: true }).click();
+    expect(await focusIn(page, '[data-testid="code-workbench-tree"]')).toBe(true);
+
+    await page.keyboard.press("ControlOrMeta+Backquote");
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toBeVisible();
+    await expect.poll(() => shellStarted(page, "cave.rail.s-new")).toBe(true);
+    await expect.poll(() => focusIn(page, ".code-term .xterm"), { message: "the shell the user asked for has focus" }).toBe(true);
+  });
+
+  test("35b. a shell that starts after focus moved to the composer leaves it there", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    await standInNativeShell(page, { hold: true });
+    await page.getByTestId("code-workbench-tree").getByText("README.md", { exact: true }).click();
+    await page.keyboard.press("ControlOrMeta+Backquote");
+    // Focus waits on the drawer's bar while the shell starts...
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toBeFocused();
+    await expect.poll(() => ptyCalls(page).then((calls) => calls.some((call) => call.cmd === "pty_start"))).toBe(true);
+
+    // ...and the user moves on before it does.
+    const composer = page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" });
+    await composer.focus();
+    await page.evaluate(() => (window as unknown as { __startShells: () => void }).__startShells());
+    await expect(page.getByTestId("code-terminal-drawer").getByText("Starting terminal…")).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(composer, "a shell that starts later doesn't take the composer's focus").toBeFocused();
+    expect(await focusIn(page, ".xterm")).toBe(false);
+  });
+
+  test("35c. the chat rail's Terminal tab, clicked once, opens the shell with focus in it", async ({ page }) => {
+    test.setTimeout(120_000);
+    const rail = await openRepoChat(page);
+    await standInNativeShell(page);
+    const terminalTab = rail.getByRole("button", { name: "Terminal" });
+    await terminalTab.click();
+    await expect.poll(() => shellStarted(page, "cave.rail.s-repo"), { timeout: 30_000 }).toBe(true);
+    await expect
+      .poll(() => focusIn(page, ".workspace-rail__terminal .xterm"), { message: "the first click's shell has focus, not the tab" })
+      .toBe(true);
+  });
+
+  test("55. keystrokes and clicks leave no visibilitychange listener behind", async ({ page }) => {
+    await base(page);
+    await openDesk(page);
+    const cdp = await page.context().newCDPSession(page);
+    const listeners = async () => {
+      const { result } = await cdp.send("Runtime.evaluate", { expression: "document" });
+      const { listeners } = await cdp.send("DOMDebugger.getEventListeners", { objectId: result.objectId! });
+      return listeners.filter((listener) => listener.type === "visibilitychange").length;
+    };
+    const composer = page.getByTestId("code-composer").getByRole("textbox", { name: "Follow-up" });
+    const tree = page.getByTestId("code-workbench-tree");
+    // One round first, so whatever the first file and the first keystroke
+    // mount is counted before the measure starts.
+    await tree.getByText("README.md", { exact: true }).click();
+    await composer.click();
+    await page.keyboard.type("warm");
+    await page.waitForTimeout(500);
+    const before = await listeners();
+
+    await page.keyboard.type("x".repeat(40), { delay: 5 });
+    for (let i = 0; i < 6; i++) {
+      await tree.getByText(i % 2 ? "README.md" : "flux.ts", { exact: true }).click();
+    }
+    await page.waitForTimeout(500);
+    // Next's bundled web-vitals added two per keystroke or click here (one in
+    // production), and never removed them.
+    expect(await listeners()).toBe(before);
+  });
+
+  test("55b. with the perf overlay on, the vitals still reach it", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("cave:perf-overlay", "1"));
+    await base(page);
+    await openDesk(page);
+    await expect
+      .poll(() => page.evaluate(() => Object.keys((window as unknown as { __caveVitals?: object }).__caveVitals ?? {})))
+      .toContain("TTFB");
+    await expect(page.getByText("PERF", { exact: true })).toBeAttached();
+  });
+});

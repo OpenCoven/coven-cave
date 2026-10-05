@@ -254,9 +254,10 @@ export function terminalThreadMounted(threadId: string): boolean {
 /**
  * Whether a terminal that starts may take focus (#5781): when nothing else
  * has it, or it's already in the terminal's own host (the Coding Desk's
- * drawer and its bar). A shell attaching a moment after the desk came back
- * took focus from the session picker or the composer, and keystrokes went
- * to the shell.
+ * drawer and its bar, the chat rail's terminal). A shell attaching a moment
+ * after the desk came back took focus from the session picker or the
+ * composer, and keystrokes went to the shell. An opener the user just used
+ * moves focus into the host (#5795), so the shell they asked for takes it.
  */
 function mayTakeStartupFocus(wrap: HTMLElement | null): boolean {
   const current = typeof document === "undefined" ? null : document.activeElement;
