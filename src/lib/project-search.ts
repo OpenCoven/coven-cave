@@ -57,7 +57,9 @@ const DEFAULT_MAX_PER_FILE = 50;
 const DEFAULT_MAX_PREVIEW = 240;
 
 function isEnvFamilyPath(filePath: string): boolean {
-  return filePath.split(/[\\/]+/).some((part) => part.startsWith(".env"));
+  // In any case and Unicode form (#5795): on a case-insensitive disk `.ENV`
+  // is the same file, and was searchable.
+  return filePath.split(/[\\/]+/).some((part) => part.normalize("NFKC").toLowerCase().startsWith(".env"));
 }
 
 type RgText = { text?: string; bytes?: string };

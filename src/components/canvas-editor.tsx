@@ -914,6 +914,8 @@ export function CanvasEditor(props: {
       }
       setPrUrl(data.url);
       setAnnouncement("Pull request opened.");
+      // The composer chip re-reads its branch's PR (#5795).
+      window.dispatchEvent(new CustomEvent("cave:branch-pr-changed"));
     } catch (error) {
       setDeliveryError(error instanceof Error ? error.message : "Couldn't create the pull request.");
     } finally {

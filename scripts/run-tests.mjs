@@ -1229,6 +1229,7 @@ export const SUITES = {
     "src/components/vault-panel.behavior.test.tsx",
     "src/components/harness-auth-vault-button.behavior.test.tsx",
     "src/components/bottom-terminal-lifetime.behavior.test.tsx",
+    "src/components/composer-git-chip.behavior.test.tsx",
     "src/components/voice-provider-settings.integration.test.tsx",
     "src/components/use-openai-voice-preview.test.tsx",
     "src/components/theme-script.test.ts",
@@ -2001,6 +2002,9 @@ export const SUITES = {
     "src/app/api/salem/pathfinder/route.test.ts",
     "src/app/api/changes/route.test.ts",
     "src/app/api/changes/route-git-states.test.ts",
+    "src/app/api/changes/route-boundaries.test.ts",
+    "src/app/api/project-file/route-behaviour.test.ts",
+    "src/app/api/project-tree/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/lib/server/project-permission-symlink.test.ts",
@@ -2201,6 +2205,9 @@ export const SUITE_PREFLIGHTS = {
 const ALIAS_LOADER = new Set([
   // drives the real changes route against real repositories (#5781)
   "src/app/api/changes/route-git-states.test.ts",
+  "src/app/api/changes/route-boundaries.test.ts",
+  "src/app/api/project-file/route-behaviour.test.ts",
+  "src/app/api/project-tree/route.test.ts",
   // imports the datetime helpers through the @/ alias (#5756)
   "src/lib/session-changes-format.test.ts",
   "src/app/api/flows/session-transcript/route.test.ts",
@@ -2688,6 +2695,7 @@ const VITEST_TESTS = new Set([
   "src/components/vault-panel.behavior.test.tsx",
   "src/components/harness-auth-vault-button.behavior.test.tsx",
   "src/components/bottom-terminal-lifetime.behavior.test.tsx",
+  "src/components/composer-git-chip.behavior.test.tsx",
   "src/app/api/vault/route.test.ts",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
