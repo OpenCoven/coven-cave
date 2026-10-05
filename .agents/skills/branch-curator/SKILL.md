@@ -27,10 +27,12 @@ Preserve a branch or worktree when any of these signals apply:
 - A legacy ownership reference lacks a current, owner-backed disposition.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
-- Its tip or reflog changed in the last 3 hours. Recency is unconditional;
-  known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
+
+There is no age wait (#5809). A merged branch retires as soon as every proof
+passes: a branch someone is still committing to fails the exact merged-head
+proof, and live work shows up as a claim, session, process, PR, or CI run.
 
 Treat `main`, the default branch, the leftover Dolt sync refs
 `__dolt_remote_info__` and `refs/dolt/data`, and other tool-owned refs as
@@ -496,7 +498,7 @@ imply remote deletion.
 The manual profile substitutes current authorization plus exact fail-closed
 proof for the unavailable cross-system transaction. It still must acquire and
 retain the local maintenance lease, rerun every GitHub issue/comment ownership,
-legacy disposition, PR, workflow, process, worktree, ref, recency, archive, and
+legacy disposition, PR, workflow, process, worktree, ref, archive, and
 recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
