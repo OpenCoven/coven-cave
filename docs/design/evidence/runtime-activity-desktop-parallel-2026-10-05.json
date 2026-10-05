@@ -1,0 +1,1018 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05",
+  "qualificationIssue": 5767,
+  "parentIssue": 5761,
+  "scope": "Partial actual packaged desktop live composer, completion and completed-history reopening with controlled real durable effects. Full original acceptance remains required.",
+  "sourceHead": "8183892dcaae985558d8530230f6c9aa90b5d845",
+  "deliveredProducer": {
+    "pr": 5811,
+    "mergeCommit": "1d2521a3cd6d3a17df52dc4157b6f1234c83c2c2",
+    "checks": {
+      "totalCount": 30,
+      "runs": [
+        {
+          "id": 111989988471,
+          "name": "Frontend build",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:40:18Z",
+          "completed_at": "2026-10-05T21:41:11Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111989988471"
+        },
+        {
+          "id": 111979222176,
+          "name": "CodeQL",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:12:18Z",
+          "completed_at": "2026-10-05T21:12:20Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/runs/111979222176"
+        },
+        {
+          "id": 111978957774,
+          "name": "Frontend validation (app tests)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:50Z",
+          "completed_at": "2026-10-05T21:23:53Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957774"
+        },
+        {
+          "id": 111978957690,
+          "name": "Frontend validation (protocol conformance)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:17:50Z",
+          "completed_at": "2026-10-05T21:24:34Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957690"
+        },
+        {
+          "id": 111978957650,
+          "name": "Frontend validation (mobile tests)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:24:39Z",
+          "completed_at": "2026-10-05T21:25:57Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957650"
+        },
+        {
+          "id": 111978957639,
+          "name": "Frontend validation (Automations release canary)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:36Z",
+          "completed_at": "2026-10-05T21:17:18Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957639"
+        },
+        {
+          "id": 111978957627,
+          "name": "Frontend validation (API tests)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:21Z",
+          "completed_at": "2026-10-05T21:22:04Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957627"
+        },
+        {
+          "id": 111978957601,
+          "name": "Frontend validation (test wiring)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:57Z",
+          "completed_at": "2026-10-05T21:17:39Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957601"
+        },
+        {
+          "id": 111978957550,
+          "name": "Frontend validation (typecheck)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:28:40Z",
+          "completed_at": "2026-10-05T21:30:34Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957550"
+        },
+        {
+          "id": 111978957540,
+          "name": "Frontend E2E (4/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:24:54Z",
+          "completed_at": "2026-10-05T21:33:48Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957540"
+        },
+        {
+          "id": 111978957526,
+          "name": "Frontend E2E (1/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:25:07Z",
+          "completed_at": "2026-10-05T21:34:51Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957526"
+        },
+        {
+          "id": 111978957522,
+          "name": "Frontend validation (lint)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:23:41Z",
+          "completed_at": "2026-10-05T21:25:01Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957522"
+        },
+        {
+          "id": 111978957518,
+          "name": "Frontend E2E (8/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:22:41Z",
+          "completed_at": "2026-10-05T21:27:38Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957518"
+        },
+        {
+          "id": 111978957485,
+          "name": "Frontend E2E (3/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:13:29Z",
+          "completed_at": "2026-10-05T21:16:51Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957485"
+        },
+        {
+          "id": 111978957475,
+          "name": "Frontend E2E (2/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:21:12Z",
+          "completed_at": "2026-10-05T21:36:51Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957475"
+        },
+        {
+          "id": 111978957463,
+          "name": "Frontend E2E (7/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:17:14Z",
+          "completed_at": "2026-10-05T21:26:00Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957463"
+        },
+        {
+          "id": 111978957461,
+          "name": "Frontend E2E (6/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:12:58Z",
+          "completed_at": "2026-10-05T21:21:18Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957461"
+        },
+        {
+          "id": 111978957439,
+          "name": "Frontend E2E (5/8)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:12Z",
+          "completed_at": "2026-10-05T21:24:50Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957439"
+        },
+        {
+          "id": 111978957194,
+          "name": "Frontend bundle",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:16:21Z",
+          "completed_at": "2026-10-05T21:19:51Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957194"
+        },
+        {
+          "id": 111978957182,
+          "name": "iOS build",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:12:33Z",
+          "completed_at": "2026-10-05T21:40:15Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957182"
+        },
+        {
+          "id": 111978957097,
+          "name": "Frontend E2E (agentic)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:11:35Z",
+          "completed_at": "2026-10-05T21:15:56Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957097"
+        },
+        {
+          "id": 111978957042,
+          "name": "Frontend validation (Windows startup controls)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:12:39Z",
+          "completed_at": "2026-10-05T21:19:57Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978957042"
+        },
+        {
+          "id": 111978819434,
+          "name": "PR checks",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:21:25Z",
+          "completed_at": "2026-10-05T21:35:12Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978819434"
+        },
+        {
+          "id": 111978819148,
+          "name": "Select validation",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:11:13Z",
+          "completed_at": "2026-10-05T21:11:32Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290407/job/111978819148"
+        },
+        {
+          "id": 111978818618,
+          "name": "transcript",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:11:24Z",
+          "completed_at": "2026-10-05T21:32:37Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374290277/job/111978818618"
+        },
+        {
+          "id": 111978811774,
+          "name": "Analyze (c-cpp)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:23:20Z",
+          "completed_at": "2026-10-05T21:24:29Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374286831/job/111978811774"
+        },
+        {
+          "id": 111978810919,
+          "name": "Analyze (javascript-typescript)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:21:03Z",
+          "completed_at": "2026-10-05T21:24:40Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374286831/job/111978810919"
+        },
+        {
+          "id": 111978810894,
+          "name": "Analyze (python)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:11:15Z",
+          "completed_at": "2026-10-05T21:12:27Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374286831/job/111978810894"
+        },
+        {
+          "id": 111978810887,
+          "name": "Analyze (rust)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:28:07Z",
+          "completed_at": "2026-10-05T21:35:00Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374286831/job/111978810887"
+        },
+        {
+          "id": 111978810676,
+          "name": "Analyze (actions)",
+          "head_sha": "8183892dcaae985558d8530230f6c9aa90b5d845",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-05T21:22:33Z",
+          "completed_at": "2026-10-05T21:23:23Z",
+          "html_url": "https://github.com/OpenCoven/coven-cave/actions/runs/37374286831/job/111978810676"
+        }
+      ]
+    },
+    "review": "Paginated reviews, review comments and issue comments empty immediately before exact-head normal REST squash merge. No protection override.",
+    "rawChecksReceipt": {
+      "path": "/tmp/cave-5811-final-checks.json",
+      "sha256": "424945034041fb99da99feb8450091c8125600a8ad069c44d1123a1f9fe1f13e"
+    }
+  },
+  "packagedBuild": {
+    "command": "CARGO_TARGET_DIR=/private/tmp/cave-5767-parallel-cargo-target COVENCAVE_DISCORD_APPLICATION_ID='' pnpm exec tauri build --ci --no-sign --bundles app --config /tmp/cave-5767-parallel-tauri-config.json",
+    "exitCode": 0,
+    "appPath": "/private/tmp/cave-5767-parallel-cargo-target/release/bundle/macos/CaveParallelQualification5767.app",
+    "identifier": "ai.opencoven.cave.qualification5767parallel",
+    "executableSha256": "80b5059a8a59f21d5ace9f8f246d7e7a780b3eeeb8ee118fc5bdff33d7a5e923",
+    "nextBuildId": "Co_v8T4wqskiSGiL2Qlkj",
+    "buildInfo": {
+      "name": "CovenCave",
+      "version": "0.5.7",
+      "revision": "development",
+      "identity": "v0.5.7+development"
+    },
+    "tauriOverride": {
+      "productName": "CaveParallelQualification5767",
+      "identifier": "ai.opencoven.cave.qualification5767parallel",
+      "bundle": {
+        "createUpdaterArtifacts": false,
+        "targets": [
+          "app"
+        ]
+      }
+    },
+    "log": {
+      "path": "/tmp/cave-5767-parallel-packaged-build.log",
+      "sha256": "d893858c0aea739d32e006ad705ec05715ab2f0efb758d0d567c4f0945dbc4b1"
+    },
+    "limits": "Local unsigned Release app, normal sidecar/bundle path; revision reports development. No signed/notarized release or updater publication."
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "evidencePath": "/tmp/cave-5767-parallel-native-live-20261005",
+      "report": {
+        "schemaVersion": 1,
+        "scenario": "packaged-native-live-parallel-prototype",
+        "startedAt": "2026-10-05T21:22:07.978Z",
+        "head": "8183892dcaae985558d8530230f6c9aa90b5d845",
+        "prototypeHash": "f7fcc3564c49362d5f571877fb6c5ee855cdda70213c2c0913385afe7acbbc47",
+        "classification": "Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.",
+        "passed": false,
+        "providerRequests": 1,
+        "checkpoints": [
+          {
+            "stage": "actual composer completed and persisted",
+            "counter": 3
+          }
+        ],
+        "appLaunches": [
+          {
+            "pid": 55233,
+            "port": 58004,
+            "quitExitCode": 0
+          },
+          {
+            "pid": 29442,
+            "port": 58004
+          }
+        ],
+        "omissions": [
+          "Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.",
+          "Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.",
+          "No real Hermes service or protected execution authority; provider supplies runtime reports."
+        ],
+        "sourceHashes": {
+          "src/app/api/chat/send/route.ts": "a8887a31d04cd02db659f24d99e12bed591ec457705d753c38aa60e61486d5c3",
+          "src/lib/chat-tool-events.ts": "446b8fc9baff4b4e58fe5f0a16e0c61342ff99067985a7b385d864bdd836779d",
+          "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f",
+          "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+          "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c"
+        },
+        "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+        "daemonPid": 55115,
+        "installedServiceBefore": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "executableSha256": "80b5059a8a59f21d5ace9f8f246d7e7a780b3eeeb8ee118fc5bdff33d7a5e923",
+        "identifier": "ai.opencoven.cave.qualification5767parallel",
+        "buildInfo": {
+          "name": "CovenCave",
+          "version": "0.5.7",
+          "revision": "development",
+          "identity": "v0.5.7+development"
+        },
+        "stage": "completed-history-ready",
+        "persistedSessionId": "native-http-response",
+        "persistedTurnId": "864f0423-409a-44b9-8d8a-85c7ddccc9e8",
+        "persistedToolStates": [
+          {
+            "id": "effect-once-1",
+            "status": "ok",
+            "outputHash": "dd275f8a7e34e85416661c741e48a165afeaf528000923c27551205a701bb75c"
+          },
+          {
+            "id": "effect-parallel-2",
+            "status": "ok",
+            "outputHash": "bdee0af7f911efbaea29050363a9d7bee2e110e1439300a19579b39f3a455628"
+          },
+          {
+            "id": "effect-late-3",
+            "status": "ok",
+            "outputHash": "e43ea3dd4c0c3bfbad70f53fce40405e7f4646385e3be3e0fe9e66991010bcc7"
+          }
+        ],
+        "installedServiceAfterFirstQuit": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "failure": {
+          "stage": "completed-history-ready",
+          "name": "AssertionError",
+          "code": "ERR_ASSERTION"
+        },
+        "appStopped": true,
+        "daemonStopped": true,
+        "fixtureRootRemoved": true,
+        "finishedAt": "2026-10-05T21:30:00.261Z"
+      },
+      "helper": {
+        "path": "/tmp/cave-5767-parallel-native-live-prototype.mjs",
+        "sha256": "f7fcc3564c49362d5f571877fb6c5ee855cdda70213c2c0913385afe7acbbc47",
+        "source": "// Controlled external provider and actual packaged composer. All GUI actions\n// are performed separately through CUA; control files release fixture stages.\nimport assert from 'node:assert/strict';\nimport { spawn, execFileSync, execFile } from 'node:child_process';\nimport { promisify } from 'node:util';\nimport { createServer } from 'node:http';\nimport { once } from 'node:events';\nimport { mkdtemp, mkdir, readFile, writeFile, readdir, rm, realpath } from 'node:fs/promises';\nimport { tmpdir, homedir } from 'node:os';\nimport { randomUUID, createHash } from 'node:crypto';\nimport path from 'node:path';\nimport { pathToFileURL, fileURLToPath } from 'node:url';\nimport { setTimeout as delay } from 'node:timers/promises';\n\nconst [execute, evidence] = process.argv.slice(2);\nassert.ok(execute === '--execute' && path.isAbsolute(evidence ?? '') && process.argv.length === 4);\nconst repo = '/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5767-desktop-qualification';\nconst app = '/private/tmp/cave-5767-parallel-cargo-target/release/bundle/macos/CaveParallelQualification5767.app';\nconst executable = app + '/Contents/MacOS/app';\nconst identifier = 'ai.opencoven.cave.qualification5767parallel';\nawait mkdir(evidence, { mode: 0o700 });\nconst root = await realpath(await mkdtemp(path.join(tmpdir(), 'cave-activity-effects-')));\nconst project = path.join(root, 'project'), covenHome = path.join(root, 'coven'), caveHome = path.join(covenHome, 'cave');\nconst ledger = path.join(project, 'effect-invocations.jsonl');\nconst binary = execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();\nconst native = args => execFileSync(binary, args, { cwd: project, env: process.env, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'] });\nconst imp = file => import(pathToFileURL(path.join(repo, file)).href);\nconst sha = bytes => createHash('sha256').update(bytes).digest('hex');\nconst files = ['src/app/api/chat/send/route.ts', 'src/lib/chat-tool-events.ts', 'src/lib/hermes-responses-stream.ts', 'scripts/runtime-activity-effect-counter.mjs', 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json'];\nconst hashes = async () => Object.fromEntries(await Promise.all(files.map(async file => [file, sha(await readFile(path.join(repo, file)))])));\nconst deadline = new AbortController();\nconst timer = setTimeout(() => deadline.abort(new Error('fixture deadline')), 30 * 60_000);\nconst interrupt = () => deadline.abort(new Error('fixture interrupted'));\nprocess.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);\nconst report = { schemaVersion: 1, scenario: 'packaged-native-live-parallel-prototype', startedAt: new Date().toISOString(), head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), prototypeHash: sha(await readFile(fileURLToPath(import.meta.url))), classification: 'Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.', passed: false, providerRequests: 0, checkpoints: [], appLaunches: [], omissions: ['Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.', 'Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.', 'No real Hermes service or protected execution authority; provider supplies runtime reports.'] };\nreport.sourceHashes = await hashes();\nlet provider, daemon = false, appChild, historySnapshot;\nconst effectChildren = [];\nconst count = async () => (await readFile(ledger, 'utf8')).trim().split('\\n').filter(Boolean).length;\nconst phase = async (stage, detail = {}) => {\n  report.stage = stage;\n  await writeFile(path.join(evidence, 'phase.json'), JSON.stringify({ stage, ...detail }) + '\\n');\n  console.log(JSON.stringify({ stage, ...detail }));\n};\nconst control = async stage => {\n  for (;;) {\n    deadline.signal.throwIfAborted();\n    try { assert.equal((await readFile(path.join(evidence, stage + '.ready'), 'utf8')).trim(), stage); return; }\n    catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n};\nconst installedService = async () => {\n  let plistHash = null;\n  try { plistHash = sha(await readFile(path.join(homedir(), 'Library/LaunchAgents/ai.opencoven.cave.plist'))); }\n  catch (error) { if (error.code !== 'ENOENT') throw error; }\n  let fields = [], exitCode = 0;\n  try {\n    const text = execFileSync('launchctl', ['print', 'gui/' + process.getuid() + '/ai.opencoven.cave'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });\n    fields = text.split('\\n').map(s => s.trim()).filter(s => /^(state|pid|runs|last exit code) = /.test(s));\n  } catch (error) { exitCode = error.status ?? null; }\n  return { plistHash, exitCode, fields };\n};\nlet logs = '';\nconst capture = child => {\n  for (const pipe of [child.stdout, child.stderr]) pipe.on('data', bytes => {\n    if (Buffer.byteLength(logs) + bytes.length > 1024 * 1024) deadline.abort(new Error('native logs exceeded bound'));\n    else logs += bytes.toString();\n  });\n};\nconst live = child => child && child.exitCode === null && child.signalCode === null;\ntry {\n  await mkdir(project, { mode: 0o700 }); await mkdir(caveHome, { recursive: true, mode: 0o700 });\n  await writeFile(ledger, '', { flag: 'wx', mode: 0o600 });\n  execFileSync('git', ['init', '--quiet', project]);\n  await writeFile(path.join(covenHome, 'familiars.toml'), '[[familiar]]\\nid = \"effectfixture\"\\ndisplay_name = \"Parallel counter fixture\"\\nrole = \"Verification\"\\ndescription = \"Controlled isolated parallel activity qualification.\"\\n');\n  Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, 'coven.sock'), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: project, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, 'vault.yaml'), COVEN_CAVE_ENV_FILE: path.join(root, '.env.local'), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, 'vault.enc.json'), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, 'vault.key'), COVEN_PREFERENCES_PATH: path.join(root, 'preferences.json'), COVEN_THEME_PATH: path.join(root, 'theme.json'), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, 'projects.json'), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, 'permissions.json'), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, 'queue.json') });\n  delete process.env.COVEN_CAVE_E2E;\n  const corpus = JSON.parse(await readFile(path.join(repo, files.at(-1)), 'utf8'));\n  const base = JSON.parse(await readFile(path.join(repo, 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json'), 'utf8'));\n  const firstResult = corpus.events.findIndex(([, data]) => data.item?.type === 'function_call_output');\n  const token = randomUUID();\n  const frame = (res, event, data) => res.write('event: ' + event + '\\ndata: ' + JSON.stringify(data) + '\\n\\n');\n  provider = createServer(async (req, res) => {\n    try {\n      assert.equal(req.headers.authorization, 'Bearer ' + token);\n      if (req.method === 'GET' && req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'served-fixture-v3' }] })); return; }\n      assert.equal(req.method, 'POST'); assert.equal(req.url, '/v1/responses');\n      let size = 0; for await (const bytes of req) { size += bytes.length; assert.ok(size <= 1024 * 1024); }\n      report.providerRequests++; assert.equal(report.providerRequests, 1, 'actual-client recovery must not redispatch');\n      res.writeHead(200, { 'content-type': 'text/event-stream' });\n      for (const [event, data] of [...base.beforeRelease.slice(0, 5), ...corpus.events.slice(1, firstResult)]) frame(res, event, data);\n      assert.equal(await count(), 0);\n      await phase('live-before-effects', { counter: 0, providerRequests: 1 });\n      await control('effects'); deadline.signal.throwIfAborted();\n      const invoke = promisify(execFile);\n      const childRuns = corpus.expected.tools.map(() => {\n        const promise = invoke(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, 'effect-invocations.jsonl'], { encoding: 'utf8', timeout: 5000, signal: deadline.signal });\n        const closed = new Promise(resolve => promise.child.once('close', resolve));\n        effectChildren.push(closed);\n        return promise.finally(() => closed);\n      });\n      const settled = await Promise.allSettled(childRuns);\n      assert.ok(settled.every(result => result.status === 'fulfilled'));\n      assert.equal(await count(), 3);\n      for (const [event, data] of corpus.events.slice(firstResult, -1)) {\n        const copy = structuredClone(data), expected = corpus.expected.tools.find(tool => tool.id === copy.item?.call_id);\n        if (expected && copy.item?.type === 'function_call_output' && copy.item.output[0].text === expected.output) copy.item.output[0].text += ':3';\n        frame(res, event, copy);\n      }\n      await phase('live-after-effects', { counter: 3, providerRequests: 1 });\n      await control('finish');\n      for (const [event, data] of base.afterRelease.slice(1)) frame(res, event, JSON.parse(JSON.stringify(data).replaceAll('{{COUNTER}}', '3')));\n      res.end();\n    } catch (error) { report.providerFailure = { name: error.name, code: error.code ?? null }; res.destroy(); }\n  });\n  provider.listen(0, '127.0.0.1'); await once(provider, 'listening');\n  Object.assign(process.env, { HERMES_API_URL: 'http://127.0.0.1:' + provider.address().port, HERMES_API_KEY: token });\n  const { saveConfig } = await imp('src/lib/cave-config.ts');\n  const { createProject } = await imp('src/lib/cave-projects.ts');\n  const { grantProjectToFamiliar } = await imp('src/lib/project-permissions.ts');\n  const { selectQueueProject } = await imp('src/lib/queue-project-readiness.ts');\n  await saveConfig({ familiars: { effectfixture: { harness: 'hermes', model: '' } } });\n  const created = await createProject({ name: 'Parallel qualification fixture', root: project });\n  await grantProjectToFamiliar({ familiarId: 'effectfixture', projectId: created.id, source: 'human', access: 'write' });\n  await selectQueueProject(created.id);\n  report.covenVersion = native(['--version']).trim(); daemon = true; native(['daemon', 'start']);\n  report.daemonPid = JSON.parse(await readFile(path.join(covenHome, 'daemon.json'), 'utf8')).pid;\n  const { freePort } = await imp('scripts/client-v1-conformance.mjs');\n  const port = await freePort();\n  const request = url => fetch('http://127.0.0.1:' + port + url, { signal: AbortSignal.any([deadline.signal, AbortSignal.timeout(3000)]) });\n  report.installedServiceBefore = await installedService();\n  report.executableSha256 = sha(await readFile(executable));\n  report.identifier = execFileSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', app + '/Contents/Info.plist'], { encoding: 'utf8' }).trim();\n  assert.equal(report.identifier, identifier);\n  const launch = async () => {\n    appChild = spawn(executable, [], { env: { ...process.env, COVEN_CAVE_PORT: String(port), PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] }); capture(appChild);\n    report.appLaunches.push({ pid: appChild.pid, port });\n    for (let attempt = 0; attempt < 90; attempt++) {\n      assert.ok(live(appChild), 'owned app exited before health');\n      try { const response = await request('/api/client/v1/health'); if (response.ok) return; } catch (error) { deadline.signal.throwIfAborted(); }\n      await delay(500, undefined, { signal: deadline.signal });\n    }\n    assert.fail('owned app server not ready');\n  };\n  await launch(); report.buildInfo = await (await request('/api/app/build-info')).json();\n  await phase('composer-ready', { appPid: appChild.pid, port, identifier, projectRoot: project, daemonPid: report.daemonPid });\n  await control('finish');\n  const conversationDir = path.join(caveHome, 'conversations');\n  for (let attempt = 0; attempt < 120; attempt++) {\n    try {\n      const names = (await readdir(conversationDir)).filter(name => name.endsWith('.json') && name !== 'index.json');\n      for (const name of names) {\n        const value = JSON.parse(await readFile(path.join(conversationDir, name), 'utf8'));\n        if (value.familiarId === 'effectfixture' && value.turns?.some(turn => turn.role === 'assistant')) historySnapshot = value;\n      }\n      if (historySnapshot) break;\n    } catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n  assert.ok(historySnapshot, 'actual composer response must persist');\n  const assistant = historySnapshot.turns.findLast(turn => turn.role === 'assistant');\n  assert.equal(assistant.text, base.expected.answer.replaceAll('{{COUNTER}}', '3'));\n  assert.equal(assistant.tools.length, 3);\n  for (const expected of corpus.expected.tools) {\n    const tool = assistant.tools.find(tool => tool.id === expected.id);\n    assert.equal(tool.status, 'ok'); assert.equal(tool.output, expected.output + ':3');\n    assert.equal(tool.activity.authority.effect, 'unavailable');\n  }\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!JSON.stringify(historySnapshot).includes(sentinel));\n  report.persistedSessionId = historySnapshot.sessionId; report.persistedTurnId = assistant.id;\n  report.persistedToolStates = assistant.tools.map(tool => ({ id: tool.id, status: tool.status, outputHash: sha(tool.output) }));\n  report.checkpoints.push({ stage: 'actual composer completed and persisted', counter: await count() });\n  await phase('completed-history-ready', { sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('relaunch');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before relaunch');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  report.installedServiceAfterFirstQuit = await installedService();\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  await launch();\n  const response = await request('/api/chat/conversation/' + historySnapshot.sessionId); assert.equal(response.status, 200);\n  const reopened = await response.json(); assert.deepEqual(reopened.conversation, historySnapshot);\n  await phase('relaunched-history-ready', { appPid: appChild.pid, sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('done');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before completion');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  const bytes = await readFile(ledger, 'utf8'); assert.equal(new Set(bytes.trim().split('\\n').map(line => JSON.parse(line).invocationId)).size, 3);\n  await writeFile(path.join(evidence, 'durable-invocations-after-ui.jsonl'), bytes);\n  report.checkpoints.push({ stage: 'actual relaunch/history reopening/normal quit', counter: 3 });\n  report.installedServiceAfter = await installedService();\n  report.installedServiceUnchanged = JSON.stringify(report.installedServiceBefore) === JSON.stringify(report.installedServiceAfter);\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!logs.includes(sentinel));\n  report.nativeLogBytesChecked = Buffer.byteLength(logs);\n  assert.equal(report.providerFailure, undefined); assert.deepEqual(await hashes(), report.sourceHashes);\n  report.passed = true;\n} catch (error) { report.failure = { stage: report.stage ?? 'setup', name: error.name, code: error.code ?? null }; process.exitCode = 1; }\nfinally {\n  deadline.abort(new Error('fixture cleanup')); clearTimeout(timer); process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt);\n  await Promise.allSettled(effectChildren);\n  if (live(appChild)) { appChild.kill('SIGTERM'); await Promise.race([once(appChild, 'exit'), delay(5000)]); }\n  report.appStopped = !live(appChild);\n  if (provider) { provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve)); }\n  if (daemon) {\n    try {\n      native(['daemon', 'stop']);\n      for (let attempt = 0; attempt < 50; attempt++) {\n        try { process.kill(report.daemonPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; report.daemonStopped = true; break; }\n        await delay(100);\n      }\n    } catch { report.daemonStopped = false; }\n  }\n  if (report.appStopped && report.daemonStopped) { await rm(root, { recursive: true, force: true }); report.fixtureRootRemoved = true; }\n  else { report.preservedRoot = root; report.passed = false; process.exitCode = 1; }\n  report.finishedAt = new Date().toISOString(); await writeFile(path.join(evidence, 'result.json'), JSON.stringify(report, null, 2) + '\\n');\n  console.log(JSON.stringify(report));\n}\n"
+      },
+      "log": {
+        "path": "/tmp/cave-5767-parallel-native-live-20261005.log",
+        "sha256": "a58f9cd2e2fd4d3daee546425b223b69368deb0da1e4c7487a9d264f367391e2"
+      }
+    },
+    {
+      "attempt": 2,
+      "evidencePath": "/tmp/cave-5767-parallel-native-live-20261005-attempt2",
+      "report": {
+        "schemaVersion": 1,
+        "scenario": "packaged-native-live-parallel-prototype",
+        "startedAt": "2026-10-05T21:33:38.102Z",
+        "head": "8183892dcaae985558d8530230f6c9aa90b5d845",
+        "prototypeHash": "dd08ea37039df2d2db64e73742e5629859c68c7e8e21ba9e499beaeb3bbd18ee",
+        "classification": "Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.",
+        "passed": false,
+        "providerRequests": 1,
+        "checkpoints": [
+          {
+            "stage": "actual composer completed and persisted",
+            "counter": 3
+          }
+        ],
+        "appLaunches": [
+          {
+            "pid": 94704,
+            "port": 61746,
+            "quitExitCode": 0
+          },
+          {
+            "pid": 78976,
+            "port": 61746
+          }
+        ],
+        "omissions": [
+          "Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.",
+          "Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.",
+          "No real Hermes service or protected execution authority; provider supplies runtime reports."
+        ],
+        "sourceHashes": {
+          "src/app/api/chat/send/route.ts": "a8887a31d04cd02db659f24d99e12bed591ec457705d753c38aa60e61486d5c3",
+          "src/lib/chat-tool-events.ts": "446b8fc9baff4b4e58fe5f0a16e0c61342ff99067985a7b385d864bdd836779d",
+          "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f",
+          "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+          "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c"
+        },
+        "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+        "daemonPid": 94686,
+        "installedServiceBefore": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "executableSha256": "80b5059a8a59f21d5ace9f8f246d7e7a780b3eeeb8ee118fc5bdff33d7a5e923",
+        "identifier": "ai.opencoven.cave.qualification5767parallel",
+        "buildInfo": {
+          "name": "CovenCave",
+          "version": "0.5.7",
+          "revision": "development",
+          "identity": "v0.5.7+development"
+        },
+        "stage": "completed-history-ready",
+        "persistedSessionId": "native-http-response",
+        "persistedTurnId": "6f261521-d202-49ee-82a4-2a5865b32d1d",
+        "persistedToolStates": [
+          {
+            "id": "effect-once-1",
+            "status": "ok",
+            "outputHash": "dd275f8a7e34e85416661c741e48a165afeaf528000923c27551205a701bb75c"
+          },
+          {
+            "id": "effect-parallel-2",
+            "status": "ok",
+            "outputHash": "bdee0af7f911efbaea29050363a9d7bee2e110e1439300a19579b39f3a455628"
+          },
+          {
+            "id": "effect-late-3",
+            "status": "ok",
+            "outputHash": "e43ea3dd4c0c3bfbad70f53fce40405e7f4646385e3be3e0fe9e66991010bcc7"
+          }
+        ],
+        "installedServiceAfterFirstQuit": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "unauthenticatedHistoryStatus": 200,
+        "failure": {
+          "stage": "completed-history-ready",
+          "name": "AssertionError",
+          "code": "ERR_ASSERTION"
+        },
+        "appStopped": true,
+        "daemonStopped": true,
+        "fixtureRootRemoved": true,
+        "finishedAt": "2026-10-05T21:40:34.540Z"
+      },
+      "helper": {
+        "path": "/tmp/cave-5767-parallel-native-live-auth-prototype.mjs",
+        "sha256": "dd08ea37039df2d2db64e73742e5629859c68c7e8e21ba9e499beaeb3bbd18ee",
+        "source": "// Controlled external provider and actual packaged composer. All GUI actions\n// are performed separately through CUA; control files release fixture stages.\nimport assert from 'node:assert/strict';\nimport { spawn, execFileSync, execFile } from 'node:child_process';\nimport { promisify } from 'node:util';\nimport { createServer } from 'node:http';\nimport { once } from 'node:events';\nimport { mkdtemp, mkdir, readFile, writeFile, readdir, rm, realpath } from 'node:fs/promises';\nimport { tmpdir, homedir } from 'node:os';\nimport { randomUUID, createHash } from 'node:crypto';\nimport path from 'node:path';\nimport { pathToFileURL, fileURLToPath } from 'node:url';\nimport { setTimeout as delay } from 'node:timers/promises';\n\nconst [execute, evidence] = process.argv.slice(2);\nassert.ok(execute === '--execute' && path.isAbsolute(evidence ?? '') && process.argv.length === 4);\nconst repo = '/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5767-desktop-qualification';\nconst app = '/private/tmp/cave-5767-parallel-cargo-target/release/bundle/macos/CaveParallelQualification5767.app';\nconst executable = app + '/Contents/MacOS/app';\nconst identifier = 'ai.opencoven.cave.qualification5767parallel';\nawait mkdir(evidence, { mode: 0o700 });\nconst root = await realpath(await mkdtemp(path.join(tmpdir(), 'cave-activity-effects-')));\nconst project = path.join(root, 'project'), covenHome = path.join(root, 'coven'), caveHome = path.join(covenHome, 'cave');\nconst ledger = path.join(project, 'effect-invocations.jsonl');\nconst binary = execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();\nconst native = args => execFileSync(binary, args, { cwd: project, env: process.env, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'] });\nconst imp = file => import(pathToFileURL(path.join(repo, file)).href);\nconst sha = bytes => createHash('sha256').update(bytes).digest('hex');\nconst files = ['src/app/api/chat/send/route.ts', 'src/lib/chat-tool-events.ts', 'src/lib/hermes-responses-stream.ts', 'scripts/runtime-activity-effect-counter.mjs', 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json'];\nconst hashes = async () => Object.fromEntries(await Promise.all(files.map(async file => [file, sha(await readFile(path.join(repo, file)))])));\nconst deadline = new AbortController();\nconst timer = setTimeout(() => deadline.abort(new Error('fixture deadline')), 30 * 60_000);\nconst interrupt = () => deadline.abort(new Error('fixture interrupted'));\nprocess.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);\nconst report = { schemaVersion: 1, scenario: 'packaged-native-live-parallel-prototype', startedAt: new Date().toISOString(), head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), prototypeHash: sha(await readFile(fileURLToPath(import.meta.url))), classification: 'Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.', passed: false, providerRequests: 0, checkpoints: [], appLaunches: [], omissions: ['Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.', 'Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.', 'No real Hermes service or protected execution authority; provider supplies runtime reports.'] };\nreport.sourceHashes = await hashes();\nlet provider, daemon = false, appChild, historySnapshot;\nconst effectChildren = [];\nconst count = async () => (await readFile(ledger, 'utf8')).trim().split('\\n').filter(Boolean).length;\nconst phase = async (stage, detail = {}) => {\n  report.stage = stage;\n  await writeFile(path.join(evidence, 'phase.json'), JSON.stringify({ stage, ...detail }) + '\\n');\n  console.log(JSON.stringify({ stage, ...detail }));\n};\nconst control = async stage => {\n  for (;;) {\n    deadline.signal.throwIfAborted();\n    try { assert.equal((await readFile(path.join(evidence, stage + '.ready'), 'utf8')).trim(), stage); return; }\n    catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n};\nconst installedService = async () => {\n  let plistHash = null;\n  try { plistHash = sha(await readFile(path.join(homedir(), 'Library/LaunchAgents/ai.opencoven.cave.plist'))); }\n  catch (error) { if (error.code !== 'ENOENT') throw error; }\n  let fields = [], exitCode = 0;\n  try {\n    const text = execFileSync('launchctl', ['print', 'gui/' + process.getuid() + '/ai.opencoven.cave'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });\n    fields = text.split('\\n').map(s => s.trim()).filter(s => /^(state|pid|runs|last exit code) = /.test(s));\n  } catch (error) { exitCode = error.status ?? null; }\n  return { plistHash, exitCode, fields };\n};\nlet logs = '';\nconst capture = child => {\n  for (const pipe of [child.stdout, child.stderr]) pipe.on('data', bytes => {\n    if (Buffer.byteLength(logs) + bytes.length > 1024 * 1024) deadline.abort(new Error('native logs exceeded bound'));\n    else logs += bytes.toString();\n  });\n};\nconst live = child => child && child.exitCode === null && child.signalCode === null;\ntry {\n  await mkdir(project, { mode: 0o700 }); await mkdir(caveHome, { recursive: true, mode: 0o700 });\n  await writeFile(ledger, '', { flag: 'wx', mode: 0o600 });\n  execFileSync('git', ['init', '--quiet', project]);\n  await writeFile(path.join(covenHome, 'familiars.toml'), '[[familiar]]\\nid = \"effectfixture\"\\ndisplay_name = \"Parallel counter fixture\"\\nrole = \"Verification\"\\ndescription = \"Controlled isolated parallel activity qualification.\"\\n');\n  Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, 'coven.sock'), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: project, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, 'vault.yaml'), COVEN_CAVE_ENV_FILE: path.join(root, '.env.local'), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, 'vault.enc.json'), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, 'vault.key'), COVEN_PREFERENCES_PATH: path.join(root, 'preferences.json'), COVEN_THEME_PATH: path.join(root, 'theme.json'), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, 'projects.json'), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, 'permissions.json'), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, 'queue.json') });\n  delete process.env.COVEN_CAVE_E2E;\n  const corpus = JSON.parse(await readFile(path.join(repo, files.at(-1)), 'utf8'));\n  const base = JSON.parse(await readFile(path.join(repo, 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json'), 'utf8'));\n  const firstResult = corpus.events.findIndex(([, data]) => data.item?.type === 'function_call_output');\n  const token = randomUUID();\n  const frame = (res, event, data) => res.write('event: ' + event + '\\ndata: ' + JSON.stringify(data) + '\\n\\n');\n  provider = createServer(async (req, res) => {\n    try {\n      assert.equal(req.headers.authorization, 'Bearer ' + token);\n      if (req.method === 'GET' && req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'served-fixture-v3' }] })); return; }\n      assert.equal(req.method, 'POST'); assert.equal(req.url, '/v1/responses');\n      let size = 0; for await (const bytes of req) { size += bytes.length; assert.ok(size <= 1024 * 1024); }\n      report.providerRequests++; assert.equal(report.providerRequests, 1, 'actual-client recovery must not redispatch');\n      res.writeHead(200, { 'content-type': 'text/event-stream' });\n      for (const [event, data] of [...base.beforeRelease.slice(0, 5), ...corpus.events.slice(1, firstResult)]) frame(res, event, data);\n      assert.equal(await count(), 0);\n      await phase('live-before-effects', { counter: 0, providerRequests: 1 });\n      await control('effects'); deadline.signal.throwIfAborted();\n      const invoke = promisify(execFile);\n      const childRuns = corpus.expected.tools.map(() => {\n        const promise = invoke(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, 'effect-invocations.jsonl'], { encoding: 'utf8', timeout: 5000, signal: deadline.signal });\n        const closed = new Promise(resolve => promise.child.once('close', resolve));\n        effectChildren.push(closed);\n        return promise.finally(() => closed);\n      });\n      const settled = await Promise.allSettled(childRuns);\n      assert.ok(settled.every(result => result.status === 'fulfilled'));\n      assert.equal(await count(), 3);\n      for (const [event, data] of corpus.events.slice(firstResult, -1)) {\n        const copy = structuredClone(data), expected = corpus.expected.tools.find(tool => tool.id === copy.item?.call_id);\n        if (expected && copy.item?.type === 'function_call_output' && copy.item.output[0].text === expected.output) copy.item.output[0].text += ':3';\n        frame(res, event, copy);\n      }\n      await phase('live-after-effects', { counter: 3, providerRequests: 1 });\n      await control('finish');\n      for (const [event, data] of base.afterRelease.slice(1)) frame(res, event, JSON.parse(JSON.stringify(data).replaceAll('{{COUNTER}}', '3')));\n      res.end();\n    } catch (error) { report.providerFailure = { name: error.name, code: error.code ?? null }; res.destroy(); }\n  });\n  provider.listen(0, '127.0.0.1'); await once(provider, 'listening');\n  Object.assign(process.env, { HERMES_API_URL: 'http://127.0.0.1:' + provider.address().port, HERMES_API_KEY: token });\n  const { saveConfig } = await imp('src/lib/cave-config.ts');\n  const { createProject } = await imp('src/lib/cave-projects.ts');\n  const { grantProjectToFamiliar } = await imp('src/lib/project-permissions.ts');\n  const { selectQueueProject } = await imp('src/lib/queue-project-readiness.ts');\n  await saveConfig({ familiars: { effectfixture: { harness: 'hermes', model: '' } } });\n  const created = await createProject({ name: 'Parallel qualification fixture', root: project });\n  await grantProjectToFamiliar({ familiarId: 'effectfixture', projectId: created.id, source: 'human', access: 'write' });\n  await selectQueueProject(created.id);\n  report.covenVersion = native(['--version']).trim(); daemon = true; native(['daemon', 'start']);\n  report.daemonPid = JSON.parse(await readFile(path.join(covenHome, 'daemon.json'), 'utf8')).pid;\n  const { freePort } = await imp('scripts/client-v1-conformance.mjs');\n  const port = await freePort();\n  const request = url => fetch('http://127.0.0.1:' + port + url, { signal: AbortSignal.any([deadline.signal, AbortSignal.timeout(3000)]) });\n  report.installedServiceBefore = await installedService();\n  report.executableSha256 = sha(await readFile(executable));\n  report.identifier = execFileSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', app + '/Contents/Info.plist'], { encoding: 'utf8' }).trim();\n  assert.equal(report.identifier, identifier);\n  const launch = async () => {\n    appChild = spawn(executable, [], { env: { ...process.env, COVEN_CAVE_PORT: String(port), PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] }); capture(appChild);\n    report.appLaunches.push({ pid: appChild.pid, port });\n    for (let attempt = 0; attempt < 90; attempt++) {\n      assert.ok(live(appChild), 'owned app exited before health');\n      try { const response = await request('/api/client/v1/health'); if (response.ok) return; } catch (error) { deadline.signal.throwIfAborted(); }\n      await delay(500, undefined, { signal: deadline.signal });\n    }\n    assert.fail('owned app server not ready');\n  };\n  await launch(); report.buildInfo = await (await request('/api/app/build-info')).json();\n  await phase('composer-ready', { appPid: appChild.pid, port, identifier, projectRoot: project, daemonPid: report.daemonPid });\n  await control('finish');\n  const conversationDir = path.join(caveHome, 'conversations');\n  for (let attempt = 0; attempt < 120; attempt++) {\n    try {\n      const names = (await readdir(conversationDir)).filter(name => name.endsWith('.json') && name !== 'index.json');\n      for (const name of names) {\n        const value = JSON.parse(await readFile(path.join(conversationDir, name), 'utf8'));\n        if (value.familiarId === 'effectfixture' && value.turns?.some(turn => turn.role === 'assistant')) historySnapshot = value;\n      }\n      if (historySnapshot) break;\n    } catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n  assert.ok(historySnapshot, 'actual composer response must persist');\n  const assistant = historySnapshot.turns.findLast(turn => turn.role === 'assistant');\n  assert.equal(assistant.text, base.expected.answer.replaceAll('{{COUNTER}}', '3'));\n  assert.equal(assistant.tools.length, 3);\n  for (const expected of corpus.expected.tools) {\n    const tool = assistant.tools.find(tool => tool.id === expected.id);\n    assert.equal(tool.status, 'ok'); assert.equal(tool.output, expected.output + ':3');\n    assert.equal(tool.activity.authority.effect, 'unavailable');\n  }\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!JSON.stringify(historySnapshot).includes(sentinel));\n  report.persistedSessionId = historySnapshot.sessionId; report.persistedTurnId = assistant.id;\n  report.persistedToolStates = assistant.tools.map(tool => ({ id: tool.id, status: tool.status, outputHash: sha(tool.output) }));\n  report.checkpoints.push({ stage: 'actual composer completed and persisted', counter: await count() });\n  await phase('completed-history-ready', { sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('relaunch');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before relaunch');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  report.installedServiceAfterFirstQuit = await installedService();\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  await launch();\n  const response = await request('/api/chat/conversation/' + historySnapshot.sessionId);\n  report.unauthenticatedHistoryStatus = response.status;\n  assert.ok([401, 403].includes(response.status), 'packaged history must refuse this helper without its ephemeral webview credential');\n  const storedAgain = JSON.parse(await readFile(path.join(conversationDir, historySnapshot.sessionId + '.json'), 'utf8'));\n  assert.deepEqual(storedAgain.turns.find(turn => turn.id === assistant.id), assistant, 'canonical stored assistant must survive the actual app/server restart');\n  report.reopenedHistoryVerification = 'Actual CUA history observations required separately; helper verifies unchanged canonical stored assistant and refusal of an uncredentialed HTTP reader.';\n  await phase('relaunched-history-ready', { appPid: appChild.pid, sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('done');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before completion');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  const bytes = await readFile(ledger, 'utf8'); assert.equal(new Set(bytes.trim().split('\\n').map(line => JSON.parse(line).invocationId)).size, 3);\n  await writeFile(path.join(evidence, 'durable-invocations-after-ui.jsonl'), bytes);\n  report.checkpoints.push({ stage: 'actual relaunch/history reopening/normal quit', counter: 3 });\n  const negative = 'negative-control-invocations.jsonl';\n  await writeFile(path.join(project, negative), '', { flag: 'wx', mode: 0o600 });\n  assert.equal(execFileSync(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, negative], { encoding: 'utf8' }), '1');\n  assert.equal(execFileSync(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, negative], { encoding: 'utf8' }), '2');\n  assert.equal(await count(), 3);\n  report.negativeControl = { realSecondInvocationDetected: true, counter: 2 };\n  report.installedServiceAfter = await installedService();\n  report.installedServiceUnchanged = JSON.stringify(report.installedServiceBefore) === JSON.stringify(report.installedServiceAfter);\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!logs.includes(sentinel));\n  report.nativeLogBytesChecked = Buffer.byteLength(logs);\n  assert.equal(report.providerFailure, undefined); assert.deepEqual(await hashes(), report.sourceHashes);\n  report.passed = true;\n} catch (error) { report.failure = { stage: report.stage ?? 'setup', name: error.name, code: error.code ?? null }; process.exitCode = 1; }\nfinally {\n  deadline.abort(new Error('fixture cleanup')); clearTimeout(timer); process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt);\n  await Promise.allSettled(effectChildren);\n  if (live(appChild)) { appChild.kill('SIGTERM'); await Promise.race([once(appChild, 'exit'), delay(5000)]); }\n  report.appStopped = !live(appChild);\n  if (provider) { provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve)); }\n  if (daemon) {\n    try {\n      native(['daemon', 'stop']);\n      for (let attempt = 0; attempt < 50; attempt++) {\n        try { process.kill(report.daemonPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; report.daemonStopped = true; break; }\n        await delay(100);\n      }\n    } catch { report.daemonStopped = false; }\n  }\n  if (report.appStopped && report.daemonStopped) { await rm(root, { recursive: true, force: true }); report.fixtureRootRemoved = true; }\n  else { report.preservedRoot = root; report.passed = false; process.exitCode = 1; }\n  report.finishedAt = new Date().toISOString(); await writeFile(path.join(evidence, 'result.json'), JSON.stringify(report, null, 2) + '\\n');\n  console.log(JSON.stringify(report));\n}\n"
+      },
+      "log": {
+        "path": "/tmp/cave-5767-parallel-native-live-20261005-attempt2.log",
+        "sha256": "9b1383abbf7e13ba352f3039d0e086db8c17743e3a25d7971fa76bb1d17725a7"
+      }
+    },
+    {
+      "attempt": 3,
+      "evidencePath": "/tmp/cave-5767-parallel-native-live-20261005-attempt3",
+      "report": {
+        "schemaVersion": 1,
+        "scenario": "packaged-native-live-parallel-prototype",
+        "startedAt": "2026-10-05T21:41:31.939Z",
+        "head": "8183892dcaae985558d8530230f6c9aa90b5d845",
+        "prototypeHash": "48f80402a1981035310df1bcf7a1718ea4ed6d2320beb180fbd18ff769dcdfa7",
+        "classification": "Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.",
+        "passed": true,
+        "providerRequests": 1,
+        "checkpoints": [
+          {
+            "stage": "actual composer completed and persisted",
+            "counter": 3
+          },
+          {
+            "stage": "actual relaunch/history reopening/normal quit",
+            "counter": 3
+          }
+        ],
+        "appLaunches": [
+          {
+            "pid": 87819,
+            "port": 64531,
+            "quitExitCode": 0
+          },
+          {
+            "pid": 4000,
+            "port": 64531,
+            "quitExitCode": 0
+          }
+        ],
+        "omissions": [
+          "Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.",
+          "Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.",
+          "No real Hermes service or protected execution authority; provider supplies runtime reports."
+        ],
+        "sourceHashes": {
+          "src/app/api/chat/send/route.ts": "a8887a31d04cd02db659f24d99e12bed591ec457705d753c38aa60e61486d5c3",
+          "src/lib/chat-tool-events.ts": "446b8fc9baff4b4e58fe5f0a16e0c61342ff99067985a7b385d864bdd836779d",
+          "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f",
+          "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+          "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c"
+        },
+        "covenVersion": "coven v0.4.8-10-ge6fc281f (engine coven-code 0.8.0, pinned 0.8.0)",
+        "daemonPid": 87697,
+        "installedServiceBefore": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "executableSha256": "80b5059a8a59f21d5ace9f8f246d7e7a780b3eeeb8ee118fc5bdff33d7a5e923",
+        "identifier": "ai.opencoven.cave.qualification5767parallel",
+        "buildInfo": {
+          "name": "CovenCave",
+          "version": "0.5.7",
+          "revision": "development",
+          "identity": "v0.5.7+development"
+        },
+        "stage": "relaunched-history-ready",
+        "persistedSessionId": "native-http-response",
+        "persistedTurnId": "e846a3b2-3909-4dbb-b156-820357cc8503",
+        "persistedToolStates": [
+          {
+            "id": "effect-once-1",
+            "status": "ok",
+            "outputHash": "dd275f8a7e34e85416661c741e48a165afeaf528000923c27551205a701bb75c"
+          },
+          {
+            "id": "effect-parallel-2",
+            "status": "ok",
+            "outputHash": "bdee0af7f911efbaea29050363a9d7bee2e110e1439300a19579b39f3a455628"
+          },
+          {
+            "id": "effect-late-3",
+            "status": "ok",
+            "outputHash": "e43ea3dd4c0c3bfbad70f53fce40405e7f4646385e3be3e0fe9e66991010bcc7"
+          }
+        ],
+        "installedServiceAfterFirstQuit": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "directLoopbackHistoryStatus": 200,
+        "reopenedHistoryVerification": "Actual CUA history observations required separately; helper verifies unchanged canonical stored assistant and separately validates the ordinary direct-loopback public history projection.",
+        "negativeControl": {
+          "realSecondInvocationDetected": true,
+          "counter": 2
+        },
+        "installedServiceAfter": {
+          "plistHash": "2d85a7d347d67f90fdc66b85747047562489a6f526c242fb81576fad86e0b524",
+          "exitCode": 0,
+          "fields": [
+            "state = running",
+            "runs = 3",
+            "pid = 1464",
+            "last exit code = 1",
+            "state = active",
+            "state = active"
+          ]
+        },
+        "installedServiceUnchanged": true,
+        "nativeLogBytesChecked": 0,
+        "appStopped": true,
+        "daemonStopped": true,
+        "fixtureRootRemoved": true,
+        "finishedAt": "2026-10-05T21:45:08.136Z"
+      },
+      "helper": {
+        "path": "/tmp/cave-5767-parallel-native-live-projection-prototype.mjs",
+        "sha256": "48f80402a1981035310df1bcf7a1718ea4ed6d2320beb180fbd18ff769dcdfa7",
+        "source": "// Controlled external provider and actual packaged composer. All GUI actions\n// are performed separately through CUA; control files release fixture stages.\nimport assert from 'node:assert/strict';\nimport { spawn, execFileSync, execFile } from 'node:child_process';\nimport { promisify } from 'node:util';\nimport { createServer } from 'node:http';\nimport { once } from 'node:events';\nimport { mkdtemp, mkdir, readFile, writeFile, readdir, rm, realpath } from 'node:fs/promises';\nimport { tmpdir, homedir } from 'node:os';\nimport { randomUUID, createHash } from 'node:crypto';\nimport path from 'node:path';\nimport { pathToFileURL, fileURLToPath } from 'node:url';\nimport { setTimeout as delay } from 'node:timers/promises';\n\nconst [execute, evidence] = process.argv.slice(2);\nassert.ok(execute === '--execute' && path.isAbsolute(evidence ?? '') && process.argv.length === 4);\nconst repo = '/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5767-desktop-qualification';\nconst app = '/private/tmp/cave-5767-parallel-cargo-target/release/bundle/macos/CaveParallelQualification5767.app';\nconst executable = app + '/Contents/MacOS/app';\nconst identifier = 'ai.opencoven.cave.qualification5767parallel';\nawait mkdir(evidence, { mode: 0o700 });\nconst root = await realpath(await mkdtemp(path.join(tmpdir(), 'cave-activity-effects-')));\nconst project = path.join(root, 'project'), covenHome = path.join(root, 'coven'), caveHome = path.join(covenHome, 'cave');\nconst ledger = path.join(project, 'effect-invocations.jsonl');\nconst binary = execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();\nconst native = args => execFileSync(binary, args, { cwd: project, env: process.env, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'] });\nconst imp = file => import(pathToFileURL(path.join(repo, file)).href);\nconst sha = bytes => createHash('sha256').update(bytes).digest('hex');\nconst files = ['src/app/api/chat/send/route.ts', 'src/lib/chat-tool-events.ts', 'src/lib/hermes-responses-stream.ts', 'scripts/runtime-activity-effect-counter.mjs', 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json'];\nconst hashes = async () => Object.fromEntries(await Promise.all(files.map(async file => [file, sha(await readFile(path.join(repo, file)))])));\nconst deadline = new AbortController();\nconst timer = setTimeout(() => deadline.abort(new Error('fixture deadline')), 30 * 60_000);\nconst interrupt = () => deadline.abort(new Error('fixture interrupted'));\nprocess.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);\nconst report = { schemaVersion: 1, scenario: 'packaged-native-live-parallel-prototype', startedAt: new Date().toISOString(), head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), prototypeHash: sha(await readFile(fileURLToPath(import.meta.url))), classification: 'Actual packaged desktop composer send and renderer/reopened history; controlled external Hermes provider and real fsynced counter effects. CUA observations recorded separately. No human/native iOS or protected-effect authority claim.', passed: false, providerRequests: 0, checkpoints: [], appLaunches: [], omissions: ['Human VoiceOver, physical-device performance and full keyboard-only acceptance pending.', 'Retry/cancellation/approval/scope-revocation/large-trace and interrupted automatic reconnect are not covered.', 'No real Hermes service or protected execution authority; provider supplies runtime reports.'] };\nreport.sourceHashes = await hashes();\nlet provider, daemon = false, appChild, historySnapshot;\nconst effectChildren = [];\nconst count = async () => (await readFile(ledger, 'utf8')).trim().split('\\n').filter(Boolean).length;\nconst phase = async (stage, detail = {}) => {\n  report.stage = stage;\n  await writeFile(path.join(evidence, 'phase.json'), JSON.stringify({ stage, ...detail }) + '\\n');\n  console.log(JSON.stringify({ stage, ...detail }));\n};\nconst control = async stage => {\n  for (;;) {\n    deadline.signal.throwIfAborted();\n    try { assert.equal((await readFile(path.join(evidence, stage + '.ready'), 'utf8')).trim(), stage); return; }\n    catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n};\nconst installedService = async () => {\n  let plistHash = null;\n  try { plistHash = sha(await readFile(path.join(homedir(), 'Library/LaunchAgents/ai.opencoven.cave.plist'))); }\n  catch (error) { if (error.code !== 'ENOENT') throw error; }\n  let fields = [], exitCode = 0;\n  try {\n    const text = execFileSync('launchctl', ['print', 'gui/' + process.getuid() + '/ai.opencoven.cave'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });\n    fields = text.split('\\n').map(s => s.trim()).filter(s => /^(state|pid|runs|last exit code) = /.test(s));\n  } catch (error) { exitCode = error.status ?? null; }\n  return { plistHash, exitCode, fields };\n};\nlet logs = '';\nconst capture = child => {\n  for (const pipe of [child.stdout, child.stderr]) pipe.on('data', bytes => {\n    if (Buffer.byteLength(logs) + bytes.length > 1024 * 1024) deadline.abort(new Error('native logs exceeded bound'));\n    else logs += bytes.toString();\n  });\n};\nconst live = child => child && child.exitCode === null && child.signalCode === null;\ntry {\n  await mkdir(project, { mode: 0o700 }); await mkdir(caveHome, { recursive: true, mode: 0o700 });\n  await writeFile(ledger, '', { flag: 'wx', mode: 0o600 });\n  execFileSync('git', ['init', '--quiet', project]);\n  await writeFile(path.join(covenHome, 'familiars.toml'), '[[familiar]]\\nid = \"effectfixture\"\\ndisplay_name = \"Parallel counter fixture\"\\nrole = \"Verification\"\\ndescription = \"Controlled isolated parallel activity qualification.\"\\n');\n  Object.assign(process.env, { COVEN_HOME: covenHome, COVEN_CAVE_HOME: caveHome, COVEN_SOCKET: path.join(covenHome, 'coven.sock'), COVEN_BIN: binary, COVEN_WORKSPACE_ROOT: project, COVEN_WORKSPACES_ROOT: root, COVEN_VAULT_FILE: path.join(root, 'vault.yaml'), COVEN_CAVE_ENV_FILE: path.join(root, '.env.local'), COVEN_CAVE_LOCAL_VAULT_FILE: path.join(root, 'vault.enc.json'), COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(root, 'vault.key'), COVEN_PREFERENCES_PATH: path.join(root, 'preferences.json'), COVEN_THEME_PATH: path.join(root, 'theme.json'), CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, 'projects.json'), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, 'permissions.json'), CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, 'queue.json') });\n  delete process.env.COVEN_CAVE_E2E;\n  const corpus = JSON.parse(await readFile(path.join(repo, files.at(-1)), 'utf8'));\n  const base = JSON.parse(await readFile(path.join(repo, 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json'), 'utf8'));\n  const firstResult = corpus.events.findIndex(([, data]) => data.item?.type === 'function_call_output');\n  const token = randomUUID();\n  const frame = (res, event, data) => res.write('event: ' + event + '\\ndata: ' + JSON.stringify(data) + '\\n\\n');\n  provider = createServer(async (req, res) => {\n    try {\n      assert.equal(req.headers.authorization, 'Bearer ' + token);\n      if (req.method === 'GET' && req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'served-fixture-v3' }] })); return; }\n      assert.equal(req.method, 'POST'); assert.equal(req.url, '/v1/responses');\n      let size = 0; for await (const bytes of req) { size += bytes.length; assert.ok(size <= 1024 * 1024); }\n      report.providerRequests++; assert.equal(report.providerRequests, 1, 'actual-client recovery must not redispatch');\n      res.writeHead(200, { 'content-type': 'text/event-stream' });\n      for (const [event, data] of [...base.beforeRelease.slice(0, 5), ...corpus.events.slice(1, firstResult)]) frame(res, event, data);\n      assert.equal(await count(), 0);\n      await phase('live-before-effects', { counter: 0, providerRequests: 1 });\n      await control('effects'); deadline.signal.throwIfAborted();\n      const invoke = promisify(execFile);\n      const childRuns = corpus.expected.tools.map(() => {\n        const promise = invoke(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, 'effect-invocations.jsonl'], { encoding: 'utf8', timeout: 5000, signal: deadline.signal });\n        const closed = new Promise(resolve => promise.child.once('close', resolve));\n        effectChildren.push(closed);\n        return promise.finally(() => closed);\n      });\n      const settled = await Promise.allSettled(childRuns);\n      assert.ok(settled.every(result => result.status === 'fulfilled'));\n      assert.equal(await count(), 3);\n      for (const [event, data] of corpus.events.slice(firstResult, -1)) {\n        const copy = structuredClone(data), expected = corpus.expected.tools.find(tool => tool.id === copy.item?.call_id);\n        if (expected && copy.item?.type === 'function_call_output' && copy.item.output[0].text === expected.output) copy.item.output[0].text += ':3';\n        frame(res, event, copy);\n      }\n      await phase('live-after-effects', { counter: 3, providerRequests: 1 });\n      await control('finish');\n      for (const [event, data] of base.afterRelease.slice(1)) frame(res, event, JSON.parse(JSON.stringify(data).replaceAll('{{COUNTER}}', '3')));\n      res.end();\n    } catch (error) { report.providerFailure = { name: error.name, code: error.code ?? null }; res.destroy(); }\n  });\n  provider.listen(0, '127.0.0.1'); await once(provider, 'listening');\n  Object.assign(process.env, { HERMES_API_URL: 'http://127.0.0.1:' + provider.address().port, HERMES_API_KEY: token });\n  const { saveConfig } = await imp('src/lib/cave-config.ts');\n  const { createProject } = await imp('src/lib/cave-projects.ts');\n  const { grantProjectToFamiliar } = await imp('src/lib/project-permissions.ts');\n  const { selectQueueProject } = await imp('src/lib/queue-project-readiness.ts');\n  await saveConfig({ familiars: { effectfixture: { harness: 'hermes', model: '' } } });\n  const created = await createProject({ name: 'Parallel qualification fixture', root: project });\n  await grantProjectToFamiliar({ familiarId: 'effectfixture', projectId: created.id, source: 'human', access: 'write' });\n  await selectQueueProject(created.id);\n  report.covenVersion = native(['--version']).trim(); daemon = true; native(['daemon', 'start']);\n  report.daemonPid = JSON.parse(await readFile(path.join(covenHome, 'daemon.json'), 'utf8')).pid;\n  const { freePort } = await imp('scripts/client-v1-conformance.mjs');\n  const port = await freePort();\n  const request = url => fetch('http://127.0.0.1:' + port + url, { signal: AbortSignal.any([deadline.signal, AbortSignal.timeout(3000)]) });\n  report.installedServiceBefore = await installedService();\n  report.executableSha256 = sha(await readFile(executable));\n  report.identifier = execFileSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', app + '/Contents/Info.plist'], { encoding: 'utf8' }).trim();\n  assert.equal(report.identifier, identifier);\n  const launch = async () => {\n    appChild = spawn(executable, [], { env: { ...process.env, COVEN_CAVE_PORT: String(port), PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] }); capture(appChild);\n    report.appLaunches.push({ pid: appChild.pid, port });\n    for (let attempt = 0; attempt < 90; attempt++) {\n      assert.ok(live(appChild), 'owned app exited before health');\n      try { const response = await request('/api/client/v1/health'); if (response.ok) return; } catch (error) { deadline.signal.throwIfAborted(); }\n      await delay(500, undefined, { signal: deadline.signal });\n    }\n    assert.fail('owned app server not ready');\n  };\n  await launch(); report.buildInfo = await (await request('/api/app/build-info')).json();\n  await phase('composer-ready', { appPid: appChild.pid, port, identifier, projectRoot: project, daemonPid: report.daemonPid });\n  await control('finish');\n  const conversationDir = path.join(caveHome, 'conversations');\n  for (let attempt = 0; attempt < 120; attempt++) {\n    try {\n      const names = (await readdir(conversationDir)).filter(name => name.endsWith('.json') && name !== 'index.json');\n      for (const name of names) {\n        const value = JSON.parse(await readFile(path.join(conversationDir, name), 'utf8'));\n        if (value.familiarId === 'effectfixture' && value.turns?.some(turn => turn.role === 'assistant')) historySnapshot = value;\n      }\n      if (historySnapshot) break;\n    } catch (error) { if (error.code !== 'ENOENT') throw error; }\n    await delay(250, undefined, { signal: deadline.signal });\n  }\n  assert.ok(historySnapshot, 'actual composer response must persist');\n  const assistant = historySnapshot.turns.findLast(turn => turn.role === 'assistant');\n  assert.equal(assistant.text, base.expected.answer.replaceAll('{{COUNTER}}', '3'));\n  assert.equal(assistant.tools.length, 3);\n  for (const expected of corpus.expected.tools) {\n    const tool = assistant.tools.find(tool => tool.id === expected.id);\n    assert.equal(tool.status, 'ok'); assert.equal(tool.output, expected.output + ':3');\n    assert.equal(tool.activity.authority.effect, 'unavailable');\n  }\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!JSON.stringify(historySnapshot).includes(sentinel));\n  report.persistedSessionId = historySnapshot.sessionId; report.persistedTurnId = assistant.id;\n  report.persistedToolStates = assistant.tools.map(tool => ({ id: tool.id, status: tool.status, outputHash: sha(tool.output) }));\n  report.checkpoints.push({ stage: 'actual composer completed and persisted', counter: await count() });\n  await phase('completed-history-ready', { sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('relaunch');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before relaunch');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  report.installedServiceAfterFirstQuit = await installedService();\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  await launch();\n  const response = await request('/api/chat/conversation/' + historySnapshot.sessionId);\n  report.directLoopbackHistoryStatus = response.status;\n  assert.equal(response.status, 200, 'ordinary app history permits the existing direct-loopback browser path');\n  const publicHistory = await response.json();\n  const publicAssistant = publicHistory.conversation.turns.find(turn => turn.id === assistant.id);\n  assert.ok(publicAssistant); assert.equal(publicAssistant.text, assistant.text); assert.equal(publicAssistant.tools.length, 3);\n  for (const expected of corpus.expected.tools) {\n    const tool = publicAssistant.tools.find(tool => tool.id === expected.id);\n    assert.equal(tool.status, 'ok'); assert.equal(tool.output, expected.output + ':3');\n    assert.equal(tool.activity.authority.effect, 'unavailable');\n  }\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!JSON.stringify(publicHistory).includes(sentinel));\n  await writeFile(path.join(evidence, 'projected-history.json'), JSON.stringify(publicHistory, null, 2) + '\\n');\n  const storedAgain = JSON.parse(await readFile(path.join(conversationDir, historySnapshot.sessionId + '.json'), 'utf8'));\n  assert.deepEqual(storedAgain.turns.find(turn => turn.id === assistant.id), assistant, 'canonical stored assistant must survive the actual app/server restart');\n  report.reopenedHistoryVerification = 'Actual CUA history observations required separately; helper verifies unchanged canonical stored assistant and separately validates the ordinary direct-loopback public history projection.';\n  await phase('relaunched-history-ready', { appPid: appChild.pid, sessionId: historySnapshot.sessionId, counter: await count() });\n  await control('done');\n  assert.ok(!live(appChild), 'quit the actual app through CUA before completion');\n  report.appLaunches.at(-1).quitExitCode = appChild.exitCode;\n  assert.equal(await count(), 3); assert.equal(report.providerRequests, 1);\n  const bytes = await readFile(ledger, 'utf8'); assert.equal(new Set(bytes.trim().split('\\n').map(line => JSON.parse(line).invocationId)).size, 3);\n  await writeFile(path.join(evidence, 'durable-invocations-after-ui.jsonl'), bytes);\n  report.checkpoints.push({ stage: 'actual relaunch/history reopening/normal quit', counter: 3 });\n  const negative = 'negative-control-invocations.jsonl';\n  await writeFile(path.join(project, negative), '', { flag: 'wx', mode: 0o600 });\n  assert.equal(execFileSync(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, negative], { encoding: 'utf8' }), '1');\n  assert.equal(execFileSync(process.execPath, [path.join(repo, 'scripts/runtime-activity-effect-counter.mjs'), '--execute', project, negative], { encoding: 'utf8' }), '2');\n  assert.equal(await count(), 3);\n  report.negativeControl = { realSecondInvocationDetected: true, counter: 2 };\n  report.installedServiceAfter = await installedService();\n  report.installedServiceUnchanged = JSON.stringify(report.installedServiceBefore) === JSON.stringify(report.installedServiceAfter);\n  for (const sentinel of base.expected.privateSentinels) assert.ok(!logs.includes(sentinel));\n  report.nativeLogBytesChecked = Buffer.byteLength(logs);\n  assert.equal(report.providerFailure, undefined); assert.deepEqual(await hashes(), report.sourceHashes);\n  report.passed = true;\n} catch (error) { report.failure = { stage: report.stage ?? 'setup', name: error.name, code: error.code ?? null }; process.exitCode = 1; }\nfinally {\n  deadline.abort(new Error('fixture cleanup')); clearTimeout(timer); process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt);\n  await Promise.allSettled(effectChildren);\n  if (live(appChild)) { appChild.kill('SIGTERM'); await Promise.race([once(appChild, 'exit'), delay(5000)]); }\n  report.appStopped = !live(appChild);\n  if (provider) { provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve)); }\n  if (daemon) {\n    try {\n      native(['daemon', 'stop']);\n      for (let attempt = 0; attempt < 50; attempt++) {\n        try { process.kill(report.daemonPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; report.daemonStopped = true; break; }\n        await delay(100);\n      }\n    } catch { report.daemonStopped = false; }\n  }\n  if (report.appStopped && report.daemonStopped) { await rm(root, { recursive: true, force: true }); report.fixtureRootRemoved = true; }\n  else { report.preservedRoot = root; report.passed = false; process.exitCode = 1; }\n  report.finishedAt = new Date().toISOString(); await writeFile(path.join(evidence, 'result.json'), JSON.stringify(report, null, 2) + '\\n');\n  console.log(JSON.stringify(report));\n}\n"
+      },
+      "log": {
+        "path": "/tmp/cave-5767-parallel-native-live-20261005-attempt3.log",
+        "sha256": "fa2c44bc3fe72391a3f8031a69c4194d76e216f6b5c064da2f0dfd1eefa5ee8f"
+      }
+    }
+  ],
+  "failureDisposition": {
+    "attempt1": "History assertion failed after first normal quit/relaunch; only AssertionError/ERR_ASSERTION retained. Exact original failing assertion/body/status not recorded; do not assign a conclusive cause. Whole raw/public-history comparison in helper was structurally invalid because GET sanitizes metadata and projects display fields.",
+    "attempt2": "Helper incorrectly expected401/403 for ordinary direct-loopback history. Actual200 retained. src/proxy.ts intentionally permits trusted direct-loopback ordinary app APIs. No product/auth change or token read/bypass.",
+    "attempt3": "Checks public projected assistant fields separately from exact unchanged canonical stored assistant. Actual native reopening and disclosure observations below independently establish UI behavior."
+  },
+  "durableEffects": {
+    "ledger": [
+      {
+        "invocationId": "6f4d43ec-7525-4c6d-b275-814544eeacf4"
+      },
+      {
+        "invocationId": "c363f0ed-022f-471d-a825-d8016c73836c"
+      },
+      {
+        "invocationId": "eb67fc52-9791-463f-a40b-1e3f8233d033"
+      }
+    ],
+    "ledgerSha256": "0aad8a1a75c6277fdd2d229822c3d253721e783be8bc69932d89ce2c8d30d1e7",
+    "primitive": "Three concurrent fresh processes append distinct random invocation IDs and fsync the ordinary private fixture ledger; no counter deduplication. Helper joins child closes before cleanup.",
+    "checkpoints": [
+      {
+        "stage": "actual composer completed and persisted",
+        "counter": 3
+      },
+      {
+        "stage": "actual relaunch/history reopening/normal quit",
+        "counter": 3
+      }
+    ],
+    "negativeControl": {
+      "realSecondInvocationDetected": true,
+      "counter": 2
+    },
+    "providerPostCount": 1,
+    "boundary": "Real effects are controlled fixture file operations. Tool envelopes are external Hermes runtime reports; they do not grant protected-effect, approval or change authority."
+  },
+  "projectedAssistantAfterRestart": {
+    "id": "e846a3b2-3909-4dbb-b156-820357cc8503",
+    "role": "assistant",
+    "text": "Inspecting 🧙 café.\nDone: 3",
+    "createdAt": "2026-10-05T21:43:17.059Z",
+    "durationMs": 20413,
+    "isError": false,
+    "tools": [
+      {
+        "id": "effect-once-1",
+        "name": "increment_counter",
+        "status": "ok",
+        "input": "{\n  \"path\": \"effect-invocations.jsonl\",\n  \"branch\": \"effect-once-1\"\n}",
+        "output": "effect-once-1-result:3",
+        "durationMs": 10059,
+        "textOffset": 20,
+        "activity": {
+          "schemaVersion": 1,
+          "runId": "0a64d743-f426-4e72-a97b-36b75f6aa068",
+          "attemptId": "376591b6-7c55-4e8a-b742-80de8d750f4a",
+          "callId": "effect-once-1",
+          "phase": "ok",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1791236576646,
+          "updatedAt": 1791236586705,
+          "sequence": 1,
+          "executionObservedAt": 1791236576646,
+          "terminalObservedAt": 1791236586705,
+          "authority": {
+            "binding": "unavailable",
+            "approval": "unavailable",
+            "effect": "unavailable"
+          }
+        }
+      },
+      {
+        "id": "effect-parallel-2",
+        "name": "increment_counter",
+        "status": "ok",
+        "input": "{\n  \"path\": \"effect-invocations.jsonl\",\n  \"branch\": \"effect-parallel-2\"\n}",
+        "output": "effect-parallel-2-result:3",
+        "durationMs": 10058,
+        "textOffset": 20,
+        "activity": {
+          "schemaVersion": 1,
+          "runId": "0a64d743-f426-4e72-a97b-36b75f6aa068",
+          "attemptId": "376591b6-7c55-4e8a-b742-80de8d750f4a",
+          "callId": "effect-parallel-2",
+          "phase": "ok",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1791236576647,
+          "updatedAt": 1791236586705,
+          "sequence": 2,
+          "executionObservedAt": 1791236576647,
+          "terminalObservedAt": 1791236586705,
+          "authority": {
+            "binding": "unavailable",
+            "approval": "unavailable",
+            "effect": "unavailable"
+          }
+        }
+      },
+      {
+        "id": "effect-late-3",
+        "name": "increment_counter",
+        "status": "ok",
+        "input": "{\n  \"path\": \"effect-invocations.jsonl\",\n  \"branch\": \"effect-late-3\"\n}",
+        "output": "effect-late-3-result:3",
+        "durationMs": 0,
+        "textOffset": 20,
+        "activity": {
+          "schemaVersion": 1,
+          "runId": "0a64d743-f426-4e72-a97b-36b75f6aa068",
+          "attemptId": "376591b6-7c55-4e8a-b742-80de8d750f4a",
+          "callId": "effect-late-3",
+          "phase": "ok",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1791236586702,
+          "updatedAt": 1791236586705,
+          "sequence": 3,
+          "executionObservedAt": null,
+          "terminalObservedAt": 1791236586705,
+          "authority": {
+            "binding": "unavailable",
+            "approval": "unavailable",
+            "effect": "unavailable"
+          }
+        }
+      }
+    ],
+    "reasoningBlocks": [
+      {
+        "schemaVersion": 1,
+        "id": "376591b6-7c55-4e8a-b742-80de8d750f4a:summary-before",
+        "representation": "provider-summary",
+        "textOffset": 0,
+        "phase": "complete",
+        "disclosure": "display-safe",
+        "observation": {
+          "runId": "0a64d743-f426-4e72-a97b-36b75f6aa068",
+          "attemptId": "376591b6-7c55-4e8a-b742-80de8d750f4a",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1791236576644,
+          "updatedAt": 1791236576645,
+          "completedAt": 1791236576645,
+          "sequence": 0,
+          "binding": "unavailable"
+        },
+        "text": "Increment the isolated counter once."
+      },
+      {
+        "schemaVersion": 1,
+        "id": "376591b6-7c55-4e8a-b742-80de8d750f4a:summary-after",
+        "representation": "provider-summary",
+        "textOffset": 20,
+        "phase": "complete",
+        "disclosure": "display-safe",
+        "observation": {
+          "runId": "0a64d743-f426-4e72-a97b-36b75f6aa068",
+          "attemptId": "376591b6-7c55-4e8a-b742-80de8d750f4a",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1791236597037,
+          "updatedAt": 1791236597037,
+          "completedAt": 1791236597037,
+          "sequence": 4,
+          "binding": "unavailable"
+        },
+        "text": "The isolated counter was incremented."
+      }
+    ],
+    "progress": [
+      {
+        "id": "familiar-contract",
+        "label": "No familiar identity files found",
+        "status": "notice",
+        "createdAt": "2026-10-05T21:42:56.629Z"
+      }
+    ],
+    "parentId": "13d8af8e-b9a6-4d56-a47f-41e9464acc28",
+    "responseMetadata": {
+      "familiarId": "effectfixture",
+      "harness": "hermes",
+      "model": "",
+      "runtime": "local:/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-activity-effects-KCrDLR/project",
+      "runtimeIdentity": {
+        "schemaVersion": 1,
+        "harness": "hermes",
+        "version": null,
+        "model": "served-fixture-v3",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "api",
+          "tools": "supported",
+          "reasoning": "supported"
+        }
+      },
+      "requestedModel": "",
+      "desiredModel": "",
+      "confirmedModel": "served-fixture-v3",
+      "retryModel": "served-fixture-v3",
+      "modelSource": "runtime-default",
+      "modelApplicationState": "applied",
+      "modelApplicationReason": "Runtime confirmed the selected model."
+    }
+  },
+  "nativeObservations": {
+    "method": "Actual CUA native app AX trees and screenshots in the acting session; no DOM/Playwright/AppleScript. Assistant-recorded observations, not human accessibility acceptance. Screenshot images remain in the conversation; no standalone image export was verified.",
+    "liveAttempt2": [
+      "Selected only synthetic project54RSDH; native New chat, pasted exact controlled prompt, Send click refused elementHasNoFrame; Enter submitted.",
+      "Before release: provider1, durable0; two Running same-name cards; first provider reasoning summary and Inspecting 🧙 café.",
+      "After release: durable3; opened all3 cards and observed effect-once-1-result:3, effect-parallel-2-result:3, effect-late-3-result:3 under their matching Branch IDs.",
+      "All3 disclosed Runtime report · hermes · version unavailable and Approval and change confirmation unavailable.",
+      "Completion: both ordered provider summaries, Done: 3, Completed/transcript saved, served-fixture-v3/runtime-default/applied/API identity. Normal CmdQ exited0."
+    ],
+    "successfulAttempt3": [
+      "Selected only synthetic projectKCrDLR; native New chat, paste and Enter submitted; no HTTPPOST seeded the assistant.",
+      "Before release: durable0/provider1; Running2, first provider summary, Inspecting 🧙 café. After release: durable3/Succeeded3/Steps3.",
+      "Completed: ordered before/after provider summaries and Unicode answer; served-fixture-v3, Hermes/version not reported, runtime-default/applied/API.",
+      "Normal CmdQ exited0; same port64531 relaunched with PID4000. Helper checked projected HTTP history and unchanged canonical stored assistant; no stream redispatch.",
+      "Opened Chat then actual existing history rail item; URL#chat-native-http-response, Completed, Steps3, both reasoning summaries, Unicode, model/runtime identity retained.",
+      "Opened each of3 persisted cards: own BranchID, exact corresponding <id>-result:3, Succeeded; all report runtime observation and unavailable approval/change confirmation.",
+      "Normal second CmdQ exited0; actual effects remain3 distinct invocations, providerPOST1; own daemon/app/temp stopped/removed."
+    ],
+    "uiAutomationErrors": [
+      "First attempt Not now modal dismissal/cgWindowNotFound; owned process/health remained live and binding refreshed. Offscreen collapse error retained; later keyboard automation focus/Space partial observation only.",
+      "Second attempt AX tree initially lacked rendered WebView; rebinding live owned app restored it. Send elementHasNoFrame; observed focused composer, Enter submitted.",
+      "Third attempt binding reported user changed app and familiar picker appeared; refreshed/closed picker and reselected exact fixture project. After restart two scroll requests returned noWindowsAvailable despite live PID; accessible card clicks succeeded. No process restart based only on observation error."
+    ],
+    "keyboardScope": "Prior attempt automated Tab/Space focus and disclosure activation only; no human keyboard-only or VoiceOver receipt."
+  },
+  "requirementCoverage": [
+    {
+      "requirements": [
+        "5763-acceptance-03",
+        "5764-acceptance-02",
+        "5767-golden-03"
+      ],
+      "owningSeam": "Hermes adapter / packaged desktop renderer",
+      "status": "partial-packaged-client",
+      "verified": "Actual native composer/live same-name terminal cards; exact three outputs/IDs and first reordered result retained after real app/server restart and native history reopening.",
+      "primaryBlocker": "Real hook/envelope combinations and retry/attempt/cancel corpus remain unqualified.",
+      "nextStep": "Exercise actual hook and attempt-producing paths with the durable counter."
+    },
+    {
+      "requirements": [
+        "5761-boundary-06",
+        "5764-acceptance-01",
+        "5764-acceptance-03",
+        "5767-golden-06"
+      ],
+      "owningSeam": "Canonical conversation storage and native completed-history projection",
+      "status": "partial-packaged-client",
+      "verified": "Completed native history reopening after normal app/server restart kept three real effects, exact stored assistant and native disclosures; independent repeated invocation detected.",
+      "primaryBlocker": "Interrupted live reconnect/lost-final/reload, native iOS actual-client effects and broader recovery corpus remain unqualified.",
+      "nextStep": "Run interrupted actual-client recovery with the same controlled durable action."
+    }
+  ],
+  "humanAcceptance": {
+    "status": "pending-human-pass",
+    "source": "Val explicitly requested leave pending for a human pass.",
+    "scope": "#5766 reasoning/tool details/approval and rejection/error and retry/reconnect/history VoiceOver plus physical-device performance."
+  },
+  "omissions": [
+    "Every114 original requirement/status tuple and17goldens remain required; this packet is partial evidence only.",
+    "No native iOS renderer/composer/live durable-effect proof; earlier XCTest/TCP transport evidence remains separate.",
+    "No full actual-client retry/error/cancel/approval/scope-revocation/hostile-split-secret/ring-gap/unsaved-state corpus.",
+    "No interrupted automatic reconnect/lost terminal/reload proof on this native app.",
+    "No comparative large-trace performance, full layout/reduced-motion acceptance or human accessibility receipts.",
+    "Native captured log bytes0 only; does not qualify broader logging or notification/cache/copy/export disclosure.",
+    "Publisher endpoint/key/checkpoint/schema admission holds and OpenCode Read-only refusal unchanged.",
+    "Project/execution coverage unknown; no issue closure, support promotion, publication or destructive retirement."
+  ],
+  "worktreeDisposition": {
+    "ownerSession": "01a10d39-3567-7413-ae63-2dfffe58a85d",
+    "path": ".worktrees/issue-5767-desktop-qualification",
+    "branch": "docs/issue-5767-native-parallel-receipts",
+    "status": "Intentionally retained and locked for remaining qualification; original pushed818 branch retained. Not safe to archive while active."
+  }
+}

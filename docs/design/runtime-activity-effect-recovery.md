@@ -111,3 +111,22 @@ access revocation, protected receipts or
 human accessibility. The normal Release `.app` startup smoke has separate,
 limited evidence. #5761–#5767 retain their full criteria; human VoiceOver and
 physical-device performance remain pending at Val's request.
+
+The rebuilt alternate-ID packaged Release app at producer head `8183892` now has
+actual native composer/live/completion and completed-history reopening evidence.
+Three concurrent fresh fsynced counter invocations stayed three across normal
+app/server restart and native history reopening; the independent second-invocation
+control reached two. Each reopened same-name card retained its own ID and output,
+provider reasoning order, Unicode and runtime/model identity, with approval and
+change authority unavailable. See
+`docs/design/evidence/runtime-activity-desktop-parallel-2026-10-05.json` for build
+provenance, two retained helper failures, the corrected probe, CUA observations
+and verified cleanup. The producer fix was delivered by #5811.
+
+This local unsigned app reports a development revision. The controlled Hermes
+provider reports fixture activity, rather than protected execution authority.
+Direct loopback ordinary history is the existing permitted browser path; the
+probe separately validates its public projection and the unchanged stored turn.
+It does not qualify interrupted live reconnect, native iOS actual-client effects,
+the full retry/cancel/approval/revocation corpus, comparative performance or human
+accessibility. All original criteria remain required.

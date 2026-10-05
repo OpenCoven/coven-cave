@@ -914,6 +914,7 @@
     },
     "recoveryNegatives": "docs/design/evidence/runtime-activity-recovery-negatives-2026-10-05.json",
     "disclosureAndDesktopPartial": "docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json",
-    "hermesReorderedResults": "docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json"
+    "hermesReorderedResults": "docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json",
+    "desktopLiveParallel": "docs/design/evidence/runtime-activity-desktop-parallel-2026-10-05.json"
   }
 }
