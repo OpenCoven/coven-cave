@@ -225,14 +225,13 @@ assert.match(
   /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
   "chat-view should route initial adoption clears through the shared helper",
 );
-// The signature takes further parameters now (local system turns). What this
-// pin protects is the body, so match the helper regardless of its arity.
-const applyConversationPayloadBlock = chatView.match(/const applyConversationPayload = \(json: ConversationHistoryPayload[^)]*\) => \{[\s\S]*?\n    \};/)?.[0] ?? "";
-assert.ok(applyConversationPayloadBlock, "chat-view should define the conversation payload apply helper");
+// Loading persisted history must never clear attention; its coordinator has
+// no attention authority and the view keeps generation adoption separately.
+const historyLoader = await readFile(new URL("../lib/chat/history-load.ts", import.meta.url), "utf8");
 assert.doesNotMatch(
-  applyConversationPayloadBlock,
+  historyLoader,
   /emitChatAttentionClear/,
-  "chat-view should not clear attention while merely loading persisted conversation history",
+  "merely loading saved conversation history must not clear attention",
 );
 assert.doesNotMatch(
   chatView,

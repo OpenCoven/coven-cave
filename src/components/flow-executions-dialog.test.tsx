@@ -264,7 +264,8 @@ describe("Flow execution history", () => {
     expect(chat).toMatch(/if \(flowBackedSession\) \{[\s\S]{0,240}return;/);
     expect(chat).toMatch(/!flowBackedSession && shouldShowDockedComposer/);
     expect(chat).toContain("Discuss in Chat");
-    expect(chat).toContain("loadFlowSessionTranscript(sessionId)");
+    // Flow transcript transport and fallback ownership now execute in
+    // chat/history-sources.test.ts and chat/history-load.test.ts.
   });
 
   test("Flow runs lives in Session view options rather than adding another toolbar button", () => {

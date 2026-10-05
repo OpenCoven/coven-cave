@@ -58,6 +58,22 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Chat, familiars, and tasks
 
+For saved transcript loading, start with these bounded entrypoints:
+
+| Responsibility | Implementation and contracts | Focused verification |
+|---|---|---|
+| Cache/network history, offline/flow fallback, cancellation | [`src/lib/chat/history-load.ts`](../src/lib/chat/history-load.ts); `ChatHistorySources` and `ChatHistoryView` are its explicit ports | `node --experimental-strip-types --import ./scripts/test-alias-register.mjs --test src/lib/chat/history-load.test.ts` |
+| Existing browser transport and encrypted caches | [`src/lib/chat/history-sources.ts`](../src/lib/chat/history-sources.ts), [`conversation-cache.ts`](../src/lib/conversation-cache.ts), [`offline-cache.ts`](../src/lib/offline-cache.ts) | Run `src/lib/chat/history-sources.test.ts`, `src/lib/conversation-cache.test.ts`, and `src/lib/offline-cache.test.ts` with the same Node test command |
+| Live-generation admission, run ownership, effect cleanup and current-ref binding | [`src/components/chat-view.tsx`](../src/components/chat-view.tsx), [`chat-turn-state.ts`](../src/lib/chat-turn-state.ts) | `src/lib/chat-transcript-load.test.ts`, `src/components/chat-view-lifecycle.test.ts`, `src/components/chat-switching.test.ts` |
+| Import boundary | `eslint.config.mjs` explicitly limits coordinator and transport imports; dynamic imports are rejected | `node --test scripts/eslint/chat-history-boundary.test.mjs`; `pnpm lint:source`, `pnpm typecheck`, `pnpm check:tests-wired` |
+
+The coordinator receives current ownership through callbacks. A pending history
+response cannot replace a send, edit, explicit reset or active generation.
+Cancellation suppresses publication without aborting shared requests. A 404 is
+authoritative absence; only a network failure can use offline history. The
+transport reuses the existing authenticated cache and revision/write guards.
+
+
 - [`familiar-identity-context.md`](familiar-identity-context.md) — how a familiar's declared identity reaches the model, and what the injection may not do
 - [`auto-mission-mode.md`](auto-mission-mode.md) — `/auto`, its status blocks, and the closing questionnaire
 - [`orchestration-ready-tasks.md`](orchestration-ready-tasks.md) — the shared task contract every familiar and orchestrator reads and writes

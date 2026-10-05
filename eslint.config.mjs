@@ -59,6 +59,33 @@ export default [
       "react-hooks/rules-of-hooks": "error",
     },
   },
+  // The saved-history coordinator has no UI/runtime/storage authority. Its
+  // transport adapter alone reaches the existing browser caches. Explicit
+  // imports keep those two responsibilities independently understandable.
+  ...[
+    ["src/lib/chat/history-load.ts", [
+      "../chat-turn-state.ts", "../chat-transcript-load.ts",
+      "../conversation-revision.ts", "../workflow-step-progress.ts",
+    ]],
+    ["src/lib/chat/history-sources.ts", [
+      "../conversation-cache.ts", "../offline-cache.ts",
+      "../chat-turn-state.ts", "./history-load.ts",
+    ]],
+  ].map(([file, allowed]) => ({
+    files: [file],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          regex: `^(?!(?:${allowed.map((specifier) => specifier.replaceAll(".", "\\.")).join("|")})$).+`,
+          message: "Saved history imports only its explicit contracts; UI, server and runtime ownership stay outside this module.",
+        }],
+      }],
+      "no-restricted-syntax": ["error", {
+        selector: "ImportExpression",
+        message: "Saved history dependencies must use the explicit static import boundary.",
+      }],
+    },
+  })),
   {
     files: ["src/components/**/*.tsx"],
     linterOptions: {

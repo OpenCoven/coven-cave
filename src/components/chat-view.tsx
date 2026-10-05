@@ -80,23 +80,14 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
-import {
-  ConversationLoadError,
-  invalidateConversation,
-  loadConversation,
-  offlineConversationWriteNeeded,
-  readConversationForPaint,
-  recordOfflineConversationWrite,
-} from "@/lib/conversation-cache";
+import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
-import { sameConversationRevision } from "@/lib/conversation-revision";
-import { deleteOfflineCacheEntry, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
   clearLiveChatGenerationAliases,
-  mapConversationHistoryTurns,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
@@ -105,7 +96,6 @@ import {
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
   type ChatTurnLifecycle,
-  type ConversationHistoryPayload,
   type LiveChatGenerationMetadata,
   type LiveChatGenerationSnapshot,
   type ProgressEvent,
@@ -113,7 +103,8 @@ import {
   type Turn,
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
-import { pendingHistorySystemTurns, startChatTranscriptLoad } from "@/lib/chat-transcript-load";
+import { startChatHistoryLoad, type ChatHistoryState } from "@/lib/chat/history-load";
+import { chatHistorySources } from "@/lib/chat/history-sources";
 import {
   chatTranscriptWindow,
   chatTranscriptWindowForTurn,
@@ -382,7 +373,6 @@ import {
   type ChatStreamClientHealth,
   type ChatStreamHealthAction,
 } from "@/lib/chat-stream-health";
-import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
@@ -574,21 +564,6 @@ export type ChatViewHandle = {
 /** Perf span: opening a thread until its transcript first paints (#5448). */
 const THREAD_OPEN_SPAN = "chat:thread-open";
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline" | "revalidating";
-
-async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
-  const params = new URLSearchParams({ sessionId });
-  try {
-    const res = await fetch(`/api/flows/session-transcript?${params.toString()}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    const json = await res.json() as { ok?: boolean; transcript?: string };
-    const transcript = typeof json.transcript === "string" ? json.transcript.trim() : "";
-    if (!json.ok || !transcript) return null;
-    return transcript;
-  } catch {
-    return null;
-  }
-}
 type FailedSend = {
   text: string;
   attachments: ChatAttachment[];
@@ -4416,216 +4391,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onSessionsChangedRef.current?.();
       }
     }
-    const applyConversationPayload = (json: ConversationHistoryPayload, localSystemTurns: Turn[] = []) => {
-      const mapped = [...mapConversationHistoryTurns(json.conversation?.turns ?? [], sessionId), ...localSystemTurns];
-      setFlowTranscriptFallback(null);
-      setTurns(mapped);
-      turnsRef.current = mapped;
-      setActiveLeafId(
-        typeof json.conversation?.activeLeafId === "string" ? json.conversation.activeLeafId : "",
-      );
-      setHistoryState("loaded");
-    };
-    // A history request can start just before the user sends. By the time its
-    // successful response arrives, its transcript is already stale; applying
-    // it would erase the optimistic user/assistant pair from the screen. The
-    // live registry is the authority until that generation settles.
-    const hasLiveGeneration = () => {
-      const live = readLiveChatGeneration(sessionId);
-      return Boolean(live && isLiveSnapshotActive(live, Date.now()));
-    };
-    // A prefetched (hover) or previously loaded transcript paints immediately
-    // instead of blanking to the history skeleton. The fetch below still runs
-    // as revalidation, so a stale cache entry is corrected as soon as the
-    // network answers — the cache is never the source of truth.
-    // Open-to-first-paint for this thread (#5448), recorded once and only when
-    // a transcript actually paints: a cache hit, the durable copy, or the
-    // network payload. An abandoned or failed open records nothing.
     const endThreadSpan = startSpan(THREAD_OPEN_SPAN);
-    // A painted transcript is what app load was waiting for (#5649).
-    const endThreadOpenSpan = () => {
-      endThreadSpan();
-      markStartupSettled();
-    };
-    const cachedPayload = readConversationForPaint(sessionId) as ConversationHistoryPayload | null;
-    const cachedConversation =
-      cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
-    if (cachedConversation) {
-      setLinkedContext(cachedConversation.context ?? null);
-      applyConversationPayload(cachedConversation);
-      endThreadOpenSpan();
-    } else if (isThreadSwitch) {
-      // Thread switch: blank the PREVIOUS thread's transcript synchronously so
-      // the history skeleton renders while this thread's history loads —
-      // otherwise the old thread's messages stay visible until the fetch
-      // lands (the skeleton only shows when turns.length === 0). Same-session
-      // reloads (settle refetch / retry) keep the visible transcript in place
-      // while revalidating. Clearing turnsRef also keeps keepLiveSession()
-      // from counting the old thread's turns if this fetch fails.
-      const emptyTurns: Turn[] = [];
-      setTurns(emptyTurns);
-      turnsRef.current = emptyTurns;
-      setActiveLeafId("");
-    }
-    let cancelled = false;
-    void (async () => {
-      if (!cachedConversation) setHistoryState("loading");
-      let durableConversation: ConversationHistoryPayload | null = null;
-      let paintedConversation = cachedConversation;
-      let paintedTurns = turnsRef.current;
-      let localSystemTurns: Turn[] = [];
-      const resetRevision = transcriptResetRevisionRef.current;
-      const hasNewerGeneration = () =>
-        transcriptResetRevisionRef.current !== resetRevision ||
-        hasLiveGeneration() || pendingHistorySystemTurns(paintedTurns, turnsRef.current) === null;
-      const paintHistory = (payload: ConversationHistoryPayload) => {
-        const additions = pendingHistorySystemTurns(paintedTurns, turnsRef.current);
-        if (additions === null || hasNewerGeneration()) return;
-        localSystemTurns = [...localSystemTurns, ...additions];
-        applyConversationPayload(payload, localSystemTurns);
-        endThreadOpenSpan();
-        paintedTurns = turnsRef.current;
-      };
-      const paintDurable = (payload: ConversationHistoryPayload) => {
-        if (cancelled || hasNewerGeneration()) return;
-        durableConversation = payload;
-        paintedConversation = payload;
-        setLinkedContext(durableConversation.context ?? null);
-        paintHistory(durableConversation);
-        // The network is still in flight: a slow request is not an outage.
-        setHistoryState("revalidating");
-      };
-      const historyLoad = startChatTranscriptLoad<ConversationHistoryPayload>({
-        loadNetwork: () => loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>,
-        loadDurable: async () => {
-          if (cachedConversation) return null;
-          const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
-          return cached?.data.ok && cached.data.conversation ? cached.data : null;
+    return startChatHistoryLoad({
+      sessionId,
+      isThreadSwitch,
+      flowBackedSession,
+      sources: chatHistorySources,
+      view: {
+        readTurns: () => turnsRef.current,
+        syncTurns: (next) => { turnsRef.current = next; },
+        readResetRevision: () => transcriptResetRevisionRef.current,
+        hasLiveGeneration: () => {
+          const live = readLiveChatGeneration(sessionId);
+          return Boolean(live && isLiveSnapshotActive(live, Date.now()));
         },
-        onPendingDurable: paintDurable,
-      });
-      try {
-        const json = await historyLoad.network;
-        if (cancelled) return;
-        if (hasNewerGeneration()) {
-          setHistoryState("loaded");
-          return;
-        }
-        setLinkedContext(json?.context ?? null);
-        if (json?.ok && json.conversation) {
-          if (hasLiveGeneration()) {
-            setHistoryState("loaded");
-            return;
-          }
-          // Skipped for an unchanged revision (#5607): the write re-encrypts
-          // the whole transcript, and a reopen almost always revalidates to
-          // exactly what was written last time.
-          if (offlineConversationWriteNeeded(sessionId, json)) {
-            void writeOfflineCache(
-              "conversation",
-              sessionId,
-              json,
-              json.conversation.activeLeafId ?? "conversation",
-            ).then((written) => {
-              if (written) recordOfflineConversationWrite(sessionId, json);
-            });
-          }
-          // Revalidation no-op guard: when the cache already painted this exact
-          // conversation, skip re-applying it. applyConversationPayload maps
-          // fresh turn objects every call, so an identical re-apply rebuilds the
-          // whole transcript — a visible flicker on heavy blocks (code, images)
-          // every time a cached thread is reopened. Content-equal → leave the
-          // painted turns untouched; only a real change re-renders.
-          if (
-            paintedConversation &&
-            sameConversationRevision(
-              json.conversation,
-              paintedConversation.conversation as ConversationHistoryPayload["conversation"],
-            )
-          ) {
-            setHistoryState("loaded");
-            return;
-          }
-          paintHistory(json);
-        } else if (json?.ok && json.context) {
-          // Known affiliation (e.g. fresh task chat) — no transcript yet.
-          if (keepLiveSession() || hasNewerGeneration()) {
-            setHistoryState("loaded");
-            return;
-          }
-          setFlowTranscriptFallback(null);
-          setTurns([]);
-          setActiveLeafId("");
-          setHistoryState("loaded");
-        } else {
-          if (keepLiveSession() || hasNewerGeneration()) {
-            setHistoryState("loaded");
-            return;
-          }
-          setFlowTranscriptFallback(null);
-          setTurns([]);
-          setActiveLeafId("");
-          setHistoryState("missing");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          if (keepLiveSession() || hasNewerGeneration()) {
-            setHistoryState("loaded");
-            return;
-          }
-          // A 404 is authoritative absence, not an offline fallback. On a
-          // real network failure only, let slow decryption finish before
-          // choosing error vs offline — success never waits for it.
-          if (!(error instanceof ConversationLoadError && error.status === 404)) {
-            const durable = await historyLoad.durable;
-            if (cancelled) return;
-            if (keepLiveSession() || hasNewerGeneration()) {
-              setHistoryState("loaded");
-              return;
-            }
-            if (durable && !durableConversation) paintDurable(durable);
-          }
-          if (
-            error instanceof ConversationLoadError
-            && error.status === 404
-            && flowBackedSession
-          ) {
-            const transcript = await loadFlowSessionTranscript(sessionId);
-            if (cancelled) return;
-            if (keepLiveSession() || hasNewerGeneration()) {
-              setHistoryState("loaded");
-              return;
-            }
-            const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
-            if (cleanedTranscript) {
-              setTurns([]);
-              setActiveLeafId("");
-              setFlowTranscriptFallback(cleanedTranscript);
-              setHistoryState("loaded");
-              return;
-            }
-          }
-          if (
-            (durableConversation || cachedConversation)
-            && !(error instanceof ConversationLoadError && error.status === 404)
-          ) {
-            setHistoryState("offline");
-            return;
-          }
-          setFlowTranscriptFallback(null);
-          setTurns([]);
-          setActiveLeafId("");
-          setHistoryState(
-            error instanceof ConversationLoadError && error.status === 404
-              ? "missing"
-              : "error",
-          );
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+        keepLiveSession,
+        setTurns,
+        setActiveLeafId,
+        setState: setHistoryState,
+        setContext: setLinkedContext,
+        setFallback: setFlowTranscriptFallback,
+        onPaint: () => {
+          endThreadSpan();
+          markStartupSettled();
+        },
+      },
+    });
   }, [sessionId, historyRetryKey, flowBackedSession]);
 
   // A 404 for a chat that is no longer in the list is a deleted (or moved)

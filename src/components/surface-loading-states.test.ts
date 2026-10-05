@@ -129,13 +129,9 @@ assert.match(
   /const isThreadSwitch = currentSessionRef\.current !== sessionId;\s*\n\s*currentSessionRef\.current = sessionId;/,
   "ChatView detects a real thread switch before adopting the new session id",
 );
-assert.match(
-  chatView,
-  // State and ref share one array now, so the transcript window's identity
-  // checks see the same empty reference on both sides of the switch.
-  /\} else if \(isThreadSwitch\) \{[\s\S]{0,700}?const emptyTurns: Turn\[\] = \[\];\s*\n\s*setTurns\(emptyTurns\);\s*\n\s*turnsRef\.current = emptyTurns;\s*\n\s*setActiveLeafId\(""\);/,
-  "ChatView blanks turns/turnsRef synchronously on thread switch so the skeleton shows instead of stale messages",
-);
+// Synchronous switch clearing and shared display/ownership identity execute
+// in chat/history-load.test.ts; actual ref binding executes in
+// chat-transcript-load.test.ts. Keep the surface's skeleton adoption here.
 assert.match(
   chatView,
   /historyState === "loading" \? \(\s*<ChatHistorySkeleton \/>/,

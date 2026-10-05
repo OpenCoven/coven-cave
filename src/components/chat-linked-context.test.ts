@@ -78,8 +78,8 @@ assert.match(
 
 assert.match(
   chatView,
-  /type ChatHistoryState = "idle" \| "loading" \| "loaded" \| "missing" \| "error"/,
-  "ChatView should explicitly track history load state for existing sessions",
+  /useState<ChatHistoryState>/,
+  "ChatView uses the coordinator's explicit history state contract",
 );
 
 assert.match(
@@ -88,11 +88,8 @@ assert.match(
   "ChatView should store linked task/GitHub context from the conversation API",
 );
 
-assert.match(
-  chatView,
-  /setHistoryState\("loading"\)[\s\S]*loadConversation\(sessionId\)[\s\S]*setLinkedContext\(json\?\.context \?\? null\)[\s\S]*setHistoryState\("loaded"\)/,
-  "ChatView should show loading state and capture API context when opening a chat",
-);
+// Loading and API-context transitions execute in chat/history-load.test.ts;
+// the actual state-setter binding executes in chat-transcript-load.test.ts.
 
 assert.match(
   chatView,
@@ -179,16 +176,12 @@ assert.match(
   "ChatView should use shared Flow ownership detection and preserve the explicit Flow origin",
 );
 
+// The flow request's encoded identity/validation and marker cleanup execute
+// in chat/history-sources.test.ts and chat/history-load.test.ts respectively.
 assert.match(
   chatView,
-  /fetch\(`\/api\/flows\/session-transcript\?\$\{params\.toString\(\)\}`/,
-  "ChatView should query the flow transcript endpoint when a flow session has no saved chat conversation",
-);
-
-assert.match(
-  chatView,
-  /const cleanedTranscript = transcript \? stripStepMarkers\(transcript\) : ""[\s\S]*setFlowTranscriptFallback\(cleanedTranscript\)/,
-  "ChatView should render scrubbed flow output instead of the generic missing-history card",
+  /transcript=\{flowTranscriptFallback\}/,
+  "ChatView renders the coordinator's recovered Flow transcript",
 );
 
 assert.match(

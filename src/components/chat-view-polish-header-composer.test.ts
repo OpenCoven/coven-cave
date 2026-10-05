@@ -441,23 +441,12 @@ assert.match(
   /function shouldKeepLiveNewChatState\(\{[\s\S]*liveSessionId[\s\S]*turnCount[\s\S]*liveSessionId === sessionId/,
   "Live new-chat preservation should not depend only on committed turn state",
 );
-assert.match(
-  source,
-  // The guard also bails on a newer transcript generation now, so allow further
-  // disjuncts. What must not change is that the catch returns early, leaving
-  // the in-flight transcript loaded rather than cleared.
-  /catch \(error\) \{[\s\S]*if \(!cancelled\) \{[\s\S]*if \(keepLiveSession\(\)[^{]*\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
-  "A stale missing-history response must not clear an in-flight transcript for the same promoted session",
-);
+// Saved-history races execute in chat/history-load.test.ts. This surface's
+// adoption and live-ref binding execute in chat-transcript-load.test.ts.
 assert.match(
   source,
   /case "session":[\s\S]*liveSessionIdRef\.current = ev\.sessionId[\s\S]*currentSessionRef\.current = ev\.sessionId/,
   "Session promotion events should bind the live transcript to the daemon session before parent rerender",
-);
-assert.match(
-  source,
-  /const hasLiveGeneration = \(\) => \{[\s\S]*readLiveChatGeneration\(sessionId\)[\s\S]*isLiveSnapshotActive[\s\S]*if \(hasLiveGeneration\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
-  "A stale successful history response must not overwrite an active live transcript",
 );
 assert.match(
   source,

@@ -343,37 +343,15 @@ test("status reports occupancy and the classified faults", async () => {
 
 test("conversation loading persists live history and falls back to a labelled read-only copy", () => {
   const chatView = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-  assert.match(
-    chatView,
-    /readOfflineCache<ConversationHistoryPayload>\("conversation", sessionId\)/,
-  );
-  assert.match(chatView, /writeOfflineCache\(\s*"conversation",\s*sessionId,\s*json,/);
-  // The durable copy is painted through `paintDurable`, so that the local
-  // system turns added while the load was in flight survive the repaint. It is
-  // labelled "revalidating" while the network is still in flight (#5583) — a
-  // slow request is not an outage — and the surface turns read-only "offline"
-  // only once the network load has actually failed.
-  assert.match(
-    chatView,
-    /const paintDurable = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?durableConversation = payload;[\s\S]*?paintHistory\(durableConversation\);[\s\S]*?setHistoryState\("revalidating"\);/,
-  );
-  assert.match(
-    chatView,
-    /\(durableConversation \|\| cachedConversation\)\s*&& !\(error instanceof ConversationLoadError && error\.status === 404\)\s*\) \{\s*setHistoryState\("offline"\);/,
-    "a failed network load over a painted durable copy is what makes the chat read-only",
-  );
-  assert.match(
-    chatView,
-    /const paintHistory = \(payload: ConversationHistoryPayload\) => \{[\s\S]*?applyConversationPayload\(payload, localSystemTurns\);/,
-  );
+  const sources = readFileSync(new URL("./chat/history-sources.ts", import.meta.url), "utf8");
+  assert.match(sources, /readOfflineCache(?:<[^>]+>)?\(\s*"conversation"/);
+  assert.match(sources, /writeOfflineCache\(\s*"conversation"/);
+  // Revalidation, notice retention and authoritative absence execute in
+  // chat/history-load.test.ts, including mutation checks for those guarantees.
   assert.match(chatView, /Offline copy · Read only/);
   assert.match(chatView, /historyState === "offline" && sessionId/);
   assert.match(chatView, /const offlineReadOnly = historyState === "offline"/);
   assert.match(chatView, /if \(historyState === "offline"\) \{\s*announce\("Offline copies are read only/);
-  assert.match(
-    chatView,
-    /\(durableConversation \|\| cachedConversation\)\s*&& !\(error instanceof ConversationLoadError && error\.status === 404\)/,
-  );
   assert.match(chatView, /readOnly=\{offlineReadOnly\}/);
   assert.match(chatView, /feedbackContext=\{readOnly \? undefined : feedbackContext\}/);
   assert.doesNotMatch(chatView, /taskSuggestion|FollowUpTaskReview/);
