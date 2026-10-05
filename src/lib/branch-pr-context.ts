@@ -18,6 +18,7 @@
 
 import { execFile } from "node:child_process";
 import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import { prLookupArgs, resolvePrTarget } from "./github-pr-target.ts";
 import type { SessionPullRequestContext } from "@/lib/types";
 
 const PR_URL_RE = /https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/;
@@ -91,44 +92,15 @@ export function parseBranchPr(
   return null;
 }
 
-/** Resolve a repo's `owner/name` from its origin remote via `git`, so the REST
- *  list query can be scoped to the right repository. */
-function repoSlug(root: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "git",
-      ["-C", root, "remote", "get-url", "origin"],
-      { windowsHide: true, timeout: 10_000, env: GH_ENV() },
-      (err, stdout) => {
-        if (err) return reject(err);
-        const m = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\s*$/.exec(stdout.trim());
-        if (!m) return reject(new Error("origin is not a github remote"));
-        resolve(m[1]!);
-      },
-    );
-  });
-}
-
+/** The branch's PR, looked up where it was opened (#5795): origin's parent
+ *  when origin is a fork, by `<origin owner>:<branch>`. Origin alone missed
+ *  every PR a fork opened. */
 const defaultRunner: BranchPrRunner = async (root, branch) => {
-  const slug = await repoSlug(root);
-  const owner = slug.split("/")[0]!;
+  const target = await resolvePrTarget(root);
+  if (!target) throw new Error("origin is not a github remote");
   return new Promise((resolve, reject) => {
-    execFile(
-      "gh",
-      [
-        "api",
-        "-X",
-        "GET",
-        `repos/${slug}/pulls`,
-        "-f",
-        `head=${owner}:${branch}`,
-        "-f",
-        "state=all",
-        "-f",
-        "per_page=1",
-      ],
-      { windowsHide: true, cwd: root, timeout: 10_000, env: GH_ENV() },
-      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    execFile("gh", prLookupArgs(target, branch), { windowsHide: true, cwd: root, timeout: 10_000, env: GH_ENV() }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
     );
   });
 };

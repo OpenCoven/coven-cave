@@ -294,4 +294,23 @@ for (const [key, value] of [
   assert.deepEqual(pathChunks([]), []);
 }
 
+// ── 15. A write during the restore's safety checkpoint is kept (#5795) ─────
+// The restore decided from the worktree, took its safety checkpoint, then
+// wrote: an agent's write in between was overwritten, and in no checkpoint.
+{
+  const { repo, git } = makeRepo({ "a.txt": "base\n", "b.txt": "base\n" });
+  write(repo, "a.txt", "checkpointed a\n");
+  write(repo, "b.txt", "checkpointed b\n");
+  const file = await checkpoint(repo);
+  git("checkout", "HEAD", "--", ".");
+  const outcome = await restore(repo, file, async () => {
+    write(repo, "a.txt", "agent v2\n");
+    return "safety.patch";
+  });
+  assert.deepEqual(outcome.kept, ["a.txt"], "the file written meanwhile is kept");
+  assert.deepEqual(outcome.restored, ["b.txt"]);
+  assert.equal(read(repo, "a.txt"), "agent v2\n", "and not overwritten");
+  assert.equal(read(repo, "b.txt"), "checkpointed b\n");
+}
+
 console.log("checkpoint-restore: ok");

@@ -26,7 +26,8 @@ import {
   type CheckpointRestoreOutcome,
 } from "@/lib/server/checkpoint-restore";
 import { gitOperationInProgress, operationInProgressMessage } from "@/lib/server/git-operation-in-progress";
-import { captureCommitStart, rollbackCommitStart } from "@/lib/server/commit-rollback";
+import { captureCommitStart, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "@/lib/server/commit-rollback";
+import { prCreateArgs, resolvePrTarget } from "@/lib/github-pr-target";
 
 export const dynamic = "force-dynamic";
 
@@ -69,25 +70,28 @@ const DIFF_CAP_CHARS = 200 * 1024;
 
 // ── git helpers ───────────────────────────────────────────────────────────────
 
-/** Run git via execFile (argument array, no shell interpolation). */
-function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+/** Run git via execFile (argument array, no shell interpolation). `env`
+ *  adds to the server's own, for a commit's private index (#5795). */
+function git(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("git", args, {
     windowsHide: true,
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
+    env: env ? { ...process.env, ...env } : process.env,
   });
 }
 
 /** Run git with `input` on stdin. Paths go through `--pathspec-from-file=-`
  *  this way, so a long list can't overrun the OS argument limit (#5756).
  *  Still execFile with an argument array: the promise carries its child. */
-function gitWithInput(cwd: string, args: string[], input: string): Promise<{ stdout: string; stderr: string }> {
+function gitWithInput(cwd: string, args: string[], input: string, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   const pending = execFileAsync("git", args, {
     windowsHide: true,
     cwd,
     timeout: GIT_TIMEOUT_MS * 3,
     maxBuffer: MAX_GIT_BUFFER,
+    env: env ? { ...process.env, ...env } : process.env,
   });
   pending.child.stdin?.end(input);
   return pending;
@@ -110,8 +114,14 @@ function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stder
  *  read-only 10s budget. Tests shorten it (`COVEN_CAVE_GIT_LONG_TIMEOUT_MS`)
  *  to drive a hook past it. */
 const NET_TIMEOUT_MS = Number(process.env.COVEN_CAVE_GIT_LONG_TIMEOUT_MS) || 60_000;
-function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+function gitLong(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("git", args, {
+    windowsHide: true,
+    cwd,
+    timeout: NET_TIMEOUT_MS,
+    maxBuffer: MAX_GIT_BUFFER,
+    env: env ? { ...process.env, ...env } : process.env,
+  });
 }
 /** Run the GitHub CLI (argument array, no shell) for PR creation. */
 function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -151,11 +161,40 @@ async function worktreeName(repoRoot: string): Promise<string | null> {
 }
 
 /** The repo's default branch: origin/HEAD when known, else main/master, else main. */
+const REMOTE_HEAD_TTL_MS = 5 * 60_000;
+const REMOTE_HEAD_FAILED_TTL_MS = 30_000;
+const remoteHeadCache = new Map<string, { branch: string | null; at: number }>();
+
+/** The remote's own default branch (#5795). `origin/HEAD` is written once, at
+ *  clone: it goes stale when the default is renamed, and a repository made
+ *  with `git init` and pushed has none, so the desk committed on the real
+ *  default and Create PR pushed to it. Null with no `origin`, or when it
+ *  can't be asked without a prompt. */
+async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
+  const url = await git(repoRoot, ["remote", "get-url", "origin"]).then(({ stdout }) => stdout.trim(), () => "");
+  if (!url) return null;
+  const key = `${repoRoot}\0${url}`;
+  const hit = remoteHeadCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.branch ? REMOTE_HEAD_TTL_MS : REMOTE_HEAD_FAILED_TTL_MS)) return hit.branch;
+  const branch = await execFileAsync("git", ["ls-remote", "--symref", "origin", "HEAD"], {
+    windowsHide: true,
+    cwd: repoRoot,
+    timeout: GIT_TIMEOUT_MS,
+    maxBuffer: MAX_GIT_BUFFER,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  }).then(({ stdout }) => /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(stdout)?.[1] ?? null, () => null);
+  remoteHeadCache.set(key, { branch, at: Date.now() });
+  return branch;
+}
+
 async function defaultBranch(repoRoot: string): Promise<string> {
+  const remote = await remoteHeadBranch(repoRoot);
+  if (remote) return remote;
   try {
     const { stdout } = await git(repoRoot, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
     const m = stdout.trim().match(/refs\/remotes\/origin\/(.+)$/);
-    if (m) return m[1];
+    // Only while what it names still exists (#5795).
+    if (m && (await refExists(repoRoot, `refs/remotes/origin/${m[1]}`))) return m[1];
   } catch { /* no origin/HEAD ref */ }
   for (const b of ["main", "master"]) {
     try {
@@ -710,6 +749,8 @@ export async function POST(req: NextRequest) {
     projectRoot?: string;
     path?: string;
     confirmUntracked?: boolean;
+    /** The reverted row's version, as the user reviewed it (#5795). */
+    expectedChangeVersion?: string;
     action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
     checkpoint?: string;
     message?: string;
@@ -845,7 +886,14 @@ export async function POST(req: NextRequest) {
       // Where things stood, so a refused or failed commit leaves no trace
       // (#5756): it used to leave the files staged, and strand a new branch,
       // checked out when HEAD had been detached.
-      const start = await captureCommitStart(root.repoRoot, cur, verified?.indexTree);
+      // A reviewed commit is built in a private index (#5795): the real one
+      // is never staged, so another process's `git add` while the commit's
+      // hooks run can't join it, and a rollback has no index to put back.
+      const privateIndex = verified ? await createPrivateIndex(root.repoRoot) : null;
+      try {
+      const start = privateIndex
+        ? { ...(await captureCommitStart(root.repoRoot, cur, verified?.indexTree)), index: null }
+        : await captureCommitStart(root.repoRoot, cur, verified?.indexTree);
       let branch = cur;
       let branchCreated = false;
       const rollback = () => rollbackCommitStart(root.repoRoot, start, branchCreated ? branch : null);
@@ -877,6 +925,7 @@ export async function POST(req: NextRequest) {
             root.repoRoot,
             ["--literal-pathspecs", "add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
             paths.join("\0"),
+            privateIndex?.env,
           );
         } else {
           await git(root.repoRoot, ["add", "-A"]);
@@ -904,35 +953,50 @@ export async function POST(req: NextRequest) {
           targetedPaths
             ? ["--literal-pathspecs", "commit", "-S", "--only", "-m", message, "--", ...targetedPaths]
             : ["commit", "-S", "-m", message],
+          privateIndex?.env,
         );
       } catch (err) {
         const timedOut = (err as { killed?: boolean }).killed === true;
-        // A commit that landed is a commit (#5781): a post-commit hook that
-        // outran the time limit was reported as a failure, and the rollback
-        // then reset the index under the new commit, so its own files read
-        // as deleted and untracked.
-        const head = await git(root.repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
-          .then(({ stdout }) => stdout.trim(), () => null);
-        if (head && head !== start.oid) {
+        // A commit that landed is a commit (#5781), but only the desk's own
+        // (#5795): an agent's commit in the session's terminal moves HEAD
+        // too, and was reported as the desk's.
+        const landed = await deskCommitLanded(root.repoRoot, start, { indexEnv: privateIndex?.env, message });
+        if (landed) {
           warning = timedOut
             ? `the commit landed, but a hook after it was still running after ${NET_TIMEOUT_MS / 1000} seconds`
             : `the commit landed, but git reported: ${stderrOf(err)}`;
         } else {
-          // Nothing staged, no new branch, HEAD where it was.
+          // Nothing staged, no new branch, HEAD where it was, unless another
+          // process committed meanwhile, which is said and left alone.
           await rollback();
+          const head = await git(root.repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+            .then(({ stdout }) => stdout.trim(), () => null);
+          const foreign = head !== start.oid
+            ? `; another commit landed on ${branch} while the desk was committing, and it isn't the desk's`
+            : "";
           if (timedOut) {
             return NextResponse.json(
-              { ok: false, error: `the commit didn't finish within ${NET_TIMEOUT_MS / 1000} seconds, so nothing was committed; a commit hook may be slow` },
+              { ok: false, error: `the commit didn't finish within ${NET_TIMEOUT_MS / 1000} seconds, so nothing was committed; a commit hook may be slow${foreign}` },
               { status: 504 },
             );
           }
           const detail = stderrOf(err);
           const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
           return NextResponse.json(
-            { ok: false, error: signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}` },
+            { ok: false, error: `${signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}`}${foreign}` },
             { status: 500 },
           );
         }
+      }
+      if (privateIndex && verified) {
+        // The real index learns what was committed, for those paths only:
+        // anything else another process staged meanwhile stays staged.
+        const paths = verified.files.flatMap((file) => (file.renamedFrom ? [file.path, file.renamedFrom] : [file.path]));
+        await gitWithInput(
+          root.repoRoot,
+          ["--literal-pathspecs", "reset", "-q", "--pathspec-from-file=-", "--pathspec-file-nul"],
+          paths.join("\0"),
+        ).catch(() => {});
       }
       const { stdout: sha } = await git(root.repoRoot, ["rev-parse", "--short", "HEAD"]);
       const { stdout: headOid } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
@@ -946,6 +1010,9 @@ export async function POST(req: NextRequest) {
         defaultBranch: def,
         ...(warning ? { warning } : {}),
       });
+      } finally {
+        privateIndex?.dispose();
+      }
       } catch (err) {
         return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
       }
@@ -1024,12 +1091,16 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
       }
+      // In origin's parent when origin is a fork, from origin's branch, and
+      // always named (#5795): left to itself, gh picked the fork, or an
+      // `upstream` remote where the branch was never pushed.
+      const target = await resolvePrTarget(root.repoRoot);
+      const prArgs = prCreateArgs(target, { base: def, branch, title, body: prBody });
+      const base = prArgs[prArgs.indexOf("--base") + 1]!;
       try {
-        const { stdout } = await ghCli(root.repoRoot, [
-          "pr", "create", "--base", def, "--head", branch, "--title", title, "--body", prBody,
-        ]);
+        const { stdout } = await ghCli(root.repoRoot, prArgs);
         const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
-        return NextResponse.json({ ok: true, url, branch, base: def });
+        return NextResponse.json({ ok: true, url, branch, base });
       } catch (err) {
         const e = err as NodeJS.ErrnoException & { stderr?: string };
         if (e.code === "ENOENT") {
@@ -1038,7 +1109,7 @@ export async function POST(req: NextRequest) {
         const detail = stderrOf(err);
         // gh exits non-zero when a PR already exists; its message includes the URL.
         const existing = detail.match(PR_URL_RE);
-        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base: def, existed: true });
+        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base, existed: true });
         return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
       }
       } catch (err) {
@@ -1136,6 +1207,24 @@ export async function POST(req: NextRequest) {
   const entry = await changedEntry(root.repoRoot, body.path);
   if (!entry) return pathNotAllowed();
   const from = entry.renamedFrom && resolveContainedFile(root.repoRoot, entry.renamedFrom) ? entry.renamedFrom : undefined;
+  // The file as the desk decides on it (#5795): the version the user reviewed
+  // when the client sends it, and again after the safety checkpoint, which
+  // can take a while. A write that landed meanwhile was reverted, and was in
+  // no checkpoint.
+  const stamp = async () => {
+    const files: ChangedFile[] = [body.path as string, ...(from ? [from] : [])].map((p) => ({ path: p, status: entry.status }));
+    await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(root.repoRoot, filePath));
+    return files.map((file) => file.changeVersion ?? "").join("\n");
+  };
+  const changedSinceReview = () =>
+    NextResponse.json(
+      { ok: false, stale: true, error: "this file changed since you reviewed it; nothing was reverted. Review it again" },
+      { status: 409 },
+    );
+  const decided = await stamp();
+  if (typeof body.expectedChangeVersion === "string" && body.expectedChangeVersion !== decided.split("\n")[0]) {
+    return changedSinceReview();
+  }
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
@@ -1204,6 +1293,7 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
+    if ((await stamp()) !== decided) return changedSinceReview();
 
     switch (plan.action) {
       case "checkout":

@@ -16,13 +16,25 @@ assert.match(
 for (const command of ['"checkout", "HEAD", "--", body.path', '"rm", "-f", "--", body.path', '"clean", "-f", "--", body.path', '"ls-files", "--error-unmatch", "--", relPath']) {
   assert.ok(source.includes(`["--literal-pathspecs", ${command}]`), `literal pathspecs for ${command}`);
 }
+// A revert re-stamps its file after the safety checkpoint (#5795): a write
+// that landed while it was taken was reverted and in no checkpoint.
+assert.match(source, /checkpointPath = \(await checkpointChanges\(root\.repoRoot\)\)\.path;[\s\S]{0,400}if \(\(await stamp\(\)\) !== decided\) return changedSinceReview\(\);\s*switch \(plan\.action\)/);
+// Create PR names its repository and head (#5795): gh picked a fork, or an
+// upstream remote where the branch was never pushed.
+assert.match(source, /const target = await resolvePrTarget\(root\.repoRoot\);\s*const prArgs = prCreateArgs\(target, \{ base: def, branch, title, body: prBody \}\);/);
+assert.match(source, /await ghCli\(root\.repoRoot, prArgs\)/);
 // A refused or failed commit rolls back staging and any branch it made (#5756).
-assert.match(source, /const start = await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\);/);
+assert.match(source, /: await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\);/);
+// A reviewed commit is built in a private index, so the rollback has no
+// index to put back (#5795).
+assert.match(source, /const start = privateIndex\s*\? \{ \.\.\.\(await captureCommitStart\(root\.repoRoot, cur, verified\?\.indexTree\)\), index: null \}/);
+assert.match(source, /"--pathspec-file-nul"\],\s*paths\.join\("\\0"\),\s*privateIndex\?\.env,\s*\);/, "the reviewed files are staged in the private index");
+assert.match(source, /\["commit", "-S", "-m", message\],\s*privateIndex\?\.env,/, "and committed from it");
 assert.match(source, /restamped\.some[\s\S]{0,200}await rollback\(\);\s*return staleCommit\(\);/, "the stale refusal rolls back");
 assert.match(
   source,
-  /if \(head && head !== start\.oid\) \{[\s\S]{0,400}\} else \{\s*\/\/ Nothing staged, no new branch, HEAD where it was\.\s*await rollback\(\);/,
-  "a failed commit rolls back, unless it landed (#5781)",
+  /const landed = await deskCommitLanded\(root\.repoRoot, start, \{ indexEnv: privateIndex\?\.env, message \}\);\s*if \(landed\) \{[\s\S]{0,400}\} else \{[\s\S]{0,200}await rollback\(\);/,
+  "a failed commit rolls back, unless the desk's own commit landed (#5781, #5795)",
 );
 // Every step between capture and commit rolls back on failure (#5775 review).
 assert.match(source, /checkout", "-b", branch\][\s\S]{0,2000}\} catch \(err\) \{\s*await rollback\(\);\s*throw err;\s*\}\s*let warning: string \| undefined;\s*try \{\s*await gitLong\(/, "a failed add or re-stamp rolls back before the commit is tried");

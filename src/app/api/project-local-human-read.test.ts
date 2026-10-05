@@ -54,8 +54,8 @@ assert.match(
 );
 assert.match(
   helper,
-  /if \(await isHumanMobileWrite\(args\.request, surface\)\) \{\s*return;/,
-  "registered-project no-familiar writes consult the opt-in mobile-write predicate",
+  /if \(await isHumanMobileWrite\(args\.request, surface\)\) \{\s*if \(leadsOutOfProject\(requestedPath, project, projects\)\) \{\s*throw new ProjectAccessDeniedError\("this path leads outside its project"\);\s*\}\s*return;/,
+  "registered-project no-familiar writes consult the opt-in mobile-write predicate, inside the project (#5795)",
 );
 assert.doesNotMatch(
   helper,

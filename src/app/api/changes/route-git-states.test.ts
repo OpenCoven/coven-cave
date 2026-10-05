@@ -386,4 +386,163 @@ const hook = (dir, name, body) => {
   assert.equal(gone.json.missingRoot, true, "the desk can tell a gone folder from a failure");
 }
 
+// An independent process, an agent in the session's terminal: outside the
+// commit's process tree, its environment and its private index.
+const agentGit = (dir, args) =>
+  `env -i PATH="$PATH" HOME="${process.env.HOME}" GIT_CONFIG_GLOBAL="${process.env.GIT_CONFIG_GLOBAL}" GIT_CONFIG_NOSYSTEM=1 git -C "${dir}" ${args}`;
+const reviewed = async (dir) =>
+  (await get({ projectRoot: dir })).json.files.map((file) => ({ path: file.path, changeVersion: file.changeVersion }));
+
+// ── 20. Another process's commit during the desk's isn't the desk's (#5795) ─
+// It was reported as landed, with the agent's commit (and the desk's reviewed
+// file, swept in by `-a`) offered for a PR as the desk's own.
+{
+  const { dir, git } = repo();
+  writeFileSync(path.join(dir, "agent.txt"), "agent\n");
+  git("add", "agent.txt");
+  git("commit", "-q", "-m", "seed agent file");
+  hook(dir, "pre-commit", ['echo "agent edit" > agent.txt', agentGit(dir, 'commit -q --no-verify -am "agent: wip"')].join("\n"));
+  writeFileSync(path.join(dir, "f.txt"), "desk edit\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "desk: reviewed change", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 500, JSON.stringify(commit.json));
+  assert.match(commit.json.error, /another commit landed on cave\/\S+ while the desk was committing, and it isn't the desk's$/);
+  assert.equal(git("log", "-1", "--format=%s").trim(), "agent: wip", "the agent's commit is kept");
+  assert.match(git("rev-parse", "--abbrev-ref", "HEAD").trim(), /^cave\//, "and the checkout stays on it");
+  assert.ok(!git("log", "--all", "--format=%s").includes("desk: reviewed change"));
+}
+
+// ── 21. A hook that refuses while another process commits is a refusal ─────
+{
+  const { dir, git } = repo();
+  hook(dir, "pre-commit", [
+    "echo agent > agent.txt",
+    agentGit(dir, "add agent.txt"),
+    agentGit(dir, 'commit -q --no-verify -m "agent: unrelated work"'),
+    'echo "lint failed: 3 problems" >&2',
+    "exit 1",
+  ].join("\n"));
+  writeFileSync(path.join(dir, "f.txt"), "desk edit\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "desk: wire it", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 500, JSON.stringify(commit.json));
+  assert.match(commit.json.error, /^commit failed: lint failed: 3 problems; another commit landed/);
+  assert.ok(!git("log", "--all", "--format=%s").includes("desk: wire it"));
+  assert.equal(git("status", "--porcelain"), " M f.txt\n", "the desk's edit is left as it was");
+}
+
+// ── 22. A file another process stages during the commit stays out (#5795) ──
+// The commit staged the reviewed files, then committed the whole index.
+{
+  const { dir, git } = repo();
+  writeFileSync(path.join(dir, "f.txt"), "reviewed desk edit\n");
+  const expectedChanges = await reviewed(dir);
+  hook(dir, "pre-commit", ['echo "never reviewed" > secret.txt', agentGit(dir, "add secret.txt")].join("\n"));
+  const commit = await post({ projectRoot: dir, action: "commit", message: "desk: reviewed", expectedChanges });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(git("show", "--name-only", "--format=", "HEAD").trim(), "f.txt", "only the reviewed file");
+  assert.equal(git("status", "--porcelain"), "A  secret.txt\n", "the other staging is kept, and the index matches the commit");
+}
+
+// ── 23. A reviewed commit whose post-commit hook outruns the limit landed ──
+// Judged by its private index's tree (#5795); the real index then matches.
+{
+  const { dir, git } = repo();
+  hook(dir, "post-commit", "sleep 6");
+  writeFileSync(path.join(dir, "f.txt"), "edited\n");
+  writeFileSync(path.join(dir, "new.txt"), "new\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "reviewed slow hook after", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.match(commit.json.warning, /^the commit landed, but a hook after it was still running after 3 seconds$/);
+  assert.equal(git("log", "-1", "--format=%s").trim(), "reviewed slow hook after");
+  assert.equal(git("status", "--porcelain"), "", "the real index learned the commit");
+}
+
+// A repository with a local bare remote whose default branch is `name`.
+function withRemote(name, { setHead = true } = {}) {
+  const { dir, git } = repo({ commit: false });
+  git("checkout", "-q", "-b", name);
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  const bare = `${dir}.git`;
+  execFileSync("git", ["init", "-q", "--bare", "-b", name, bare]);
+  git("remote", "add", "origin", bare);
+  git("push", "-q", "-u", "origin", name);
+  if (setHead) git("remote", "set-head", "origin", "-a");
+  const remoteTip = (branch) => execFileSync("git", ["--git-dir", bare, "rev-parse", branch], { encoding: "utf8" }).trim();
+  return { dir, git, bare, remoteTip };
+}
+
+// ── 24. The default branch is the remote's own, not a stale origin/HEAD ────
+// A clone from before GitHub renamed master to main kept origin/HEAD on
+// master, so a commit on main stayed there, and Create PR pushed it (#5795).
+{
+  const { dir, git, bare, remoteTip } = withRemote("master");
+  execFileSync("git", ["--git-dir", bare, "branch", "-m", "master", "main"]);
+  execFileSync("git", ["--git-dir", bare, "symbolic-ref", "HEAD", "refs/heads/main"]);
+  git("fetch", "-q", "origin");
+  git("branch", "-q", "-m", "master", "main");
+  git("branch", "-q", "-u", "origin/main", "main");
+  assert.equal(git("symbolic-ref", "refs/remotes/origin/HEAD").trim(), "refs/remotes/origin/master", "origin/HEAD is stale");
+  const before = remoteTip("main");
+  writeFileSync(path.join(dir, "f.txt"), "desk change\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Fix the widget", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "main");
+  assert.equal(commit.json.branchCreated, true, "the commit gets its own branch");
+  assert.match(commit.json.branch, /^cave\//);
+  assert.equal(remoteTip("main"), before);
+}
+
+// ── 25. A default named neither main nor master, with no origin/HEAD ───────
+// `git init`, add a remote, push: the usual way, and it leaves no origin/HEAD.
+{
+  const { dir, git, remoteTip } = withRemote("trunk", { setHead: false });
+  writeFileSync(path.join(dir, "f.txt"), "desk change on trunk\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Trunk change", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "trunk");
+  assert.equal(commit.json.branchCreated, true);
+  // Back on trunk with a commit of its own: Create PR won't push the default.
+  git("checkout", "-q", "trunk");
+  writeFileSync(path.join(dir, "g.txt"), "on trunk\n");
+  git("add", "g.txt");
+  git("commit", "-q", "-m", "local trunk commit");
+  const before = remoteTip("trunk");
+  const pr = await post({ projectRoot: dir, action: "create-pr", title: "Should not push" });
+  assert.equal(pr.status, 400, JSON.stringify(pr.json));
+  assert.match(pr.json.error, /you're on trunk/);
+  assert.equal(remoteTip("trunk"), before, "the remote's default is untouched");
+}
+
+// ── 26. A revert holds to the version the user reviewed (#5795) ────────────
+{
+  const { dir, git } = repo();
+  writeFileSync(path.join(dir, "f.txt"), "agent v1\n");
+  const [row] = (await get({ projectRoot: dir })).json.files;
+  writeFileSync(path.join(dir, "f.txt"), "agent v2, written after the review\n");
+  const stale = await post({ projectRoot: dir, path: "f.txt", expectedChangeVersion: row.changeVersion });
+  assert.equal(stale.status, 409, JSON.stringify(stale.json));
+  assert.equal(stale.json.stale, true);
+  assert.equal(readFileSync(path.join(dir, "f.txt"), "utf8"), "agent v2, written after the review\n", "nothing was reverted");
+  const [fresh] = (await get({ projectRoot: dir })).json.files;
+  const revert = await post({ projectRoot: dir, path: "f.txt", expectedChangeVersion: fresh.changeVersion });
+  assert.equal(revert.status, 200, JSON.stringify(revert.json));
+  assert.equal(git("status", "--porcelain"), "");
+}
+
+// ── 27. Offline, an origin/HEAD naming a branch that's gone isn't trusted ──
+// The remote can't be asked, origin/HEAD still names master, and master is
+// gone: the local main is the default, so the commit gets its own branch.
+{
+  const { dir, git, bare } = withRemote("master");
+  git("branch", "-q", "-m", "master", "main");
+  git("update-ref", "-d", "refs/remotes/origin/master");
+  rmSync(bare, { recursive: true, force: true });
+  assert.equal(git("symbolic-ref", "refs/remotes/origin/HEAD").trim(), "refs/remotes/origin/master");
+  writeFileSync(path.join(dir, "f.txt"), "offline change\n");
+  const commit = await post({ projectRoot: dir, action: "commit", message: "Offline change", expectedChanges: await reviewed(dir) });
+  assert.equal(commit.status, 200, JSON.stringify(commit.json));
+  assert.equal(commit.json.defaultBranch, "main");
+  assert.equal(commit.json.branchCreated, true);
+}
+
 console.log("changes route git states: ok");

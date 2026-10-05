@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { captureCommitStart, rollbackCommitStart } from "./commit-rollback.ts";
+import { captureCommitStart, commitSubject, createPrivateIndex, deskCommitLanded, rollbackCommitStart } from "./commit-rollback.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "commit-rollback-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
@@ -93,6 +93,56 @@ function makeRepo() {
   assert.equal(start.index, tree);
   await rollbackCommitStart(repo, start, null);
   assert.equal(git("diff", "--cached", "--name-only"), "a.txt");
+}
+
+// ── 6. Another process's commit on the new branch keeps the checkout (#5795)
+// Switching back would take that commit's files out of the worktree.
+{
+  const { repo, git } = makeRepo();
+  const start = await captureCommitStart(repo, "main");
+  git("checkout", "-q", "-b", "cave/desk");
+  writeFileSync(path.join(repo, "agent.txt"), "agent\n");
+  git("add", "agent.txt");
+  git("commit", "-q", "-m", "agent: wip");
+  await rollbackCommitStart(repo, { ...start, index: null }, "cave/desk");
+  assert.equal(git("rev-parse", "--abbrev-ref", "HEAD"), "cave/desk", "the checkout stays on the branch with the other commit");
+  assert.equal(git("log", "-1", "--format=%s"), "agent: wip");
+}
+
+// ── 7. Only the desk's own commit counts as landed (#5795) ─────────────────
+{
+  assert.equal(commitSubject("Fix the widget"), "Fix the widget");
+  assert.equal(commitSubject("\n  Fix the\nwidget  \n\nBody text\n"), "Fix the widget", "the first paragraph, joined");
+  assert.equal(commitSubject("  \n"), "");
+
+  const { repo, git } = makeRepo();
+  const start = await captureCommitStart(repo, "main");
+  writeFileSync(path.join(repo, "a.txt"), "desk\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "desk: change");
+  assert.equal(await deskCommitLanded(repo, start, { message: "desk: change" }), git("rev-parse", "HEAD"), "its parent is the start and its subject the desk's");
+  assert.equal(await deskCommitLanded(repo, start, { message: "something else" }), null, "another message is another commit");
+  writeFileSync(path.join(repo, "a.txt"), "agent\n");
+  git("commit", "-q", "-am", "desk: change");
+  assert.equal(await deskCommitLanded(repo, start, { message: "desk: change" }), null, "a commit on top of another isn't the desk's");
+
+  const { repo: repo2, git: git2 } = makeRepo();
+  const start2 = await captureCommitStart(repo2, "main");
+  const index = await createPrivateIndex(repo2);
+  try {
+    writeFileSync(path.join(repo2, "a.txt"), "desk\n");
+    execFileSync("git", ["add", "a.txt"], { cwd: repo2, env: { ...process.env, ...index.env } });
+    assert.equal(git2("diff", "--cached", "--name-only"), "", "the real index is untouched");
+    execFileSync("git", ["commit", "-q", "-m", "any message"], { cwd: repo2, env: { ...process.env, ...index.env } });
+    assert.equal(await deskCommitLanded(repo2, start2, { indexEnv: index.env, message: "desk: change" }), git2("rev-parse", "HEAD"), "with a private index, the tree decides");
+    git2("reset", "-q", "--hard", start2.oid);
+    writeFileSync(path.join(repo2, "b.txt"), "agent\n");
+    git2("add", "b.txt");
+    git2("commit", "-q", "-m", "agent: wip");
+    assert.equal(await deskCommitLanded(repo2, start2, { indexEnv: index.env, message: "agent: wip" }), null, "another tree is another commit");
+  } finally {
+    index.dispose();
+  }
 }
 
 console.log("commit-rollback: ok");

@@ -422,17 +422,25 @@ export async function restoreCheckpointPatch(
     if (write.length === 0 && remove.length === 0) return outcome;
 
     outcome.safetyCheckpointPath = (await options.beforeWrite?.()) ?? null;
-    if (write.length > 0) {
+    // Hashed again after the safety checkpoint (#5795): a write that landed
+    // while it was being taken is in no checkpoint, so it's kept, not
+    // overwritten.
+    const after = await worktreeBlobs(repoRoot, [...write, ...remove], options.contain);
+    const untouched = (rel: string) => same(after.get(rel), current.get(rel));
+    for (const rel of [...write, ...remove]) if (!untouched(rel)) outcome.kept.push(rel);
+    const writeNow = write.filter(untouched);
+    const removeNow = remove.filter(untouched);
+    if (writeNow.length > 0) {
       // From the throwaway index: right content, mode and symlinks, and the
       // real index never learns about it.
       // On stdin, past the argument limit (#5781).
-      await gitWithInput(repoRoot, ["checkout-index", "-f", "-z", "--stdin"], write.join("\0"), env);
+      await gitWithInput(repoRoot, ["checkout-index", "-f", "-z", "--stdin"], writeNow.join("\0"), env);
     }
-    for (const rel of remove) {
+    for (const rel of removeNow) {
       const abs = options.contain(rel);
       if (abs) fs.rmSync(/* turbopackIgnore: true */ abs, { force: true });
     }
-    outcome.restored = [...write, ...remove].sort();
+    outcome.restored = [...writeNow, ...removeNow].sort();
     return outcome;
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
