@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-assert.match(source, /await stampChangedFiles\(files, \(filePath\) => resolveContainedFileMetadata\(repoRoot, filePath\)\)/, "metadata reads are awaited through the bounded, failure-isolated helper");
+assert.match(source, /await stampChangedFiles\(files, containedMetadata\(repoRoot\)\)/, "metadata reads are awaited through the bounded, failure-isolated helper");
+// One real path per folder per pass over the list (#5795), not one per file.
+assert.match(source, /function containedMetadata\(repoRoot: string\)[\s\S]{0,200}const realpaths = new Map<string, Promise<string>>\(\);\s*return \(relPath\) => resolveContainedFileMetadata\(repoRoot, relPath, realpaths\);/);
 
 
 assert.match(
@@ -86,17 +88,23 @@ assert.match(
 );
 
 
-// The status GET carries the current branch (Projects hub Git section) — from
-// the existing currentBranch() helper, omitted on unborn repos.
+// The status GET carries the current branch (Projects hub Git section) and
+// the worktree name from one rev-parse (#5795), falling back to the existing
+// currentBranch() helper before the first commit.
 assert.match(
   source,
-  /branch = await currentBranch\(repoRoot\);/,
+  /\["rev-parse", "--git-dir", "--git-common-dir", "--abbrev-ref", "HEAD"\][\s\S]{0,600}const branch = await currentBranch\(repoRoot\)\.catch\(\(\) => null\);/,
   "listChanges resolves the current branch via the shared helper",
 );
 assert.match(
   source,
-  /NextResponse\.json\(\{ ok: true, repo: true, repoRoot, branch, worktree, files \}\)/,
+  /return \{ ok: true, repo: true, repoRoot, branch, worktree, files \};/,
   "the change-list response includes the branch and worktree fields",
+);
+assert.match(
+  source,
+  /return NextResponse\.json\(await sharedChangeSummary\(repoRoot, \(\) => readChanges\(repoRoot\)\)\);/,
+  "the change list is one shared read per repository (#5795)",
 );
 
 // Linked-worktree detection compares --git-dir with --git-common-dir (they

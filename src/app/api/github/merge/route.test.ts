@@ -123,3 +123,35 @@ test("merges correlate displayed base/head and reject a stale or invalid revisio
   }
   assert.equal(writes.length, 1);
 });
+
+// #5795: the branch's PR stayed cached as open after a merge, so the PR tab
+// offered Squash merge again and a second click got "not mergeable".
+test("a merge drops that pull request from the branch PR lookup's cache", async () => {
+  const { branchPrCache } = await import("../../../../lib/branch-pr-context.ts");
+  const dropped: Array<[string, number]> = [];
+  const original = branchPrCache.invalidatePullRequest;
+  branchPrCache.invalidatePullRequest = (repo, number) => {
+    dropped.push([repo, number]);
+    original.call(branchPrCache, repo, number);
+  };
+  try {
+    globalThis.fetch = async (_url, init) => !init?.method
+      ? Response.json({ head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40), ref: "main" } })
+      : Response.json({ message: "Pull Request is not mergeable" }, { status: 405 });
+    const refused = await POST(new Request("http://localhost/api/github/merge", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, headSha: "a".repeat(40) }),
+    }));
+    assert.equal((await refused.json()).ok, false);
+    assert.deepEqual(dropped, [], "a refused merge leaves it");
+    globalThis.fetch = async (_url, init) => !init?.method
+      ? Response.json({ head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40), ref: "main" } })
+      : Response.json({ merged: true, sha: "c".repeat(40) });
+    const merged = await POST(new Request("http://localhost/api/github/merge", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, headSha: "a".repeat(40) }),
+    }));
+    assert.equal((await merged.json()).ok, true);
+    assert.deepEqual(dropped, [["o/r", 7]]);
+  } finally {
+    branchPrCache.invalidatePullRequest = original;
+  }
+});

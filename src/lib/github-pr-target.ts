@@ -12,7 +12,7 @@
 // `<origin owner>:<branch>`.
 
 import { execFile } from "node:child_process";
-import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import { githubCliSpawnEnvAsync, scrubSidecarInternalEnv } from "./coven-bin.ts";
 
 export type PrTarget = {
   /** `owner/name` the pull request is opened in. */
@@ -31,12 +31,15 @@ const GH_ENV = () => scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLE
 const TARGET_TTL_MS = 10 * 60_000;
 const targets = new Map<string, { target: PrTarget; at: number }>();
 
-const defaultGh: GhRunner = (cwd, args) =>
-  new Promise((resolve, reject) => {
-    execFile("gh", args, { windowsHide: true, cwd, timeout: 10_000, env: GH_ENV() }, (err, stdout) =>
+/** `gh` as the user's shell finds it (#5795), not only on the sidecar's PATH. */
+const defaultGh: GhRunner = async (cwd, args) => {
+  const env = await githubCliSpawnEnvAsync();
+  return new Promise((resolve, reject) => {
+    execFile("gh", args, { windowsHide: true, cwd, timeout: 10_000, env }, (err, stdout) =>
       err ? reject(err) : resolve(stdout),
     );
   });
+};
 
 /** `owner/name` of a GitHub remote URL (https or ssh), or null. */
 export function githubSlug(url: string): string | null {

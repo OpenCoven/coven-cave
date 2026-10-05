@@ -290,3 +290,92 @@ test("prUrlCache: failures negative-cache as null", async () => {
   await tick();
   assert.equal(calls, 1, "negative entry served from memory within TTL");
 });
+
+// ── #5795: the desk's own actions, and a reused branch ──
+
+test("invalidate drops (root, branch), and entries keyed by a folder inside root", async () => {
+  const { mkdtempSync, mkdirSync, realpathSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "branch-pr-invalidate-")));
+  mkdirSync(path.join(root, "app"));
+  let open = false;
+  const cache = createBranchPrCache({ runner: async () => (open ? JSON.stringify([{ number: 9, html_url: "https://github.com/o/r/pull/9", state: "open" }]) : "[]") });
+  try {
+    assert.equal(await cache.resolve(root, "cave/x"), null);
+    assert.equal(await cache.resolve(path.join(root, "app"), "cave/x"), null, "the sessions list keys by the chat's folder");
+    assert.equal(await cache.resolve(root, "other"), null);
+    open = true; // Create PR opened it
+    cache.invalidate(root, "cave/x");
+    assert.equal(cache.get(path.join(root, "app"), "cave/x"), undefined, "a subfolder's entry went too");
+    assert.equal((await cache.resolve(root, "cave/x"))?.number, 9, "the next read asks again");
+    assert.equal(cache.get(root, "other"), null, "another branch keeps its answer");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a lookup in flight when invalidated never lands", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  const cache = createBranchPrCache({
+    runner: async () => {
+      calls += 1;
+      if (calls === 1) {
+        await gate;
+        return "[]"; // read before the PR was opened
+      }
+      return JSON.stringify([{ number: 5, html_url: "https://github.com/o/r/pull/5", state: "open" }]);
+    },
+  });
+  const stale = cache.resolve("/repo", "cave/y");
+  cache.invalidate("/repo", "cave/y");
+  release();
+  assert.equal(await stale, null, "its own caller still gets its answer");
+  assert.equal((await cache.resolve("/repo", "cave/y"))?.number, 5, "but it wasn't kept");
+});
+
+test("invalidatePullRequest drops every entry that answered with that PR", async () => {
+  let state = "open";
+  const cache = createBranchPrCache({
+    runner: async () => JSON.stringify([{ number: 12, html_url: "https://github.com/O/R/pull/12", state, ...(state === "closed" ? { merged_at: "2026-10-01T00:00:00Z" } : {}) }]),
+  });
+  assert.equal((await cache.resolve("/a", "feat"))?.state, "open");
+  assert.equal((await cache.resolve("/b", "feat"))?.state, "open");
+  state = "closed"; // merged
+  cache.invalidatePullRequest("o/r", 12);
+  assert.equal(cache.get("/a", "feat"), undefined);
+  assert.equal((await cache.resolve("/b", "feat"))?.state, "merged");
+});
+
+test("a merged PR is settled only while its branch hasn't moved past the merge", async () => {
+  let now = 0;
+  let calls = 0;
+  const merged = (headSha) =>
+    JSON.stringify([{ number: 3, html_url: "https://github.com/o/r/pull/3", state: "closed", merged_at: "2026-10-01T12:00:00Z", head: { sha: headSha } }]);
+  const tips = {
+    // Reused: a commit after the merge.
+    reused: { oid: "b".repeat(40), committedAt: Date.parse("2026-10-02T09:00:00Z") },
+    // Untouched since the PR's head.
+    done: { oid: "a".repeat(40), committedAt: Date.parse("2026-10-01T11:00:00Z") },
+  };
+  const cache = createBranchPrCache({
+    ttlMs: 1000,
+    settledTtlMs: 60_000,
+    now: () => now,
+    branchTip: async (_root, branch) => tips[branch] ?? null,
+    runner: async () => {
+      calls += 1;
+      return merged("a".repeat(40));
+    },
+  });
+  assert.equal((await cache.resolve("/repo", "reused"))?.state, "merged");
+  assert.equal((await cache.resolve("/repo", "done"))?.state, "merged");
+  assert.equal(calls, 2);
+  now = 2000; // past the open-PR TTL, well within the settled one
+  cache.get("/repo", "reused");
+  cache.get("/repo", "done");
+  await tick();
+  assert.equal(calls, 3, "only the reused branch is looked up again");
+});

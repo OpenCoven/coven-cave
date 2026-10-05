@@ -65,6 +65,45 @@ export const PATCH_DIFF_ARGS = [
   "--submodule=short",
 ] as const;
 
+/**
+ * Whether a file's name makes it a `.env` file, whose contents Cave never
+ * shows (#5795). By the name's last part, in any letter case and Unicode
+ * form: on APFS `.ENV` opens the same file, and reading it returned the
+ * secrets the `.env` spelling redacts.
+ */
+export function isEnvFileName(filePath: string): boolean {
+  const name = filePath.split(/[\\/]/).pop() ?? "";
+  return name.normalize("NFKC").toLowerCase().startsWith(".env");
+}
+
+/** What a `.env` file's diff shows in place of its contents (#5795). */
+export const ENV_FILE_DIFF_PLACEHOLDER = "# A .env file changed. Its contents aren't shown, for security.";
+
+/** A `diff --git` header naming a `.env` file on either side. Quoted names
+ *  keep `.env` as is, so the raw header is enough; a match may also redact
+ *  a name with `.env` after a space, which only hides more. */
+const ENV_DIFF_HEADER_RE = /[\s/"]\.env[^/\s"]*(?=["\s]|$)/i;
+
+/**
+ * A patch with every `.env` file's section reduced to its header and the
+ * placeholder (#5795): the desk's diff and the checkpoint text endpoint
+ * served its secrets, to the phone as well. Only what's shown changes; a
+ * checkpoint file keeps the real contents, so a restore still has them.
+ */
+export function redactEnvFilePatches(patch: string): string {
+  const sections = patch.split(/^(?=diff --git )/m);
+  return sections
+    .map((section) => {
+      if (!section.startsWith("diff --git ")) return section;
+      const headerEnd = section.indexOf("\n");
+      const header = headerEnd < 0 ? section : section.slice(0, headerEnd);
+      const name = header.normalize("NFKC");
+      if (!ENV_DIFF_HEADER_RE.test(name)) return section;
+      return `${header}\n${ENV_FILE_DIFF_PLACEHOLDER}\n`;
+    })
+    .join("");
+}
+
 /** An untracked file larger than this is left out of a checkpoint (#5781):
  *  one 52 MB binary overran the patch buffer and failed every revert. */
 export const CHECKPOINT_MAX_UNTRACKED_BYTES = 50 * 1024 * 1024;

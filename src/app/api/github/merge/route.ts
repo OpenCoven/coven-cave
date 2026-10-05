@@ -27,6 +27,7 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
 import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
+import { branchPrCache } from "@/lib/branch-pr-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -112,6 +113,9 @@ export async function POST(req: Request) {
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
       return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
     }
+    // The branch's PR was cached as open (#5795): the PR tab kept offering
+    // Squash merge, and a second click got GitHub's "not mergeable".
+    branchPrCache.invalidatePullRequest(repo, number);
 
     let branchDeleted = false;
     let branchDeleteError: string | null = null;
