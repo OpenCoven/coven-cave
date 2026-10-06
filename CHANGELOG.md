@@ -7,6 +7,69 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-10-06
+
+> Voice calls can use the microphone again on macOS: the released app keeps its microphone and camera entitlements.
+
+Patch release on top of v0.5.7. Headline: the notarized macOS app lost the
+`com.apple.security.device.audio-input` entitlement when the release script
+re-signed it, so the hardened runtime denied the microphone without ever
+showing a prompt and nothing in System Settings could allow it. Install this
+version and the microphone prompt appears on the first call.
+
+### Added
+- **Chat siderail** shows runtime identity, live work state and PR context.
+  Chat distinguishes the runtime-reported model from the requested one and
+  orders reasoning summaries and tool activity with the prose.
+- **Memories Library reader** uses the full pane, capped at `max-w-screen-2xl`,
+  with a drag handle on the column edge to resize the reading width (#5769).
+- **Memory exploration** (#5777) works in narrow panes; the Relations graph
+  gains familiar filtering, labeled colors and explicit navigation controls.
+- **iOS** filters chats by project in one tap (#5802) and gains a repeatable
+  inline-image zoom performance driver (#5768).
+- **Windows release** signs the MSI with the pinned SSL.com eSigner action and
+  verifies the Authenticode signature before publishing (#5758).
+
+### Fixed
+- **macOS microphone** (#5822). The release script now seals the app with
+  `src-tauri/Entitlements.plist` and stops before notarization when the sealed
+  app is missing a declared entitlement. The camera entitlement from #5696 is
+  restored by the same change.
+- **Chat sign-in** (#5796). A failed Chat authentication no longer discards the
+  message: a confirmed CLI sign-in failure offers an interactive Connect
+  terminal, and a key-specific failure opens that familiar's Vault while Chat
+  stays mounted for retry. The sign-in terminal replays its login command once
+  per Retry and never on an automatic reconnect (#5800, #5813).
+- **Chat turns** (#5773). A send to a chat with a live turn returns
+  `409 chat_run_active` before attachments, queueing or transport startup, so a
+  second harness cannot replace the first run's Stop. Reopening a chat reuses
+  its recent model state instead of re-requesting it (#5750).
+- **Activity** keeps cancelled tool calls visible and inspectable when a
+  response is stopped (#5815), and retains Hermes tool results that arrive
+  before their call is announced (#5811).
+- **Coding Desk** keeps unsaved edits, saves to the right file and refuses
+  stale overwrites (#5746), with the remaining findings from the fourth to
+  seventh desk reviews fixed (#5751–#5806) and relayed Codex failures no
+  longer described as silent (#5754).
+- **Desktop reachability** on macOS is guarded by the compiled app identifier,
+  so an alternate build no longer talks to the installed app's service.
+- **Shell** saves the right Chat width after resizing and keeps its
+  conversation and draft mounted while navigating elsewhere (#5742).
+- **Reflection notes** classify a missing delivery receipt as incomplete rather
+  than a blocker (#5744).
+
+### Changed
+- **Worktree curation** drops the 3-hour recency wait (#5810), binds retention
+  proof to one exact remote tag (#5784), accepts committed `AUTO_MERGE` residue
+  (#5789), corrects the retirement PR head search (#5793), and treats XcodeGen
+  and iOS markdown bundle output as disposable (#5817).
+- **Release acceptance** defers the `cli-*` steps (#5747) and drives Cave
+  against the released Coven daemon in the automations canary (#5782).
+- **Vault** documents the committed `vault.yaml` format and ignores `*.lock`
+  files.
+- Saved transcript history loading moves out of ChatView into a typed
+  coordinator, with no change in behavior.
+
 ## [0.5.7] - 2026-10-02
 
 > Cave stops starting a second Coven daemon, so harness sessions can sign in again.
