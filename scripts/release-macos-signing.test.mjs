@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -434,3 +444,106 @@ test("release.sh retries its network-dependent steps", () => {
   assert.match(releaseScript, /notarize_with_retries/, "notary submission goes through the retry loop");
   assert.match(releaseScript, /2\) echo "Apple rejected the submission \(Invalid\) — not retrying\." >&2; exit 1 ;;/, "a real Invalid verdict never retries");
 });
+
+// ── App entitlements survive the manual re-sign (#5822) ──────────────────────
+// `tauri build` signs the app with src-tauri/Entitlements.plist, then
+// release.sh re-signs the bundle. A seal without --entitlements replaces that
+// signature with one that has none, and the hardened runtime then makes macOS
+// deny the microphone without a prompt. v0.5.7 shipped that way.
+test("the envelope seal carries the app entitlements Tauri declares", () => {
+  const tauriConfig = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+  const declaredPath = join("src-tauri", tauriConfig.bundle.macOS.entitlements);
+  assert.equal(declaredPath, "src-tauri/Entitlements.plist");
+  assert.match(
+    releaseScript,
+    /^APP_ENTITLEMENTS="src-tauri\/Entitlements\.plist"$/m,
+    "release.sh seals with the same entitlements file tauri build uses",
+  );
+  assert.match(releaseScript, /^require_file "\$APP_ENTITLEMENTS"$/m);
+
+  const entitlements = readFileSync(
+    fileURLToPath(new URL("../src-tauri/Entitlements.plist", import.meta.url)),
+    "utf8",
+  );
+  assert.match(
+    entitlements,
+    /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/,
+    "voice calls need the hardened-runtime microphone entitlement",
+  );
+
+  const seal = releaseScript.slice(
+    releaseScript.indexOf('echo "==> Sealing the .app envelope"'),
+    releaseScript.indexOf('echo "==> Verifying signature"'),
+  );
+  assert.match(
+    seal,
+    /codesign --force --options runtime --timestamp \\\n\s+--entitlements "\$APP_ENTITLEMENTS" \\\n\s+--sign "\$SIGNING_IDENTITY" "\$APP_PATH"/,
+    "the seal signs the main executable, so it must pass the app entitlements",
+  );
+});
+
+test("the release stops before packaging when the sealed app lost an entitlement", () => {
+  const sealAt = releaseScript.indexOf('echo "==> Sealing the .app envelope"');
+  const gateAt = releaseScript.indexOf('\nverify_app_entitlements "$APP_PATH"\n');
+  const packageAt = releaseScript.indexOf('echo "==> Packaging DMG with Applications shortcut"');
+  assert.notEqual(gateAt, -1, "release.sh checks the sealed app's entitlements");
+  assert(sealAt < gateAt && gateAt < packageAt, "the check runs after the seal and before the DMG is built");
+});
+
+function entitlementGateSource() {
+  const start = releaseScript.indexOf("verify_app_entitlements() {");
+  assert.notEqual(start, -1, "release.sh defines verify_app_entitlements");
+  const end = releaseScript.indexOf("\n}\n", start);
+  return releaseScript.slice(start, end + 3);
+}
+
+test(
+  "the entitlement check passes a correctly signed binary and rejects a stripped one",
+  { skip: process.platform !== "darwin" && "codesign and PlistBuddy exist only on macOS" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "cave-entitlement-gate-"));
+    try {
+      const declared = fileURLToPath(new URL("../src-tauri/Entitlements.plist", import.meta.url));
+      const binary = join(dir, "app");
+      copyFileSync("/usr/bin/true", binary);
+      const gate = join(dir, "gate.sh");
+      writeFileSync(
+        gate,
+        `set -euo pipefail\nAPP_ENTITLEMENTS="$1"\n${entitlementGateSource()}\nverify_app_entitlements "$2"\n`,
+      );
+      const sign = (...extra) =>
+        execFileSync("codesign", ["--force", "--options", "runtime", ...extra, "--sign", "-", binary], {
+          stdio: "pipe",
+        });
+      const runGate = (entitlementsPath) =>
+        spawnSync("bash", [gate, entitlementsPath, binary], { encoding: "utf8" });
+
+      sign();
+      const stripped = runGate(declared);
+      assert.equal(stripped.status, 1, "a signature without entitlements fails the release");
+      assert.match(stripped.stderr, /missing entitlement: com\.apple\.security\.device\.audio-input/);
+      assert.match(stripped.stderr, /missing entitlement: com\.apple\.security\.device\.camera/);
+
+      sign("--entitlements", declared);
+      const sealed = runGate(declared);
+      assert.equal(sealed.status, 0, sealed.stderr);
+      assert.match(sealed.stdout, /carries all 2 declared entitlements/);
+
+      const empty = join(dir, "empty.plist");
+      writeFileSync(
+        empty,
+        '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict/></plist>\n',
+      );
+      const unreadable = runGate(empty);
+      assert.equal(unreadable.status, 1, "an entitlements file with no keys fails closed");
+      assert.match(unreadable.stderr, /no entitlements could be read/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

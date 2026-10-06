@@ -22,6 +22,10 @@ NOTARY_KEYCHAIN_DIR=""
 NOTARY_KEYCHAIN_PATH=""
 DMG_STAGE=""
 NODE_ENTITLEMENTS="src-tauri/entitlements/node.plist"
+# The app's own entitlements (microphone, camera). `tauri build` applies them,
+# but the manual re-sign below replaces that signature, so the envelope seal
+# has to pass them again (#5822).
+APP_ENTITLEMENTS="src-tauri/Entitlements.plist"
 
 require_tool() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required tool: $1" >&2; exit 1; }
@@ -50,6 +54,39 @@ retry() {
     sleep "$delay"
     n=$((n + 1))
   done
+}
+
+# Fail the release when the sealed app does not carry every entitlement the
+# app declares. Under the hardened runtime macOS denies the microphone without
+# a prompt when `com.apple.security.device.audio-input` is absent from the
+# signature, whatever the user has allowed in System Settings (#5822).
+verify_app_entitlements() {
+  local app="$1"
+  local signed key declared_value signed_value
+  local checked=0
+  local missing=0
+  signed=$(mktemp)
+  codesign -d --entitlements - --xml "$app" > "$signed" 2>/dev/null || true
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    checked=$((checked + 1))
+    declared_value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$APP_ENTITLEMENTS")
+    signed_value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$signed" 2>/dev/null || true)
+    if [ "$signed_value" != "$declared_value" ]; then
+      echo "    ! signed app is missing entitlement: $key" >&2
+      missing=1
+    fi
+  done < <(/usr/libexec/PlistBuddy -c "Print" "$APP_ENTITLEMENTS" | sed -n 's/^    \([^ ][^ ]*\) = .*$/\1/p')
+  rm -f "$signed"
+  if [ "$checked" -eq 0 ]; then
+    echo "    ! no entitlements could be read from $APP_ENTITLEMENTS" >&2
+    return 1
+  fi
+  if [ "$missing" -ne 0 ]; then
+    echo "    ! $app was sealed without the entitlements in $APP_ENTITLEMENTS" >&2
+    return 1
+  fi
+  echo "    signed app carries all $checked declared entitlements"
 }
 
 cleanup_release_artifacts() {
@@ -302,6 +339,7 @@ require_tool osascript
 require_tool spctl
 require_tool shasum
 require_tool openssl
+require_file "$APP_ENTITLEMENTS"
 require_file "$NODE_ENTITLEMENTS"
 require_file "$DMG_BACKGROUND"
 
@@ -409,11 +447,17 @@ done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"
 
 echo "==> Sealing the .app envelope"
+# The seal signs the main executable, so it decides the app's entitlements.
+# Sealing without them ships a hardened app that macOS refuses the microphone.
 retry 3 15 codesign --force --options runtime --timestamp \
+  --entitlements "$APP_ENTITLEMENTS" \
   --sign "$SIGNING_IDENTITY" "$APP_PATH"
 
 echo "==> Verifying signature"
 codesign -vvv "$APP_PATH" 2>&1 | tail -n 5
+
+echo "==> Verifying signed entitlements"
+verify_app_entitlements "$APP_PATH"
 
 echo "==> Packaging DMG with Applications shortcut"
 # Stage the .app and a symlink to /Applications so the DMG window shows the
