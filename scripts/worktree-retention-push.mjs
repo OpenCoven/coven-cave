@@ -79,7 +79,7 @@ export function retentionTag(branch, sha) {
 //
 // `--remotes` is refs/remotes/*, which is remote-tracking BRANCHES only. Git
 // keeps no remote-tracking refs for tags at all, so a branch archived as a
-// pushed tag still counts as unpushed here — see remoteTagCommits below, which
+// pushed tag still counts as unpushed here — see remoteRetainedCommits below, which
 // supplies the half this cannot see.
 export function unpushedCount(worktreePath) {
   try {
@@ -128,7 +128,7 @@ export function headSha(worktreePath) {
 }
 
 /**
- * Commit ids the remote currently advertises as tags.
+ * Commit ids the remote currently advertises as tags or pull-request heads.
  *
  * The guard already treats "a remote branch OR a tag pushed to a remote" as
  * retention. This hook did not, so it re-pushed branches whose heads were
@@ -143,14 +143,22 @@ export function headSha(worktreePath) {
  * advertises the commit directly. Taking both means the peeled commit is always
  * present, and the extra tag-object ids can never collide with a commit id.
  *
+ * GitHub also keeps `refs/pull/<n>/head` at the exact head of every PR, fixed
+ * once the PR closes, and the strict guard already accepts it as retention
+ * (`--retained-by-github-pr`). Without it, a squash-merged head pushed without
+ * `-u` and later pruned has none of the deleted-upstream signals below, so this
+ * hook re-created three branches GitHub had auto-deleted at merge (#5818).
+ * `refs/pull/<n>/merge` is a test-merge commit, never a head, so it is not
+ * listed. Same single round trip as tags alone (about 0.6 s for 8,000 refs).
+ *
  * Returns null when the remote cannot be reached, which the caller treats as
  * "no proof" and pushes — the safe direction. Wrongly pushing costs a redundant
  * ref; wrongly skipping leaves commits on one machine, which is the leak this
  * hook exists to stop.
  */
-export function remoteTagCommits(worktreePath) {
+export function remoteRetainedCommits(worktreePath) {
   try {
-    const output = git(["ls-remote", "--tags", "origin"], worktreePath, PUSH_TIMEOUT_MS);
+    const output = git(["ls-remote", "origin", "refs/tags/*", "refs/pull/*/head"], worktreePath, PUSH_TIMEOUT_MS);
     const oids = new Set();
     for (const line of output.split("\n")) {
       const oid = line.slice(0, 40);
@@ -171,7 +179,7 @@ export function remoteTagCommits(worktreePath) {
  *
  * Returns null when the remote cannot be reached, which the caller treats as
  * "no proof of deletion" and falls back to the branch-first path — the same
- * safe direction remoteTagCommits takes.
+ * safe direction remoteRetainedCommits takes.
  */
 export function remoteBranchNames(worktreePath) {
   try {
@@ -360,15 +368,15 @@ function main() {
 
   // Resolved lazily and at most once per pass: only worktrees that look at
   // risk need it, and a pass where nothing is at risk should stay offline.
-  let tagCommits;
-  const tagRetained = (worktreePath) => {
-    if (tagCommits === undefined) tagCommits = remoteTagCommits(root);
-    if (!tagCommits || tagCommits.size === 0) return false;
+  let retainedCommits;
+  const remoteRetained = (worktreePath) => {
+    if (retainedCommits === undefined) retainedCommits = remoteRetainedCommits(root);
+    if (!retainedCommits || retainedCommits.size === 0) return false;
     const head = headSha(worktreePath);
-    return head !== null && tagCommits.has(head);
+    return head !== null && retainedCommits.has(head);
   };
 
-  // Same lazy-once-per-pass shape as tagRetained: a pass where nothing is at
+  // Same lazy-once-per-pass shape as remoteRetained: a pass where nothing is at
   // risk never reaches the network.
   let branchNames;
   // Read once per pass, like the two lookups above, and only when something is
@@ -427,15 +435,18 @@ function main() {
     }
     if (unpushed === 0) continue;
 
-    // Already archived: the remote advertises a tag at exactly this HEAD, which
-    // is the guard's own definition of retained. Re-creating the branch here is
-    // what undid twelve deliberate archive-and-delete retirements (cave-nw3hq).
+    // Already retained: the remote advertises a tag or a pull-request head at
+    // exactly this HEAD, which is the guard's own definition of retained.
+    // Re-creating the branch here is what undid twelve deliberate
+    // archive-and-delete retirements (cave-nw3hq) and resurrected three
+    // auto-deleted merged PR branches (#5818). Nothing is pushed at all, so
+    // GitHub's delete-on-merge stays in effect.
     //
     // Exact HEAD only. A tag that merely CONTAINS this head would also be
     // retention, but proving it needs the tag's commit locally and therefore a
     // fetch — too much for a hook on every tool call. That case still pushes,
     // which costs a redundant ref rather than a lost commit.
-    if (tagRetained(wt.path)) {
+    if (remoteRetained(wt.path)) {
       skipped.push(branch ?? wt.path);
       continue;
     }
@@ -472,7 +483,7 @@ function main() {
   // forever. The count is what tells you the rule is doing something.
   if (skipped.length > 0) {
     record(root, {
-      verdict: "skipped-tag-retained",
+      verdict: "skipped-remote-retained",
       count: skipped.length,
       branches: skipped.slice(0, 10),
     });

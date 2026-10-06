@@ -19,7 +19,7 @@ import {
   isAutoLock,
   parseWorktrees,
   reasonFor,
-  remoteTagCommits,
+  remoteRetainedCommits,
   riskOf,
 } from "./worktree-autolock.mjs";
 
@@ -265,13 +265,13 @@ try {
 
     // The real lookup, against real `ls-remote` output — the parsing is where
     // this class of bug lives, so a stub alone would not prove much.
-    const live = remoteTagCommits(repo);
+    const live = remoteRetainedCommits(repo);
     assert.ok(live instanceof Set, "the remote answered");
     assert.equal(headShaOf(repo), head);
     assert.ok(live.has(head), "ls-remote's peeled ^{} line puts the commit oid in the set");
     assert.equal(
       riskOf(repo, (p) => {
-        const oids = remoteTagCommits(p);
+        const oids = remoteRetainedCommits(p);
         const h = headShaOf(p);
         return Boolean(oids && h && oids.has(h));
       }),
@@ -298,18 +298,18 @@ try {
     // reversible; "retained" is the verdict that permits destruction.
     //
     // Break the remote for real. Passing `() => false` here would only restate
-    // the local-only-tag case above and would never touch remoteTagCommits'
+    // the local-only-tag case above and would never touch remoteRetainedCommits'
     // failure path, so a regression treating an ls-remote ERROR as "retained"
     // would sail straight through.
     const reachable = git(["remote", "get-url", "origin"], repo).trim();
     git(["remote", "set-url", "origin", path.join(scratch, "no-such-remote.git")], repo);
     assert.equal(
-      remoteTagCommits(repo),
+      remoteRetainedCommits(repo),
       null,
       "an unreachable remote yields null, not an empty set that could read as 'no tags, so unretained' or worse",
     );
     const offline = riskOf(repo, (p) => {
-      const oids = remoteTagCommits(p);
+      const oids = remoteRetainedCommits(p);
       const h = headShaOf(p);
       return Boolean(oids && h && oids.has(h));
     });
@@ -322,7 +322,7 @@ try {
     // lock.
     assert.equal(
       riskOf(repo, (p) => {
-        const oids = remoteTagCommits(p);
+        const oids = remoteRetainedCommits(p);
         const h = headShaOf(p);
         return Boolean(oids && h && oids.has(h));
       }),
@@ -338,6 +338,54 @@ try {
     assert.ok(dirtyButRetained, "uncommitted work is at risk regardless of tag retention");
     assert.equal(dirtyButRetained.dirty, 1);
     assert.equal(dirtyButRetained.unpushed, 0);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+// --- a pull-request head is retention too (#5818) ---------------------------
+// A squash-merged head whose branch GitHub auto-deleted sits on no remote
+// branch and, once retention-push stops archiving it as a tag, on no tag
+// either. GitHub still holds it as `refs/pull/<n>/head`, which the strict guard
+// accepts, so locking it would only block a retirement the guard allows.
+{
+  const scratch = mkdtempSync(path.join(tmpdir(), "autolock-pr-head-"));
+  try {
+    const origin = path.join(scratch, "origin.git");
+    git(["init", "--quiet", "--bare", "-b", "main", origin], scratch);
+    const repo = path.join(scratch, "repo");
+    git(["init", "--quiet", "-b", "main", repo], scratch);
+    writeFileSync(path.join(repo, "seed.txt"), "seed\n");
+    git(["add", "."], repo);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "seed"], repo);
+    git(["remote", "add", "origin", origin], repo);
+    git(["push", "--quiet", "origin", "main"], repo);
+
+    git(["checkout", "--quiet", "-b", "fix/merged"], repo);
+    writeFileSync(path.join(repo, "work.txt"), "shipped\n");
+    git(["add", "."], repo);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "work"], repo);
+    git(["push", "--quiet", "origin", "fix/merged"], repo);
+    const head = git(["rev-parse", "HEAD"], repo).trim();
+    git(["push", "--quiet", "origin", "--delete", "fix/merged"], repo);
+    git(["fetch", "--quiet", "--prune", "origin"], repo);
+
+    const live = (p) => {
+      const oids = remoteRetainedCommits(p);
+      const h = headShaOf(p);
+      return Boolean(oids && h && oids.has(h));
+    };
+    const before = riskOf(repo, live);
+    assert.ok(before, "precondition: with no branch, tag or PR ref the head is at risk");
+    assert.equal(before.unpushed, 1);
+
+    git(["--git-dir", origin, "update-ref", "refs/pull/3/head", head], scratch);
+    assert.equal(riskOf(repo, live), null, "a head the remote keeps as a PR head is not locked");
+
+    // A test-merge ref is not the head, so it retains nothing.
+    git(["--git-dir", origin, "update-ref", "-d", "refs/pull/3/head"], scratch);
+    git(["--git-dir", origin, "update-ref", "refs/pull/3/merge", head], scratch);
+    assert.ok(riskOf(repo, live), "refs/pull/<n>/merge is not retention");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
