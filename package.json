@@ -153,7 +153,7 @@
     "react-colorful": "5.8.0",
     "react-dom": "19.2.8",
     "react-resizable-panels": "4.12.2",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "shiki": "4.3.1",
     "sucrase": "3.35.1",
     "twitter-text": "3.1.0",
@@ -190,7 +190,7 @@
       "enhanced-resolve": "5.23.0",
       "nanoid@3": "3.3.18",
       "postcss@<8.5.23": "^8.5.26",
-      "sharp": "0.35.4",
+      "sharp": "0.35.5",
       "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz"
     },
     "supportedArchitectures": {
