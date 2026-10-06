@@ -20,6 +20,7 @@ import {
   isModelAllowedByRuntime,
   runtimeModelInventoryScope,
   runtimeModelIdForLaunch,
+  runtimeModelProviderMismatch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
 
@@ -534,5 +535,56 @@ assert.equal(
   "valid familiar slugs remain scoped for discovery",
 );
 assert.equal(isModelAllowedByRuntime("future-unknown", "provider/custom"), false);
+
+// A provider-qualified id from a provider the runtime cannot route is refused
+// at every write/launch boundary. Codex strips the prefix and forwards
+// `claude-opus-5-5` to OpenAI, which rejects it after the turn has started.
+assert.deepEqual(
+  runtimeModelProviderMismatch("codex", "anthropic/claude-opus-5-5"),
+  { runtime: "codex", runtimeProvider: "openai", modelProvider: "anthropic" },
+  "a Claude model on Codex is a provider mismatch",
+);
+assert.equal(isModelAllowedByRuntime("codex", "anthropic/claude-opus-5-5"), false);
+assert.equal(isModelAllowedByRuntime("codex", "anthropic/claude-fable-5-1"), false);
+assert.equal(isModelAllowedByRuntime("claude", "openai/gpt-6-astra"), false);
+assert.equal(isModelAllowedByRuntime("copilot", "anthropic/claude-opus-5-5"), false);
+assert.equal(isModelAllowedByRuntime("grok", "openai/gpt-6-astra"), false);
+assert.equal(
+  runtimeModelProviderMismatch("codex", "openai/gpt-6-astra"),
+  null,
+  "the runtime's own provider namespace is not a mismatch",
+);
+assert.equal(isModelAllowedByRuntime("codex", "openai/gpt-6-astra"), true);
+assert.equal(isModelAllowedByRuntime("codex", "OpenAI/custom-preview"), true, "provider comparison is case-insensitive");
+assert.equal(isModelAllowedByRuntime("claude", "anthropic/claude-opus-5-5"), true);
+assert.equal(isModelAllowedByRuntime("claude", "anthropic/opus"), true, "the Opus 5 launch alias stays allowed");
+assert.equal(isModelAllowedByRuntime("grok", "xai/grok-4.5"), true);
+assert.equal(
+  runtimeModelProviderMismatch("codex", "gpt-6-astra"),
+  null,
+  "a bare id carries no provider claim to check",
+);
+assert.equal(isModelAllowedByRuntime("codex", "gpt-6-astra"), true);
+// Runtimes that preserve the full id route several providers themselves, and
+// runtimes with no declared provider are runtime-managed: neither is constrained.
+assert.equal(runtimeModelProviderMismatch("hermes", "nous/hermes-4"), null);
+assert.equal(isModelAllowedByRuntime("hermes", "anthropic/claude-opus-5-5"), true);
+assert.equal(runtimeModelProviderMismatch("opencode", "anthropic/claude-opus-5-5"), null);
+assert.equal(isModelAllowedByRuntime("opencode", "anthropic/claude-opus-5-5"), true);
+assert.equal(runtimeModelProviderMismatch("openclaw", "anthropic/claude-opus-5-5"), null);
+assert.equal(
+  runtimeModelProviderMismatch("future-unknown", "anthropic/claude-opus-5-5"),
+  null,
+  "an unknown runtime has no provider to mismatch; the catalog check fails it closed instead",
+);
+assert.equal(
+  runtimeModelProviderMismatch(
+    "codex",
+    "anthropic/claude-opus-5-5",
+    [{ id: "codex", modelIdTransform: "preserve" }],
+  ),
+  null,
+  "a registry that preserves the full id for a runtime lifts the constraint",
+);
 
 console.log("runtime-models.test.ts: ok");

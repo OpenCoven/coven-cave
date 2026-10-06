@@ -240,12 +240,48 @@ export function runtimeOwnsModelDefault(runtime: string): boolean {
   return catalogForRuntime(canonical)?.defaultOwner === "runtime";
 }
 
+export type RuntimeModelProviderMismatch = {
+  runtime: string;
+  runtimeProvider: Exclude<RuntimeProvider, null>;
+  modelProvider: string;
+};
+
+/**
+ * A provider-qualified id that names a provider the runtime cannot route.
+ *
+ * Runtimes bound to one provider (Codex → OpenAI, Claude Code → Anthropic,
+ * Copilot → GitHub, Grok → xAI) strip the `provider/` prefix at launch, so a
+ * foreign prefix is not forwarded anywhere: `anthropic/claude-opus-5-5` reaches
+ * Codex as `claude-opus-5-5` and the provider rejects it after the turn has
+ * started. Runtimes that preserve the full id (Hermes, OpenCode) and runtimes
+ * with no declared provider route several providers themselves, so they are
+ * not constrained here. Bare ids carry no provider claim to check.
+ */
+export function runtimeModelProviderMismatch(
+  runtime: string,
+  modelId: string,
+  runtimes: readonly RuntimeModelTransformMetadata[] = REGISTRY_RUNTIMES,
+): RuntimeModelProviderMismatch | null {
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const catalog = catalogForRuntime(canonicalRuntime);
+  if (!catalog?.provider) return null;
+  const transform = runtimes.find((entry) => entry.id === canonicalRuntime)?.modelIdTransform;
+  if (transform === "preserve") return null;
+  const slash = modelId.indexOf("/");
+  if (slash <= 0) return null;
+  const modelProvider = modelId.slice(0, slash);
+  if (modelProvider.toLowerCase() === catalog.provider.toLowerCase()) return null;
+  return { runtime: canonicalRuntime, runtimeProvider: catalog.provider, modelProvider };
+}
+
 /** Enforce the selected runtime's custom-id policy at every write/launch
  * boundary, not only in picker rendering. Known catalogs that allow custom
- * ids accept safe ids; runtimes without a catalog fail closed. */
+ * ids accept safe ids from the runtime's own provider; runtimes without a
+ * catalog fail closed. */
 export function isModelAllowedByRuntime(runtime: string, modelId: string): boolean {
   const catalog = catalogForRuntime(runtime);
   if (!catalog || !modelId) return false;
+  if (runtimeModelProviderMismatch(runtime, modelId)) return false;
   return catalog.allowCustom || catalog.models.some((model) => model.id === modelId);
 }
 
