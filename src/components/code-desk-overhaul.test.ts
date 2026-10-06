@@ -395,7 +395,7 @@ assert.match(terminalMed, /if \(!connected && \(disposeOnUnmount \|\| terminalTh
 assert.match(terminalMed, /if \(terminalThreadStopped\(threadId\)\) \{\s*stopTerminalThread\(threadId\);\s*bridge\.dispose\(\);\s*return;/, "then kills the shell and lets go");
 assert.match(prPanelSrc, /cache: "no-store",\s*signal: AbortSignal\.timeout\(CHECKS_TIMEOUT_MS\),/, "the checks read times out into an error with Retry");
 assert.match(panelSrc, /const requestPending = outbound\.pending !== null;/);
-assert.match(panelSrc, /if \(!message \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no commit while a request runs");
+assert.match(panelSrc, /if \(!message \|\| listCut \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no commit while a request runs, or while the list is cut (#5807)");
 assert.match(panelSrc, /if \(!title \|\| !postCommit \|\| changesOutbound\.get\(outboundKey\)\.pending\) return;/, "no Create PR while a request runs");
 
 // ── Pass 5 low fixes (#5756) ─────────────────────────────────────────────────

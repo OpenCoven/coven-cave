@@ -18,6 +18,9 @@ assert.match(controller, /function stopRailTerminal[\s\S]*killPtyBridge\(threadI
 assert.match(controller, /setTerminalOpened\(false\)/);
 assert.match(controller, /"cave:changes-refresh"/);
 assert.match(controller, /fetchChangesSummary\(root, opts\)/);
+// One refresh event, one forced read (#5807): the rail names the event as its
+// cause, so it joins the read the desk's hook and the changes panel started.
+assert.match(controller, /const refresh = \(event: Event\) => void load\(\{ force: true, cause: event \}\);/);
 assert.match(controller, /useEffect\(\(\) => \{\s*if \(!active\) return;\s*if \(!effectiveProjectRoot\)/,
   "inactive panes neither fetch changes nor subscribe to polling");
 assert.match(controller, /\[active, effectiveProjectRoot, sessionRunning\]/,
@@ -25,7 +28,7 @@ assert.match(controller, /\[active, effectiveProjectRoot, sessionRunning\]/,
 assert.match(controller, /const effectiveProjectRoot = browseRootOverride \?\? projectRoot/);
 assert.match(controller, /setBrowseRootOverride\(null\)/);
 assert.match(controller, /useState<number \| null>\(null\)/);
-assert.match(controller, /json\.files\?\.length \?\? 0/);
+assert.match(controller, /setChangeCount\(httpOk && json\.ok \? changedFileCount\(json\) : null\)/, "the badge counts every changed file, even when the list is cut (#5807)");
 // Copilot review on #3601: inactive scopes must never report an open rail.
 assert.match(
   controller,

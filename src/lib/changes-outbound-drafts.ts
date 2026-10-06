@@ -51,19 +51,40 @@ export const TIMED_OUT_COMMIT_WATCH_MS = 10 * 60_000;
  * or a new `cave/` branch, which is where a commit from the default branch
  * goes. The branch it landed on, and whether it is new; null while it can't
  * be told.
+ *
+ * `headOid` is the commit it landed as (#5807), so Create PR is pinned to it
+ * as a normal commit's is. The list names HEAD and its subject; HEAD counts
+ * as this commit only when that subject is the one it was sent with. When it
+ * isn't (another commit landed on top), `headOid` is empty and Create PR
+ * names the branch alone, as before.
  */
 export function timedOutCommitLanded(
   sent: ChangesOutboundTimedOutCommit,
-  now: { branch: string | null | undefined; files: readonly { path: string; changeVersion?: string }[] },
-): { branch: string; newBranch: boolean } | null {
+  now: {
+    branch: string | null | undefined;
+    files: readonly { path: string; changeVersion?: string }[];
+    head?: string | null;
+    headSubject?: string | null;
+  },
+): { branch: string; newBranch: boolean; headOid: string } | null {
   if (sent.files.length === 0) return null;
   const still = new Set(now.files.map((file) => `${file.path}\0${file.changeVersion ?? ""}`));
   if (sent.files.some((file) => still.has(`${file.path}\0${file.changeVersion}`))) return null;
   const branch = now.branch ?? "";
   if (!branch || branch === "HEAD") return null;
-  if (sent.branch && branch === sent.branch) return { branch, newBranch: false };
-  if (branch !== sent.branch && branch.startsWith("cave/")) return { branch, newBranch: true };
+  const headOid = now.head && /^[0-9a-f]{40}$/i.test(now.head) && now.headSubject === commitSubject(sent.message)
+    ? now.head
+    : "";
+  if (sent.branch && branch === sent.branch) return { branch, newBranch: false, headOid };
+  if (branch !== sent.branch && branch.startsWith("cave/")) return { branch, newBranch: true, headOid };
   return null;
+}
+
+/** A message's subject as git's `%s` gives it: the first paragraph, its
+ *  lines joined by spaces. */
+export function commitSubject(message: string): string {
+  const firstParagraph = message.trim().split(/\n[ \t]*\n/)[0] ?? "";
+  return firstParagraph.split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
 }
 
 export type ChangesOutbound = {

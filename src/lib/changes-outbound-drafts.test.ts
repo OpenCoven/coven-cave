@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND, timedOutCommitLanded } = await import("./changes-outbound-drafts.ts");
+const { commitSubject, createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND, timedOutCommitLanded } = await import("./changes-outbound-drafts.ts");
 
 // An unknown key reads as the shared empty entry, so a fresh panel renders
 // without allocating anything.
@@ -107,18 +107,42 @@ const { createChangesOutboundStore, EMPTY_CHANGES_OUTBOUND, timedOutCommitLanded
   );
   assert.deepEqual(
     timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [] }),
-    { branch: "cave/wire-it-abc", newBranch: true },
+    { branch: "cave/wire-it-abc", newBranch: true, headOid: "" },
     "from the default branch it lands on a new cave/ branch",
   );
   assert.deepEqual(
     timedOutCommitLanded({ ...sent, branch: "feat/x" }, { branch: "feat/x", files: [{ path: "a.ts", changeVersion: "9:9:9" }] }),
-    { branch: "feat/x", newBranch: false },
+    { branch: "feat/x", newBranch: false, headOid: "" },
     "on a feature branch it stays; a file written again since is a new change",
   );
   assert.equal(timedOutCommitLanded(sent, { branch: "release/2", files: [] }), null, "another branch altogether: something else happened");
   assert.equal(timedOutCommitLanded(sent, { branch: "HEAD", files: [] }), null, "a detached head names no branch");
   assert.equal(timedOutCommitLanded(sent, { branch: null, files: [] }), null);
   assert.equal(timedOutCommitLanded({ ...sent, files: [] }, { branch: "cave/x", files: [] }), null, "nothing was sent");
+
+  // Pinned to its commit when the list's HEAD is it (#5807).
+  const oid = "a".repeat(40);
+  assert.equal(
+    timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [], head: oid, headSubject: "Wire it" })?.headOid,
+    oid,
+    "HEAD carries the subject it was sent with: Create PR is pinned to it",
+  );
+  assert.equal(
+    timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [], head: oid, headSubject: "Agent follow-up" })?.headOid,
+    "",
+    "another commit on top: the branch alone, as before",
+  );
+  assert.equal(
+    timedOutCommitLanded(sent, { branch: "cave/wire-it-abc", files: [], head: "not-an-oid", headSubject: "Wire it" })?.headOid,
+    "",
+    "a malformed head is never sent as a pin",
+  );
+}
+
+{
+  assert.equal(commitSubject("Wire it"), "Wire it");
+  assert.equal(commitSubject("  Wire it\n\nThe body explains.\n"), "Wire it", "the body is not the subject");
+  assert.equal(commitSubject("Wire it\nacross two lines\n\nBody"), "Wire it across two lines", "git joins the first paragraph");
 }
 
 console.log("changes-outbound-drafts: ok");

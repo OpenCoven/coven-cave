@@ -614,18 +614,46 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
   return NextResponse.json(await sharedChangeSummary(repoRoot, () => readChanges(repoRoot)));
 }
 
+/** The commit HEAD names and its subject line, or null before the first
+ *  commit (#5807). A commit the client stopped waiting for is found landed
+ *  in a later list; with these, its Create PR can be pinned to the exact
+ *  commit when the subject shows it is the one that was sent. */
+async function headCommit(repoRoot: string): Promise<{ oid: string; subject: string } | null> {
+  try {
+    const { stdout } = await git(repoRoot, ["log", "-1", "--format=%H%x00%s", "HEAD", "--"]);
+    const [oid, subject = ""] = stdout.replace(/\n$/, "").split("\0");
+    return /^[0-9a-f]{40}$/i.test(oid ?? "") ? { oid, subject } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How many files one change list names (#5807). An untracked folder of
+ *  30,000 files made a 3.4 MB answer on every poll. The cap is the most one
+ *  desk commit may name, so any list that can be committed is never cut, and
+ *  a cut list could not have been committed whole anyway. */
+const MAX_LISTED_CHANGES = MAX_EXPECTED_CHANGES;
+
 async function readChanges(repoRoot: string) {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
-  const files = parsePorcelainZ(stdout);
+  const changed = parsePorcelainZ(stdout);
+  const truncated = changed.length > MAX_LISTED_CHANGES;
+  const files = truncated ? changed.slice(0, MAX_LISTED_CHANGES) : changed;
   // A rewrite can keep the same path/status/diffstat. Cheap filesystem stamps
   // let the collapsed Code tab notice it without fetching full diffs on polls.
   await stampChangedFiles(files, containedMetadata(repoRoot));
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.
+  // The totals cover every changed file, listed or not (#5807).
+  const totals = { insertions: 0, deletions: 0 };
   try {
     const { stdout: numstat } = await gitDiff(repoRoot, ["--numstat", "-z", "HEAD", "--"]);
     const counts = parseNumstatZ(numstat);
+    for (const c of counts.values()) {
+      totals.insertions += c.insertions;
+      totals.deletions += c.deletions;
+    }
     for (const file of files) {
       const c = counts.get(file.path);
       if (c) {
@@ -642,9 +670,28 @@ async function readChanges(repoRoot: string) {
   // Linked-worktree name rides along too (composer git chip) — null in the
   // primary checkout, the checkout dir's basename in a `git worktree`.
   // So does whether origin is on GitHub, for the panel's Create PR (#5795).
-  const [{ branch, worktree }, githubOrigin] = await Promise.all([branchAndWorktree(repoRoot), originOnGitHub(repoRoot)]);
+  const [{ branch, worktree }, githubOrigin, head] = await Promise.all([
+    branchAndWorktree(repoRoot),
+    originOnGitHub(repoRoot),
+    headCommit(repoRoot),
+  ]);
 
-  return { ok: true, repo: true, repoRoot, branch, worktree, githubOrigin, files };
+  return {
+    ok: true,
+    repo: true,
+    repoRoot,
+    branch,
+    worktree,
+    githubOrigin,
+    head: head?.oid ?? null,
+    headSubject: head?.subject ?? null,
+    files,
+    // How many files changed in all, and their line totals; `files` stops
+    // at MAX_LISTED_CHANGES when `truncated` (#5807).
+    totalFiles: changed.length,
+    totals,
+    truncated,
+  };
 }
 
 /** PR context for the current branch (composer git chip): the pull request

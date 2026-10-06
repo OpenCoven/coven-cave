@@ -690,4 +690,47 @@ function featureCommit(options) {
   }
 }
 
+// ── 18. A very large change list is cut, with its totals (#5807) ──────────
+// An untracked folder of 30,000 files made a 3.4 MB answer on every poll. The
+// list stops at the most one commit may name, and says what it left out.
+{
+  const { dir } = repo();
+  writeFileSync(path.join(dir, "f.txt"), "base\nmore\n");
+  mkdirSync(path.join(dir, "bulk"));
+  for (let i = 0; i < 5001; i++) writeFileSync(path.join(dir, "bulk", `u${String(i).padStart(5, "0")}.txt`), "x\n");
+  const cut = (await get({ projectRoot: dir })).json;
+  assert.equal(cut.ok, true, JSON.stringify(cut).slice(0, 200));
+  assert.equal(cut.truncated, true);
+  assert.equal(cut.totalFiles, 5002, "every changed file is counted");
+  assert.equal(cut.files.length, 5000, "only as many as a commit may name are listed");
+  assert.deepEqual(cut.totals, { insertions: 1, deletions: 0 }, "the line totals cover the files left out too");
+
+  const { dir: small } = repo();
+  writeFileSync(path.join(small, "f.txt"), "edited\n");
+  const whole = (await get({ projectRoot: small })).json;
+  assert.equal(whole.truncated, false);
+  assert.equal(whole.totalFiles, 1);
+  assert.equal(whole.files.length, 1);
+  assert.deepEqual(whole.totals, { insertions: 1, deletions: 1 });
+}
+
+// ── 19. The list names the head commit (#5807) ─────────────────────────────
+// A commit the client stopped waiting for can be pinned to its exact commit
+// when it turns up landed, because the list now says what HEAD is.
+{
+  const { dir, git } = repo();
+  const head = (await get({ projectRoot: dir })).json;
+  assert.equal(head.head, git("rev-parse", "HEAD").trim());
+  assert.equal(head.headSubject, "base");
+
+  const unborn = path.join(workspace, `repo-${count++}`);
+  mkdirSync(unborn);
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: unborn });
+  writeFileSync(path.join(unborn, "first.txt"), "first\n");
+  const none = (await get({ projectRoot: unborn })).json;
+  assert.equal(none.ok, true, JSON.stringify(none));
+  assert.equal(none.head, null, "no commit yet, so no head");
+  assert.equal(none.headSubject, null);
+}
+
 console.log("changes route boundaries: ok");

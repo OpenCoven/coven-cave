@@ -45,7 +45,22 @@ export type ChangesSummaryResponse = {
   /** Whether `origin` is a GitHub remote a pull request can be opened on.
    *  Absent from older servers, which reads as yes. */
   githubOrigin?: boolean;
+  /** The commit HEAD names and its subject; null before the first commit (#5807). */
+  head?: string | null;
+  headSubject?: string | null;
+  /** Every changed file, counted, and their line totals (#5807). `files`
+   *  stops at the server's cap when `truncated`. Absent from older servers. */
+  totalFiles?: number;
+  totals?: { insertions: number; deletions: number };
+  truncated?: boolean;
 };
+
+/** How many files changed in all: the server's count, or the list's length
+ *  from an older server that didn't send one (#5807). */
+export function changedFileCount(json: ChangesSummaryResponse): number {
+  if (typeof json.totalFiles === "number") return json.totalFiles;
+  return Array.isArray(json.files) ? json.files.length : 0;
+}
 
 export type ChangesSummaryResult = {
   /** HTTP-level `res.ok` — callers branch on this exactly as they did on the Response. */
