@@ -76,8 +76,8 @@ export function parseWorktrees(porcelain) {
 
 // At risk = a removal would destroy something unrecoverable.
 //   dirty            → uncommitted edits exist nowhere else
-//   commits off-remote → committed but on neither a remote branch nor a
-//                        remote tag
+//   commits off-remote → committed but on no remote branch, remote tag, or
+//                        pull-request head
 //
 // `rev-list HEAD --not --remotes` alone is NOT the test the guard applies, and
 // the comment that claimed it was is how this hook came to fight the
@@ -89,14 +89,14 @@ export function parseWorktrees(porcelain) {
 // exactly this, and WT_AUTOLOCK_DISABLE=1 does not help: the hook fires per
 // tool call, so a unit unlocked in one call is re-locked before the next.
 //
-// The missing half is `remoteTagCommits`, which asks the remote what tags it
-// actually has — the same helper `worktree-retention-push.mjs` already uses for
+// The missing half is `remoteRetainedCommits`, which asks the remote what tags
+// and pull-request heads it actually has — the same helper `worktree-retention-push.mjs` already uses for
 // this exact blind spot (cave-nw3hq, where it re-created twelve branches it had
 // just been asked to retire). Note what is deliberately NOT used: `--tags`
 // would count LOCAL tags, and a local-only tag is not retention — it dies with
 // the checkout, which is the hole the guard exists to close.
-export function riskOf(worktreePath, tagRetained = () => false) {
-  const verdict = evaluateRisk(worktreePath, tagRetained);
+export function riskOf(worktreePath, remoteRetained = () => false) {
+  const verdict = evaluateRisk(worktreePath, remoteRetained);
   if (verdict.status !== "at-risk") return null;
   return { dirty: verdict.dirty, unpushed: verdict.unpushed };
 }
@@ -111,7 +111,7 @@ export function riskOf(worktreePath, tagRetained = () => false) {
 // half-created worktree, or a dead registration into the one verdict that
 // permits destruction — the exact inversion the tag blind spot caused in
 // cave-qbr34. So the release path consumes this, and only `clear` unlocks.
-export function evaluateRisk(worktreePath, tagRetained = () => false) {
+export function evaluateRisk(worktreePath, remoteRetained = () => false) {
   let dirty = 0;
   let unpushed = 0;
   try {
@@ -132,7 +132,7 @@ export function evaluateRisk(worktreePath, tagRetained = () => false) {
   // standing and the tree locked: a lock is reversible, while treating an
   // unanswerable question as "retained" hands out the one verdict that permits
   // destruction.
-  if (unpushed > 0 && tagRetained(worktreePath)) unpushed = 0;
+  if (unpushed > 0 && remoteRetained(worktreePath)) unpushed = 0;
   if (dirty === 0 && unpushed === 0) return { status: "clear" };
   return { status: "at-risk", dirty, unpushed };
 }
@@ -158,10 +158,13 @@ export function isAutoLock(reason) {
   return unquoted.startsWith(REASON_PREFIX);
 }
 
-// Commit oids the REMOTE holds under a tag, HEAD included when a tag points at
-// it. `ls-remote` prints both the tag object and its peeled `^{}` commit on
-// separate lines; collecting every oid covers annotated and lightweight tags
-// without having to tell them apart.
+// Commit oids the REMOTE holds under a tag or a pull-request head, HEAD
+// included when one points at it. `ls-remote` prints both the tag object and
+// its peeled `^{}` commit on separate lines; collecting every oid covers
+// annotated and lightweight tags without having to tell them apart.
+// `refs/pull/<n>/head` is GitHub's fixed copy of a PR's exact head, which the
+// strict guard accepts as retention, so a squash-merged head whose branch
+// GitHub auto-deleted is not locked as at risk (#5818).
 //
 // Deliberately duplicated from `worktree-retention-push.mjs` rather than
 // imported. Every hook in this directory loads standalone — none imports a
@@ -170,9 +173,9 @@ export function isAutoLock(reason) {
 // and a guard that silently never runs is the worst outcome available here
 // (see the isDirectRun comment below). Keep the two in step by hand; both name
 // each other.
-export function remoteTagCommits(worktreePath) {
+export function remoteRetainedCommits(worktreePath) {
   try {
-    const output = git(["ls-remote", "--tags", "origin"], worktreePath);
+    const output = git(["ls-remote", "origin", "refs/tags/*", "refs/pull/*/head"], worktreePath);
     const oids = new Set();
     for (const line of output.split("\n")) {
       const oid = line.slice(0, 40);
@@ -244,12 +247,12 @@ function main() {
   // Resolved lazily and at most once per pass, matching the retention-push
   // hook: only a worktree the branch test already calls unretained needs it, so
   // a pass where everything is pushed never touches the network.
-  let tagCommits;
-  const tagRetained = (worktreePath) => {
-    if (tagCommits === undefined) tagCommits = remoteTagCommits(root);
-    if (!tagCommits || tagCommits.size === 0) return false;
+  let retainedCommits;
+  const remoteRetained = (worktreePath) => {
+    if (retainedCommits === undefined) retainedCommits = remoteRetainedCommits(root);
+    if (!retainedCommits || retainedCommits.size === 0) return false;
     const head = headShaOf(worktreePath);
-    return head !== null && tagCommits.has(head);
+    return head !== null && retainedCommits.has(head);
   };
 
   // The first record is the main working tree; git refuses to lock it.
@@ -260,7 +263,7 @@ function main() {
     if (wt.locked) {
       // Someone else's claim — this hook cannot evaluate it, so it stands.
       if (!isAutoLock(wt.lockReason)) continue;
-      const verdict = evaluateRisk(wt.path, tagRetained);
+      const verdict = evaluateRisk(wt.path, remoteRetained);
       // Anything but a positive all-clear keeps the lock: still at risk, or
       // unreadable and therefore unproven.
       if (verdict.status !== "clear") continue;
@@ -277,7 +280,7 @@ function main() {
       continue;
     }
 
-    const risk = riskOf(wt.path, tagRetained);
+    const risk = riskOf(wt.path, remoteRetained);
     if (!risk) continue;
     try {
       git(["worktree", "lock", "--reason", reasonFor(risk, today), wt.path], root);

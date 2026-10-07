@@ -14,7 +14,7 @@ import {
   parseWorktrees,
   previouslyPushedBranches,
   remoteBranchNames,
-  remoteTagCommits,
+  remoteRetainedCommits,
   retain,
   retentionTag,
   unpushedCount,
@@ -328,6 +328,61 @@ test("the hook archives rather than resurrects a merged branch whose tracking re
   }
 });
 
+test("the hook pushes nothing for a merged head the remote keeps as a pull-request head", () => {
+  // The #5818 shape: pushed by hand without -u from a --no-track worktree,
+  // squash-merged, auto-deleted at merge, tracking ref pruned, and never pushed
+  // by this hook. Every deleted-upstream signal is absent, so the hook used to
+  // read the branch as never pushed and re-create it on the remote.
+  const { root, remote, work } = scaffold();
+  try {
+    const unit = path.join(work, ".worktrees", "topic");
+    git(["worktree", "add", "-q", "--no-track", "-b", "feat/topic", unit, "main"], work);
+    configure(unit);
+    commit(unit, "one");
+    git(["push", "-q", "origin", "feat/topic"], unit);
+    const head = git(["rev-parse", "HEAD"], unit).trim();
+    // GitHub's fixed copy of the PR's exact head.
+    bare(["update-ref", "refs/pull/1/head", head], remote);
+
+    const mainWork = path.join(root, "mainwork");
+    git(["clone", "-q", remote, mainWork], root);
+    configure(mainWork);
+    git(["merge", "-q", "--squash", "origin/feat/topic"], mainWork);
+    git(["commit", "-q", "-m", "squashed topic (#1)"], mainWork);
+    git(["push", "-q", "origin", "main"], mainWork);
+    bare(["update-ref", "-d", "refs/heads/feat/topic"], remote);
+    git(["fetch", "-q", "--prune", "origin"], work);
+
+    assert.equal(hadRemoteTracking(work, "feat/topic"), false, "precondition: tracking ref pruned");
+    assert.equal(hasUpstreamConfig(work, "feat/topic"), false, "precondition: pushed without -u");
+    assert.equal(previouslyPushedBranches(work).has("feat/topic"), false, "precondition: not in this hook's log");
+    assert.ok(unpushedCount(unit) > 0, "precondition: --remotes alone calls the head unpushed");
+    assert.ok(remoteRetainedCommits(work).has(head), "the remote advertises the head as a PR head");
+
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "worktree-retention-push.mjs")], {
+      cwd: work,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...ISOLATED, CLAUDE_PROJECT_DIR: work },
+    });
+
+    assert.equal(
+      bare(["for-each-ref", "--format=%(refname)", "refs/heads/feat/topic"], remote).trim(),
+      "",
+      "the auto-deleted branch is NOT resurrected",
+    );
+    assert.equal(
+      bare(["for-each-ref", "--format=%(refname)", "refs/tags/"], remote).trim(),
+      "",
+      "and no retention tag is pushed either: the PR head already retains it",
+    );
+    const log = readFileSync(path.join(work, ".claude", "worktree-retention-push.log"), "utf8");
+    assert.match(log, /"verdict":"skipped-remote-retained".*"feat\/topic"/, "the skip is recorded");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a branch that genuinely never left the machine is still retained as a branch", () => {
   const { root, remote, work } = scaffold();
   try {
@@ -362,7 +417,7 @@ test("previouslyPushedBranches reads only real pushed-branch records", () => {
         JSON.stringify({ verdict: "pushed-branch", branch: "feat/pushed" }),
         JSON.stringify({ verdict: "pushed-tag", branch: "feat/tagged" }),
         JSON.stringify({ verdict: "retention-failed", branch: "feat/failed" }),
-        JSON.stringify({ verdict: "skipped-tag-retained", count: 2, branches: ["feat/skipped"] }),
+        JSON.stringify({ verdict: "skipped-remote-retained", count: 2, branches: ["feat/skipped"] }),
         "{ this line is truncated",
       ].join("\n") + "\n",
     );
@@ -452,7 +507,7 @@ test("retain retains a detached HEAD, which has no branch to push", () => {
   }
 });
 
-test("remoteTagCommits sees a pushed tag, which --remotes never can", () => {
+test("remoteRetainedCommits sees a pushed tag, which --remotes never can", () => {
   // The exact shape of the cave-nw3hq incident: a merged branch is archived as
   // a pushed tag and deleted from the remote. `git rev-list --not --remotes`
   // still calls its commits unpushed, because remote-tracking refs exist for
@@ -476,7 +531,7 @@ test("remoteTagCommits sees a pushed tag, which --remotes never can", () => {
       "precondition: with the branch gone, --remotes alone calls this unpushed",
     );
 
-    const tags = remoteTagCommits(work);
+    const tags = remoteRetainedCommits(work);
     assert.ok(tags instanceof Set, "the remote answered");
     assert.ok(
       tags.has(head),
@@ -487,7 +542,7 @@ test("remoteTagCommits sees a pushed tag, which --remotes never can", () => {
   }
 });
 
-test("remoteTagCommits collects the peeled commit of an annotated tag", () => {
+test("remoteRetainedCommits collects the peeled commit of an annotated tag", () => {
   // An annotated tag advertises the TAG OBJECT at refs/tags/x and the commit at
   // refs/tags/x^{}. Reading only the first would compare a tag-object id against
   // a commit id and never match — the check would silently never fire.
@@ -499,20 +554,42 @@ test("remoteTagCommits collects the peeled commit of an annotated tag", () => {
     git(["tag", "-a", "annotated-example", "-m", "annotated", head], work);
     git(["push", "origin", "annotated-example"], work);
 
-    const tags = remoteTagCommits(work);
+    const tags = remoteRetainedCommits(work);
     assert.ok(tags.has(head), "the peeled commit is present, not just the tag object");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("remoteTagCommits returns null when the remote cannot be reached", () => {
+test("remoteRetainedCommits counts pull-request heads but not their test merges", () => {
+  // `refs/pull/<n>/head` is the PR's exact head; `refs/pull/<n>/merge` is a
+  // test-merge commit GitHub builds and moves, never anything a branch held.
+  const { root, remote, work } = scaffold();
+  try {
+    const seed = headSha(work);
+    git(["checkout", "-q", "-b", "feat/pr"], work);
+    commit(work, "pr");
+    git(["push", "-q", "origin", "feat/pr"], work);
+    const prHead = headSha(work);
+    bare(["update-ref", "refs/pull/9/head", prHead], remote);
+    bare(["update-ref", "refs/pull/9/merge", seed], remote);
+    git(["push", "-q", "origin", "--delete", "feat/pr"], work);
+
+    const oids = remoteRetainedCommits(work);
+    assert.ok(oids.has(prHead), "the PR head is retained");
+    assert.equal(oids.has(seed), false, "a test-merge ref and a plain branch head are not listed");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteRetainedCommits returns null when the remote cannot be reached", () => {
   // No proof means push, which is the safe direction: a redundant ref costs
   // nothing, a skipped push leaves commits on one machine.
   const { root, work } = scaffold();
   try {
     git(["remote", "set-url", "origin", path.join(root, "does-not-exist.git")], work);
-    assert.equal(remoteTagCommits(work), null);
+    assert.equal(remoteRetainedCommits(work), null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -537,7 +614,7 @@ test("remoteBranchNames reads the heads the remote advertises", () => {
 
 test("remoteBranchNames returns null when the remote cannot be reached", () => {
   // Null is "no proof of deletion", which keeps the branch-first path — the
-  // same safe direction remoteTagCommits takes.
+  // same safe direction remoteRetainedCommits takes.
   const { root, work } = scaffold();
   try {
     git(["remote", "set-url", "origin", path.join(root, "does-not-exist.git")], work);

@@ -1199,7 +1199,7 @@ function tagsOnRemote(cwd, remote) {
       // OBJECT at `refs/tags/x` and its commit at `refs/tags/x^{}`; a
       // lightweight tag advertises the commit directly. Taking both means the
       // peeled commit is always present, and a tag-object id can never collide
-      // with a commit id. Same parse as remoteTagCommits() in
+      // with a commit id. Same parse as remoteRetainedCommits() in
       // worktree-retention-push.mjs, which had to answer this first.
       const oid = trimmed.slice(0, 40);
       if (/^[0-9a-f]{40}$/.test(oid)) found.oids.add(oid);
