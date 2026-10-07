@@ -26,6 +26,27 @@ assert.deepEqual(parseConnectorIds(undefined), []);
   assert.equal(env.GH_TOKEN, "existing", "never overrides an explicit GH_TOKEN");
 }
 
+{
+  const env = { GH_TOKEN: "   ", GITHUB_PAT: "ghp_real" };
+  prepareTurnConnectors(["github"], env);
+  assert.equal(env.GH_TOKEN, "ghp_real", "a blank GH_TOKEN is replaced");
+}
+{
+  const env = { GITHUB_PAT: "  ghp_x  " };
+  prepareTurnConnectors(["github"], env);
+  assert.equal(env.GH_TOKEN, "ghp_x", "a padded token is trimmed");
+}
+{
+  const env = { GITHUB_TOKEN: "tok" };
+  assert.deepEqual(prepareTurnConnectors(["github"], env), [{ id: "github", available: true }]);
+  assert.equal(env.GH_TOKEN, "tok");
+}
+{
+  const env = {};
+  prepareTurnConnectors(["github", "asana"], env);
+  assert.deepEqual(env, {}, "an unavailable connector leaves the env untouched");
+}
+
 // Asana: a launcher ASANA_ACCESS_TOKEN is exposed under the one name the prompt uses.
 {
   const env = { ASANA_ACCESS_TOKEN: "asana_test_value" };

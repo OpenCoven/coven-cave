@@ -7,7 +7,9 @@
  * A turn only names which connectors the user turned on; this module checks
  * the turn's real env, exposes an already-present credential under the name
  * the tool reads (gh reads GH_TOKEN), and tells the familiar what it can use.
- * It never widens scope: nothing here reads the Vault.
+ * It never widens scope: nothing here reads the Vault. A gh keyring login is
+ * deliberately not consulted: GitHub is reported available only when a token
+ * is in this familiar's env, because reading the keyring would widen scope.
  */
 import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
 
@@ -58,16 +60,26 @@ export function prepareTurnConnectors(
 ): TurnConnector[] {
   return requested.map((id) => {
     if (!env) return { id, available: false };
-    if (id === "github") {
-      const token = firstToken(env, GITHUB_HARNESS_TOKEN_ENV_KEYS);
-      if (!token) return { id, available: false };
-      if (!env.GH_TOKEN?.trim()) env.GH_TOKEN = token;
-      return { id, available: true };
+    switch (id) {
+      case "github": {
+        // Precedence deliberately takes the first key in GITHUB_HARNESS_TOKEN_ENV_KEYS
+        // (the familiar's Vault-scoped GITHUB_PAT first) and never overrides an explicit GH_TOKEN.
+        const token = firstToken(env, GITHUB_HARNESS_TOKEN_ENV_KEYS);
+        if (!token) return { id, available: false };
+        if (!env.GH_TOKEN?.trim()) env.GH_TOKEN = token;
+        return { id, available: true };
+      }
+      case "asana": {
+        const token = firstToken(env, ASANA_TOKEN_ENV_KEYS);
+        if (!token) return { id, available: false };
+        if (!env.ASANA_PAT?.trim()) env.ASANA_PAT = token;
+        return { id, available: true };
+      }
+      default: {
+        const unreachable: never = id;
+        return unreachable;
+      }
     }
-    const token = firstToken(env, ASANA_TOKEN_ENV_KEYS);
-    if (!token) return { id, available: false };
-    if (!env.ASANA_PAT?.trim()) env.ASANA_PAT = token;
-    return { id, available: true };
   });
 }
 
