@@ -344,9 +344,18 @@ final class LiveVoiceCallModel: Identifiable {
         }
     }
 
+    /// Whether the call has said anything that sticks (#5828). A partial row
+    /// is recognition still in progress: a call ended before any row became
+    /// final sent nothing, so its auto-created session is still empty and is
+    /// discarded on end like a silent one. The discard asks the server to
+    /// delete only an empty session, so this can't drop real content.
+    private var hasFinalTranscript: Bool {
+        state.transcript.contains(where: \.isFinal)
+    }
+
     private func markConversationContentIfNeeded() {
         guard !hasCommittedConversationContent,
-              !state.transcript.isEmpty
+              hasFinalTranscript
         else { return }
         hasCommittedConversationContent = true
         autoCreatedSessionId = nil
@@ -355,7 +364,7 @@ final class LiveVoiceCallModel: Identifiable {
     private func bindThreadSessionIfNeeded() {
         guard !didBindThreadSession,
               let sessionId = state.sessionId,
-              !state.transcript.isEmpty
+              hasFinalTranscript
         else { return }
         didBindThreadSession = true
         hasCommittedConversationContent = true
