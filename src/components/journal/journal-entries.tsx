@@ -941,8 +941,9 @@ export function JournalEntries({
             onRunFinished={() => {
               if (!mountedRef.current) return;
               void loadDays();
-              const current = selectedRef.current;
-              if (current.date === today) void loadDay(current);
+              // A run may write today's entry or backfill an earlier
+              // missed day, so refresh whichever entry is open.
+              void loadDay(selectedRef.current);
             }}
           />
         ) : null}

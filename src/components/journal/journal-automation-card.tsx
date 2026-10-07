@@ -13,6 +13,7 @@ import {
   JOURNAL_RUNTIMES,
   formatRoutineHour,
   isJournalRuntime,
+  type JournalRunFailure,
   type JournalRuntime,
 } from "@/lib/journal-automation";
 
@@ -21,10 +22,20 @@ type RoutineView = { id: string; status: "ACTIVE" | "PAUSED"; hour: number | nul
 type RunView = { id: string; status: "running" | "succeeded" | "failed" | "cancelled"; startedAt: string; finishedAt?: string; sessionId?: string };
 /** Whether the last succeeded run actually wrote the day's entry (server-checked). */
 type RunEntryView = { date: string; written: boolean } | null;
+/** Why the last run failed, read server-side from its session log. */
+type RunFailureView = JournalRunFailure | null;
 
 type CardState =
   | { kind: "loading" }
-  | { kind: "ready"; routine: RoutineView | null; lastRun: RunView | null; lastRunEntry: RunEntryView }
+  | {
+      kind: "ready";
+      routine: RoutineView | null;
+      lastRun: RunView | null;
+      lastRunEntry: RunEntryView;
+      lastRunFailure: RunFailureView;
+      /** The routine was saved with older reflection instructions. */
+      promptOutdated: boolean;
+    }
   /** The daemon's automations service can't be reached — said precisely, no fallback. */
   | { kind: "unavailable"; error: string }
   | { kind: "error"; error: string };
@@ -76,7 +87,7 @@ export function JournalAutomationCard({
   const [state, setState] = useState<CardState>({ kind: "loading" });
   const [hour, setHour] = useState<number>(DEFAULT_JOURNAL_ROUTINE_TIME.hour);
   const [runtime, setRuntime] = useState<JournalRuntime>(DEFAULT_JOURNAL_RUNTIME);
-  const [busy, setBusy] = useState<"toggle" | "time" | "runtime" | "run" | null>(null);
+  const [busy, setBusy] = useState<"toggle" | "time" | "runtime" | "prompt" | "run" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runNote, setRunNote] = useState<string | null>(null);
   // While a Run now is in flight, poll for its outcome (bounded, and paused
@@ -97,9 +108,16 @@ export function JournalAutomationCard({
     };
   }, []);
 
-  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunEntry?: RunEntryView }) => {
+  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunEntry?: RunEntryView; lastRunFailure?: RunFailureView; promptOutdated?: boolean }) => {
     const routine = json.routine ?? null;
-    setState({ kind: "ready", routine, lastRun: json.lastRun ?? null, lastRunEntry: json.lastRunEntry ?? null });
+    setState({
+      kind: "ready",
+      routine,
+      lastRun: json.lastRun ?? null,
+      lastRunEntry: json.lastRunEntry ?? null,
+      lastRunFailure: json.lastRunFailure ?? null,
+      promptOutdated: json.promptOutdated === true,
+    });
     setHour(routineHour(routine));
     setRuntime(routineRuntime(routine));
   }, []);
@@ -123,7 +141,14 @@ export function JournalAutomationCard({
         return next;
       }
       applyBody(json);
-      return { kind: "ready", routine: json.routine ?? null, lastRun: json.lastRun ?? null, lastRunEntry: json.lastRunEntry ?? null };
+      return {
+        kind: "ready",
+        routine: json.routine ?? null,
+        lastRun: json.lastRun ?? null,
+        lastRunEntry: json.lastRunEntry ?? null,
+        lastRunFailure: json.lastRunFailure ?? null,
+        promptOutdated: json.promptOutdated === true,
+      };
     } catch (err) {
       if (reqId !== reqRef.current || !mountedRef.current) return null;
       const next: CardState = { kind: "error", error: err instanceof Error ? err.message : "request failed" };
@@ -142,7 +167,7 @@ export function JournalAutomationCard({
     enabled: boolean,
     nextHour: number,
     nextRuntime: JournalRuntime,
-    reason: "toggle" | "time" | "runtime",
+    reason: "toggle" | "time" | "runtime" | "prompt",
   ) => {
     setBusy(reason);
     setActionError(null);
@@ -161,7 +186,9 @@ export function JournalAutomationCard({
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't save the daily reflection.");
       applyBody(json);
       announce(
-        reason === "time"
+        reason === "prompt"
+          ? `${familiarName}'s daily reflection now uses the latest instructions.`
+          : reason === "time"
           ? `Daily reflection time set to ${formatRoutineHour(nextHour)}.`
           : reason === "runtime"
             ? `Daily reflection now runs on ${runtimeLabel(nextRuntime)}.`
@@ -233,6 +260,9 @@ export function JournalAutomationCard({
   const savedTime = formatRoutineHour(routineHour(routine));
   const lastRun = state.kind === "ready" ? state.lastRun : null;
   const lastRunEntry = state.kind === "ready" ? state.lastRunEntry : null;
+  const lastRunFailure = state.kind === "ready" ? state.lastRunFailure : null;
+  const runFailed = lastRun?.status === "failed";
+  const promptOutdated = state.kind === "ready" && Boolean(state.routine) && state.promptOutdated;
   // The daemon says "succeeded" whenever the harness exits 0 — including a
   // signed-out harness that only printed "Login expired". Trust the file.
   const wroteNothing = lastRun?.status === "succeeded" && lastRunEntry !== null && !lastRunEntry.written;
@@ -364,6 +394,43 @@ export function JournalAutomationCard({
                 <Icon name="ph:warning" width={12} aria-hidden />
                 The last run finished without writing {familiarName}&apos;s entry. {runtimeLabel(routine?.runtime ?? runtime)} may
                 need signing in — check it with <code>coven doctor</code>, or pick another harness above.
+              </p>
+              {lastRun?.sessionId ? (
+                <details className="journal-details">
+                  <summary>Details</summary>
+                  <code>coven attach {lastRun.sessionId}</code>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+          {promptOutdated ? (
+            <div className="journal-auto__degraded" role="status" data-prompt-outdated="">
+              <p className="journal-auto__line">
+                <Icon name="ph:info" width={12} aria-hidden />
+                This routine still runs older reflection instructions. Update it to the latest ones, which ground
+                the entry in {familiarName}&apos;s sessions and stay within the run&apos;s turn budget.
+              </p>
+              <Button
+                size="xs"
+                leadingIcon="ph:arrow-clockwise"
+                disabled={busy !== null}
+                loading={busy === "prompt"}
+                onClick={() => { void save(enabled, hour, runtime, "prompt"); }}
+              >
+                Update instructions
+              </Button>
+            </div>
+          ) : null}
+          {runFailed ? (
+            <div className="journal-auto__degraded" role="status" data-failure-kind={lastRunFailure?.kind ?? "unknown"}>
+              <p className="journal-auto__line">
+                <Icon name="ph:warning" width={12} aria-hidden />
+                {lastRunFailure
+                  ? `The last run failed: ${lastRunFailure.message}`
+                  : `The last run failed before writing ${familiarName}'s entry.`}
+              </p>
+              <p className="journal-auto__line journal-auto__line--muted">
+                {lastRunFailure?.hint ?? "Open the session for the full log, or Run now to try again."}
               </p>
               {lastRun?.sessionId ? (
                 <details className="journal-details">

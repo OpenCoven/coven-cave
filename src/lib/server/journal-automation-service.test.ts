@@ -63,7 +63,7 @@ test("GET reports no routine yet as available + null", async () => {
   const daemon = fakeDaemon();
   const result = await service.readJournalAutomation("astra", { transport: daemon.transport });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { ok: true, available: true, routine: null, lastRun: null, lastRunEntry: null });
+  assert.deepEqual(result.body, { ok: true, available: true, routine: null, lastRun: null, lastRunEntry: null, lastRunFailure: null });
 });
 
 test("GET returns the routine with its parsed time and the newest run", async () => {
@@ -284,4 +284,68 @@ test("POST run reports a failed run with the daemon's error", async () => {
   assert.equal(result.status, 502);
   assert.equal(result.body.ok, false);
   assert.match(result.body.error, /not installed/);
+});
+
+test("GET explains a failed last run from its session log", async () => {
+  const daemon = fakeDaemon({
+    routines: [{ id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] }],
+    runs: {
+      [astraId]: [
+        { id: "r9", automationId: astraId, runtime: "claude", status: "failed", sessionId: "session-q", startedAt: "2026-10-06T02:00:29Z" },
+      ],
+    },
+  });
+  const asked = [];
+  const result = await service.readJournalAutomation("astra", {
+    transport: daemon.transport,
+    readSessionLog: async (id) => {
+      asked.push(id);
+      return [{ message: "You've hit your weekly limit · resets 1am (America/Chicago)\n" }, { message: 'exit: {"exitCode":1}' }];
+    },
+  });
+  assert.deepEqual(asked, ["session-q"]);
+  assert.equal(result.body.lastRunFailure.kind, "quota");
+  assert.match(result.body.lastRunFailure.message, /weekly limit/);
+});
+
+test("GET leaves lastRunFailure null for a succeeded run or an unreadable log", async () => {
+  const routines = [{ id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] }];
+  const ok = fakeDaemon({ routines, runs: { [astraId]: [{ id: "r1", automationId: astraId, runtime: "claude", status: "succeeded", sessionId: "s", startedAt: "2026-10-06T02:00:29Z" }] } });
+  let reads = 0;
+  const okResult = await service.readJournalAutomation("astra", {
+    transport: ok.transport,
+    readSessionLog: async () => { reads += 1; return []; },
+    readEntry: async () => ({ exists: true, source: "file", modified: "2026-10-06T02:01:00Z" }),
+  });
+  assert.equal(okResult.body.lastRunFailure, null);
+  assert.equal(reads, 0, "a succeeded run's log is never read");
+  const failed = fakeDaemon({ routines, runs: { [astraId]: [{ id: "r2", automationId: astraId, runtime: "claude", status: "failed", sessionId: "s", startedAt: "2026-10-06T02:00:29Z" }] } });
+  const failedResult = await service.readJournalAutomation("astra", {
+    transport: failed.transport,
+    readSessionLog: async () => { throw new Error("daemon down"); },
+  });
+  assert.equal(failedResult.status, 200, "a log read failure never hides the routine");
+  assert.equal(failedResult.body.lastRunFailure, null);
+});
+
+test("GET flags a routine saved with older reflection instructions", async () => {
+  const { JOURNAL_ROUTINE_PROMPT_MARKER } = await import("../journal-automation.ts");
+  const base = { id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] };
+  const stale = await service.readJournalAutomation("astra", { transport: fakeDaemon({ routines: [{ ...base, prompt: "You are Astra, writing today's entry." }] }).transport });
+  assert.equal(stale.body.promptOutdated, true);
+  const fresh = await service.readJournalAutomation("astra", { transport: fakeDaemon({ routines: [{ ...base, prompt: `...\n${JOURNAL_ROUTINE_PROMPT_MARKER}` }] }).transport });
+  assert.equal(fresh.body.promptOutdated, false);
+  const none = await service.readJournalAutomation("astra", { transport: fakeDaemon().transport });
+  assert.equal(none.body.promptOutdated, undefined, "no routine, nothing to update");
+});
+
+test("a saved routine's prompt carries the current instructions marker", async () => {
+  const { JOURNAL_ROUTINE_PROMPT_MARKER } = await import("../journal-automation.ts");
+  const daemon = fakeDaemon();
+  const result = await service.saveJournalAutomation(
+    { familiar: "astra", enabled: true, hour: 4, minute: 0, familiarName: "Astra" },
+    { transport: daemon.transport },
+  );
+  assert.ok(result.body.routine.prompt.includes(JOURNAL_ROUTINE_PROMPT_MARKER));
+  assert.equal(result.body.promptOutdated, false);
 });
