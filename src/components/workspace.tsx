@@ -26,6 +26,7 @@ import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/worksp
 import { statusContextPolicy } from "@/lib/workspace-destination-policy";
 import {
   normalizeWorkspacePaneRequest,
+  openedByUser,
   workspacePaneRequestKey,
   type WorkspacePaneRequest,
 } from "@/lib/workspace-pane-request";
@@ -3790,7 +3791,9 @@ export function Workspace() {
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
-      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), m);
+      // A drop is the user asking for the page now (#5807): a terminal opened
+      // this way takes focus, while one a link restores does not.
+      const request = openedByUser(normalizeWorkspacePaneRequest(nextPaneInstanceId(), m));
       const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
       if (!request || (primary && workspacePaneRequestKey(request) === workspacePaneRequestKey(primary))) {
         return;
@@ -4788,6 +4791,7 @@ export function Workspace() {
             projectRoot={session?.project_root ?? null}
             active
             paneInstanceId={request.instanceId}
+            focusOnOpen={request.openedByUser === true}
           />
         </WorkspacePanePage>
       );

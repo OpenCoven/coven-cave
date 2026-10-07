@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { changedFileCount, fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { sumFileTotals } from "@/lib/chat-environment-panel-model";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -70,8 +70,13 @@ export function useChangesSummary(
       if (generation.current !== gen) return;
       if (httpOk && json.ok) {
         setNotARepo(json.repo === false);
-        setCount(Array.isArray(json.files) ? json.files.length : 0);
-        setTotals(sumFileTotals(json.files));
+        // The whole tree's count and totals, even when the list is cut (#5807).
+        setCount(changedFileCount(json));
+        setTotals(
+          json.truncated && json.totals
+            ? { additions: json.totals.insertions, deletions: json.totals.deletions }
+            : sumFileTotals(json.files),
+        );
         setBranch(typeof json.branch === "string" ? json.branch : null);
         setWorktree(typeof json.worktree === "string" ? json.worktree : null);
       }

@@ -54,7 +54,16 @@ type ChangesResponse = {
   error?: string;
   branch?: string | null;
   githubOrigin?: boolean;
+  head?: string | null;
+  headSubject?: string | null;
+  totalFiles?: number;
+  totals?: { insertions: number; deletions: number };
+  truncated?: boolean;
 };
+
+/** A change list the server cut short (#5807): every changed file, counted,
+ *  and their line totals. */
+type ListCut = { total: number; insertions: number; deletions: number };
 
 
 // ── Panel body (mounted per project root) ─────────────────────────────────────
@@ -107,6 +116,11 @@ export function SessionChangesInner({
   // which reads as yes.
   const [branch, setBranch] = useState<string | null>(null);
   const [githubOrigin, setGithubOrigin] = useState(true);
+  // What HEAD is, so a commit found landed late is pinned to it (#5807).
+  const [headOid, setHeadOid] = useState<string | null>(null);
+  const [headSubject, setHeadSubject] = useState<string | null>(null);
+  // Set when the list is cut short (#5807); Commit is off while it is.
+  const [listCut, setListCut] = useState<ListCut | null>(null);
   // Only for a refresh someone asked for (#5795): set on every background
   // poll, it rendered the whole list twice a poll, and the Refresh button
   // flickered off every five seconds.
@@ -206,6 +220,20 @@ export function SessionChangesInner({
       setRepoRoot(json.repoRoot ?? null);
       setBranch(json.branch ?? null);
       setGithubOrigin(json.githubOrigin !== false);
+      setHeadOid(json.head ?? null);
+      setHeadSubject(json.headSubject ?? null);
+      const cut: ListCut | null = json.truncated
+        ? {
+          total: json.totalFiles ?? json.files?.length ?? 0,
+          insertions: json.totals?.insertions ?? 0,
+          deletions: json.totals?.deletions ?? 0,
+        }
+        : null;
+      setListCut((prev) =>
+        prev && cut && prev.total === cut.total && prev.insertions === cut.insertions && prev.deletions === cut.deletions
+          ? prev
+          : cut,
+      );
       // Content-guard: an unchanged 5s poll keeps the previous reference so the
       // whole diff panel (and the expanded file's diff refetch, gated by
       // filesSig) doesn't churn while an agent is actively editing.
@@ -329,8 +357,9 @@ export function SessionChangesInner({
   // keeps the line counts must still refresh the expanded diff.
   const filesSig = files.map((f) => `${f.path}:${diffSignature(f)}`).join("|");
   // Aggregate +/- across all changed files for the header summary.
-  const totalInsertions = files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
-  const totalDeletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
+  // A cut list (#5807) shows the whole tree's totals, not the listed part's.
+  const totalInsertions = listCut ? listCut.insertions : files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
+  const totalDeletions = listCut ? listCut.deletions : files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
   useEffect(() => {
     if (!expandedPath) return;
     const file = files.find((f) => f.path === expandedPath);
@@ -553,7 +582,7 @@ export function SessionChangesInner({
 
   const commitChanges = useCallback(async () => {
     const message = commitMsg.trim();
-    if (!message || changesOutbound.get(outboundKey).pending) return;
+    if (!message || listCut || changesOutbound.get(outboundKey).pending) return;
     setActionError(null);
     setOutbound({ pending: "commit", error: null, prUrl: null, prExisted: false, commitWarning: null, timedOutCommit: null });
     // The list as reviewed (#5745): the server refuses when the working
@@ -599,11 +628,12 @@ export function SessionChangesInner({
       // A refused commit usually means the tree moved: show the new list.
       void load();
     }
-  }, [announce, branch, commitMsg, files, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
+  }, [announce, branch, commitMsg, files, listCut, projectRoot, load, loadCheckpoints, outboundKey, setOutbound]);
 
   // A commit the client gave up on, found landed in a later list (#5795). It
-  // gets the result a commit gets, from what the list says: its branch, but
-  // not its id, so Create PR names the branch and not the commit. Create PR is
+  // gets the result a commit gets, from what the list says: its branch, and
+  // its id when the list's HEAD carries its subject (#5807), so Create PR is
+  // pinned to that commit; otherwise Create PR names the branch alone. It is
   // offered when the branch isn't the default. A commit from the default goes
   // to a new branch; one that stayed on its branch was on the default only if
   // it was the repository's first commit, and then that is its only branch.
@@ -614,7 +644,7 @@ export function SessionChangesInner({
       setOutbound({ timedOutCommit: null });
       return;
     }
-    const landed = timedOutCommitLanded(timedOutCommit, { branch, files });
+    const landed = timedOutCommitLanded(timedOutCommit, { branch, files, head: headOid, headSubject });
     if (!landed) return;
     let cancelled = false;
     void (async () => {
@@ -625,7 +655,14 @@ export function SessionChangesInner({
       setOutbound({
         timedOutCommit: null,
         error: null,
-        postCommit: { sha: "", headOid: "", branch: landed.branch, onDefaultBranch: !feature },
+        // Pinned to the commit when the list's HEAD is it (#5807), as a
+        // normal commit's Create PR is; otherwise the branch alone.
+        postCommit: {
+          sha: landed.headOid.slice(0, 7),
+          headOid: landed.headOid,
+          branch: landed.branch,
+          onDefaultBranch: !feature,
+        },
         prTitle: timedOutCommit.message.split("\n")[0].slice(0, 72),
         prBody: "",
         prOpen: false,
@@ -634,7 +671,7 @@ export function SessionChangesInner({
       announce(`The commit landed after all, on ${landed.branch}.`);
     })();
     return () => { cancelled = true; };
-  }, [announce, branch, error, files, loaded, outboundKey, projectRoot, setOutbound, timedOutCommit]);
+  }, [announce, branch, error, files, headOid, headSubject, loaded, outboundKey, projectRoot, setOutbound, timedOutCommit]);
 
   const createPr = useCallback(async () => {
     const title = prTitle.trim();
@@ -688,7 +725,9 @@ export function SessionChangesInner({
     }
   }, [announce, load, outboundKey, postCommit, prTitle, prBody, projectRoot, setOutbound]);
 
-  const canCommit = loaded && !notARepo && !error && files.length > 0;
+  // A cut list can't be committed (#5807): a commit names every change it
+  // reviewed, and this list doesn't hold them all.
+  const canCommit = loaded && !notARepo && !error && files.length > 0 && !listCut;
   // Create PR pushes to `origin` and opens the PR on GitHub (#5795): with no
   // GitHub origin it can only fail, after pushing the branch.
   const canOpenPr = githubOrigin;
@@ -773,7 +812,7 @@ export function SessionChangesInner({
               </span>
               {loaded && !notARepo && !error ? (
                 <span className="inline-flex h-4 shrink-0 items-center rounded border border-[var(--border-hairline)] px-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                  {files.length}
+                  {listCut ? listCut.total : files.length}
                 </span>
               ) : null}
               {loaded && !notARepo && !error && totalInsertions + totalDeletions > 0 ? (
@@ -890,6 +929,22 @@ export function SessionChangesInner({
             />
           </div>
         )}
+
+        {listCut && loaded && !notARepo ? (
+          // Says what the list leaves out (#5807), and why Commit is off.
+          <div
+            data-testid="changes-list-cut"
+            role="status"
+            className="mb-2 flex items-start gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
+          >
+            <Icon name="ph:warning" width={12} aria-hidden className="mt-0.5 shrink-0 text-[var(--color-warning)]" />
+            <span className="min-w-0 break-words">
+              Showing the first {files.length.toLocaleString()} of {listCut.total.toLocaleString()} changed files.{" "}
+              {(listCut.total - files.length).toLocaleString()} aren&rsquo;t listed, so Commit is off. Add the folder to
+              .gitignore, or commit from a terminal.
+            </span>
+          </div>
+        ) : null}
 
         {!loaded && !error ? (
           <ChangesSkeleton />

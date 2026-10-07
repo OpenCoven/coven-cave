@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   normalizeWorkspacePaneRequest,
+  openedByUser,
   workspacePaneRequestKey,
 } from "./workspace-pane-request.ts";
 
@@ -30,4 +31,17 @@ test("aliases sharing a canonical surface remain distinct split tiles", () => {
 
 test("unknown pages cannot create a pane request", () => {
   assert.equal(normalizeWorkspacePaneRequest("pane-unknown", "not-a-page"), null);
+});
+
+test("a request the user just opened is marked so, without changing its identity (#5807)", () => {
+  const restored = normalizeWorkspacePaneRequest("pane-term", "terminal");
+  assert.ok(restored);
+  assert.equal(restored.openedByUser, undefined, "a link or a saved layout is not the user opening it");
+  const opened = openedByUser(restored);
+  assert.ok(opened);
+  assert.equal(opened.openedByUser, true);
+  assert.equal(opened.instanceId, restored.instanceId);
+  assert.equal(workspacePaneRequestKey(opened), workspacePaneRequestKey(restored), "same split tile");
+  assert.ok(Object.isFrozen(opened));
+  assert.equal(openedByUser(null), null, "an unknown page stays unknown");
 });

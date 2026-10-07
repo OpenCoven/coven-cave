@@ -98,8 +98,8 @@ assert.match(
 );
 assert.match(
   source,
-  /return \{ ok: true, repo: true, repoRoot, branch, worktree, githubOrigin, files \};/,
-  "the change-list response includes the branch and worktree fields, and whether origin is on GitHub (#5795)",
+  /return \{\s*ok: true,\s*repo: true,\s*repoRoot,\s*branch,\s*worktree,\s*githubOrigin,\s*head: head\?\.oid \?\? null,\s*headSubject: head\?\.subject \?\? null,\s*files,[\s\S]{0,200}totalFiles: changed\.length,\s*totals,\s*truncated,\s*\};/,
+  "the change-list response includes the branch and worktree fields, whether origin is on GitHub (#5795), the head commit, and the list's totals and cut (#5807)",
 );
 assert.match(
   source,

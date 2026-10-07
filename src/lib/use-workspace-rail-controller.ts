@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
+import { changedFileCount, fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { useCodeRail } from "@/lib/use-code-rail";
 import { codeRailChangeSignature, hasNewCodeRailChanges } from "@/lib/code-rail";
@@ -76,13 +76,13 @@ export function useWorkspaceRailController({
     }
     let cancelled = false;
     let inFlight = false;
-    const load = async (opts?: { force?: boolean }) => {
+    const load = async (opts?: { force?: boolean; cause?: Event }) => {
       if (inFlight) return;
       inFlight = true;
       try {
         const { httpOk, json } = await fetchChangesSummary(root, opts);
         if (!cancelled) {
-          setChangeCount(httpOk && json.ok ? (json.files?.length ?? 0) : null);
+          setChangeCount(httpOk && json.ok ? changedFileCount(json) : null);
           if (httpOk && json.ok) {
             const signature = codeRailChangeSignature(json.files ?? []);
             if (hasNewCodeRailChanges(changeSignatureRef.current, signature)) {
@@ -98,7 +98,9 @@ export function useWorkspaceRailController({
       }
     };
     void load();
-    const refresh = () => void load({ force: true });
+    // Named by its cause (#5807): one `cave:changes-refresh` reaches the desk's
+    // hook and the changes panel too, and they share one forced read.
+    const refresh = (event: Event) => void load({ force: true, cause: event });
     window.addEventListener("cave:changes-refresh", refresh);
     const intervalId = sessionRunning
       ? window.setInterval(() => {
