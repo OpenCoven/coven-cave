@@ -13,7 +13,60 @@ const executablePath = chromium.executablePath();
 if (!existsSync(executablePath)) {
   console.log(`glitter-crypt-chromium.test.ts skipped: browser not installed at ${executablePath}`);
 } else {
-  async function checkGame(frameDelay) {
+  // The game's own fire window (#5801): fire() hexes a wisp within
+  // AIM_TOLERANCE + RANGE_SLACK / dist radians. The controller reads both from
+  // the game so the two can't drift, and fires inside three quarters of it.
+  // A fixed ±0.06 was stricter than the game and narrower than one capped
+  // frame's turn, so under sparse frames a small correction never landed.
+  const arcadeSource = buildArcadeSrcDoc();
+  const aimTolerance = Number(/var AIM_TOLERANCE = ([\d.]+);/.exec(arcadeSource)?.[1]);
+  const rangeSlack = Number(/AIM_TOLERANCE \+ ([\d.]+) \/ Math\.max\(dist, 1\)/.exec(arcadeSource)?.[1]);
+  assert.ok(aimTolerance > 0 && rangeSlack > 0, "the game's fire window is readable from its source");
+  const fireWindow = (dist) => 0.75 * (aimTolerance + rangeSlack / Math.max(dist, 1));
+
+  // The crypt's floor plan, also read from the game, for the search below.
+  const mapRows = [.../var MAP = \[([\s\S]*?)\];/.exec(arcadeSource)?.[1].matchAll(/"([^"]+)"/g) ?? []].map((m) => m[1]);
+  assert.ok(mapRows.length > 2 && mapRows.every((row) => row.length === mapRows[0].length), "the crypt map is readable from its source");
+  const isFloor = (x, y) => mapRows[y]?.[x] === ".";
+  const cellKey = (cell) => `${cell.x},${cell.y}`;
+  const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  /** The floor cell holding a point, or the nearest floor neighbour when the
+   *  point sits on a wall's edge (a wisp pinned in a corner does). */
+  function floorCellAt(point) {
+    const base = { x: Math.floor(point.x), y: Math.floor(point.y) };
+    const candidates = [base, ...STEPS.map(([dx, dy]) => ({ x: base.x + dx, y: base.y + dy }))]
+      .filter((cell) => isFloor(cell.x, cell.y));
+    candidates.sort((a, b) =>
+      Math.hypot(a.x + 0.5 - point.x, a.y + 0.5 - point.y) - Math.hypot(b.x + 0.5 - point.x, b.y + 0.5 - point.y));
+    return candidates[0] ?? null;
+  }
+  /** The first cell of a shortest four-way floor path between two cells. */
+  function nextCellToward(from, to) {
+    const previous = new Map([[cellKey(from), null]]);
+    const queue = [from];
+    while (queue.length > 0) {
+      const cell = queue.shift();
+      if (cell.x === to.x && cell.y === to.y) {
+        let step = cell;
+        while (previous.get(cellKey(step)) && cellKey(previous.get(cellKey(step))) !== cellKey(from)) {
+          step = previous.get(cellKey(step));
+        }
+        return step;
+      }
+      for (const [dx, dy] of STEPS) {
+        const next = { x: cell.x + dx, y: cell.y + dy };
+        if (!isFloor(next.x, next.y) || previous.has(cellKey(next))) continue;
+        previous.set(cellKey(next), cell);
+        queue.push(next);
+      }
+    }
+    return null;
+  }
+
+  // `seed` fixes wave 1's layout: the delayed-frame regression uses 3, and
+  // 123 and 127 pin every wave-1 wisp out of sight from the start (#5801).
+  // Unseeded runs keep random normal gameplay.
+  async function checkGame(frameDelay, seed = frameDelay ? 3 : null) {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
@@ -24,11 +77,10 @@ if (!existsSync(executablePath)) {
         if (message.type() === "error") failures.push(message.text());
       });
 
-      // Seed only the delayed-frame regression; retain random normal gameplay.
-      const seeded = frameDelay
-        ? "<script>let seed=3; Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};</script>"
+      const seeded = seed != null
+        ? `<script>let seed=${seed}; Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};</script>`
         : "";
-      await page.setContent(buildArcadeSrcDoc().replace("<head>", "<head>" + seeded), { waitUntil: "load" });
+      await page.setContent(arcadeSource.replace("<head>", "<head>" + seeded), { waitUntil: "load" });
 
       assert.equal(await page.evaluate(() => document.compatMode), "CSS1Compat", "seeded and normal documents preserve standards mode");
 
@@ -136,29 +188,69 @@ if (!existsSync(executablePath)) {
       // exactly the flake this loop kept producing.
       let hexed = 0;
       let aimedShots = 0;
+      let seekSteps = 0;
+      let lastSighting = Date.now();
+      const turnToward = async (bearing) => {
+        // TURN_SPEED is 2.5 rad/s; hold just long enough to close the gap.
+        const hold = Math.min(260, Math.max(16, (Math.abs(bearing) / 2.5) * 1000));
+        const key = bearing > 0 ? "ArrowRight" : "ArrowLeft";
+        await page.keyboard.down(key);
+        await page.waitForTimeout(hold);
+        await page.keyboard.up(key);
+      };
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline && hexed === 0) {
         const now = await snapshot();
         hexed = now.score;
         if (hexed > 0) break;
         if (now.state !== "playing") {
-          // Dying is a legitimate outcome of standing still. Re-enter and keep
-          // going; the assertion below is about firing, not about surviving.
+          // Dying is a legitimate outcome of standing still or of walking up to
+          // a wisp. Re-enter and keep going; the assertion below is about
+          // firing, not about surviving.
           await page.locator("#veil-action").click();
           await page.waitForTimeout(120);
           continue;
         }
         if (!now.targetVisible) {
-          await page.waitForTimeout(70);
+          // Wisps chase in a straight line and stop for good in a concave
+          // wall corner, so a player who only waits can wait out the whole
+          // deadline with every wisp pinned out of sight (#5801). After a
+          // while with nothing in sight, walk toward the nearest wisp, seen
+          // or not: moving changes every chase line and frees them. A straight
+          // line toward a wisp behind a wall only walks into the wall, so the
+          // walk follows the floor plan's shortest path.
+          const hidden = Date.now() - lastSighting < 4000
+            ? null
+            : await page.evaluate(() => window.__ARCADE_SNAPSHOT__(false));
+          const heading = hidden ? hidden.angle + hidden.bearing : 0;
+          const wisp = hidden && Number.isFinite(hidden.nearest)
+            ? { x: hidden.x + Math.cos(heading) * hidden.nearest, y: hidden.y + Math.sin(heading) * hidden.nearest }
+            : null;
+          const goal = wisp && floorCellAt(wisp);
+          const next = goal && nextCellToward({ x: Math.floor(hidden.x), y: Math.floor(hidden.y) }, goal);
+          if (!next) {
+            await page.waitForTimeout(70);
+            continue;
+          }
+          const waypoint = { x: next.x + 0.5, y: next.y + 0.5 };
+          let turn = Math.atan2(waypoint.y - hidden.y, waypoint.x - hidden.x) - hidden.angle;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          if (Math.abs(turn) > 0.25) {
+            await turnToward(turn);
+            continue;
+          }
+          // MOVE_SPEED is 2.9 cells/s; stop near the waypoint, not past it.
+          const walk = Math.min(250, Math.max(60, (Math.hypot(waypoint.x - hidden.x, waypoint.y - hidden.y) / 2.9) * 1000));
+          await page.keyboard.down("ArrowUp");
+          await page.waitForTimeout(walk);
+          await page.keyboard.up("ArrowUp");
+          seekSteps += 1;
           continue;
         }
-        if (Math.abs(now.bearing) > 0.06) {
-          // TURN_SPEED is 2.5 rad/s; hold just long enough to close the gap.
-          const hold = Math.min(260, Math.max(16, (Math.abs(now.bearing) / 2.5) * 1000));
-          const key = now.bearing > 0 ? "ArrowRight" : "ArrowLeft";
-          await page.keyboard.down(key);
-          await page.waitForTimeout(hold);
-          await page.keyboard.up(key);
+        lastSighting = Date.now();
+        if (Math.abs(now.bearing) > fireWindow(now.nearest)) {
+          await turnToward(now.bearing);
           continue;
         }
         // Aimed at a visible target. It can move between observation and fire;
@@ -167,7 +259,7 @@ if (!existsSync(executablePath)) {
         aimedShots += 1;
         await page.waitForTimeout(aimedShots > 8 ? 220 : 70);
       }
-      assert.ok(hexed > 0, `aiming at a wisp and zapping it raises the hexed count: ${JSON.stringify({ aimedShots, snapshot: await snapshot() })}`);
+      assert.ok(hexed > 0, `aiming at a wisp and zapping it raises the hexed count: ${JSON.stringify({ seed, frameDelay, aimedShots, seekSteps, snapshot: await snapshot() })}`);
 
       if (frameDelay) {
         await page.evaluate(() => { window.requestAnimationFrame = window.__nativeRAF; });
@@ -205,4 +297,7 @@ if (!existsSync(executablePath)) {
   }
   await checkGame(0);
   await checkGame(1500);
+  // Every wave-1 wisp pins in a wall corner out of sight (#5801).
+  await checkGame(0, 123);
+  await checkGame(0, 127);
 }
