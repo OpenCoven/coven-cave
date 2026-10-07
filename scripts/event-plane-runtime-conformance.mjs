@@ -22,7 +22,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,6 +71,7 @@ async function startServer({ eventPlane, accessSecret = null, passkeyRequired = 
         return {
           port,
           origin,
+          caveHome: env.COVEN_CAVE_HOME,
           capability,
           async stop() {
             await stopCave({ child }, port);
@@ -211,7 +212,9 @@ async function main() {
         const ready = await nextMessage(ws);
         assert.equal(ready.type, "ready");
         assert.deepEqual(ready.topics, ["board", "sessions"]);
-        assert.equal(ready.seq, 0);
+        // Not necessarily 0: with the plane on, the daemon watcher publishes
+        // its first observation at startup (#5843).
+        assert.ok(Number.isSafeInteger(ready.seq) && ready.seq >= 0);
         ws.close();
       });
       await check("an unsupported protocol closes with 4400 and discloses nothing", async () => {
@@ -238,6 +241,17 @@ async function main() {
         assert.equal(await silentFor(sessions.ws, 750), true, "a sessions-only client hears nothing");
         board.ws.close();
         sessions.ws.close();
+      });
+      await check("a roster file change reaches familiars subscribers (#5843)", async () => {
+        const { ws } = await readySocket(cave, ["familiars"]);
+        const event = nextMessage(ws);
+        // Inside this run's scratch Cave home (asserted at startup).
+        writeFileSync(path.join(cave.caveHome, "removed-familiars.json"), JSON.stringify({ ids: [] }));
+        const invalidation = await event;
+        assert.equal(invalidation.type, "invalidate");
+        assert.equal(invalidation.topic, "familiars");
+        assert.equal(invalidation.entityIds, undefined, "a file change invalidates the whole roster");
+        ws.close();
       });
       await check("a resume cursor replays the retained board suffix", async () => {
         const first = await readySocket(cave, ["board"]);
