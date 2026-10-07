@@ -350,6 +350,7 @@ export const SUITES = {
     "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
+    "src/lib/connectors.test.ts",
     "src/lib/citations-directive.test.ts",
     "src/lib/github-item-url.test.ts",
     "src/lib/github-sub-tags.test.ts",
@@ -2218,6 +2219,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/connectors.test.ts",
   // the event-plane capability route resolves @/ and next/server (#5830)
   "src/app/api/events/capability/route.test.ts",
   // saved-history mapping uses the existing shared chat-turn-state contract
