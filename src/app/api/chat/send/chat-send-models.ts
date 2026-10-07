@@ -14,6 +14,7 @@ import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/claude-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
+import { buildConnectorsDirective, type TurnConnector } from "@/lib/connectors";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
 
 type ModelRequest = {
@@ -62,6 +63,8 @@ type ResponseControlRequest = {
   modelControls?: ModelControlValues;
   modelOverride?: string;
   modelOverrideScope?: ModelRequest["modelOverrideScope"];
+  /** Connectors the user turned on for this chat, with real availability. */
+  connectors?: readonly TurnConnector[];
 };
 
 
@@ -324,8 +327,10 @@ export function buildPromptWithResponseControls(prompt: string, body: ResponseCo
         "",
       ]
     : [];
+  const connectorsBlock = buildConnectorsDirective(body.connectors ?? []);
   return [
     ...guidance,
+    ...(connectorsBlock ? [connectorsBlock, ""] : []),
     buildNextPathsDirective(),
     "",
     buildCovenMarkersDirective(),
