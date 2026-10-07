@@ -457,7 +457,13 @@ struct ChatsHomeView: View {
             }
             let projectChoices = projectFilterChoices(snapshot)
             if projectChoices.count > 1 || projectFilter != nil {
-                projectFilterStrip(projectChoices)
+                // At accessibility sizes one chip fills the screen width, so
+                // the strip becomes a single menu naming the current choice.
+                if dynamicTypeSize.isAccessibilitySize {
+                    projectFilterMenu(projectChoices)
+                } else {
+                    projectFilterStrip(projectChoices)
+                }
             }
             if let familiarId = familiarFilter {
                 familiarFilterChip(familiarId)
@@ -554,6 +560,10 @@ struct ChatsHomeView: View {
         }
     }
 
+    private func projectFilterSymbol(_ filter: ChatListSnapshot.ProjectFilter) -> String {
+        filter == .unassigned ? "tray" : "folder"
+    }
+
     /// One-tap project filter: "All" first, then each project with chats. It
     /// appears only when there is more than one place to choose between.
     private func projectFilterStrip(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
@@ -564,7 +574,7 @@ struct ChatsHomeView: View {
                     projectFilterChip(
                         choice,
                         label: projectFilterName(choice),
-                        systemImage: choice == .unassigned ? "tray" : "folder"
+                        systemImage: projectFilterSymbol(choice)
                     )
                 }
             }
@@ -575,6 +585,51 @@ struct ChatsHomeView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Filter by project")
         .accessibilityIdentifier("Project filter")
+    }
+
+    /// The strip at accessibility text sizes. There each chip is about as
+    /// wide as the screen, so reaching a project meant swiping chip by chip;
+    /// one full-width control names the current choice and opens every choice
+    /// at once. Same filter, same choices, same order.
+    private func projectFilterMenu(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
+        let current = projectFilter.map(projectFilterName) ?? "All projects"
+        let active = projectFilter != nil
+        return Menu {
+            Picker("Filter by project", selection: $projectFilter) {
+                Label("All projects", systemImage: "square.grid.2x2")
+                    .tag(ChatListSnapshot.ProjectFilter?.none)
+                ForEach(choices, id: \.self) { choice in
+                    Label(projectFilterName(choice), systemImage: projectFilterSymbol(choice))
+                        .tag(Optional(choice))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: projectFilter.map(projectFilterSymbol) ?? "square.grid.2x2")
+                    .accessibilityHidden(true)
+                Text(current)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .accessibilityHidden(true)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(active ? chrome.accent : chrome.textSecondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .glass(.control, cornerRadius: 22)
+            .accentGlow(active: active)
+            .contentShape(Rectangle())
+        }
+        // Rigid height, so the menu never competes with the title row for
+        // vertical room in the header.
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel("Filter by project")
+        .accessibilityValue(current)
+        .accessibilityIdentifier("Project filter menu")
     }
 
     private func projectFilterChip(
