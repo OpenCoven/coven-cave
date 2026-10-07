@@ -2717,8 +2717,8 @@ async function postAdmittedChat(
     });
   }
   // Connectors use credentials already granted to this familiar's spawn
-  // env. Only a local launch has that env; ssh hosts and the Hermes API
-  // report the connector unavailable rather than pretend it is on.
+  // env. Only a local launch has that env; ssh hosts, the Hermes API, and
+  // OpenClaw report the connector unavailable rather than pretend it is on.
   const turnConnectors = prepareTurnConnectors(
     parseConnectorIds(body.connectors),
     !sshRuntime && localRuntimePlan ? localRuntimePlan.env : null,

@@ -1974,6 +1974,7 @@ export const SUITES = {
     "src/lib/github-token.test.ts",
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
+    "src/app/api/connectors/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
     "src/app/api/github/assigned/route-cache.test.ts",
     "src/lib/github-assigned-meta.test.ts",
@@ -2220,6 +2221,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/connectors/route.test.ts",
   "src/lib/connectors.test.ts",
   // the event-plane capability route resolves @/ and next/server (#5830)
   "src/app/api/events/capability/route.test.ts",
