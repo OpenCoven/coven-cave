@@ -165,6 +165,7 @@ const contracts: RouteContract[] = [
   { route: "/daemon/travel/reconcile", methods: ["POST"], kind: "json" },
   { route: "/escalations/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/escalations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/events/capability", methods: ["GET"], kind: "json" },
   // DELETE added deliberately by cave-nv1dk.1: clearing an avatar is now a host
   // mutation, not a browser-local IndexedDB delete. Mirrors the sibling
   // /backdrop route, which already exposes GET/PUT/DELETE.

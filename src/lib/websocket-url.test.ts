@@ -31,6 +31,16 @@ assert.equal(requiresSecureWebsocket({ protocol: "http:", host: "127.0.0.1:3020"
 assert.equal(requiresSecureWebsocket({ protocol: "https:", host: "cave.ts.net" }), true);
 
 // --- URL construction --------------------------------------------------------
+// The event plane's socket follows the same rule (#5830): wss: behind HTTPS
+// (Tailscale Serve on MagicDNS), plain ws: to the local sidecar.
+assert.equal(
+  websocketUrl("/api/events-ws", undefined, { protocol: "https:", host: "cave.ts.net" }),
+  "wss://cave.ts.net/api/events-ws",
+);
+assert.equal(
+  websocketUrl("/api/events-ws", undefined, { protocol: "http:", host: "127.0.0.1:3210" }),
+  "ws://127.0.0.1:3210/api/events-ws",
+);
 assert.equal(
   websocketUrl("/api/pty-ws", { threadId: "t1" }, { protocol: "https:", host: "cave.ts.net" }),
   "wss://cave.ts.net/api/pty-ws?threadId=t1",

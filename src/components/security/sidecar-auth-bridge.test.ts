@@ -102,6 +102,17 @@ test("attaches the token query param to same-host PTY WebSockets", () => {
   );
 });
 
+test("attaches the token query param to same-host event-plane WebSockets only (#5830)", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_ws" });
+  run(win);
+  const events = new win.WebSocket("ws://localhost:3210/api/events-ws");
+  assert.equal(events.url, "ws://localhost:3210/api/events-ws?covenCaveToken=tok_ws");
+  const other = new win.WebSocket("ws://localhost:3210/api/other-ws");
+  assert.equal(other.url, "ws://localhost:3210/api/other-ws", "only the exact token-bearing paths get the token");
+  const cross = new win.WebSocket("ws://evil.example.com/api/events-ws");
+  assert.equal(cross.url, "ws://evil.example.com/api/events-ws", "cross-host event sockets must not receive the token");
+});
+
 test("keeps the WebSocket readyState statics on the patched constructor", () => {
   const win = makeWindow({ hash: "#covenCaveToken=tok_static" });
   run(win);

@@ -7368,7 +7368,7 @@ import {
   createHash as createHash2,
   createHmac,
   randomBytes as randomBytes2,
-  randomUUID as randomUUID3
+  randomUUID as randomUUID4
 } from "node:crypto";
 import {
   chmodSync,
@@ -7396,8 +7396,433 @@ import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
 import { WebSocket, WebSocketServer } from "ws";
 
+// src/lib/cave-event-plane-protocol.ts
+var CAVE_EVENT_PROTOCOL = 1;
+var CAVE_EVENT_PATH = "/api/events-ws";
+var MAX_EVENT_MESSAGE_BYTES = 16 * 1024;
+var MAX_EVENT_ENTITY_IDS = 32;
+var MAX_EVENT_ENTITY_ID_BYTES = 256;
+var MAX_EVENT_LABEL_BYTES = 128;
+var CAVE_EVENT_CLOSE = {
+  /** Unsupported protocol version. Not retryable with the same client. */
+  protocol: 4400,
+  /** Malformed, binary, oversized, or otherwise invalid frame. */
+  invalidFrame: 4402,
+  /** Slow consumer. Retryable with backoff. */
+  slowConsumer: 4408
+};
+var CAVE_EVENT_TOPICS = [
+  "sessions",
+  "board",
+  "runs",
+  "familiars",
+  "daemon"
+];
+var CaveEventProtocolError = class extends Error {
+  constructor(message, closeCode = CAVE_EVENT_CLOSE.invalidFrame) {
+    super(message);
+    this.name = "CaveEventProtocolError";
+    this.closeCode = closeCode;
+  }
+};
+var encoder = new TextEncoder();
+var utf8Bytes = (value) => encoder.encode(value).byteLength;
+function isCaveEventTopic(value) {
+  return typeof value === "string" && CAVE_EVENT_TOPICS.includes(value);
+}
+function isPlainRecord(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function invalid(message) {
+  throw new CaveEventProtocolError(message);
+}
+function safeCount(value, field) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    invalid(`event ${field} must be a non-negative safe integer`);
+  }
+  return value;
+}
+function label(value, field) {
+  if (typeof value !== "string" || value.length === 0) invalid(`event ${field} must be a non-empty string`);
+  if (utf8Bytes(value) > MAX_EVENT_LABEL_BYTES) invalid(`event ${field} exceeds ${MAX_EVENT_LABEL_BYTES} bytes`);
+  return value;
+}
+function normalizeTopics(value) {
+  if (!Array.isArray(value)) invalid("event topics must be an array");
+  const seen = /* @__PURE__ */ new Set();
+  for (const topic of value) {
+    if (!isCaveEventTopic(topic)) invalid(`unknown event topic: ${String(topic).slice(0, 32)}`);
+    if (seen.has(topic)) invalid(`duplicate event topic: ${topic}`);
+    seen.add(topic);
+  }
+  return [...seen];
+}
+function normalizeEntityIds(value) {
+  if (value === void 0) return void 0;
+  if (!Array.isArray(value)) invalid("event entity ids must be an array");
+  if (value.length > MAX_EVENT_ENTITY_IDS) invalid(`an event names at most ${MAX_EVENT_ENTITY_IDS} entity ids`);
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const id of value) {
+    if (typeof id !== "string" || id.length === 0) invalid("event entity ids must be non-empty strings");
+    if (utf8Bytes(id) > MAX_EVENT_ENTITY_ID_BYTES) {
+      invalid(`event entity ids are at most ${MAX_EVENT_ENTITY_ID_BYTES} bytes`);
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids.length > 0 ? ids : void 0;
+}
+function decodeFrame(raw) {
+  if (typeof raw !== "string") invalid("event frames must be text");
+  if (utf8Bytes(raw) > MAX_EVENT_MESSAGE_BYTES) invalid("event message exceeds 16 KiB");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    invalid("event message is not JSON");
+  }
+  if (!isPlainRecord(parsed)) invalid("event message must be an object");
+  if (parsed.protocol !== CAVE_EVENT_PROTOCOL) {
+    throw new CaveEventProtocolError("unsupported event protocol", CAVE_EVENT_CLOSE.protocol);
+  }
+  return parsed;
+}
+function resumeCursor(value) {
+  if (value === void 0) return void 0;
+  if (!isPlainRecord(value)) invalid("event resume cursor must be an object");
+  return { epoch: label(value.epoch, "resume epoch"), seq: safeCount(value.seq, "resume seq") };
+}
+function parseEventClientMessage(raw) {
+  const message = decodeFrame(raw);
+  switch (message.type) {
+    case "hello": {
+      const resume = resumeCursor(message.resume);
+      return {
+        type: "hello",
+        protocol: CAVE_EVENT_PROTOCOL,
+        clientId: label(message.clientId, "client id"),
+        topics: normalizeTopics(message.topics),
+        ...resume ? { resume } : {}
+      };
+    }
+    case "subscribe":
+      return { type: "subscribe", protocol: CAVE_EVENT_PROTOCOL, topics: normalizeTopics(message.topics) };
+    case "ack":
+      return {
+        type: "ack",
+        protocol: CAVE_EVENT_PROTOCOL,
+        epoch: label(message.epoch, "ack epoch"),
+        seq: safeCount(message.seq, "ack seq")
+      };
+    default:
+      return invalid("unknown event message type");
+  }
+}
+function isEventPlaneEnabled(env) {
+  const value = env.COVEN_CAVE_EVENT_PLANE_ENABLED?.trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+
+// src/lib/server/cave-event-broker.ts
+import { randomUUID } from "node:crypto";
+var EVENT_RING_COUNT_DEFAULT = 2048;
+var EVENT_RING_COUNT_MAX = 16384;
+var EVENT_RING_BYTE_LIMIT = 1024 * 1024;
+var EVENT_HEARTBEAT_MS = 25e3;
+var EVENT_BUFFERED_AMOUNT_LIMIT = 256 * 1024;
+var encoder2 = new TextEncoder();
+var byteLength = (value) => encoder2.encode(value).byteLength;
+var zeroCounts = () => Object.fromEntries(CAVE_EVENT_TOPICS.map((topic) => [topic, 0]));
+function boundedPositiveInt(raw, fallback, maximum) {
+  if (raw === void 0 || !/^\s*\d+\s*$/.test(raw)) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) return fallback;
+  return Math.min(value, maximum);
+}
+function frameText(data) {
+  if (typeof data === "string") return data;
+  if (data instanceof Uint8Array) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+  if (Array.isArray(data) && data.every((part) => part instanceof Uint8Array)) {
+    return Buffer.concat(data).toString("utf8");
+  }
+  return null;
+}
+function frameBytes(data) {
+  if (typeof data === "string") return byteLength(data);
+  if (data instanceof Uint8Array || data instanceof ArrayBuffer) return data.byteLength;
+  if (Array.isArray(data)) return data.reduce((sum, part) => sum + (part?.byteLength ?? 0), 0);
+  return Number.POSITIVE_INFINITY;
+}
+function createEventBroker(options = {}) {
+  const ringCountLimit = Math.max(1, Math.min(options.ringCountLimit ?? EVENT_RING_COUNT_DEFAULT, EVENT_RING_COUNT_MAX));
+  const ringByteLimit = Math.max(1, options.ringByteLimit ?? EVENT_RING_BYTE_LIMIT);
+  const heartbeatMs = options.heartbeatMs ?? EVENT_HEARTBEAT_MS;
+  const bufferedAmountLimit = options.bufferedAmountLimit ?? EVENT_BUFFERED_AMOUNT_LIMIT;
+  const startInterval = options.setInterval ?? ((callback, ms) => {
+    const handle2 = setInterval(callback, ms);
+    handle2.unref?.();
+    return handle2;
+  });
+  const stopInterval = options.clearInterval ?? ((handle2) => clearInterval(handle2));
+  const epoch = (options.newEpoch ?? randomUUID)();
+  let seq = 0;
+  const versions = zeroCounts();
+  const ring = [];
+  let ringBytes = 0;
+  const clients = /* @__PURE__ */ new Map();
+  let heartbeat = null;
+  const counters = {
+    published: zeroCounts(),
+    delivered: zeroCounts(),
+    replayed: 0,
+    replayGaps: 0,
+    restartResyncs: 0,
+    acknowledgements: 0,
+    closures: { protocol: 0, invalidFrame: 0, slowConsumer: 0, heartbeat: 0 }
+  };
+  const forget = (socket) => {
+    clients.delete(socket);
+    if (clients.size === 0 && heartbeat !== null) {
+      stopInterval(heartbeat);
+      heartbeat = null;
+    }
+  };
+  const refuse = (socket, code, reason) => {
+    if (code === CAVE_EVENT_CLOSE.protocol) counters.closures.protocol += 1;
+    else if (code === CAVE_EVENT_CLOSE.slowConsumer) counters.closures.slowConsumer += 1;
+    else counters.closures.invalidFrame += 1;
+    forget(socket);
+    try {
+      socket.close(code, reason);
+    } catch {
+      socket.terminate();
+    }
+  };
+  const deliver = (socket, encoded) => {
+    if (socket.bufferedAmount > bufferedAmountLimit) {
+      refuse(socket, CAVE_EVENT_CLOSE.slowConsumer, "slow consumer");
+      return false;
+    }
+    try {
+      socket.send(encoded);
+      return true;
+    } catch {
+      forget(socket);
+      socket.terminate();
+      return false;
+    }
+  };
+  const sendMessage = (socket, message) => deliver(socket, JSON.stringify(message));
+  const installedVersions = (topics) => {
+    const out = {};
+    for (const topic of topics) out[topic] = versions[topic];
+    return out;
+  };
+  const ready = (socket, state) => sendMessage(socket, {
+    type: "ready",
+    protocol: CAVE_EVENT_PROTOCOL,
+    epoch,
+    seq,
+    topics: [...state.topics],
+    versions: installedVersions(state.topics)
+  });
+  const resync = (socket, state, reason) => sendMessage(socket, {
+    type: "resync-required",
+    protocol: CAVE_EVENT_PROTOCOL,
+    epoch,
+    seq,
+    topics: [...state.topics],
+    reason
+  });
+  const handleHello = (socket, state, message) => {
+    state.helloed = true;
+    state.topics = new Set(message.topics);
+    const resume = message.resume;
+    if (resume) {
+      if (resume.epoch !== epoch) {
+        counters.restartResyncs += 1;
+        if (!resync(socket, state, "server-restarted")) return;
+      } else if (resume.seq > seq) {
+        refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "impossible resume cursor");
+        return;
+      } else {
+        const oldest = ring[0]?.seq ?? seq + 1;
+        if (resume.seq < oldest - 1) {
+          counters.replayGaps += 1;
+          if (!resync(socket, state, "replay-gap")) return;
+        } else {
+          for (const record2 of ring) {
+            if (record2.seq <= resume.seq || !state.topics.has(record2.topic)) continue;
+            if (!deliver(socket, record2.encoded)) return;
+            counters.replayed += 1;
+          }
+          state.acknowledged = resume.seq;
+        }
+      }
+    }
+    ready(socket, state);
+  };
+  const handleMessage = (socket, data, isBinary) => {
+    const state = clients.get(socket);
+    if (!state) return;
+    if (isBinary) {
+      refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "binary frames are not accepted");
+      return;
+    }
+    if (frameBytes(data) > MAX_EVENT_MESSAGE_BYTES) {
+      refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "frame too large");
+      return;
+    }
+    const text3 = frameText(data);
+    if (text3 === null) {
+      refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "invalid frame");
+      return;
+    }
+    let message;
+    try {
+      message = parseEventClientMessage(text3);
+    } catch (error) {
+      const code = error instanceof CaveEventProtocolError ? error.closeCode : CAVE_EVENT_CLOSE.invalidFrame;
+      refuse(socket, code, code === CAVE_EVENT_CLOSE.protocol ? "unsupported protocol" : "invalid frame");
+      return;
+    }
+    if (!state.helloed) {
+      if (message.type !== "hello") {
+        refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "hello required");
+        return;
+      }
+      handleHello(socket, state, message);
+      return;
+    }
+    switch (message.type) {
+      case "hello":
+        refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "duplicate hello");
+        return;
+      case "subscribe":
+        state.topics = new Set(message.topics);
+        ready(socket, state);
+        return;
+      case "ack":
+        if (message.epoch !== epoch || message.seq > seq) {
+          refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "invalid acknowledgement");
+          return;
+        }
+        if (message.seq > state.acknowledged) {
+          state.acknowledged = message.seq;
+          counters.acknowledgements += 1;
+        }
+        return;
+    }
+  };
+  const beat = () => {
+    for (const [socket, state] of [...clients]) {
+      if (!state.alive) {
+        counters.closures.heartbeat += 1;
+        forget(socket);
+        socket.terminate();
+        continue;
+      }
+      if (!state.helloed) {
+        state.silentBeats += 1;
+        if (state.silentBeats >= 2) {
+          refuse(socket, CAVE_EVENT_CLOSE.invalidFrame, "hello required");
+          continue;
+        }
+      }
+      state.alive = false;
+      try {
+        socket.ping();
+      } catch {
+        forget(socket);
+        socket.terminate();
+      }
+    }
+  };
+  return {
+    attach(socket) {
+      clients.set(socket, { helloed: false, topics: /* @__PURE__ */ new Set(), acknowledged: 0, alive: true, silentBeats: 0 });
+      if (heartbeat === null) heartbeat = startInterval(beat, heartbeatMs);
+      return {
+        message: (data, isBinary) => handleMessage(socket, data, isBinary),
+        pong: () => {
+          const state = clients.get(socket);
+          if (state) state.alive = true;
+        },
+        closed: () => forget(socket)
+      };
+    },
+    publish(topic, entityIds) {
+      if (!CAVE_EVENT_TOPICS.includes(topic)) throw new Error(`unknown event topic: ${topic}`);
+      const ids = normalizeEntityIds(entityIds);
+      seq += 1;
+      versions[topic] += 1;
+      counters.published[topic] += 1;
+      const message = {
+        type: "invalidate",
+        protocol: CAVE_EVENT_PROTOCOL,
+        epoch,
+        seq,
+        topic,
+        version: versions[topic],
+        ...ids ? { entityIds: ids } : {}
+      };
+      const encoded = JSON.stringify(message);
+      const bytes = byteLength(encoded);
+      ring.push({ seq, topic, encoded, bytes });
+      ringBytes += bytes;
+      while (ring.length > ringCountLimit || ringBytes > ringByteLimit) {
+        const evicted = ring.shift();
+        if (!evicted) break;
+        ringBytes -= evicted.bytes;
+      }
+      for (const [socket, state] of [...clients]) {
+        if (!state.helloed || !state.topics.has(topic)) continue;
+        if (deliver(socket, encoded)) counters.delivered[topic] += 1;
+      }
+    },
+    diagnostics() {
+      const subscriptions = zeroCounts();
+      for (const state of clients.values()) for (const topic of state.topics) subscriptions[topic] += 1;
+      return {
+        epoch,
+        seq,
+        versions: { ...versions },
+        connections: clients.size,
+        subscriptions,
+        published: { ...counters.published },
+        delivered: { ...counters.delivered },
+        replayed: counters.replayed,
+        replayGaps: counters.replayGaps,
+        restartResyncs: counters.restartResyncs,
+        acknowledgements: counters.acknowledgements,
+        ringEvents: ring.length,
+        ringBytes,
+        closures: { ...counters.closures }
+      };
+    },
+    epoch: () => epoch,
+    shutdown() {
+      if (heartbeat !== null) stopInterval(heartbeat);
+      heartbeat = null;
+      for (const socket of [...clients.keys()]) {
+        clients.delete(socket);
+        try {
+          socket.close(1001, "server shutting down");
+        } catch {
+          socket.terminate();
+        }
+      }
+    }
+  };
+}
+
 // src/lib/server/device-access/store.ts
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
 import { chmod, lstat, mkdir, open, realpath } from "node:fs/promises";
 import { join as join2, resolve } from "node:path";
 
@@ -7924,7 +8349,7 @@ function text(value, field, max = 256) {
 function tailnet(value) {
   const normalized = text(value, "tailnet", 253).toLowerCase();
   const labels = normalized.split(".");
-  if (labels.length < 3 || !normalized.endsWith(".ts.net") || labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) {
+  if (labels.length < 3 || !normalized.endsWith(".ts.net") || labels.some((label2) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label2))) {
     throw new DeviceAccessError("invalid_request", "Tailnets must be exact DNS names ending in .ts.net.");
   }
   return normalized;
@@ -8080,7 +8505,7 @@ var SqliteDeviceAccessStore = class {
       INSERT INTO audit (id, at, deviceId, actor, event, requestId, method, path, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(),
+      randomUUID2(),
       at,
       deviceId,
       actor,
@@ -8175,7 +8600,7 @@ var SqliteDeviceAccessStore = class {
   async request(peer, input) {
     const normalized = normalizePeer(peer);
     const installationId = text(input?.installationId, "installation ID");
-    const label = text(input?.label, "device label");
+    const label2 = text(input?.label, "device label");
     return this.transaction(() => {
       const at = this.timestamp();
       if (!this.isTailnetAllowed(normalized.tailnet)) {
@@ -8192,7 +8617,7 @@ var SqliteDeviceAccessStore = class {
       if (pending.count >= 64) {
         throw new DeviceAccessError("rate_limited", "Too many devices are awaiting approval.");
       }
-      const id = randomUUID();
+      const id = randomUUID2();
       const credential = `${DEVICE_CREDENTIAL_PREFIX}${id}.${randomBytes(32).toString("base64url")}`;
       this.db.prepare(`
         INSERT INTO devices (
@@ -8202,7 +8627,7 @@ var SqliteDeviceAccessStore = class {
       `).run(
         id,
         installationId,
-        label,
+        label2,
         normalized.tailnet,
         normalized.nodeId,
         normalized.userId,
@@ -8337,7 +8762,7 @@ async function createDeviceAccessStore({ root = join2(caveHome(), "device-access
 }
 
 // src/lib/server/device-access/gateway.ts
-import { randomUUID as randomUUID2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { randomUUID as randomUUID3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { userInfo } from "node:os";
 
 // src/lib/server/device-access/peers.ts
@@ -10187,7 +10612,7 @@ function createDeviceAccessGateway(options) {
         throw new DeviceAccessError("forbidden", "This operation requires local desktop authority.", 403);
       }
       requireOrigin(req, false);
-      const requestId = randomUUID2();
+      const requestId = randomUUID3();
       await store.recordAccess(device.id, { requestId, method: req.method ?? "GET", path: pathname, status: 0 });
       if (single(req, "cookie")?.includes(`${DEVICE_ACCESS_COOKIE}=${credential}`)) {
         credentialCookie(res, credential);
@@ -10484,7 +10909,7 @@ if (CLIENT_V1_AUTHORITY_MODE !== "off") {
 globalThis.__covenCaveClientV1AuthorityBootstrap = CLIENT_V1_AUTHORITY_BOOTSTRAP;
 var CLIENT_V1_DISCOVERY_NONCE = CLIENT_V1_AUTHORITY_BOOTSTRAP && !("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP) ? Buffer.from(
   CLIENT_V1_AUTHORITY_BOOTSTRAP.runtimeNonce
-).toString("base64url") : randomUUID3();
+).toString("base64url") : randomUUID4();
 var clientV1DiscoveryPublished = false;
 var clientV1DiscoveryEndpoint = "";
 function standaloneCaveHome() {
@@ -10729,10 +11154,10 @@ function sanitizedWindowsAclProbeTimeout2(error) {
   windowsAclProbeTimeoutStages2.set(sanitized, stage);
   return sanitized;
 }
-function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
+function assertStandaloneWindowsExclusive(path6, label2, deadline = performance2.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
   if (standaloneVerifiedWindowsPaths.has(path6)) return;
   if (standaloneWaivedWindowsPaths.has(path6)) return;
-  const subject = `Client v1 discovery ${label}`;
+  const subject = `Client v1 discovery ${label2}`;
   const probeStartedAt = performance2.now();
   const waiver = resolveUnverifiedOwnershipWaiver2(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
@@ -10799,7 +11224,7 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
     }
   } catch (cause) {
     if (!waiver.granted) {
-      throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
+      throw discoveryPublicationFailure(`${label2}-owner-unverified`, new Error(
         unverifiableOwnershipRefusal2(subject, path6, cause, waiver.note),
         { cause }
       ));
@@ -10825,7 +11250,7 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
   if (findings.length > 0) {
     console.warn(`[windows-acl-state] ${JSON.stringify({
       at: (/* @__PURE__ */ new Date()).toISOString(),
-      discoveryPath: label,
+      discoveryPath: label2,
       durationMs: Math.max(0, Math.round(performance2.now() - probeStartedAt)),
       repairAttempted: report.repaired,
       protected: report.protected,
@@ -10834,7 +11259,7 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
       removedPrincipalCount: report.removed.length
     })}`);
     throw discoveryPublicationFailure(
-      `${label}-owner-shared`,
+      `${label2}-owner-shared`,
       new Error(sharedOwnershipRefusal2(subject, path6, findings, waiver))
     );
   }
@@ -10845,22 +11270,22 @@ function assertStandaloneWindowsExclusive(path6, label, deadline = performance2.
   }
   standaloneVerifiedWindowsPaths.add(path6);
 }
-function requireStandaloneOwner(path6, metadata, label, windowsAclProbeDeadline) {
+function requireStandaloneOwner(path6, metadata, label2, windowsAclProbeDeadline) {
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
       throw discoveryPublicationFailure(
-        `${label}-owner-shared`,
-        new Error(`Client v1 discovery ${label} must be owned by the current user.`)
+        `${label2}-owner-shared`,
+        new Error(`Client v1 discovery ${label2} must be owned by the current user.`)
       );
     }
     return;
   }
   if (process.platform !== "win32") {
-    throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
-      `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path6} is refused.`
+    throw discoveryPublicationFailure(`${label2}-owner-unverified`, new Error(
+      `Client v1 discovery ${label2} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path6} is refused.`
     ));
   }
-  assertStandaloneWindowsExclusive(path6, label, windowsAclProbeDeadline);
+  assertStandaloneWindowsExclusive(path6, label2, windowsAclProbeDeadline);
 }
 function assertStandaloneDiscoveryTarget(path6, windowsAclProbeDeadline) {
   try {
@@ -10963,7 +11388,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
       }
     };
   }
-  const temporaryPath = `${path6}.${process.pid}.${randomUUID3()}.tmp`;
+  const temporaryPath = `${path6}.${process.pid}.${randomUUID4()}.tmp`;
   let fd = null;
   let ownsTemporaryPath = false;
   try {
@@ -11089,7 +11514,7 @@ function cleanupStandaloneClientV1Discovery() {
   }
 }
 var LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
-var LOCAL_PEER_SECRET = randomUUID3();
+var LOCAL_PEER_SECRET = randomUUID4();
 process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
 var FORWARDING_HEADERS = [
   "forwarded",
@@ -11302,10 +11727,10 @@ function normalizeForwardedAddress(value) {
   return address.toLowerCase();
 }
 var TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
-var TAILNET_PEER_SECRET = randomUUID3();
+var TAILNET_PEER_SECRET = randomUUID4();
 process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
 var TAILNET_STATUS_REFRESH_MS = 3e4;
-process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET = randomUUID3();
+process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET = randomUUID4();
 function allowedTailnetNodeIds() {
   const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
   return new Set(
@@ -11444,6 +11869,17 @@ function shouldRejectUnauthenticatedPtyUpgrade({
 } = {}) {
   if (tokenAuthenticated || directLoopback) return false;
   return sidecarTokenConfigured || accessTokenConfigured;
+}
+function authorizeEventUpgrade(req, query) {
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) return 403;
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+    directLoopback: isDirectLoopbackRequest(req)
+  })) return 401;
+  return 200;
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
@@ -11790,7 +12226,55 @@ function scheduleDeferredEntryPreload() {
 }
 var wss = new WebSocketServer({ noServer: true });
 var remotePtyClients = /* @__PURE__ */ new Set();
-var deviceAccessSecret = randomUUID3();
+var eventBroker = isEventPlaneEnabled(process.env) ? createEventBroker({
+  ringCountLimit: boundedPositiveInt(
+    process.env.COVEN_CAVE_EVENT_RING_COUNT,
+    EVENT_RING_COUNT_DEFAULT,
+    EVENT_RING_COUNT_MAX
+  )
+}) : null;
+var eventPlanePublisher = {
+  enabled: eventBroker !== null,
+  markResourceChanged: (topic, entityIds) => eventBroker?.publish(topic, entityIds)
+};
+globalThis.__covenCaveEventPlanePublisher = eventPlanePublisher;
+var eventWss = new WebSocketServer({ noServer: true, maxPayload: MAX_EVENT_MESSAGE_BYTES * 4 });
+var remoteEventClients = /* @__PURE__ */ new Set();
+function refuseEventUpgrade(socket, status) {
+  const line = status === 401 ? "401 Unauthorized" : status === 403 ? "403 Forbidden" : "404 Not Found";
+  socket.write(`HTTP/1.1 ${line}\r
+Connection: close\r
+Content-Length: 0\r
+\r
+`);
+  socket.destroy();
+}
+function handleEventUpgrade(req, socket, head, query) {
+  const status = authorizeEventUpgrade(req, query);
+  if (status !== 200) {
+    refuseEventUpgrade(socket, status);
+    return;
+  }
+  const broker = eventBroker;
+  if (!broker) {
+    refuseEventUpgrade(socket, 404);
+    return;
+  }
+  eventWss.handleUpgrade(req, socket, head, (ws) => {
+    const handlers = broker.attach(ws);
+    const remote = !isDirectLoopbackRequest(req);
+    if (remote) remoteEventClients.add(ws);
+    const closed = () => {
+      remoteEventClients.delete(ws);
+      handlers.closed();
+    };
+    ws.on("message", (data, isBinary) => handlers.message(data, isBinary));
+    ws.on("pong", () => handlers.pong());
+    ws.once("close", closed);
+    ws.once("error", closed);
+  });
+}
+var deviceAccessSecret = randomUUID4();
 process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
 var discoveryInitialization = Promise.withResolvers();
 var deferredDeviceAccess = deferDeviceAccessStore(async () => {
@@ -11809,6 +12293,7 @@ var deviceAccess = createDeviceAccessGateway({
   },
   onPolicyChanged() {
     for (const client of remotePtyClients) client.terminate();
+    for (const client of remoteEventClients) client.terminate();
   }
 });
 await app.prepare();
@@ -11860,6 +12345,10 @@ server.on("upgrade", async (req, socket, head) => {
   } catch {
     socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
+    return;
+  }
+  if (pathname === CAVE_EVENT_PATH) {
+    handleEventUpgrade(req, socket, head, query);
     return;
   }
   if (pathname !== "/api/pty-ws") {
@@ -11962,6 +12451,7 @@ function shutdownHttpServer() {
   httpShutdownStarted = true;
   cleanupStandaloneClientV1Discovery();
   terminatePtySessions();
+  eventBroker?.shutdown();
   const timer = setTimeout(() => process.exit(1), 2e3);
   timer.unref?.();
   server.close(() => {

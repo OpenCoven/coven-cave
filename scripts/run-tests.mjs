@@ -1818,6 +1818,7 @@ export const SUITES = {
     "src/app/api/skills/directory/use/route.test.ts",
     "src/lib/server/skills-directory.test.ts",
     "src/app/api/capabilities/route.test.ts",
+    "src/app/api/events/capability/route.test.ts",
     "src/app/api/workflows/route.test.ts",
     "src/app/api/workflows/run/route.test.ts",
     "src/app/api/workflows/run/copilot-engine-gate.test.ts",
@@ -1944,6 +1945,10 @@ export const SUITES = {
     "src/lib/pty-upgrade-auth.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "src/lib/websocket-url.test.ts",
+    // event plane protocol, publication facade and broker (#5830)
+    "src/lib/cave-event-plane-protocol.test.ts",
+    "src/lib/server/cave-event-plane-publisher.test.ts",
+    "src/lib/server/cave-event-broker.test.ts",
     "src/lib/familiar-liveness.test.ts",
     "scripts/app-store-connect.test.mjs",
     "scripts/testflight-receipt.test.mjs",
@@ -2208,6 +2213,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // the event-plane capability route resolves @/ and next/server (#5830)
+  "src/app/api/events/capability/route.test.ts",
   // saved-history mapping uses the existing shared chat-turn-state contract
   "src/lib/chat/history-load.test.ts",
   // drives the real changes route against real repositories (#5781)

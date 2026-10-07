@@ -1,0 +1,73 @@
+{
+  "capability": {
+    "enabled": true,
+    "protocolVersion": 1,
+    "path": "/api/events-ws",
+    "topics": ["sessions", "board", "runs", "familiars", "daemon"],
+    "rolloutMode": { "web": "shadow", "ios": "off" }
+  },
+  "closeCodes": {
+    "protocol": 4400,
+    "invalidFrame": 4402,
+    "slowConsumer": 4408
+  },
+  "hello": {
+    "type": "hello",
+    "protocol": 1,
+    "clientId": "browser-main",
+    "topics": ["sessions", "board"],
+    "resume": { "epoch": "boot-a", "seq": 41 }
+  },
+  "subscribe": {
+    "type": "subscribe",
+    "protocol": 1,
+    "topics": ["runs"]
+  },
+  "ack": {
+    "type": "ack",
+    "protocol": 1,
+    "epoch": "boot-a",
+    "seq": 42
+  },
+  "ready": {
+    "type": "ready",
+    "protocol": 1,
+    "epoch": "boot-a",
+    "seq": 42,
+    "topics": ["sessions", "board"],
+    "versions": { "sessions": 3, "board": 8 }
+  },
+  "invalidate": {
+    "type": "invalidate",
+    "protocol": 1,
+    "epoch": "boot-a",
+    "seq": 43,
+    "topic": "board",
+    "version": 9,
+    "entityIds": ["card-1"]
+  },
+  "resyncRequired": {
+    "type": "resync-required",
+    "protocol": 1,
+    "epoch": "boot-b",
+    "seq": 0,
+    "topics": ["sessions", "board"],
+    "reason": "server-restarted"
+  },
+  "malformed": {
+    "unknownTopic": {
+      "type": "invalidate",
+      "protocol": 1,
+      "epoch": "boot-a",
+      "seq": 44,
+      "topic": "secrets",
+      "version": 1
+    },
+    "unsupportedProtocol": {
+      "type": "hello",
+      "protocol": 2,
+      "clientId": "future",
+      "topics": ["sessions"]
+    }
+  }
+}
