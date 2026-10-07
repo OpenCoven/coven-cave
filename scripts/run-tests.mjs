@@ -889,6 +889,9 @@ export const SUITES = {
     "src/lib/shared-json-fetch.test.ts",
     "src/lib/shared-requests.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
+    // event plane client manager and React hook (#5833)
+    "src/lib/cave-event-plane-client.test.ts",
+    "src/lib/use-cave-event-plane.test.tsx",
     "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",
     "src/lib/pausable-poll-discipline.test.ts",
@@ -2648,6 +2651,7 @@ const VITEST_TESTS = new Set([
     "src/components/voice-call-settings.test.tsx",
   "src/lib/use-surface-warmup.behavior.test.tsx",
   "src/lib/use-pausable-poll.behavior.test.tsx",
+  "src/lib/use-cave-event-plane.test.tsx",
   "src/lib/use-reply-recommendation.behavior.test.tsx",
   "src/app/wikis/wiki-page.test.tsx",
   "src/components/covenwiki-reader.test.tsx",
