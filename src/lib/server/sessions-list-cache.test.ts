@@ -106,7 +106,7 @@ function fnBlock(source, name) {
   ]) {
     assert.match(
       fnBlock(config, mutator),
-      /invalidateSessionsListCache\(\)/,
+      /invalidateSessionsListCache\((?:\[[^\]]*\])?\)/,
       `${mutator} invalidates the sessions-list cache`,
     );
   }
@@ -116,7 +116,7 @@ function fnBlock(source, name) {
   for (const sweep of ["autoArchiveSessionsLocal", "archiveSessionsForMergedPrs"]) {
     assert.doesNotMatch(
       fnBlock(config, sweep),
-      /invalidateSessionsListCache\(\)/,
+      /invalidateSessionsListCache\((?:\[[^\]]*\])?\)/,
       `${sweep} is sweep-internal and must not invalidate mid-compute`,
     );
   }
@@ -128,7 +128,7 @@ function fnBlock(source, name) {
   for (const mutator of ["saveConversation", "deleteConversation"]) {
     assert.match(
       fnBlock(conversations, mutator),
-      /invalidateSessionsListCache\(\)/,
+      /invalidateSessionsListCache\((?:\[[^\]]*\])?\)/,
       `${mutator} invalidates the sessions-list cache`,
     );
   }
@@ -138,7 +138,7 @@ function fnBlock(source, name) {
 {
   assert.match(
     read("../../app/api/sessions/[id]/kill/route.ts"),
-    /invalidateSessionsListCache\(\)/,
+    /invalidateSessionsListCache\((?:\[[^\]]*\])?\)/,
     "the kill route invalidates the sessions-list cache after a successful kill",
   );
   const prune = read("../../app/api/sessions/prune/route.ts");

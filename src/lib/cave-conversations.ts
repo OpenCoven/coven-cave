@@ -934,7 +934,7 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   // Bust the sessions-list SWR cache (cave-53yx): a new or updated
   // conversation must be visible to the event-driven list refresh that fires
   // right after the save, not 1-2 polls later.
-  invalidateSessionsListCache();
+  invalidateSessionsListCache([conv.sessionId]);
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
@@ -1185,7 +1185,7 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     // A deleted transcript's summary (title included) must not outlive it in
     // the persisted index until some later scan happens to rewrite it.
     scheduleSummaryIndexWrite();
-    invalidateSessionsListCache();
+    invalidateSessionsListCache([sessionId]);
     return true;
   } catch {
     return false;

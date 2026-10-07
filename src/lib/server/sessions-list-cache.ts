@@ -27,6 +27,7 @@
  */
 import { createSwrCache } from "../swr-cache.ts";
 import type { SessionRow } from "../types.ts";
+import { markResourceChanged } from "./cave-event-plane-publisher.ts";
 
 export type SessionsListPayload =
   | {
@@ -67,6 +68,9 @@ export const sessionsListCache = createSwrCache<SessionsListResult>({
  * applySweptRows), and invalidating mid-compute would version-bump the entry
  * away and leave the cache permanently cold.
  */
-export function invalidateSessionsListCache(): void {
+export function invalidateSessionsListCache(sessionIds?: readonly string[]): void {
   sessionsListCache.clear();
+  // Cache first, then publish (#5835): a client refreshing on the event must
+  // not be served the snapshot the event says is stale.
+  markResourceChanged("sessions", sessionIds);
 }
