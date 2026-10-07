@@ -1783,6 +1783,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
     "src/app/api/chat/send/chat-send-models.test.ts",
+    "src/app/api/chat/send/connectors-wiring.test.ts",
     "src/app/api/chat/send/harness-routing-codex-preflight.test.ts",
     "src/app/api/chat/send/codex-routing.test.ts",
     "src/app/api/chat/send/harness-routing-codex-direct.test.ts",

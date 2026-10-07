@@ -63,6 +63,11 @@ type ResponseControlRequest = {
   modelControls?: ModelControlValues;
   modelOverride?: string;
   modelOverrideScope?: ModelRequest["modelOverrideScope"];
+};
+
+/** Prompt-only inputs. Kept off ResponseControlRequest because the raw send
+ * body also satisfies that type and carries connector ids, not TurnConnectors. */
+type PromptResponseControls = ResponseControlRequest & {
   /** Connectors the user turned on for this chat, with real availability. */
   connectors?: readonly TurnConnector[];
 };
@@ -316,7 +321,7 @@ export function turnRetryModel(input: {
 
 /** Add only explicitly selected prompt-only guidance. Native controls must
  * never be duplicated as prose, and unsupported controls never reach here. */
-export function buildPromptWithResponseControls(prompt: string, body: ResponseControlRequest): string {
+export function buildPromptWithResponseControls(prompt: string, body: PromptResponseControls): string {
   const controls = Object.entries(body.modelControls ?? {});
   const guidance = controls.length > 0
     ? [
