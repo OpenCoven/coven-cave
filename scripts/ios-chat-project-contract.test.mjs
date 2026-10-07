@@ -502,9 +502,17 @@ assert.match(
 );
 assert.match(
   voiceModel,
-  /private func bindThreadSessionIfNeeded\(\) \{[\s\S]*!state\.transcript\.isEmpty[\s\S]*hasCommittedConversationContent = true[\s\S]*autoCreatedSessionId = nil[\s\S]*onSessionEstablished\?\(sessionId\)/,
-  "binding the thread session must retire auto-created cleanup as soon as the call has transcript content",
+  /private func bindThreadSessionIfNeeded\(\) \{[\s\S]*hasFinalTranscript[\s\S]*hasCommittedConversationContent = true[\s\S]*autoCreatedSessionId = nil[\s\S]*onSessionEstablished\?\(sessionId\)/,
+  "binding the thread session must retire auto-created cleanup as soon as the call has final transcript content",
 );
+// A partial row is recognition still in progress (#5828): only a final row
+// commits the call's content, so a call ended mid-recognition is discarded.
+assert.match(
+  voiceModel,
+  /private var hasFinalTranscript: Bool \{\s*state\.transcript\.contains\(where: \\\.isFinal\)\s*\}/,
+  "committed voice content means a final transcript row, not any row",
+);
+assert.doesNotMatch(voiceModel, /!state\.transcript\.isEmpty/, "no content check counts a partial row");
 assert.match(
   voiceModel,
   /private func resetForRestart\(mode: VoiceCallMode\) \{[\s\S]*let retryableAutoCreatedSessionId = pendingAutoCreatedSessionIdForRestart\(\)[\s\S]*autoCreatedSessionId = retryableAutoCreatedSessionId[\s\S]*launch = \.idle[\s\S]*private func pendingAutoCreatedSessionIdForRestart\(\) -> String\? \{[\s\S]*!hasCommittedConversationContent,[\s\S]*!didBindThreadSession[\s\S]*return autoCreatedSessionId/,

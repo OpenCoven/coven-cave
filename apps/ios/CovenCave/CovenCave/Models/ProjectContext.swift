@@ -559,8 +559,11 @@ enum ProjectContext: Codable, Hashable, Identifiable, Sendable {
             _ candidateRoot: String,
             within projectRoot: String
         ) -> Bool {
-            let prefix = projectRoot == "/"
-                ? "/.worktrees/"
+            // A normalized root keeps its trailing slash ("/", "C:/"), so a
+            // worktree sits directly under it. Only "/" was special-cased, and
+            // a drive-root project looked under "C://.worktrees/" (#5828).
+            let prefix = projectRoot.hasSuffix("/")
+                ? "\(projectRoot).worktrees/"
                 : "\(projectRoot)/.worktrees/"
             guard candidateRoot.hasPrefix(prefix) else { return false }
             let relative = candidateRoot.dropFirst(prefix.count)

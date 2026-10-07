@@ -631,6 +631,24 @@ final class ProjectContextTests: XCTestCase {
         XCTAssertFalse(context.matches(session: session("session", familiarId: "nova", projectRoot: nil)))
     }
 
+    func testRootProjectsResolveTheirWorktreesWithoutADoubledSlash() {
+        // A normalized root keeps its trailing slash, so a drive-root project
+        // looked for worktrees under "C://.worktrees/" and read them as
+        // Unassigned (#5828).
+        let drive = ProjectContext.project(project("drive", "Drive", root: "C:/"))
+        XCTAssertTrue(drive.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "C:/.worktrees/feat")))
+        XCTAssertTrue(drive.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "C:\\.worktrees\\feat\\")))
+        XCTAssertTrue(drive.matches(session: session("session", familiarId: "nova", projectRoot: "C:/.worktrees/feat/inner")))
+        XCTAssertFalse(drive.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "C:/.worktrees")))
+        XCTAssertFalse(drive.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "C:/elsewhere")))
+
+        let posixRoot = ProjectContext.project(project("root", "Root", root: "/"))
+        XCTAssertTrue(posixRoot.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "/.worktrees/feat")))
+
+        let share = ProjectContext.project(project("share", "Share", root: "//server/share"))
+        XCTAssertTrue(share.matches(thread: thread("Thread", familiarIds: ["nova"], projectRoot: "//server/share/.worktrees/feat")))
+    }
+
     func testRegisteredProjectScopeAssignsNestedProjectAndWorktreeToSingleWinningContext() {
         let parent = project("parent", "Parent", root: "/repos/cave")
         let nested = project("nested", "Nested", root: "/repos/cave/.worktrees/feature")

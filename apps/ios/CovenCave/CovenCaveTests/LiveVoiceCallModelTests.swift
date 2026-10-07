@@ -317,6 +317,53 @@ final class LiveVoiceCallModelTests: XCTestCase {
         XCTAssertEqual(discardedSessionIds, ["voice-empty"])
     }
 
+    func testPartialOnlyTranscriptStillDiscardsTheAutoCreatedSession() async throws {
+        // Recognition still in progress when the call ends sent nothing, so the
+        // session it created is as empty as a silent call's (#5828).
+        let transport = RecordingVoiceTransport()
+        let media = RecordingVoiceMediaSession()
+        var deletedSessionIds: [String] = []
+        var discardedSessionIds: [String] = []
+        var establishedSessionIds: [String] = []
+        let client = client { [self] request in
+            switch (request.httpMethod, request.url?.path, request.url?.query) {
+            case ("POST", "/api/chat/conversation", _):
+                return try response(for: request, status: 200, body: #"{"ok":true,"sessionId":"voice-partial"}"#)
+            case ("POST", "/api/voice/session", _):
+                return try response(for: request, status: 200, body: grantResponseBody)
+            case ("DELETE", "/api/chat/conversation/voice-partial", "ifEmpty=1"):
+                deletedSessionIds.append("voice-partial")
+                return try response(for: request, status: 200, body: #"{"ok":true,"deleted":true}"#)
+            default:
+                XCTFail("Unexpected request: \(request.httpMethod ?? "?") \(request.url?.absoluteString ?? "?")")
+                return try response(for: request, status: 500, body: #"{"ok":false}"#)
+            }
+        }
+
+        let model = LiveVoiceCallModel(
+            familiar: familiar(),
+            sessionId: nil,
+            projectRoot: "/repos/cave",
+            client: client,
+            onSessionEstablished: { establishedSessionIds.append($0) },
+            onSessionDiscarded: { discardedSessionIds.append($0) },
+            makeRealtimeTransport: { transport },
+            makeMediaSession: { media }
+        )
+
+        await model.start()
+        transport.emit(.connected)
+        transport.emit(.partial(role: .user, text: "Hel", segmentID: "user-1", revision: 1))
+        XCTAssertFalse(model.state.transcript.isEmpty, "the partial row is shown while recognition runs")
+
+        model.end()
+        await model.waitForPendingCleanup()
+
+        XCTAssertTrue(establishedSessionIds.isEmpty, "a partial row never binds the session to the chat")
+        XCTAssertEqual(deletedSessionIds, ["voice-partial"])
+        XCTAssertEqual(discardedSessionIds, ["voice-partial"])
+    }
+
     func testTranscriptContentPreservesAnAutoCreatedSessionOnEnd() async throws {
         let transport = RecordingVoiceTransport()
         let media = RecordingVoiceMediaSession()
