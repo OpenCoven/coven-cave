@@ -4,6 +4,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  modelRuntimeMismatchMessage,
   offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
@@ -361,6 +362,60 @@ assert.equal(
   }),
   "unsupported",
   "a provider-qualified model suppressed by a switched runtime must fail closed",
+);
+
+// A Claude model saved on a Codex chat used to be forwarded and fail seconds
+// after launch as an opaque exit-1. It is refused before any process starts,
+// for a saved selection and for a fresh pick alike.
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "anthropic/claude-opus-5-5",
+    modelState: { ...sessionState, harness: "codex", effectiveModel: "anthropic/claude-opus-5-5" },
+    harness: "codex",
+    modelForwardingEnabled: true,
+  }),
+  "provider-mismatch",
+  "a saved Claude model on a Codex chat is a provider mismatch",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "anthropic/claude-opus-5-5",
+    modelState: { ...sessionState, harness: "codex", effectiveModel: "anthropic/claude-opus-5-5", source: "next-message" },
+    harness: "codex",
+    modelForwardingEnabled: true,
+  }),
+  "provider-mismatch",
+  "a next-message pick cannot bypass the provider check",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "openai/gpt-6-astra",
+    modelState: { ...sessionState, harness: "codex", effectiveModel: "openai/gpt-6-astra" },
+    harness: "codex",
+    modelForwardingEnabled: true,
+  }),
+  null,
+  "the runtime's own provider stays launchable",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "anthropic/claude-opus-5-5",
+    modelState: { ...sessionState, harness: "opencode", effectiveModel: "anthropic/claude-opus-5-5" },
+    harness: "opencode",
+    modelForwardingEnabled: true,
+  }),
+  null,
+  "a multi-provider runtime keeps its full-id selections",
+);
+assert.equal(
+  modelRuntimeMismatchMessage({ harness: "codex", desiredModel: "anthropic/claude-opus-5-5" }),
+  "This chat runs on Codex, which only serves OpenAI models, so it cannot run anthropic/claude-opus-5-5. " +
+    "Pick an OpenAI model for this chat, or move the chat to a runtime that serves Anthropic models.",
+);
+assert.equal(
+  modelRuntimeMismatchMessage({ harness: "claude", desiredModel: "openai/gpt-6-astra" }),
+  "This chat runs on Claude Code, which only serves Anthropic models, so it cannot run openai/gpt-6-astra. " +
+    "Pick an Anthropic model for this chat, or move the chat to a runtime that serves OpenAI models.",
 );
 
 console.log("chat-send-models.test.ts: ok");

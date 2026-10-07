@@ -8,8 +8,8 @@ import {
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { isModelAllowedByRuntime, runtimeModelProviderMismatch } from "@/lib/runtime-models";
+import { canonicalHarnessId, runtimeDisplayLabel } from "@/lib/harness-adapters";
 import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/claude-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
@@ -143,14 +143,53 @@ export function savedModelSelectionRejection(args: {
   modelForwardingEnabled: boolean;
   invalidSavedModel?: boolean;
   suppressedSavedModel?: boolean;
-}): "invalid" | "unsupported" | "forwarding" | null {
+}): "invalid" | "unsupported" | "provider-mismatch" | "forwarding" | null {
   if (args.invalidSavedModel) return "invalid";
   if (args.suppressedSavedModel) return "unsupported";
-  if (args.modelState.source !== "session" && args.modelState.source !== "familiar-default") return null;
   const desiredModel = cleanModelId(args.desiredModel);
+  // A model from a provider the runtime cannot route fails after launch, not
+  // before, whichever scope selected it. Checked ahead of the saved-source
+  // scoping below so a stale client cannot send it as a fresh pick.
+  if (desiredModel && runtimeModelProviderMismatch(args.harness, desiredModel)) {
+    return "provider-mismatch";
+  }
+  if (args.modelState.source !== "session" && args.modelState.source !== "familiar-default") return null;
   if (!desiredModel) return null;
   if (!isModelAllowedByRuntime(args.harness, desiredModel)) return "unsupported";
   return args.modelForwardingEnabled ? null : "forwarding";
+}
+
+const MODEL_PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  github: "GitHub",
+  xai: "xAI",
+  nous: "Nous",
+};
+
+function modelProviderLabel(provider: string): string {
+  return MODEL_PROVIDER_LABELS[provider.toLowerCase()] ?? provider;
+}
+
+function withArticle(noun: string): string {
+  return `${/^[aeiouxAEIOUX]/.test(noun) ? "an" : "a"} ${noun}`;
+}
+
+/** Plain copy for a model the chat's runtime cannot run. Names both sides so
+ * the fix is obvious: pick a model from the runtime's provider, or move the
+ * chat to a runtime that serves the selected model. */
+export function modelRuntimeMismatchMessage(args: {
+  harness: string;
+  desiredModel: string;
+}): string {
+  const model = cleanModelId(args.desiredModel) ?? args.desiredModel;
+  const mismatch = runtimeModelProviderMismatch(args.harness, model);
+  const runtime = runtimeDisplayLabel(args.harness);
+  if (!mismatch) return `${runtime} cannot run ${model}.`;
+  const runtimeProvider = modelProviderLabel(mismatch.runtimeProvider);
+  const modelProvider = modelProviderLabel(mismatch.modelProvider);
+  return `This chat runs on ${runtime}, which only serves ${runtimeProvider} models, so it cannot run ${model}. ` +
+    `Pick ${withArticle(runtimeProvider)} model for this chat, or move the chat to a runtime that serves ${modelProvider} models.`;
 }
 
 /** A saved Cave model is an explicit launch intent, not a hint that can be

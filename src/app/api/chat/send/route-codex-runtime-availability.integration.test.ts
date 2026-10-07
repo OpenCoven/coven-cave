@@ -374,6 +374,37 @@ try {
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.confirmedModel, undefined);
   assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
 
+  // A model from a provider Codex cannot route is refused at the boundary,
+  // before Coven or Codex starts. Forwarding it used to launch the runtime and
+  // report the provider's rejection as an opaque exit-1 process failure.
+  process.env.COVEN_TEST_MODE = "assistant-envelope";
+  {
+    const callsBefore = (await readFile(log, "utf8")).trim().split("\n").filter(Boolean).length;
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "opal",
+        prompt: "claude model on a codex chat",
+        modelOverride: "anthropic/claude-opus-5-5",
+        modelOverrideScope: "next-message",
+        projectRoot: familiarWorkspace,
+      }),
+    }));
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.code, "model_runtime_mismatch");
+    assert.match(payload.error, /This chat runs on Codex, which only serves OpenAI models, so it cannot run anthropic\/claude-opus-5-5/);
+    assert.equal(payload.modelApplicationState, "rejected");
+    const callsAfter = (await readFile(log, "utf8")).trim().split("\n").filter(Boolean)
+      .slice(callsBefore)
+      .map((line) => JSON.parse(line));
+    assert.ok(
+      !callsAfter.some((args) => args[0] === "run"),
+      `a provider mismatch must never start a Coven run: ${JSON.stringify(callsAfter)}`,
+    );
+  }
+
   // Coven relays Codex's own failure reason in the result frame, not on
   // stderr. Cave must count it as runtime output (so the copy no longer
   // claims Codex was silent) while still withholding its contents.

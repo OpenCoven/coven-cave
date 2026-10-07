@@ -126,6 +126,7 @@ import {
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
   runtimeModelIdForLaunch,
+  runtimeModelProviderMismatch,
 } from "@/lib/runtime-models";
 import {
   quarantineOpenCodeSchema,
@@ -330,6 +331,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  modelRuntimeMismatchMessage,
   needsClaudeOpus5Routability,
   offlineQueuedModelIntent,
   persistedTurnControls,
@@ -2796,6 +2798,22 @@ async function postAdmittedChat(
             ? codexDirectCapabilities?.model === true
             : binding.harness === "grok" || covenModelForwardingSupported;
   const explicitModelSelection = body.modelOverride !== undefined && body.modelOverride !== "";
+  if (explicitModelSelection && requestedModel && runtimeModelProviderMismatch(binding.harness, requestedModel)) {
+    // A fresh pick from another provider is refused with the same specific
+    // copy as a saved one: the runtime would launch and the provider would
+    // reject the model seconds later as an opaque exit-1 process failure.
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "model_runtime_mismatch",
+        error: modelRuntimeMismatchMessage({ harness: binding.harness, desiredModel: requestedModel }),
+        requestedModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: "The selected runtime cannot run a model from this provider.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
   if (explicitModelSelection && (!requestedModel || !isModelAllowedByRuntime(binding.harness, requestedModel))) {
     return new Response(
       JSON.stringify({
@@ -2914,6 +2932,19 @@ async function postAdmittedChat(
       desiredModel,
       modelApplicationState: "rejected",
       modelApplicationReason: "The saved model id failed launch-boundary validation.",
+    }, { status: 400 });
+  }
+  if (savedModelRejection === "provider-mismatch") {
+    // Refused before any process starts: forwarding this id would launch the
+    // runtime and have the provider reject it seconds later, which used to
+    // surface only as an opaque exit-1 "process failure".
+    return NextResponse.json({
+      ok: false,
+      code: "model_runtime_mismatch",
+      error: modelRuntimeMismatchMessage({ harness: binding.harness, desiredModel }),
+      desiredModel,
+      modelApplicationState: "rejected",
+      modelApplicationReason: "The selected runtime cannot run a model from this provider.",
     }, { status: 400 });
   }
   if (savedModelRejection === "unsupported") {
