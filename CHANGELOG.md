@@ -7,6 +7,40 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-10-07
+
+> Chats stop sending a model to a runtime that can't run it, and the Coding Desk handles very large change lists.
+
+Patch release on top of v0.5.8. Headline: a chat whose saved model belongs to
+a different provider than its runtime (for example a Claude model on a Codex
+chat) is refused before any run starts, with a sentence naming both sides,
+instead of failing seconds later as an opaque exit 1.
+
+### Added
+- **Event plane, off by default** (#5831, #5834). The protocol, broker,
+  authenticated socket, and the demand-driven web client and React hook for
+  the WebSocket event plane. Nothing connects unless
+  `COVEN_CAVE_EVENT_PLANE_ENABLED=1` is set, and no component uses the hook
+  yet, so polling is unchanged.
+
+### Fixed
+- **Model and runtime mismatch** (#5820, #5821). A provider-qualified model id
+  that the chat's runtime cannot run is refused at the send boundary, and a
+  stale client cannot resend it as a fresh pick.
+- **Coding Desk** (#5807, #5826). A dropped terminal split takes focus, change
+  lists stop at 5,000 files with totals and a truncation flag, and the chat
+  rail joins the shared changes refresh.
+- **iOS** (#5828, #5829). Projects at a drive root resolve their worktrees, and
+  a call ended while recognition was still partial no longer keeps an empty
+  chat bound to it.
+- **Worktree retention** (#5818, #5819). The retention hook no longer pushes
+  back merged PR branches that GitHub deleted on merge.
+
+### Changed
+- `sharp` 0.35.4 → 0.35.5 (#5825).
+- The Glitter Crypt browser test no longer times out on layouts that pin every
+  wisp out of sight (#5801, #5827).
+
 ## [0.5.8] - 2026-10-06
 
 > Voice calls can use the microphone again on macOS: the released app keeps its microphone and camera entitlements.
