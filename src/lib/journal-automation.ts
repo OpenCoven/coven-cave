@@ -99,6 +99,20 @@ export function formatRoutineHour(hour: number, locale?: string): string {
   return new Date(2000, 0, 1, hour, 0, 0).toLocaleTimeString(locale, { hour: "numeric" });
 }
 
+/**
+ * Version stamp at the end of every routine prompt. The daemon stores the
+ * prompt text, so a routine keeps the instructions it was saved with; bump
+ * this whenever buildJournalRoutinePrompt changes meaningfully and the
+ * journal pane will offer to refresh routines saved before the change.
+ */
+export const JOURNAL_ROUTINE_PROMPT_VERSION = 2;
+export const JOURNAL_ROUTINE_PROMPT_MARKER = `(journal-reflection instructions v${JOURNAL_ROUTINE_PROMPT_VERSION})`;
+
+/** Whether a stored routine prompt carries the current instructions. */
+export function isJournalRoutinePromptCurrent(prompt: string | null | undefined): boolean {
+  return typeof prompt === "string" && prompt.includes(JOURNAL_ROUTINE_PROMPT_MARKER);
+}
+
 export type JournalRoutinePromptInput = {
   familiarId: string;
   /** Display name; falls back to the id. */
@@ -143,5 +157,61 @@ export function buildJournalRoutinePrompt(input: JournalRoutinePromptInput): str
     "<the reflection>",
     "",
     `Write no other file: do not create, edit, or delete anything else, inside or outside \`${dir}\`, and do not commit. When you are done, reply with only the path you wrote, or the reason you stopped.`,
+    "",
+    JOURNAL_ROUTINE_PROMPT_MARKER,
   ].join("\n");
+}
+
+// ── Failed-run diagnosis ─────────────────────────────────────────────────────
+
+/** Why a reflection run failed, read from its session log. */
+export type JournalRunFailureKind = "quota" | "auth" | "network" | "turns" | "timeout" | "other";
+export type JournalRunFailure = { kind: JournalRunFailureKind; message: string; hint: string };
+
+type SessionLogLine = { message?: unknown } | null | undefined;
+
+const FAILURE_PATTERNS: Array<{ kind: Exclude<JournalRunFailureKind, "other">; re: RegExp }> = [
+  { kind: "quota", re: /\b(weekly|daily|usage|rate|session) limit\b|hit your .*limit|quota|insufficient credits|429\b/i },
+  { kind: "auth", re: /login expired|not logged in|sign(?:ed)? ?in|unauthori[sz]ed|\b401\b|authenticat/i },
+  { kind: "turns", re: /(?:maximum|max) turn|turn limit|max[_ ]turns/i },
+  { kind: "timeout", re: /timed out|timeout exceeded|deadline exceeded/i },
+  { kind: "network", re: /request failed|error sending request|ECONN\w*|ENOTFOUND|ETIMEDOUT|network|socket hang up|\b50[234]\b/i },
+];
+
+const FAILURE_HINTS: Record<JournalRunFailureKind, string> = {
+  quota: "The harness hit its usage limit. Pick another harness, or let the next scheduled run try again after the limit resets.",
+  auth: "The harness is signed out. Sign it in (check with `coven doctor`), or pick another harness.",
+  network: "The harness couldn't reach its provider. This is usually transient; Run now to try again.",
+  turns: "The run used up its turn budget before writing the entry. Update to the latest reflection instructions, or pick another harness.",
+  timeout: "The run hit the routine's time limit before writing the entry. Run now to try again.",
+  other: "Open the session for the full log.",
+};
+
+/** Daemon bookkeeping and tool-progress lines that never explain a failure. */
+function isNoiseLine(text: string): boolean {
+  return /^exit:\s*\{/.test(text) || /^\[[A-Za-z]+\.\.\.\]$/.test(text) || /^Warning: no stdin data/i.test(text);
+}
+
+/**
+ * Read a failed run's session log (`/api/v1/sessions/<id>/log` lines) and
+ * name why it failed, so the journal can say "weekly limit reached" rather
+ * than a bare "Failed". Null when the log says nothing usable.
+ */
+export function diagnoseJournalRunFailure(log: readonly SessionLogLine[] | null | undefined): JournalRunFailure | null {
+  if (!Array.isArray(log)) return null;
+  const lines = log
+    .map((line) => (line && typeof line.message === "string" ? line.message.replace(/\u001b\[[0-9;]*m/g, "").trim() : ""))
+    .filter((text) => text && !isNoiseLine(text));
+  if (lines.length === 0) return null;
+  // Newest first: the last meaningful line is usually the one that ended it.
+  for (const text of [...lines].reverse()) {
+    const match = FAILURE_PATTERNS.find((pattern) => pattern.re.test(text));
+    if (match) return { kind: match.kind, message: clip(text), hint: FAILURE_HINTS[match.kind] };
+  }
+  return { kind: "other", message: clip(lines[lines.length - 1]), hint: FAILURE_HINTS.other };
+}
+
+function clip(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 240 ? `${flat.slice(0, 239)}…` : flat;
 }

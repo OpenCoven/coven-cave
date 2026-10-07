@@ -27,13 +27,17 @@ import {
   JOURNAL_ROUTINE_TAG,
   JOURNAL_ROUTINE_TIMEOUT_MINUTES,
   buildJournalRoutinePrompt,
+  diagnoseJournalRunFailure,
+  isJournalRoutinePromptCurrent,
   isJournalRuntime,
   isValidRoutineTime,
   journalRRule,
   journalRoutineId,
   parseJournalRRule,
+  type JournalRunFailure,
   type JournalRuntime,
 } from "@/lib/journal-automation";
+import { callDaemon } from "@/lib/coven-daemon";
 import { dateSlug } from "@/lib/daily-report";
 import { ensureFamiliarJournalDir, isJournalFamiliarId, readJournalEntry } from "@/lib/server/journal-store";
 
@@ -52,6 +56,19 @@ export type JournalAutomationBody = {
    * apart. Null while running, after a failure, or with no run.
    */
   lastRunEntry?: { date: string; written: boolean } | null;
+  /**
+   * Why the last run failed, read from its session log (quota, sign-in,
+   * network, turn budget…). Null unless the last run failed and its log
+   * names a reason.
+   */
+  lastRunFailure?: JournalRunFailure | null;
+  /**
+   * True when the routine was saved with older reflection instructions. The
+   * daemon stores the prompt text, so a routine never picks up improved
+   * instructions until it is saved again; the journal pane offers that.
+   * Absent when there is no routine.
+   */
+  promptOutdated?: boolean;
   run?: CovenAutomationsRunPayload;
   error?: string;
 };
@@ -66,6 +83,8 @@ export type JournalAutomationDeps = {
   ensureJournalDir?: (familiarId: string) => Promise<string>;
   /** Reads the familiar's entry for a day; defaults to the journal store. */
   readEntry?: (date: string, familiarId: string) => Promise<{ exists: boolean; source?: string | null; modified: string | null }>;
+  /** Reads a session's log lines; defaults to the daemon's /api/v1/sessions/<id>/log. */
+  readSessionLog?: (sessionId: string) => Promise<Array<{ message?: unknown }>>;
 };
 
 export type JournalAutomationPut = {
@@ -151,6 +170,25 @@ async function lastRunEntry(
   }
 }
 
+async function daemonSessionLog(sessionId: string): Promise<Array<{ message?: unknown }>> {
+  const res = await callDaemon<Array<{ message?: unknown }>>({
+    path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/log`,
+    timeoutMs: 3_000,
+  });
+  if (!res.ok || !Array.isArray(res.data)) throw new Error(res.error ?? `session log HTTP ${res.status}`);
+  return res.data;
+}
+
+/** Why the last run failed, when it did and its log says. Never throws. */
+async function lastRunFailure(run: RoutineRun | null, deps: JournalAutomationDeps): Promise<JournalRunFailure | null> {
+  if (!run || run.status !== "failed" || !run.sessionId) return null;
+  try {
+    return diagnoseJournalRunFailure(await (deps.readSessionLog ?? daemonSessionLog)(run.sessionId));
+  } catch {
+    return null;
+  }
+}
+
 /** GET — the familiar's routine (or null) and its latest run. */
 export async function readJournalAutomation(
   familiar: unknown,
@@ -160,10 +198,18 @@ export async function readJournalAutomation(
   try {
     const routine = await findRoutine(familiar, deps.transport);
     const lastRun = routine ? await latestRun(routine.id, deps.transport) : null;
-    const entry = await lastRunEntry(familiar, lastRun, deps);
+    const [entry, failureReason] = await Promise.all([lastRunEntry(familiar, lastRun, deps), lastRunFailure(lastRun, deps)]);
     return {
       status: 200,
-      body: { ok: true, available: true, routine: routine ? view(routine) : null, lastRun, lastRunEntry: entry },
+      body: {
+        ok: true,
+        available: true,
+        routine: routine ? view(routine) : null,
+        lastRun,
+        lastRunEntry: entry,
+        lastRunFailure: failureReason,
+        ...(routine ? { promptOutdated: !isJournalRoutinePromptCurrent(routine.prompt) } : {}),
+      },
     };
   } catch (err) {
     return failure(err, true);
@@ -242,8 +288,19 @@ export async function saveJournalAutomation(
       ? await updateRoutine({ ...definition, id: definition.id }, deps.transport)
       : await createRoutine(definition, deps.transport);
     const lastRun = existing ? await latestRun(saved.id, deps.transport) : null;
-    const entry = await lastRunEntry(input.familiar, lastRun, deps);
-    return { status: 200, body: { ok: true, available: true, routine: view(saved), lastRun, lastRunEntry: entry } };
+    const [entry, failureReason] = await Promise.all([lastRunEntry(input.familiar, lastRun, deps), lastRunFailure(lastRun, deps)]);
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        available: true,
+        routine: view(saved),
+        lastRun,
+        lastRunEntry: entry,
+        lastRunFailure: failureReason,
+        promptOutdated: !isJournalRoutinePromptCurrent(saved.prompt),
+      },
+    };
   } catch (err) {
     return failure(err, false);
   }

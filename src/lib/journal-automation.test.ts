@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import test from "node:test";
 import {
   DEFAULT_JOURNAL_ROUTINE_TIME,
   buildJournalRoutinePrompt,
@@ -82,3 +83,31 @@ assert.equal(isValidRoutineTime("9", 0), false, "strings are not times");
 }
 
 console.log("journal-automation.test.ts: ok");
+
+// ── Failed-run diagnosis ─────────────────────────────────────────────────────
+
+test("diagnoseJournalRunFailure names the real reason from the session log", async () => {
+  const { diagnoseJournalRunFailure } = await import("./journal-automation.ts");
+  const log = (...messages) => messages.map((message) => ({ level: "info", message: `${message}\n` }));
+  const cases = [
+    [log("Warning: no stdin data received in 3s", "You've hit your weekly limit · resets 1am (America/Chicago)", 'exit: {"exitCode":1,"status":"failed"}'), "quota", /weekly limit/],
+    [log("[Bash...]", "Error: API error: [codex] Error: HTTP request failed: error sending request for url (https://chatgpt.com/backend-api/codex/responses)", 'exit: {"exitCode":1}'), "network", /HTTP request failed/],
+    [log("[WebFetch...]", "Error: API error: Maximum turn limit (10) reached", 'exit: {"exitCode":1}'), "turns", /turn limit/],
+    [log("Login expired. Run `coven-code login`."), "auth", /Login expired/],
+    [log("Error: something odd happened", 'exit: {"exitCode":1}'), "other", /something odd/],
+  ];
+  for (const [entries, kind, message] of cases) {
+    const diagnosis = diagnoseJournalRunFailure(entries);
+    assert.equal(diagnosis.kind, kind, `kind for ${kind}`);
+    assert.match(diagnosis.message, message);
+    assert.ok(!/exit:/.test(diagnosis.message), "the exit bookkeeping line is never the reason");
+    assert.ok(diagnosis.hint.length > 0, "every kind carries a next step");
+  }
+});
+
+test("diagnoseJournalRunFailure returns null for an empty or unreadable log", async () => {
+  const { diagnoseJournalRunFailure } = await import("./journal-automation.ts");
+  assert.equal(diagnoseJournalRunFailure([]), null);
+  assert.equal(diagnoseJournalRunFailure(null), null);
+  assert.equal(diagnoseJournalRunFailure([{ message: 'exit: {"exitCode":1}' }]), null);
+});
