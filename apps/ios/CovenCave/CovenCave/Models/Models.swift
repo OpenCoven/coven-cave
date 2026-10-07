@@ -109,6 +109,12 @@ struct SessionRow: Identifiable, Codable, Hashable {
     /// The pull request the chat's work produced, when the server resolved one
     /// (`SessionPullRequestContext` in `src/lib/types.ts`).
     var pullRequest: SessionPullRequest? = nil
+    /// "Never auto-archive" mark from Cave state. A kept chat is never offered
+    /// for archiving, matching the desktop's merged-chat sweep.
+    var keep: Bool? = nil
+    /// Cave-local archive defer-until timestamp (explicit extension or the
+    /// summon grace). Inside the window a chat is not offered for archiving.
+    var archiveExtendedUntil: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, title, harness, model, runtime, status
@@ -120,7 +126,8 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case projectRoot = "project_root"
         case origin, generated
         case flow
-        case attention, pullRequest
+        case attention, pullRequest, keep
+        case archiveExtendedUntil = "archive_extended_until"
     }
 
     var isFlowRun: Bool { origin == "flow" || flow != nil }

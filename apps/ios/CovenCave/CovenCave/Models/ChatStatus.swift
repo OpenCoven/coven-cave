@@ -59,6 +59,8 @@ struct ChatPullRequestBadge: Hashable {
     let state: ChatPullRequestState
     let number: Int?
     let url: URL?
+    /// False when the server only found the PR in the transcript.
+    let ownsChat: Bool
 
     /// "PR #42 · merged"; an unverified state names only the PR.
     var label: String {
@@ -84,7 +86,17 @@ struct ChatPullRequestBadge: Hashable {
         }
         number = pr.number
         url = resolved
+        ownsChat = pr.attribution != "transcript"
     }
+}
+
+extension ChatPullRequestBadge {
+    /// Whether this PR can settle the chat: GitHub says merged AND the PR was
+    /// resolved from the chat's own work branch. A transcript-attributed PR is
+    /// only a link the chat mentioned — a long-lived familiar chat reports many
+    /// over its lifetime, and the latest one merging says nothing about the
+    /// chat being done. Mirrors `merged-chat-auto-archive.ts` (cave-u9wl).
+    var settlesChat: Bool { state == .merged && ownsChat }
 }
 
 /// Everything a chat row needs to say about status, resolved once.
@@ -125,6 +137,15 @@ struct ChatStatusSummary: Hashable {
         }
     }
 
+    /// The one-word reason for the pill: "approval", "credentials", …
+    var reasonWord: String? {
+        switch reason {
+        case "approval", "credentials", "decision": return reason
+        case "input": return "reply"
+        default: return nil
+        }
+    }
+
     /// One spoken sentence for VoiceOver.
     var accessibilityText: String {
         var parts = [lifecycle.label]
@@ -148,9 +169,17 @@ struct ChatStatusSummary: Hashable {
         pullRequest: SessionPullRequest?,
         archived: Bool,
         pinned: Bool,
+        keep: Bool = false,
+        archiveDeferredUntil: Date? = nil,
+        now: Date = Date(),
         streaming: Bool = false
     ) -> ChatStatusSummary {
         let pr = ChatPullRequestBadge(pullRequest)
+        // The desktop sweep's opt-outs, plus pinning: a chat you chose to keep
+        // in view, marked keep, or are inside an archive extension for is
+        // never offered for archiving.
+        let archivable = !pinned && !keep && !archived
+            && (archiveDeferredUntil.map { $0 <= now } ?? true)
         let key = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         if streaming || liveStatuses.contains(key) {
@@ -164,7 +193,7 @@ struct ChatStatusSummary: Hashable {
         // An archived chat is settled by definition — it wants nothing.
         let attention = archived ? nil : attention
         let state = attention?.state ?? "none"
-        let merged = pr?.state == .merged
+        let merged = pr?.settlesChat == true && archivable
 
         if state != "none" && !state.isEmpty {
             let reason = attention?.reason
@@ -177,14 +206,14 @@ struct ChatStatusSummary: Hashable {
             // A merged PR answers a chat that was merely left hanging: the
             // familiar's last word was the work landing. An explicit ask still
             // outranks the merge.
-            if leftHanging && merged && !pinned {
+            if leftHanging && merged {
                 return ChatStatusSummary(lifecycle: .readyToArchive, reason: nil, since: nil,
                                          quiet: false, pullRequest: pr)
             }
             return ChatStatusSummary(lifecycle: .awaiting, reason: reason, since: since,
                                      quiet: leftHanging, pullRequest: pr)
         }
-        if merged && !pinned && !archived {
+        if merged {
             return ChatStatusSummary(lifecycle: .readyToArchive, reason: nil, since: nil,
                                      quiet: false, pullRequest: pr)
         }
@@ -192,10 +221,13 @@ struct ChatStatusSummary: Hashable {
                                  reason: nil, since: nil, quiet: false, pullRequest: pr)
     }
 
-    static func derive(_ session: SessionRow, streaming: Bool = false) -> ChatStatusSummary {
+    static func derive(_ session: SessionRow, now: Date = Date(),
+                       streaming: Bool = false) -> ChatStatusSummary {
         derive(status: session.status, attention: session.attention,
                pullRequest: session.pullRequest, archived: session.archivedAt != nil,
-               pinned: session.pinned == true, streaming: streaming)
+               pinned: session.pinned == true, keep: session.keep == true,
+               archiveDeferredUntil: caveParseISO(session.archiveExtendedUntil),
+               now: now, streaming: streaming)
     }
 
     /// A local thread may be bound to several sessions (a group chat, one per

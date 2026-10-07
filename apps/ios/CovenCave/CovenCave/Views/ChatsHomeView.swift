@@ -63,7 +63,6 @@ struct ChatsHomeView: View {
     /// Needs you / Running / Ready to archive (#5850). List organisation only,
     /// like the project filter; nil is All.
     @State private var statusFilter: ChatStatusFilter?
-    @State private var confirmArchiveReady = false
     /// The Reflections section starts collapsed so review runs never push
     /// live chats down; opening it once is remembered across launches. It is
     /// read once and written on toggle rather than held in `@AppStorage`, so
@@ -795,7 +794,13 @@ struct ChatsHomeView: View {
                 }
                 .accessibilityIdentifier("Chat row \(entry.id)")
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(sizeClass == .compact ? Color.clear : nil)
+                .listRowBackground(rowBackground(for: entry))
+                // A tinted field is its own card: separators would cut
+                // through its rounded edges.
+                .listRowSeparator(
+                    ChatStatusTint.rowField(entry.status, accent: chrome.accent) != nil ? .hidden : .automatic,
+                    edges: .all
+                )
             }
             if snapshot.entries.isEmpty && snapshot.archivedCount > 0 {
                 Button("Show archived chats (\(snapshot.archivedCount))") { showArchived = true }
@@ -814,30 +819,63 @@ struct ChatsHomeView: View {
         }
     }
 
-    /// The Ready-to-archive view's one bulk action. Archive is reversible
-    /// (Show archived → Unarchive), but it moves many rows at once, so it asks.
+    /// Phones draw rows on the themed list background; iPad keeps the system
+    /// background so its selection highlight shows. Either way a chat that is
+    /// stopped on you gets its status field — except the selected iPad row,
+    /// whose highlight already says where you are.
+    private func rowBackground(for entry: ChatListSnapshot.Entry) -> AnyView? {
+        let selected: Bool = switch entry.conversation {
+        case .local(let thread): sizeClass == .regular && selection == .thread(thread)
+        case .server: false
+        }
+        let flags = ChatStatusTint.rowField(entry.status, accent: chrome.accent) != nil
+            || entry.status.lifecycle == .failed
+        guard flags, !selected else { return sizeClass == .compact ? AnyView(Color.clear) : nil }
+        return AnyView(ChatStatusRowBackground(
+            status: entry.status,
+            plain: sizeClass == .compact ? .clear : Color(uiColor: .systemBackground)
+        ))
+    }
+
+    /// The Ready-to-archive view's one bulk action. Archiving is reversible,
+    /// so it acts at once and offers Undo in the toast (the iOS pattern for a
+    /// reversible bulk action) rather than asking first.
     private func archiveReadyRow(count: Int) -> some View {
-        Button {
-            confirmArchiveReady = true
+        let tint = ChatStatusTint.color(.readyToArchive, accent: chrome.accent)
+        return Button {
+            archiveReadyChats()
         } label: {
-            Label(count == 1 ? "Archive this chat" : "Archive all \(count) ready chats",
-                  systemImage: "archivebox")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ChatStatusTint.color(.readyToArchive, accent: chrome.accent))
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+            HStack(spacing: 10) {
+                Image(systemName: "archivebox.fill")
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(count == 1 ? "Archive this chat" : "Archive all \(count)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(chrome.textPrimary)
+                    Text("Their pull requests merged")
+                        .font(.caption)
+                        .foregroundStyle(chrome.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(tint.opacity(0.22), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glassPress)
+        .accessibilityLabel(count == 1 ? "Archive this chat" : "Archive all \(count) ready chats")
+        .accessibilityHint("Their pull requests merged. Undo is offered afterwards.")
         .accessibilityIdentifier("Archive ready chats")
-        .confirmationDialog(
-            count == 1 ? "Archive this chat?" : "Archive \(count) chats?",
-            isPresented: $confirmArchiveReady,
-            titleVisibility: .visible
-        ) {
-            Button(count == 1 ? "Archive" : "Archive \(count)") { archiveReadyChats() }
-        } message: {
-            Text("Their pull requests have merged. You can find them again under Show archived.")
-        }
     }
 
     /// Re-resolves at confirm time, so a chat that started running or asked
@@ -855,17 +893,31 @@ struct ChatsHomeView: View {
             projectFilter: projectFilter,
             statusFilter: .readyToArchive
         ).entries
+        var threads: [ChatThread] = []
+        var sessions: [SessionRow] = []
         for entry in ready {
             switch entry.conversation {
             case .local(let thread):
                 if thread.isStreaming { continue }
-                app.setThreadArchived(thread, true)
+                threads.append(thread)
             case .server(let session):
-                app.setServerSessionArchived(session, true)
+                sessions.append(session)
             }
         }
+        let total = threads.count + sessions.count
+        guard total > 0 else { return }
+        for thread in threads { app.setThreadArchived(thread, true) }
+        for session in sessions { app.setServerSessionArchived(session, true) }
         Haptics.success()
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { statusFilter = nil }
+        app.showToast(
+            total == 1 ? "Archived 1 chat" : "Archived \(total) chats",
+            systemImage: "archivebox.fill",
+            actionTitle: "Undo"
+        ) { [app] in
+            for thread in threads { app.setThreadArchived(thread, false) }
+            for session in sessions { app.setServerSessionArchived(session, false) }
+        }
     }
 
     private func statusFilterEmptyState(_ filter: ChatStatusFilter) -> some View {
@@ -1220,13 +1272,11 @@ struct ThreadRow: View {
                         relativeTime
                     }
                 }
-                Text(familiars.map(\.displayName).joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(secondaryColor)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                if let effectiveStatus {
-                    ChatStatusLine(status: effectiveStatus)
-                }
+                ChatStatusCaption(
+                    status: effectiveStatus,
+                    names: familiars.map(\.displayName).joined(separator: ", "),
+                    nameColor: secondaryColor
+                )
                 if let draftText = app.threadDrafts[thread.id] {
                     // A persisted unsent draft outranks the last-message
                     // preview (standard messenger affordance — makes drafts

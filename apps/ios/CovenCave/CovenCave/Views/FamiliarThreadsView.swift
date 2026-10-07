@@ -495,12 +495,7 @@ struct ServerSessionRow: View {
                         relativeTime
                     }
                 }
-                if let familiar {
-                    Text(familiar.displayName)
-                        .font(.caption)
-                        .foregroundStyle(chrome.textSecondary)
-                }
-                ChatStatusLine(status: status)
+                ChatStatusCaption(status: status, names: familiar?.displayName ?? "")
                 Label("On another device", systemImage: "desktopcomputer")
                     .font(.caption)
                     .foregroundStyle(.secondary)

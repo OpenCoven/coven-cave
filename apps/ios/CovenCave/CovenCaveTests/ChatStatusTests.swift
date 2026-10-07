@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class ChatStatusTests: XCTestCase {
     private let merged = SessionPullRequest(repo: "OpenCoven/coven-cave", number: 42,
-                                            state: "merged", attribution: "transcript")
+                                            state: "merged", attribution: "branch")
 
     private func lifecycle(
         _ status: String?, _ attention: SessionAttention? = nil,
@@ -55,6 +55,28 @@ final class ChatStatusTests: XCTestCase {
         XCTAssertEqual(lifecycle("running", pr: merged), .running)
         XCTAssertEqual(lifecycle("completed", pr: merged, pinned: true), .completed)
         XCTAssertEqual(lifecycle("completed", pr: merged, archived: true), .completed)
+    }
+
+    /// Mirrors merged-chat-auto-archive.ts: only a merge of the chat's OWN
+    /// branch settles it, and keep marks and extension windows opt out.
+    func testOnlyABranchMergeOutsideTheDesktopOptOutsIsReady() {
+        var mentioned = merged
+        mentioned.attribution = "transcript"
+        XCTAssertEqual(lifecycle("completed", pr: mentioned), .completed)
+        XCTAssertEqual(lifecycle("completed", .init(state: "left-hanging"), pr: mentioned), .awaiting)
+        var legacy = merged
+        legacy.attribution = nil
+        XCTAssertEqual(lifecycle("completed", pr: legacy), .readyToArchive)
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func derived(keep: Bool = false, until: Date? = nil) -> ChatLifecycle {
+            ChatStatusSummary.derive(status: "completed", attention: nil, pullRequest: merged,
+                                     archived: false, pinned: false, keep: keep,
+                                     archiveDeferredUntil: until, now: now).lifecycle
+        }
+        XCTAssertEqual(derived(keep: true), .completed)
+        XCTAssertEqual(derived(until: now.addingTimeInterval(60)), .completed)
+        XCTAssertEqual(derived(until: now.addingTimeInterval(-60)), .readyToArchive)
     }
 
     func testArchivedChatWantsNothing() {
