@@ -103,6 +103,12 @@ struct SessionRow: Identifiable, Codable, Hashable {
     /// Daemon-only runs the server flags as generated (not user chats).
     var generated: Bool?
     var flow: FlowSessionReference? = nil
+    /// Server-authored "does this chat want something from you" evidence
+    /// (`chat-attention.ts`). Absent from older servers, which reads as none.
+    var attention: SessionAttention? = nil
+    /// The pull request the chat's work produced, when the server resolved one
+    /// (`SessionPullRequestContext` in `src/lib/types.ts`).
+    var pullRequest: SessionPullRequest? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, title, harness, model, runtime, status
@@ -114,6 +120,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case projectRoot = "project_root"
         case origin, generated
         case flow
+        case attention, pullRequest
     }
 
     var isFlowRun: Bool { origin == "flow" || flow != nil }
@@ -539,4 +546,67 @@ struct ConversationResponse: Codable {
     let ok: Bool
     let error: String?
     let conversation: Conversation?
+}
+
+// MARK: - Chat status evidence
+
+/// `ChatAttention` from `src/lib/chat-attention.ts`. Decoding never throws: a
+/// malformed or future-shaped value reads as "no attention" instead of
+/// failing the whole session list.
+struct SessionAttention: Codable, Hashable {
+    /// `none`, `left-hanging`, `awaiting-human` or `overdue-human`.
+    var state: String
+    var since: String?
+    /// `input`, `decision`, `approval` or `credentials`.
+    var reason: String?
+
+    init(state: String, since: String? = nil, reason: String? = nil) {
+        self.state = state
+        self.since = since
+        self.reason = reason
+    }
+
+    private enum CodingKeys: String, CodingKey { case state, since, reason }
+
+    init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        state = (try? values?.decodeIfPresent(String.self, forKey: .state)) ?? "none"
+        since = (try? values?.decodeIfPresent(String.self, forKey: .since)) ?? nil
+        reason = (try? values?.decodeIfPresent(String.self, forKey: .reason)) ?? nil
+    }
+}
+
+/// `SessionPullRequestContext` from `src/lib/types.ts`. Decoding never throws.
+struct SessionPullRequest: Codable, Hashable {
+    var repo: String?
+    var number: Int?
+    var url: String?
+    /// GitHub's word (`open`, `merged`, `closed`, `draft`) when the server
+    /// verified it; anything else claims only that a PR exists.
+    var state: String?
+    var draft: Bool?
+    /// `branch` (authoritative) or `transcript` (the chat reported the URL).
+    var attribution: String?
+
+    init(repo: String? = nil, number: Int? = nil, url: String? = nil,
+         state: String? = nil, draft: Bool? = nil, attribution: String? = nil) {
+        self.repo = repo
+        self.number = number
+        self.url = url
+        self.state = state
+        self.draft = draft
+        self.attribution = attribution
+    }
+
+    private enum CodingKeys: String, CodingKey { case repo, number, url, state, draft, attribution }
+
+    init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        repo = (try? values?.decodeIfPresent(String.self, forKey: .repo)) ?? nil
+        number = (try? values?.decodeIfPresent(Int.self, forKey: .number)) ?? nil
+        url = (try? values?.decodeIfPresent(String.self, forKey: .url)) ?? nil
+        state = (try? values?.decodeIfPresent(String.self, forKey: .state)) ?? nil
+        draft = (try? values?.decodeIfPresent(Bool.self, forKey: .draft)) ?? nil
+        attribution = (try? values?.decodeIfPresent(String.self, forKey: .attribution)) ?? nil
+    }
 }

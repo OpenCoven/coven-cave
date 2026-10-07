@@ -476,6 +476,7 @@ struct ServerSessionRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SessionRow
     private var familiar: Familiar? { session.familiarId.flatMap(app.familiar) }
+    private var status: ChatStatusSummary { ChatStatusSummary.derive(session) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -499,6 +500,7 @@ struct ServerSessionRow: View {
                         .font(.caption)
                         .foregroundStyle(chrome.textSecondary)
                 }
+                ChatStatusLine(status: status)
                 Label("On another device", systemImage: "desktopcomputer")
                     .font(.caption)
                     .foregroundStyle(.secondary)
