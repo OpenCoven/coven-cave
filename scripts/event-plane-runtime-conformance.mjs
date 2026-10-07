@@ -40,7 +40,7 @@ function signedAccessToken(secret, ttlMs = 60_000) {
   return `v1.${expiresAt}.${nonce}.${sig}`;
 }
 
-async function startServer({ eventPlane, accessSecret = null, passkeyRequired = false }) {
+async function startServer({ eventPlane, accessSecret = null, passkeyRequired = false, extraEnv = {} }) {
   const port = await freePort();
   const scratch = mkdtempSync(path.join(tmpdir(), "cave-event-plane-"));
   const env = buildCaveEnvironment({
@@ -53,6 +53,10 @@ async function startServer({ eventPlane, accessSecret = null, passkeyRequired = 
   for (const key of EVENT_ENV) delete env[key];
   if (eventPlane) env.COVEN_CAVE_EVENT_PLANE_ENABLED = "1";
   if (passkeyRequired) env.COVEN_CAVE_PASSKEY_REQUIRED = "1";
+  Object.assign(env, extraEnv);
+  // Writes below create real board cards: they must land in this run's
+  // scratch home, never in the operator's ~/.coven.
+  assert.ok(env.COVEN_CAVE_HOME.startsWith(scratch) && env.COVEN_HOME.startsWith(scratch), "refusing to run outside the scratch home");
   const child = spawn(process.execPath, ["server.mjs"], { cwd: repositoryRoot, env, stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4_000); });
@@ -66,6 +70,7 @@ async function startServer({ eventPlane, accessSecret = null, passkeyRequired = 
         const capability = (await res.json()).eventPlane;
         return {
           port,
+          origin,
           capability,
           async stop() {
             await stopCave({ child }, port);
@@ -127,6 +132,35 @@ function nextClose(ws, timeoutMs = 5_000) {
       resolve({ code, reason: String(reason) });
     });
   });
+}
+
+/** Create a board card through the real route, as the app does. */
+async function createCard(cave, title) {
+  const res = await fetch(`${cave.origin}/api/board`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: cave.origin },
+    body: JSON.stringify({ title }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(body));
+  return body.card;
+}
+
+/** Resolves true if the socket stays quiet for `ms`. */
+function silentFor(ws, ms) {
+  return new Promise((resolve) => {
+    const onMessage = () => { clearTimeout(timer); resolve(false); };
+    const timer = setTimeout(() => { ws.off("message", onMessage); resolve(true); }, ms);
+    ws.once("message", onMessage);
+  });
+}
+
+async function readySocket(cave, topics, resume) {
+  const { status, ws } = await openSocket(cave.port, "/api/events-ws");
+  assert.equal(status, 101);
+  const first = nextMessage(ws);
+  ws.send(JSON.stringify({ type: "hello", protocol: 1, clientId: "conformance", topics, ...(resume ? { resume } : {}) }));
+  return { ws, first: await first };
 }
 
 const hello = (topics) => JSON.stringify({ type: "hello", protocol: 1, clientId: "conformance", topics });
@@ -192,6 +226,30 @@ async function main() {
         const { status } = await openSocket(cave.port, "/api/events-ws/extra");
         assert.notEqual(status, 101);
       });
+      await check("a real board write reaches board subscribers only, after the write (#5835)", async () => {
+        const board = await readySocket(cave, ["board"]);
+        const sessions = await readySocket(cave, ["sessions"]);
+        const event = nextMessage(board.ws);
+        const card = await createCard(cave, "conformance card");
+        const invalidation = await event;
+        assert.equal(invalidation.type, "invalidate");
+        assert.equal(invalidation.topic, "board");
+        assert.deepEqual(invalidation.entityIds, [card.id]);
+        assert.equal(await silentFor(sessions.ws, 750), true, "a sessions-only client hears nothing");
+        board.ws.close();
+        sessions.ws.close();
+      });
+      await check("a resume cursor replays the retained board suffix", async () => {
+        const first = await readySocket(cave, ["board"]);
+        const event = nextMessage(first.ws);
+        await createCard(cave, "replay me");
+        const invalidation = await event;
+        first.ws.close();
+        const resumed = await readySocket(cave, ["board"], { epoch: first.first.epoch, seq: invalidation.seq - 1 });
+        assert.equal(resumed.first.type, "invalidate");
+        assert.equal(resumed.first.seq, invalidation.seq);
+        resumed.ws.close();
+      });
     } finally {
       await cave.stop();
     }
@@ -229,6 +287,54 @@ async function main() {
         const token = encodeURIComponent(signedAccessToken(secret));
         const { status } = await openSocket(cave.port, `/api/pty-ws?threadId=t1&coven_access_token=${token}`, remoteHost);
         assert.equal(status, 401);
+      });
+    } finally {
+      await cave.stop();
+    }
+  }
+
+  // 4. A cursor from an earlier boot is told to resync.
+  {
+    const first = await startServer({ eventPlane: true });
+    let oldEpoch;
+    try {
+      const { ws, first: ready } = await readySocket(first, ["board"]);
+      oldEpoch = ready.epoch;
+      ws.close();
+    } finally {
+      await first.stop();
+    }
+    const second = await startServer({ eventPlane: true });
+    try {
+      await check("a cursor from an earlier boot gets resync-required", async () => {
+        const { ws, first: message } = await readySocket(second, ["board"], { epoch: oldEpoch, seq: 0 });
+        assert.equal(message.type, "resync-required");
+        assert.equal(message.reason, "server-restarted");
+        assert.notEqual(message.epoch, oldEpoch);
+        ws.close();
+      });
+    } finally {
+      await second.stop();
+    }
+  }
+
+  // 5. A cursor older than a small replay ring is told to resync.
+  {
+    const cave = await startServer({ eventPlane: true, extraEnv: { COVEN_CAVE_EVENT_RING_COUNT: "2" } });
+    try {
+      await check("a cursor older than the ring gets a replay-gap resync", async () => {
+        const watcher = await readySocket(cave, ["board"]);
+        const epoch = watcher.first.epoch;
+        for (let i = 0; i < 4; i += 1) {
+          const event = nextMessage(watcher.ws);
+          await createCard(cave, `ring ${i}`);
+          await event;
+        }
+        watcher.ws.close();
+        const { ws, first: message } = await readySocket(cave, ["board"], { epoch, seq: 1 });
+        assert.equal(message.type, "resync-required");
+        assert.equal(message.reason, "replay-gap");
+        ws.close();
       });
     } finally {
       await cave.stop();

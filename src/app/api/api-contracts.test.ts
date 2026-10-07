@@ -1415,7 +1415,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListCacheSource,
-    /export function invalidateSessionsListCache\(\): void \{\s*\n\s*sessionsListCache\.clear\(\);/,
+    /export function invalidateSessionsListCache\((?:sessionIds\?: readonly string\[\])?\): void \{\s*\n\s*sessionsListCache\.clear\(\);/,
     "sessions-list-cache: mutation paths can bust every cached view (cave-53yx)",
   );
 

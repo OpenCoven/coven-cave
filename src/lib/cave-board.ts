@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { markResourceChanged } from "./server/cave-event-plane-publisher.ts";
 
 import {
   DEFAULT_MAX_RETRIES,
@@ -385,7 +386,14 @@ function withBoardLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-export async function saveBoard(board: BoardFile): Promise<void> {
+/**
+ * Persist the board, then tell event-plane subscribers it changed (#5835).
+ * Every board mutation reaches disk through here, and callers save only when
+ * something changed, so a failed or no-op mutation publishes nothing.
+ * `changedIds` is advisory: without it the whole board is invalidated, which
+ * is always correct (a delete can repair other cards' dependencies).
+ */
+export async function saveBoard(board: BoardFile, changedIds?: readonly string[]): Promise<void> {
   await ensureDir();
   // Atomic write (temp file + rename): a plain writeFile truncates-then-writes,
   // so a concurrent reader can observe a half-written file, loadBoard() fails to
@@ -393,6 +401,7 @@ export async function saveBoard(board: BoardFile): Promise<void> {
   // a task-chat POST 404ing on a card that exists). The write lock above
   // serializes mutations; writeJsonAtomic makes each write torn-read-safe.
   await writeJsonAtomic(BOARD_PATH, board);
+  markResourceChanged("board", changedIds);
 }
 
 export class BoardAgenticProposalMutationError extends Error {
@@ -1165,7 +1174,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   if (attachments) card.attachments = attachments;
   assertValidOrchestration(card, { cards: board.cards });
   board.cards.push(card);
-  await saveBoard(board);
+  await saveBoard(board, [card.id]);
   return card;
   });
 }
@@ -1520,7 +1529,7 @@ export async function updateCard(
   return withBoardLock(async () => {
     const updated = await updateCardLocked(id, patchWithOps, options);
     if (!updated) return null;
-    await saveBoard(updated.board);
+    await saveBoard(updated.board, [updated.card.id]);
     return updated.card;
   });
 }
@@ -1671,7 +1680,7 @@ export async function transitionCard(
     automated: true,
   });
   board.cards[idx] = next;
-  await saveBoard(board);
+  await saveBoard(board, [next.id]);
   return next;
   });
 }
@@ -1867,7 +1876,7 @@ export async function restoreCards(
       live.add(card.id);
       restored.push(card.id);
     }
-    if (restored.length > 0) await saveBoard(board);
+    if (restored.length > 0) await saveBoard(board, restored);
     return { restored, skipped };
   });
 }
