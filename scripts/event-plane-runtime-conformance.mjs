@@ -1,0 +1,249 @@
+#!/usr/bin/env node
+/**
+ * Event plane runtime conformance (#5830): drive the BUILT server
+ * (`server.mjs` plus `.next`) and prove the /api/events-ws upgrade behaves as
+ * the design says.
+ *
+ * - With the plane off (the default), the capability says so and an
+ *   authorized upgrade is refused.
+ * - With it on, a direct-loopback client completes hello → ready, and an
+ *   unsupported protocol closes with 4400 before anything is disclosed.
+ * - A remote or forwarded client needs the paired access credential: a
+ *   signed token is accepted, and no token gets 403 or 401.
+ * - The PTY keeps its remote passkey gate while the event socket, which
+ *   carries invalidations only, does not inherit it.
+ *
+ * Run `pnpm build` first. Every Cave gets its own temporary homes and port,
+ * so the operator's own data and servers are never touched.
+ *
+ *   node scripts/event-plane-runtime-conformance.mjs
+ */
+
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createHmac, randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { WebSocket } from "ws";
+import { buildCaveEnvironment, freePort, stopCave } from "./client-v1-conformance.mjs";
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const EVENT_ENV = ["COVEN_CAVE_EVENT_PLANE_ENABLED", "COVEN_CAVE_EVENT_WEB_MODE", "COVEN_CAVE_EVENT_IOS_MODE"];
+
+/** A signed mobile access token, the shape paired phones hold. */
+function signedAccessToken(secret, ttlMs = 60_000) {
+  const expiresAt = Date.now() + ttlMs;
+  const nonce = randomBytes(9).toString("base64url");
+  const sig = createHmac("sha256", secret).update(`v1.${expiresAt}.${nonce}`).digest("base64url");
+  return `v1.${expiresAt}.${nonce}.${sig}`;
+}
+
+async function startServer({ eventPlane, accessSecret = null, passkeyRequired = false }) {
+  const port = await freePort();
+  const scratch = mkdtempSync(path.join(tmpdir(), "cave-event-plane-"));
+  const env = buildCaveEnvironment({
+    port,
+    caveHomeDir: path.join(scratch, "cave-home"),
+    covenHomeDir: path.join(scratch, "coven-home"),
+    adminToken: null,
+    mobileAccessToken: accessSecret,
+  });
+  for (const key of EVENT_ENV) delete env[key];
+  if (eventPlane) env.COVEN_CAVE_EVENT_PLANE_ENABLED = "1";
+  if (passkeyRequired) env.COVEN_CAVE_PASSKEY_REQUIRED = "1";
+  const child = spawn(process.execPath, ["server.mjs"], { cwd: repositoryRoot, env, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4_000); });
+  const origin = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`Cave exited before readiness:\n${stderr}`);
+    try {
+      const res = await fetch(`${origin}/api/events/capability`, { signal: AbortSignal.timeout(1_000) });
+      if (res.ok) {
+        const capability = (await res.json()).eventPlane;
+        return {
+          port,
+          capability,
+          async stop() {
+            await stopCave({ child }, port);
+            rmSync(scratch, { recursive: true, force: true });
+          },
+        };
+      }
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  child.kill("SIGKILL");
+  throw new Error(`Cave readiness timed out:\n${stderr}`);
+}
+
+/**
+ * Open a socket and report how the upgrade ended: an HTTP status for a refusal,
+ * or the open socket. `headers` can carry a forwarded Host to stand in for a
+ * remote client arriving through `tailscale serve`.
+ */
+function openSocket(port, pathAndQuery, headers = {}, timeoutMs = 5_000) {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${pathAndQuery}`, { headers });
+    // A path the server doesn't own goes to Next's upgrade handler, which can
+    // leave the socket unanswered. That is "not the event socket", not a hang.
+    const timer = setTimeout(() => {
+      ws.terminate();
+      resolve({ status: 0, ws: null });
+    }, timeoutMs);
+    const done = (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    };
+    ws.once("open", () => done({ status: 101, ws }));
+    ws.once("unexpected-response", (_req, res) => {
+      res.resume();
+      done({ status: res.statusCode, ws: null });
+    });
+    ws.once("error", () => done({ status: 0, ws: null }));
+  });
+}
+
+function nextMessage(ws, timeoutMs = 5_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("no event message")), timeoutMs);
+    ws.once("message", (data) => {
+      clearTimeout(timer);
+      resolve(JSON.parse(String(data)));
+    });
+  });
+}
+
+function nextClose(ws, timeoutMs = 5_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("no close")), timeoutMs);
+    ws.once("close", (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: String(reason) });
+    });
+  });
+}
+
+const hello = (topics) => JSON.stringify({ type: "hello", protocol: 1, clientId: "conformance", topics });
+const results = [];
+async function check(name, run) {
+  try {
+    await run();
+    results.push([name, true]);
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    results.push([name, false]);
+    console.log(`not ok - ${name}\n  ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function main() {
+  if (!existsSync(path.join(repositoryRoot, "server.mjs")) || !existsSync(path.join(repositoryRoot, ".next", "BUILD_ID"))) {
+    console.error("event-plane-runtime-conformance: run `pnpm build` first (needs server.mjs and .next).");
+    return 2;
+  }
+
+  // 1. Off by default.
+  {
+    const cave = await startServer({ eventPlane: false });
+    try {
+      await check("the capability is off by default", () => {
+        assert.equal(cave.capability.enabled, false);
+        assert.deepEqual(cave.capability.rolloutMode, { web: "off", ios: "off" });
+      });
+      await check("a disabled plane refuses the upgrade", async () => {
+        const { status } = await openSocket(cave.port, "/api/events-ws");
+        assert.equal(status, 404);
+      });
+    } finally {
+      await cave.stop();
+    }
+  }
+
+  // 2. On, direct loopback.
+  {
+    const cave = await startServer({ eventPlane: true });
+    try {
+      await check("the capability is on when switched on", () => assert.equal(cave.capability.enabled, true));
+      await check("a loopback client completes hello and gets the ready barrier", async () => {
+        const { status, ws } = await openSocket(cave.port, "/api/events-ws");
+        assert.equal(status, 101);
+        ws.send(hello(["board", "sessions"]));
+        const ready = await nextMessage(ws);
+        assert.equal(ready.type, "ready");
+        assert.deepEqual(ready.topics, ["board", "sessions"]);
+        assert.equal(ready.seq, 0);
+        ws.close();
+      });
+      await check("an unsupported protocol closes with 4400 and discloses nothing", async () => {
+        const { ws } = await openSocket(cave.port, "/api/events-ws");
+        const closed = nextClose(ws);
+        ws.send(JSON.stringify({ type: "hello", protocol: 2, clientId: "future", topics: ["board"] }));
+        const { code, reason } = await closed;
+        assert.equal(code, 4400);
+        assert.doesNotMatch(reason, /epoch|seq|version/i);
+      });
+      await check("an exact path only: a lookalike is not the event socket", async () => {
+        const { status } = await openSocket(cave.port, "/api/events-ws/extra");
+        assert.notEqual(status, 101);
+      });
+    } finally {
+      await cave.stop();
+    }
+  }
+
+  // 3. Remote clients need the paired credential, and the PTY passkey gate
+  //    stays on the terminal only.
+  {
+    const secret = randomBytes(24).toString("base64url");
+    const cave = await startServer({ eventPlane: true, accessSecret: secret, passkeyRequired: true });
+    const remoteHost = { host: "cave.ts.net" };
+    try {
+      await check("a remote client with a signed access token is accepted", async () => {
+        const token = encodeURIComponent(signedAccessToken(secret));
+        const { status, ws } = await openSocket(cave.port, `/api/events-ws?coven_access_token=${token}`, remoteHost);
+        assert.equal(status, 101);
+        ws.send(hello(["runs"]));
+        assert.equal((await nextMessage(ws)).type, "ready");
+        ws.close();
+      });
+      await check("a remote client without a credential is refused", async () => {
+        const { status } = await openSocket(cave.port, "/api/events-ws", remoteHost);
+        assert.equal(status, 403);
+      });
+      await check("a forwarded loopback client without a credential is refused", async () => {
+        const { status } = await openSocket(cave.port, "/api/events-ws", { "x-forwarded-for": "100.64.0.7" });
+        assert.equal(status, 401);
+      });
+      await check("an expired signed token is refused", async () => {
+        const token = encodeURIComponent(signedAccessToken(secret, -1_000));
+        const { status } = await openSocket(cave.port, `/api/events-ws?coven_access_token=${token}`, remoteHost);
+        assert.equal(status, 403);
+      });
+      await check("the terminal keeps its passkey gate for the same remote credential", async () => {
+        const token = encodeURIComponent(signedAccessToken(secret));
+        const { status } = await openSocket(cave.port, `/api/pty-ws?threadId=t1&coven_access_token=${token}`, remoteHost);
+        assert.equal(status, 401);
+      });
+    } finally {
+      await cave.stop();
+    }
+  }
+
+  const failed = results.filter(([, ok]) => !ok).length;
+  console.log(`\nevent-plane-runtime-conformance: ${results.length - failed} of ${results.length} passed`);
+  return failed === 0 ? 0 : 1;
+}
+
+main().then(
+  (code) => process.exit(code),
+  (error) => {
+    console.error(`event-plane-runtime-conformance: ${error instanceof Error ? error.stack : String(error)}`);
+    process.exit(1);
+  },
+);

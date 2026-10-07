@@ -801,4 +801,45 @@ assert.match(
 );
 assert.match(src, /startHeapMonitor\(\);/, "the heap monitor starts with the server");
 
+// ── Event plane upgrade (#5830) ───────────────────────────────────────────
+// /api/events-ws is its own capability: it shares the PTY upgrade's source,
+// origin and credential checks, but not the shell's passkey-presence gate,
+// and it is routed before the PTY and Next branches.
+{
+  const sliceFn = (name: string) => {
+    const start = src.indexOf(`function ${name}(`);
+    assert.ok(start !== -1, `${name} exists`);
+    const end = src.indexOf("\nfunction ", start + 1);
+    return src.slice(start, end === -1 ? undefined : end);
+  };
+  const eventAuthorization = sliceFn("authorizeEventUpgrade");
+  assert.match(eventAuthorization, /isAuthorized\(req, query\)/, "remote event clients present the paired or sidecar credential");
+  assert.match(eventAuthorization, /isAllowedUpgradeSource\(req, tokenAuthenticated\)/, "the same host and origin gate as the terminal");
+  assert.match(eventAuthorization, /shouldRejectUnauthenticatedPtyUpgrade\(/, "an unauthenticated remote client is refused");
+  assert.doesNotMatch(
+    eventAuthorization,
+    /COVEN_CAVE_PASSKEY_REQUIRED|hasValidPasskeyPresence/,
+    "read-only invalidation sockets must not inherit the PTY shell-presence gate",
+  );
+  const upgrade = src.slice(src.indexOf('server.on("upgrade"'));
+  const eventRoute = upgrade.indexOf("if (pathname === CAVE_EVENT_PATH)");
+  assert.ok(eventRoute !== -1, "the event path is routed by exact match");
+  assert.ok(eventRoute < upgrade.indexOf('if (pathname !== "/api/pty-ws")'), "it is routed before the PTY and Next branches");
+  assert.match(
+    upgrade,
+    /COVEN_CAVE_PASSKEY_REQUIRED === "1"[\s\S]{0,150}!hasValidPasskeyPresence\(req, tailnetNodeId\)/,
+    "PTY remote access keeps passkey presence",
+  );
+  const handler = sliceFn("handleEventUpgrade");
+  assert.ok(
+    handler.indexOf("authorizeEventUpgrade(req, query)") < handler.indexOf("if (!broker)"),
+    "authorization runs before the disabled-plane refusal, so a refused client learns nothing about the plane",
+  );
+  assert.match(handler, /remoteEventClients\.add\(ws\)/, "remote event clients are tracked");
+  assert.match(src, /for \(const client of remoteEventClients\) client\.terminate\(\);/, "a device-access policy change ends remote event sessions");
+  assert.match(src, /const eventBroker = isEventPlaneEnabled\(process\.env\)\s*\?\s*createEventBroker\(/, "no broker exists unless the plane is switched on");
+  assert.match(src, /globalThis\.__covenCaveEventPlanePublisher = eventPlanePublisher;/, "Next routes reach the broker through the bridge");
+  assert.match(src, /eventBroker\?\.shutdown\(\);/, "shutdown closes event clients");
+}
+
 console.log("server-pty-ws.test.ts OK");

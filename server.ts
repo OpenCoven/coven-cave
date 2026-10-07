@@ -31,6 +31,16 @@ import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+// Event plane first: src/device-access-proxy.test.ts executes the bundled
+// device-access region of server.mjs, so nothing may be bundled inside it.
+import { CAVE_EVENT_PATH, MAX_EVENT_MESSAGE_BYTES, isEventPlaneEnabled } from "./src/lib/cave-event-plane-protocol.ts";
+import {
+  EVENT_RING_COUNT_DEFAULT,
+  EVENT_RING_COUNT_MAX,
+  boundedPositiveInt,
+  createEventBroker,
+} from "./src/lib/server/cave-event-broker.ts";
+import type { CaveEventPlanePublisher } from "./src/lib/server/cave-event-plane-publisher.ts";
 import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/status.ts";
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
@@ -1751,6 +1761,26 @@ function shouldRejectUnauthenticatedPtyUpgrade({
   return sidecarTokenConfigured || accessTokenConfigured;
 }
 
+/**
+ * Authorize an /api/events-ws upgrade (#5830). It shares the PTY upgrade's
+ * source, origin and credential checks, so a remote or forwarded client needs
+ * the paired access or sidecar credential. It deliberately omits the PTY's
+ * remote passkey-presence gate: the event socket exposes only invalidation
+ * metadata, never a shell, and paired apps must refresh without a passkey
+ * prompt. Failures return a bare status and disclose nothing about the broker.
+ */
+function authorizeEventUpgrade(req: IncomingMessage, query: UpgradeQuery): 200 | 401 | 403 {
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) return 403;
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+    directLoopback: isDirectLoopbackRequest(req),
+  })) return 401;
+  return 200;
+}
+
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
   if (!isPtyAuthRequired()) return false;
 
@@ -2233,6 +2263,74 @@ function scheduleDeferredEntryPreload(): void {
 
 const wss = new WebSocketServer({ noServer: true });
 const remotePtyClients = new Set<WebSocket>();
+
+// ── Event plane (#5830) ───────────────────────────────────────────────────────
+// Invalidations only, over /api/events-ws: "this snapshot may be stale". Off
+// unless COVEN_CAVE_EVENT_PLANE_ENABLED=1; with the switch off there is no
+// broker, the upgrade is refused, and publishing is a quiet no-op. Next routes
+// reach the broker through this globalThis bridge because Next bundles them
+// apart from this server.
+const eventBroker = isEventPlaneEnabled(process.env)
+  ? createEventBroker({
+    ringCountLimit: boundedPositiveInt(
+      process.env.COVEN_CAVE_EVENT_RING_COUNT,
+      EVENT_RING_COUNT_DEFAULT,
+      EVENT_RING_COUNT_MAX,
+    ),
+  })
+  : null;
+const eventPlanePublisher: CaveEventPlanePublisher = {
+  enabled: eventBroker !== null,
+  markResourceChanged: (topic, entityIds) => eventBroker?.publish(topic, entityIds),
+};
+globalThis.__covenCaveEventPlanePublisher = eventPlanePublisher;
+// ws refuses anything past maxPayload with its own 1009 close; frames between
+// the protocol bound and this get the protocol's 4402 from the broker.
+const eventWss = new WebSocketServer({ noServer: true, maxPayload: MAX_EVENT_MESSAGE_BYTES * 4 });
+const remoteEventClients = new Set<WebSocket>();
+
+function refuseEventUpgrade(socket: { write(chunk: string): unknown; destroy(): void }, status: 401 | 403 | 404): void {
+  const line = status === 401 ? "401 Unauthorized" : status === 403 ? "403 Forbidden" : "404 Not Found";
+  socket.write(`HTTP/1.1 ${line}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  socket.destroy();
+}
+
+/**
+ * Authorize first, so a refused client learns nothing about the plane, then
+ * refuse a disabled plane, then hand the socket to the broker. Remote clients
+ * are tracked so a device-access policy change ends their sessions, as it
+ * does for remote terminals.
+ */
+function handleEventUpgrade(
+  req: IncomingMessage,
+  socket: Parameters<WebSocketServer["handleUpgrade"]>[1],
+  head: Buffer,
+  query: UpgradeQuery,
+): void {
+  const status = authorizeEventUpgrade(req, query);
+  if (status !== 200) {
+    refuseEventUpgrade(socket, status);
+    return;
+  }
+  const broker = eventBroker;
+  if (!broker) {
+    refuseEventUpgrade(socket, 404);
+    return;
+  }
+  eventWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    const handlers = broker.attach(ws);
+    const remote = !isDirectLoopbackRequest(req);
+    if (remote) remoteEventClients.add(ws);
+    const closed = () => {
+      remoteEventClients.delete(ws);
+      handlers.closed();
+    };
+    ws.on("message", (data: RawData, isBinary: boolean) => handlers.message(data, isBinary));
+    ws.on("pong", () => handlers.pong());
+    ws.once("close", closed);
+    ws.once("error", closed);
+  });
+}
 const deviceAccessSecret = randomUUID();
 process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
 // NOT awaited. Hardening the device-access store spawns a PowerShell ACL probe
@@ -2259,6 +2357,7 @@ const deviceAccess = createDeviceAccessGateway({
   },
   onPolicyChanged() {
     for (const client of remotePtyClients) client.terminate();
+    for (const client of remoteEventClients) client.terminate();
   },
 });
 
@@ -2319,6 +2418,11 @@ server.on("upgrade", async (req, socket, head) => {
   } catch {
     socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
+    return;
+  }
+
+  if (pathname === CAVE_EVENT_PATH) {
+    handleEventUpgrade(req, socket, head, query);
     return;
   }
 
@@ -2496,6 +2600,7 @@ function shutdownHttpServer(): void {
   httpShutdownStarted = true;
   cleanupStandaloneClientV1Discovery();
   terminatePtySessions();
+  eventBroker?.shutdown();
   const timer = setTimeout(() => process.exit(1), 2_000);
   timer.unref?.();
   server.close(() => {

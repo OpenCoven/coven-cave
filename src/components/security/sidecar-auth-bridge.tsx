@@ -43,7 +43,9 @@ export const SIDECAR_AUTH_BRIDGE = `
       const supportedProtocol =
         nextUrl.protocol === "ws:" || nextUrl.protocol === "wss:" ||
         nextUrl.protocol === "http:" || nextUrl.protocol === "https:";
-      if (sameHost && supportedProtocol && nextUrl.pathname === "/api/pty-ws") {
+      // Exact paths only: the terminal socket and the event plane (#5830).
+      const tokenSocket = nextUrl.pathname === "/api/pty-ws" || nextUrl.pathname === "/api/events-ws";
+      if (sameHost && supportedProtocol && tokenSocket) {
         nextUrl.searchParams.set(tokenParam, token);
         return new NativeWebSocket(nextUrl, protocols);
       }
