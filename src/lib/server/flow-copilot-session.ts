@@ -19,6 +19,9 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { saveConversation, type ConversationFile } from "../cave-conversations.ts";
 import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat-tool-events.ts";
+import { runtimeIdentityForLaunch, withReportedRuntimeModel } from "../chat-runtime-identity.ts";
+import { runtimeActivityForAdapter } from "../chat-runtime-activity.ts";
+import { runtimeModelIdForLaunch } from "../runtime-models.ts";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
@@ -30,6 +33,7 @@ import {
 import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { finalizeFlowSession } from "./flow-attention.ts";
+import { projectLegacyAssistantText, projectLegacyToolOffsets } from "./legacy-reasoning-projection.ts";
 import {
   COVEN_PROCESS_SUPERVISOR_CONTROL_PREFIX,
   COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES,
@@ -586,6 +590,8 @@ function awaitCopilotSupervisorAdmission(
 
 export type CopilotFlowLaunch = {
   spec: CopilotStreamSpec;
+  /** Version from the same capability probe that selected spec/launchCommand. */
+  clientVersion?: string | null;
   prompt: string;
   projectRoot: string;
   familiarId: string | null;
@@ -875,10 +881,16 @@ export async function startCopilotFlowRun(
   const launchedThroughSupervisor = supervisorCommand !== null;
 
   const startedAt = new Date().toISOString();
+  let runtimeIdentity = runtimeIdentityForLaunch("copilot", launch.clientVersion, runtimeActivityForAdapter("direct", true, false));
+  const forwardedModel = launch.model && launch.spec.modelFlag
+    ? runtimeModelIdForLaunch("copilot", launch.model) : undefined;
   let assistantText = "";
   const deltaByMessage = new Map<string, string>();
   const textAssembler = new CopilotTextAssembler();
-  const toolTracker = new ToolCallTracker();
+  const toolTracker = new ToolCallTracker(Date.now, "", {
+    runId: randomUUID(), harness: "copilot", version: runtimeIdentity.version,
+    protocol: launch.spec.protocol.id,
+  });
   const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
   const MAX_PENDING_TOOL_COMPLETIONS = 64;
   const compatibilityDiagnostics = new Map<string, string>();
@@ -931,6 +943,11 @@ export async function startCopilotFlowRun(
       if (diagnostic) compatibilityDiagnostics.set(diagnostic.code, diagnostic.message);
       return;
     }
+    // Only the documented assistant message field is an identity report.
+    // Later messages may report a model change or explicit unavailability.
+    if (event.kind === "message") {
+      runtimeIdentity = withReportedRuntimeModel(runtimeIdentity, event.model);
+    }
     if (event.kind === "text_delta") {
       const append = textAssembler.delta(event.messageId, event.text, event.frameId);
       if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
@@ -967,7 +984,7 @@ export async function startCopilotFlowRun(
         }
       }
     } else if (event.kind === "tool_start") {
-      toolTracker.envelopeToolUse(
+      toolTracker.envelopeToolStart(
         event.toolCallId,
         event.toolName,
         formatToolInputValue(event.input),
@@ -1133,11 +1150,6 @@ export async function startCopilotFlowRun(
         deltaByMessage.set(pending.messageId, pending.text);
       }
       const reconciledAssistantText = [...deltaByMessage.values()].join("\n");
-      assistantText = reconciledAssistantText.trim();
-      const persistedTools = toPersistedTools(
-        toolTracker.snapshot(),
-        reconciledAssistantText.length - reconciledAssistantText.trimStart().length,
-      );
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not
       // be dropped. Captured text is preserved ahead of the exit note.
@@ -1148,7 +1160,20 @@ export async function startCopilotFlowRun(
           ? "Copilot reported a failed result."
           : "";
       const cancelled = active.terminationRequested && forcedFailureDiagnostic === null;
+      // Match chat persistence before attention/control-marker extraction.
+      // Only legacy tagged content is withheld; visible orchestration markers
+      // and literal code examples remain available to Research reconciliation.
+      const displayText = projectLegacyAssistantText(reconciledAssistantText, failed || cancelled);
+      assistantText = displayText.trim();
+      toolTracker.settleUnfinished();
+      const persistedTools = toPersistedTools(
+        projectLegacyToolOffsets(toolTracker.snapshot(), reconciledAssistantText),
+        displayText.length - displayText.trimStart().length,
+      );
       const finishedAt = new Date().toISOString();
+      if (runtimeIdentity.activity && [...compatibilityDiagnostics.keys()].some((code) => code !== "unsupervised-process-tree")) {
+        runtimeIdentity = { ...runtimeIdentity, activity: { ...runtimeIdentity.activity, tools: "partial" } };
+      }
       const text = [
         assistantText,
         ...compatibilityDiagnostics.values(),
@@ -1174,6 +1199,12 @@ export async function startCopilotFlowRun(
             role: "assistant",
             text,
             createdAt: finishedAt,
+            responseMetadata: {
+              familiarId: launch.familiarId ?? "", harness: "copilot", runtimeIdentity,
+              runtime: `local:${launch.projectRoot}`, model: launch.model ?? "",
+              requestedModel: launch.model ?? "",
+              ...(forwardedModel ? { forwardedModel } : {}),
+            },
             ...(persistedTools ? { tools: persistedTools } : {}),
             ...(failed ? { isError: true } : {}),
             ...(cancelled ? { cancelled: true } : {}),

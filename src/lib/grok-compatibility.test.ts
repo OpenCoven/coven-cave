@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,7 +10,9 @@ import {
   grokSchemaBundlePayloadHash,
   grokSchemaBundleSigningPayload,
   isGrokSchemaBundle,
+  parseGrokCompatibilityEvent,
   resolveGrokCompatibility,
+  selectGrokSchema,
   verifyGrokSchemaBundle,
 } from "./grok-compatibility.ts";
 
@@ -54,6 +56,69 @@ assert.deepEqual(
 );
 assert.equal(grokRunCapabilitiesFromHelp("  --output-format\n  --other streaming-json\n").streamingJson, false, "unrelated help prose cannot authorize structured argv");
 assert.deepEqual(grokProbeEnvironment({ NODE_ENV: "test", PATH: "/bin", XAI_API_KEY: "secret", GROK_AUTH_TOKEN: "secret", SERVICE_PASSWORD: "secret", SESSION_AUTH: "secret", HTTPS_PROXY: "https://user:secret@proxy.example" }), { NODE_ENV: "test", PATH: "/bin" }, "capability probes inherit no credential-bearing environment variables");
+
+// Captured passive help; this is capability evidence, not runtime admission.
+const nativeHelp = await readFile(new URL("./fixtures/grok/1.0.46-help.txt", import.meta.url), "utf8");
+const nativeCapabilities = grokRunCapabilitiesFromHelp(nativeHelp, "1.0.46");
+assert.equal(nativeCapabilities.streamingJson, true, "multiline choices belong to the output option across blank lines");
+assert.ok(nativeCapabilities.valueOptions.includes("--model"), "short aliases do not hide value-bearing long options");
+assert.ok(nativeCapabilities.valueOptions.includes("--single"));
+assert.ok(nativeCapabilities.valueOptions.includes("--session-id"));
+assert.equal(nativeCapabilities.nativeAcp, true, "the advertised native ACP protocol is retained as a compatibility constraint");
+assert.equal(selectGrokSchema(BUILTIN_GROK_SCHEMA_BUNDLE.schemas, nativeCapabilities), null,
+  "native ACP must not inherit the unversioned legacy text contract");
+const exactNativeSchema = structuredClone(BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]);
+exactNativeSchema.requires.versions = ["1.0.46"];
+assert.equal(selectGrokSchema([exactNativeSchema], nativeCapabilities)?.id, exactNativeSchema.id);
+assert.equal(selectGrokSchema([exactNativeSchema], { ...nativeCapabilities, version: "1.0.47" }), null);
+for (const help of [
+  "  --output-format <FORMAT>\n      Possible values: plain\n  -m, --model <MODEL>\n      streaming-json\n",
+  "  --output-format <FORMAT>\n      Possible values: plain\n\nCommands:\n  streaming-json   unrelated subcommand\n",
+  "  --output-format-extra <FORMAT> streaming-json\n  --output-format <FORMAT> plain\n",
+]) assert.equal(grokRunCapabilitiesFromHelp(help).streamingJson, false, "a different option or section cannot advertise the output format");
+assert.equal(grokRunCapabilitiesFromHelp(nativeHelp.replaceAll("\n", "\r\n")).streamingJson, true);
+
+const nativeProposal = JSON.parse(await readFile(new URL("./fixtures/grok/1.0.46-unsigned-proposal.json", import.meta.url), "utf8"));
+const proposalNow = Date.parse(nativeProposal.issuedAt) + 1;
+assert.equal(isGrokSchemaBundle(nativeProposal, proposalNow), true, "data-only ACP lifecycle descriptors validate without becoming trusted");
+assert.equal(verifyGrokSchemaBundle(nativeProposal, keyring, proposalNow), false, "an unsigned native proposal is never admitted");
+const nativeSchema = nativeProposal.schemas[0];
+const nativeFrames = JSON.parse(await readFile(new URL("./fixtures/grok/1.0.46-tool-read.json", import.meta.url), "utf8"));
+assert.deepEqual(nativeFrames.map((frame: unknown) => parseGrokCompatibilityEvent(frame, nativeSchema)), [
+  { kind: "tool_request", id: "read-marker", name: "read_file", input: { target_file: "marker.txt" } },
+  { kind: "ignore" },
+  { kind: "tool_end", id: "read-marker", output: nativeFrames[2].rawOutput, isError: false },
+], "captured pending and statusless location frames do not invent execution start");
+assert.equal(parseGrokCompatibilityEvent({ ...nativeFrames[0], status: "in_progress" }, nativeSchema).kind, "tool_start");
+assert.equal(parseGrokCompatibilityEvent({ ...nativeFrames[1], status: "in_progress" }, nativeSchema).kind, "tool_progress");
+assert.deepEqual(parseGrokCompatibilityEvent({ ...nativeFrames[2], status: "failed" }, nativeSchema),
+  { kind: "tool_end", id: "read-marker", output: nativeFrames[2].rawOutput, isError: true });
+assert.equal(parseGrokCompatibilityEvent({ ...nativeFrames[1], status: "pending" }, nativeSchema).kind, "ignore");
+assert.equal(parseGrokCompatibilityEvent({ ...nativeFrames[0], status: "future_state" }, nativeSchema).kind, "unknown");
+assert.equal(parseGrokCompatibilityEvent({ ...nativeFrames[2], toolCallId: "" }, nativeSchema).kind, "unknown");
+for (const type of nativeSchema.eventTypes.ignored) {
+  assert.deepEqual(parseGrokCompatibilityEvent({ type, data: "private", signature: "opaque" }, nativeSchema), { kind: "ignore" });
+}
+const unboundNative = structuredClone(nativeProposal);
+delete unboundNative.schemas[0].requires.versions;
+assert.equal(isGrokSchemaBundle(unboundNative, proposalNow), false, "status-tagged tool aliases still require exact versions");
+const noStateNative = structuredClone(nativeProposal);
+noStateNative.schemas[0].fields.state = [];
+assert.equal(isGrokSchemaBundle(noStateNative, proposalNow), false);
+const overlapNative = structuredClone(nativeProposal);
+overlapNative.schemas[0].eventTypes.toolStart = ["tool_call"];
+assert.equal(isGrokSchemaBundle(overlapNative, proposalNow), false);
+const unsignedCacheDirectory = await mkdtemp(path.join(tmpdir(), "coven-grok-unsigned-"));
+try {
+  const unsignedResolution = await resolveGrokCompatibility(nativeCapabilities, {
+    publicKeys: keyring, url: "https://registry.example/grok.json", now: () => proposalNow,
+    cachePath: path.join(unsignedCacheDirectory, "schema.json"),
+    fetch: async () => new Response(JSON.stringify(nativeProposal)),
+  });
+  assert.equal(unsignedResolution.mode, "plain", "native help plus an unsigned descriptor cannot enable structured execution");
+} finally {
+  await rm(unsignedCacheDirectory, { recursive: true, force: true });
+}
 
 const supported = { version: "fixture", streamingJson: true, options: ["--output-format"], valueOptions: ["--output-format"] };
 const selected = await resolveGrokCompatibility(supported, { publicKeys: keyring, fetch: async () => new Response(JSON.stringify(signed)) });

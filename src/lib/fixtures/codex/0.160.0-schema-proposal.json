@@ -1,0 +1,10 @@
+{
+  "id": "codex-jsonl-0.160-v1",
+  "schemaVersion": 1,
+  "minVersion": "0.160.0",
+  "maxVersionExclusive": "0.161.0",
+  "requiredCapabilities": { "jsonEvents": true },
+  "eventTypes": ["thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "error"],
+  "toolItemTypes": ["command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search"],
+  "textItemTypes": ["agent_message"]
+}

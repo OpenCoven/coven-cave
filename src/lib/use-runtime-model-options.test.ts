@@ -38,7 +38,7 @@ assert.match(
   "the hook calls the canonical shared runtime inventory endpoint",
 );
 assert.equal(
-  source.includes('staticModels.length > 0) return "fallback"') &&
+  !source.includes('staticModels.length > 0) return "fallback"') &&
     source.includes('defaultOwner === "runtime"') &&
     source.includes('? "runtime-managed"'),
   true,

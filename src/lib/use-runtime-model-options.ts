@@ -32,6 +32,7 @@ export type RuntimeModelInventoryResult = RuntimeModelInventory & {
 };
 
 const DYNAMIC_INVENTORY_RUNTIMES = new Set([
+  "codex",
   "claude",
   "copilot",
   "opencode",
@@ -67,9 +68,8 @@ const SCOPE_STATES = new Set(["familiar", "global", "runtime-managed", "unavaila
 
 export function inventoryFailureProvenance(
   runtime: string,
-  staticModels: readonly RuntimeModelOption[],
+  _staticModels: readonly RuntimeModelOption[],
 ): ModelInventoryProvenance {
-  if (staticModels.length > 0) return "fallback";
   return catalogForRuntime(runtime)?.defaultOwner === "runtime"
     ? "runtime-managed"
     : "unavailable";
@@ -96,27 +96,10 @@ function fallbackInventory(
   familiarId: string | null,
 ): RuntimeModelInventory {
   const catalog = catalogForRuntime(runtime);
-  // Hermes' static catalog is historical UI guidance, not a provider-backed
-  // inventory. On transport failure, fail closed instead of presenting those
-  // OpenAI seeds as models available to this familiar's endpoint.
-  if (runtime === "hermes") {
-    const provenance = "runtime-managed" as const;
-    return {
-      runtime,
-      models: [],
-      provenance,
-      freshness: runtimeModelInventoryFreshness(provenance),
-      refreshState: runtimeModelInventoryRefreshState(provenance),
-      availability: runtimeModelInventoryAvailability(provenance),
-      defaultOwner: catalog?.defaultOwner ?? "runtime",
-      allowCustom: catalog?.allowCustom ?? false,
-      scope: runtimeModelInventoryScope(runtime, familiarId),
-    };
-  }
   const provenance = inventoryFailureProvenance(runtime, staticModels);
   return {
     runtime,
-    models: [...staticModels],
+    models: [],
     provenance,
     freshness: runtimeModelInventoryFreshness(provenance),
     refreshState: runtimeModelInventoryRefreshState(provenance),
@@ -136,6 +119,7 @@ function isInventoryResponse(
     value?.ok === true &&
     value.runtime === runtime &&
     Array.isArray(value.models) &&
+    (value.provenance !== "fallback" || value.models.length === 0) &&
     // An empty successful response is not evidence of provider entitlement;
     // keep it degraded until discovery returns at least one validated model.
     (value.provenance !== "live" || value.models.length > 0) &&
@@ -164,7 +148,7 @@ function isInventoryResponse(
   );
 }
 
-/** Static seeds stay synchronous while capable runtimes replace them live. */
+/** Only runtime-reported choices are selectable; discovery failures stay empty. */
 export function useRuntimeModelInventory(
   runtime: string,
   familiarId?: string | null,

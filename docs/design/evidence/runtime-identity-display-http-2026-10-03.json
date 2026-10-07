@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-03T17:32:48.540Z",
+  "scope": "Cave identity and display projection; built HTTP fixture",
+  "candidate": {
+    "startedAt": "2026-10-03T17:29:16.995634+00:00",
+    "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+    "sourceSha256": "82174b384caf52836958dee20356efdf580cd241f8d745906f480371b22f2f1a",
+    "status": "passed",
+    "exitCode": 0,
+    "sourceUnchanged": true,
+    "finishedAt": "2026-10-03T17:31:25.218362+00:00",
+    "buildId": "99Q7s--vuhUR7g5J6csDU",
+    "artifacts": {
+      "server.mjs": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+      ".next/server/app/api/chat/send/route.js": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503",
+      ".next/server/app/api/sessions/[id]/events/route.js": "b3a6738f5893fd0d76e38928e6b55962260f0a497784c0a4e0e0acd847ce7cd0"
+    }
+  },
+  "http": {
+    "buildId": "99Q7s--vuhUR7g5J6csDU",
+    "sourceSha256": "82174b384caf52836958dee20356efdf580cd241f8d745906f480371b22f2f1a",
+    "mode": "built-http-fixture",
+    "startedAt": "2026-10-03T17:32:45.820Z",
+    "limitations": [
+      "Fixture daemon and seeded history; no real provider or native app",
+      "Loopback client; no physical remote ingress",
+      "No approval/effect receipt qualification"
+    ],
+    "checks": [
+      "missing/invalid forwarded credentials refused before daemon",
+      "projected response bytes, lifecycle metadata and cursors",
+      "cross-session page and raw daemon errors refused",
+      "built history read retains per-turn native and legacy records"
+    ],
+    "status": "passed",
+    "caveStopped": true,
+    "fixtureDaemonStopped": true,
+    "finishedAt": "2026-10-03T17:32:48.540Z"
+  },
+  "ui": {
+    "status": "unverified",
+    "reason": "Default browser window changed during read-only inspection; no rendered identity/tool or human accessibility acceptance is claimed.",
+    "fixtureServerStopped": true,
+    "fixtureDaemonStopped": true
+  },
+  "verification": {
+    "headerRegression": "failed before correction, then passed",
+    "focusedSuites": [
+      "chat-response-metadata",
+      "chat-session-chrome",
+      "chat-header-row",
+      "chat-view-polish-header-composer",
+      "chat-runtime-identity",
+      "chat-view-lifecycle",
+      "run-activity-strip"
+    ],
+    "focusedEslint": "passed",
+    "testWiring": {
+      "status": "passed",
+      "files": 2105
+    },
+    "diffCheck": "passed"
+  },
+  "limitations": [
+    "Seeded history and fixture daemon; no real provider or native app in this run.",
+    "Loopback HTTP with simulated forwarded-peer headers, not a physical remote client.",
+    "No approval or committed-effect receipt qualification.",
+    "Earlier production build was stopped because a newly reproduced legacy identity defect required a source correction. Its process tree was verified absent; it is not a passing candidate.",
+    "Codex canonical admission, live Copilot qualification, other runtime/path and packaged-client coverage remain open."
+  ]
+}

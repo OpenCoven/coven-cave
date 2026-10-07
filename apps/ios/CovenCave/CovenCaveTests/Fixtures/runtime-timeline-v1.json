@@ -1,0 +1,1909 @@
+{
+  "schemaVersion": 1,
+  "classification": "Shared display-order fixtures; no execution or authority evidence",
+  "scenarios": [
+    {
+      "id": "unicode-0",
+      "text": "Inspecting 🧙 café.\nFinal answer.\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 20,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "402b3963-dadf-4658-abc4-557208fff8e2:after",
+          "representation": "provider-summary",
+          "textOffset": 20,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "402b3963-dadf-4658-abc4-557208fff8e2:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "expectedText": [
+        "Inspecting 🧙 café.\n",
+        "Final answer.\n"
+      ]
+    },
+    {
+      "id": "unicode-1",
+      "text": "读文件 é 👨‍👩‍👧‍👦.\nFinal answer.\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "06e3d23d-9acc-4a2c-a012-ae22649567c9",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 20,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "06e3d23d-9acc-4a2c-a012-ae22649567c9:after",
+          "representation": "provider-summary",
+          "textOffset": 20,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "06e3d23d-9acc-4a2c-a012-ae22649567c9",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "06e3d23d-9acc-4a2c-a012-ae22649567c9:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "06e3d23d-9acc-4a2c-a012-ae22649567c9",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "expectedText": [
+        "读文件 é 👨‍👩‍👧‍👦.\n",
+        "Final answer.\n"
+      ]
+    },
+    {
+      "id": "unicode-2",
+      "text": "فحص الملف.\nFinal answer.\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "59943a43-3c86-473e-823a-2b3edb8205e4",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 11,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "59943a43-3c86-473e-823a-2b3edb8205e4:after",
+          "representation": "provider-summary",
+          "textOffset": 11,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "59943a43-3c86-473e-823a-2b3edb8205e4",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "59943a43-3c86-473e-823a-2b3edb8205e4:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "59943a43-3c86-473e-823a-2b3edb8205e4",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "expectedText": [
+        "فحص الملف.\n",
+        "Final answer.\n"
+      ]
+    },
+    {
+      "id": "fence",
+      "text": "Before.\n\n```ts\nconst value = 1;\n\nconst next = 2;\n```\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7dceb9f9-0088-4dae-bbe6-5b28d029617e",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 30,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "7dceb9f9-0088-4dae-bbe6-5b28d029617e:after",
+          "representation": "provider-summary",
+          "textOffset": 30,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7dceb9f9-0088-4dae-bbe6-5b28d029617e",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "7dceb9f9-0088-4dae-bbe6-5b28d029617e:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7dceb9f9-0088-4dae-bbe6-5b28d029617e",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "```ts\nconst value = 1;\n\nconst next = 2;\n```"
+    },
+    {
+      "id": "tilde",
+      "text": "Before.\n\n~~~~\n```literal\n\ninside\n~~~~\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "a33939ff-0167-4ff4-9ba6-c85943bd4c71",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 23,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "a33939ff-0167-4ff4-9ba6-c85943bd4c71:after",
+          "representation": "provider-summary",
+          "textOffset": 23,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "a33939ff-0167-4ff4-9ba6-c85943bd4c71",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "a33939ff-0167-4ff4-9ba6-c85943bd4c71:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "a33939ff-0167-4ff4-9ba6-c85943bd4c71",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "~~~~\n```literal\n\ninside\n~~~~"
+    },
+    {
+      "id": "inline-code",
+      "text": "Before.\n\nUse `multi\nline` code.\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "eb958303-7a7a-4de0-a5b7-f5a64f80c1c5",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 20,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "eb958303-7a7a-4de0-a5b7-f5a64f80c1c5:after",
+          "representation": "provider-summary",
+          "textOffset": 20,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "eb958303-7a7a-4de0-a5b7-f5a64f80c1c5",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "eb958303-7a7a-4de0-a5b7-f5a64f80c1c5:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "eb958303-7a7a-4de0-a5b7-f5a64f80c1c5",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "Use `multi\nline` code."
+    },
+    {
+      "id": "approve",
+      "text": "Before.\n\n<coven:approve kind=\"questions\" prompt=\"Read `code`\n\nthen choose?\" options=\"Yes|No\" />\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "85e5721d-c78b-46b1-ba33-a4e42663abe3",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 52,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "85e5721d-c78b-46b1-ba33-a4e42663abe3:after",
+          "representation": "provider-summary",
+          "textOffset": 52,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "85e5721d-c78b-46b1-ba33-a4e42663abe3",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "85e5721d-c78b-46b1-ba33-a4e42663abe3:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "85e5721d-c78b-46b1-ba33-a4e42663abe3",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "<coven:approve kind=\"questions\" prompt=\"Read `code`\n\nthen choose?\" options=\"Yes|No\" />"
+    },
+    {
+      "id": "paired",
+      "text": "Before.\n\n<coven:proposal-review>\n\n{\"verdict\":\"reject\"}\n\n</coven:proposal-review>\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7542934d-e0a8-4fe4-a840-52feca15a722",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 44,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "7542934d-e0a8-4fe4-a840-52feca15a722:after",
+          "representation": "provider-summary",
+          "textOffset": 44,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7542934d-e0a8-4fe4-a840-52feca15a722",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "7542934d-e0a8-4fe4-a840-52feca15a722:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "7542934d-e0a8-4fe4-a840-52feca15a722",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "<coven:proposal-review>\n\n{\"verdict\":\"reject\"}\n\n</coven:proposal-review>"
+    },
+    {
+      "id": "image-deck",
+      "text": "Before.\n\n<coven:image src=\"https://example.com/a.png\" group=\"deck\" />\n\nBetween.\n\n<coven:image src=\"https://example.com/b.png\" group=\"deck\" />\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "1ae77ba2-3bcb-4024-931d-bf1ff4d04f31",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 75,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "1ae77ba2-3bcb-4024-931d-bf1ff4d04f31:after",
+          "representation": "provider-summary",
+          "textOffset": 75,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "1ae77ba2-3bcb-4024-931d-bf1ff4d04f31",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "1ae77ba2-3bcb-4024-931d-bf1ff4d04f31:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "1ae77ba2-3bcb-4024-931d-bf1ff4d04f31",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "<coven:image src=\"https://example.com/a.png\" group=\"deck\" />\n\nBetween.\n\n<coven:image src=\"https://example.com/b.png\" group=\"deck\" />"
+    },
+    {
+      "id": "questions",
+      "text": "Before.\n\n<coven:approve kind=\"questions\" prompt=\"First?\" options=\"Yes|No\" />\n\n<coven:approve kind=\"questions\" prompt=\"Second?\" options=\"Yes|No\" />\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "259c2516-175a-4ff8-8dc2-89f5bb4252ce",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 77,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "259c2516-175a-4ff8-8dc2-89f5bb4252ce:after",
+          "representation": "provider-summary",
+          "textOffset": 77,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "259c2516-175a-4ff8-8dc2-89f5bb4252ce",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "259c2516-175a-4ff8-8dc2-89f5bb4252ce:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "259c2516-175a-4ff8-8dc2-89f5bb4252ce",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "<coven:approve kind=\"questions\" prompt=\"First?\" options=\"Yes|No\" />\n\n<coven:approve kind=\"questions\" prompt=\"Second?\" options=\"Yes|No\" />"
+    },
+    {
+      "id": "emoji-marker",
+      "text": "Before.\n\n<coven:approve prompt=\"🧙\n\nChoose?\" options=\"Yes|No\" />\n\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "56395723-61f9-43e1-afcf-fe44c6914144",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 36,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "56395723-61f9-43e1-afcf-fe44c6914144:after",
+          "representation": "provider-summary",
+          "textOffset": 36,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "56395723-61f9-43e1-afcf-fe44c6914144",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "56395723-61f9-43e1-afcf-fe44c6914144:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "56395723-61f9-43e1-afcf-fe44c6914144",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning",
+        "text"
+      ],
+      "atomic": "<coven:approve prompt=\"🧙\n\nChoose?\" options=\"Yes|No\" />"
+    },
+    {
+      "id": "open-inline",
+      "text": "Before.\n\n`still\n\ncode",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "439b9866-4814-4fa6-b42d-a1e4375824f3",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 15,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "439b9866-4814-4fa6-b42d-a1e4375824f3:after",
+          "representation": "provider-summary",
+          "textOffset": 15,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "439b9866-4814-4fa6-b42d-a1e4375824f3",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "439b9866-4814-4fa6-b42d-a1e4375824f3:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "439b9866-4814-4fa6-b42d-a1e4375824f3",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "reasoning"
+      ],
+      "atomic": "`still\n\ncode"
+    },
+    {
+      "id": "parallel-same-name",
+      "text": "Before.\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "af3df247-87cd-419e-941e-840bddc7c196",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 8,
+          "output": "safe output",
+          "durationMs": 0
+        },
+        {
+          "id": "read-2",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "af3df247-87cd-419e-941e-840bddc7c196",
+            "callId": "read-2",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 2,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 8,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "af3df247-87cd-419e-941e-840bddc7c196:after",
+          "representation": "provider-summary",
+          "textOffset": 8,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "af3df247-87cd-419e-941e-840bddc7c196",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 3,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "af3df247-87cd-419e-941e-840bddc7c196:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "af3df247-87cd-419e-941e-840bddc7c196",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "text",
+        "tool",
+        "tool",
+        "reasoning",
+        "text"
+      ]
+    },
+    {
+      "id": "retry-retained",
+      "text": "New attempt.\nFinal.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "error",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "4975c94d-e358-42bd-8205-56bbe7ee6cf1",
+            "callId": "read",
+            "phase": "error",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 0,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "4975c94d-e358-42bd-8205-56bbe7ee6cf1:after",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "4975c94d-e358-42bd-8205-56bbe7ee6cf1",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "4975c94d-e358-42bd-8205-56bbe7ee6cf1:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "4975c94d-e358-42bd-8205-56bbe7ee6cf1",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": [
+        "reasoning",
+        "tool",
+        "reasoning",
+        "text"
+      ]
+    },
+    {
+      "id": "legacy-offset",
+      "text": "Before.\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "92341341-7302-4565-876f-aabaa45ad02b",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "92341341-7302-4565-876f-aabaa45ad02b:after",
+          "representation": "provider-summary",
+          "textOffset": 8,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "92341341-7302-4565-876f-aabaa45ad02b",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "92341341-7302-4565-876f-aabaa45ad02b:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "92341341-7302-4565-876f-aabaa45ad02b",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": null
+    },
+    {
+      "id": "duplicate-sequence",
+      "text": "Before.\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "16d6a151-34fb-4dec-8cc0-8c92f8ce9324",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 8,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "16d6a151-34fb-4dec-8cc0-8c92f8ce9324:after",
+          "representation": "provider-summary",
+          "textOffset": 8,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "16d6a151-34fb-4dec-8cc0-8c92f8ce9324",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 1,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "16d6a151-34fb-4dec-8cc0-8c92f8ce9324:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "16d6a151-34fb-4dec-8cc0-8c92f8ce9324",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": null
+    },
+    {
+      "id": "mixed-run",
+      "text": "Before.\nAfter.",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "0867360b-3e06-459f-9d44-2d11f8578655",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 8,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [
+        {
+          "schemaVersion": 1,
+          "id": "0867360b-3e06-459f-9d44-2d11f8578655:after",
+          "representation": "provider-summary",
+          "textOffset": 8,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            "attemptId": "0867360b-3e06-459f-9d44-2d11f8578655",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 2,
+            "binding": "unavailable"
+          },
+          "text": "Done."
+        },
+        {
+          "schemaVersion": 1,
+          "id": "0867360b-3e06-459f-9d44-2d11f8578655:before",
+          "representation": "provider-summary",
+          "textOffset": 0,
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "0867360b-3e06-459f-9d44-2d11f8578655",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "completedAt": 100,
+            "sequence": 0,
+            "binding": "unavailable"
+          },
+          "text": "Inspect."
+        }
+      ],
+      "expectedKinds": null
+    },
+    {
+      "id": "reference-forward",
+      "text": "Read [manual][guide].\n\n[guide]: https://example.com/docs \"Guide\"\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 23,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [],
+      "expectedKinds": [
+        "text",
+        "tool",
+        "text"
+      ],
+      "expectedText": [
+        "Read [manual][guide].\n\n",
+        "[guide]: https://example.com/docs \"Guide\"\n"
+      ],
+      "renderParity": true,
+      "expectedLinks": []
+    },
+    {
+      "id": "reference-backward",
+      "text": "[guide]: https://example.com/docs\n\nRead [guide][] and [guide].\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 35,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [],
+      "expectedKinds": [
+        "text",
+        "tool",
+        "text"
+      ],
+      "expectedText": [
+        "[guide]: https://example.com/docs\n\n",
+        "Read [guide][] and [guide].\n"
+      ],
+      "renderParity": true,
+      "expectedLinks": []
+    },
+    {
+      "id": "footnote-literal",
+      "text": "Read [^note].\n\n[^note]: A **bold** note.\n\n    Second paragraph.\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 15,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [],
+      "expectedKinds": [
+        "text",
+        "tool",
+        "text"
+      ],
+      "expectedText": [
+        "Read [^note].\n\n",
+        "[^note]: A **bold** note.\n\n    Second paragraph.\n"
+      ],
+      "renderParity": true,
+      "expectedLinks": []
+    },
+    {
+      "id": "inline-links-unicode",
+      "text": "Read [🧙 café](https://example.com/docs \"Guide\").\n\nThen [details](https://example.com/details).\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 7,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [],
+      "expectedKinds": [
+        "text",
+        "tool",
+        "text"
+      ],
+      "expectedText": [
+        "Read [🧙 café](https://example.com/docs \"Guide\").\n\n",
+        "Then [details](https://example.com/details).\n"
+      ],
+      "renderParity": true,
+      "expectedLinks": [
+        "https://example.com/docs",
+        "https://example.com/details"
+      ]
+    },
+    {
+      "id": "reference-code-literal",
+      "text": "```text\nRead [manual][guide].\n\n[guide]: https://example.com/code\n```\n\nActual [link](https://example.com/real).\n",
+      "tools": [
+        {
+          "id": "read",
+          "name": "read_file",
+          "input": "marker.txt",
+          "status": "ok",
+          "activity": {
+            "schemaVersion": 1,
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "402b3963-dadf-4658-abc4-557208fff8e2",
+            "callId": "read",
+            "phase": "ok",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "hermes",
+              "version": null,
+              "protocol": null
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 100,
+            "sequence": 1,
+            "executionObservedAt": null,
+            "terminalObservedAt": 100,
+            "authority": {
+              "binding": "unavailable",
+              "approval": "unavailable",
+              "effect": "unavailable"
+            }
+          },
+          "textOffset": 20,
+          "output": "safe output",
+          "durationMs": 0
+        }
+      ],
+      "reasoningBlocks": [],
+      "expectedKinds": [
+        "text",
+        "tool",
+        "text"
+      ],
+      "expectedText": [
+        "```text\nRead [manual][guide].\n\n[guide]: https://example.com/code\n```\n\n",
+        "Actual [link](https://example.com/real).\n"
+      ],
+      "renderParity": true,
+      "expectedLinks": [
+        "https://example.com/real"
+      ]
+    }
+  ]
+}

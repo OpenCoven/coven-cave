@@ -24,6 +24,9 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// delete of one of those has nothing to remove on the server.
     /// Optional so snapshots written before durable message delete decode.
     var serverTurnId: String?
+    /// Captured from the actual stream/history client. Legacy snapshots without
+    /// this reference must refresh history before loading a full tool result.
+    var toolOutputReference: ToolOutputReference? = nil
     var role: Role
     var familiarId: String?
     var text: String
@@ -97,6 +100,8 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
+    var runtimeIdentity: ChatRuntimeIdentity?
+    var reasoningBlocks: [ChatReasoningBlock]? = nil
 
     var isQueued: Bool { queued == true }
     var isQueuedDispatchInFlight: Bool { queued == true && queuedDispatchInFlight == true }
@@ -118,7 +123,8 @@ extension DisplayMessage {
 
     /// Rebuild one persisted server turn without dropping response controls
     /// that retry depends on.
-    static func restored(from turn: ChatTurn, familiarId: String?) -> DisplayMessage {
+    static func restored(from turn: ChatTurn, familiarId: String?,
+                         toolOutputReference: ToolOutputReference? = nil) -> DisplayMessage {
         let role = Role(rawValue: turn.role) ?? .assistant
         // Sub-expressions are hoisted out of the initializer call deliberately:
         // inline, the two ternaries plus the nested flatMap/map closure pushed
@@ -137,6 +143,7 @@ extension DisplayMessage {
         // memberwise initializer requires that order.
         return DisplayMessage(
             serverTurnId: turn.id,
+            toolOutputReference: role == .assistant ? toolOutputReference : nil,
             role: role,
             familiarId: role == .assistant ? familiarId : nil,
             text: turn.text,
@@ -159,14 +166,17 @@ extension DisplayMessage {
             modelOverride: resolvedModel,
             modelOverridesByFamiliar: overridesByFamiliar,
             modelOverrideScope: turn.modelOverrideScope,
-            activity: activity
+            activity: activity,
+            runtimeIdentity: metadata?.reportedRuntimeIdentity,
+            reasoningBlocks: role == .assistant ? turn.reasoningBlocks?.compactMap(\.validated) : nil
         )
     }
 
     /// Restore the persisted transcript and attach an assistant's authoritative
     /// retry model to the preceding user request, which owns retry inputs.
-    static func restoredTranscript(from turns: [ChatTurn], familiarId: String?) -> [DisplayMessage] {
-        var messages = turns.map { restored(from: $0, familiarId: familiarId) }
+    static func restoredTranscript(from turns: [ChatTurn], familiarId: String?,
+                                   toolOutputReference: ToolOutputReference? = nil) -> [DisplayMessage] {
+        var messages = turns.map { restored(from: $0, familiarId: familiarId, toolOutputReference: toolOutputReference) }
         for index in turns.indices where turns[index].role == "assistant" {
             guard let retryModel = turns[index].responseMetadata?.retryModel,
                   let familiarId,
@@ -181,6 +191,7 @@ extension DisplayMessage {
     /// controls needed to retry the copied turn faithfully.
     static func duplicate(of message: DisplayMessage) -> DisplayMessage {
         DisplayMessage(
+            toolOutputReference: message.toolOutputReference,
             role: message.role,
             familiarId: message.familiarId,
             text: message.text,
@@ -205,7 +216,9 @@ extension DisplayMessage {
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             modelOverrideScope: message.modelOverrideScope,
-            activity: message.activity
+            activity: message.activity,
+            runtimeIdentity: message.runtimeIdentity?.validated(),
+            reasoningBlocks: message.reasoningBlocks
         )
     }
 }
@@ -640,6 +653,7 @@ final class ChatThread: Identifiable, Hashable {
                     // would append the same buffered prefix a second time.
                     mutate(placeholder.id) {
                         $0.serverTurnId = nil
+                        $0.toolOutputReference = nil
                         $0.text = ""
                         $0.isError = false
                         $0.streaming = true
@@ -1474,6 +1488,7 @@ final class ChatThread: Identifiable, Hashable {
         let previousReply = messages[idx]
         mutate(messageId) {
             $0.serverTurnId = nil
+            $0.toolOutputReference = nil
             $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil
         }
         let retryPlaceholder = messages[idx]
@@ -1582,7 +1597,8 @@ final class ChatThread: Identifiable, Hashable {
         guard let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId] else { return }
         guard let convo = try await client.conversation(sessionId: sessionId) else { return }
-        messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId)
+        messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId,
+            toolOutputReference: ToolOutputReference(sessionId: sessionId, connection: client.connection))
         updatedAt = Date()
     }
 
@@ -1593,14 +1609,17 @@ final class ChatThread: Identifiable, Hashable {
     /// `guard !isGroup` behaviour, reached honestly).
     private func reloadGroup(client: CaveClient) async throws {
         var transcripts: [(familiarId: String, turns: [ChatTurn])] = []
+        var references: [String: ToolOutputReference] = [:]
         for familiarId in familiarIds {
             guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { continue }
             guard let convo = try? await client.conversation(sessionId: sessionId) else { continue }
             transcripts.append((familiarId: familiarId, turns: convo.turns))
+            references[familiarId] = ToolOutputReference(sessionId: sessionId, connection: client.connection)
         }
         guard !transcripts.isEmpty else { return }
         let reconciled = Self.reconciledGroupTranscript(current: messages,
-                                                        transcripts: transcripts)
+                                                        transcripts: transcripts,
+                                                        toolOutputReferences: references)
         messages = reconciled.messages
         let keptIds = Set(messages.map(\.id))
         absentForSession = reconciled.absentForSession.filter { keptIds.contains($0.key) }
@@ -1643,7 +1662,8 @@ final class ChatThread: Identifiable, Hashable {
     /// desktop.
     nonisolated static func reconciledGroupTranscript(
         current: [DisplayMessage],
-        transcripts: [(familiarId: String, turns: [ChatTurn])]
+        transcripts: [(familiarId: String, turns: [ChatTurn])],
+        toolOutputReferences: [String: ToolOutputReference] = [:]
     ) -> (messages: [DisplayMessage], absentForSession: [String: Set<String>]) {
         var adoptions: [String: String] = [:]
         var matchedBy: [String: Set<String>] = [:]
@@ -1736,7 +1756,8 @@ final class ChatThread: Identifiable, Hashable {
         var rebuilt: [DisplayMessage] = []
         rebuilt += insertions
             .filter { $0.anchorId == nil }
-            .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId) }
+            .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId,
+                toolOutputReference: toolOutputReferences[$0.familiarId]) }
         for message in current {
             let projected = projectedInto[message.id] ?? []
             if projected.isEmpty {
@@ -1753,6 +1774,10 @@ final class ChatThread: Identifiable, Hashable {
                 if let id = adoptions[message.id] {
                     kept.serverTurnId = id
                 }
+                if kept.toolOutputReference == nil, kept.role == .assistant,
+                   let familiarId = kept.familiarId, matched.contains(familiarId) {
+                    kept.toolOutputReference = toolOutputReferences[familiarId]
+                }
                 rebuilt.append(kept)
             } else if absentFrom[message.id, default: []] == projected {
                 // Every session it projects into cleanly proved it never
@@ -1768,7 +1793,8 @@ final class ChatThread: Identifiable, Hashable {
             }
             rebuilt += insertions
                 .filter { $0.anchorId == message.id }
-                .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId) }
+                .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId,
+                    toolOutputReference: toolOutputReferences[$0.familiarId]) }
         }
         return (rebuilt, absentFrom)
     }
@@ -1912,7 +1938,7 @@ final class ChatThread: Identifiable, Hashable {
         let projectRoot = normalizedProjectRoot
         guard projectRoot != nil || sessionID != nil else { return nil }
 
-        return CaveClient.SendBody(
+        var body = CaveClient.SendBody(
             familiarId: familiarId,
             prompt: prompt,
             sessionId: sessionID,
@@ -1925,6 +1951,12 @@ final class ChatThread: Identifiable, Hashable {
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
+        #if DEBUG
+        if NativeActivityRecoveryPreview.configuration?.providerCanary == true {
+            body.permissionMode = "read"
+        }
+        #endif
+        return body
     }
 
     /// O(1) id → `messages` position for the stream's hot mutation path.
@@ -2064,7 +2096,7 @@ final class ChatThread: Identifiable, Hashable {
             ) {
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
-                      userMessageId: userMessageId,
+                      userMessageId: userMessageId, connection: client.connection,
                       sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                 if let id = frame.id { cursor = id }
             }
@@ -2305,16 +2337,26 @@ final class ChatThread: Identifiable, Hashable {
     /// Apply one stream event to the thread — shared by the original send
     /// stream and the mid-turn resume stream so both render identically.
     private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
-                       userMessageId: String?,
+                       userMessageId: String?, connection: CaveConnection,
                        sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
         switch event {
         case .session(let sid):
             if !sid.isEmpty {
                 sessionIds[familiarId] = sid
+                mutate(messageId) {
+                    $0.toolOutputReference = ToolOutputReference(sessionId: sid, connection: connection)
+                }
                 // Persist the address needed for exact run-id reconciliation
                 // as soon as the server names a new conversation.
                 onChange()
             }
+        case .runtimeIdentity(let identity):
+            mutate(messageId) { $0.runtimeIdentity = identity }
+            onChange()
+        case .reasoning(let block):
+            flush(coalescer, into: messageId, onChange: onChange)
+            mutate(messageId) { $0.reasoningBlocks = ChatReasoningBlock.merging($0.reasoningBlocks, block) }
+            onChange()
         case .assistantChunk(let chunk):
             // Coalesce tokens: buffer chunk text and flush to the message on a
             // short cadence instead of mutating the (observed) messages array +
@@ -2327,12 +2369,27 @@ final class ChatThread: Identifiable, Hashable {
                 guard let self else { return }
                 self.flush(coalescer, into: messageId, onChange: onChange)
             }
-        case .assistantReplace(let text):
+        case .assistantReplace(let text, let correction):
             flush(coalescer, into: messageId, onChange: onChange)
-            mutate(messageId) { $0.text = text; $0.streaming = true }
+            mutate(messageId) {
+                $0.text = text; $0.streaming = true
+                if let correction {
+                    $0.reasoningBlocks = $0.reasoningBlocks?.map { block in
+                        var block = block; block.textOffset = correction.rebase(block.textOffset); return block
+                    }
+                    $0.activity = $0.activity?.map { step in
+                        var step = step; step.textOffset = correction.rebase(step.textOffset); return step
+                    }
+                }
+            }
             onChange()
-        case .done(let isError, let sid, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies):
-            if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
+        case .done(let isError, let sid, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies, let runtimeIdentity):
+            if let sid, !sid.isEmpty {
+                sessionIds[familiarId] = sid
+                mutate(messageId) {
+                    $0.toolOutputReference = ToolOutputReference(sessionId: sid, connection: connection)
+                }
+            }
             flush(coalescer, into: messageId, onChange: onChange)
             if let userMessageId {
                 mutate(userMessageId) { $0.recordRetryModel(retryModel, for: familiarId) }
@@ -2348,6 +2405,7 @@ final class ChatThread: Identifiable, Hashable {
                 $0.desiredModel = desiredModel
                 $0.forwardedModel = forwardedModel
                 $0.confirmedModel = confirmedModel
+                $0.runtimeIdentity = runtimeIdentity
                 $0.modelSource = modelSource
                 $0.modelApplicationState = modelApplicationState
                 $0.modelApplicationReason = modelApplicationReason
@@ -2368,7 +2426,7 @@ final class ChatThread: Identifiable, Hashable {
             var changed = false
             var stepLabel: String?
             mutate(messageId) {
-                guard let folded = ActivityFold.fold($0.activitySteps, event: event) else { return }
+                guard let folded = ActivityFold.fold($0.activitySteps, event: event, textOffset: $0.text.utf16.count) else { return }
                 $0.activity = folded
                 changed = true
                 stepLabel = folded.currentStep?.title
@@ -2440,7 +2498,7 @@ final class ChatThread: Identifiable, Hashable {
                     recovery.accepted = true
                     if Self.isResumeGap(frame.event) { sawResumeGap = true }
                     apply(frame.event, into: messageId, familiarId: familiarId,
-                          userMessageId: userMessageId,
+                          userMessageId: userMessageId, connection: client.connection,
                           sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                     if let id = frame.id { nextCursor = id }
                 }
@@ -2533,6 +2591,7 @@ final class ChatThread: Identifiable, Hashable {
                     into: messageId,
                     familiarId: familiarId,
                     userMessageId: userMessageId,
+                    connection: client.connection,
                     sawDone: &sawDone,
                     coalescer: coalescer,
                     onChange: onChange
@@ -2642,6 +2701,7 @@ final class ChatThread: Identifiable, Hashable {
         }
         mutate(messageId) {
             $0.serverTurnId = reply.id
+            $0.toolOutputReference = ToolOutputReference(sessionId: sessionId, connection: client.connection)
             $0.text = reply.text
             $0.isError = reply.isError ?? false
             $0.streaming = false
@@ -2649,6 +2709,7 @@ final class ChatThread: Identifiable, Hashable {
             $0.desiredModel = reply.responseMetadata?.desiredModel
             $0.forwardedModel = reply.responseMetadata?.forwardedModel
             $0.confirmedModel = reply.responseMetadata?.confirmedModel
+            $0.runtimeIdentity = reply.responseMetadata?.reportedRuntimeIdentity
             $0.modelSource = reply.responseMetadata?.modelSource
             $0.modelApplicationState = reply.responseMetadata?.modelApplicationState
             $0.modelApplicationReason = reply.responseMetadata?.modelApplicationReason
@@ -2657,10 +2718,11 @@ final class ChatThread: Identifiable, Hashable {
             $0.promptGuidanceControls = reply.responseMetadata?.promptGuidanceControls
             $0.appliedControls = reply.responseMetadata?.appliedControls
             $0.rejectedControlFamilies = reply.responseMetadata?.rejectedControlFamilies
-            if let settled = ActivityFold.settle($0.activitySteps,
-                                                 success: !(reply.isError ?? false)) {
-                $0.activity = settled
-            }
+            // The saved reply owns the complete display projection. Settling
+            // only the interrupted prefix loses tools and summaries received
+            // after the phone disconnected (or every tool after app restart).
+            $0.activity = ActivityFold.steps(fromTools: reply.tools)
+            $0.reasoningBlocks = reply.reasoningBlocks?.compactMap(\.validated)
         }
         return .completed
     }

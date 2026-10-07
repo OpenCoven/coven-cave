@@ -139,6 +139,7 @@ assert.deepEqual(
     text: "Safe reply",
     attachments: undefined,
     reasoning: undefined,
+    reasoningBlocks: undefined,
     tools: undefined,
     progress: [{
       id: "opencode-compatibility",
@@ -3365,3 +3366,12 @@ console.log("cave-conversations createdAt-stability test OK");
 }
 console.log("cave-conversations research-runid round-trip test OK");
 
+
+
+// A lazy-output target comes from the authenticated history request, never a
+// stored lookalike or whichever session the view happens to show later.
+const sourceBoundTools = [{ id: "same-call", name: "Read", status: "ok", outputChars: 2000, outputSessionId: "forged" }];
+const sourceBoundTurn = { id: "source-turn", role: "assistant", text: "done", tools: sourceBoundTools };
+assert.equal(mapConversationHistoryTurns([sourceBoundTurn], "original-session")[0].tools[0].outputSessionId, "original-session");
+assert.equal(mapConversationHistoryTurns([sourceBoundTurn])[0].tools[0].outputSessionId, undefined, "missing source cannot be guessed from stored tool fields");
+assert.equal(sourceBoundTools[0].outputSessionId, "forged", "source mapping does not mutate storage");

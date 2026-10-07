@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "harness": "copilot",
+  "qualified": false,
+  "observedNativeVersion": "1.0.82",
+  "observedNativeModel": "claude-sonnet-5",
+  "attempts": [
+    {
+      "schemaVersion": 1,
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-03T16:06:42.240Z",
+      "finishedAt": "2026-10-03T16:08:36.063Z",
+      "candidate": {
+        "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+        "patchSha256": "c72b3145b676b24965bf6ddc04dd71205fe714f5240a73f943a5bef39e0d2359",
+        "changedSourceSha256": "d561a7e00691a99350b29e07aaf0dd56747a1faba21419274f6c700393131ac7"
+      },
+      "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "OMC3GInbK_Gxr6xBnPS1b",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+      },
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.82"
+      },
+      "profile": "copilot-jsonl-v1",
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "httpStatus": 501,
+      "eventKinds": [],
+      "errors": [],
+      "diagnostics": [],
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": false
+      },
+      "answerContainsMarker": false,
+      "saved": {
+        "exists": false,
+        "answerContainsMarker": false,
+        "identityMatches": true,
+        "toolCount": 0
+      },
+      "replayHttpStatus": 404,
+      "passed": false,
+      "failure": "Expected values to be strictly equal:\n\n404 !== 200\n",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "tools": [],
+      "qualificationNote": "HTTP send returned 501 before streaming. The original checker did not retain the refusal code and later failed on the absent replay. The underlying refusal cause remains unresolved."
+    },
+    {
+      "schemaVersion": 1,
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-03T16:10:22.016Z",
+      "finishedAt": "2026-10-03T16:12:09.151Z",
+      "candidate": {
+        "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+        "patchSha256": "c72b3145b676b24965bf6ddc04dd71205fe714f5240a73f943a5bef39e0d2359",
+        "changedSourceSha256": "571c7cdbd8fe048ebf5505ec08c7a3328bff23e8a912a9bc7db26febaa1dc899"
+      },
+      "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "OMC3GInbK_Gxr6xBnPS1b",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+      },
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.82"
+      },
+      "profile": "copilot-jsonl-v1",
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "tool_use",
+        "assistant_replace",
+        "assistant_chunk",
+        "done"
+      ],
+      "errors": [],
+      "diagnostics": [
+        {
+          "id": "harness-start",
+          "status": "running"
+        },
+        {
+          "id": "harness-start",
+          "status": "done"
+        },
+        {
+          "id": "save-transcript",
+          "status": "running"
+        },
+        {
+          "id": "save-transcript",
+          "status": "done"
+        }
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.82",
+        "model": "claude-sonnet-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "path": "direct",
+      "done": {
+        "isError": false,
+        "cancelled": false,
+        "persisted": true
+      },
+      "answerContainsMarker": false,
+      "historyHttpStatus": 200,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "identityMatches": true,
+        "toolCount": 2
+      },
+      "replayHttpStatus": 200,
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": false
+      },
+      "passed": false,
+      "failure": "native tool must read the unpredictable marker",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "tools": [
+        {
+          "name": "other",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "other",
+          "status": "running",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "other",
+          "status": "error",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "other",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "other",
+          "status": "running",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "other",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "qualificationNote": "Native model and requested/running/terminal tool events reached HTTP and saved history. The original checker ignored assistant_replace, so it could not establish full answer equivalence. This attempt remains failed; it is not relabeled after the checker fix."
+    },
+    {
+      "schemaVersion": 1,
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-10-03T16:13:06.270Z",
+      "finishedAt": "2026-10-03T16:16:59.150Z",
+      "candidate": {
+        "head": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+        "patchSha256": "c72b3145b676b24965bf6ddc04dd71205fe714f5240a73f943a5bef39e0d2359",
+        "changedSourceSha256": "61948d6f6b25f4f6d91b2aeac3628e6b81ebf941603af56f47d33b279e15e1bf"
+      },
+      "runtimeVersion": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "covenVersion": "coven v0.4.7-1-gc8fd9e84 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "limitations": [
+        "Built HTTP server on loopback; forwarded-peer classification is simulated with headers, not a physical remote client. No UI is exercised.",
+        "Provider authentication and user CLI configuration use the existing account; HOME is not isolated.",
+        "Read-only scenario; no protected-effect receipt or side-effect counter qualification."
+      ],
+      "build": {
+        "id": "OMC3GInbK_Gxr6xBnPS1b",
+        "serverSha256": "a9142ad2997bd87bb094a32b462aabf8dd2b07caaef2baa9124e4664a199b6b0",
+        "sendRouteSha256": "2623cb3674f76564256287e1d6f00d0a4244554dbb0c99895220bc9e56be5503"
+      },
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.82"
+      },
+      "profile": "copilot-jsonl-v1",
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "stopRequested": false,
+      "passed": false,
+      "failure": "TimeoutError",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "tools": [],
+      "qualificationNote": "With append/replace answer handling and exact answer/identity assertions, the HTTP run exceeded its unchanged timeout. The Stop request was not acknowledged. Server listener and daemon teardown succeeded. Host load was high when checked afterward, but causation is unproven."
+    }
+  ],
+  "followUp": "Rerun the corrected canary when host load permits a bounded real turn. Investigate any repeated HTTP refusal without weakening Read-only or compatibility gates.",
+  "hostLoadAfterTimeout": {
+    "observedAt": "2026-10-03T16:19:00Z",
+    "loadAverage1m": 114.65,
+    "loadAverage5m": 110.78,
+    "loadAverage15m": 94.11,
+    "timestampPrecision": "minute",
+    "causation": "unproven"
+  },
+  "postRunCopilotCwdInspection": {
+    "command": "lsof -nP -a -c copilot -d cwd -Fpn",
+    "matchingCanaryProcesses": 0,
+    "scope": "Copilot-named processes with the temporary canary working directory; not a complete descendant-process audit."
+  }
+}

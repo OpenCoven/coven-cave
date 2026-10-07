@@ -649,8 +649,8 @@ assert.match(
 // thinking chrome. One shared flag gates both the chip and the fallback.
 assert.match(
   source,
-  /const indicatorVisible = Boolean\(turn\.pending\) && !visible && !reasoning;/,
-  "TurnRow reserves the generic indicator for pending turns without visible text or streamed reasoning (CHAT-D12-01)",
+  /const indicatorVisible = Boolean\(turn\.pending\) && !visible && !reasoning && !reasoningBlocks\?\.length;/,
+  "TurnRow reserves the generic indicator for pending turns without visible text, legacy reasoning or structured summaries (CHAT-D12-01)",
 );
 assert.match(
   source,

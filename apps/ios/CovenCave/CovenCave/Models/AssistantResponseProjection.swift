@@ -388,11 +388,9 @@ struct AssistantResponseProjection: Equatable {
         let length: Int
     }
 
-    private static func protectMarkdownCode(in text: String) -> ProtectedMarkdownCode {
-        guard !text.isEmpty else {
-            return ProtectedMarkdownCode(text: text, fragments: [])
-        }
-
+    /// Shared layout protection. Offsets are converted to UTF-16 by callers;
+    /// these ranges retain Swift's valid string boundaries.
+    static func markdownCodeRanges(in text: String) -> [Range<String.Index>] {
         let lines = markdownLines(in: text)
         var ranges: [Range<String.Index>] = []
         var lineIndex = 0
@@ -433,6 +431,11 @@ struct AssistantResponseProjection: Equatable {
             lineIndex += 1
         }
 
+        return ranges
+    }
+
+    private static func protectMarkdownCode(in text: String) -> ProtectedMarkdownCode {
+        let ranges = markdownCodeRanges(in: text)
         var markerPrefix = "\u{E000}COVEN-CODE-"
         while text.contains(markerPrefix) {
             markerPrefix += "-"

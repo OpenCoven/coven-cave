@@ -200,7 +200,7 @@ function JsonBlock({ text }: { text: string }) {
 function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
   const [open, setOpen] = useState(false);
   const lifecycle = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "pending" : "complete");
-  // Served model + token/cost meta — otherwise only visible in the raw JSON.
+  // Native runtime/model report plus usage; full text stays on the tooltip.
   const meta = turnMetaSummary(turn);
   return (
     <div className="rounded-md border border-[var(--border-hairline)]">
@@ -222,7 +222,7 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
         {meta ? (
           <span
             className="max-w-40 shrink-0 truncate font-mono text-[var(--text-muted)]"
-            title={usageBreakdown(turn.usage, turn.costUsd) ?? undefined}
+            title={[meta, usageBreakdown(turn.usage, turn.costUsd)].filter(Boolean).join("\n")}
           >
             {meta}
           </span>

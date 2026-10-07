@@ -44,11 +44,13 @@ export function writeShowThinking(value: boolean): void {
  * Subscribe to the global show-thinking preference. Returns the current value
  * and a setter that persists + broadcasts the change to every subscriber.
  */
-export function useShowThinking(): [boolean, (value: boolean) => void] {
+export function useShowThinking(): [boolean, (value: boolean) => void, boolean] {
   const [show, setShow] = useState(DEFAULT_SHOW_THINKING);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setShow(readShowThinking());
+    setReady(true);
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent<boolean>).detail;
       setShow(typeof detail === "boolean" ? detail : readShowThinking());
@@ -64,5 +66,5 @@ export function useShowThinking(): [boolean, (value: boolean) => void] {
     };
   }, []);
 
-  return [show, writeShowThinking];
+  return [show, writeShowThinking, ready];
 }

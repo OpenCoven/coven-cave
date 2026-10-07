@@ -771,7 +771,7 @@ export function parseCopilotChatEvent(
  * seam). Copilot announces calls via `message.toolRequests[]` and/or
  * `tool_start`, and settles them via `tool_end`. The tracker links a later
  * `tool_start` onto the same id an earlier `toolRequests[]` opened, so emitting
- * both is safe — the second is deduped. Non-tool events return [].
+ * both advances one stable call from requested to running. Non-tool events return [].
  */
 export function copilotToolActions(ev: CopilotChatEvent): ToolAction[] {
   switch (ev.kind) {
@@ -783,7 +783,7 @@ export function copilotToolActions(ev: CopilotChatEvent): ToolAction[] {
         input: req.input,
       }));
     case "tool_start":
-      return [{ op: "use", id: ev.toolCallId, name: ev.toolName, input: ev.input }];
+      return [{ op: "start", id: ev.toolCallId, name: ev.toolName, input: ev.input }];
     case "tool_end":
       return [{ op: "result", id: ev.toolCallId, output: ev.output, isError: ev.isError }];
     default:

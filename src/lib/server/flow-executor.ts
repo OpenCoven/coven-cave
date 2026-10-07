@@ -428,6 +428,7 @@ export async function startFlowSession(
       let releaseSessionOwner: (() => Promise<void>) | undefined;
       const result = await startCopilotFlowRunWithTransportBoundary({
         spec,
+        clientVersion: capability.version,
         prompt,
         projectRoot,
         familiarId,

@@ -8,7 +8,7 @@ const chatTurnState = await readFile(new URL("./chat-turn-state.ts", import.meta
 
 assert.match(
   caveConversations,
-  /tools\?: Array<\{[\s\S]*name: string[\s\S]*status: "running" \| "ok" \| "error"/,
+  /tools\?: Array<\{[\s\S]*name: string[\s\S]*status: ToolStatus/,
   "Saved conversation turns should support structured tool-use metadata",
 );
 

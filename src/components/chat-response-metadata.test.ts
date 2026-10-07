@@ -1,7 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { formatRuntime } from "../lib/chat-response-metadata.ts";
+import { formatRuntime, responseMetadataModel } from "../lib/chat-response-metadata.ts";
+
+const legacyMetadata = { familiarId: "fixture", harness: "claude", model: "selected-old-model", confirmedModel: "legacy-inferred-model", runtime: "local:/fixture" };
+assert.equal(responseMetadataModel(legacyMetadata), null, "legacy model intent never confirms the model that answered");
+assert.equal(responseMetadataModel(undefined), null);
+const nativeMetadata = { ...legacyMetadata, runtimeIdentity: { schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5" } };
+assert.equal(responseMetadataModel(nativeMetadata), "claude-opus-5-5");
+assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, model: null } }), null);
+assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, schemaVersion: 99 } }), null);
+assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, harness: "copilot" } }), null);
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
@@ -148,15 +157,23 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /function responseModelStatusLines\([\s\S]*?Requested model:[\s\S]*?Applied model:[\s\S]*?function ResponseModelStatus\([\s\S]*?const lines = responseModelStatusLines\(metadata\);[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
+  /function responseModelStatusLines\([\s\S]*?Requested model:[\s\S]*?Recorded model:[\s\S]*?function ResponseModelStatus\([\s\S]*?const lines = responseModelStatusLines\(metadata\);[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
   "Assistant turn rows render requested, forwarded, and effective model state through shared metadata lines",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatView,
-  /metadata\?\.confirmedModel\?\.trim\(\)[\s\S]*metadata\?\.model\?\.trim\(\)/,
-  "Response metadata display should prefer the runtime-confirmed model over the requested model",
+  /metadata\?\.confirmedModel\?\.trim\(\)/,
+  "Response identity never falls back to configured or legacy inferred models",
 );
+assert.match(chatView, /const metaModel = identity\?\.model \?\? undefined;/);
+assert.match(chatView, /const identity = responseMetadataIdentity\(turn\.responseMetadata\);/);
+assert.match(chatView, /const displayResponseMetadata = activePendingTurn\s*\? activePendingTurn\.responseMetadata : lastSettledAssistantTurn\?\.responseMetadata;/,
+  "a pending turn with no report cannot borrow the previous turn's identity");
+assert.match(chatView, /responseMetadata=\{displayResponseMetadata\}/);
+const latestResponseSelection = chatView.match(/const lastSettledAssistantTurn = useMemo\([\s\S]*?\[turns\],\s*\);/)?.[0];
+assert.ok(latestResponseSelection);
+assert.doesNotMatch(latestResponseSelection, /durationMs|costUsd|\.usage/, "a newer response without usage still owns the displayed identity");
 assert.doesNotMatch(
   chatView,
   /openclaw-local/,

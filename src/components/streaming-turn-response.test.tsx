@@ -680,6 +680,27 @@ describe("StreamingTurnResponse", () => {
     expect(textContent(disclosure.findByType("summary"))).toBe("2 activity updates");
   });
 
+  it("keeps reasoning mounted while tools stay lazy in live, completed, and reloaded turns", async () => {
+    const props = {
+      reasoningContent: <details open><summary>Reasoning summary</summary>Inspect the marker.</details>,
+      activityDetails: <div>Tool payload</div>,
+    };
+    const renderer = await render(response({ ...props, model: model({ status: "working" }) }));
+    const verify = (view: ReactTestRenderer) => {
+      expect(textContent(view.root)).toContain("Inspect the marker.");
+      const activity = view.root.findByProps({ "data-turn-activity": true });
+      expect(activity.props.open).toBeUndefined();
+      expect(textContent(activity)).not.toContain("Inspect the marker.");
+      expect(textContent(view.root)).not.toContain("Tool payload");
+    };
+    verify(renderer);
+    await act(async () => {
+      renderer.update(response({ ...props, model: model({ status: "complete", activeBlock: null }) }));
+    });
+    verify(renderer);
+    verify(await render(response({ ...props, model: model({ status: "complete", activeBlock: null }) })));
+  });
+
   it("closes on the first completion transition when the disclosure was untouched", async () => {
     const renderer = await render(
       response({
@@ -1678,4 +1699,16 @@ describe("StreamingTurnResponse", () => {
     expect(handler).toBe(explicitOpenUrl);
     expect(responseDecorator.decorate).not.toHaveBeenCalled();
   });
+});
+
+
+it("keeps an ordered transcript visible during a transient preamble", async () => {
+  const tree = await render(response({
+    model: model({ committedText: "I'll check.", currentActivity: null, activity: [] }),
+    transcriptContent: <div data-ordered-transcript>Summary, tool and answer</div>,
+    reasoningContent: <div data-legacy-summary>Legacy summary</div>,
+  }));
+  expect(tree.root.findAll((node) => node.props["data-ordered-transcript"] !== undefined)).toHaveLength(1);
+  expect(tree.root.findAll((node) => node.props["data-legacy-summary"] !== undefined)).toHaveLength(0);
+  await act(async () => tree.unmount());
 });

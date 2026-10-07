@@ -4,6 +4,70 @@ import XCTest
 @testable import CovenCave
 
 final class MarkdownBundleLoadingTests: XCTestCase {
+    @MainActor
+    func testNativePlainParagraphsMatchPackagedVisibleText() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "native-plain-paragraph-v1", withExtension: "json"))
+        let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
+        let coordinator = MarkdownWebView.Coordinator()
+        let window = mount(coordinator.webView)
+        defer { unmount(window, coordinator: coordinator) }
+        try await waitUntilReady(coordinator.webView)
+        for item in cases {
+            let source = try XCTUnwrap(item["source"] as? String)
+            guard let paragraph = MarkdownDetect.plainTimelineParagraph(source) else { continue }
+            let id = try XCTUnwrap(item["id"] as? String)
+            let result = try await coordinator.webView.callAsyncJavaScript("""
+                await window.caveRender(source);
+                const nodes = [...document.querySelector('.cm-preview').children];
+                return {plain: nodes.length === 1 && nodes[0].tagName === 'P' && nodes[0].children.length === 0,
+                        text: nodes[0]?.innerText};
+                """, arguments: ["source": source], contentWorld: .page)
+            let report = try XCTUnwrap(result as? [String: Any])
+            XCTAssertEqual(report["plain"] as? Bool, true, id)
+            XCTAssertEqual(report["text"] as? String, paragraph, id)
+        }
+    }
+
+    @MainActor
+    func testTimelinePreservesPackagedMarkdownSemantics() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "runtime-timeline-v1", withExtension: "json"))
+        let corpus = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let scenarios = try XCTUnwrap(corpus["scenarios"] as? [[String: Any]])
+        let coordinator = MarkdownWebView.Coordinator()
+        let window = mount(coordinator.webView)
+        defer { unmount(window, coordinator: coordinator) }
+        try await waitUntilReady(coordinator.webView)
+        for scenario in scenarios where scenario["renderParity"] as? Bool == true {
+            let id = try XCTUnwrap(scenario["id"] as? String)
+            let source = try XCTUnwrap(scenario["text"] as? String)
+            let raw: [String: Any] = ["id": id, "role": "assistant", "text": source,
+                                      "tools": try XCTUnwrap(scenario["tools"])]
+            let turn = try JSONDecoder().decode(ChatTurn.self, from: JSONSerialization.data(withJSONObject: raw))
+            let message = DisplayMessage.restored(from: turn, familiarId: "fixture")
+            let entries = try XCTUnwrap(ChatActivityTimeline.entries(text: source, steps: message.activitySteps, reasoning: []))
+            let spans = entries.compactMap { entry -> String? in
+                if case .text(_, let value) = entry { return value }; return nil
+            }
+            let result = try await coordinator.webView.callAsyncJavaScript("""
+                const render = async text => {
+                    await window.caveRender(text);
+                    return [...document.querySelector('.cm-preview').children].map(node => ({
+                        tag: node.tagName, text: node.textContent,
+                        links: [...node.querySelectorAll('a')].map(a => a.getAttribute('href'))
+                    }));
+                };
+                const baseline = await render(source);
+                const split = [];
+                for (const text of spans) split.push(...await render(text));
+                return {same: JSON.stringify(baseline) === JSON.stringify(split),
+                        links: split.flatMap(node => node.links)};
+                """, arguments: ["source": source, "spans": spans], contentWorld: .page)
+            let report = try XCTUnwrap(result as? [String: Any])
+            XCTAssertEqual(report["same"] as? Bool, true, id)
+            XCTAssertEqual(report["links"] as? [String], scenario["expectedLinks"] as? [String], id)
+        }
+    }
+
     func testPackagedStartupBundleExcludesDiagramPayload() throws {
         let html = try XCTUnwrap(Bundle.main.url(forResource: "markdown", withExtension: "html"))
         let bytes = try Data(contentsOf: html).count

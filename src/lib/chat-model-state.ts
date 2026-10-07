@@ -57,7 +57,6 @@ export type ResolveChatModelStateInput = {
 
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
-const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
@@ -110,14 +109,6 @@ function effectiveModelForHarness(model: unknown, harness: string): string | nul
   return cleanModel;
 }
 
-function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): {
-  model: string;
-  reason: string;
-} {
-  const model = effectiveModelForHarness(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
-  return { model, reason: "Inherited from Cave defaults." };
-}
-
 export function modelApplicationForHarness(input?: ModelApplicationInput | null): ModelApplicationResult {
   if (input?.failed) {
     return {
@@ -160,13 +151,10 @@ export function modelRejectionInError(errorText: unknown): boolean {
   return typeof errorText === "string" && MODEL_REJECTION_RE.test(errorText);
 }
 
-// Decide how a finished run reflects on the selected model. coven echoes the
-// requested model id in `system.init` BEFORE spawning the harness, so an echo
-// confirms forwarding — not a successful run. We therefore only report
-// `applied` when the run also succeeded; `failed` when the run errored AND the
-// error names the model; and `pending` when the run errored for some other
-// reason (the model was forwarded but never confirmed). No echo ⇒ null, so the
-// caller leaves the honest pre-run state (`pending`/`unsupported`) untouched.
+// Decide application state after a validated native model report. Callers must
+// not pass an argv selection or a relay's system.init echo as confirmedModel.
+// A model-specific rejection is failed; another run error leaves it pending.
+// Missing native evidence leaves the caller's pre-run state untouched.
 export function modelApplicationFromRun(input: {
   confirmedModel: string | null;
   isError: boolean;
@@ -258,12 +246,12 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const globalDefault = globalDefaultForHarness(input.globalDefaultModel, input.harness);
+  const globalDefault = effectiveModelForHarness(input.globalDefaultModel, input.harness);
   return chatModelState(input, {
-    effectiveModel: globalDefault.model,
-    source: "global-default",
+    effectiveModel: globalDefault ?? "",
+    source: globalDefault ? "global-default" : "runtime-default",
     applicationState: "saved",
-    reason: globalDefault.reason,
+    reason: globalDefault ? "Inherited from Cave defaults." : "Using the runtime's configured default model.",
   });
 }
 

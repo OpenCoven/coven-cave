@@ -124,7 +124,7 @@ test("runtime inventory masks scope transitions and preserves same-scope refresh
       allowCustom: undefined,
     });
     assert.equal(snapshots.at(-1)?.loading, false);
-    assert.equal(snapshots.at(-1)?.provenance, "fallback");
+    assert.equal(snapshots.at(-1)?.provenance, "unavailable");
     assert.equal(
       snapshots.at(-1)?.models.some((model) => model.id === "anthropic/familiar-a"),
       false,
@@ -202,8 +202,8 @@ test("an empty live response falls back instead of claiming model entitlement", 
     });
     const settled = snapshots.at(-1);
     assert.equal(settled?.loading, false);
-    assert.equal(settled?.provenance, "fallback");
-    assert.ok((settled?.models.length ?? 0) > 0, "static seeds remain visibly fallback data");
+    assert.equal(settled?.provenance, "unavailable");
+    assert.deepEqual(settled?.models, [], "failed discovery cannot restore static models");
   } finally {
     await act(async () => { renderer?.unmount(); });
     globalThis.fetch = originalFetch;

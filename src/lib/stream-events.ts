@@ -1,3 +1,6 @@
+import type { ChatReasoningBlock } from "./chat-reasoning-blocks.ts";
+import type { ToolStatus } from "./chat-tool-state.ts";
+import type { ToolActivity } from "./chat-activity.ts";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { TurnUsage } from "@/lib/usage-format";
@@ -12,6 +15,8 @@ export type ToolOffsetCorrection = { after: number; delta: number };
 export type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
+  | { kind: "response_metadata"; responseMetadata: ChatResponseMetadata }
+  | { kind: "reasoning"; block: ChatReasoningBlock }
   | { kind: "assistant_chunk"; text: string }
   | { kind: "assistant_replace"; text: string; toolOffsetCorrection?: ToolOffsetCorrection }
   | { kind: "attachment"; attachment: ChatAttachment }
@@ -29,8 +34,9 @@ export type StreamEvent =
       name: string;
       input?: string;
       output?: string;
-      status?: "running" | "ok" | "error";
+      status?: ToolStatus;
       durationMs?: number;
+      activity?: ToolActivity;
     }
   | {
       kind: "done";

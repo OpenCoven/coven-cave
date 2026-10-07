@@ -196,6 +196,19 @@ test("PUT strips client-forged assistant telemetry (usage/cost/tools/reasoning)"
   }
 });
 
+test("PUT cannot mint runtime identity evidence", async () => {
+  const res = await PUT(writeReq({ familiarId: "milo", harness: "claude", turns: [{
+    role: "assistant", text: "Imported answer", responseMetadata: {
+      familiarId: "milo", harness: "claude", model: "anthropic/claude-opus-5-5", runtime: "local:/repos/cave",
+      runtimeIdentity: { schemaVersion: 1, harness: "claude", version: "2.1.280", model: "claude-opus-5-5",
+        activity: { schemaVersion: 1, path: "coven", tools: "supported", reasoning: "supported" } },
+    },
+  }] }), paramsFor("sess-forged-runtime-identity"));
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.conversation.turns[0].responseMetadata?.runtimeIdentity, undefined);
+});
+
 test("PUT keeps response facts bounded and rejects secret-bearing model metadata", async () => {
   const res = await PUT(
     writeReq({
@@ -646,6 +659,8 @@ test("GET redacts legacy secret-bearing response metadata and model intent", asy
       harness: "claude",
       model: "anthropic/claude-sonnet-4-6",
       runtime: "local:/repos/cave",
+      runtimeIdentity: { schemaVersion: 1, harness: "claude", version: "2.1.280", model: "claude-opus-5-5", payload: "private-provider-data",
+        activity: { schemaVersion: 1, path: "coven", tools: "partial", reasoning: "disabled", payload: "private-provider-data" } },
       modelApplicationReason: "provider error https://user:secret@example.invalid/raw",
       requestedControls: { reasoning: "https://user:secret@example.invalid/raw" },
     },
@@ -667,6 +682,8 @@ test("GET redacts legacy secret-bearing response metadata and model intent", asy
   assert.doesNotMatch(JSON.stringify(json), /secret|example\.invalid|provider error/);
   assert.equal(json.conversation.turns[0].responseMetadata.model, "anthropic/claude-sonnet-4-6");
   assert.equal(json.conversation.modelIntent.reason, undefined);
+  assert.deepEqual(json.conversation.turns[0].responseMetadata.runtimeIdentity, { schemaVersion: 1, harness: "claude", version: "2.1.280", model: "claude-opus-5-5",
+    activity: { schemaVersion: 1, path: "coven", tools: "partial", reasoning: "disabled" } }, "reload retains only validated server-owned runtime facts");
 });
 
 // --- cave-wbxcu: createdAt is decided at creation and read-only afterwards ---
@@ -1084,4 +1101,100 @@ test("concurrent first opens all serve the migrated image and its final tag", as
     assert.equal(attachment.dataUrl, undefined);
     assert.equal((await getConversation(id, response.headers.get("etag"))).status, 304);
   }
+});
+
+
+test("tool provenance survives history only with a matching server-owned call and cannot be client-authored", async () => {
+  const activity = {
+    schemaVersion: 1, runId: "22222222-3333-4444-8555-666666666666",
+    attemptId: "33333333-3333-4444-8555-666666666666", callId: "read-1", phase: "ok",
+    source: "runtime-report", producer: { harness: "hermes", version: null, protocol: "hermes-responses-v1" },
+    firstObservedAt: 100, updatedAt: 150, executionObservedAt: 110, terminalObservedAt: 150,
+    authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" },
+  };
+  const tool = { id: "read-1", name: "Read", status: "ok", activity };
+  const turn = { id: "a", role: "assistant", text: "Done", createdAt: "2026-10-03T00:00:00Z", tools: [tool] };
+  const id = "sess-tool-provenance";
+  writeConversation(id, [turn, { ...turn, id: "b", tools: [{ ...tool, activity: { ...activity, callId: "other" } }] },
+    { ...turn, id: "c", role: "user" }]);
+  const history = await (await GET(new Request(`http://test/api/chat/conversation/${id}`), paramsFor(id))).json();
+  assert.deepEqual(history.conversation.turns[0].tools[0].activity, activity);
+  assert.equal(history.conversation.turns[1].tools[0].activity, undefined);
+  assert.equal(history.conversation.turns[2].tools, undefined, "user turns cannot expose server telemetry");
+  const write = await PUT(writeReq({ turns: [turn] }), paramsFor(id));
+  assert.equal(write.status, 200);
+  assert.equal(storedConversation(id).turns[0].tools, undefined, "client writes cannot mint even well-shaped observations");
+});
+
+test("typed reasoning history remains server-owned and future blocks cannot hide the answer", async () => {
+  const { ReasoningBlockTracker } = await import("@/lib/server/chat-reasoning-projection");
+  const tracker = new ReasoningBlockTracker(() => ({
+    runId: "11111111-2222-4333-8444-555555555555", harness: "codex", version: "0.145.0", protocol: "codex-jsonl-v1",
+  }), "22222222-2222-4333-8444-555555555555", () => 100);
+  const block = tracker.observe("summary", "complete", "Compare the results.");
+  const turn = { id: "a", role: "assistant", text: "Answer", createdAt: "2026-10-03T00:00:00Z", reasoningBlocks: [block] };
+  const id = "sess-reasoning-projection";
+  writeConversation(id, [turn, { ...turn, id: "b", reasoningBlocks: [{ ...block, schemaVersion: 99 }] }]);
+  const history = await (await GET(new Request(`http://test/api/chat/conversation/${id}`), paramsFor(id))).json();
+  assert.deepEqual(history.conversation.turns[0].reasoningBlocks, [block]);
+  assert.equal(history.conversation.turns[1].reasoningBlocks, undefined);
+  assert.equal(history.conversation.turns[1].text, "Answer");
+  const response = await PUT(writeReq({ turns: [turn] }), paramsFor(id));
+  assert.equal(response.status, 200);
+  assert.equal(storedConversation(id).turns[0].reasoningBlocks, undefined);
+});
+
+test("history and lazy outputs share disclosure without rewriting stored execution records", async () => {
+  const id = "sess-historical-disclosure";
+  const nativeId = "call token=PRIVATE_NATIVE_ID";
+  const signed = "https://files.example.com/report?sig=PRIVATE_URL";
+  const tool = { id: nativeId, name: "Lookup person@example.com", status: "ok", input: `email person@example.com ${signed}`,
+    output: `Result password=PRIVATE_OUTPUT ${signed}`, _meta: "OPAQUE_TOOL_STATE" };
+  const answer = "Answer with a code example: `<thinking>literal</thinking>`.";
+  writeConversation(id, [{ id: "a", role: "assistant", text: `<thinking>PRIVATE_LEGACY_TAG</thinking>${answer}`, createdAt: "2026-10-03T00:00:00Z",
+    reasoning: "UNCLASSIFIED_REASONING", tools: [tool, { ...tool, id: "unfinished", status: "running", output: "INCOMPLETE_PAYLOAD" }, null],
+    progress: [{ id: nativeId, label: "Contact person@example.com", detail: signed, status: "notice", createdAt: "2026-10-03T00:00:00Z", _meta: "OPAQUE_PROGRESS" }] }]);
+  const before = readFileSync(conversationPath(id), "utf8");
+  const response = await GET(new Request(`http://test/api/chat/conversation/${id}`), paramsFor(id));
+  const body = await response.json();
+  assert.doesNotMatch(JSON.stringify(body), /PRIVATE_|person@example|OPAQUE_|UNCLASSIFIED_REASONING|INCOMPLETE_PAYLOAD/);
+  const turn = body.conversation.turns[0];
+  assert.equal(turn.text, answer, "ordinary answers and code examples remain intact");
+  assert.equal(turn.tools[0].status, "ok");
+  assert.equal(turn.tools[0].activity, undefined, "legacy tools gain no invented provenance");
+  assert.equal(turn.tools[1].status, "running");
+  assert.equal(turn.tools[1].output, undefined, "unfinished legacy previews have no complete-unit contract");
+  const { GET: TOOL_OUTPUT } = await import("./tool-output/route.ts");
+  const lazy = await TOOL_OUTPUT(new Request(`http://test/api/chat/conversation/${id}/tool-output?toolId=${turn.tools[0].id}`), paramsFor(id));
+  assert.equal(lazy.status, 200);
+  assert.deepEqual(await lazy.json(), { ok: true, output: turn.tools[0].output });
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before, "read projection never migrates private execution records");
+
+  // Comparing redacted values would incorrectly resolve these conflicting calls.
+  const duplicateId = "sess-private-ambiguous";
+  writeConversation(duplicateId, [{ id: "a", role: "assistant", text: "Answer", createdAt: "2026-10-03T00:00:00Z",
+    tools: [{ ...tool, id: "duplicate", output: "password=FIRST_VALUE" }, { ...tool, id: "duplicate", output: "password=SECOND_VALUE" }] }]);
+  const ambiguous = await TOOL_OUTPUT(new Request(`http://test/api/chat/conversation/${duplicateId}/tool-output?toolId=duplicate`), paramsFor(duplicateId));
+  assert.equal(ambiguous.status, 409, "redaction must not erase raw-output ambiguity");
+});
+
+test("history projection is idempotent and preserves ambiguity in the stored hash namespace", async () => {
+  const { projectConversationDisplay, findDisplayToolOutput } = await import("@/lib/server/conversation-display-projection");
+  const { ToolCallTracker, toPersistedTools } = await import("@/lib/chat-tool-events");
+  const tracker = new ToolCallTracker(() => 100, "", {
+    runId: "11111111-2222-4333-8444-555555555555", harness: "codex", version: "0.145.0", protocol: "codex-jsonl-v1",
+  });
+  const nativeId = "call token=PRIVATE_HASH_ID";
+  tracker.envelopeToolUse(nativeId, "Read", "safe.ts");
+  tracker.envelopeToolResult(nativeId, "Safe output", false);
+  const tools = toPersistedTools(tracker.snapshot(), 0);
+  const id = "sess-hash-projection";
+  writeConversation(id, [{ id: "a", role: "assistant", text: "Answer", createdAt: "2026-10-03T00:00:00Z", tools }]);
+  const original = storedConversation(id);
+  const once = projectConversationDisplay(original);
+  assert.deepEqual(projectConversationDisplay(once), once);
+  assert.deepEqual(once.turns[0].tools, tools, "safe current IDs, provenance and payloads survive reload unchanged");
+  assert.deepEqual(findDisplayToolOutput(original, tools[0].id), { kind: "found", output: "Safe output" });
+  original.turns[0].tools.push({ id: nativeId, name: "Read", status: "ok", output: "Safe output" });
+  assert.equal(findDisplayToolOutput(original, tools[0].id).kind, "ambiguous", "different stored IDs cannot silently merge even with equal outputs");
 });

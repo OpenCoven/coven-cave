@@ -13,10 +13,28 @@ import {
 } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
+const disclosure = new ToolCallTracker(() => 1_000);
+const privateInput = JSON.stringify({ path: "safe.ts", apiKey: "private-input-value" });
+const safeStart = disclosure.envelopeToolUse("safe-1", "read", privateInput);
+const safeProgress = disclosure.envelopeToolProgress("safe-1", "Authorization: Bearer private-progress-value");
+const safeEnd = disclosure.envelopeToolResult("safe-1", "password=private-output-value", false);
+for (const projection of [safeStart, safeProgress, safeEnd, disclosure.snapshot(), toPersistedTools(disclosure.snapshot(), 0)]) {
+  assert.doesNotMatch(JSON.stringify(projection), /private-(input|progress|output)-value/, "credentials never enter emitted or retained tool payloads");
+}
+assert.match(safeStart.input, /safe.ts/);
+assert.match(safeStart.input, /redacted/);
+const safeHook = disclosure.hookStart("shell", "TOKEN=private-hook-value echo safe");
+assert.doesNotMatch(safeHook.input, /private-hook-value/);
+assert.match(safeHook.input, /echo safe/);
+assert.equal(disclosure.hookEnd("shell", "x".repeat(256 * 1024 + 1), false).output, "[tool payload omitted: disclosure limit exceeded]");
+const reorderedDisclosure = new ToolCallTracker();
+reorderedDisclosure.envelopeToolResult("late", "password=private-reordered-value", false);
+reorderedDisclosure.envelopeToolUse("late", "read");
+assert.doesNotMatch(JSON.stringify(reorderedDisclosure.consumePendingEnvelopeResult("late")), /private-reordered-value/);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
 assert.equal(tracker.envelopeToolResult("call_1", "duplicate before start", true), null);
 const started = tracker.envelopeToolUse("call_1", "bash", '{"command":"pwd"}', 4);
-assert.deepEqual(started, { id: "call_1", name: "bash", input: '{"command":"pwd"}', status: "running" });
+assert.deepEqual(started, { id: "call_1", name: "bash", input: '{"command":"pwd"}', status: "requested" });
 const settled = tracker.consumePendingEnvelopeResult("call_1");
 assert.equal(settled?.id, "call_1");
 assert.equal(settled?.input, '{"command":"pwd"}');
@@ -37,23 +55,23 @@ assert.equal(progress.envelopeToolProgress("progress_1", "queued"), null, "progr
 assert.ok(progress.envelopeToolUse("progress_1", "read"));
 assert.deepEqual(
   progress.consumePendingEnvelopeProgress("progress_1"),
-  { id: "progress_1", name: "read", output: "queued", status: "running" },
+  { id: "progress_1", name: "read", output: undefined, status: "running" },
   "reordered progress updates the later start under its stable id",
 );
 assert.deepEqual(
   progress.envelopeToolProgress("progress_1", "halfway"),
-  { id: "progress_1", name: "read", output: "halfway", status: "running" },
+  { id: "progress_1", name: "read", output: undefined, status: "running" },
   "progress after a start updates the same running bubble without settling it",
 );
 assert.deepEqual(
   progress.snapshot(),
-  [{ id: "progress_1", name: "read", input: undefined, output: "halfway", status: "running" }],
+  [{ id: "progress_1", name: "read", input: undefined, output: undefined, status: "running" }],
   "a progress-only lifecycle remains explicitly running until a result arrives",
 );
 assert.deepEqual(
   toPersistedTools(progress.snapshot(), 0),
-  [{ id: "progress_1", name: "read", output: "halfway\n[tool did not settle before the turn ended]", status: "error" }],
-  "a progress-only lifecycle is recovered as a terminal error instead of persisting an infinite spinner",
+  [{ id: "progress_1", name: "read", output: "[tool did not settle before the turn ended]", status: "unknown" }],
+  "a progress-only lifecycle is recovered as an unknown outcome instead of persisting an infinite spinner",
 );
 
 const oversized = new ToolCallTracker(() => 1_000);
@@ -139,7 +157,7 @@ const linkedHook = new ToolCallTracker(() => 1_000);
 const linkedHookStart = linkedHook.hookStart("read");
 const linkedHookUpdate = linkedHook.envelopeToolUse("hook-linked", "read", "x".repeat(100_000));
 assert.equal(linkedHookUpdate?.id, linkedHookStart.id, "a late envelope updates the existing hook bubble instead of creating a second one");
-assert.equal(linkedHookUpdate?.status, "running", "a late envelope input keeps its running hook bubble running");
+assert.equal(linkedHookUpdate?.status, "requested", "a late envelope input keeps its running hook bubble running");
 const linkedHookInput = linkedHook.snapshot()[0]?.input;
 assert.ok(
   new TextEncoder().encode(linkedHookInput ?? "").byteLength <= 8_000,
@@ -160,15 +178,15 @@ assert.equal(
 );
 
 const largeHookStart = new ToolCallTracker(() => 1_000);
-const largeHookStartInput = "x".repeat(LIVE_TOOL_INPUT_CAP + 1);
+const largeHookStartInput = "x ".repeat(LIVE_TOOL_INPUT_CAP);
 assert.equal(
   largeHookStart.hookStart("read", largeHookStartInput).input,
   capLiveToolPayload(largeHookStartInput, LIVE_TOOL_INPUT_CAP),
   "hook starts must cap tool input before returning the live SSE event",
 );
 assert.equal(
-  largeHookStart.hookEnd("read", "x".repeat(LIVE_TOOL_OUTPUT_CAP + 1), false).output,
-  capLiveToolPayload("x".repeat(LIVE_TOOL_OUTPUT_CAP + 1), LIVE_TOOL_OUTPUT_CAP),
+  largeHookStart.hookEnd("read", "x ".repeat(LIVE_TOOL_OUTPUT_CAP), false).output,
+  capLiveToolPayload("x ".repeat(LIVE_TOOL_OUTPUT_CAP), LIVE_TOOL_OUTPUT_CAP),
   "hook completions must cap tool output before returning the live SSE event",
 );
 terminalWindow.hookEnd("never-started", undefined, false);
@@ -188,14 +206,14 @@ assert.equal(recordedWindow.snapshot().length, MAX_RECORDED_TOOL_EVENTS, "a long
 
 const lateEnvelopeInput = new ToolCallTracker(() => 1_000);
 const hookOnlyStart = lateEnvelopeInput.hookStart("Read");
-const delayedInput = "x".repeat(LIVE_TOOL_INPUT_CAP + 1);
+const delayedInput = "x ".repeat(LIVE_TOOL_INPUT_CAP);
 assert.deepEqual(
   lateEnvelopeInput.envelopeToolUse("late-input", "Read", delayedInput),
   {
     id: hookOnlyStart.id,
     name: "Read",
     input: capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
-    status: "running",
+    status: "requested",
   },
   "a late envelope fills a hook-only live bubble with a bounded input update",
 );
@@ -213,7 +231,7 @@ assert.deepEqual(
     id: "streamed-input",
     name: "Read",
     input: capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
-    status: "running",
+    status: "requested",
   },
   "streamed tool input updates are capped before they reach SSE",
 );
@@ -267,7 +285,7 @@ assert.deepEqual(postBeforePre.snapshot(), [{
   id: "post-before-pre",
   name: "Read",
   input: '{"path":"README.md"}',
-  output: "hook output",
+  output: "envelope output",
   status: "ok",
   durationMs: 0,
 }]);
@@ -276,7 +294,7 @@ assert.deepEqual(postBeforePre.snapshot(), [{
 // Two large same-name inputs can share the entire display-capped prefix. Their
 // full-input fingerprints must still keep reordered hook output on the matching
 // native envelope id rather than falling back to FIFO.
-const cappedPrefix = "x".repeat(LIVE_TOOL_INPUT_CAP);
+const cappedPrefix = "x ".repeat(LIVE_TOOL_INPUT_CAP / 2);
 const largeA = `${cappedPrefix}-first`;
 const largeB = `${cappedPrefix}-second`;
 const largeSameName = new ToolCallTracker(() => 1_000);

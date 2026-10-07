@@ -63,17 +63,19 @@ function useNow(active: boolean, intervalMs: number): number {
  * remove the very node whose parent is being observed, and it could never
  * measure its way back.
  */
-function useWideEnough(ref: React.RefObject<HTMLElement | null>): boolean {
-  const [wide, setWide] = useState(true);
+function useWideEnough(ref: React.RefObject<HTMLElement | null>, present: boolean): boolean {
+  const [wide, setWide] = useState(false);
   useLayoutEffect(() => {
+    if (!present) return;
     const row = ref.current?.parentElement;
-    if (!row || typeof ResizeObserver === "undefined") return;
+    if (!row) return;
     const measure = () => setWide(row.clientWidth >= ACTIVITY_MAP_MIN_ROW_WIDTH);
     measure();
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, present]);
   return wide;
 }
 
@@ -128,12 +130,14 @@ export function ChatActivityMap({
     [turns],
   );
   const railRef = useRef<HTMLElement | null>(null);
-  const wide = useWideEnough(railRef);
   const now = useNow(hasRunning || Boolean(conversationCreatedAt), hasRunning ? LIVE_TICK_MS : IDLE_TICK_MS);
   const model = useMemo(
     () => runRailModel(turns, { nowMs: now, conversationCreatedAt }),
     [turns, now, conversationCreatedAt],
   );
+  // The first tool mounts the previously absent aside. Ref identity does not
+  // change, so the measurement must also follow this empty-to-tool transition.
+  const wide = useWideEnough(railRef, model.calls > 0);
 
   // Nothing has run yet: the rail would be five empty boxes. Render nothing
   // rather than furniture around no content.
@@ -149,6 +153,11 @@ export function ChatActivityMap({
       aria-label="Activity map"
     >
       <Counters model={model} />
+      {model.requested || model.rejected || model.unknown ? (
+        <p className="cave-runrail__trailing">
+          {[model.requested ? `${model.requested} requested` : "", model.rejected ? `${model.rejected} rejected` : "", model.unknown ? `${model.unknown} outcome unknown` : ""].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
 
       {/* ── TIMELINE ── every tool call, width proportional to its duration */}
       <section className="cave-runrail__panel">

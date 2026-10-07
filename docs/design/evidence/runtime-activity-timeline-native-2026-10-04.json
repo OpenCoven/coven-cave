@@ -1,0 +1,705 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T00:58:06.668779+00:00",
+  "issue": 5766,
+  "parentIssue": 5761,
+  "relatedIssues": [
+    5765,
+    5767
+  ],
+  "base": "18f6e327addc63707736c91040524bdc734a323c",
+  "sourceFingerprint": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+  "scope": "Native chronological reasoning, prose and tool presentation using the shared observation and UTF-16 contract. Model menus retain only the newest supported member of each known family.",
+  "simulator": {
+    "id": "9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+    "device": "iPhone 16 Pro",
+    "os": "iOS 26.5"
+  },
+  "implementation": [
+    "ChatActivityTimeline ports the web boundary and observation-order rules; missing or conflicting positions retain legacy layout.",
+    "MessageProseView gives each stable text span its own WebView height and fallback state while reader/copy actions retain full-response scope.",
+    "AppModel owns per-block summary choices separately from the existing default-on AppStorage preference; explicit global changes reset local choices.",
+    "Inline tools retain status, source, failure visibility, existing lazy output reads and per-tool expansion; semantic status changes use UIKit announcements.",
+    "Disclosure touch targets are at least 44 points and summary titles wrap at accessibility text sizes."
+  ],
+  "verified": [
+    "17 shared TypeScript/Swift scenarios cover Unicode, markup/code boundaries, image decks, same-name tools, retained attempts, legacy fallback and invalid chronology.",
+    "133 selected native unit tests and 12 Activity UI tests pass, including prior runtime identity, legacy tools and output-scope refusal cases.",
+    "Native rendered order is summary, prose, tool, summary, prose. Local summary/tool choices survive background/foreground and completion; a newly arriving block respects opt-out.",
+    "Failures remain visible under opt-out; global hide/show resets local choices; completed tool output opens and dismisses through the existing sheet.",
+    "Largest accessibility text renders the whole summary title and tool label within the viewport. Screenshots are automated simulator evidence, not human VoiceOver acceptance.",
+    "Release warm-journey smoke passes. Its test duration is not a quantitative performance measurement."
+  ],
+  "retainedFailuresAndCorrections": [
+    "The first shared-fixture run used an invalid failed phase; corrected the fixture to the established error phase.",
+    "The initial UI locators assumed child identifiers and one accessibility node per WebView. The observed hierarchy supplies the parent identifier and nested WebView nodes; tests now scope those actual nodes.",
+    "The global-toggle test tapped the label area, which did not move the native switch. Targeting the observed trailing thumb verifies persistence and reset semantics.",
+    "A green large-text test still showed a truncated title. The title now wraps; the check compares text height to native font metrics and positions the full tool below the sticky date header.",
+    "The first Release check was explicitly interrupted (exit 75) when screenshot review showed remaining large-text crowding. The header now uses explicit top alignment and vertical spacing, with title bounds checked against the preceding tool.",
+    "The first wrapping assertion incorrectly required an 80-point header despite a fully rendered 74.67-point header; replaced that arbitrary threshold with font-relative multiline evidence.",
+    "An attempted tsx invocation failed because the repo does not install tsx; the existing Node strip-types/alias-loader command passed."
+  ],
+  "checks": {
+    "native-timeline-shared-first": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:27:27.411506+00:00",
+      "sourceBefore": "e74241303e47e95c82780df7f721882e55ccc5cade51635b683cacfdd384a8a1",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-shared-first.log",
+      "finishedAt": "2026-10-04T00:27:27.752380+00:00",
+      "exitCode": 1,
+      "sourceAfter": "e74241303e47e95c82780df7f721882e55ccc5cade51635b683cacfdd384a8a1",
+      "sourceUnchanged": true
+    },
+    "native-timeline-shared-second": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:29:01.090629+00:00",
+      "sourceBefore": "76e5825b6673134d2c700cfae1fad511cd4a482e260dd9fdaad39a25dcf4576b",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-shared-second.log",
+      "finishedAt": "2026-10-04T00:29:01.402669+00:00",
+      "exitCode": 0,
+      "sourceAfter": "76e5825b6673134d2c700cfae1fad511cd4a482e260dd9fdaad39a25dcf4576b",
+      "sourceUnchanged": true
+    },
+    "native-timeline-unit-first": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-unit-first.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/AssistantResponseProjectionTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:29:20.016695+00:00",
+      "sourceBefore": "76e5825b6673134d2c700cfae1fad511cd4a482e260dd9fdaad39a25dcf4576b",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-unit-first.log",
+      "finishedAt": "2026-10-04T00:31:03.162549+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9da3dbbb08b43b317c5efe62ee1728493c4e06ff0439bb4e465796a6ce689824",
+      "sourceUnchanged": false
+    },
+    "native-timeline-mobile-first": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:30:57.231436+00:00",
+      "sourceBefore": "9da3dbbb08b43b317c5efe62ee1728493c4e06ff0439bb4e465796a6ce689824",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-mobile-first.log",
+      "finishedAt": "2026-10-04T00:31:24.615762+00:00",
+      "exitCode": 0,
+      "sourceAfter": "9da3dbbb08b43b317c5efe62ee1728493c4e06ff0439bb4e465796a6ce689824",
+      "sourceUnchanged": true
+    },
+    "native-timeline-ui-first": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-first.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelinePreservesSummaryProseToolOrder",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineFailureRemainsVisibleWithSummariesHidden",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:34:52.568304+00:00",
+      "sourceBefore": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-first.log",
+      "finishedAt": "2026-10-04T00:37:04.782068+00:00",
+      "exitCode": 65,
+      "sourceAfter": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "sourceUnchanged": true
+    },
+    "native-timeline-ui-second": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-second.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelinePreservesSummaryProseToolOrder",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineFailureRemainsVisibleWithSummariesHidden",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineGlobalPreferenceResetsLocalChoices",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:37:33.447916+00:00",
+      "sourceBefore": "fc4f3e165ba7cb14cc9d1ba3262e05c54c74764fc34e01f39ccdfb00dcbc6508",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-second.log",
+      "finishedAt": "2026-10-04T00:39:31.009745+00:00",
+      "exitCode": 65,
+      "sourceAfter": "fc4f3e165ba7cb14cc9d1ba3262e05c54c74764fc34e01f39ccdfb00dcbc6508",
+      "sourceUnchanged": true
+    },
+    "native-timeline-ui-third": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-third.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineGlobalPreferenceResetsLocalChoices",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineSupportsAccessibilityTextSize",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:40:05.528794+00:00",
+      "sourceBefore": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ui-third.log",
+      "finishedAt": "2026-10-04T00:41:18.522990+00:00",
+      "exitCode": 0,
+      "sourceAfter": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "sourceUnchanged": true
+    },
+    "native-timeline-accessibility-wrap": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-accessibility-wrap.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineSupportsAccessibilityTextSize",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:41:49.565317+00:00",
+      "sourceBefore": "bc5351accf31a2f88a6f463a7c431fdcfa180e27385970fbc5aad19d9484a8e5",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-accessibility-wrap.log",
+      "finishedAt": "2026-10-04T00:42:51.465260+00:00",
+      "exitCode": 65,
+      "sourceAfter": "bc5351accf31a2f88a6f463a7c431fdcfa180e27385970fbc5aad19d9484a8e5",
+      "sourceUnchanged": true
+    },
+    "native-timeline-regression-final": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-regression-final.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/AssistantResponseProjectionTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:43:45.778383+00:00",
+      "sourceBefore": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-regression-final.log",
+      "finishedAt": "2026-10-04T00:47:18.900013+00:00",
+      "exitCode": 0,
+      "sourceAfter": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "sourceUnchanged": true
+    },
+    "native-timeline-accessibility-bounds": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-accessibility-bounds.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineSupportsAccessibilityTextSize",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:48:45.030494+00:00",
+      "sourceBefore": "4d072d57ba749d5be3949b12a0e37ebec5258117be28f177afb7e32308731fe6",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-accessibility-bounds.log",
+      "finishedAt": "2026-10-04T00:49:48.865030+00:00",
+      "exitCode": 0,
+      "sourceAfter": "4d072d57ba749d5be3949b12a0e37ebec5258117be28f177afb7e32308731fe6",
+      "sourceUnchanged": true
+    },
+    "native-timeline-regression-complete": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-regression-complete.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests",
+        "-only-testing:CovenCaveTests/ChatActivityTimelineTests",
+        "-only-testing:CovenCaveTests/AssistantResponseProjectionTests",
+        "-only-testing:CovenCaveTests/AgentActivityTests",
+        "-only-testing:CovenCaveTests/ChatResponseControlsTests",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-only-testing:CovenCaveTests/ActivityCorpusTests",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:50:33.922631+00:00",
+      "sourceBefore": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-regression-complete.log",
+      "finishedAt": "2026-10-04T00:54:14.403161+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "sourceUnchanged": true
+    },
+    "native-timeline-ts-final": {
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:35:40.586110+00:00",
+      "sourceBefore": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ts-final.log",
+      "finishedAt": "2026-10-04T00:35:40.978193+00:00",
+      "exitCode": 254,
+      "sourceAfter": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "sourceUnchanged": true
+    },
+    "native-timeline-ts-second": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-activity-timeline.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:35:53.755965+00:00",
+      "sourceBefore": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-ts-second.log",
+      "finishedAt": "2026-10-04T00:35:54.181380+00:00",
+      "exitCode": 0,
+      "sourceAfter": "381c3c0ca5ba7d46163c05d8f3e257bae749338cf324992b9f41e1e556f7a911",
+      "sourceUnchanged": true
+    },
+    "native-timeline-typecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:40:26.285670+00:00",
+      "sourceBefore": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-typecheck.log",
+      "finishedAt": "2026-10-04T00:40:32.366172+00:00",
+      "exitCode": 0,
+      "sourceAfter": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "sourceUnchanged": true
+    },
+    "native-timeline-lint-final": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:40:53.922722+00:00",
+      "sourceBefore": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-lint-final.log",
+      "finishedAt": "2026-10-04T00:41:19.619027+00:00",
+      "exitCode": 0,
+      "sourceAfter": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "sourceUnchanged": true
+    },
+    "native-timeline-menu-policy": {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/runtime-model-families.test.ts"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:52:19.339758+00:00",
+      "sourceBefore": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-menu-policy.log",
+      "finishedAt": "2026-10-04T00:52:20.087167+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "sourceUnchanged": true
+    },
+    "native-timeline-wiring-final": {
+      "command": [
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:40:53.922738+00:00",
+      "sourceBefore": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-wiring-final.log",
+      "finishedAt": "2026-10-04T00:40:54.538154+00:00",
+      "exitCode": 0,
+      "sourceAfter": "98ee8c69324c48591bc303a3f02dcdd5f6ed073e82e77749effe2748e38fa65e",
+      "sourceUnchanged": true
+    },
+    "native-timeline-mobile-wrap-final": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:44:03.496003+00:00",
+      "sourceBefore": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-mobile-wrap-final.log",
+      "finishedAt": "2026-10-04T00:44:28.569688+00:00",
+      "exitCode": 0,
+      "sourceAfter": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "sourceUnchanged": true
+    },
+    "native-timeline-release-smoke": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCavePerformance",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-release-smoke.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testCurrentShellWarmJourneys",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:47:50.190849+00:00",
+      "sourceBefore": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-release-smoke.log",
+      "finishedAt": "2026-10-04T00:48:28.305633+00:00",
+      "exitCode": 75,
+      "sourceAfter": "a8a3e31ef331bc57964657664c94f6fe830a64ec5a7fe8dc9913a379aba24703",
+      "sourceUnchanged": true
+    },
+    "native-timeline-release-complete": {
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCavePerformance",
+        "-destination",
+        "platform=iOS Simulator,id=9DF2F308-20E6-4410-8A6D-FE40502EADA1",
+        "-derivedDataPath",
+        "/Users/buns/.coven/cave/verification/issue-5761/ios-derived",
+        "-resultBundlePath",
+        "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-release-complete.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testCurrentShellWarmJourneys",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:54:39.698746+00:00",
+      "sourceBefore": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-release-complete.log",
+      "finishedAt": "2026-10-04T00:57:52.876314+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "sourceUnchanged": true
+    },
+    "native-timeline-mobile-complete": {
+      "command": [
+        "pnpm",
+        "test:mobile"
+      ],
+      "cwd": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5761-runtime-model-tools-current",
+      "startedAt": "2026-10-04T00:50:35.059617+00:00",
+      "sourceBefore": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "log": "/Users/buns/.coven/cave/verification/issue-5761/native-timeline-mobile-complete.log",
+      "finishedAt": "2026-10-04T00:51:01.106911+00:00",
+      "exitCode": 0,
+      "sourceAfter": "e872ce72e119b2eeb4c8500f622a010c64e0c9d75bd029ef23ecac386b8190db",
+      "sourceUnchanged": true
+    }
+  },
+  "validationScopes": [
+    "TypeScript shared-fixture, typecheck, lint and test-wiring checks passed before the final Swift-only label wrapping and native UI-test refinements; no TypeScript source changed afterward.",
+    "The final native regression, mobile source-contract suite and Release smoke use the recorded final source fingerprint.",
+    "The initial 73-unit run overlapped mobile source-contract test edits, so its before/after hashes differ; the final 133-unit run supersedes it."
+  ],
+  "screenshots": {
+    "timeline-native-hidden-failure": {
+      "path": "docs/design/evidence/timeline-native-hidden-failure-2026-10-04.png",
+      "sha256": "23db19882a152b51aa44a0d4f97f7d0a3bdf5c8fa2d670f7a0ba436117e3d039"
+    },
+    "timeline-native-live-completed": {
+      "path": "docs/design/evidence/timeline-native-live-completed-2026-10-04.png",
+      "sha256": "59a148468ef7d8b5017ba88da39fde220453bdd45648d1eb2f995b23e77eb07a"
+    },
+    "timeline-native-default": {
+      "path": "docs/design/evidence/timeline-native-default-2026-10-04.png",
+      "sha256": "6b5a2630c2229035ae9887831d6aa559b66b828df4786f38f3628e0a506819d4"
+    },
+    "timeline-native-accessibility-tool": {
+      "path": "docs/design/evidence/timeline-native-accessibility-tool-2026-10-04.png",
+      "sha256": "90cf4462441683feaa7b13c44f99ad002eae91c5295149bb84a44e150e2ef57f"
+    },
+    "timeline-native-accessibility-start": {
+      "path": "docs/design/evidence/timeline-native-accessibility-start-2026-10-04.png",
+      "sha256": "423fdb6186d982c8445f8a92349556e296e84d7850abbdd5532b83c3742c7287"
+    }
+  },
+  "sourceDeltaSinceWebTimelineArchive": [
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Models/AssistantResponseProjection.swift",
+      "before": null,
+      "after": "1788905ceb078d3d04169f2b3873f98bcb61a983904cd63f99222c431f85c5be"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Models/ChatActivityTimeline.swift",
+      "before": null,
+      "after": "09bebfc5a2df8ff3e75bacac5456b73b5b4721331eba5857d86544820c0b78df"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Models/ChatReasoningDisclosureState.swift",
+      "before": null,
+      "after": "e1395ab27d056565cb549e353e5869cfb728b292275c72cdcb9b3a876c2dfa24"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/State/AppModel.swift",
+      "before": "3d9b06accce137c052b7cc89b11a390c6abb90ddfa746340b11c822c995675be",
+      "after": "a879bf4f85e9b9af5952b2df43b6702424fa53060d42843eeeae92e852c4a90d"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/AgentActivityView.swift",
+      "before": "61404d01c74c2986e00d0958b1f44b9b867798cf233c30ca7eee07c99c420639",
+      "after": "f4c97852921a5b691f8a6432bc295c9cdbbe95fb2239a96fd9d8e2cd763e22c0"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+      "before": "cda3f0c35aea424faf76feac490c792d1d80f2f96f6e031e0e27f9ef98214436",
+      "after": "e6d0c27edd89fef2c85778be88cd42905383a8594b9a322e1c693d6766e15e56"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift",
+      "before": "feb884e862d8bbbf78bf1d681ae05654bc01b8eba4a95be932822689f488f397",
+      "after": "c27d92a84934b5a68256706e40839f81a65365d61c0ec45ed1ae05cbb012b369"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/MessageProseView.swift",
+      "before": null,
+      "after": "57d10f26603a5470169e9d448f4302e1e81ea16cb98c04cb525b11231ae01196"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/ChatActivityTimelineTests.swift",
+      "before": null,
+      "after": "26ce6a52b6675fb72e12654f970f922858c8e6fa1047fb7e205739f7ddd0877d"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-timeline-v1.json",
+      "before": null,
+      "after": "54568c770953aaf0ef8ab93c5bbc7a15302a46ebcd10f6c411c0617560df3db4"
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift",
+      "before": "177f9731d5bd01e9c6ab02911180e35067c9542aba3b1a4230feb9373fbfe61d",
+      "after": "637bf04d0a69e6f734d8b80e28f9ec56a08f78c3e4566944a525e37e75b48905"
+    },
+    {
+      "path": "docs/design/evidence/timeline-native-accessibility-start-2026-10-04.png",
+      "before": null,
+      "after": "423fdb6186d982c8445f8a92349556e296e84d7850abbdd5532b83c3742c7287"
+    },
+    {
+      "path": "docs/design/evidence/timeline-native-accessibility-tool-2026-10-04.png",
+      "before": null,
+      "after": "90cf4462441683feaa7b13c44f99ad002eae91c5295149bb84a44e150e2ef57f"
+    },
+    {
+      "path": "docs/design/evidence/timeline-native-default-2026-10-04.png",
+      "before": null,
+      "after": "6b5a2630c2229035ae9887831d6aa559b66b828df4786f38f3628e0a506819d4"
+    },
+    {
+      "path": "docs/design/evidence/timeline-native-hidden-failure-2026-10-04.png",
+      "before": null,
+      "after": "23db19882a152b51aa44a0d4f97f7d0a3bdf5c8fa2d670f7a0ba436117e3d039"
+    },
+    {
+      "path": "docs/design/evidence/timeline-native-live-completed-2026-10-04.png",
+      "before": null,
+      "after": "59a148468ef7d8b5017ba88da39fde220453bdd45648d1eb2f995b23e77eb07a"
+    },
+    {
+      "path": "docs/design/runtime-model-tool-identity.md",
+      "before": "c2d93d6c176d1600f932ce62fa1dc1477dafe4088fc10ea55297c0d2532d9f93",
+      "after": "441bbe11029cb573ad55e3ffce407d923404d8a21a3da32489fbe5afc0707f5e"
+    },
+    {
+      "path": "scripts/ios-markdown-accent.test.mjs",
+      "before": null,
+      "after": "070e6aa8ab7b16d29f11b058f5d619066a3bc7fea664ebd2c3f82c97aeaccf0d"
+    },
+    {
+      "path": "scripts/ios-message-reader.test.mjs",
+      "before": null,
+      "after": "afcd8cdf0bc3f86fa6a8ba2aeb028f8fc4b702124fc67eb1654f414fc379e159"
+    },
+    {
+      "path": "scripts/ios-modern-polish.test.mjs",
+      "before": null,
+      "after": "49f30382581fe2cb3d275a0c74717573b90e47e2a7d053794671c33bfe27da09"
+    },
+    {
+      "path": "src/lib/chat-activity-timeline.test.ts",
+      "before": "42a56303dcb9d799078acdaf364a1c97cd97acbf0e46e398df0ad4a8490b3aed",
+      "after": "e35e88c723bc455d9df2a2e8c0c3e09cce683f2d153c262d9f0f9c10a168a5df"
+    }
+  ],
+  "stagedPatchSHA256Unchanged": "70e4b738fa7285c94ce287726d73e02086f20b488c76559229508d920e6f6a9a",
+  "limitations": [
+    "UI lifecycle is DEBUG render-only fixture evidence. Output requests use the existing isolated URLProtocol fixture. No provider tool executes in these UI tests.",
+    "Previous native TCP qualification is separate evidence; remote HTTPS, packaged desktop/native provider paths, reconnect and process-restart UI coverage remain incomplete.",
+    "Full theme, reduced-motion, rich-content and parallel/retry/error/approval matrices remain incomplete; cross-span Markdown reference/footnote context needs further qualification.",
+    "Comparative large-trace performance, physical-device measurements and human VoiceOver remain open.",
+    "Canonical signed Codex/Grok admission and the separately requested OpenCode access-mode decision remain outstanding; no trust or authorization changed.",
+    "Local and uncommitted. No push, PR, merge, release, ownership transfer, issue closure or other session app restart."
+  ]
+}

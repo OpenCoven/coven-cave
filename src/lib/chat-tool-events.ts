@@ -1,11 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import type { ToolActivity } from "./chat-activity.ts";
+import { projectToolObservation, type ToolObservationContext } from "./server/chat-activity-projection.ts";
+import { projectDisplayId, projectDisplayText } from "./server/chat-display-projection.ts";
+import { isKnownToolOutcome, isToolActive, retainToolStatus, type ToolOutcome, type ToolStatus } from "./chat-tool-state.ts";
 
 // Tool-call event tracking for the native chat SSE stream.
 //
 // Two independent sources describe the same tool calls:
 //   1. Hook lines on stdout ("hook: pre_tool_use Bash {...}" /
 //      "hook: post_tool_use Bash {...}") — only present when the harness has
-//      those hooks configured. They carry real start/end timing.
+//      those hooks configured. Pre-hooks report intent, not execution proof.
 //   2. stream-json envelopes — assistant messages carry `tool_use` content
 //      blocks (native id, name, input) and the follow-up user message carries
 //      the matching `tool_result` block (tool_use_id, content).
@@ -15,20 +19,20 @@ import { createHash } from "node:crypto";
 // id merge into one block. Invariants:
 //   - Concurrent same-name calls get DISTINCT ids (per-name FIFO queue of
 //     open calls; CHAT-D4-03 was a name-keyed map that merged them).
-//   - When hooks and envelopes describe the same call, hook events win for
-//     timing/output; envelope events are linked to the same id (so they merge
-//     in the UI) or suppressed once the hook has settled the call
+//   - When hooks and envelopes describe the same call, events are linked to
+//     the same id. The first known terminal result wins across both sources
 //     (CHAT-D4-04 dedup).
 //   - When hooks are absent, envelope blocks alone produce a full
-//     running → settled lifecycle.
+//     requested → settled lifecycle without inventing an execution start.
 
 export type ToolStreamEvent = {
   id: string;
   name: string;
   input?: string;
   output?: string;
-  status: "running" | "ok" | "error";
+  status: ToolStatus;
   durationMs?: number;
+  activity?: ToolActivity;
 };
 
 /** A tool event as recorded for persistence — ToolStreamEvent plus the
@@ -82,6 +86,16 @@ export function capLiveToolPayload(value: string | undefined, cap: number): stri
     ? sliceWellFormedUtf16Prefix(value, prefixBudget)
     : decodeUtf8Prefix(encoded, prefixBudget);
   return `${prefix}${TOOL_PAYLOAD_TRUNCATION_SUFFIX}`;
+}
+
+/** Project a complete payload before bounding it. Truncating first can remove
+ * the credential marker needed by redaction. Incomplete protocol fragments
+ * must be withheld by their adapter until a complete value is available. */
+function projectLiveToolPayload(value: string | undefined, cap: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (utf8Bytes(value) > 256 * 1024) return "[tool payload omitted: disclosure limit exceeded]";
+  const projected = projectDisplayText(value, { classification: cap === LIVE_TOOL_INPUT_CAP ? "tool-input" : "tool-output", complete: true });
+  return projected === undefined ? "[tool payload omitted: could not safely inspect]" : capLiveToolPayload(projected, cap);
 }
 
 function decodeUtf8Prefix(encoded: Uint8Array, byteLimit: number): string {
@@ -191,8 +205,11 @@ export function flattenToolResultContent(content: unknown): string | undefined {
         parts.push((block as { text: string }).text);
       }
     }
-    if (parts.length) return parts.join("\n");
+    // Unknown block kinds (including opaque reasoning, image and provider
+    // state) never fall back to serializing the original block array.
+    return parts.length ? parts.join("\n") : undefined;
   }
+  if (typeof content === "object" && "type" in content) return undefined;
   try {
     return JSON.stringify(content, null, 2);
   } catch {
@@ -227,7 +244,7 @@ export class ToolCallTracker {
   /** Results observed before their matching tool_use block. JSONL transports
    * normally preserve order, but retaining one result prevents an out-of-order
    * pair from leaving a newly announced call running for the whole turn. */
-  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean; bytes: number; receivedAt: number }>();
+  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean; outcome: ToolOutcome; bytes: number; receivedAt: number }>();
   private pendingEnvelopeResultBytes = 0;
   /** Progress can race a start frame, but never creates a nameless bubble. */
   private pendingEnvelopeProgress = new Map<string, { output: string | undefined; bytes: number; receivedAt: number }>();
@@ -243,19 +260,24 @@ export class ToolCallTracker {
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
+  /** Bounded reconciliation for a real result arriving after stream loss. */
+  private unknownEnvelopeCalls = new Map<string, OpenCall>();
   private readonly now: () => number;
   /** Distinguishes separate harness attempts within one chat turn. Native
    * envelope ids remain the lookup keys; only the UI/persistence ids need the
    * attempt namespace. */
   private readonly idPrefix: string;
+  readonly attemptId = randomUUID();
+  private readonly observationContext?: ToolObservationContext | (() => ToolObservationContext);
 
-  constructor(now: () => number = Date.now, idPrefix = "") {
+  constructor(now: () => number = Date.now, idPrefix = "", observationContext?: ToolObservationContext | (() => ToolObservationContext)) {
     this.now = now;
     this.idPrefix = idPrefix;
+    this.observationContext = observationContext;
   }
 
   private streamId(id: string): string {
-    return `${this.idPrefix}${id}`;
+    return `${this.idPrefix}${projectDisplayId(id)}`;
   }
 
   private queueFor(name: string): OpenCall[] {
@@ -325,6 +347,7 @@ export class ToolCallTracker {
   private rememberSettledHookCall(call: OpenCall): void {
     if (!call.hookStarted) return;
     const queue = this.settledHookCalls.get(call.name) ?? [];
+    if (queue.includes(call)) return;
     queue.push(call);
     const MAX_RECONCILE_CALLS_PER_NAME = 25;
     while (queue.length > MAX_RECONCILE_CALLS_PER_NAME) queue.shift();
@@ -371,6 +394,7 @@ export class ToolCallTracker {
   private rememberSettledEnvelopeCall(call: OpenCall): void {
     if (call.origin !== "envelope" || call.hookStarted) return;
     const queue = this.settledEnvelopeCalls.get(call.name) ?? [];
+    if (queue.includes(call)) return;
     queue.push(call);
     this.settledEnvelopeCalls.set(call.name, queue);
     this.trimSettledReconciliationCalls(this.settledEnvelopeCalls);
@@ -406,7 +430,24 @@ export class ToolCallTracker {
     return call;
   }
 
-  private record(ev: ToolStreamEvent, textOffset?: number): void {
+  private record(ev: ToolStreamEvent, textOffset?: number, source: ToolActivity["source"] = "runtime-report"): void {
+    ev.name = projectDisplayText(ev.name, { classification: "tool-name", complete: true })?.slice(0, 512) || "Tool";
+    const previous = this.recorded.get(ev.id);
+    const status = retainToolStatus(previous?.status, ev.status);
+    if (previous && (isKnownToolOutcome(previous.status) || status !== ev.status)) {
+      // Apply the same projection to the emitted event and the saved record.
+      // Late hooks may add missing arguments, but cannot rewrite an outcome.
+      if ("output" in ev || status !== ev.status) ev.output = previous.output;
+      if ("durationMs" in ev || status !== ev.status) ev.durationMs = previous.durationMs;
+      ev.status = status;
+    }
+    if (this.observationContext) {
+      ev.activity = projectToolObservation({
+        context: typeof this.observationContext === "function" ? this.observationContext() : this.observationContext,
+        attemptId: this.attemptId, callId: ev.id, status: ev.status, source,
+        now: this.now(), previous: previous?.activity,
+      });
+    }
     const bounded: ToolStreamEvent = {
       ...ev,
       ...(ev.input !== undefined ? { input: capLiveToolPayload(ev.input, LIVE_TOOL_INPUT_CAP) } : {}),
@@ -450,12 +491,15 @@ export class ToolCallTracker {
       const ev: ToolStreamEvent = {
         id: call.id,
         name: call.name,
-        output,
-        status: "error",
+        output: projectLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP),
+        status: "unknown",
         durationMs: this.now() - call.startedAt,
       };
       this.settle(call);
-      this.record(ev);
+      this.rememberUnknownEnvelopeCall(call);
+      this.rememberSettledHookCall(call);
+      this.rememberSettledEnvelopeCall(call);
+      this.record(ev, undefined, "application");
       settled.push(ev);
     }
     return settled;
@@ -471,7 +515,17 @@ export class ToolCallTracker {
     }
   }
 
-  /** pre_tool_use (or bare tool_use) hook line: a call is starting. */
+  private rememberUnknownEnvelopeCall(call: OpenCall): void {
+    if (!call.envelopeId) return;
+    while (this.unknownEnvelopeCalls.size >= MAX_RECORDED_TOOL_EVENTS) {
+      const oldest = this.unknownEnvelopeCalls.keys().next().value;
+      if (oldest === undefined) break;
+      this.unknownEnvelopeCalls.delete(oldest);
+    }
+    this.unknownEnvelopeCalls.set(call.envelopeId, call);
+  }
+
+  /** A pre hook reports intent; it may precede authorization or execution. */
   hookStart(name: string, input?: string, textOffset?: number): ToolStreamEvent {
     const queue = this.queueFor(name);
     // The envelope may have announced this call first (assistant message
@@ -483,7 +537,7 @@ export class ToolCallTracker {
     // to FIFO; otherwise the completed output can be recorded on the other
     // call's stable id.
     const inputFingerprint = toolInputFingerprint(input);
-    const liveInput = capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
+    const liveInput = projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
     const claim = inputFingerprint === undefined
       ? unclaimedEnvelopeCalls[0]
       : unclaimedEnvelopeCalls.find((c) => c.inputFingerprint === inputFingerprint)
@@ -499,27 +553,18 @@ export class ToolCallTracker {
         queue.splice(claimIndex, 1);
         queue.push(claim);
       }
-      // The hook marks actual execution start — a tighter duration baseline
-      // than when the envelope was parsed.
-      claim.startedAt = this.now();
-      const ev: ToolStreamEvent = { id: claim.id, name, input: liveInput, status: "running" };
-      this.record(ev, textOffset);
+      const ev: ToolStreamEvent = { id: claim.id, name, input: liveInput, status: "requested" };
+      this.record(ev, textOffset, "hook-report");
       return ev;
     }
     const settledEnvelopeCall = this.takeSettledEnvelopeCall(name, input);
     if (settledEnvelopeCall) {
-      // The user result has already completed this envelope, but a late hook
-      // still owns the authoritative timing/output. Reuse the native id so the
-      // hook updates the original UI record rather than adding another call.
+      // Reconcile the delayed pre without reopening the completed call.
       settledEnvelopeCall.hookStarted = true;
-      settledEnvelopeCall.startedAt = this.now();
-      // This hook is now live even though its envelope result arrived first.
-      // Keep it in the open queue so a missing post hook is settled at turn
-      // end; remembering it only as completed would leave the live SSE chip
-      // running forever.
-      this.queueFor(name).push(settledEnvelopeCall);
-      const ev: ToolStreamEvent = { id: settledEnvelopeCall.id, name, input: liveInput, status: "running" };
-      this.record(ev, textOffset);
+      settledEnvelopeCall.preHookObserved = true;
+      this.rememberSettledHookCall(settledEnvelopeCall);
+      const ev: ToolStreamEvent = { id: settledEnvelopeCall.id, name, input: liveInput, status: "requested" };
+      this.record(ev, textOffset, "hook-report");
       return ev;
     }
     const postBeforePreCall = this.takePostBeforePreEnvelopeCall(name, input);
@@ -537,7 +582,7 @@ export class ToolCallTracker {
         status: previous?.status ?? "ok",
         ...(previous?.durationMs !== undefined ? { durationMs: previous.durationMs } : {}),
       };
-      this.record(ev, textOffset);
+      this.record(ev, textOffset, "hook-report");
       return ev;
     }
     this.seq += 1;
@@ -551,15 +596,15 @@ export class ToolCallTracker {
       inputFingerprint,
     };
     queue.push(call);
-    const ev: ToolStreamEvent = { id: call.id, name, input: liveInput, status: "running" };
-    this.record(ev, textOffset);
+    const ev: ToolStreamEvent = { id: call.id, name, input: liveInput, status: "requested" };
+    this.record(ev, textOffset, "hook-report");
     return ev;
   }
 
   /** post_tool_use hook line: the OLDEST open hook-started call completed. */
   hookEnd(name: string, output: string | undefined, isError: boolean): ToolStreamEvent {
     const queue = this.open.get(name);
-    const liveOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
+    const liveOutput = projectLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
     // FIFO pairing: a post matches the oldest open pre of the same name.
     // Fall back to the oldest envelope-only call (post-hook-only harnesses).
     const hookStartedCall = queue?.find((c) => c.hookStarted);
@@ -587,7 +632,7 @@ export class ToolCallTracker {
       };
       this.rememberSettledHookCall(completedHook);
       const ev: ToolStreamEvent = { id: completedHook.id, name, output: liveOutput, status };
-      this.record(ev);
+      this.record(ev, undefined, "hook-report");
       return ev;
     }
     const durationMs = this.now() - call.startedAt;
@@ -597,12 +642,13 @@ export class ToolCallTracker {
     // second call later.
     call.hookStarted = true;
     this.settle(call);
+    if (call.envelopeId) this.unknownEnvelopeCalls.delete(call.envelopeId);
     // A delayed assistant envelope can arrive after a complete pre/post hook
     // pair. Retain hook-only completions long enough to link that native id
     // rather than rendering a second tool bubble for the same execution.
     if (!call.envelopeId || !call.preHookObserved) this.rememberSettledHookCall(call);
     const ev: ToolStreamEvent = { id: call.id, name, output: liveOutput, status, durationMs };
-    this.record(ev);
+    this.record(ev, undefined, "hook-report");
     return ev;
   }
 
@@ -630,7 +676,7 @@ export class ToolCallTracker {
     const inputFingerprint = toolInputFingerprint(input);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
-    // duplicate block — hook events win when both sources exist.
+    // duplicate block; the first known terminal result wins.
     const unlinkedHookCalls = queue.filter((c) => c.origin === "hook" && !c.envelopeId);
     // When concurrent same-name hooks arrive before their assistant envelopes,
     // FIFO alone can link the second envelope to the first execution. The hook
@@ -649,7 +695,7 @@ export class ToolCallTracker {
         const ev: ToolStreamEvent = {
           id: hookCall.id,
           name,
-          input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
+          input: projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
           status: prev.status,
         };
         this.record(ev);
@@ -674,7 +720,7 @@ export class ToolCallTracker {
         const ev: ToolStreamEvent = {
           id: settledHookCall.id,
           name,
-          input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
+          input: projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
           status: prev.status,
           ...(prev.durationMs !== undefined ? { durationMs: prev.durationMs } : {}),
         };
@@ -697,9 +743,26 @@ export class ToolCallTracker {
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    const ev: ToolStreamEvent = { id: call.id, name, input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP), status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input: projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP), status: "requested" };
     this.record(ev, textOffset);
     return ev;
+  }
+
+  /** Only adapters with an observed execution-start frame use this path. */
+  envelopeToolStart(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
+    const announced = this.envelopeToolUse(id, name, input, textOffset);
+    const call = this.byEnvelopeId.get(id);
+    if (!call) return announced;
+    const previous = this.recorded.get(call.id);
+    if (previous?.status !== "requested") return announced;
+    const event: ToolStreamEvent = {
+      id: call.id,
+      name: call.name,
+      ...(input !== undefined ? { input: projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP) } : {}),
+      status: "running",
+    };
+    this.record(event, textOffset);
+    return event;
   }
 
   /** Settle a result that arrived before its start, once the id is known. */
@@ -708,7 +771,7 @@ export class ToolCallTracker {
     const pending = this.pendingEnvelopeResults.get(toolUseId);
     if (!pending) return null;
     this.dropPendingEnvelopeResult(toolUseId);
-    return this.envelopeToolResult(toolUseId, pending.output, pending.isError);
+    return this.envelopeToolResult(toolUseId, pending.output, pending.isError, pending.outcome);
   }
 
   /** Apply the most recent reordered progress update after a tool start. */
@@ -728,7 +791,7 @@ export class ToolCallTracker {
   envelopeToolProgress(toolUseId: string, output: string | undefined): ToolStreamEvent | null {
     this.prunePendingEnvelopeProgress();
     if (utf8Bytes(toolUseId) > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
-    const boundedOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
+    const boundedOutput = projectDisplayText(output, { classification: "tool-output", complete: false });
     const pendingBytes = utf8Bytes(boundedOutput);
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) {
@@ -758,10 +821,11 @@ export class ToolCallTracker {
     if (input === undefined || this.settledEnvelopeIds.has(toolUseId)) return null;
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) return null;
-    const boundedInput = capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
-    const ev: ToolStreamEvent = { id: call.id, name: call.name, input: boundedInput, status: "running" };
+    const boundedInput = projectLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
     const prev = this.recorded.get(call.id);
+    const ev: ToolStreamEvent = { id: call.id, name: call.name, input: boundedInput, status: prev?.status ?? "requested" };
     if (prev) {
+      this.record(ev);
       this.recorded.set(call.id, { ...prev, ...ev, input: boundedInput });
     } else {
       this.record(ev);
@@ -770,32 +834,19 @@ export class ToolCallTracker {
   }
 
   /**
-   * Settles every currently open call as interrupted. A stream can terminate
+   * Marks every currently open call's outcome unknown. A stream can terminate
    * after announcing a function call but before its execution/result event;
    * emit final updates so the live UI never retains a permanent spinner and
    * persistence matches what the user saw.
    */
   failOpenCalls(output = "[tool did not settle before the stream ended]"): ToolStreamEvent[] {
-    const calls = Array.from(this.open.values()).flat();
-    return calls.map((call) => {
-      const durationMs = this.now() - call.startedAt;
-      this.settle(call);
-      const ev: ToolStreamEvent = {
-        id: call.id,
-        name: call.name,
-        output,
-        status: "error",
-        durationMs,
-      };
-      this.record(ev);
-      return ev;
-    });
+    return this.settleUnfinished(output);
   }
 
   /**
    * stream-json `tool_result` block (from the follow-up user message).
    * Returns null when the matching call was already settled by a post hook
-   * (hook output + duration win). A result that arrives before its start is
+   * (the first terminal output and duration win). A result before its start is
    * retained by native id until the start frame arrives, avoiding a silently
    * stuck/missing bubble after a reconnect or reordered JSONL flush.
    */
@@ -803,12 +854,13 @@ export class ToolCallTracker {
     toolUseId: string,
     output: string | undefined,
     isError: boolean,
+    outcome: ToolOutcome = isError ? "error" : "ok",
   ): ToolStreamEvent | null {
     this.prunePendingEnvelopeResults();
-    if (utf8Bytes(toolUseId) > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
-    const boundedOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
+    if (utf8Bytes(toolUseId) > 512 || (this.settledEnvelopeIds.has(toolUseId) && !this.unknownEnvelopeCalls.has(toolUseId))) return null;
+    const boundedOutput = projectLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
     const pendingBytes = utf8Bytes(boundedOutput);
-    const call = this.byEnvelopeId.get(toolUseId);
+    const call = this.byEnvelopeId.get(toolUseId) ?? this.unknownEnvelopeCalls.get(toolUseId);
     if (!call) {
       // A malformed stream must not turn arbitrary unmatched ids into an
       // unbounded in-memory buffer. Retain a small FIFO window for genuine
@@ -828,11 +880,12 @@ export class ToolCallTracker {
         this.dropPendingEnvelopeResult(oldest);
       }
       if (pendingBytes > MAX_PENDING_TOOL_RESULT_BYTES) return null;
-      this.pendingEnvelopeResults.set(toolUseId, { output: boundedOutput, isError, bytes: pendingBytes, receivedAt: this.now() });
+      this.pendingEnvelopeResults.set(toolUseId, { output: boundedOutput, isError, outcome, bytes: pendingBytes, receivedAt: this.now() });
       this.pendingEnvelopeResultBytes += pendingBytes;
       return null;
     }
     const durationMs = this.now() - call.startedAt;
+    this.unknownEnvelopeCalls.delete(toolUseId);
     this.rememberSettledHookCall(call);
     this.rememberSettledEnvelopeCall(call);
     this.settle(call);
@@ -841,7 +894,7 @@ export class ToolCallTracker {
       name: call.name,
       input: this.recorded.get(call.id)?.input,
       output: boundedOutput,
-      status: isError ? "error" : "ok",
+      status: outcome,
       durationMs,
     };
     this.record(ev);
@@ -866,8 +919,7 @@ export const PERSIST_OUTPUT_CAP = 4_000;
  * - `leadingTrim`: the saved turn text is `assistantText.trim()`, so offsets
  *   stamped against the untrimmed stream shift left by the leading-whitespace
  *   length (clamped at 0).
- * - Still-running calls coerce to error — a persisted "running" badge would
- *   spin forever after reload.
+ * - Unresolved calls become unknown; turn completion cannot prove an outcome.
  * - Returns undefined when there is nothing to persist (no `tools: []` noise).
  */
 export function toPersistedTools(
@@ -876,17 +928,18 @@ export function toPersistedTools(
 ): RecordedToolEvent[] | undefined {
   if (events.length === 0) return undefined;
   return events.map((ev) => {
-    const stillRunning = ev.status === "running";
+    const stillRunning = isToolActive(ev.status);
     const output = stillRunning
       ? `${ev.output ? `${ev.output}\n` : ""}[tool did not settle before the turn ended]`
       : ev.output;
     return {
       id: ev.id,
       name: ev.name,
-      status: stillRunning ? "error" : ev.status,
+      status: stillRunning ? "unknown" : ev.status,
       ...(ev.input !== undefined ? { input: ev.input.slice(0, PERSIST_INPUT_CAP) } : {}),
       ...(output !== undefined ? { output: output.slice(-PERSIST_OUTPUT_CAP) } : {}),
       ...(ev.durationMs !== undefined ? { durationMs: ev.durationMs } : {}),
+      ...(ev.activity ? { activity: stillRunning ? { ...ev.activity, phase: "unknown" as const, source: "application" as const } : ev.activity } : {}),
       ...(ev.textOffset !== undefined
         ? { textOffset: Math.max(0, ev.textOffset - leadingTrim) }
         : {}),

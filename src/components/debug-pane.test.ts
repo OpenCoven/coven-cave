@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   source,
-  /title=\{usageBreakdown\(turn\.usage, turn\.costUsd\) \?\? undefined\}/,
-  "The compact turn meta should carry the full usage breakdown as its tooltip",
+  /title=\{\[meta, usageBreakdown\(turn\.usage, turn\.costUsd\)\]\.filter\(Boolean\)\.join\("\\n"\)\}/,
+  "The compact turn meta retains full native identity and usage in its tooltip",
 );
 assert.match(
   source,

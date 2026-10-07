@@ -418,8 +418,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function shortModelLabel\(/,
-  "Model id is shortened for the header (vendor/claude- prefix dropped)",
+  /function responseModelLabel\(model: string\): string \{\s*return model;/,
+  "Header keeps the exact model id, including provider and release",
 );
 assert.match(
   source,

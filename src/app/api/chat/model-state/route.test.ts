@@ -29,6 +29,11 @@ assert.match(
 assert.match(route, /\n\s*inventory,\n/);
 assert.match(
   route,
+  /canReadCliInventory = localInventoryRequest &&\s*canonicalHarnessId\(binding\.harness\) === state\.harness &&\s*!isSshRuntime\(binding\.runtime\) && !state\.runtime\?\.startsWith\("ssh:"\)[\s\S]*?allowCliInventory: canReadCliInventory/,
+  "aggregate model discovery cannot substitute a local CLI inventory for an SSH or different harness binding",
+);
+assert.match(
+  route,
   /function modelBindingScope\([\s\S]*?binding\.hermesProfile\.id[\s\S]*?runtimeForBinding\(binding\),[\s\S]*?runtime,[\s\S]*?hermesScope,[\s\S]*?bindingScope: modelBindingScope\(binding, state\.runtime\)/,
   "the response exposes a non-secret binding identity for local, SSH, and Hermes profile scope transitions",
 );

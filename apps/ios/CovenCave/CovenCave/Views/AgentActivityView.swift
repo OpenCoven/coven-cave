@@ -1,10 +1,11 @@
 import SwiftUI
+import UIKit
 
 /// Live "what is the familiar doing" trail for an assistant reply.
 ///
 /// While the reply streams, a compact chip narrates the newest running step
 /// ("Bash — ls src/"); once the turn finishes it collapses to a one-line
-/// summary ("Ran 4 tools"). Tapping either state expands the recent steps
+/// summary ("4 tool calls"). Tapping either state expands the recent steps
 /// with status glyphs, detail lines, and durations.
 struct AgentActivityView: View {
     let steps: [ActivityStep]
@@ -16,6 +17,8 @@ struct AgentActivityView: View {
     /// re-creates this view and view-local `@State` would go with it — the
     /// trail collapsing itself moments after the reader opened it (cave-m5tao).
     let messageId: String
+    var onShowToolOutput: ((ActivityStep) -> Void)? = nil
+    var inlineTool: Bool = false
 
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
@@ -34,6 +37,17 @@ struct AgentActivityView: View {
                 stepList
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
+            if inlineTool && !expanded, let failure = steps.first?.errorOutput, !failure.isEmpty {
+                Text(failure)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Color.red)
+                    .lineLimit(ActivityFold.errorOutputLines)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onChange(of: steps.first?.status) { old, new in
+            guard inlineTool, old != new, let step = steps.first else { return }
+            UIAccessibility.post(notification: .announcement, argument: "\(step.title): \(inlineStatus(step)).")
         }
     }
 
@@ -51,7 +65,7 @@ struct AgentActivityView: View {
             Haptics.tap()
         } label: {
             HStack(spacing: 6) {
-                if streaming {
+                if streaming && (!inlineTool || steps.first?.status.isActive == true) {
                     ProgressView()
                         .controlSize(.mini)
                         .tint(chrome.textSecondary)
@@ -64,7 +78,7 @@ struct AgentActivityView: View {
                 Text(chipLabel)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(inlineTool ? 3 : 1)
                     // "Bash — <argument>": keep the tool name and the end of
                     // the argument, drop the middle. Same reasoning as the
                     // detail line in an expanded row.
@@ -78,6 +92,7 @@ struct AgentActivityView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
+            .frame(minHeight: inlineTool ? 44 : nil)
             .glassFill(.control, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -87,6 +102,10 @@ struct AgentActivityView: View {
     }
 
     private var chipLabel: String {
+        if inlineTool, let step = steps.first {
+            let detail = step.detail.map { " · \($0)" } ?? ""
+            return "\(step.title)\(detail) · \(inlineStatus(step))"
+        }
         if streaming, let current = steps.currentStep {
             if let detail = current.detail, !detail.isEmpty {
                 return "\(current.title) — \(detail)"
@@ -97,8 +116,20 @@ struct AgentActivityView: View {
     }
 
     private var accessibilitySummary: String {
-        streaming ? "Agent activity: running \(steps.currentStep?.title ?? "step")"
+        inlineTool ? "Tool activity: \(chipLabel)" : streaming ? "Agent activity: \(steps.currentStep?.status == .requested ? "requested" : "running") \(steps.currentStep?.title ?? "step")"
                   : "Agent activity: \(steps.summaryLabel)"
+    }
+
+    private func inlineStatus(_ step: ActivityStep) -> String {
+        switch step.status {
+        case .requested: "Requested"
+        case .running: streaming ? "Running" : "Outcome unknown"
+        case .ok: "Succeeded"
+        case .error: "Failed"
+        case .rejected: "Rejected"
+        case .notice: "Notice"
+        case .unknown: "Outcome unknown"
+        }
     }
 
     // MARK: - Expanded steps
@@ -127,6 +158,31 @@ struct AgentActivityView: View {
                 Text(step.title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                if step.status == .requested {
+                    Text("Requested")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if step.status == .rejected {
+                    Text("Rejected")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if step.status == .unknown {
+                    Text("Outcome unknown")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if step.kind == .tool {
+                    Text(step.activity?.validated(callId: step.id, status: step.status.rawValue)?.sourceLabel ?? "Source unavailable for this observation.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Approval and change confirmation unavailable.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let detail = step.detail, !detail.isEmpty {
                     Text(detail)
                         .font(.caption2.monospaced())
@@ -149,6 +205,12 @@ struct AgentActivityView: View {
                         .textSelection(.enabled)
                         .padding(.top, 2)
                 }
+                if step.kind == .tool, let onShowToolOutput {
+                    Button("Show output") { onShowToolOutput(step) }
+                        .font(.caption.weight(.medium))
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("Show output for \(step.title)")
+                }
             }
             Spacer(minLength: 8)
             if let duration = Self.durationLabel(step.durationMs) {
@@ -157,11 +219,16 @@ struct AgentActivityView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private func statusGlyph(_ step: ActivityStep) -> some View {
         switch step.status {
+        case .requested:
+            Image(systemName: "clock")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Requested")
         case .running where streaming:
             ProgressView().controlSize(.mini).tint(chrome.textSecondary)
         case .running:
@@ -179,6 +246,16 @@ struct AgentActivityView: View {
             Image(systemName: "info.circle")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+        case .unknown:
+            Image(systemName: "questionmark.circle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Outcome unknown")
+        case .rejected:
+            Image(systemName: "nosign")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Rejected")
         case .error:
             Image(systemName: "xmark.circle.fill")
                 .font(.caption2)

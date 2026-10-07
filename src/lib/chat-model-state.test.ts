@@ -145,13 +145,13 @@ assert.deepEqual(
     familiarId: "nova",
     harness: "claude",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "openai/gpt-5.6-sol",
-    source: "global-default",
+    effectiveModel: "",
+    source: "runtime-default",
     familiarDefaultModel: null,
     applicationState: "saved",
-    reason: "Inherited from Cave defaults.",
+    reason: "Using the runtime's configured default model.",
   },
-  "stale synthetic defaults should fall back to a real global model instead of being forwarded",
+  "stale synthetic defaults must not fabricate a model selection",
 );
 assert.deepEqual(
   resolveChatModelState({

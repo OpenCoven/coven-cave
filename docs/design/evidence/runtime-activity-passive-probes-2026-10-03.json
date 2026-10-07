@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-03T17:43:43.230Z",
+  "scope": "Passive help/version probes and builtin schema selection only. No provider turn, model choice, signed registry refresh, real tool execution or UI acceptance.",
+  "runtimes": {
+    "grok": {
+      "version": "1.0.5",
+      "mode": "plain",
+      "schema": null,
+      "diagnostic": "streaming-json-unavailable",
+      "toolEventCounts": null
+    },
+    "opencode": {
+      "version": null,
+      "mode": "plain",
+      "schema": null,
+      "diagnostic": "capability-probe-unavailable",
+      "toolEventCounts": null
+    }
+  },
+  "finishedAt": "2026-10-03T17:43:46.538Z",
+  "candidateHead": "2240d8c3d81a8f56b3cff154d8f391ec266123a1",
+  "sourceSha256AtProbe": "82174b384caf52836958dee20356efdf580cd241f8d745906f480371b22f2f1a",
+  "qualification": "incomplete",
+  "followUpVersionProbe": {
+    "runtime": "opencode",
+    "operation": [
+      "--version"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 2.304,
+    "outputBytes": 8,
+    "version": [
+      "1.17.16"
+    ],
+    "declaredOptions": null
+  },
+  "grokOutputFormatHelp": [
+    "--output-format <OUTPUT_FORMAT>",
+    "Output format for headless mode",
+    "",
+    "Possible values:",
+    "- plain",
+    "- json",
+    "- streaming-json:          NDJSON of the agent native ACP session updates",
+    "- streaming-messages-json: NDJSON in the Anthropic Messages API wire format",
+    "",
+    "[default: plain]",
+    ""
+  ],
+  "findings": [
+    "Grok 1.0.5 returned a version but Cave selected plain mode. Its output-format help lists possible values beyond the two continuation lines inspected by the current probe.",
+    "The installed Grok help describes streaming-json as native ACP session updates. The existing builtin schema describes type/text/end frames and declares no tool events. Help text alone does not qualify that adapter for the native protocol.",
+    "The bounded OpenCode capability probe was unavailable. A separate absolute-path version-only probe completed with 1.17.16. A version alone does not qualify a tool protocol.",
+    "No provider turn or model inventory was requested. No signed registry was fetched or written. Temporary capability cache paths were isolated and removed."
+  ],
+  "nextStep": "Obtain the canonical Grok ACP descriptor and native fixtures, and qualify the installed OpenCode protocol through the existing bounded launch probe before claiming tool visibility."
+}

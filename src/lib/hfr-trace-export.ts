@@ -1,3 +1,8 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
+import { normalizeRuntimeIdentity } from "./chat-runtime-identity.ts";
+import { projectStoredTool } from "./server/conversation-display-projection.ts";
+import { projectLegacyAssistantText } from "./server/legacy-reasoning-projection.ts";
+import { projectDisplayId } from "./server/chat-display-projection.ts";
 // Coven → Hermes Flight Recorder (HFR) trace exporter.
 //
 // HFR (github.com/zwright8/hermes-flight-recorder) ingests agent execution
@@ -25,7 +30,7 @@ export type HfrToolInput = {
   name: string;
   input?: string;
   output?: string;
-  status: "running" | "ok" | "error";
+  status: ToolStatus;
   durationMs?: number;
 };
 
@@ -40,6 +45,8 @@ export type HfrTurnInput = {
   durationMs?: number;
   isError?: boolean;
   cancelled?: boolean;
+  /** Stored server report, never reconstructed from selected/confirmedModel. */
+  responseMetadata?: { harness?: string; runtimeIdentity?: unknown };
   tools?: HfrToolInput[];
   usage?: {
     inputTokens: number;
@@ -80,7 +87,7 @@ export type HfrExportOptions = {
   subagentLinks?: HfrSubagentLink[];
   /** Cap on any single free-text field (tool args/result, answer). Tool
    *  results keep their tail (error context); everything else keeps its head.
-   *  0/undefined disables truncation. */
+   *  0 disables this optional truncation; disclosure bounds still apply. */
   maxFieldChars?: number;
 };
 
@@ -154,7 +161,9 @@ export function conversationToHfrEvents(
     source_format: sourceFormat,
     familiar_id: conv.familiarId,
     harness: conv.harness,
-    model: conv.model,
+    // A conversation can switch models/runtimes between turns. Its legacy
+    // header value is context, not evidence of the model used by each call.
+    recorded_model: conv.model,
     title: conv.title,
     origin: conv.origin ?? "chat",
     ts: conv.createdAt,
@@ -179,12 +188,24 @@ export function conversationToHfrEvents(
 
     if (turn.role !== "assistant") continue;
 
-    for (const tool of turn.tools ?? []) {
+    const harness = turn.responseMetadata?.harness ?? conv.harness;
+    const runtimeIdentity = typeof harness === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(harness)
+      ? normalizeRuntimeIdentity(turn.responseMetadata?.runtimeIdentity, harness)
+      : undefined;
+    const turnObservation = {
+      turn_id: typeof turn.id === "string" ? projectDisplayId(turn.id) : undefined,
+      runtime_identity: runtimeIdentity,
+    };
+
+    for (const storedTool of turn.tools ?? []) {
+      const tool = projectStoredTool(storedTool);
+      if (!tool) continue;
       const startTs = turn.createdAt;
       const endTs = addMillis(startTs, tool.durationMs);
       events.push({
         hook: "pre_tool_call",
         session_id: sessionId,
+        ...turnObservation,
         tool_call_id: tool.id,
         tool_name: tool.name,
         tool_input: clip(tool.input, max),
@@ -192,12 +213,13 @@ export function conversationToHfrEvents(
         ts: startTs,
         timestamp: startTs,
       });
-      // A tool still "running" at persist time never settled — record it as an
-      // error so HFR's completion check treats it as unresolved, not success.
-      const isError = tool.status === "error" || tool.status === "running";
+      // Missing execution results cannot become synthetic post-tool receipts.
+      if (tool.status !== "ok" && tool.status !== "error") continue;
+      const isError = tool.status === "error";
       events.push({
         hook: "post_tool_call",
         session_id: sessionId,
+        ...turnObservation,
         tool_call_id: tool.id,
         tool_name: tool.name,
         tool_output: clip(tool.output, max, "tail"),
@@ -213,15 +235,18 @@ export function conversationToHfrEvents(
     // HFR derives `final_answer` from the LLM observer hook's
     // assistant_response/output. Emit this hook even without usage/cost when
     // the turn has a valid assistant response.
-    const assistantResponse = turn.text && !turn.cancelled && !turn.isError
-      ? clip(turn.text, max)
+    const visibleAnswer = typeof turn.text === "string"
+      ? projectLegacyAssistantText(turn.text, turn.cancelled || turn.isError) : "";
+    const assistantResponse = visibleAnswer && !turn.cancelled && !turn.isError
+      ? clip(visibleAnswer, max)
       : undefined;
     if (assistantResponse !== undefined || turn.usage || turn.costUsd !== undefined) {
       const ts = addMillis(turn.createdAt, turn.durationMs);
       events.push({
         hook: "post_llm_call",
         session_id: sessionId,
-        model: conv.model,
+        ...turnObservation,
+        model: runtimeIdentity?.model ?? undefined,
         assistant_response: assistantResponse,
         output: assistantResponse,
         usage: turn.usage

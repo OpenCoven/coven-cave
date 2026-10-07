@@ -158,8 +158,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /modelForCaveFromRuntimeEcho\(\s*binding\.harness,\s*selectedModel,\s*echoed,\s*\)/,
-  "runtime echoes must be converted back to Cave's canonical model id",
+  /modelForCaveFromRuntimeEcho\(\s*binding\.harness,\s*selectedModel,\s*reported,?\s*\)/,
+  "validated runtime reports must be converted back to Cave's canonical model id",
 );
 
 assert.match(
@@ -229,9 +229,10 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(openCodeDirect && openCodeLaunchModel && forwardModel\)[\s\S]*?confirmedModel: forwardModel,[\s\S]*?responseMetadata\.confirmedModel = forwardModel;/,
-  "OpenCode confirms the original provider-qualified id only when its launch guard forwarded a model",
+  /if \(openCodeDirect && openCodeLaunchModel && forwardModel\)[\s\S]*?modelApplicationForHarness\(openCodeModelRejected\s*\? \{ failed: true \} : \{ supported: true \}\)[\s\S]*?OpenCode received the selected model; the resolved model was not reported\./,
+  "OpenCode preserves model forwarding as pending without fabricating a runtime report",
 );
+assert.doesNotMatch(chatRoute, /responseMetadata\.confirmedModel = forwardModel;/);
 
 // --model is emitted before the `--` separator, never after (the prompt is a
 // variadic positional that would otherwise swallow it).

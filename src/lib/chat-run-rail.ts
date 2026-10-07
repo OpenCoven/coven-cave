@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./chat-tool-state.ts";
 // Pure model for the chat run rail — the right-hand instrument column from
 // `Coven Cave - Chat Session.html` (cave-w716g).
 //
@@ -41,7 +42,7 @@ export type RunRailSegment = {
    *  floor share so a fast call is visible rather than invisible. */
   ratio: number;
   durationMs: number;
-  status: "running" | "ok" | "error";
+  status: ToolStatus;
 };
 
 /** A legend row: one category that actually occurred. */
@@ -54,7 +55,7 @@ export type RunRailMixRow = {
 
 /** The live/last step. Heading mirrors the frame's own three states. */
 export type RunRailNow = {
-  heading: "Doing now" | "Stopped at" | "Last step";
+  heading: "Doing now" | "Requested" | "Rejected" | "Outcome unknown" | "Stopped at" | "Last step";
   name: string;
   /** The command or argument line, when the call carried one. */
   command: string | null;
@@ -66,6 +67,9 @@ export type RunRailModel = {
   done: number;
   failed: number;
   running: number;
+  requested: number;
+  rejected: number;
+  unknown: number;
   /** Total tool time across the run. */
   totalMs: number;
   segments: RunRailSegment[];
@@ -128,9 +132,12 @@ export function runRailModel(
   let done = 0;
   let failed = 0;
   let running = 0;
+  let requested = 0;
+  let rejected = 0;
+  let unknown = 0;
   let totalMs = 0;
   let liveCall: { name: string; input?: string; durationMs?: number } | null = null;
-  let lastCall: { name: string; input?: string; durationMs?: number; error: boolean } | null = null;
+  let lastCall: { name: string; input?: string; durationMs?: number; status: ToolStatus } | null = null;
 
   for (const turn of turns) {
     for (const [toolIndex, tool] of (turn.tools ?? []).entries()) {
@@ -151,14 +158,20 @@ export function runRailModel(
         liveCall = { name: tool.name, input: tool.input, durationMs: tool.durationMs };
       } else if (tool.status === "error") {
         failed += 1;
-      } else {
+      } else if (tool.status === "ok") {
         done += 1;
+      } else if (tool.status === "rejected") {
+        rejected += 1;
+      } else if (tool.status === "requested") {
+        requested += 1;
+      } else {
+        unknown += 1;
       }
       lastCall = {
         name: tool.name,
         input: tool.input,
         durationMs: tool.durationMs,
-        error: tool.status === "error",
+        status: tool.status,
       };
     }
   }
@@ -189,7 +202,7 @@ export function runRailModel(
     };
   } else if (lastCall) {
     now = {
-      heading: lastCall.error ? "Stopped at" : "Last step",
+      heading: lastCall.status === "error" ? "Stopped at" : lastCall.status === "requested" ? "Requested" : lastCall.status === "rejected" ? "Rejected" : lastCall.status === "unknown" ? "Outcome unknown" : "Last step",
       name: lastCall.name,
       command: runRailCommand(lastCall.input),
       ...(lastCall.durationMs !== undefined ? { durationMs: lastCall.durationMs } : {}),
@@ -201,6 +214,9 @@ export function runRailModel(
     done,
     failed,
     running,
+    requested,
+    rejected,
+    unknown,
     totalMs,
     segments,
     mix,

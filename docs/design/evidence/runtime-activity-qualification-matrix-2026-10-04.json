@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T05:53:04.460536+00:00",
+  "issues": [
+    5761,
+    5763,
+    5767
+  ],
+  "candidate": {
+    "baseHead": "18f6e327addc63707736c91040524bdc734a323c",
+    "currentProductionBuild": "jWUpxykRXSyNo49w4GE3-",
+    "builtSourceFingerprint": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+    "currentCheckerSourceFingerprint": "1e8b2507a6e9df9dcd9915f0dea92d7143bc25afc7e1049f879c1649ef9960bb",
+    "sourceDelta": "Current build fixes first-tool rail measurement and Claude fast-mode family filtering; installed Copilot inventory passes. Real Claude browser send/reload passed before these final changes. Copilot browser send and native desktop remain incomplete. No iOS source changes.",
+    "currentNativeSourceFingerprint": "c5293d9aa7c0238adda9c0d45fe24d7306238e3a94eed5468b1fe4562220d248"
+  },
+  "interpretation": [
+    "Capability describes what the selected adapter can project; qualification describes collected evidence. Neither grants execution authority.",
+    "currentBuildRevalidated covers only the specified client/scenario on this build. Other records are historical candidate evidence, not silently refreshed results.",
+    "Null identity is unavailable. Synthetic models and shell inventory are labeled and never presented as native producer proof.",
+    "Native-provider-capture is a direct CLI observation, distinct from real-provider-verified through Cave admission/persistence."
+  ],
+  "modelMenuPolicy": "Newest numeric release per discovered provider/family/variant, using validated configured backing-model metadata for discovery aliases. Keep the alias as launch ID. Preserve custom IDs with unknown ordering. Discovery remains support authority; inventory metadata never confirms the served model. Saved older choices remain visible without being reintroduced as supported options. Claude fast mode belongs to its base family; standard mode wins a same-release tie.",
+  "paths": [
+    {
+      "runtime": "claude",
+      "launchPath": "local Coven",
+      "runtimeVersion": "2.1.288",
+      "reportedPrimaryModel": "claude-opus-5-5",
+      "schemaOrContract": "claude-stream-json-v2",
+      "qualification": "real-provider-verified",
+      "client": "built HTTP send/replay/history and native Debug composer/output/termination/hydration; real Dia composer/tool output/reload on recorded earlier build",
+      "toolDetail": "supported",
+      "reasoningSummary": "unknown",
+      "evidence": [
+        "runtime-activity-web-providers-2026-10-04.json",
+        "runtime-activity-native-providers-2026-10-04.json",
+        "runtime-activity-current-canaries-2026-10-04.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Qualify packaged clients against this provider path.",
+      "notes": [
+        "Coven 0.4.7-1-gc8fd9e84, engine coven-code 0.8.0; one successful Read call.",
+        "Native Read-only first attempt passes with matching reported runtime/model, successful saved tool output and stable session/run/local message/tool IDs across relaunch. Two distinct conversations per canary: one HTTP and one native. No extra dispatch on relaunch; no protected-effect claim.",
+        "Provider/native evidence retains its recorded source/build. Current inventory-only proof does not qualify a completed provider turn."
+      ]
+    },
+    {
+      "runtime": "copilot",
+      "launchPath": "local direct",
+      "runtimeVersion": "1.0.88",
+      "reportedPrimaryModel": "claude-sonnet-5",
+      "schemaOrContract": "copilot-jsonl-v1",
+      "qualification": "real-provider-verified",
+      "client": "built HTTP send/replay/history and native Debug composer/output/termination/hydration",
+      "toolDetail": "supported",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "runtime-activity-web-providers-2026-10-04.json",
+        "runtime-activity-native-providers-2026-10-04.json",
+        "runtime-activity-current-canaries-2026-10-04.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Qualify packaged clients against this provider path.",
+      "notes": [
+        "Exact version equality retained after matching server PATH warm-up.",
+        "Failed bash marker-read attempt and successful view both persist; no one-invocation or protected-effect claim.",
+        "Native Read-only first attempt passes with matching reported runtime/model, successful saved tool output and stable session/run/local message/tool IDs across relaunch. Two distinct conversations per canary: one HTTP and one native. No extra dispatch on relaunch; no protected-effect claim.",
+        "Provider/native evidence retains its recorded source/build. Current inventory-only proof does not qualify a completed provider turn."
+      ]
+    },
+    {
+      "runtime": "copilot",
+      "launchPath": "Flow supervised/direct fallback",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "copilot-jsonl-v1",
+      "qualification": "fixture-conformant",
+      "client": "server execution and completed Flow history",
+      "toolDetail": "supported",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "runtime-model-reports-2026-10-03.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Qualify authorized real-provider Flow execution and opt-in native supervisor lifecycle.",
+      "notes": [
+        "Version/model provenance and later report changes use fixtures; no real Flow model/version established.",
+        "Two native supervisor tests skipped without explicit binary opt-in. Flow has no live chat SSE."
+      ]
+    },
+    {
+      "runtime": "codex",
+      "launchPath": "local direct",
+      "runtimeVersion": "0.160.0",
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "codex-jsonl-0.160-v1 unsigned proposal",
+      "qualification": "native-provider-capture and fixture-conformant; canonical admission unverified",
+      "client": "native CLI capture; Cave verifier/cache/decoder test",
+      "toolDetail": "conditional on accepted schema",
+      "reasoningSummary": "conditional on accepted summary schema",
+      "evidence": [
+        "../../../src/lib/fixtures/codex/README.md",
+        "runtime-activity-canaries-2026-10-03.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Reconcile canonical publisher endpoint, key binding and immutable checkpoint with the publisher owner, then qualify stock-trust execution.",
+      "notes": [
+        "Native capture is not Cave stock-trust acceptance. Ephemeral signatures cannot activate production trust.",
+        "No native primary-model report in the selected schema."
+      ]
+    },
+    {
+      "runtime": "codex",
+      "launchPath": "unverified local Coven relay",
+      "runtimeVersion": "0.160.0 shell inventory only",
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "unsupported-version fallback",
+      "qualification": "tool visibility unqualified",
+      "client": "real isolated daemon, imported send handler",
+      "toolDetail": "unknown; observed no tool events",
+      "reasoningSummary": "unknown",
+      "evidence": [
+        "runtime-activity-canaries-2026-10-03.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Resolve canonical direct admission; do not substitute shell identity for the relay.",
+      "notes": [
+        "Inventory version is not reported by the relay. Historical marker answer succeeded; tool assertion failed."
+      ]
+    },
+    {
+      "runtime": "grok",
+      "launchPath": "local direct native ACP",
+      "runtimeVersion": "1.0.46",
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "1.0.46 unsigned ACP proposal; ephemeral signed fixture",
+      "qualification": "native-provider-capture and fixture-conformant; canonical admission unverified",
+      "client": "native CLI capture and Cave route fixture",
+      "toolDetail": "conditional on accepted named-call schema",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "runtime-activity-grok-acp-2026-10-03.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Obtain canonical signed admission through the publisher owner, then qualify stock-trust Cave execution.",
+      "notes": [
+        "Available grok-4.7 is inventory, not reported primary identity; aggregate usage does not confirm it.",
+        "Stock unconfigured trust stays plain/no-compatible-schema."
+      ]
+    },
+    {
+      "runtime": "opencode",
+      "launchPath": "local direct",
+      "runtimeVersion": "1.17.16",
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "opencode-run-json-v1",
+      "qualification": "launch-probe-verified; Read-only refused; provider unverified",
+      "client": "passive bounded probe and built HTTP refusal",
+      "toolDetail": "conditional on structured schema; execution unqualified",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "runtime-activity-opencode-admission-2026-10-03.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Await the existing unanswered Full-access canary approval; preserve the Read-only refusal.",
+      "notes": [
+        "Authenticated Read-only HTTP 501; missing/invalid credentials 401. No automatic Full-access fallback."
+      ]
+    },
+    {
+      "runtime": "hermes",
+      "launchPath": "Responses API",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": "served-fixture-v3 (synthetic only)",
+      "schemaOrContract": "runtime-activity-http-v1 corpus schemaVersion 1",
+      "qualification": "fixture-conformant through real production HTTP, real Coven daemon, native live send/persistence/termination/restart/hydration and normal scene-supervisor recovery",
+      "client": "recorded web timeline; native TCP and Debug ChatView live-send/recovery/history/output",
+      "toolDetail": "supported",
+      "reasoningSummary": "supported",
+      "evidence": [
+        "runtime-model-hermes-aliases-2026-10-04.json",
+        "runtime-activity-native-providers-2026-10-04.json",
+        "runtime-activity-native-launch-handoff-2026-10-04.json",
+        "runtime-activity-native-live-send-2026-10-04.json",
+        "runtime-activity-native-supervisor-2026-10-04.json",
+        "runtime-activity-native-recovery-2026-10-04.json",
+        "runtime-activity-native-restart-2026-10-04.json",
+        "runtime-activity-timeline-2026-10-04.json",
+        "runtime-activity-capture-review-2026-10-04.json"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Obtain the canonical served-model producer report and a supported permission path before actual turn qualification; preserve the existing Read-only refusal.",
+      "notes": [
+        "Final-source live-send and accepted-queue baseline pass; every run retains one provider request and one marker read.",
+        "Live send starts from an empty thread. The controller verifies persisted partial phone state before termination and ordinary hydration recovers stable local message IDs, tool/summaries/model/output.",
+        "The simulator installation race is reproduced: Live Activity cleanup launched the app without fixture arguments. The harness preinstalls before each XCTest stage; production startup and recovery remain unchanged.",
+        "The test handles the notification prompt; running and recovered frames are unobscured at original resolution.",
+        "Coven daemon version is not Hermes runtime identity. No real Hermes provider version/model established.",
+        "Earlier failed and instrumented attempts are retained as historical evidence, including the prompt-obscured capture.",
+        "Accepted-queue TCP and UI baseline revalidated on current native provider-fixture source. Earlier live-send termination/hydration retains its own recorded fingerprint.",
+        "Provider/recovery packet predates the current menu-only build; not rerun. Its original evidence remains retained.",
+        "Installed Hermes 0.18.0 API inventory with explicit isolated route aliases passes through the recorded production menu endpoint. No provider/tool turn; health version is listener inventory only."
+      ]
+    },
+    {
+      "runtime": "hermes",
+      "launchPath": "quiet CLI",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "quiet text CLI",
+      "qualification": "unsupported detail path",
+      "client": "existing text compatibility path",
+      "toolDetail": "unsupported",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "../runtime-model-tool-identity.md"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Use a qualified structured API or establish an upstream structured CLI contract.",
+      "notes": []
+    },
+    {
+      "runtime": "openclaw",
+      "launchPath": "negotiated Gateway",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "negotiated Gateway/tool contract",
+      "qualification": "fixture-conformant; real producer unverified",
+      "client": "send/replay/history route fixtures",
+      "toolDetail": "conditional on accepted negotiation",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "runtime-activity-main-integration-2026-10-03.json",
+        "../runtime-model-tool-identity.md"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Preserve separate owner/release gate #4892; qualify actual accepted producer without blocking unrelated runtimes.",
+      "notes": [
+        "Accepted-turn negotiation supplies version; no live version/model established by these fixtures."
+      ]
+    },
+    {
+      "runtime": "openclaw",
+      "launchPath": "CLI bridge fallback",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "text bridge",
+      "qualification": "unsupported detail path",
+      "client": "existing fallback",
+      "toolDetail": "unsupported",
+      "reasoningSummary": "unsupported",
+      "evidence": [
+        "../runtime-model-tool-identity.md"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Keep fallback limitation explicit; preserve the separate #4892 compatibility owner.",
+      "notes": []
+    },
+    {
+      "runtime": "any",
+      "launchPath": "SSH or unverified Coven relay",
+      "runtimeVersion": null,
+      "reportedPrimaryModel": null,
+      "schemaOrContract": "unverified remote/relay producer",
+      "qualification": "unverified",
+      "client": "existing relay transport",
+      "toolDetail": "unknown",
+      "reasoningSummary": "unknown",
+      "evidence": [
+        "../runtime-model-tool-identity.md"
+      ],
+      "currentBuildRevalidated": false,
+      "nextStep": "Establish remote producer/version and protocol evidence for the exact host/path.",
+      "notes": [
+        "Never substitute local inventory, hooks or model names for remote capability."
+      ]
+    }
+  ],
+  "clientQualification": {
+    "web": "Real Claude composer, reported identity, successful tool/output and reload pass on kv8FenOX2f9mApbjXkoMk. Current build verifies automated rail lifecycle and actual Copilot model inventory; no final-build browser capture. Copilot UI attempt ended before send during user interference. See runtime-activity-web-providers-2026-10-04.json.",
+    "native": "Recorded actual Claude/Copilot native Debug composer/output/termination/hydration and accepted-queue baseline pass on v1THgZr1dvmIVuJQomLJ5. Native source is unchanged; provider/native packets retain their own source/build. No current-build rerun, remote/pairing, packaged release, physical-device or human acceptance.",
+    "packagedDesktop": "Distinct app identifier is insufficient: prepare_gui_reachability may uninstall the global ai.opencoven.cave LaunchAgent when the isolated app has daemon_mode false. The user has that LaunchAgent installed. Preserve it and the running installed app.",
+    "physicalDeviceAndHumanAccessibility": "Unverified; human VoiceOver and physical-device acceptance remain gaps."
+  },
+  "remainingCrossPathGates": [
+    "Canonical Codex/Grok admission and stock-trust live route proof.",
+    "OpenCode execution approval remains unanswered; no access escalation.",
+    "Remote HTTPS/managed pairing, remaining real-provider native paths and packaged-client rendering.",
+    "Broader golden scenarios: ring eviction, interrupted persistence, retry/approval/effect receipts and hostile/private content across clients.",
+    "Human keyboard/VoiceOver, reduced-motion/theme/RTL and physical-device acceptance."
+  ],
+  "disposition": "Incomplete. Worktrees preserved, uncommitted. No closure, Project Done, commit/push/PR/merge/release or publisher/trust mutation.",
+  "evidenceSHA256": {
+    "../../../src/lib/fixtures/codex/README.md": "f63f2d05ccd047229bfcb518c1a94311060811d2f7b71ddd5b53b5ef98f99eed",
+    "../runtime-model-tool-identity.md": "a98b0af502ead5e16fc9a7391d1f8e9cee768fd767910df04a70872406ece96d",
+    "runtime-activity-canaries-2026-10-03.json": "cce8b2ae7290bf8d1e6598bb60fe54d8008c0a75bc5247afe80dd262cea739ca",
+    "runtime-activity-current-canaries-2026-10-04.json": "f8384734c61f16b6bd3a6e9ebb216cb40133109585b7a8dd8a8bcb575327d9c0",
+    "runtime-activity-grok-acp-2026-10-03.json": "1b1c5fbea261641738ea9d455a50747c726f28654140be79899a51afb924ee92",
+    "runtime-activity-main-integration-2026-10-03.json": "bd5e4800a41799f8c121bf94c4309c31b4fac01f57e2af5264103b820372b381",
+    "runtime-activity-native-recovery-2026-10-04.json": "9a9b8138bc0224fc16faf000eddff9696f48e76b3f0e4580f4697a7e8e75d61f",
+    "runtime-activity-native-restart-2026-10-04.json": "0335acd0a225d45dfe083a56d471d24bd817870322d2153539137428ef3f389c",
+    "runtime-activity-native-supervisor-2026-10-04.json": "9ae721f274cfd7734aece4aa17c7dc54b11d8f16664c9c516f331563dbd8d565",
+    "runtime-activity-opencode-admission-2026-10-03.json": "2fe22c98f8ba3f1f0f593b6cae422be90d75f1a50ad0fe7fc83c272b2058130c",
+    "runtime-activity-timeline-2026-10-04.json": "19f5cc9c7dc3d163af01feba27b179752674ce05917ad0dd21651d9010af0517",
+    "runtime-model-reports-2026-10-03.json": "c702cf54c709883a1176ffb8b22c71619a18cc8c3e36be7841fc178d74e10e3e",
+    "runtime-activity-capture-review-2026-10-04.json": "1ddf6df8c52b2c271ea05bb02493b557480413e4fe3e7c7d09e39e2774b824f7",
+    "runtime-activity-native-live-send-2026-10-04.json": "7b2c4b0e34c2c2325882c6c452f39df0e46c246f4e8a46a8d882eb4d34de9ba6",
+    "runtime-activity-native-launch-handoff-2026-10-04.json": "cba5ee5e48935427634e2b33f9c6a15f3f47750079faea2d2af3ea17a532ff0d",
+    "runtime-activity-native-providers-2026-10-04.json": "82250f716296aaf64ec3b963223752b159b537794566181239ad3bcb3cce8919",
+    "runtime-model-hermes-aliases-2026-10-04.json": "39f533324aea3c0ae0ff2588c16e17e18e2482043757083b890f71e912670a6d",
+    "runtime-activity-web-providers-2026-10-04.json": "81deefb78cdaa100baa54acdc1d172f4f0f9d29beb6068a91f18d265e6e40859"
+  }
+}

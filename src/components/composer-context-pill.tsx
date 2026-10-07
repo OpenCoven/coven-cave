@@ -29,7 +29,6 @@ import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-project
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
-  runtimeOwnsModelDefault,
   type RuntimeModelOption,
 } from "@/lib/runtime-models";
 
@@ -112,10 +111,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const canAddProject = Boolean(config.createProject || config.createProjectOrThrow);
 
   const runtimeName = runtimeDisplayName(config.runtime);
-  const modelLabel =
-    !config.modelValue && runtimeOwnsModelDefault(config.runtime)
-      ? "Runtime default"
-      : runtimeModelLabel(config.modelValue, config.modelOptions);
+  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions) ?? "Runtime default (unresolved)";
 
   const root = config.projectRoot?.trim() ? config.projectRoot : undefined;
   const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(
@@ -327,18 +323,18 @@ export function ComposerContextChips(props: ComposerContextProps) {
       <button
         ref={modelRef}
         type="button"
-        className="cave-context-chip focus-ring"
+        className="cave-context-chip cave-context-chip--runtime focus-ring"
         disabled={props.disabled || context.config.modelDisabled}
         aria-haspopup="dialog"
         aria-expanded={menu === "model"}
-        aria-label={`Model: ${modelLabel} — change model`}
+        aria-label={`Runtime: ${context.runtimeName} · Model: ${modelLabel} — change model`}
         title={`Runtime: ${context.runtimeName}${context.modelLabel ? ` · Model: ${context.modelLabel}` : ""}`}
         onClick={() => setMenu((c) => (c === "model" ? null : "model"))}
       >
         <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
           <RuntimeLogo runtime={context.config.runtime} size={13} />
         </span>
-        <span className="cave-context-chip__text">{modelLabel}</span>
+        <span className="cave-context-chip__text">{context.runtimeName} · {modelLabel}</span>
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
 

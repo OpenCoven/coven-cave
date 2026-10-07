@@ -427,6 +427,17 @@ test("the message projection normalizes a root turn's parent to null", () => {
   }), { sort: "2026-08-01T00:00:00.000Z", id: "t1" });
 });
 
+test("Client v1 withholds tagged legacy assistant reasoning without widening chat:read", () => {
+  const text = '<thinking>PRIVATE_LEGACY</thinking>Answer. `<thinking>literal</thinking>`';
+  const source: ChatTurn = { id: "legacy", role: "assistant", text, createdAt: "2026-08-01T00:00:00.000Z" };
+  const projected = projectClientV1Message("conversation-1", source);
+  assert.equal(projected.text, 'Answer. `<thinking>literal</thinking>`');
+  assert.equal(projectClientV1Message("conversation-1", { ...source, role: "user" }).text, text,
+    "user-authored source examples are not provider reasoning");
+  assert.equal(source.text, text, "presentation does not rewrite the stored transcript");
+  assert.doesNotMatch(JSON.stringify(projected), /PRIVATE_LEGACY|reasoningBlocks/);
+});
+
 test("a projection refuses a record whose required field the store did not supply", () => {
   // None of the four stores validates its own JSON. `loadProjects` returns
   // whatever projects.json parsed to, `readConversationSummary` copies

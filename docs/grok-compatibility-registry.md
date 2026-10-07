@@ -13,3 +13,22 @@ The release maps these to `NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_*`; production
 ## Evidence
 
 Verified on 2026-07-26 from xAI's [Grok Build overview](https://docs.x.ai/build/overview), which documents headless `grok -p ... --output-format streaming-json`, and the upstream [headless-mode source documentation](https://github.com/xai-org/grok-build/blob/47348d13ec4508dcfe440e34c6d511bb02998fb2/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md) at Grok Build revision [`47348d13ec4508dcfe440e34c6d511bb02998fb2`](https://github.com/xai-org/grok-build/tree/47348d13ec4508dcfe440e34c6d511bb02998fb2). Those sources establish the baseline text/thought/end/error transport only; they do **not** document tool lifecycle envelope names. No live Grok capture is stored or required. Future signed schemas need separately recorded source evidence for every added event and field before release owners publish them.
+
+## Native ACP qualification (2026-10-03)
+
+Current help uses multiline output choices and short/long option aliases.
+The probe reads the output option's own complete stanza and records an ACP
+constraint. That constraint requires an exact-version schema for any structured
+decoding; it cannot select the unversioned legacy text baseline.
+
+The optional data-only `eventTypes.toolLifecycle` group handles ACP status-tagged
+calls and updates. Pending is requested, in_progress is running, and declared
+terminal states are results. A statusless location update is ignored. These
+schemas require exact versions and nonempty id/name/state/terminal aliases;
+unknown event names and states retain the quarantine path. Event-name groups
+allow at most 32 entries; field aliases stay capped at 8.
+
+The [1.0.46 qualification fixtures](../src/lib/fixtures/grok/README.md) include
+native capture provenance and an unsigned descriptor proposal. Local signer /
+verifier / cache checks use ephemeral test keys only. Canonical signed admission
+and stock-trust live Cave acceptance remain pending.
