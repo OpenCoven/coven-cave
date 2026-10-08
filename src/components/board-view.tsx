@@ -45,7 +45,7 @@ import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResources, invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
 type Props = {
@@ -310,8 +310,9 @@ export function BoardView({
   const interactingRef = useRef(interacting);
   interactingRef.current = interacting;
   const boardEventDirtyRef = useRef(false);
-  const boardEvents = useCaveEventPlane("board", () => {
-    invalidateSurfaceResources("board:cards");
+  const boardEvents = useCaveEventPlane("board", (event) => {
+    // Once per event: the workspace's Tasks badge shares this resource (#5869).
+    invalidateSurfaceResourcesFor(event, "board:cards");
     if (interactingRef.current) {
       boardEventDirtyRef.current = true;
       return;

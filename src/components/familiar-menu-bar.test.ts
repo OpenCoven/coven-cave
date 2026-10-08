@@ -307,7 +307,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /readSurfaceResource<[\s\S]*?>\(\s*"board:cards",?\s*\)[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
+  /readSurfaceResource<[\s\S]*?>\(\s*"board:cards"(?:, opts\?\.force === true)?,?\s*\)[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
   "open (not-done) board cards are collected with their familiarId",
 );
 
