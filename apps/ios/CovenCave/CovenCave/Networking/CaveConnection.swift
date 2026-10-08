@@ -284,8 +284,9 @@ struct CaveConnection: Codable, Equatable {
         // Fail closed on an unreadable managed item, not back to a legacy token.
         let managed = try DeviceAccessStore.loadActive()
         guard let token = managed?.credential ?? KeychainStore.string(forKey: tokenKey) else { return nil }
-        // A managed grant needs TLS: `https`, or `wss` for the event socket.
-        if isManagedDeviceCredential(token), !["https", "wss"].contains(url.scheme?.lowercased() ?? "") {
+        // A managed grant is REST-only over TLS: device access keeps WebSocket
+        // scopes, the event socket included, off managed grants (#5864).
+        if isManagedDeviceCredential(token), url.scheme?.lowercased() != "https" {
             throw CaveError.insecureCredentialTransport
         }
         guard isCredentialTransportSecure(url) else {
