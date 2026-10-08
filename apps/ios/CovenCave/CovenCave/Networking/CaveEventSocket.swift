@@ -35,6 +35,8 @@ actor CaveEventSocket {
         let credential: String?
         /// The origin the credential was issued for. Required with a credential.
         let credentialOrigin: String?
+        /// The `Origin` header a managed device grant must present, as REST does.
+        var origin: String? = nil
     }
 
     struct Health: Equatable, Sendable {
@@ -68,7 +70,7 @@ actor CaveEventSocket {
     private let transportFactory: @Sendable () -> any CaveEventSocketTransport
     private let sleep: Sleep
     private let random: @Sendable () -> Double
-    private let onHealthChange: (@Sendable (Health) async -> Void)?
+    private var onHealthChange: (@Sendable (Health) async -> Void)?
 
     private var mode: CaveEventRolloutMode = .off
     private var endpoint: Endpoint?
@@ -163,6 +165,13 @@ actor CaveEventSocket {
         await reconcile()
     }
 
+    /// Replace the health observer and tell it the current health at once.
+    func setHealthHandler(_ handler: (@Sendable (Health) async -> Void)?) async {
+        onHealthChange = handler
+        lastHealth = nil
+        await emitHealth()
+    }
+
     func stateSnapshot() -> State { state }
 
     func rolloutMode() -> CaveEventRolloutMode { mode }
@@ -233,6 +242,9 @@ actor CaveEventSocket {
         request.timeoutInterval = 8
         if let credential = endpoint.credential, !credential.isEmpty {
             request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        }
+        if let origin = endpoint.origin {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
         }
         let sleep = self.sleep
         openTask = Task { [weak self] in
