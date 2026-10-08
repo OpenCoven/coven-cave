@@ -7787,12 +7787,17 @@ function createEventBroker(options = {}) {
     },
     diagnostics() {
       const subscriptions = zeroCounts();
-      for (const state of clients.values()) for (const topic of state.topics) subscriptions[topic] += 1;
+      let readyConnections = 0;
+      for (const state of clients.values()) {
+        if (state.helloed) readyConnections += 1;
+        for (const topic of state.topics) subscriptions[topic] += 1;
+      }
       return {
         epoch,
         seq,
         versions: { ...versions },
         connections: clients.size,
+        readyConnections,
         subscriptions,
         published: { ...counters.published },
         delivered: { ...counters.delivered },
@@ -7818,6 +7823,28 @@ function createEventBroker(options = {}) {
         }
       }
     }
+  };
+}
+function summarizeEventPlaneDiagnostics(diagnostics) {
+  if (!diagnostics) {
+    return {
+      enabled: false,
+      activeConnections: 0,
+      readyConnections: 0,
+      subscriptions: zeroCounts(),
+      invalidations: zeroCounts(),
+      replayGaps: 0,
+      slowConsumerCloses: 0
+    };
+  }
+  return {
+    enabled: true,
+    activeConnections: diagnostics.connections,
+    readyConnections: diagnostics.readyConnections,
+    subscriptions: { ...diagnostics.subscriptions },
+    invalidations: { ...diagnostics.published },
+    replayGaps: diagnostics.replayGaps,
+    slowConsumerCloses: diagnostics.closures.slowConsumer
   };
 }
 
@@ -12238,6 +12265,7 @@ var eventPlanePublisher = {
   markResourceChanged: (topic, entityIds) => eventBroker?.publish(topic, entityIds)
 };
 globalThis.__covenCaveEventPlanePublisher = eventPlanePublisher;
+globalThis.__covenCaveEventPlaneDiagnostics = () => summarizeEventPlaneDiagnostics(eventBroker?.diagnostics() ?? null);
 var eventWss = new WebSocketServer({ noServer: true, maxPayload: MAX_EVENT_MESSAGE_BYTES * 4 });
 var remoteEventClients = /* @__PURE__ */ new Set();
 function refuseEventUpgrade(socket, status) {

@@ -13,6 +13,7 @@
  */
 
 import {
+  CAVE_EVENT_TOPICS,
   MAX_EVENT_ENTITY_IDS,
   normalizeEntityIds,
   type CaveEventTopic,
@@ -24,9 +25,26 @@ export type CaveEventPlanePublisher = {
   markResourceChanged(topic: CaveEventTopic, entityIds?: readonly string[]): void;
 };
 
+/**
+ * Aggregate counts a diagnostics surface may show (#5862). Mirrors
+ * `EventPlaneDiagnosticsSummary` in the broker, which this module can't import:
+ * it is bundled into Next routes, apart from the custom server.
+ */
+export type CaveEventPlaneDiagnostics = {
+  enabled: boolean;
+  activeConnections: number;
+  readyConnections: number;
+  subscriptions: Record<CaveEventTopic, number>;
+  invalidations: Record<CaveEventTopic, number>;
+  replayGaps: number;
+  slowConsumerCloses: number;
+};
+
 declare global {
   // eslint-disable-next-line no-var
   var __covenCaveEventPlanePublisher: CaveEventPlanePublisher | undefined;
+  // eslint-disable-next-line no-var
+  var __covenCaveEventPlaneDiagnostics: (() => CaveEventPlaneDiagnostics) | undefined;
 }
 
 type FailureKind = "unavailable" | "malformed" | "publish-failed";
@@ -73,6 +91,38 @@ export function markResourceChanged(
     reportOnce(report, "publish-failed", topic, error);
     return false;
   }
+}
+
+const count = (value: unknown): number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+
+function topicCounts(value: unknown): Record<CaveEventTopic, number> {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return Object.fromEntries(CAVE_EVENT_TOPICS.map((topic) => [topic, count(source[topic])])) as Record<CaveEventTopic, number>;
+}
+
+/**
+ * The plane's aggregate counters for a diagnostics response (#5862). Reads the
+ * bridge `server.ts` installs and copies only known count fields, so a future
+ * broker field can't leak through. Without the custom server (Next dev, tests)
+ * or with the plane off, it reports `enabled: false` and zeros.
+ */
+export function readEventPlaneDiagnostics(): CaveEventPlaneDiagnostics {
+  let raw: Partial<CaveEventPlaneDiagnostics> | undefined;
+  try {
+    raw = globalThis.__covenCaveEventPlaneDiagnostics?.();
+  } catch {
+    raw = undefined;
+  }
+  return {
+    enabled: raw?.enabled === true,
+    activeConnections: count(raw?.activeConnections),
+    readyConnections: count(raw?.readyConnections),
+    subscriptions: topicCounts(raw?.subscriptions),
+    invalidations: topicCounts(raw?.invalidations),
+    replayGaps: count(raw?.replayGaps),
+    slowConsumerCloses: count(raw?.slowConsumerCloses),
+  };
 }
 
 /** Test-only: forget which failures were already reported. */

@@ -65,6 +65,41 @@ final class ChatProjectFilterUITests: XCTestCase {
     }
 
     @MainActor
+    func testAccessibilityTextSizesUseOneProjectMenu() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-preview-design-closeout", "--ui-preview-chats-home",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+        ]
+        app.launch()
+
+        let menu = app.buttons["Project filter menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        XCTAssertFalse(chip(app, "All").exists, "screen-wide chips give way to one menu")
+        XCTAssertEqual(menu.value as? String, "All projects")
+
+        let lyra = row(app, "local:ui-preview-lyra-chat")
+        let desktop = row(app, "server:ui-preview-server-only")
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+
+        menu.tap()
+        let design = app.buttons["Design Library"].firstMatch
+        XCTAssertTrue(design.waitForExistence(timeout: 5), "the menu lists every project at once")
+        XCTAssertTrue(app.buttons["Unassigned"].firstMatch.exists)
+        design.tap()
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+        XCTAssertTrue(desktop.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(menu.value as? String, "Design Library", "the control names the current choice")
+
+        menu.tap()
+        let all = app.buttons["All projects"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5))
+        all.tap()
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+        XCTAssertEqual(menu.value as? String, "All projects")
+    }
+
+    @MainActor
     private func row(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)["Chat row \(id)"].firstMatch
     }
