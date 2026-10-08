@@ -38,6 +38,10 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
+    /// The suggestion row a hardware keyboard has highlighted (#5879).
+    @State private var suggestionIndex = 0
+    /// The draft Escape dismissed the suggestion menu for; editing reopens it.
+    @State private var suggestionsDismissedFor: String?
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
@@ -123,7 +127,6 @@ struct ChatView: View {
         guard case .commands(let prefix) = composerIntent else { return [] }
         return SlashCatalog.matches(prefix)
     }
-    private var showingSlashMenu: Bool { !slashMatches.isEmpty }
 
     // Second-level completion for `/model …` and `/familiar …`. Model rows come
     // from the options `loadSessionModelState` already fetched on open, so no
@@ -147,7 +150,6 @@ struct ChatView: View {
         default: return nil
         }
     }
-    private var showingArgumentMenu: Bool { !argumentRows.isEmpty }
 
     // @-mention autocomplete (group chats only): the trailing `@token` matches
     // the group's familiars by name.
@@ -159,6 +161,21 @@ struct ChatView: View {
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
+
+    /// The one suggestion menu for the draft (#5879): commands, a command's
+    /// argument picker, or mentions, unless Escape dismissed it for this draft.
+    private var suggestionList: ComposerSuggestionList? {
+        guard suggestionsDismissedFor != draft else { return nil }
+        return ComposerSuggestionList.make(
+            intent: composerIntent, commands: slashMatches,
+            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [])
+    }
+    private var suggestionIds: [String] { suggestionList?.items.map(\.id) ?? [] }
+
+    /// The composer placeholder says how to reach the menus.
+    private var composerPlaceholder: String {
+        thread.isGroup ? "Write a message… / for commands, @ to mention" : "Write a message… / for commands"
+    }
 
     // A voice call targets a single familiar, so the call button only appears
     // on one-to-one threads whose familiar is known. Group threads have no
@@ -1397,24 +1414,11 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
             }
-            if showingSlashMenu {
-                SlashCommandMenu(commands: slashMatches) { command in pickFromMenu(command) }
-                    .padding(.horizontal, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            if let argumentCommand, showingArgumentMenu {
-                ComposerArgumentMenu(command: argumentCommand, rows: argumentRows,
-                                     avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { row in
-                    pickArgument(row, for: argumentCommand)
-                }
-                .padding(.horizontal, 12)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            if showingMentionMenu {
-                MentionMenu(familiars: mentionMatches,
-                            avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { familiar in
-                    draft = MentionInput.insert(name: familiar.displayName, into: draft)
-                    composerFocused = true
+            if let suggestionList {
+                SuggestionMenu(list: suggestionList,
+                               selection: SuggestionSelection.clamp(suggestionIndex, count: suggestionList.items.count),
+                               avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { item in
+                    pickSuggestion(item)
                 }
                 .padding(.horizontal, 12)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1428,14 +1432,14 @@ struct ChatView: View {
             composerBar
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingArgumentMenu)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: suggestionList == nil)
+        // A different list starts from its first row.
+        .onChange(of: suggestionIds) { _, _ in suggestionIndex = 0 }
         // Skill and prompt rows load the first time their picker opens (#5876).
         .task(id: suggestionKindToLoad) {
             guard let kind = suggestionKindToLoad else { return }
             await loadSuggestions(kind)
         }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
@@ -1577,7 +1581,7 @@ struct ChatView: View {
             .buttonStyle(.glassPress)
             .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
-            TextField("Write a message…", text: $draft, axis: .vertical)
+            TextField(composerPlaceholder, text: $draft, axis: .vertical)
                 .accessibilityLabel("Message")
                 .font(isEmptyThread ? .body : .callout)
                 .lineLimit(1...6)
@@ -1588,15 +1592,33 @@ struct ChatView: View {
                 // software keyboard's return still inserts a newline as usual
                 // (a vertical-axis field doesn't fire onSubmit), so multi-line
                 // composing on-device is untouched.
+                // With the suggestion menu open, Return picks the highlighted
+                // row instead of sending (#5879).
                 .onKeyPress(keys: [.return]) { press in
                     guard !press.modifiers.contains(.shift) else { return .ignored }
+                    if pickHighlightedSuggestion() { return .handled }
                     guard canSend else { return .ignored }
                     send()
                     return .handled
                 }
-                // Hardware Escape closes the "+" menu (outside tap and row
-                // selection are the touch paths).
+                // Tab completes the highlighted suggestion; ↑/↓ move it.
+                .onKeyPress(keys: [.tab]) { _ in
+                    pickHighlightedSuggestion() ? .handled : .ignored
+                }
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    guard let count = suggestionList?.items.count, count > 0 else { return .ignored }
+                    suggestionIndex = SuggestionSelection.move(suggestionIndex, by: press.key == .upArrow ? -1 : 1,
+                                                               count: count)
+                    return .handled
+                }
+                // Hardware Escape closes the suggestion menu for this draft,
+                // then the "+" menu (outside tap and row selection are the
+                // touch paths).
                 .onKeyPress(keys: [.escape]) { _ in
+                    if suggestionList != nil {
+                        suggestionsDismissedFor = draft
+                        return .handled
+                    }
                     guard showActionMenu else { return .ignored }
                     showActionMenu = false
                     return .handled
@@ -1847,6 +1869,27 @@ struct ChatView: View {
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
     /// prefilled (keyboard stays up); zero-arg commands run immediately.
+    /// Pick any row of the suggestion menu (#5879).
+    private func pickSuggestion(_ item: ComposerSuggestionItem) {
+        suggestionIndex = 0
+        switch item.kind {
+        case .command(let command):
+            pickFromMenu(command)
+        case let .argument(row, command):
+            pickArgument(row, for: command)
+        case .mention(let familiar):
+            draft = MentionInput.insert(name: familiar.displayName, into: draft)
+            composerFocused = true
+        }
+    }
+
+    /// Pick the keyboard-highlighted row. False when no menu is open.
+    private func pickHighlightedSuggestion() -> Bool {
+        guard let items = suggestionList?.items, !items.isEmpty else { return false }
+        pickSuggestion(items[SuggestionSelection.clamp(suggestionIndex, count: items.count)])
+        return true
+    }
+
     private func pickFromMenu(_ command: SlashCommand) {
         if command.argPlaceholder != nil {
             draft = command.name + " "

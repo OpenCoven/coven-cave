@@ -73,11 +73,50 @@ final class ComposerArgumentMenuUITests: XCTestCase {
         composer.typeText("/prompt ")
         let standup = app.buttons["Standup update, Yesterday, today, blockers"].firstMatch
         XCTAssertTrue(standup.waitForExistence(timeout: 5), "the prompt picker lists templates")
-        XCTAssertTrue(app.staticTexts["· tap to insert · type to filter"].exists, "the footer says it inserts")
+        XCTAssertTrue(app.staticTexts["Tap to insert · type to filter"].exists, "the footer says it inserts")
         standup.tap()
         let inserted = NSPredicate(format: "value BEGINSWITH %@", "Yesterday:")
         expectation(for: inserted, evaluatedWith: composer)
         waitForExpectations(timeout: 5)
         XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].exists, "inserting never leaves the chat")
+    }
+
+    // MARK: Hardware keyboard (#5879)
+
+    @MainActor
+    func testArrowKeysMoveTheHighlightAndTabPicksIt() {
+        let app = launchEmptyChat()
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("/skill ")
+        let review = app.buttons["code-review, Review a change for bugs"].firstMatch
+        let notes = app.buttons["release-notes, Draft release notes"].firstMatch
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        XCTAssertTrue(review.isSelected, "the first row starts highlighted")
+
+        composer.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(notes.waitForSelected(timeout: 3), "↓ moves the highlight")
+        XCTAssertFalse(review.isSelected)
+
+        // release-notes declares an argument hint, so picking it fills the
+        // composer for editing rather than sending. Tab, not Return: the
+        // simulator's test driver doesn't deliver Return or Escape to the
+        // field's key handler, so those two share this path untested here.
+        composer.typeKey(.tab, modifierFlags: [])
+        let filled = NSPredicate(format: "value == %@", "/skill release-notes ")
+        expectation(for: filled, evaluatedWith: composer)
+        waitForExpectations(timeout: 5)
+    }
+}
+
+private extension XCUIElement {
+    func waitForSelected(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if isSelected { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return isSelected
     }
 }
