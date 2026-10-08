@@ -423,6 +423,8 @@ final class AppModel {
     /// endpoint from `connection.host`, which is why it needs no teardown wired
     /// into `disconnect()`.
     let familiarDashboards = FamiliarDashboardStore()
+    /// Skills and prompt templates for the composer's argument pickers (#5876).
+    let composerSuggestions = ComposerSuggestionStore()
     /// Recent model-state answers, so reopening a chat reuses one instead of
     /// refetching it (#5748). Host-keyed like `familiarDashboards`.
     let chatModelStates = ChatModelStateCache()
@@ -2696,6 +2698,19 @@ final class AppModel {
             projectContext = .unassigned
             projectContextSelectionSource = .user
         }
+
+        // Rows for the composer's /skill and /prompt pickers (#5876).
+        composerSuggestions.seed(
+            skills: [
+                SkillOption(id: "code-review", name: "code-review", description: "Review a change for bugs"),
+                SkillOption(id: "release-notes", name: "release-notes", description: "Draft release notes",
+                            argumentHint: "[version]"),
+            ],
+            prompts: [
+                PromptOption(id: "standup", name: "Standup update", description: "Yesterday, today, blockers",
+                             tags: ["daily"], body: "Yesterday:\nToday:\nBlockers:"),
+            ]
+        )
 
         connectionState = .connected
     }

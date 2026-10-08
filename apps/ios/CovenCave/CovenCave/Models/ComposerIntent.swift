@@ -62,7 +62,8 @@ enum ComposerIntent: Equatable {
 /// filtering rules are unit-testable without SwiftUI.
 enum ComposerArgumentRows {
     static func rows(for command: SlashCommand, partial: String,
-                     familiars: [Familiar], models: [ChatModelOption]) -> [ComposerArgumentRow] {
+                     familiars: [Familiar], models: [ChatModelOption],
+                     skills: [SkillOption] = [], prompts: [PromptOption] = []) -> [ComposerArgumentRow] {
         let q = partial.lowercased()
         func hit(_ fields: String?...) -> Bool {
             q.isEmpty || fields.contains { $0?.lowercased().contains(q) == true }
@@ -78,9 +79,16 @@ enum ComposerArgumentRows {
                 .filter { hit($0.label, $0.id) }
                 .map { ComposerArgumentRow(id: $0.id, title: $0.label,
                                            subtitle: $0.id == $0.label ? nil : $0.id, value: $0.id) }
-        case .skill, .prompt, .none:
-            // Skills and prompts get their pickers once the phone fetches
-            // `api/skills/local` / `api/prompts` (issue #5846 follow-up).
+        case .skill:
+            // `/skills` takes the whole remainder as its filter, like the desktop.
+            return SkillInvocation.filter(skills, partial: partial)
+                .map { ComposerArgumentRow(id: $0.id, title: $0.name,
+                                           subtitle: $0.description ?? ($0.id == $0.name ? nil : $0.id),
+                                           value: $0.id) }
+        case .prompt:
+            return PromptPick.filter(prompts, partial: partial)
+                .map { ComposerArgumentRow(id: $0.id, title: $0.name, subtitle: $0.description, value: $0.id) }
+        case .none:
             return []
         }
     }
