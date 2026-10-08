@@ -7,8 +7,8 @@ const src = readFileSync(new URL("./use-pausable-poll.ts", import.meta.url), "ut
 // ── Signature ────────────────────────────────────────────────────────────────
 assert.match(
   src,
-  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{\s*enabled\?: boolean;\s*pauseWhileInputActive\?: boolean;\s*serialize\?: boolean;[\s\S]*?intervalEnabled\?: boolean;[\s\S]*?refreshOnFocusEnabled\?: boolean;\s*\},\s*\): void/,
-  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive, serialize, intervalEnabled, refreshOnFocusEnabled }) returns void",
+  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{\s*enabled\?: boolean;\s*pauseWhileInputActive\?: boolean;\s*serialize\?: boolean;[\s\S]*?intervalEnabled\?: boolean;[\s\S]*?refreshOnFocusEnabled\?: boolean;[\s\S]*?onIntervalPaused\?: \(\) => void;\s*\},\s*\): void/,
+  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive, serialize, intervalEnabled, refreshOnFocusEnabled, onIntervalPaused }) returns void",
 );
 
 // ── Recurring poll pauses while the tab is hidden ────────────────────────────
