@@ -136,7 +136,16 @@ struct ChatView: View {
         guard case .argument(let command, let partial) = composerIntent else { return [] }
         return ComposerArgumentRows.rows(
             for: command, partial: partial,
-            familiars: app.familiars, models: thread.isGroup ? [] : modelPickerOptions)
+            familiars: app.familiars, models: thread.isGroup ? [] : modelPickerOptions,
+            skills: app.composerSuggestions.skills, prompts: app.composerSuggestions.prompts)
+    }
+    /// Which suggestion list the open picker needs from the desktop (#5876).
+    private var suggestionKindToLoad: ComposerSuggestionStore.Kind? {
+        switch argumentCommand?.argCompletion {
+        case .skill: return .skills
+        case .prompt: return .prompts
+        default: return nil
+        }
     }
     private var showingArgumentMenu: Bool { !argumentRows.isEmpty }
 
@@ -1421,6 +1430,11 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingArgumentMenu)
+        // Skill and prompt rows load the first time their picker opens (#5876).
+        .task(id: suggestionKindToLoad) {
+            guard let kind = suggestionKindToLoad else { return }
+            await loadSuggestions(kind)
+        }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
@@ -1846,9 +1860,72 @@ struct ChatView: View {
     /// Pick from the argument menu: the command runs at once with the row's
     /// value, the way the desktop picker does — no second tap on send.
     private func pickArgument(_ row: ComposerArgumentRow, for command: SlashCommand) {
-        draft = ""
         Haptics.tap()
-        dispatch(command, args: row.value)
+        switch command.argCompletion {
+        case .skill:
+            guard let skill = app.composerSuggestions.skills.first(where: { $0.id == row.value }) else { return }
+            // A skill that declares an argument hint is filled in for editing,
+            // as on the desktop; any other runs at once.
+            if let hint = skill.argumentHint, !hint.trimmingCharacters(in: .whitespaces).isEmpty {
+                draft = "/skill \(skill.id) "
+                return
+            }
+            draft = ""
+            sendPrompt(SkillInvocation.prompt(for: skill), command: command)
+        case .prompt:
+            // A prompt is inserted for editing and never sent.
+            guard let prompt = app.composerSuggestions.prompts.first(where: { $0.id == row.value }) else { return }
+            draft = prompt.body
+        default:
+            draft = ""
+            dispatch(command, args: row.value)
+        }
+    }
+
+    private func loadSuggestions(_ kind: ComposerSuggestionStore.Kind) async {
+        guard let client = app.client else { return }
+        await app.composerSuggestions.ensureLoaded(
+            kind, host: app.connection?.host,
+            skills: { try await client.localSkills() },
+            prompts: { try await client.promptTemplates() })
+    }
+
+    /// `/skill <name> [args]` typed and sent: resolve it the desktop's way.
+    private func invokeSkill(_ args: String, command: SlashCommand) async {
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            draft = "/skill "
+            return
+        }
+        await loadSuggestions(.skills)
+        guard let match = SkillInvocation.resolveInvocation(trimmed, in: app.composerSuggestions.skills) else {
+            let failed = app.composerSuggestions.loadState(.skills) == .failed
+            thread.appendSystem(failed
+                ? "Couldn't load skills from the desktop. Is it reachable?"
+                : "No skill matches “\(trimmed)”. Type /skill to pick one.", isError: true)
+            app.touch(thread)
+            return
+        }
+        sendPrompt(SkillInvocation.prompt(for: match.skill, args: match.args), command: command)
+    }
+
+    /// `/prompt <name>` typed and sent: insert the template, never send it.
+    private func insertPrompt(_ args: String) async {
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            draft = "/prompt "
+            return
+        }
+        await loadSuggestions(.prompts)
+        guard let prompt = PromptPick.resolve(trimmed, in: app.composerSuggestions.prompts) else {
+            let failed = app.composerSuggestions.loadState(.prompts) == .failed
+            thread.appendSystem(failed
+                ? "Couldn't load prompts from the desktop. Is it reachable?"
+                : "No prompt matches “\(trimmed)”. Type /prompt to pick one.", isError: true)
+            app.touch(thread)
+            return
+        }
+        draft = prompt.body
     }
 
     /// Pick from the full Commands sheet — always prefill so the user sees the
@@ -1893,6 +1970,14 @@ struct ChatView: View {
             Task { await switchModel(args) }
         case .startDiagram:
             startDiagram(args)
+        case .invokeSkill:
+            Task { await invokeSkill(args, command: command) }
+        case .insertPrompt:
+            Task { await insertPrompt(args) }
+        case .browseSkills:
+            draft = args.isEmpty ? "/skills " : "/skills \(args)"
+        case .browsePrompts:
+            draft = args.isEmpty ? "/prompts " : "/prompts \(args)"
         case .desktopOnly(let surface):
             app.showToast("\(surface) lives on your desktop", systemImage: "desktopcomputer",
                           style: .warning)

@@ -1248,6 +1248,33 @@ struct CaveClient {
         }
     }
 
+    // MARK: - Composer suggestions (#5876)
+
+    /// `GET /api/skills/local` — skills the familiar's harness can run, for the
+    /// composer's `/skill` picker.
+    func localSkills() async throws -> [SkillOption] {
+        let req = try request("api/skills/local")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(SkillsResponse.self, from: data).skills
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `GET /api/prompts` — prompt templates for the composer's `/prompt` picker.
+    func promptTemplates() async throws -> [PromptOption] {
+        let req = try request("api/prompts")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(PromptsResponse.self, from: data).prompts
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: - Theme
 
     /// `GET /api/theme` — the desktop's active theme + resolved colour tokens, so

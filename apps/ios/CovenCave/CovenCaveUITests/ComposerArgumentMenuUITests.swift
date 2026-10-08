@@ -46,4 +46,38 @@ final class ComposerArgumentMenuUITests: XCTestCase {
         composer.typeText("zz")
         XCTAssertTrue(nyxRow(app).waitForNonExistence(timeout: 3), "a non-matching argument empties the picker")
     }
+
+    // MARK: Skills and prompts (#5876)
+
+    @MainActor
+    func testSkillPickerListsAndFiltersSkills() {
+        let app = launchEmptyChat()
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("/skill ")
+        let review = app.buttons["code-review, Review a change for bugs"].firstMatch
+        XCTAssertTrue(review.waitForExistence(timeout: 5), "the skill picker lists skills")
+        XCTAssertTrue(app.buttons["release-notes, Draft release notes"].exists)
+        composer.typeText("rele")
+        XCTAssertTrue(review.waitForNonExistence(timeout: 3), "typing filters the skills")
+        XCTAssertTrue(app.buttons["release-notes, Draft release notes"].exists)
+    }
+
+    @MainActor
+    func testPickingAPromptInsertsItsTextWithoutSending() {
+        let app = launchEmptyChat()
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("/prompt ")
+        let standup = app.buttons["Standup update, Yesterday, today, blockers"].firstMatch
+        XCTAssertTrue(standup.waitForExistence(timeout: 5), "the prompt picker lists templates")
+        XCTAssertTrue(app.staticTexts["· tap to insert · type to filter"].exists, "the footer says it inserts")
+        standup.tap()
+        let inserted = NSPredicate(format: "value BEGINSWITH %@", "Yesterday:")
+        expectation(for: inserted, evaluatedWith: composer)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].exists, "inserting never leaves the chat")
+    }
 }

@@ -48,13 +48,21 @@ final class ComposerIntentTests: XCTestCase {
                        .argument(command("/familiar"), partial: "No"))
     }
 
+    func testSkillAndPromptCommandsOpenTheirPickers() {
+        // Native since #5876: the phone fetches their rows.
+        XCTAssertEqual(ComposerIntent.detect("/skill co", allowsMentions: false),
+                       .argument(command("/skill"), partial: "co"))
+        XCTAssertEqual(ComposerIntent.detect("/skills ", allowsMentions: false),
+                       .argument(command("/skills"), partial: ""))
+        XCTAssertEqual(ComposerIntent.detect("/prompt st", allowsMentions: false),
+                       .argument(command("/prompt"), partial: "st"))
+        XCTAssertEqual(ComposerIntent.detect("/snippets st", allowsMentions: false),
+                       .argument(command("/prompt"), partial: "st"))
+        XCTAssertEqual(ComposerIntent.detect("/prompts ", allowsMentions: false),
+                       .argument(command("/prompts"), partial: ""))
+    }
+
     func testDesktopOnlyCommandsNeverOpenAnArgumentPicker() {
-        // `/skill` and `/prompt` declare pickers for the follow-up, but stay
-        // desktop-only until the phone can fetch their rows.
-        XCTAssertEqual(command("/skill").argCompletion, .skill)
-        XCTAssertEqual(command("/prompt").argCompletion, .prompt)
-        XCTAssertEqual(ComposerIntent.detect("/skill co", allowsMentions: false), .none)
-        XCTAssertEqual(ComposerIntent.detect("/prompt st", allowsMentions: false), .none)
         XCTAssertEqual(ComposerIntent.detect("/board x", allowsMentions: false), .none)
     }
 
@@ -128,7 +136,7 @@ final class ComposerIntentTests: XCTestCase {
 
     func testPickersWithoutRowsYieldNothing() {
         XCTAssertTrue(ComposerArgumentRows.rows(for: command("/skill"), partial: "",
-                                                familiars: roster, models: models).isEmpty)
+                                                familiars: roster, models: models, skills: []).isEmpty)
         XCTAssertTrue(ComposerArgumentRows.rows(for: command("/run"), partial: "",
                                                 familiars: roster, models: models).isEmpty)
         XCTAssertTrue(ComposerArgumentRows.rows(for: command("/model"), partial: "",

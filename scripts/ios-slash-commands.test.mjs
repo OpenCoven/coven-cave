@@ -134,7 +134,19 @@ assert.match(chatView, /ComposerIntent\.detect\(draft, allowsMentions: thread\.i
   "the composer should derive its suggestion surface from ComposerIntent");
 assert.match(chatView, /if let argumentCommand, showingArgumentMenu \{[\s\S]{0,400}ComposerArgumentMenu\(/,
   "the composer should render the argument menu");
-assert.match(chatView, /private func pickArgument\([\s\S]{0,200}dispatch\(command, args: row\.value\)/,
-  "picking an argument row runs the command with that value");
+assert.match(chatView, /private func pickArgument\([\s\S]{0,1600}default:\s*draft = ""\s*dispatch\(command, args: row\.value\)/,
+  "picking a familiar or model row runs the command with that value");
+
+// Native skill and prompt pickers (#5876), mirroring src/lib/slash-skill.ts
+// and src/lib/slash-prompt.ts.
+const suggestions = await read(`${iosRoot}/Models/ComposerSuggestions.swift`);
+for (const [name, action] of [["/skill", "invokeSkill"], ["/skills", "browseSkills"], ["/prompt", "insertPrompt"], ["/prompts", "browsePrompts"]]) {
+  assert.match(iosSlash, new RegExp(`name: "${name}"[\\s\\S]{0,320}availability: \\.native, action: \\.${action}`),
+    `${name} is native on iOS`);
+}
+assert.match(suggestions, /"Use the \\"\\\(skill\.name\)\\" skill\."/, "a skill pick sends the desktop's directive");
+assert.match(chatView, /case \.prompt:\s*\/\/ A prompt is inserted for editing and never sent\.[\s\S]{0,200}draft = prompt\.body/,
+  "picking a prompt inserts its body and never sends");
+assert.match(chatView, /\.task\(id: suggestionKindToLoad\)/, "skill and prompt rows load when their picker opens");
 
 console.log("ios-slash-commands.test.mjs: ok");
