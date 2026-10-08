@@ -132,8 +132,11 @@ assert.match(iosSlash, /name: "\/model"[\s\S]{0,200}argCompletion: \.model/, "/m
 assert.match(iosSlash, /name: "\/familiar"[\s\S]{0,200}argCompletion: \.familiar/, "/familiar declares the familiar argument picker");
 assert.match(chatView, /ComposerIntent\.detect\(draft, allowsMentions: thread\.isGroup\)/,
   "the composer should derive its suggestion surface from ComposerIntent");
-assert.match(chatView, /if let argumentCommand, showingArgumentMenu \{[\s\S]{0,400}ComposerArgumentMenu\(/,
-  "the composer should render the argument menu");
+assert.match(chatView, /if let suggestionList \{[\s\S]{0,200}SuggestionMenu\(list: suggestionList/,
+  "the composer renders one suggestion menu for commands, arguments and mentions (#5879)");
+assert.match(chatView, /\.onKeyPress\(keys: \[\.upArrow, \.downArrow\]\)/, "arrow keys move the highlighted suggestion");
+assert.match(chatView, /if pickHighlightedSuggestion\(\) \{ return \.handled \}[\s\S]{0,80}send\(\)/,
+  "Return picks the highlighted suggestion before it sends");
 assert.match(chatView, /private func pickArgument\([\s\S]{0,1600}default:\s*draft = ""\s*dispatch\(command, args: row\.value\)/,
   "picking a familiar or model row runs the command with that value");
 
