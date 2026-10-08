@@ -58,6 +58,8 @@ export type EventPlaneDiagnostics = {
   seq: number;
   versions: TopicCounts;
   connections: number;
+  /** Connections that completed hello and received their ready barrier. */
+  readyConnections: number;
   subscriptions: TopicCounts;
   published: TopicCounts;
   delivered: TopicCounts;
@@ -387,12 +389,17 @@ export function createEventBroker(options: EventBrokerOptions = {}): EventBroker
 
     diagnostics() {
       const subscriptions = zeroCounts();
-      for (const state of clients.values()) for (const topic of state.topics) subscriptions[topic] += 1;
+      let readyConnections = 0;
+      for (const state of clients.values()) {
+        if (state.helloed) readyConnections += 1;
+        for (const topic of state.topics) subscriptions[topic] += 1;
+      }
       return {
         epoch,
         seq,
         versions: { ...versions },
         connections: clients.size,
+        readyConnections,
         subscriptions,
         published: { ...counters.published },
         delivered: { ...counters.delivered },
@@ -420,5 +427,44 @@ export function createEventBroker(options: EventBrokerOptions = {}): EventBroker
         }
       }
     },
+  };
+}
+
+/**
+ * What diagnostics surfaces may show about the plane (#5862): aggregate counts
+ * only. The epoch, cursors, entity ids and credentials stay inside the broker.
+ */
+export type EventPlaneDiagnosticsSummary = {
+  enabled: boolean;
+  activeConnections: number;
+  readyConnections: number;
+  /** Clients subscribed per topic. */
+  subscriptions: TopicCounts;
+  /** Invalidations published per topic since the server started. */
+  invalidations: TopicCounts;
+  replayGaps: number;
+  slowConsumerCloses: number;
+};
+
+export function summarizeEventPlaneDiagnostics(diagnostics: EventPlaneDiagnostics | null): EventPlaneDiagnosticsSummary {
+  if (!diagnostics) {
+    return {
+      enabled: false,
+      activeConnections: 0,
+      readyConnections: 0,
+      subscriptions: zeroCounts(),
+      invalidations: zeroCounts(),
+      replayGaps: 0,
+      slowConsumerCloses: 0,
+    };
+  }
+  return {
+    enabled: true,
+    activeConnections: diagnostics.connections,
+    readyConnections: diagnostics.readyConnections,
+    subscriptions: { ...diagnostics.subscriptions },
+    invalidations: { ...diagnostics.published },
+    replayGaps: diagnostics.replayGaps,
+    slowConsumerCloses: diagnostics.closures.slowConsumer,
   };
 }

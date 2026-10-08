@@ -14,6 +14,11 @@ import {
   type RunBufferStatus,
 } from "@/lib/chat-stream-health";
 import { formatBytes } from "@/lib/session-changes-format";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import {
+  getCaveEventPlaneClient,
+  type CaveEventPlaneClientDiagnostics,
+} from "@/lib/cave-event-plane-client";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   appendEvents,
@@ -184,6 +189,34 @@ function KVRow({ k, title, children }: { k: string; title?: string; children: Re
         {children}
       </span>
     </div>
+  );
+}
+
+/**
+ * This browser's event-plane client (#5862): connection state and the
+ * reconnect, coalescing, fallback and avoided-poll counters. Counts only; it
+ * reads the client's snapshot and never sees tokens, entity ids or payloads.
+ * Mounted only while its section is open, so a closed pane doesn't poll.
+ */
+function EventPlaneDiagnosticsRows() {
+  const [snapshot, setSnapshot] = useState<CaveEventPlaneClientDiagnostics | null>(null);
+  const read = useCallback(() => setSnapshot(getCaveEventPlaneClient().diagnostics()), []);
+  useEffect(read, [read]);
+  usePausablePoll(read, POLL_MS);
+  if (!snapshot) return null;
+  const delivered = Object.values(snapshot.invalidationsDelivered).reduce((sum, value) => sum + value, 0);
+  const observed = Object.values(snapshot.invalidationsObserved).reduce((sum, value) => sum + value, 0);
+  return (
+    <>
+      <KVRow k="mode">{snapshot.rolloutMode}</KVRow>
+      <KVRow k="state">{snapshot.state}</KVRow>
+      <KVRow k="reconnects">{snapshot.reconnects}</KVRow>
+      <KVRow k="invalidations seen">{observed}</KVRow>
+      <KVRow k="invalidations delivered">{delivered}</KVRow>
+      <KVRow k="coalesced">{snapshot.coalesced}</KVRow>
+      <KVRow k="fallback activations">{snapshot.fallbackActivations}</KVRow>
+      <KVRow k="polls avoided">{snapshot.pollsAvoided}</KVRow>
+    </>
   );
 }
 
@@ -724,6 +757,10 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
               Loading server buffer status…
             </div>
           ) : null}
+        </Section>
+
+        <Section title="Event plane">
+          <EventPlaneDiagnosticsRows />
         </Section>
 
         <Section title="Turns" count={turns.length}>

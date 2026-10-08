@@ -58,6 +58,10 @@ export function usePausablePoll(
     intervalEnabled?: boolean;
     /** The on-return refresh only (#5858). Default on. */
     refreshOnFocusEnabled?: boolean;
+    /** Called on each tick the paused interval would have polled (#5862):
+     *  enabled, `intervalEnabled: false`, visible, and not paused for input.
+     *  It only counts; it never runs the callback. */
+    onIntervalPaused?: () => void;
   },
 ): void {
   const enabled = opts?.enabled ?? true;
@@ -70,6 +74,9 @@ export function usePausablePoll(
   const cbRef = useRef(callback);
   cbRef.current = callback;
   const inFlightRef = useRef(false);
+  const pausedTickRef = useRef(opts?.onIntervalPaused);
+  pausedTickRef.current = opts?.onIntervalPaused;
+  const countsPausedTicks = enabled && !intervalEnabled && Boolean(opts?.onIntervalPaused);
 
   const run = useCallback(() => {
     if (!enabled) return;
@@ -95,6 +102,16 @@ export function usePausablePoll(
     const id = setInterval(run, intervalMs);
     return () => clearInterval(id);
   }, [intervalEnabled, intervalMs, run]);
+
+  useEffect(() => {
+    if (!countsPausedTicks) return;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (pollPausedForActiveInput(pauseWhileInputActive)) return;
+      pausedTickRef.current?.();
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [countsPausedTicks, intervalMs, pauseWhileInputActive]);
 
   // Immediate refresh on regaining the foreground (browser focus/visibility +
   // Tauri native focus), so returning to the tab doesn't wait out the interval.

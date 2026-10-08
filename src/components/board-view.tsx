@@ -7,6 +7,7 @@ import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
+import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
@@ -332,7 +333,13 @@ export function BoardView({
   usePausablePoll(
     () => { void load({ quiet: true, force: true }); },
     15_000,
-    { enabled: !interacting, pauseWhileInputActive: true, intervalEnabled: !boardEventPrimary },
+    {
+      enabled: !interacting,
+      pauseWhileInputActive: true,
+      intervalEnabled: !boardEventPrimary,
+      // Each skipped tick is a poll the plane saved, for the debug pane (#5862).
+      onIntervalPaused: noteCaveEventPollAvoided,
+    },
   );
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent

@@ -44,8 +44,8 @@ assert.match(
 assert.match(board, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\), \{ enabled: !boardEventPrimary \}\);/);
 assert.match(
   board,
-  /usePausablePoll\(\s*\(\) => \{ void load\(\{ quiet: true, force: true \}\); \},\s*15_000,\s*\{ enabled: !interacting, pauseWhileInputActive: true, intervalEnabled: !boardEventPrimary \},\s*\);/,
-  "the interval pauses while covered, and the interaction gate is kept",
+  /usePausablePoll\(\s*\(\) => \{ void load\(\{ quiet: true, force: true \}\); \},\s*15_000,\s*\{\s*enabled: !interacting,\s*pauseWhileInputActive: true,\s*intervalEnabled: !boardEventPrimary,[\s\S]*?onIntervalPaused: noteCaveEventPollAvoided,\s*\},\s*\);/,
+  "the interval pauses while covered, the interaction gate is kept, and skipped ticks are counted (#5862)",
 );
 assert.doesNotMatch(workspace, /intervalEnabled/, "sessions and daemon polling stay authoritative (Val, 2026-10-08)");
 console.log("event-plane-consumers.test.ts: ok");
