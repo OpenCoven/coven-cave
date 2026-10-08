@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { markResourceChanged, resetEventPublisherReportsForTests } from "./cave-event-plane-publisher.ts";
+import { markResourceChanged, readEventPlaneDiagnostics, resetEventPublisherReportsForTests } from "./cave-event-plane-publisher.ts";
 
 afterEach(() => {
   delete globalThis.__covenCaveEventPlanePublisher;
+  delete globalThis.__covenCaveEventPlaneDiagnostics;
   resetEventPublisherReportsForTests();
 });
 
@@ -66,4 +67,37 @@ test("an invalid entity id is a reported failure, not a thrown one", () => {
   globalThis.__covenCaveEventPlanePublisher = { enabled: true, markResourceChanged: () => {} };
   assert.equal(markResourceChanged("board", ["x".repeat(300)], (...args) => errors.push(args)), false);
   assert.match(String(errors[0]?.[0]), /publish-failed/);
+});
+
+test("diagnostics read only known aggregate counts from the bridge (#5862)", () => {
+  globalThis.__covenCaveEventPlaneDiagnostics = () => ({
+    enabled: true,
+    activeConnections: 1,
+    readyConnections: 1,
+    subscriptions: { board: 1, extra: 9 },
+    invalidations: { board: 2 },
+    replayGaps: 0,
+    slowConsumerCloses: -3,
+    covenCaveToken: "secret",
+    entityIds: ["card-1"],
+  }) as never;
+  const diagnostics = readEventPlaneDiagnostics();
+  assert.deepEqual(diagnostics, {
+    enabled: true,
+    activeConnections: 1,
+    readyConnections: 1,
+    subscriptions: { sessions: 0, board: 1, runs: 0, familiars: 0, daemon: 0 },
+    invalidations: { sessions: 0, board: 2, runs: 0, familiars: 0, daemon: 0 },
+    replayGaps: 0,
+    slowConsumerCloses: 0,
+  });
+  assert.equal(JSON.stringify(diagnostics).includes("covenCaveToken"), false);
+  assert.equal(JSON.stringify(diagnostics).includes("entityIds"), false);
+});
+
+test("diagnostics without the bridge, or with a throwing one, report the plane off", () => {
+  assert.equal(readEventPlaneDiagnostics().enabled, false);
+  globalThis.__covenCaveEventPlaneDiagnostics = () => { throw new Error("boom"); };
+  assert.equal(readEventPlaneDiagnostics().enabled, false);
+  assert.equal(readEventPlaneDiagnostics().activeConnections, 0);
 });

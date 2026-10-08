@@ -15,6 +15,7 @@ import {
   writePerformanceReport,
 } from "./cave-performance-report.mjs";
 import { enforcedFixtureProfiles } from "../src/lib/performance-budgets.ts";
+import { measureEventPlaneWorkload } from "./event-plane-workload.mjs";
 
 function conversation({
   warmP50 = 4,
@@ -459,4 +460,38 @@ test("the workflow benchmarks the fixture the enforced budgets were seeded again
   // the benchmark reads blank as "not overridden" rather than as zero.
   assert.equal(workflow.jobs.report.env.CAVE_BENCH_ITERATIONS, "${{ inputs.iterations }}");
   assert.equal(workflow.on.workflow_dispatch.inputs.iterations.default, "");
+});
+
+test("the report carries the event plane's aggregate counters (#5862)", () => {
+  const eventPlane = measureEventPlaneWorkload();
+  assert.deepEqual(eventPlane.invalidationsByTopic, { sessions: 50, board: 50, runs: 0, familiars: 50, daemon: 50 });
+  assert.equal(eventPlane.replayGaps, 1, "the returning cursor fell outside the ring");
+  assert.equal(eventPlane.slowConsumerCloses, 1, "the slow consumer was closed");
+  assert.equal(eventPlane.activeConnections, 64);
+  assert.deepEqual(eventPlane.subscriptions, { sessions: 31, board: 48, runs: 0, familiars: 0, daemon: 0 });
+
+  const report = buildPerformanceReport({
+    conversation: conversation(),
+    reliability: reliability(),
+    metadata: metadata(),
+    eventPlane,
+  });
+  assert.equal(report.eventPlane.replayGaps, 1);
+  assert.equal(report.eventPlane.invalidationsByTopic.board, 50);
+  assert.equal(report.summary.metricCount, report.metrics.length, "the counters are not budgeted metrics");
+  const text = JSON.stringify(report.eventPlane);
+  assert.equal(text.includes("epoch"), false, "no epoch or cursor");
+  assert.equal(text.includes("entityIds"), false, "no entity ids");
+
+  const markdown = renderPerformanceReportMarkdown(report);
+  assert.match(markdown, /## Event plane counters/);
+  assert.match(markdown, /- Replay gaps: 1/);
+  assert.match(markdown, /- Slow-consumer closures: 1/);
+  assert.match(markdown, /\| board \| 50 \| 48 \|/);
+});
+
+test("a report without the event-plane workload omits the section", () => {
+  const report = buildPerformanceReport({ conversation: conversation(), reliability: reliability(), metadata: metadata() });
+  assert.equal(report.eventPlane, null);
+  assert.doesNotMatch(renderPerformanceReportMarkdown(report), /Event plane counters/);
 });

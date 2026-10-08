@@ -61,8 +61,9 @@ test("existing unbounded callbacks keep polling unless serialization is explicit
   expect(refresh).toHaveBeenCalledTimes(4);
 });
 
-function GatedProbe(props: { refresh: () => void; intervalEnabled?: boolean; refreshOnFocusEnabled?: boolean; enabled?: boolean }) {
+function GatedProbe(props: { refresh: () => void; intervalEnabled?: boolean; refreshOnFocusEnabled?: boolean; enabled?: boolean; onIntervalPaused?: () => void }) {
   usePausablePoll(props.refresh, 1000, {
+    onIntervalPaused: props.onIntervalPaused,
     enabled: props.enabled,
     intervalEnabled: props.intervalEnabled,
     refreshOnFocusEnabled: props.refreshOnFocusEnabled,
@@ -101,4 +102,24 @@ test("enabled: false still overrides both gates, and callers without them are un
   expect(foreground.enabled).toBe(true);
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(refresh).toHaveBeenCalledTimes(1);
+});
+
+test("a paused interval reports each tick it skipped, and never while hidden or disabled (#5862)", async () => {
+  const refresh = vi.fn();
+  const avoided = vi.fn();
+  await act(async () => { renderer = create(<GatedProbe refresh={refresh} intervalEnabled={false} onIntervalPaused={avoided} />); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(avoided).toHaveBeenCalledTimes(3);
+  expect(refresh).toHaveBeenCalledTimes(0);
+  vi.stubGlobal("document", { hidden: true });
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(avoided).toHaveBeenCalledTimes(3);
+  vi.stubGlobal("document", { hidden: false });
+  await act(async () => renderer.update(<GatedProbe refresh={refresh} intervalEnabled onIntervalPaused={avoided} />));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(avoided).toHaveBeenCalledTimes(3);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.update(<GatedProbe refresh={refresh} enabled={false} intervalEnabled={false} onIntervalPaused={avoided} />));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(avoided).toHaveBeenCalledTimes(3);
 });
