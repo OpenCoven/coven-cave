@@ -156,7 +156,18 @@ assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/,
 assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
 assert.match(source, /const \[deepLinkTab, setDeepLinkTab\] = useState<AutomationTab \| null>/, "Calendar and Crons deep links override the saved tab for one visit");
 assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
-assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
+assert.match(source, /Needs you · \{needs\.asks\.length\}/, "the only raised work queue is the Needs-you tier, counting its asks (#5873)");
+assert.match(source, /const needs = useMemo\(\(\) => splitFinishedNeeds\(inboxFeed\.needsYou\), \[inboxFeed\.needsYou\]\);/, "finished notifications are split out of the asks");
+assert.match(
+  source,
+  /\{needs\.asks\.map\(\(item\) => \([\s\S]*?<RitualNeedsRow[\s\S]*?<RitualFinishedGroup\s+items=\{needs\.finished\}[\s\S]*?onDismissAll=\{\(list\) => void dismissFinished\(list\)\}/,
+  "the Finished group follows the asks inside Needs you",
+);
+assert.match(
+  source,
+  /const dismissFinished = async \(list: InboxItem\[\]\) => \{[\s\S]*?filter\(\(id\) => !id\.startsWith\("eph:"\)\)[\s\S]*?fetch\("\/api\/inbox\/bulk", \{[\s\S]*?action: "dismiss", ids[\s\S]*?await reloadAfterMutation\(\);/,
+  "Dismiss all is one bulk request over the server-backed finished items",
+);
 assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
 assert.match(source, /aria-label="Show agenda thread"/, "the overview exposes the agenda thread");
 assert.match(source, /overviewSwipeStartRef/, "Log and Agenda support a manual swipe gesture");
@@ -267,10 +278,11 @@ assert.match(automationsView, /<InboxFeedList[\s\S]*?onSelect=\{openInboxItem\}/
 assert.match(automationsView, /<RitualNeedsRow[\s\S]*?onSelect=\{openInboxItem\}/, "Needs you uses the daily-summary navigation boundary");
 assert.match(automationsView, /<RitualItemRow[\s\S]*?onSelect=\{openInboxItem\}/, "the ritual log uses the daily-summary navigation boundary");
 assert.match(automationsView, /<RitualAgendaThread[\s\S]*?onSelect=\{openInboxItem\}/, "the agenda thread uses the daily-summary navigation boundary");
+assert.match(automationsView, /<RitualFinishedGroup[\s\S]*?onSelect=\{openInboxItem\}/, "the Finished group uses the daily-summary navigation boundary (#5873)");
 assert.equal(
   [...automationsView.matchAll(/onSelect=\{openInboxItem\}/g)].length,
-  4,
-  "all four Rituals inbox presentations use the shared navigation boundary",
+  5,
+  "all five Rituals inbox presentations use the shared navigation boundary",
 );
 
 // ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
