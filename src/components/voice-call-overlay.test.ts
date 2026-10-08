@@ -414,3 +414,25 @@ assert.match(
 );
 
 console.log("voice-call-overlay.test.ts: ok");
+
+// #5856: a loop provider's brain turn shows as "Thinking…" until speech starts.
+assert.match(
+  component,
+  /onThinking:\s*\(busy\)\s*=>\s*\{\s*if \(attempt\.active\) setThinking\(busy\);\s*\}/,
+  "the overlay records the provider's thinking state for the current attempt only",
+);
+assert.match(
+  component,
+  /const statusLabel = liveUnmuted && transcript\.speaking\s*\?\s*"Replying…"\s*:\s*liveUnmuted && thinking \? "Thinking…" : labelFor\(state\);/,
+  "speech outranks thinking, and both yield to the muted and non-live labels",
+);
+assert.match(
+  component,
+  /role="status" aria-live="polite">\{statusLabel\}</,
+  "the status line announces the derived label through the polite live region",
+);
+assert.match(
+  component,
+  /attemptRef\.current = \{ active: true \};\s*setThinking\(false\);/,
+  "a retried call starts without a stale thinking state",
+);
