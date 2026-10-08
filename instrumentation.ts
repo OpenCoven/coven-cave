@@ -74,6 +74,7 @@ export async function register() {
     if (isEventPlaneEnabled(process.env)) {
       (await import("@/lib/server/daemon-event-watcher")).startDaemonEventWatcher();
       (await import("@/lib/server/familiar-roster-watch")).startFamiliarRosterWatch();
+      (await import("@/lib/server/board-file-watch")).startBoardFileWatch();
     }
   } catch (error) {
     console.warn("[instrumentation] event plane watchers could not start:", error);

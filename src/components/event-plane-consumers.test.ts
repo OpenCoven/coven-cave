@@ -33,9 +33,19 @@ assert.match(
   /useEffect\(\(\) => \{\s*if \(interacting \|\| !boardEventDirtyRef\.current\) return;\s*boardEventDirtyRef\.current = false;\s*void load\(\{ quiet: true, force: true \}\);\s*\}, \[interacting, load\]\);/,
   "a deferred invalidation reloads exactly once when the interaction ends",
 );
+// Phase 4b (#5858): the board poll and focus refresh pause only while the
+// board topic is ready in primary mode. Mount load and !interacting stay.
+assert.match(board, /const boardEvents = useCaveEventPlane\("board",/, "the gate reads the subscription's own health");
 assert.match(
   board,
-  /usePausablePoll\(\s*\(\) => \{ void load\(\{ quiet: true, force: true \}\); \},\s*15_000,\s*\{ enabled: !interacting, pauseWhileInputActive: true \},\s*\);/,
-  "the board poll is unchanged in this phase",
+  /const boardEventPrimary = boardEvents\.rolloutMode === "primary" && boardEvents\.ready;/,
+  "covered only when ready in primary mode",
 );
+assert.match(board, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\), \{ enabled: !boardEventPrimary \}\);/);
+assert.match(
+  board,
+  /usePausablePoll\(\s*\(\) => \{ void load\(\{ quiet: true, force: true \}\); \},\s*15_000,\s*\{ enabled: !interacting, pauseWhileInputActive: true, intervalEnabled: !boardEventPrimary \},\s*\);/,
+  "the interval pauses while covered, and the interaction gate is kept",
+);
+assert.doesNotMatch(workspace, /intervalEnabled/, "sessions and daemon polling stay authoritative (Val, 2026-10-08)");
 console.log("event-plane-consumers.test.ts: ok");
