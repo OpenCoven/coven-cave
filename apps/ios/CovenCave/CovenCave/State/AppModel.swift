@@ -392,7 +392,29 @@ final class AppModel {
         case needsAuth(String)
     }
 
-    var connection: CaveConnection?
+    var connection: CaveConnection? {
+        didSet {
+            // Another host or pairing: the socket's endpoint, credential and
+            // cursor belong to the old one (#5867). Turn it off now; the next
+            // connected probe reads the new capability. A refresh that starts
+            // after this change supersedes it.
+            guard connection != oldValue else { return }
+            eventPlaneGeneration += 1
+            let generation = eventPlaneGeneration
+            Task { [weak self] in await self?.disableEventPlane(ifGeneration: generation) }
+        }
+    }
+    /// The event-plane socket (#5867). Off until a connected probe reads the
+    /// capability; it follows the scene and never pauses a poll.
+    @ObservationIgnored let eventSocket: CaveEventSocket
+    @ObservationIgnored private let eventCapabilityLoader: @Sendable (CaveConnection) async -> CaveEventCapability
+    @ObservationIgnored private let eventEndpointResolver: @MainActor (CaveConnection) -> CaveEventSocket.Endpoint?
+    @ObservationIgnored private var eventSubscription: CaveEventSocket.SubscriptionToken?
+    @ObservationIgnored private var eventPlaneGeneration = 0
+    @ObservationIgnored private(set) var eventRouter: CaveEventRefreshRouter?
+    /// The socket's latest health, for diagnostics and callers that may one
+    /// day pause a poll a topic covers.
+    private(set) var eventPlaneHealth = CaveEventSocket.Health(mode: .off, state: .disabled, readyTopics: [])
     private(set) var managedPairingBaseURL: URL?
     /// Per-Familiar hub dashboards (`cave-9rwd.2`). Owned here rather than by
     /// the hub view so flipping between two Familiars in the roster does not
@@ -2359,8 +2381,17 @@ final class AppModel {
         reminderNotificationScheduler: any ReminderNotificationScheduling = SystemReminderNotificationScheduler(),
         baseURLDiscoverer: @escaping @Sendable ([URL]) async -> DiscoveryOutcome = { candidates in
             await AppModel.discoverBaseURL(candidates)
-        }
+        },
+        eventSocket: CaveEventSocket? = nil,
+        eventCapabilityLoader: (@Sendable (CaveConnection) async -> CaveEventCapability)? = nil,
+        eventEndpointResolver: (@MainActor (CaveConnection) -> CaveEventSocket.Endpoint?)? = nil
     ) {
+        self.eventEndpointResolver = eventEndpointResolver ?? { CaveEventPlaneEndpoint.make(connection: $0) }
+        self.eventSocket = eventSocket ?? CaveEventSocket()
+        self.eventCapabilityLoader = eventCapabilityLoader ?? { connection in
+            // Discovery or decoding failure is off: polling carries on.
+            (try? await CaveClient(connection: connection).eventCapability()) ?? .off
+        }
         let performanceRecorder = performanceRecorder ?? .shared
         let threadStore = ThreadSnapshotStore(url: threadStoreURL ?? AppModel.threadsFileURL)
         self.performanceRecorder = performanceRecorder
@@ -5331,9 +5362,56 @@ final class AppModel {
     /// Scene lifecycle is another signal, not another retry loop. The one
     /// supervisor sleeps while the app is backgrounded; BGAppRefreshTask owns
     /// a separate single maintenance ping when iOS grants background time.
+    // MARK: - Event plane (#5867)
+
+    /// Read the capability for the current connection and point the socket at
+    /// it. iOS follows `rolloutMode.ios` only; anything unusable is `off`.
+    func refreshEventPlane() async {
+        eventPlaneGeneration += 1
+        let generation = eventPlaneGeneration
+        guard !isPerformanceFixture, let connection else {
+            await eventSocket.configure(endpoint: nil, mode: .off)
+            return
+        }
+        await ensureEventSubscription()
+        guard let endpoint = eventEndpointResolver(connection) else {
+            await eventSocket.configure(endpoint: nil, mode: .off)
+            return
+        }
+        let capability = await eventCapabilityLoader(connection)
+        // The pairing changed, or a newer refresh started, while the
+        // capability was in flight.
+        guard generation == eventPlaneGeneration, self.connection == connection else { return }
+        await eventSocket.configure(endpoint: endpoint, mode: capability.iosMode)
+    }
+
+    private func disableEventPlane(ifGeneration generation: Int) async {
+        guard generation == eventPlaneGeneration else { return }
+        await eventSocket.configure(endpoint: nil, mode: .off)
+    }
+
+    private func ensureEventSubscription() async {
+        guard eventSubscription == nil else { return }
+        let router = CaveEventRefreshRouter(loaders: .init(
+            sessions: { [weak self] in await self?.loadSessions(preservingSelection: true) },
+            tasks: { [weak self] in await self?.loadTasks() },
+            tasksLoaded: { [weak self] in self?.tasksLoaded ?? false },
+            familiars: { [weak self] in await self?.loadFamiliars() },
+            daemon: { [weak self] in self?.requestConnectionRecovery(.streamFailure) }
+        ))
+        eventRouter = router
+        await eventSocket.setHealthHandler { [weak self] health in
+            await MainActor.run { self?.eventPlaneHealth = health }
+        }
+        eventSubscription = await eventSocket.subscribe(topics: [.sessions, .board, .familiars, .daemon]) { [weak router] event in
+            await MainActor.run { router?.receive(event) }
+        }
+    }
+
     func setConnectionSupervisorActive(_ active: Bool) async {
         guard !isPerformanceFixture else { return }
         connectionSupervisorActive = active
+        await eventSocket.setSceneActive(active)
         if active {
             requestConnectionRecovery(.foreground)
         } else {
@@ -5837,6 +5915,8 @@ final class AppModel {
                 configurationGeneration: configurationGeneration
             ) else { return }
             flushQueuedMessages()
+            // After the token roll, so the socket carries the current credential.
+            Task { [weak self] in await self?.refreshEventPlane() }
             if !shouldLoadCoreBeforeDispatch {
                 guard refreshLeaseIsCurrent(
                     supervisorGeneration,
