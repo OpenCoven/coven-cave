@@ -163,7 +163,11 @@ struct MessageBubble: View {
     var body: some View {
         Group {
             if message.role == .system {
-                systemNote
+                if SystemNoteStyle.style(for: message.text, hasAction: onRetryDelete != nil) == .notice {
+                    systemNotice
+                } else {
+                    systemNote
+                }
             } else {
                 chatBubble
             }
@@ -180,6 +184,25 @@ struct MessageBubble: View {
             }
         }
         .simultaneousGesture(replySwipe)
+    }
+
+    /// Short one-line feedback ("Model set to Opus 5.5.") as a quiet notice
+    /// row rather than a card (#5881). Errors keep their red.
+    private var systemNotice: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: message.isError ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.caption2)
+            Text(message.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.caption)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(message.isError ? Color.red : Color.secondary)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 24).padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message.isError ? "Error: \(message.text)" : message.text)
+        .contextMenu { messageActions }
     }
 
     /// Inline slash-command output — a subtle monospaced card so it reads as
@@ -257,8 +280,9 @@ struct MessageBubble: View {
                     // Keep row geometry and tool state mounted. Only earlier
                     // prose WebViews may unload outside the viewport; nesting
                     // a lazy stack here can leave blank space on reopening.
-                    ForEach(timeline) { entry in
-                        timelineEntry(entry, isTail: entry.id == timeline.last?.id)
+                    let display = ChatActivityTimeline.collapsingRepeats(timeline)
+                    ForEach(display) { entry in
+                        timelineEntry(entry, isTail: entry.id == display.last?.id)
                     }
                 } else if !isUser, let blocks = message.reasoningBlocks {
                     ForEach(blocks.compactMap(\.validated)) { block in
@@ -268,6 +292,16 @@ struct MessageBubble: View {
                 }
                 // What the familiar is doing (tool calls / progress) — live
                 // while streaming, a collapsed summary once finished.
+                // A settled timeline reply shows its tools inline, one by one.
+                // "Run details" sums the whole run up in one place (#5881).
+                let timelineTools = timeline == nil ? [] : message.activitySteps.filter { $0.kind == .tool }
+                if !isUser, !message.streaming, timelineTools.count >= 2 {
+                    AgentActivityView(steps: timelineTools, streaming: false,
+                                      messageId: "\(message.id):run-details",
+                                      onShowToolOutput: onShowToolOutput,
+                                      summaryTitle: "Run details")
+                        .padding(.leading, 2)
+                }
                 let remainingActivity = timeline == nil ? message.activitySteps : message.activitySteps.filter { $0.kind == .progress }
                 if !isUser, !remainingActivity.isEmpty {
                     AgentActivityView(steps: remainingActivity,
@@ -514,15 +548,18 @@ struct MessageBubble: View {
                          onOpenReader: onOpenReader, onContentHeightChange: onContentHeightChange)
     }
 
-    @ViewBuilder private func timelineEntry(_ entry: ChatTimelineEntry, isTail: Bool) -> some View {
+    @ViewBuilder private func timelineEntry(_ entry: ChatTimelineDisplayEntry, isTail: Bool) -> some View {
         switch entry {
         case .text(_, let text):
             timelineProse(text, streaming: message.streaming && isTail, deferOffscreenMarkdown: !isTail)
                 .contextMenu { messageActions }
-        case .tool(let step):
-            AgentActivityView(steps: [step], streaming: message.streaming,
+        case .tools(let steps):
+            // Identical repeats fold into one row marked ×N; expanding it
+            // lists each call (#5881).
+            AgentActivityView(steps: steps, streaming: message.streaming,
                               messageId: "\(message.id):\(entry.id)",
-                              onShowToolOutput: onShowToolOutput, inlineTool: true)
+                              onShowToolOutput: onShowToolOutput, inlineTool: true,
+                              repeatCount: steps.count)
         case .reasoning(let block):
             ReasoningSummaryView(block: block, streaming: message.streaming,
                                  messageId: message.id, onContentHeightChange: onContentHeightChange)
