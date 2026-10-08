@@ -120,4 +120,21 @@ for (const command of ["/board", "/auto", "/journal", "/automations", "/remind",
   );
 }
 
+// Argument-level completion (#5846): once a native command with an argument
+// picker is followed by a space, the composer swaps the command list for the
+// argument menu instead of hiding every suggestion.
+const composerIntent = await read(`${iosRoot}/Models/ComposerIntent.swift`);
+assert.match(composerIntent, /enum ComposerIntent: Equatable \{[\s\S]*case argument\(SlashCommand, partial: String\)/,
+  "ComposerIntent should model a command argument lookup");
+assert.match(composerIntent, /command\.availability == \.native,\s*command\.argCompletion != \.none/,
+  "argument pickers open only for native commands that declare one");
+assert.match(iosSlash, /name: "\/model"[\s\S]{0,200}argCompletion: \.model/, "/model declares the model argument picker");
+assert.match(iosSlash, /name: "\/familiar"[\s\S]{0,200}argCompletion: \.familiar/, "/familiar declares the familiar argument picker");
+assert.match(chatView, /ComposerIntent\.detect\(draft, allowsMentions: thread\.isGroup\)/,
+  "the composer should derive its suggestion surface from ComposerIntent");
+assert.match(chatView, /if let argumentCommand, showingArgumentMenu \{[\s\S]{0,400}ComposerArgumentMenu\(/,
+  "the composer should render the argument menu");
+assert.match(chatView, /private func pickArgument\([\s\S]{0,200}dispatch\(command, args: row\.value\)/,
+  "picking an argument row runs the command with that value");
+
 console.log("ios-slash-commands.test.mjs: ok");
