@@ -11,6 +11,7 @@ import {
   buildInboxGroups,
   groupInboxFeed,
   INBOX_GROUP_BY_OPTIONS,
+  splitFinishedNeeds,
   type InboxGroupBy,
 } from "@/lib/inbox-feed";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
@@ -49,6 +50,7 @@ import {
   RitualAgendaThread,
   RitualItemRow,
   RitualNeedsRow,
+  RitualFinishedGroup,
   ritualWeekLabel,
   type RitualOverviewPane,
   useRitualNow,
@@ -705,6 +707,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   );
   const ritualAgenda = useMemo(() => ritualAgendaItems(inboxVisible), [inboxVisible]);
   const needsYouIds = useMemo(() => new Set(inboxFeed.needsYou.map((item) => item.id)), [inboxFeed.needsYou]);
+  // Session-finished notifications are gathered into one group (#5873).
+  const needs = useMemo(() => splitFinishedNeeds(inboxFeed.needsYou), [inboxFeed.needsYou]);
   const ritualLog = useMemo(
     () => ritualLogItems(inboxVisible).filter((item) => !needsYouIds.has(item.id)),
     [inboxVisible, needsYouIds],
@@ -750,6 +754,28 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     } finally {
       setInboxBulkBusy(false);
       inboxSelect.exit();
+    }
+  };
+
+  /** Dismiss every finished notification in one bulk request (#5873). */
+  const [finishedBusy, setFinishedBusy] = useState(false);
+  const dismissFinished = async (list: InboxItem[]) => {
+    const ids = list.map((item) => item.id).filter((id) => !id.startsWith("eph:"));
+    if (ids.length === 0) return;
+    setFinishedBusy(true);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "dismiss", ids }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`Dismissed ${ids.length} finished chat${ids.length === 1 ? "" : "s"}.`);
+      await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "dismiss failed");
+    } finally {
+      setFinishedBusy(false);
     }
   };
 
@@ -1207,9 +1233,9 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
 
                     {inboxFeed.needsYou.length > 0 ? (
                       <section className="rituals-overview__needs" aria-labelledby="rituals-needs-heading">
-                        <h2 id="rituals-needs-heading">Needs you · {inboxFeed.needsYou.length}</h2>
+                        <h2 id="rituals-needs-heading">Needs you · {needs.asks.length}</h2>
                         <ul>
-                          {inboxFeed.needsYou.map((item) => (
+                          {needs.asks.map((item) => (
                             <RitualNeedsRow
                               key={item.id}
                               item={item}
@@ -1221,6 +1247,14 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                               onUnwatch={(next, repo) => void unwatchRepo(next, repo)}
                             />
                           ))}
+                          <RitualFinishedGroup
+                            items={needs.finished}
+                            familiarLabel={familiarLabel}
+                            busy={finishedBusy}
+                            onSelect={openInboxItem}
+                            onDismiss={(next) => void dismissInboxItem(next)}
+                            onDismissAll={(list) => void dismissFinished(list)}
+                          />
                         </ul>
                       </section>
                     ) : null}

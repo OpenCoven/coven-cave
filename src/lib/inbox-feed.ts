@@ -4,6 +4,7 @@
 // or the node-only cave-inbox store.
 
 import type { InboxItem, ItemKind } from "@/lib/cave-inbox";
+import { SESSION_FINISHED_AUTO } from "./session-finished-inbox.ts";
 
 export type InboxFeedGroups = {
   /** Demands attention now: fired items + anything awaiting a response. */
@@ -257,4 +258,21 @@ export function buildInboxGroups(
     groups.push({ id: "familiar:none", title: "No familiar", items: unassigned.sort(byRecent) });
   }
   return groups;
+}
+
+/**
+ * Split Needs you into the items that ask for something and the
+ * session-finished notifications (#5873). A finished chat is news, not a
+ * question, and they arrive one per chat: on a busy desk they outnumber
+ * everything else in the tier many times over. The Rituals overview shows the
+ * asks one by one and gathers the finished ones into a single group that can
+ * be dismissed at once. Order is preserved within each list.
+ */
+export function splitFinishedNeeds(needsYou: readonly InboxItem[]): { asks: InboxItem[]; finished: InboxItem[] } {
+  const asks: InboxItem[] = [];
+  const finished: InboxItem[] = [];
+  for (const item of needsYou) {
+    (item.auto === SESSION_FINISHED_AUTO ? finished : asks).push(item);
+  }
+  return { asks, finished };
 }

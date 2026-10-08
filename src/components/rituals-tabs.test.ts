@@ -144,7 +144,7 @@ assert.match(
 assert.match(automations, /<h1[\s\S]*?>\s*Rituals\s*<\/h1>/, "Surface header reads Rituals");
 assert.match(
   automations,
-  /aria-label="Toggle events ribbon"[\s\S]*Needs you · \{inboxFeed\.needsYou\.length\}[\s\S]*aria-label="Show ritual log"[\s\S]*aria-label="Show agenda thread"/,
+  /aria-label="Toggle events ribbon"[\s\S]*Needs you · \{needs\.asks\.length\}[\s\S]*aria-label="Show ritual log"[\s\S]*aria-label="Show agenda thread"/,
   "overview follows the handoff hierarchy: week ribbon, Needs-you queue, then Log/Agenda",
 );
 assert.match(

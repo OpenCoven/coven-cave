@@ -890,6 +890,7 @@ export const SUITES = {
     "src/lib/shared-json-fetch.test.ts",
     "src/lib/shared-requests.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
+  "src/components/automations/ritual-finished-group.behavior.test.tsx",
     // event plane client manager and React hook (#5833)
     "src/lib/cave-event-plane-client.test.ts",
     "src/lib/use-cave-event-plane.test.tsx",
@@ -2654,6 +2655,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/automations/ritual-finished-group.behavior.test.tsx",
   "src/components/chat-run-rail-lifecycle.test.tsx",
   "src/components/chat-turn-timeline.test.tsx",
   "src/components/grimoire-graph-interaction.test.tsx",
