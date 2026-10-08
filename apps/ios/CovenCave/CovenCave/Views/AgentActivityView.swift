@@ -19,6 +19,10 @@ struct AgentActivityView: View {
     let messageId: String
     var onShowToolOutput: ((ActivityStep) -> Void)? = nil
     var inlineTool: Bool = false
+    /// How many identical steps this inline row stands for (#5881).
+    var repeatCount: Int = 1
+    /// A name for the collapsed summary, e.g. "Run details" (#5881).
+    var summaryTitle: String? = nil
 
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
@@ -104,7 +108,8 @@ struct AgentActivityView: View {
     private var chipLabel: String {
         if inlineTool, let step = steps.first {
             let detail = step.detail.map { " · \($0)" } ?? ""
-            return "\(step.title)\(detail) · \(inlineStatus(step))"
+            let repeats = repeatCount > 1 ? " ×\(repeatCount)" : ""
+            return "\(step.title)\(detail) · \(inlineStatus(step))\(repeats)"
         }
         if streaming, let current = steps.currentStep {
             if let detail = current.detail, !detail.isEmpty {
@@ -112,11 +117,12 @@ struct AgentActivityView: View {
             }
             return current.title
         }
+        if let summaryTitle { return "\(summaryTitle) · \(steps.summaryLabel)" }
         return steps.summaryLabel
     }
 
     private var accessibilitySummary: String {
-        inlineTool ? "Tool activity: \(chipLabel)" : streaming ? "Agent activity: \(steps.currentStep?.status == .requested ? "requested" : "running") \(steps.currentStep?.title ?? "step")"
+        inlineTool ? "Tool activity: \(chipLabel)\(repeatCount > 1 ? ", repeated \(repeatCount) times" : "")" : streaming ? "Agent activity: \(steps.currentStep?.status == .requested ? "requested" : "running") \(steps.currentStep?.title ?? "step")"
                   : "Agent activity: \(steps.summaryLabel)"
     }
 

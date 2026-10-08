@@ -208,3 +208,70 @@ enum ChatActivityTimeline {
         }
     }
 }
+
+/// A timeline entry as the bubble draws it (#5881): identical back-to-back
+/// tool steps fold into one row, so a polling loop or a retried call reads as
+/// "Bash · npm test · Succeeded ×4" instead of four rows.
+enum ChatTimelineDisplayEntry: Identifiable, Hashable {
+    case text(id: String, text: String)
+    /// One or more identical tool steps. `steps.count > 1` means folded repeats.
+    case tools([ActivityStep])
+    case reasoning(ChatReasoningBlock)
+
+    var id: String {
+        switch self {
+        case .text(let id, _): id
+        case .tools(let steps): "tool:\(steps.first?.id ?? "")"
+        case .reasoning(let block): "reasoning:\(block.id)"
+        }
+    }
+}
+
+extension ChatActivityTimeline {
+    /// Fold consecutive tool entries that repeat each other: same title, same
+    /// detail, same settled outcome, with no prose or reasoning between them.
+    /// A running or requested step never folds, so live progress stays visible.
+    static func collapsingRepeats(_ entries: [ChatTimelineEntry]) -> [ChatTimelineDisplayEntry] {
+        var result: [ChatTimelineDisplayEntry] = []
+        for entry in entries {
+            switch entry {
+            case .text(let id, let text):
+                result.append(.text(id: id, text: text))
+            case .reasoning(let block):
+                result.append(.reasoning(block))
+            case .tool(let step):
+                if case .tools(var group)? = result.last, let first = group.first, repeats(first, step) {
+                    group.append(step)
+                    result[result.count - 1] = .tools(group)
+                } else {
+                    result.append(.tools([step]))
+                }
+            }
+        }
+        return result
+    }
+
+    static func repeats(_ a: ActivityStep, _ b: ActivityStep) -> Bool {
+        !a.status.isActive && !b.status.isActive
+            && a.status == b.status
+            && a.title == b.title
+            && (a.detail ?? "") == (b.detail ?? "")
+    }
+}
+
+/// How a system note draws (#5881). Short one-line feedback ("Model set to
+/// Opus 5.5.") is a quiet notice row; command output that spans lines, or a
+/// note that carries an action, keeps the monospaced card.
+enum SystemNoteStyle: Equatable {
+    case notice
+    case card
+
+    static let noticeMaxLength = 140
+
+    static func style(for text: String, hasAction: Bool) -> SystemNoteStyle {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hasAction, !trimmed.isEmpty, !trimmed.contains("\n"),
+              trimmed.count <= noticeMaxLength else { return .card }
+        return .notice
+    }
+}
