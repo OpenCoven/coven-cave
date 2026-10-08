@@ -113,13 +113,32 @@ struct ChatView: View {
 
     /// Per-thread key for the persisted unsent draft.
 
-    // The slash autocomplete is driven purely off the in-progress draft: a
-    // leading "/" on the first word (no whitespace committed yet).
+    // The suggestion menus are driven purely off the in-progress draft — one
+    // surface at a time: command list → argument picker → mention picker
+    // (see `ComposerIntent`).
+    private var composerIntent: ComposerIntent {
+        ComposerIntent.detect(draft, allowsMentions: thread.isGroup)
+    }
     private var slashMatches: [SlashCommand] {
-        guard SlashInput.isTypingCommand(draft) else { return [] }
-        return SlashCatalog.matches(draft)
+        guard case .commands(let prefix) = composerIntent else { return [] }
+        return SlashCatalog.matches(prefix)
     }
     private var showingSlashMenu: Bool { !slashMatches.isEmpty }
+
+    // Second-level completion for `/model …` and `/familiar …`. Model rows come
+    // from the options `loadSessionModelState` already fetched on open, so no
+    // request fires while typing; familiars are the on-device roster.
+    private var argumentCommand: SlashCommand? {
+        guard case .argument(let command, _) = composerIntent else { return nil }
+        return command
+    }
+    private var argumentRows: [ComposerArgumentRow] {
+        guard case .argument(let command, let partial) = composerIntent else { return [] }
+        return ComposerArgumentRows.rows(
+            for: command, partial: partial,
+            familiars: app.familiars, models: thread.isGroup ? [] : modelPickerOptions)
+    }
+    private var showingArgumentMenu: Bool { !argumentRows.isEmpty }
 
     // @-mention autocomplete (group chats only): the trailing `@token` matches
     // the group's familiars by name.
@@ -130,7 +149,7 @@ struct ChatView: View {
         let q = partial.lowercased()
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
-    private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+    private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
 
     // A voice call targets a single familiar, so the call button only appears
     // on one-to-one threads whose familiar is known. Group threads have no
@@ -1374,6 +1393,14 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if let argumentCommand, showingArgumentMenu {
+                ComposerArgumentMenu(command: argumentCommand, rows: argumentRows,
+                                     avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { row in
+                    pickArgument(row, for: argumentCommand)
+                }
+                .padding(.horizontal, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if showingMentionMenu {
                 MentionMenu(familiars: mentionMatches,
                             avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { familiar in
@@ -1393,6 +1420,7 @@ struct ChatView: View {
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingArgumentMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
@@ -1813,6 +1841,14 @@ struct ChatView: View {
             draft = ""
             dispatch(command, args: "")
         }
+    }
+
+    /// Pick from the argument menu: the command runs at once with the row's
+    /// value, the way the desktop picker does — no second tap on send.
+    private func pickArgument(_ row: ComposerArgumentRow, for command: SlashCommand) {
+        draft = ""
+        Haptics.tap()
+        dispatch(command, args: row.value)
     }
 
     /// Pick from the full Commands sheet — always prefill so the user sees the

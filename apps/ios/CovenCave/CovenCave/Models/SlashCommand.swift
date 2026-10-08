@@ -30,6 +30,10 @@ struct SlashCommand: Identifiable, Hashable {
     /// Whether the command has a real surface on mobile, or politely redirects.
     enum Availability { case native, desktopOnly }
 
+    /// The second-level picker a command opens once an argument follows it
+    /// (`/model op…`). `.none` means the argument is free text.
+    enum ArgCompletion { case none, model, familiar, skill, prompt }
+
     /// What dispatch should do when this command runs.
     enum Action: Hashable {
         case help                  // present the Commands reference sheet
@@ -51,6 +55,7 @@ struct SlashCommand: Identifiable, Hashable {
     let hint: String
     let description: String
     var argPlaceholder: String?
+    var argCompletion: ArgCompletion = .none
     let section: Section
     let availability: Availability
     let action: Action
@@ -93,11 +98,11 @@ enum SlashCatalog {
                      section: .chat, availability: .native, action: .help),
         SlashCommand(name: "/model", aliases: ["/m"], hint: "switch model",
                      description: "Pick or set the model for this chat. Pass an id/name or open the picker.",
-                     argPlaceholder: "model", section: .chat,
+                     argPlaceholder: "model", argCompletion: .model, section: .chat,
                      availability: .native, action: .switchModel),
         SlashCommand(name: "/skill", hint: "run a skill",
                      description: "Invoke a skill — pass a name or pick from the menu as you type.",
-                     argPlaceholder: "name", section: .chat,
+                     argPlaceholder: "name", argCompletion: .skill, section: .chat,
                      availability: .desktopOnly, action: .desktopOnly("Skills")),
         SlashCommand(name: "/skills", hint: "browse skills",
                      description: "Show every available skill to pick from.",
@@ -105,7 +110,7 @@ enum SlashCatalog {
                      availability: .desktopOnly, action: .desktopOnly("Skills")),
         SlashCommand(name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt",
                      description: "Drop a starter prompt into the composer for editing.",
-                     argPlaceholder: "name", section: .chat,
+                     argPlaceholder: "name", argCompletion: .prompt, section: .chat,
                      availability: .desktopOnly, action: .desktopOnly("Prompts")),
         SlashCommand(name: "/prompts", hint: "browse prompts",
                      description: "Show every prompt template to pick from.",
@@ -123,7 +128,7 @@ enum SlashCatalog {
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",
                      description: "Open the familiar picker. Pass a name to switch directly.",
-                     argPlaceholder: "name", section: .familiar,
+                     argPlaceholder: "name", argCompletion: .familiar, section: .familiar,
                      availability: .native, action: .familiarPicker),
 
         // MARK: Daemon / health
