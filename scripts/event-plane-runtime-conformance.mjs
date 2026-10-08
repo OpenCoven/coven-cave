@@ -253,6 +253,15 @@ async function main() {
         assert.equal(invalidation.entityIds, undefined, "a file change invalidates the whole roster");
         ws.close();
       });
+      await check("an outside write to board.json reaches board subscribers (#5858)", async () => {
+        const { ws } = await readySocket(cave, ["board"]);
+        const event = nextMessage(ws);
+        // Another process or tool writing the board in this run's scratch home.
+        writeFileSync(path.join(cave.caveHome, "board.json"), JSON.stringify({ cards: [] }));
+        const invalidation = await event;
+        assert.equal(invalidation.topic, "board");
+        ws.close();
+      });
       await check("a resume cursor replays the retained board suffix", async () => {
         const first = await readySocket(cave, ["board"]);
         const event = nextMessage(first.ws);

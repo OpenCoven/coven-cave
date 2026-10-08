@@ -1887,6 +1887,7 @@ export const SUITES = {
     "src/lib/server/sessions-publisher.test.ts",
     "src/lib/server/daemon-event-watcher.test.ts",
     "src/lib/server/familiar-roster-watch.test.ts",
+    "src/lib/server/board-file-watch.test.ts",
     "src/lib/server/chat-run-sessions-publisher.test.ts",
     "src/instrumentation-event-plane.test.ts",
     "src/lib/server/json-etag.test.ts",

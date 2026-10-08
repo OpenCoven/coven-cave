@@ -87,21 +87,25 @@ export function createFamiliarRosterWatch(options: FamiliarRosterWatchOptions): 
   };
 }
 
+/** Watch one directory with `fs.watch`; null when it can't be watched. Shared
+ *  with the board watch (#5858). */
+export function watchDirectoryWithFs(dir: string, onChange: (filename: string | null) => void): (() => void) | null {
+  try {
+    const watcher = watch(dir, { persistent: false }, (_event, filename) => onChange(filename ? String(filename) : null));
+    watcher.on("error", () => watcher.close());
+    return () => watcher.close();
+  } catch {
+    // A directory that doesn't exist yet can't be watched. Polling still
+    // covers the topic, so this is a missed optimization, not an error.
+    return null;
+  }
+}
+
 /** The production watch: real files, `fs.watch`, and the event-plane bridge. */
 export function startFamiliarRosterWatch(): FamiliarRosterWatch {
   return createFamiliarRosterWatch({
     files: familiarRosterSourceFiles(),
-    watchDirectory(dir, onChange) {
-      try {
-        const watcher = watch(dir, { persistent: false }, (_event, filename) => onChange(filename ? String(filename) : null));
-        watcher.on("error", () => watcher.close());
-        return () => watcher.close();
-      } catch {
-        // A directory that doesn't exist yet can't be watched. Polling still
-        // covers familiars, so this is a missed optimization, not an error.
-        return null;
-      }
-    },
+    watchDirectory: watchDirectoryWithFs,
     publish: () => {
       markResourceChanged("familiars");
     },
