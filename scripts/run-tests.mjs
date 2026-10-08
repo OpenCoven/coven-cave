@@ -892,6 +892,7 @@ export const SUITES = {
     // event plane client manager and React hook (#5833)
     "src/lib/cave-event-plane-client.test.ts",
     "src/lib/use-cave-event-plane.test.tsx",
+    "src/components/event-plane-consumers.test.ts",
     "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",
     "src/lib/pausable-poll-discipline.test.ts",
