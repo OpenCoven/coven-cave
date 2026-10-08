@@ -1,0 +1,66 @@
+{
+  "name": "vane",
+  "version": "0.1.0",
+  "description": "Cited AI answers from a self-hosted Vane (formerly Perplexica) instance with bundled SearXNG.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "search",
+    "vane",
+    "perplexica",
+    "searxng",
+    "research",
+    "citations",
+    "web"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "marketplaceId": "opencoven/vane",
+  "x-coven": {
+    "displayName": "Vane Search",
+    "category": "Browser & Web",
+    "trust": "local-tool",
+    "sourceRefs": [
+      "https://github.com/ItzCrazyKns/Vane",
+      "https://github.com/BunsDev/perplexica-search-engine-ai"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": false
+    }
+  },
+  "mcpServers": {
+    "vane": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/vane-mcp.mjs"
+      ],
+      "type": "stdio",
+      "env": {
+        "VANE_URL": "${VANE_URL}"
+      }
+    }
+  },
+  "userConfig": {
+    "vane_url": {
+      "type": "string",
+      "title": "Vane Instance URL",
+      "description": "Base URL of the self-hosted Vane instance. Loopback only unless VANE_ALLOW_REMOTE=1 is also set.",
+      "required": true,
+      "default": "http://127.0.0.1:3030",
+      "sensitive": false,
+      "env": "VANE_URL"
+    }
+  }
+}

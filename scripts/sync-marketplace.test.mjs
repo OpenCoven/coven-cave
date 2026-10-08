@@ -377,6 +377,21 @@ assert.ok(
   ),
 );
 
+const productionVane = productionCatalog.plugins.find((plugin) => plugin.name === "vane");
+assert.ok(productionVane, "the production catalog includes Vane Search");
+assert.equal(productionVane.category, "Browser & Web");
+assert.equal(productionVane.trust, "local-tool");
+assert.equal(productionVane.skill.managed, "manual");
+assert.equal(productionVane.mcpServers.vane.command, "node");
+assert.deepEqual(productionVane.mcpServers.vane.args, ["${CLAUDE_PLUGIN_ROOT}/server/vane-mcp.mjs"]);
+assert.deepEqual(productionVane.mcpServers.vane.env, { VANE_URL: "${VANE_URL}" });
+assert.equal(productionVane.userConfig.vane_url.env, "VANE_URL");
+assert.equal(productionVane.userConfig.vane_url.default, "http://127.0.0.1:3030");
+assert.equal(productionVane.userConfig.vane_url.sensitive, false);
+const productionVaneRoot = path.join(ROOT, "marketplace", "plugins", "vane");
+assert.ok(existsSync(path.join(productionVaneRoot, "server", "vane-mcp.mjs")), "the bundled Vane MCP server ships inside the package");
+assert.match(readFileSync(path.join(productionVaneRoot, "skills", "vane", "SKILL.md"), "utf8"), /lead, not evidence/);
+
 const productionThreadLabRoot = path.join(ROOT, "marketplace", "plugins", "tweet-thread-lab");
 const threadLabManifest = JSON.parse(readFileSync(path.join(productionThreadLabRoot, "plugin.json"), "utf8"));
 const threadLabCodexManifest = JSON.parse(

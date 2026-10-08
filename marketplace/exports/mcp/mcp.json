@@ -182,6 +182,16 @@
         "SEARXNG_URL": "${SEARXNG_URL}"
       }
     },
+    "vane": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/vane-mcp.mjs"
+      ],
+      "type": "stdio",
+      "env": {
+        "VANE_URL": "${VANE_URL}"
+      }
+    },
     "dbhub": {
       "command": "npx",
       "args": [
