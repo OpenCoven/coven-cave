@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   board,
-  /useCaveEventPlane\("board", \(\) => \{\s*invalidateSurfaceResources\("board:cards"\);\s*if \(interactingRef\.current\) \{\s*boardEventDirtyRef\.current = true;\s*return;\s*\}\s*void load\(\{ quiet: true, force: true \}\);\s*\}\);/,
+  /useCaveEventPlane\("board", \(event\) => \{[\s\S]*?invalidateSurfaceResourcesFor\(event, "board:cards"\);\s*if \(interactingRef\.current\) \{\s*boardEventDirtyRef\.current = true;\s*return;\s*\}\s*void load\(\{ quiet: true, force: true \}\);\s*\}\);/,
   "a board invalidation drops the warm cache, and defers while the user interacts",
 );
 assert.match(board, /interactingRef\.current = interacting;/, "the ref follows the existing interaction gate, not a second state");
@@ -47,5 +47,12 @@ assert.match(
   /usePausablePoll\(\s*\(\) => \{ void load\(\{ quiet: true, force: true \}\); \},\s*15_000,\s*\{\s*enabled: !interacting,\s*pauseWhileInputActive: true,\s*intervalEnabled: !boardEventPrimary,[\s\S]*?onIntervalPaused: noteCaveEventPollAvoided,\s*\},\s*\);/,
   "the interval pauses while covered, the interaction gate is kept, and skipped ticks are counted (#5862)",
 );
-assert.doesNotMatch(workspace, /intervalEnabled/, "sessions and daemon polling stay authoritative (Val, 2026-10-08)");
+// Only the board-reading Tasks badge pauses in the workspace (#5869); sessions
+// and daemon polling stay authoritative (Val, 2026-10-08).
+assert.equal(workspace.match(/intervalEnabled/g)?.length, 1, "exactly one workspace poll is covered");
+assert.match(
+  workspace,
+  /useCaveEventPlane\("board", \(event\) => \{\s*invalidateSurfaceResourcesFor\(event, "board:cards"\);\s*void refreshOpenTaskCards\(\{ force: true \}\);\s*\}\);[\s\S]*?usePausablePoll\(\(\) => void refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,\s*intervalEnabled: !workspaceBoardPrimary,\s*refreshOnFocusEnabled: !workspaceBoardPrimary,\s*onIntervalPaused: noteCaveEventPollAvoided,\s*\}\);/,
+  "the Tasks badge poll is the one the board topic covers",
+);
 console.log("event-plane-consumers.test.ts: ok");

@@ -10,6 +10,13 @@
 
 **Scope:** Browser, Tauri desktop, and iOS
 
+> **As shipped (2026-10-08).** Every name in this design shipped unchanged.
+> Three scope decisions narrowed what primary mode pauses, and none of them
+> changes the protocol. Browser and Tauri pause only the board's poll (Val,
+> #5858). iOS pauses no poll. `runs` is not published yet (#5843). Managed
+> device grants get no socket, by device-access policy. The operational view is
+> in [`event-plane-operations.md`](../../event-plane-operations.md).
+
 ## Goal
 
 Reduce repeated API reads and stale cross-client state by adding one
