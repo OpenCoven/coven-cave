@@ -103,6 +103,7 @@ import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -2113,6 +2114,12 @@ export function Workspace() {
     serialize: true,
     pauseWhileInputActive: true,
   });
+  // Event plane (#5854). Each topic refreshes through its existing owner. In
+  // `shadow` mode the client only counts invalidations and calls nothing, so
+  // the polls above stay authoritative and unchanged.
+  useCaveEventPlane("sessions", () => void loadSessions());
+  useCaveEventPlane("familiars", () => void loadFamiliars());
+  useCaveEventPlane("daemon", () => void daemonConnectionSupervisorRef.current?.refresh({ fresh: true }));
   usePausablePoll(() => loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     serialize: true,
     pauseWhileInputActive: true,

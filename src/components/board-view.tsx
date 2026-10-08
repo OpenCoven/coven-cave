@@ -6,6 +6,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
@@ -307,6 +308,28 @@ export function BoardView({
     15_000,
     { enabled: !interacting, pauseWhileInputActive: true },
   );
+
+  // Event plane (#5854). A board invalidation drops the warm card cache and
+  // reloads quietly. If the user is mid-interaction, the board is marked dirty
+  // instead and reloads exactly once when the interaction ends, so an
+  // invalidation never clobbers an optimistic edit or a drag. In `shadow`
+  // mode the client calls nothing and the poll above stays authoritative.
+  const interactingRef = useRef(interacting);
+  interactingRef.current = interacting;
+  const boardEventDirtyRef = useRef(false);
+  useCaveEventPlane("board", () => {
+    invalidateSurfaceResources("board:cards");
+    if (interactingRef.current) {
+      boardEventDirtyRef.current = true;
+      return;
+    }
+    void load({ quiet: true, force: true });
+  });
+  useEffect(() => {
+    if (interacting || !boardEventDirtyRef.current) return;
+    boardEventDirtyRef.current = false;
+    void load({ quiet: true, force: true });
+  }, [interacting, load]);
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent
   // (e.g. the Task chip in chat-view) routes to /?…#card-<id>; we pick that
