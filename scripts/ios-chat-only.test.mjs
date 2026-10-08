@@ -48,6 +48,8 @@ test("the largest type sizes keep conversation titles and counts readable", () =
     "server-only chat titles must also wrap at accessibility sizes");
   assert.match(home, /isSelected \? chrome\.accentForeground : chrome\.textPrimary/,
     "selected iPad rows use the accent's contrasting foreground");
+  assert.match(home, /if dynamicTypeSize\.isAccessibilitySize \{\s*projectFilterMenu\(projectChoices\)\s*\} else \{\s*projectFilterStrip\(projectChoices\)/,
+    "at accessibility sizes the project strip becomes one menu instead of screen-wide chips");
 });
 
 test("the native guide describes chat-only navigation without weakening pairing", () => {
