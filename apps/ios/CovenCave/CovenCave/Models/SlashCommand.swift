@@ -47,6 +47,10 @@ struct SlashCommand: Identifiable, Hashable {
         case doctor                // /doctor — run `coven doctor` inline
         case switchModel           // /model — pick or set the chat model
         case startDiagram          // /diagram — start the guided diagram intake
+        case invokeSkill           // /skill <name> [args] — send the skill directive (#5876)
+        case insertPrompt          // /prompt <name> — drop the template into the composer
+        case browseSkills          // /skills — open the skill picker
+        case browsePrompts         // /prompts — open the prompt picker
         case desktopOnly(String)   // recognised, but lives on the desktop
     }
 
@@ -64,7 +68,7 @@ struct SlashCommand: Identifiable, Hashable {
 
     var sendsChatMessage: Bool {
         switch action {
-        case .sendAsPrompt, .startDiagram: return true
+        case .sendAsPrompt, .startDiagram, .invokeSkill: return true
         default: return false
         }
     }
@@ -103,19 +107,19 @@ enum SlashCatalog {
         SlashCommand(name: "/skill", hint: "run a skill",
                      description: "Invoke a skill — pass a name or pick from the menu as you type.",
                      argPlaceholder: "name", argCompletion: .skill, section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Skills")),
+                     availability: .native, action: .invokeSkill),
         SlashCommand(name: "/skills", hint: "browse skills",
                      description: "Show every available skill to pick from.",
-                     section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Skills")),
+                     argCompletion: .skill, section: .chat,
+                     availability: .native, action: .browseSkills),
         SlashCommand(name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt",
                      description: "Drop a starter prompt into the composer for editing.",
                      argPlaceholder: "name", argCompletion: .prompt, section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
+                     availability: .native, action: .insertPrompt),
         SlashCommand(name: "/prompts", hint: "browse prompts",
                      description: "Show every prompt template to pick from.",
-                     section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
+                     argCompletion: .prompt, section: .chat,
+                     availability: .native, action: .browsePrompts),
         SlashCommand(name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image",
                      description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).",
                      argPlaceholder: "describe an image…", section: .chat,

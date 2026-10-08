@@ -84,7 +84,7 @@ struct ComposerArgumentMenu: View {
             Text(command.name)
                 .font(.system(.caption2, design: .monospaced).weight(.semibold))
                 .foregroundStyle(chrome.accent)
-            Text("· tap to run · type to filter")
+            Text(command.argCompletion == .prompt ? "· tap to insert · type to filter" : "· tap to run · type to filter")
                 .font(.caption2)
         }
         .foregroundStyle(.tertiary)
