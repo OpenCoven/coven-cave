@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { WebSocket } from "ws";
 // The file-count ceiling is read from sidecar-runtime-budget.json through this
 // module rather than repeated here — see cave-0ia8h.
 import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
@@ -183,6 +184,86 @@ function authenticatedHeaders(baseUrl, contentType) {
     origin: baseUrl,
     "x-coven-cave-token": token,
   };
+}
+
+function nextSocketMessage(ws, label, timeoutMs = 10_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no event-plane ${label} within ${timeoutMs} ms`)), timeoutMs);
+    ws.once("message", (data) => {
+      clearTimeout(timer);
+      resolve(JSON.parse(String(data)));
+    });
+  });
+}
+
+/**
+ * The packaged event plane end to end (#5862): the capability, the advertised
+ * same-host socket with the sidecar credential, hello -> ready, bounded
+ * diagnostics while connected, one real board write inside the temporary Cave
+ * home, its single board invalidation, and a clean close.
+ */
+async function verifyEventPlaneRoundTrip(baseUrl, temporaryCaveHome) {
+  const capabilityResponse = await fetch(`${baseUrl}/api/events/capability`, {
+    headers: authenticatedHeaders(baseUrl),
+  });
+  assert.equal(capabilityResponse.status, 200, "packaged sidecar must answer the event-plane capability");
+  const capability = (await capabilityResponse.json()).eventPlane;
+  assert.equal(capability.enabled, true, "the smoke launch switches the event plane on");
+  assert.equal(capability.protocolVersion, 1);
+  assert.ok(capability.topics.includes("board"));
+
+  const socketUrl = new URL(capability.path, baseUrl);
+  socketUrl.protocol = "ws:";
+  socketUrl.searchParams.set("covenCaveToken", token);
+  const ws = new WebSocket(socketUrl, { headers: { origin: baseUrl } });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("event-plane socket did not open")), 10_000);
+    ws.once("open", () => { clearTimeout(timer); resolve(); });
+    ws.once("unexpected-response", (_req, res) => {
+      clearTimeout(timer);
+      reject(new Error(`event-plane upgrade refused with ${res.statusCode}`));
+    });
+    ws.once("error", (error) => { clearTimeout(timer); reject(error); });
+  });
+  try {
+    const readyMessage = nextSocketMessage(ws, "ready barrier");
+    ws.send(JSON.stringify({ type: "hello", protocol: 1, clientId: "sidecar-smoke", topics: ["board"] }));
+    const ready = await readyMessage;
+    assert.equal(ready.type, "ready", `expected the ready barrier, got ${JSON.stringify(ready)}`);
+    assert.deepEqual(ready.topics, ["board"]);
+
+    const diagnosticsResponse = await fetch(`${baseUrl}/api/daemon/diagnostics`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(diagnosticsResponse.status, 200, "packaged sidecar must export diagnostics");
+    const diagnosticsText = await diagnosticsResponse.text();
+    const eventPlane = JSON.parse(diagnosticsText).eventPlane;
+    assert.equal(eventPlane.enabled, true);
+    assert.equal(eventPlane.activeConnections, 1, "exactly the smoke's socket is connected");
+    assert.equal(eventPlane.readyConnections, 1);
+    assert.equal(eventPlane.subscriptions.board, 1);
+    assert.equal(diagnosticsText.includes(token), false, "diagnostics must not carry the sidecar credential");
+    assert.equal(diagnosticsText.includes("covenCaveToken"), false);
+    assert.equal(diagnosticsText.includes("entityIds"), false, "diagnostics carry counts, not entity ids");
+
+    const invalidationMessage = nextSocketMessage(ws, "board invalidation");
+    const cardResponse = await fetch(`${baseUrl}/api/board`, {
+      method: "POST",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify({ title: "Sidecar event-plane smoke" }),
+    });
+    assert.equal(cardResponse.status, 200, `board write failed: ${await cardResponse.clone().text()}`);
+    await access(path.join(temporaryCaveHome, "board.json"));
+    const invalidation = await invalidationMessage;
+    assert.equal(invalidation.type, "invalidate");
+    assert.equal(invalidation.topic, "board");
+    assert.ok(Number.isSafeInteger(invalidation.seq) && invalidation.seq > ready.seq);
+  } finally {
+    const closed = new Promise((resolve) => ws.once("close", (code) => resolve(code)));
+    ws.close(1000, "smoke done");
+    const code = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(null), 5_000))]);
+    assert.equal(code, 1000, "the event-plane socket closes cleanly");
+  }
 }
 
 /** Verify that a staged or extracted runtime actually retained a behavioral
@@ -664,6 +745,12 @@ async function main() {
       port: secondPort,
       environment: {
         COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE: "enforce",
+        // The event-plane round trip (#5862). Its board write must stay in the
+        // temporary home, which the cleanup below removes; this is the path
+        // Cave derives from COVEN_HOME anyway, pinned against a caller's own.
+        COVEN_CAVE_HOME: path.join(covenHome, "cave"),
+        COVEN_CAVE_EVENT_PLANE_ENABLED: "1",
+        COVEN_CAVE_EVENT_WEB_MODE: "shadow",
       },
     }));
     const secondEarlyExit = Promise.race([
@@ -743,9 +830,11 @@ async function main() {
     assert.equal(restoredBackdrop.status, 200, "restarted sidecar must restore backdrop bytes");
     assert.deepEqual(Buffer.from(await restoredBackdrop.arrayBuffer()), backdropBytes);
 
+    await verifyEventPlaneRoundTrip(baseUrl, path.join(covenHome, "cave"));
+
     console.log(
       `sidecar-runtime-smoke: ok on ${process.platform}/${process.arch} ` +
-      `(preferences survived ${firstPort} -> ${secondPort})`,
+      `(preferences survived ${firstPort} -> ${secondPort}; event plane round trip)`,
     );
   } catch (err) {
     console.error(output.dump());

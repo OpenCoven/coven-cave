@@ -225,4 +225,10 @@ assert.match(
   "the export route uses the redacted manifest builder",
 );
 
+assert.match(
+  diagnosticsRoute,
+  /eventPlane: readEventPlaneDiagnostics\(\)/,
+  "the export carries the event plane's aggregate counters through the bounded reader (#5862)",
+);
+
 console.log("daemon-diagnostics.test.ts: ok");
