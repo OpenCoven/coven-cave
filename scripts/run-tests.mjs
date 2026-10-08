@@ -108,6 +108,7 @@ export const SUITES = {
     "scripts/remote-hygiene.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
+    "src/lib/invalidate-once.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
     "src/components/code-shortcuts-dialog.test.tsx",
     "src/components/workspace-pane-page.test.ts",

@@ -126,4 +126,54 @@ final class CaveEventWireTests: XCTestCase {
         let future = CaveEventCapability(enabled: true, protocolVersion: 2, path: CaveEventWire.path, topics: [], rolloutMode: .init(web: .primary, ios: .primary))
         XCTAssertEqual(future.iosMode, .off)
     }
+
+    // MARK: Final conformance (#5869)
+    // Literal pins, twin of cave-event-plane-protocol.test.ts's final block.
+
+    func testFinalConformancePins() {
+        XCTAssertEqual(CaveEventWire.protocolVersion, 1)
+        XCTAssertEqual(CaveEventWire.path, "/api/events-ws")
+        XCTAssertEqual(CaveEventTopic.allCases.map(\.rawValue), ["sessions", "board", "runs", "familiars", "daemon"])
+        XCTAssertEqual(CaveEventCloseCode.unsupportedProtocol, 4400)
+        XCTAssertEqual(CaveEventCloseCode.invalidFrame, 4402)
+        XCTAssertEqual(CaveEventCloseCode.slowConsumer, 4408)
+    }
+
+    func testEveryMalformedFixtureIsRefused() throws {
+        let malformed = try XCTUnwrap(try fixture()["malformed"] as? [String: Any])
+        XCTAssertGreaterThanOrEqual(malformed.count, 2)
+        for (name, message) in malformed {
+            XCTAssertThrowsError(try CaveEventServerMessage.parse(frame(message)), name)
+        }
+    }
+
+    func testWebAndIOSRolloutModesAreIndependent() throws {
+        let modes: [CaveEventRolloutMode] = [.off, .shadow, .primary]
+        for web in modes {
+            for ios in modes {
+                let json = #"{"enabled":true,"protocolVersion":1,"path":"/api/events-ws","topics":["board"],"rolloutMode":{"web":"\#(web.rawValue)","ios":"\#(ios.rawValue)"}}"#
+                let capability = try JSONDecoder().decode(CaveEventCapability.self, from: Data(json.utf8))
+                XCTAssertEqual(capability.rolloutMode, CaveEventRolloutModes(web: web, ios: ios))
+                XCTAssertEqual(capability.iosMode, ios, "web \(web.rawValue) never leaks into iOS")
+            }
+        }
+    }
+
+    func testReadyIsValidAfterHelloAndAfterAReplacementSubscribe() throws {
+        let golden = try fixture()
+        let subscribe = try XCTUnwrap(golden["subscribe"] as? [String: Any])
+        let replacement = try XCTUnwrap(subscribe["topics"] as? [String])
+        // The barrier for the hello's set, then the barrier for the replacement set.
+        let afterHello = try CaveEventServerMessage.parse(frame(XCTUnwrap(golden["ready"])))
+        guard case let .ready(first) = afterHello else { return XCTFail("expected ready") }
+        XCTAssertEqual(first.topics, [.sessions, .board])
+        let afterSubscribe = try CaveEventServerMessage.parse(frame([
+            "type": "ready", "protocol": 1, "epoch": "boot-a", "seq": 42,
+            "topics": replacement, "versions": [:] as [String: Int],
+        ] as [String: Any]))
+        guard case let .ready(second) = afterSubscribe else { return XCTFail("expected ready") }
+        XCTAssertEqual(second.topics.map(\.rawValue), replacement, "the replacement set, not a union")
+        let encoded = try CaveEventClientMessage.subscribe(topics: Set(second.topics)).encoded()
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? NSDictionary, subscribe as NSDictionary)
+    }
 }
