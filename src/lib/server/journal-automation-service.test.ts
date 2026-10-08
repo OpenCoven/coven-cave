@@ -135,7 +135,8 @@ test("PUT enable creates an ACTIVE coven-code routine in the familiar's journal 
   assert.equal(created.cwd, journalDir, "the routine's cwd is the familiar's journal dir");
   assert.equal(created.timezone, "local");
   assert.ok((await stat(journalDir)).isDirectory(), "the cwd exists before the routine is created");
-  assert.ok(created.prompt.includes(`${journalDir}/DATE.md`), "the prompt names the one file it writes");
+  assert.ok(created.prompt.includes(`${journalDir}/<day>.md`), "the prompt names the entry files it writes");
+  assert.match(created.prompt, /board\.json'/, "the prompt reads the Cave board by default");
   assert.ok(created.prompt.includes("/ws/astra"), "the prompt names the familiar's workspace");
   assert.equal(result.body.routine.hour, 21);
 });
@@ -219,6 +220,76 @@ test("a succeeded run that wrote nothing is reported as not written", async () =
     readEntry: async () => assert.fail("a running run is not checked"),
   });
   assert.equal(running.body.lastRunEntry, null);
+});
+
+test("current routines are checked for the day before the run, and a skipped day counts", async () => {
+  // v3+ routines reflect on yesterday and leave an existing entry alone, so
+  // the entry for the previous local day is what the run is answerable for.
+  const { buildJournalRoutinePrompt } = await import("../journal-automation.ts");
+  const prompt = buildJournalRoutinePrompt({ familiarId: "astra", journalDir: "/j/astra" });
+  const startedAt = "2026-10-07T13:00:00.000Z";
+  const routines = [{ id: astraId, status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=8", tags: [], prompt }];
+  const runs = { [astraId]: [{ id: "r1", automationId: astraId, runtime: "coven-code", status: "succeeded", startedAt, sessionId: "s-1" }] };
+  const previousDay = (() => {
+    const d = new Date(startedAt);
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
+  const written = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async (date) => {
+      assert.equal(date, previousDay, "the reflected day, not the run's own day");
+      return { exists: true, source: "familiar", modified: "2026-10-06T23:00:00.000Z" };
+    },
+  });
+  assert.deepEqual(written.body.lastRunEntry, { date: previousDay, written: true }, "an entry the run left as written still counts");
+
+  const missing = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async () => ({ exists: false, source: null, modified: null }),
+  });
+  assert.deepEqual(missing.body.lastRunEntry, { date: previousDay, written: false });
+
+  const legacy = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async () => ({ exists: true, source: "legacy", modified: "2026-10-07T13:01:00.000Z" }),
+  });
+  assert.equal(legacy.body.lastRunEntry.written, false, "a legacy file is never the routine's");
+});
+
+test("PUT with boardPath null leaves the board step out of the prompt", async () => {
+  const daemon = fakeDaemon();
+  await service.saveJournalAutomation(
+    { familiar: "astra", enabled: true, hour: 8, minute: 0, familiarName: "Astra" },
+    { transport: daemon.transport, boardPath: null },
+  );
+  const created = daemon.calls.find((c) => c.action === "coven.automations.create").definition;
+  assert.match(created.prompt, /echo 'no board'/);
+});
+
+test("PUT with hour null keeps a schedule set elsewhere", async () => {
+  const daemon = fakeDaemon({
+    routines: [{ id: astraId, status: "ACTIVE", rrule: "FREQ=WEEKLY;BYHOUR=9;BYDAY=MO", tags: [], runtime: "copilot" }],
+  });
+  const result = await service.saveJournalAutomation(
+    { familiar: "astra", enabled: false, hour: null, minute: 0, familiarName: null, runtime: null },
+    { transport: daemon.transport },
+  );
+  assert.equal(result.status, 200);
+  const updated = daemon.store.get(astraId);
+  assert.equal(updated.rrule, "FREQ=WEEKLY;BYHOUR=9;BYDAY=MO", "the custom rule is untouched");
+  assert.equal(updated.runtime, "copilot", "and so is the harness");
+  assert.equal(updated.status, "PAUSED");
+  assert.equal(result.body.routine.hour, null, "the pane is told it is not a single daily hour");
+
+  const fresh = await service.saveJournalAutomation(
+    { familiar: "nova", enabled: true, hour: null, minute: 0, familiarName: null, runtime: null },
+    { transport: fakeDaemon().transport },
+  );
+  assert.equal(fresh.status, 400, "a new routine needs an hour");
+  assert.equal(service.parseJournalAutomationPut({ familiar: "astra", enabled: true, hour: null }).hour, null);
+  assert.equal(typeof service.parseJournalAutomationPut({ familiar: "astra", enabled: true }), "string", "a missing hour is still refused");
 });
 
 test("PUT disable with no routine is a no-op", async () => {

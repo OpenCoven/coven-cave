@@ -37,7 +37,9 @@ import {
   type JournalRunFailure,
   type JournalRuntime,
 } from "@/lib/journal-automation";
+import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
+import { caveHome } from "@/lib/coven-paths";
 import { dateSlug } from "@/lib/daily-report";
 import { ensureFamiliarJournalDir, isJournalFamiliarId, readJournalEntry } from "@/lib/server/journal-store";
 
@@ -83,6 +85,8 @@ export type JournalAutomationDeps = {
   ensureJournalDir?: (familiarId: string) => Promise<string>;
   /** Reads the familiar's entry for a day; defaults to the journal store. */
   readEntry?: (date: string, familiarId: string) => Promise<{ exists: boolean; source?: string | null; modified: string | null }>;
+  /** The Cave board the prompt reads cards from; null leaves it out. */
+  boardPath?: string | null;
   /** Reads a session's log lines; defaults to the daemon's /api/v1/sessions/<id>/log. */
   readSessionLog?: (sessionId: string) => Promise<Array<{ message?: unknown }>>;
 };
@@ -90,7 +94,9 @@ export type JournalAutomationDeps = {
 export type JournalAutomationPut = {
   familiar: string;
   enabled: boolean;
-  hour: number;
+  /** Whole hour 0–23, or null to keep an existing routine's schedule
+   *  (one set elsewhere, e.g. Rituals, that isn't a single daily hour). */
+  hour: number | null;
   minute: number;
   familiarName: string | null;
   /** Harness to run on; omitted keeps the routine's current one. */
@@ -149,22 +155,32 @@ async function latestRun(id: string, transport?: AutomationTransport): Promise<R
 /** Clock-skew slack when comparing an entry's mtime with the run's start. */
 const ENTRY_SKEW_MS = 5_000;
 
-/** Did the last succeeded run write the familiar's entry for its local day? */
+/**
+ * Did the last succeeded run leave the familiar's entry for the day it
+ * reflects on? Current routines reflect on the day before the run and skip a
+ * day that is already written, so any existing entry for that day counts.
+ * Routines still on older instructions wrote the run's own day, and only a
+ * file modified by the run counts (a signed-out harness exits 0 too).
+ */
 async function lastRunEntry(
   familiar: string,
   run: RoutineRun | null,
+  reflectsPreviousDay: boolean,
   deps: JournalAutomationDeps,
 ): Promise<{ date: string; written: boolean } | null> {
   if (!run || run.status !== "succeeded") return null;
   const started = Date.parse(run.startedAt);
   if (!Number.isFinite(started)) return null;
   // The routine runs in the machine's local zone, as does this server.
-  const date = dateSlug(new Date(started));
+  const day = new Date(started);
+  if (reflectsPreviousDay) day.setDate(day.getDate() - 1);
+  const date = dateSlug(day);
   try {
     const record = await (deps.readEntry ?? readJournalEntry)(date, familiar);
+    if (!record.exists || record.source === "legacy") return { date, written: false };
+    if (reflectsPreviousDay) return { date, written: true };
     const modified = record.modified ? Date.parse(record.modified) : NaN;
-    const written = record.exists && record.source !== "legacy" && Number.isFinite(modified) && modified >= started - ENTRY_SKEW_MS;
-    return { date, written };
+    return { date, written: Number.isFinite(modified) && modified >= started - ENTRY_SKEW_MS };
   } catch {
     return null;
   }
@@ -198,7 +214,7 @@ export async function readJournalAutomation(
   try {
     const routine = await findRoutine(familiar, deps.transport);
     const lastRun = routine ? await latestRun(routine.id, deps.transport) : null;
-    const [entry, failureReason] = await Promise.all([lastRunEntry(familiar, lastRun, deps), lastRunFailure(lastRun, deps)]);
+    const [entry, failureReason] = await Promise.all([lastRunEntry(familiar, lastRun, Boolean(routine && isJournalRoutinePromptCurrent(routine.prompt)), deps), lastRunFailure(lastRun, deps)]);
     return {
       status: 200,
       body: {
@@ -225,7 +241,7 @@ export function parseJournalAutomationPut(body: unknown): JournalAutomationPut |
   // The native scheduler runs on the hour (no BYMINUTE), so minute is
   // optional and must be 0 when sent.
   const minute = b.minute === undefined ? 0 : b.minute;
-  if (!isValidRoutineTime(b.hour, minute)) {
+  if (b.hour !== null && !isValidRoutineTime(b.hour, minute)) {
     return "hour must be a whole hour 0–23; Coven routines run on the hour, so minute must be 0";
   }
   if (b.runtime !== undefined && !isJournalRuntime(b.runtime)) return "runtime must be one of coven-code, codex, claude, copilot";
@@ -233,7 +249,7 @@ export function parseJournalAutomationPut(body: unknown): JournalAutomationPut |
   return {
     familiar: b.familiar,
     enabled: b.enabled,
-    hour: b.hour as number,
+    hour: b.hour === null ? null : (b.hour as number),
     minute: 0,
     familiarName: name || null,
     runtime: isJournalRuntime(b.runtime) ? b.runtime : null,
@@ -259,6 +275,9 @@ export async function saveJournalAutomation(
   if (!input.enabled && !existing) {
     return { status: 200, body: { ok: true, available: true, routine: null, lastRun: null } };
   }
+  if (input.hour === null && !existing?.rrule) {
+    return { status: 400, body: { ok: false, available: true, error: "hour is required for a new daily reflection" } };
+  }
   try {
     const journalDir = await (deps.ensureJournalDir ?? ensureFamiliarJournalDir)(input.familiar);
     const workspaceDir = deps.workspaceDir ? await deps.workspaceDir(input.familiar).catch(() => null) : null;
@@ -267,12 +286,14 @@ export async function saveJournalAutomation(
       id: journalRoutineId(input.familiar),
       name: `Daily reflection · ${name}`,
       status: input.enabled ? "ACTIVE" : "PAUSED",
-      rrule: journalRRule(input.hour, input.minute),
+      // A null hour keeps a schedule set elsewhere instead of overwriting it.
+      rrule: input.hour === null ? existing!.rrule : journalRRule(input.hour, input.minute),
       prompt: buildJournalRoutinePrompt({
         familiarId: input.familiar,
         familiarName: name,
         journalDir,
         workspaceDir,
+        boardPath: deps.boardPath === undefined ? path.join(caveHome(), "board.json") : deps.boardPath,
       }),
       // An explicit choice wins; otherwise keep whatever the routine runs on
       // (it may have been switched in Rituals), and only a new one defaults.
@@ -288,7 +309,7 @@ export async function saveJournalAutomation(
       ? await updateRoutine({ ...definition, id: definition.id }, deps.transport)
       : await createRoutine(definition, deps.transport);
     const lastRun = existing ? await latestRun(saved.id, deps.transport) : null;
-    const [entry, failureReason] = await Promise.all([lastRunEntry(input.familiar, lastRun, deps), lastRunFailure(lastRun, deps)]);
+    const [entry, failureReason] = await Promise.all([lastRunEntry(input.familiar, lastRun, isJournalRoutinePromptCurrent(saved.prompt), deps), lastRunFailure(lastRun, deps)]);
     return {
       status: 200,
       body: {
