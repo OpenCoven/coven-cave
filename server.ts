@@ -39,6 +39,7 @@ import {
   EVENT_RING_COUNT_MAX,
   boundedPositiveInt,
   createEventBroker,
+  summarizeEventPlaneDiagnostics,
 } from "./src/lib/server/cave-event-broker.ts";
 import type { CaveEventPlanePublisher } from "./src/lib/server/cave-event-plane-publisher.ts";
 import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/status.ts";
@@ -2284,6 +2285,8 @@ const eventPlanePublisher: CaveEventPlanePublisher = {
   markResourceChanged: (topic, entityIds) => eventBroker?.publish(topic, entityIds),
 };
 globalThis.__covenCaveEventPlanePublisher = eventPlanePublisher;
+// Aggregate counters only, for /api/daemon/diagnostics (#5862).
+globalThis.__covenCaveEventPlaneDiagnostics = () => summarizeEventPlaneDiagnostics(eventBroker?.diagnostics() ?? null);
 // ws refuses anything past maxPayload with its own 1009 close; frames between
 // the protocol bound and this get the protocol's 4402 from the broker.
 const eventWss = new WebSocketServer({ noServer: true, maxPayload: MAX_EVENT_MESSAGE_BYTES * 4 });

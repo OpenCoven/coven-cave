@@ -12,6 +12,7 @@ import {
   evaluatePerformanceBudgets,
   PERFORMANCE_BUDGETS,
 } from "../src/lib/performance-budgets.ts";
+import { measureEventPlaneWorkload } from "./event-plane-workload.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /**
@@ -174,6 +175,33 @@ function reliabilityMetrics(reliability) {
   ]);
 }
 
+const EVENT_PLANE_COUNT_FIELDS = ["replayGaps", "activeConnections", "slowConsumerCloses"];
+
+function topicCountMap(value, label) {
+  if (!value || typeof value !== "object") throw new Error(`${label} must be an object of topic counts`);
+  return Object.fromEntries(
+    Object.entries(value).map(([topic, count]) => [topic, finiteNumber(count, `${label}.${topic}`)]),
+  );
+}
+
+/**
+ * The event plane's aggregate counters (#5862), kept beside the metrics rather
+ * than among them: they record what the workload exercised, not a latency or
+ * rate to budget. Counts only; the workload never returns ids or payloads.
+ */
+function eventPlaneSection(eventPlane) {
+  if (!eventPlane) return null;
+  const section = {
+    workload: eventPlane.workload ?? null,
+    invalidationsByTopic: topicCountMap(eventPlane.invalidationsByTopic, "eventPlane.invalidationsByTopic"),
+    subscriptions: topicCountMap(eventPlane.subscriptions, "eventPlane.subscriptions"),
+  };
+  for (const field of EVENT_PLANE_COUNT_FIELDS) {
+    section[field] = finiteNumber(eventPlane[field], `eventPlane.${field}`);
+  }
+  return section;
+}
+
 function compareMetric(current, previous, thresholdPct) {
   if (!previous || previous.unit !== current.unit || previous.direction !== current.direction) {
     return null;
@@ -223,6 +251,7 @@ export function buildPerformanceReport({
   baselineReport = null,
   regressionThresholdPct = DEFAULT_REGRESSION_THRESHOLD_PCT,
   budgetCatalogue = PERFORMANCE_BUDGETS,
+  eventPlane = null,
 }) {
   finiteNumber(regressionThresholdPct, "regressionThresholdPct");
   if (regressionThresholdPct < 0) throw new Error("regressionThresholdPct must be non-negative");
@@ -293,6 +322,7 @@ export function buildPerformanceReport({
     },
     budgets,
     metrics,
+    eventPlane: eventPlaneSection(eventPlane),
     benchmarks: {
       conversationList: conversation,
       daemonReliability: reliability,
@@ -354,6 +384,25 @@ export function renderPerformanceReportMarkdown(report) {
     ([operation, summary]) =>
       `| ${operation.replaceAll("_", " ")} | ${(summary.successRate * 100).toFixed(2)}% | ${formatMetricValue(summary.successfulDurationMs.p95, "ms")} | ${summary.pass ? "pass" : "fail"} |`,
   );
+  const eventPlane = report.eventPlane;
+  const eventPlaneTopics = eventPlane
+    ? [...new Set([...Object.keys(eventPlane.invalidationsByTopic), ...Object.keys(eventPlane.subscriptions)])]
+    : [];
+  const eventPlaneMarkdown = eventPlane
+    ? `## Event plane counters
+
+The broker's aggregate counters after a deterministic in-process workload.
+
+- Active connections: ${eventPlane.activeConnections}
+- Replay gaps: ${eventPlane.replayGaps}
+- Slow-consumer closures: ${eventPlane.slowConsumerCloses}
+
+| Topic | Invalidations | Subscriptions |
+| --- | ---: | ---: |
+${eventPlaneTopics.map((topic) => `| ${topic} | ${eventPlane.invalidationsByTopic[topic] ?? 0} | ${eventPlane.subscriptions[topic] ?? 0} |`).join("\n")}
+
+`
+    : "";
   const baselineLine = report.baseline
     ? `Compared with ${report.baseline.sha} from run ${report.baseline.runId}.`
     : "No previous report was available; this run seeds the timeline.";
@@ -398,7 +447,7 @@ ${report.budgets.results.map(budgetRow).join("\n")}
 | --- | ---: | ---: | --- |
 ${reliabilityRows.join("\n")}
 
-## Scope
+${eventPlaneMarkdown}## Scope
 
 This lane measures Cave's conversation-list scan/cache path and its deterministic daemon startup, reconnect, and recovery contract. The JSON report retains the raw benchmark payloads for future analysis.
 `;
@@ -541,6 +590,7 @@ async function main() {
     },
     baselineReport,
     regressionThresholdPct: options.regressionThresholdPct,
+    eventPlane: measureEventPlaneWorkload(),
   });
   const written = await writePerformanceReport({ outputRoot: options.output, report });
   process.stdout.write(

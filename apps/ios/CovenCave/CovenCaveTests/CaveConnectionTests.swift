@@ -41,6 +41,38 @@ final class CaveConnectionTests: XCTestCase {
         )
     }
 
+    func testHTTPSDerivesSecureEventSocket() {
+        let connection = CaveConnection(host: "https://cave.example.test:8443/api?source=pairing#x")
+        XCTAssertEqual(connection.eventSocketURL?.absoluteString, "wss://cave.example.test:8443/api/events-ws")
+        XCTAssertEqual(connection.eventSocketURLForCredentialedRequest?.absoluteString, "wss://cave.example.test:8443/api/events-ws")
+    }
+
+    func testMagicDNSHostDerivesSecureEventSocket() {
+        let connection = CaveConnection(host: "cave.tailnet.example.ts.net:8443")
+        XCTAssertEqual(connection.eventSocketURL?.absoluteString, "wss://cave.tailnet.example.ts.net:8443/api/events-ws")
+    }
+
+    func testLoopbackHTTPDerivesPlainEventSocket() {
+        let connection = CaveConnection(host: "http://127.0.0.1:3020")
+        XCTAssertEqual(connection.eventSocketURL?.absoluteString, "ws://127.0.0.1:3020/api/events-ws")
+        XCTAssertEqual(connection.eventSocketURLForCredentialedRequest?.absoluteString, "ws://127.0.0.1:3020/api/events-ws")
+    }
+
+    func testCredentialedRemotePlaintextEventSocketIsRefused() {
+        let connection = CaveConnection(host: "http://100.64.0.8:3020")
+        XCTAssertEqual(connection.eventSocketURL?.absoluteString, "ws://100.64.0.8:3020/api/events-ws")
+        XCTAssertNil(connection.eventSocketURLForCredentialedRequest)
+    }
+
+    func testEventSocketSharesTheCredentialOriginOfItsHost() throws {
+        let connection = CaveConnection(host: "https://cave.example.test:8443")
+        let socket = try XCTUnwrap(connection.eventSocketURL)
+        XCTAssertEqual(
+            CaveConnection.credentialOrigin(for: socket),
+            CaveConnection.credentialOrigin(for: try XCTUnwrap(connection.baseURL))
+        )
+    }
+
     func testCredentialOriginIsExactAndSharedByHTTPSAndWSS() {
         XCTAssertEqual(
             CaveConnection.credentialOrigin(for: URL(string: "https://cave.example.test:8443/api")!),

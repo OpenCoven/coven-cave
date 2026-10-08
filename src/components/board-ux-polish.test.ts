@@ -36,7 +36,7 @@ assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "Boa
 assert.match(view, /finally\s*\{\s*if \(!ctl\.signal\.aborted\) setHasLoaded\(true\);/, "load() must set hasLoaded in finally (skipping a superseded/aborted load)");
 assert.match(view, /!hasLoaded && !error \?/, "A loading branch must precede the empty-state branch");
 assert.match(view, /role="status" aria-label="Loading tasks"/, "Loading state must be announced");
-assert.match(view, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\)\)/, "board refocus bypasses a fresh warm cache");
+assert.match(view, /useRefreshOnFocus\(\(\) => load\(\{ force: true \}\)(?:, \{ enabled: !boardEventPrimary \})?\)/, "board refocus bypasses a fresh warm cache (paused only while the event plane covers the board, #5858)");
 
 // ───────── Failed mutations surface (no silent revert) ─────────
 assert.match(view, /const \[actionError, setActionError\] = useState<string \| null>\(null\)/, "BoardView must track actionError");

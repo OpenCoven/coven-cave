@@ -108,6 +108,7 @@ export const SUITES = {
     "scripts/remote-hygiene.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
+    "src/lib/invalidate-once.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
     "src/components/code-shortcuts-dialog.test.tsx",
     "src/components/workspace-pane-page.test.ts",
@@ -889,9 +890,11 @@ export const SUITES = {
     "src/lib/shared-json-fetch.test.ts",
     "src/lib/shared-requests.test.ts",
     "src/lib/use-pausable-poll.behavior.test.tsx",
+  "src/components/automations/ritual-finished-group.behavior.test.tsx",
     // event plane client manager and React hook (#5833)
     "src/lib/cave-event-plane-client.test.ts",
     "src/lib/use-cave-event-plane.test.tsx",
+    "src/components/event-plane-consumers.test.ts",
     "src/lib/use-reply-recommendation.behavior.test.tsx",
     "src/lib/use-surface-warmup.behavior.test.tsx",
     "src/lib/pausable-poll-discipline.test.ts",
@@ -1886,6 +1889,7 @@ export const SUITES = {
     "src/lib/server/sessions-publisher.test.ts",
     "src/lib/server/daemon-event-watcher.test.ts",
     "src/lib/server/familiar-roster-watch.test.ts",
+    "src/lib/server/board-file-watch.test.ts",
     "src/lib/server/chat-run-sessions-publisher.test.ts",
     "src/instrumentation-event-plane.test.ts",
     "src/lib/server/json-etag.test.ts",
@@ -2651,6 +2655,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/automations/ritual-finished-group.behavior.test.tsx",
   "src/components/chat-run-rail-lifecycle.test.tsx",
   "src/components/chat-turn-timeline.test.tsx",
   "src/components/grimoire-graph-interaction.test.tsx",

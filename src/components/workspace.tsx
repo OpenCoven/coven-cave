@@ -103,9 +103,11 @@ import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
@@ -2113,6 +2115,12 @@ export function Workspace() {
     serialize: true,
     pauseWhileInputActive: true,
   });
+  // Event plane (#5854). Each topic refreshes through its existing owner. In
+  // `shadow` mode the client only counts invalidations and calls nothing, so
+  // the polls above stay authoritative and unchanged.
+  useCaveEventPlane("sessions", () => void loadSessions());
+  useCaveEventPlane("familiars", () => void loadFamiliars());
+  useCaveEventPlane("daemon", () => void daemonConnectionSupervisorRef.current?.refresh({ fresh: true }));
   usePausablePoll(() => loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     serialize: true,
     pauseWhileInputActive: true,
@@ -2644,7 +2652,7 @@ export function Workspace() {
     pauseWhileInputActive: true,
   });
 
-  const refreshOpenTaskCards = useCallback(async () => {
+  const refreshOpenTaskCards = useCallback(async (opts?: { force?: boolean }) => {
     try {
       const { data: json } = await readSurfaceResource<{
         ok?: boolean;
@@ -2655,7 +2663,7 @@ export function Workspace() {
           familiarId?: string | null;
           endDate?: string | null;
         }>;
-      }>("board:cards");
+      }>("board:cards", opts?.force === true);
       if (json.ok && Array.isArray(json.cards)) {
         const cards = json.cards;
         // The 60s board poll rebuilds these arrays each tick; keep the previous
@@ -2689,8 +2697,20 @@ export function Workspace() {
   useEffect(() => {
     void refreshOpenTaskCards();
   }, [refreshOpenTaskCards]);
+  // The badge reads the board, so the board topic covers it like the Board
+  // view's own poll (#5869, under Val's board-only decision in #5858). In
+  // primary mode with the topic ready, an invalidation refreshes it and the
+  // 60s interval and its focus refresh pause; otherwise both run as before.
+  const workspaceBoardEvents = useCaveEventPlane("board", (event) => {
+    invalidateSurfaceResourcesFor(event, "board:cards");
+    void refreshOpenTaskCards({ force: true });
+  });
+  const workspaceBoardPrimary = workspaceBoardEvents.rolloutMode === "primary" && workspaceBoardEvents.ready;
   usePausablePoll(() => void refreshOpenTaskCards(), 60_000, {
     pauseWhileInputActive: true,
+    intervalEnabled: !workspaceBoardPrimary,
+    refreshOnFocusEnabled: !workspaceBoardPrimary,
+    onIntervalPaused: noteCaveEventPollAvoided,
   });
 
   // Declared above handleEnrichTasks, which closes over it.

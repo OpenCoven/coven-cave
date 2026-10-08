@@ -726,3 +726,23 @@ assert.match(
 );
 
 console.log("debug-pane.test.ts: ok");
+
+// ── Event plane client counters (#5862) ───────────────────────────────────────
+assert.match(
+  source,
+  /<Section title="Event plane">\s*<EventPlaneDiagnosticsRows \/>\s*<\/Section>/,
+  "the debug pane has an Event plane section, closed by default so it doesn't poll",
+);
+assert.match(
+  source,
+  /getCaveEventPlaneClient\(\)\.diagnostics\(\)/,
+  "it reads the browser client's own counter snapshot",
+);
+for (const row of ["reconnects", "coalesced", "fallback activations", "polls avoided"]) {
+  assert.match(source, new RegExp(`<KVRow k="${row}">`), `the section shows ${row}`);
+}
+assert.doesNotMatch(
+  source.slice(source.indexOf("function EventPlaneDiagnosticsRows"), source.indexOf("function JsonBlock")),
+  /entityIds|covenCaveToken|fetch\(/,
+  "the section shows counts only and makes no request",
+);
