@@ -43,7 +43,9 @@ assert.match(
 
 assert.match(messageBubble, /open\(parsed\.visible\)/, "a segmented reader action still opens the full answer");
 assert.match(messageBubble, /onOpenReader: message\.streaming \? nil : onOpenReader\.map/, "earlier spans do not offer a reader action before the response settles");
-assert.match(messageBubble, /ForEach\(timeline\)/, "timeline entries keep stable identities and mounted geometry");
+// Repeat steps fold first (#5881); rows still key off stable entry ids.
+assert.match(messageBubble, /let display = ChatActivityTimeline\.collapsingRepeats\(timeline\)\s*ForEach\(display\)/,
+  "timeline entries keep stable identities and mounted geometry");
 assert.match(messageBubble, /deferOffscreenMarkdown: !isTail/, "the tail renderer stays mounted for viewport recovery");
 assert.match(messageProse, /!deferOffscreenMarkdown \|\| message\.streaming \|\| voiceOverEnabled \|\| isNearViewport/, "streaming, VoiceOver and nearby prose keep rich rendering");
 assert.match(messageProse, /@State private var mdHeight/, "each prose span owns its measured WebView height");
