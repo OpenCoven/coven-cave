@@ -7,6 +7,47 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-10-08
+
+> Voice calls say "Thinking…" while your familiar works on its reply, instead of looking dead.
+
+Patch release on top of v0.5.9. Headline: during a voice call with a
+harness-backed familiar (ElevenLabs or the familiar brain), the call screen
+read "Listening" for the whole time the familiar worked on its reply, which
+can take 20 seconds or more, so calls looked dead and were hung up before the
+reply arrived. The call now shows "Thinking…" until the familiar starts
+speaking.
+
+### Added
+- **iOS composer menus** (#5846, #5875, #5876, #5878, #5879, #5880). Typing
+  `/model ` or `/familiar ` opens an argument picker instead of dead-ending;
+  `/skill` and `/prompt` are native pickers backed by the desktop's skills and
+  prompts; and commands, arguments and mentions share one suggestion menu with
+  hardware-keyboard navigation on iPad.
+- **Event plane, still off by default** (#5838, #5844, #5855, #5860, #5863,
+  #5866, #5868, #5872). Board and session invalidations publish after durable
+  writes; daemon and familiar-roster watchers start only when
+  `COVEN_CAVE_EVENT_PLANE_ENABLED=1`; web surfaces connect in shadow mode; the
+  board can hand its refresh to the plane in primary mode; server and debug-pane
+  diagnostics report the plane's counters; iOS gains the wire contract and a
+  socket wired into the app model; and conformance tests and a request-count
+  gate close out the plan. With the plane off, nothing connects and polling is
+  unchanged.
+
+### Fixed
+- **Voice call status** (#5856, #5857). A brain turn in flight shows
+  "Thinking…"; speech still shows "Replying…", and muted or non-live states
+  keep their own labels.
+- **iOS Chats** (#5849). At accessibility text sizes the project strip
+  becomes one full-width menu instead of chips that fit one per screen.
+- **Rituals → Needs you** (#5873, #5874). Session-finished notifications
+  collapse into one "Finished · N" row with Dismiss all, so the items that ask
+  for something are no longer buried.
+
+### Changed
+- The Coding Desk switch-announcement test reads live regions every 50 ms, so
+  it no longer misses a message cleared after 250 ms (#5859, #5861).
+
 ## [0.5.9] - 2026-10-07
 
 > Chats stop sending a model to a runtime that can't run it, and the Coding Desk handles very large change lists.
