@@ -372,6 +372,62 @@ final class ChatListSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.archivedCount, 1)
     }
 
+    func testProjectChoicesExcludeChatsHiddenByArchiveFamiliarAndSearch() {
+        let projects = ["alpha", "beta", "gamma", "empty"].map { project($0, root: "/repos/\($0)") }
+        let alpha = chat("Build alpha", root: "/repos/alpha", familiars: ["nyx"])
+        let beta = chat("Build beta", root: "/repos/beta", familiars: ["lyra"])
+        let archived = chat("Build archived", root: "/repos/gamma", familiars: ["nyx"])
+        archived.archived = true
+        let loose = chat("Notes", root: nil, familiars: ["lyra"])
+        let threads = [alpha, beta, archived, loose]
+        let cache = ChatListSnapshotCache()
+
+        for includeArchived in [false, true] {
+            for familiar in [nil, "nyx", "lyra"] as [String?] {
+                for query in ["", "Build", "missing"] {
+                    let visible = ChatListSnapshot(
+                        threads: threads, sessions: [], familiars: [], projects: projects,
+                        query: query, includeArchived: includeArchived, familiarId: familiar
+                    )
+                    let expectedIds = Set(visible.entries.compactMap(\.projectId))
+                    let expectedUnassigned = visible.entries.contains { $0.projectId == nil }
+                    XCTAssertEqual(visible.projectIds, expectedIds)
+                    XCTAssertEqual(visible.hasUnassigned, expectedUnassigned)
+                    for selection in [nil, .project(id: "alpha"), .project(id: "beta"), .unassigned]
+                        as [ChatListSnapshot.ProjectFilter?] {
+                        let filtered = cache.resolve(
+                            threads: threads, sessions: [], familiars: [], projects: projects,
+                            query: query, includeArchived: includeArchived,
+                            familiarId: familiar, projectFilter: selection
+                        )
+                        XCTAssertEqual(filtered.projectIds, expectedIds,
+                                       "project selection must not hide other nonempty choices")
+                        XCTAssertEqual(filtered.hasUnassigned, expectedUnassigned)
+                    }
+                }
+            }
+        }
+    }
+
+    func testProjectChoicesRefreshWhenLastChatIsArchivedOrRemoved() {
+        let projects = [project("alpha", root: "/repos/alpha"), project("beta", root: "/repos/beta")]
+        let alpha = chat("alpha", root: "/repos/alpha")
+        var beta = SessionRow(id: "beta", title: "Desktop beta", familiarId: "nyx")
+        beta.projectRoot = "/repos/beta"
+        let cache = ChatListSnapshotCache()
+        func resolve(_ threads: [ChatThread], includeArchived: Bool = false) -> ChatListSnapshot {
+            cache.resolve(threads: threads, sessions: [beta], familiars: [], projects: projects,
+                          query: "", includeArchived: includeArchived, projectFilter: .project(id: "alpha"))
+        }
+        XCTAssertEqual(resolve([alpha]).projectIds, ["alpha", "beta"])
+        alpha.archived = true
+        XCTAssertEqual(resolve([alpha]).projectIds, ["beta"])
+        XCTAssertEqual(resolve([alpha], includeArchived: true).projectIds, ["alpha", "beta"])
+        beta.archivedAt = "2026-10-08T12:00:00Z"
+        XCTAssertTrue(resolve([alpha]).projectIds.isEmpty)
+        XCTAssertEqual(resolve([], includeArchived: true).projectIds, ["beta"])
+    }
+
     func testWithoutAProjectCatalogEveryConversationIsUnassigned() {
         let snapshot = ChatListSnapshot(
             threads: [chat("alpha", root: "/repos/alpha"), chat("beta", root: "/repos/beta")],

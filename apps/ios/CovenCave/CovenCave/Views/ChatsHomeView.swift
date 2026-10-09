@@ -530,20 +530,17 @@ struct ChatsHomeView: View {
         .accessibilityIdentifier("Familiar filter chip")
     }
 
-    /// Projects offered by the filter: every registered project bound to at
-    /// least one conversation (active or archived), by name, then Unassigned
-    /// history when there is any. A filter that names a project with no chats
-    /// left, or one no longer registered, stays listed so it can be cleared.
+    /// Offer only projects with chats under the current search, familiar and
+    /// archive settings. All projects remains available to clear a selection
+    /// whose last matching chat disappeared.
     private func projectFilterChoices(_ snapshot: ChatListSnapshot) -> [ChatListSnapshot.ProjectFilter] {
-        var ids = snapshot.projectIds
-        if case .project(let id)? = projectFilter { ids.insert(id) }
-        var choices: [ChatListSnapshot.ProjectFilter] = ids
+        var choices: [ChatListSnapshot.ProjectFilter] = snapshot.projectIds
             .sorted {
                 let order = projectDisplayName($0).localizedCaseInsensitiveCompare(projectDisplayName($1))
                 return order == .orderedSame ? $0 < $1 : order == .orderedAscending
             }
             .map { .project(id: $0) }
-        if snapshot.hasUnassigned || projectFilter == .unassigned {
+        if snapshot.hasUnassigned {
             choices.append(.unassigned)
         }
         return choices
