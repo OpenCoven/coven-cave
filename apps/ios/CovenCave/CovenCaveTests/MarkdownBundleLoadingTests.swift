@@ -9,8 +9,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "native-plain-paragraph-v1", withExtension: "json"))
         let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
         let coordinator = MarkdownWebView.Coordinator()
-        let window = mount(coordinator.webView)
-        defer { unmount(window, coordinator: coordinator) }
+        let mountedWebView = try mount(coordinator.webView)
+        defer { unmount(mountedWebView, coordinator: coordinator) }
         try await waitUntilReady(coordinator.webView)
         for item in cases {
             let source = try XCTUnwrap(item["source"] as? String)
@@ -34,8 +34,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
         let corpus = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         let scenarios = try XCTUnwrap(corpus["scenarios"] as? [[String: Any]])
         let coordinator = MarkdownWebView.Coordinator()
-        let window = mount(coordinator.webView)
-        defer { unmount(window, coordinator: coordinator) }
+        let mountedWebView = try mount(coordinator.webView)
+        defer { unmount(mountedWebView, coordinator: coordinator) }
         try await waitUntilReady(coordinator.webView)
         for scenario in scenarios where scenario["renderParity"] as? Bool == true {
             let id = try XCTUnwrap(scenario["id"] as? String)
@@ -79,8 +79,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
     @MainActor
     func testDiagramEngineLoadsOnlyForSettledDiagramsAndIsReused() async throws {
         let coordinator = MarkdownWebView.Coordinator()
-        let window = mount(coordinator.webView)
-        defer { unmount(window, coordinator: coordinator) }
+        let mountedWebView = try mount(coordinator.webView)
+        defer { unmount(mountedWebView, coordinator: coordinator) }
         try await waitUntilReady(coordinator.webView)
 
         let webView = coordinator.webView
@@ -124,8 +124,8 @@ final class MarkdownBundleLoadingTests: XCTestCase {
     @MainActor
     func testMissingDiagramResourceReportsFailureAndPreservesReadableSource() async throws {
         let coordinator = MarkdownWebView.Coordinator()
-        let window = mount(coordinator.webView)
-        defer { unmount(window, coordinator: coordinator) }
+        let mountedWebView = try mount(coordinator.webView)
+        defer { unmount(mountedWebView, coordinator: coordinator) }
         try await waitUntilReady(coordinator.webView)
 
         _ = try await coordinator.webView.evaluateJavaScript("""
@@ -154,21 +154,35 @@ final class MarkdownBundleLoadingTests: XCTestCase {
     }
 
     @MainActor
-    private func mount(_ webView: WKWebView) -> UIWindow {
-        let host = UIViewController()
-        host.view = webView
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
-        window.rootViewController = host
-        window.isHidden = false
-        host.view.layoutIfNeeded()
-        return window
+    @MainActor
+    private struct MountedWebView {
+        let window: UIWindow
+        let previousKeyWindow: UIWindow?
     }
 
     @MainActor
-    private func unmount(_ window: UIWindow, coordinator: MarkdownWebView.Coordinator) {
+    private func mount(_ webView: WKWebView) throws -> MountedWebView {
+        let host = UIViewController()
+        host.view = webView
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = try XCTUnwrap(
+            scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        )
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        return MountedWebView(window: window, previousKeyWindow: previousKeyWindow)
+    }
+
+    @MainActor
+    private func unmount(_ mountedWebView: MountedWebView, coordinator: MarkdownWebView.Coordinator) {
         coordinator.invalidate()
-        window.isHidden = true
-        window.rootViewController = nil
+        mountedWebView.window.isHidden = true
+        mountedWebView.window.rootViewController = nil
+        mountedWebView.previousKeyWindow?.makeKeyAndVisible()
     }
 
     @MainActor
@@ -181,7 +195,15 @@ final class MarkdownBundleLoadingTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTFail("The packaged markdown renderer did not become ready")
+        let diagnostic = try? await webView.evaluateJavaScript("""
+            JSON.stringify({
+                url: location.href,
+                readyState: document.readyState,
+                rendererReady: typeof window.caveRender === 'function',
+                scripts: [...document.scripts].map(script => script.src)
+            })
+            """)
+        XCTFail("The packaged markdown renderer did not become ready: \(String(describing: diagnostic))")
         throw NSError(domain: "MarkdownBundleLoadingTests", code: 1)
     }
 }
