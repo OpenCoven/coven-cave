@@ -230,6 +230,15 @@
       "category": "Browser & Web"
     },
     {
+      "name": "vane",
+      "source": "./plugins/vane",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
       "name": "dbhub",
       "source": "./plugins/dbhub",
       "policy": {

@@ -426,6 +426,7 @@ export const SUITES = {
     "src/lib/first-project-gate-policy.test.ts",
     "src/lib/session-project-scope.test.ts",
     "scripts/sync-marketplace.test.mjs",
+    "scripts/vane-mcp-server.test.mjs",
     "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
     "src/lib/marketplace-logo.test.ts",
