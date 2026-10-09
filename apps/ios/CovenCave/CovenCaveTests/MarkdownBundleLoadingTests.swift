@@ -154,7 +154,6 @@ final class MarkdownBundleLoadingTests: XCTestCase {
     }
 
     @MainActor
-    @MainActor
     private struct MountedWebView {
         let window: UIWindow
         let previousKeyWindow: UIWindow?
