@@ -151,6 +151,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-library-view.test.ts",
     "src/components/role-surfaces/research-studio-providers.test.ts",
     "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
+    "src/components/role-surfaces/research-blog-directions.test.tsx",
     "src/components/role-surfaces/research-tab-desk.test.ts",
     "src/components/role-surfaces/use-research-run-gateway.test.ts",
     "src/components/ui/clamped-text.test.ts",
@@ -169,6 +170,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/components/role-surfaces/research-run-projection-surface.test.tsx",
     "src/lib/research-generations.test.ts",
+    "src/lib/research-blog-directions.test.ts",
     "src/lib/research-paper-view.test.ts",
     "src/lib/research-resource-browser.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -2719,6 +2721,7 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/research-x-sources.test.tsx",
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
+    "src/components/role-surfaces/research-blog-directions.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
   "src/components/role-surfaces/researcher-surface-loader.test.tsx",
   "src/components/role-surfaces/research-mission-detail-origin.test.tsx",

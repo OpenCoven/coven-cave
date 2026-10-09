@@ -1,0 +1,27 @@
+.research-blog-directions,
+.research-blog-directions__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.research-blog-directions__options {
+  padding: var(--space-3);
+  max-inline-size: min(100vw - var(--space-8), 30ch);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.research-blog-directions__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--touch-target);
+  overflow-wrap: anywhere;
+}
+
+.research-blog-directions .research-studio__select {
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
