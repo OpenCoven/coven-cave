@@ -176,6 +176,9 @@ export function buildCodexExecArgs(input: {
   model: string | null;
   readOnly: boolean;
   addDirs: readonly string[];
+  /** Validated Thinking pick (`model_reasoning_effort` level, #5905); null
+   *  leaves the CLI's own default in place. */
+  reasoningEffort?: string | null;
 }): string[] {
   const caps = input.capabilities;
   // Routing already refused unsafe resume tokens; this second check keeps the
@@ -183,15 +186,24 @@ export function buildCodexExecArgs(input: {
   const resumeSessionId = isSafeCodexResumeSessionId(input.resumeSessionId)
     ? input.resumeSessionId
     : null;
+  // The level is validated against the capability's values upstream; this
+  // shape check keeps the builder safe on its own, since the value becomes
+  // half of a `key=value` config override.
+  const reasoningEffort =
+    typeof input.reasoningEffort === "string" && /^[a-z]+$/.test(input.reasoningEffort)
+      ? input.reasoningEffort
+      : null;
   if (resumeSessionId) {
     const a = ["exec", "resume", resumeSessionId, "--json"];
     if (input.model && caps.resumeModel) a.push("--model", input.model);
+    if (reasoningEffort && caps.resumeConfig) a.push("-c", `model_reasoning_effort=${reasoningEffort}`);
     if (caps.resumeSkipGitRepoCheck) a.push("--skip-git-repo-check");
     a.push("--", input.prompt);
     return a;
   }
   const a = ["exec", "--json"];
   if (input.model && caps.model) a.push("--model", input.model);
+  if (reasoningEffort && caps.config) a.push("-c", `model_reasoning_effort=${reasoningEffort}`);
   // Cave's Read-only chip maps onto Codex's native sandbox exactly like
   // `coven run --permission read-only` does; "full" stays implicit so the
   // harness keeps its own default sandbox rather than being widened.

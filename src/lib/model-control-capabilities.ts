@@ -56,16 +56,38 @@ const MODEL_CONTROL_FAMILIES = new Set<ModelControlFamily>([
   "tool-support",
 ]);
 
-const reasoning = (delivery: ModelControlDelivery, parameter?: string): ModelControlCapability => ({
+const DEFAULT_REASONING_VALUES: readonly ModelControlValue[] = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+/** `codex exec -c model_reasoning_effort=<value>`: Codex's own documented
+ * levels (CLI 0.162 accepts the key on fresh and resume launches). */
+export const CODEX_REASONING_CONTROL_PARAMETER = "model_reasoning_effort";
+const CODEX_REASONING_VALUES: readonly ModelControlValue[] = [
+  ...DEFAULT_REASONING_VALUES,
+  { value: "xhigh", label: "Extra high" },
+];
+
+/** `copilot --reasoning-effort <level>` (CLI 1.0.94 help). "none" is not
+ * offered: Auto already means "send nothing". */
+export const COPILOT_REASONING_CONTROL_PARAMETER = "--reasoning-effort";
+const COPILOT_REASONING_VALUES: readonly ModelControlValue[] = [
+  ...CODEX_REASONING_VALUES,
+  { value: "max", label: "Max" },
+];
+
+const reasoning = (
+  delivery: ModelControlDelivery,
+  parameter?: string,
+  values: readonly ModelControlValue[] = DEFAULT_REASONING_VALUES,
+): ModelControlCapability => ({
   family: "reasoning",
   label: delivery === "prompt-only" ? "Reasoning guidance" : "Reasoning",
   delivery,
-  values: [
-    { value: "minimal", label: "Minimal" },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-  ],
+  values,
   validation: {},
   ...(parameter ? { parameter } : {}),
 });
@@ -152,19 +174,32 @@ export function modelControlCapabilities(
     ];
   }
 
+  // Codex and Copilot take a native reasoning level on the direct transports
+  // Cave spawns itself (`codex exec -c model_reasoning_effort=…`,
+  // `copilot --reasoning-effort …`). Both are CLI-level, so they are offered
+  // for every model id; the routes gate them on the direct transport being
+  // selected with the flag available (#5905).
+  if (canonicalRuntime === "codex") {
+    return [reasoning("runtime-cli", CODEX_REASONING_CONTROL_PARAMETER, CODEX_REASONING_VALUES)];
+  }
+  if (canonicalRuntime === "copilot") {
+    return [reasoning("runtime-cli", COPILOT_REASONING_CONTROL_PARAMETER, COPILOT_REASONING_VALUES)];
+  }
+
   return [];
 }
 
-/** Drop runtime-CLI controls whose wire flag the installed Coven CLI does not
- * advertise, so a client never renders (or sends) a setting the launch could
- * not forward. Shared by the model-state and send routes. */
+/** Drop runtime-CLI controls whose wire flag the selected transport cannot
+ * forward, so a client never renders (or sends) a setting the launch could
+ * not deliver. `forwardable` names the parameters the launch will honour;
+ * the model-state and send routes compute it from the same probes. */
 export function withForwardableRuntimeCliControls(
   capabilities: readonly ModelControlCapability[],
-  forwardable: { speed: boolean },
+  forwardable: ReadonlySet<string>,
 ): readonly ModelControlCapability[] {
   return capabilities.filter((capability) =>
     capability.delivery !== "runtime-cli" ||
-    (capability.parameter === COVEN_SPEED_CONTROL_PARAMETER && forwardable.speed),
+    (capability.parameter !== undefined && forwardable.has(capability.parameter)),
   );
 }
 

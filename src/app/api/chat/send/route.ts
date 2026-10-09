@@ -67,6 +67,7 @@ import {
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
   copilotStreamSpec,
+  copilotSupportsReasoningEffort,
   CopilotMessageTranscript,
   CopilotTextAssembler,
   isSafeCopilotResumeSessionId,
@@ -107,6 +108,7 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
   evaluateCovenBackedRuntimeAvailability,
@@ -344,6 +346,9 @@ import {
 import { claudeOpus5Routability } from "@/lib/server/claude-models";
 import {
   appliedModelControls,
+  CODEX_REASONING_CONTROL_PARAMETER,
+  COPILOT_REASONING_CONTROL_PARAMETER,
+  COVEN_SPEED_CONTROL_PARAMETER,
   modelControlCapabilities,
   withForwardableRuntimeCliControls,
   modelControlInputWithLegacy,
@@ -2899,6 +2904,20 @@ async function postAdmittedChat(
     !sshRuntime &&
     binding.harness === "claude" &&
     ((await probeCovenCapability(covenRunSupportsSpeed)) ?? false);
+  // The Thinking control for Codex and Copilot rides their direct transports
+  // (`codex exec -c model_reasoning_effort=…`, `copilot --reasoning-effort`),
+  // so it is forwardable exactly when that transport was selected above with
+  // the flag in its probed contract (#5905). The model-state route asks the
+  // same routing helpers, so the chips it offers match what lands here.
+  const codexReasoningForwardingEnabled =
+    codexDirect && codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
+  const copilotReasoningForwardingEnabled =
+    Boolean(copilotStream) && copilotSupportsReasoningEffort(copilotCapability?.version ?? null);
+  const forwardableControlParameters = new Set<string>([
+    ...(speedForwardingEnabled ? [COVEN_SPEED_CONTROL_PARAMETER] : []),
+    ...(codexReasoningForwardingEnabled ? [CODEX_REASONING_CONTROL_PARAMETER] : []),
+    ...(copilotReasoningForwardingEnabled ? [COPILOT_REASONING_CONTROL_PARAMETER] : []),
+  ]);
   const { desiredModel, modelState, invalidSavedModel, suppressedSavedModel } = resolveSendModelMetadata({
     body,
     config,
@@ -3028,7 +3047,7 @@ async function postAdmittedChat(
   const controlCapabilities = withForwardableRuntimeCliControls(
     modelControlCapabilities(binding.harness, desiredModel)
       .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
-    { speed: speedForwardingEnabled },
+    forwardableControlParameters,
   );
   const controlValidation = validateModelControlValues(
     controlCapabilities,
@@ -3051,6 +3070,10 @@ async function postAdmittedChat(
   }
   body.modelControls = controlValidation.values;
   const forwardSpeed = speedForwardingEnabled ? controlValidation.values.performance ?? null : null;
+  const forwardReasoning =
+    codexReasoningForwardingEnabled || copilotReasoningForwardingEnabled
+      ? controlValidation.values.reasoning ?? null
+      : null;
   const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
   const appliedModelControlValues = appliedModelControls(controlCapabilities, controlValidation.values);
   const hermesReasoningEffort = controlCapabilities.some(
@@ -3439,6 +3462,8 @@ async function postAdmittedChat(
         // session/sandbox flags above.
         addDirs: grantDirs,
         pluginDirs: copilotPluginDirs,
+        // Thinking pick (#5905), gated on the probed CLI version above.
+        reasoningEffort: forwardReasoning,
       });
     }
     if (hermesDirect) {
@@ -3522,6 +3547,9 @@ async function postAdmittedChat(
         model: codexDirectLaunchModel,
         readOnly: body.permissionMode === "read",
         addDirs: grantDirs,
+        // Thinking pick (#5905): `-c model_reasoning_effort=…`, gated on the
+        // probed `--config` capability for this launch shape.
+        reasoningEffort: forwardReasoning,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];

@@ -37,6 +37,25 @@ const CLAUDE_MODEL = { id: "claude-sonnet-5", label: "Claude Sonnet 5" };
 
 // The shape /api/chat/model-state reports for a local Claude binding whose
 // installed coven CLI advertises `--speed` (see model-control-capabilities).
+// A local Codex binding whose direct `codex exec` transport advertises
+// `-c, --config` (#5905).
+const CODEX_CONTROLS = [
+  {
+    family: "reasoning",
+    label: "Reasoning",
+    delivery: "runtime-cli",
+    parameter: "model_reasoning_effort",
+    values: [
+      { value: "minimal", label: "Minimal" },
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+      { value: "xhigh", label: "Extra high" },
+    ],
+    validation: {},
+  },
+];
+
 const CLAUDE_CONTROLS = [
   {
     family: "reasoning",
@@ -66,6 +85,8 @@ const CLAUDE_CONTROLS = [
 
 type Mutable = {
   harness: string;
+  /** Opt the Codex fixture into reporting its Thinking control (#5905). */
+  codexControls?: boolean;
   effectiveModel: string;
   familiarsServed: number;
   modelStateServed: number;
@@ -141,8 +162,10 @@ async function seed(page: Page, inventoryAvailable = true, harness = "codex"): P
           reason: "e2e",
         },
         // Controls follow the runtime: Claude reports Thinking guidance and
-        // the runtime Speed flag; Codex reports none.
-        controls: state.harness === "claude" ? CLAUDE_CONTROLS : [],
+        // the runtime Speed flag; Codex reports its native reasoning level only
+        // when the test opts in (the real route gates it on the direct
+        // transport), so the default Codex fixture shows no chips.
+        controls: state.harness === "claude" ? CLAUDE_CONTROLS : state.harness === "codex" && state.codexControls ? CODEX_CONTROLS : [],
       },
     });
   });
@@ -351,6 +374,31 @@ test.describe("composer runtime picker (context chips)", () => {
     // The opened chat's chips start from the same pick.
     const chat = page.getByTestId("chat-main");
     await expect(chat.getByRole("button", { name: /change speed/ })).toContainText("Speed · Thorough", { timeout: 15_000 });
+  });
+  test("Codex gets a Thinking chip when its direct transport reports the control, and the pick rides the send (#5905)", async ({ page }) => {
+    const state = await seed(page);
+    state.codexControls = true;
+    await page.goto("/?mode=chat");
+    const main = page.getByTestId("chat-main");
+    const thinkingChip = main.getByRole("button", { name: /change thinking/ });
+    await expect(thinkingChip).toBeVisible({ timeout: 45_000 });
+    await expect(thinkingChip).toContainText("Thinking · Auto");
+    await expect(thinkingChip).toHaveAttribute("title", /Applied by the runtime/);
+    // Codex reports no Speed control: that chip stays absent.
+    await expect(main.getByRole("button", { name: /change speed/ })).toHaveCount(0);
+
+    await thinkingChip.click();
+    const menu = page.getByRole("menu", { name: "Thinking", exact: true });
+    await expect(menu.getByRole("menuitemradio", { name: "Extra high", exact: true })).toBeVisible();
+    await menu.getByRole("menuitemradio", { name: "High", exact: true }).click();
+    await expect(thinkingChip).toContainText("Thinking · High");
+
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Think it through");
+    await composer.press("Enter");
+    await expect(() => expect(state.sendBodies.length).toBeGreaterThan(0)).toPass({ timeout: 10_000 });
+    const sent = state.sendBodies.at(-1) as { modelControls?: Record<string, string> };
+    expect(sent.modelControls).toEqual({ reasoning: "high" });
   });
 });
 
