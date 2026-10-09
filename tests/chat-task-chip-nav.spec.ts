@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 
 // Repro for: clicking the linked-task chip in the chat header should navigate
 // to the board and open that card's inspector (expanded details). User reports
@@ -124,3 +125,40 @@ test("task chip navigates to the board card inspector, not the chat list", async
   await expect(page.getByRole("dialog", { name: "Card inspector" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-surface")).toHaveCount(0);
 });
+
+for (const back of ["browser", "settings-button", "escape"] as const) {
+test(`${back}: Back restores a chat deep link without a Workspace render-phase update`, async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    const historyTrace: Array<{ event: string; url: string }> = [];
+    Object.assign(window, { caveHistoryTrace: historyTrace });
+    for (const event of ["popstate", "hashchange"]) {
+      window.addEventListener(event, () => historyTrace.push({ event, url: location.href }));
+    }
+  });
+  await setup(page);
+  await page.locator(".chat-sidebar").getByText("Review Version Control in Cave", { exact: false }).first().click();
+  await expect(page).toHaveURL(/#chat-s-task$/);
+  await expect(page.getByTestId("chat-main").getByText("On it.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings/);
+  if (back === "browser") await page.goBack();
+  else if (back === "settings-button") await page.getByRole("button", { name: "Back", exact: true }).click();
+  else {
+    await page.locator(".settings-shell__header").click();
+    await page.keyboard.press("Escape");
+  }
+  await expect(page).toHaveURL(/#chat-s-task$/);
+  await expect(page.getByTestId("chat-main").getByText("On it.", { exact: true })).toBeVisible();
+  const trace = await page.evaluate(() => (window as unknown as { caveHistoryTrace: object[] }).caveHistoryTrace);
+  const evidence = JSON.stringify({ back, trace, errors }, null, 2);
+  const evidencePath = testInfo.outputPath("history-trace.json");
+  await writeFile(evidencePath, evidence);
+  await testInfo.attach("history-trace", { path: evidencePath, contentType: "application/json" });
+  expect(errors.filter((message) => /Cannot update a component[\s\S]*while rendering a different component/.test(message))).toEqual([]);
+});
+}
