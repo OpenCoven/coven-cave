@@ -50,6 +50,34 @@ final class ChatProjectFilterUITests: XCTestCase {
     }
 
     @MainActor
+    func testArchivingLastChatRemovesSelectedProjectChip() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
+        app.launch()
+
+        let design = chip(app, "Design Library")
+        XCTAssertTrue(design.waitForExistence(timeout: 10))
+        design.tap()
+        let lyra = row(app, "local:ui-preview-lyra-chat")
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+        lyra.press(forDuration: 1)
+        app.buttons["Archive"].firstMatch.tap()
+        XCTAssertTrue(lyra.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(design.waitForNonExistence(timeout: 5),
+                      "a selected project must not remain a filter choice after its last visible chat is archived")
+
+        let all = chip(app, "All")
+        all.tap()
+        XCTAssertTrue(row(app, "server:ui-preview-server-only").waitForExistence(timeout: 5))
+        XCTAssertFalse(design.exists)
+        app.buttons["Chat list options"].tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show archived")).firstMatch.tap()
+        XCTAssertTrue(design.waitForExistence(timeout: 5))
+        design.tap()
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testProjectFilterOpensAChatInItsOwnProject() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
