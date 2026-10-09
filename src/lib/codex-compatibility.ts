@@ -43,10 +43,14 @@ export type CodexCapabilities = {
   addDir?: boolean;
   skipGitRepoCheck?: boolean;
   color?: boolean;
+  /** `-c, --config <key=value>` overrides; carries the Thinking control
+   *  (`model_reasoning_effort`, #5905). */
+  config?: boolean;
   /** `codex exec resume` is a distinct argv contract. */
   resumeJson?: boolean;
   resumeModel?: boolean;
   resumeSkipGitRepoCheck?: boolean;
+  resumeConfig?: boolean;
 };
 
 export type CodexRuntimeReport = {
@@ -990,9 +994,11 @@ export async function discoverCodexRuntime(
         addDir: option(help, "--add-dir"),
         skipGitRepoCheck: option(help, "--skip-git-repo-check"),
         color: option(help, "--color"),
+        config: option(help, "--config"),
         resumeJson: option(resumeHelp, "--json"),
         resumeModel: option(resumeHelp, "--model"),
         resumeSkipGitRepoCheck: option(resumeHelp, "--skip-git-repo-check"),
+        resumeConfig: option(resumeHelp, "--config"),
       },
     };
   } catch {

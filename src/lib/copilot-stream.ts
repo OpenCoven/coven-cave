@@ -89,6 +89,21 @@ export type RuntimeEventProtocolSchema = {
  */
 const COPILOT_SESSION_ID_MIN_CLIENT_VERSION = "1.0.70";
 
+// `copilot --reasoning-effort <none|minimal|low|medium|high|xhigh|max>`
+// carries the Thinking control (#5905). 1.0.94 is the first version whose
+// help we verified advertises it; older clients keep their own default.
+const COPILOT_REASONING_EFFORT_MIN_CLIENT_VERSION = "1.0.94";
+export const COPILOT_REASONING_EFFORT_FLAG = "--reasoning-effort";
+
+/** Whether a probed Copilot CLI version accepts `--reasoning-effort`. An
+ *  unparseable or missing version fails closed. */
+export function copilotSupportsReasoningEffort(clientVersion: string | null | undefined): boolean {
+  const normalized = parseRuntimeClientVersion(clientVersion);
+  if (!normalized) return false;
+  const order = compareRuntimeClientVersions(normalized, COPILOT_REASONING_EFFORT_MIN_CLIENT_VERSION);
+  return order !== null && order >= 0;
+}
+
 export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
   {
     id: "copilot-jsonl-v1",
@@ -485,6 +500,9 @@ export type CopilotStreamLaunch = {
   addDirs: string[];
   /** Trusted, app-bundled skill-only plugins loaded for this process. */
   pluginDirs?: string[];
+  /** Validated Thinking pick for `--reasoning-effort` (#5905); callers gate
+   *  it on `copilotSupportsReasoningEffort`. Null leaves the CLI default. */
+  reasoningEffort?: string | null;
   /**
    * `argv` (default) — the prompt trails the prefix's `-p` flag as one argv
    * token, exactly as the registered copilot manifest declares. `stdin` — the
@@ -527,6 +545,11 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   if (launch.model && spec.modelFlag) {
     const model = runtimeModelIdForLaunch("copilot", launch.model);
     if (model) args.push(spec.modelFlag, model);
+  }
+  // The level is validated against the capability's values upstream; the
+  // shape check keeps the builder safe on its own against a flag-shaped value.
+  if (typeof launch.reasoningEffort === "string" && /^[a-z]+$/.test(launch.reasoningEffort)) {
+    args.push(COPILOT_REASONING_EFFORT_FLAG, launch.reasoningEffort);
   }
   // Trust each granted root at the harness level; repeatable native flag.
   // Emitted for read AND full turns so the grant list stays the declared

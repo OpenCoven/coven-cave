@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CODEX_REASONING_CONTROL_PARAMETER,
+  COPILOT_REASONING_CONTROL_PARAMETER,
   COVEN_SPEED_CONTROL_PARAMETER,
   appliedModelControls,
   modelControlCapabilities,
@@ -142,12 +144,12 @@ test("Claude's Speed control is coven run --speed, offered for the runtime defau
     "Speed values are coven run --speed's own vocabulary, which the daemon maps onto Claude --effort low|medium|high",
   );
   assert.deepEqual(
-    withForwardableRuntimeCliControls(capabilities, { speed: false }).map((capability) => capability.family),
+    withForwardableRuntimeCliControls(capabilities, new Set()).map((capability) => capability.family),
     ["reasoning"],
     "a CLI that does not advertise --speed drops the control instead of rendering a chip the send route would reject",
   );
   assert.deepEqual(
-    withForwardableRuntimeCliControls(capabilities, { speed: true }).map((capability) => capability.family),
+    withForwardableRuntimeCliControls(capabilities, new Set([COVEN_SPEED_CONTROL_PARAMETER])).map((capability) => capability.family),
     ["reasoning", "performance"],
   );
   const validated = validateModelControlValues(capabilities, { performance: "thorough" });
@@ -158,5 +160,48 @@ test("Claude's Speed control is coven run --speed, offered for the runtime defau
     "a forwarded runtime flag is reported as applied, unlike prompt guidance",
   );
   assert.deepEqual(promptOnlyModelControls(capabilities, validated.values), {});
-  assert.deepEqual(modelControlCapabilities("codex", ""), [], "no other runtime borrows the Claude Speed mapping");
+  assert.ok(
+    !modelControlCapabilities("codex", "").some((capability) => capability.family === "performance"),
+    "no other runtime borrows the Claude Speed mapping",
+  );
+});
+
+test("Codex and Copilot carry Thinking on their direct transports, gated per wire flag (#5905)", () => {
+  const codex = modelControlCapabilities("codex", "openai/gpt-5.6-sol");
+  assert.deepEqual(
+    codex.map((capability) => [capability.family, capability.delivery, capability.parameter]),
+    [["reasoning", "runtime-cli", CODEX_REASONING_CONTROL_PARAMETER]],
+    "Codex reports a native reasoning level via -c model_reasoning_effort",
+  );
+  assert.deepEqual(
+    codex[0]?.values.map((option) => option.value),
+    ["minimal", "low", "medium", "high", "xhigh"],
+    "Codex levels are its own documented set",
+  );
+  const copilot = modelControlCapabilities("copilot", "");
+  assert.deepEqual(
+    copilot.map((capability) => [capability.family, capability.delivery, capability.parameter]),
+    [["reasoning", "runtime-cli", COPILOT_REASONING_CONTROL_PARAMETER]],
+    "Copilot reports a native reasoning level via --reasoning-effort, for the runtime default too",
+  );
+  assert.deepEqual(
+    copilot[0]?.values.map((option) => option.value),
+    ["minimal", "low", "medium", "high", "xhigh", "max"],
+    "Copilot levels follow its help; none is left to Auto",
+  );
+  assert.deepEqual(
+    withForwardableRuntimeCliControls(codex, new Set([COPILOT_REASONING_CONTROL_PARAMETER])),
+    [],
+    "a gate for another runtime's flag never lets a control through",
+  );
+  assert.deepEqual(
+    withForwardableRuntimeCliControls(codex, new Set([CODEX_REASONING_CONTROL_PARAMETER])).map((capability) => capability.family),
+    ["reasoning"],
+  );
+  assert.deepEqual(
+    appliedModelControls(codex, validateModelControlValues(codex, { reasoning: "xhigh" }).values),
+    { reasoning: "xhigh" },
+    "a forwarded runtime flag is reported as applied",
+  );
+  assert.deepEqual(validateModelControlValues(copilot, { reasoning: "none" }).rejected, ["reasoning"]);
 });

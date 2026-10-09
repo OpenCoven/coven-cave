@@ -8,6 +8,14 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Changed
+- **Thinking chip for Codex and Copilot** (#5905). Both runtimes now report a
+  native reasoning level, forwarded on the direct transports Cave spawns
+  itself: `codex exec -c model_reasoning_effort=<level>` (also on resume) and
+  `copilot --reasoning-effort <level>` (CLI 1.0.94 and later). The control is
+  offered only when the send route would take that transport with the flag
+  available, so a chip never promises a setting the launch cannot deliver.
+
+### Changed
 - **Home composer: Thinking and Speed chips** (#5902). The Home composer shows
   the same Thinking and Speed chips as Chat, resolved from the selected
   familiar's model-state report and refreshed after a model pick. A pick rides

@@ -172,17 +172,17 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /withForwardableRuntimeCliControls\(\s*\n\s*modelControlCapabilities\(binding\.harness, desiredModel\)[\s\S]*?\{ speed: speedForwardingEnabled \},\s*\n\s*\);/,
+  /withForwardableRuntimeCliControls\(\s*\n\s*modelControlCapabilities\(binding\.harness, desiredModel\)[\s\S]*?forwardableControlParameters,\s*\n\s*\);/,
   "the send route drops the Speed control when it cannot forward it, so a pick is rejected rather than silently ignored",
 );
 assert.match(
   modelStateRoute,
-  /withForwardableRuntimeCliControls\([\s\S]*?\{ speed: speedForwardable \},/,
+  /withForwardableRuntimeCliControls\([\s\S]*?speedForwardable \? \[COVEN_SPEED_CONTROL_PARAMETER\] : \[\]/,
   "the model-state route offers the Speed control on the same probe, so a client never renders a chip the send route would reject",
 );
 assert.match(
   modelStateRoute,
-  /const speedForwardable =\s*\n\s*state\.harness === "claude" &&\s*\n\s*canonicalHarnessId\(binding\.harness\) === "claude" &&\s*\n\s*!isSshRuntime\(binding\.runtime\) &&/,
+  /const localBinding =\s*\n\s*canonicalHarnessId\(binding\.harness\) === state\.harness &&\s*\n\s*!isSshRuntime\(binding\.runtime\) &&[\s\S]*?const speedForwardable =\s*\n\s*state\.harness === "claude" &&\s*\n\s*localBinding &&/,
   "the model-state Speed gate matches the send route's local Claude binding condition",
 );
 assert.match(
@@ -194,6 +194,40 @@ assert.match(
   chatRoute,
   /if \(forwardSpeed\) a\.push\("--speed", forwardSpeed\);/,
   "coven run argv forwards --speed when enabled",
+);
+
+// Thinking for Codex and Copilot (#5905): forwardable exactly when the direct
+// transport was selected with the flag in its probed contract; the model-state
+// route asks the same routing helpers through direct-transport-reasoning-gates.
+assert.match(
+  chatRoute,
+  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
+  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability",
+);
+assert.match(
+  chatRoute,
+  /const copilotReasoningForwardingEnabled =\s*\n\s*Boolean\(copilotStream\) && copilotSupportsReasoningEffort\(copilotCapability\?\.version \?\? null\);/,
+  "Copilot Thinking forwarding follows the direct JSONL routing decision and the probed CLI version",
+);
+assert.match(
+  chatRoute,
+  /const forwardableControlParameters = new Set<string>\(\[[\s\S]*?COVEN_SPEED_CONTROL_PARAMETER[\s\S]*?CODEX_REASONING_CONTROL_PARAMETER[\s\S]*?COPILOT_REASONING_CONTROL_PARAMETER[\s\S]*?\]\);/,
+  "every runtime-cli control is gated by its own wire flag",
+);
+assert.match(
+  chatRoute,
+  /buildCodexExecArgs\(\{[\s\S]*?reasoningEffort: forwardReasoning,[\s\S]*?\}\);/,
+  "the direct Codex argv carries the validated Thinking pick",
+);
+assert.match(
+  chatRoute,
+  /buildCopilotStreamArgs\(\{[\s\S]*?reasoningEffort: forwardReasoning,[\s\S]*?\}\);/,
+  "the direct Copilot argv carries the validated Thinking pick",
+);
+assert.match(
+  modelStateRoute,
+  /directTransportReasoningGates\(\{ familiarId, harness: state\.harness, resumeSessionId \}\)/,
+  "the model-state route offers Codex/Copilot Thinking only when the direct transport could forward it",
 );
 assert.match(
   chatRoute,

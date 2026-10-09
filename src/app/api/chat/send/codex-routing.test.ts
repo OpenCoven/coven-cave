@@ -30,6 +30,8 @@ const fullCapabilities = {
   resumeJson: true,
   resumeModel: true,
   resumeSkipGitRepoCheck: true,
+  config: true,
+  resumeConfig: true,
 };
 
 // SSH always keeps the remote Coven path — and never spends a probe on it.
@@ -233,6 +235,58 @@ assert.deepEqual(
   }),
   ["exec", "resume", "thread-abc123", "--json", "--", "continue please"],
   "a resume help contract without --model / --skip-git-repo-check omits both",
+);
+
+// ── Thinking control (#5905): `-c model_reasoning_effort=<level>` ───────────
+assert.deepEqual(
+  buildCodexExecArgs({
+    prompt: "think hard",
+    resumeSessionId: null,
+    capabilities: fullCapabilities,
+    model: "gpt-5.6-sol",
+    readOnly: false,
+    addDirs: [],
+    reasoningEffort: "xhigh",
+  }),
+  ["exec", "--json", "--model", "gpt-5.6-sol", "-c", "model_reasoning_effort=xhigh", "--skip-git-repo-check", "--color", "never", "--", "think hard"],
+  "a validated Thinking pick rides a fresh launch as a config override",
+);
+assert.deepEqual(
+  buildCodexExecArgs({
+    prompt: "continue",
+    resumeSessionId: "thread-abc123",
+    capabilities: fullCapabilities,
+    model: null,
+    readOnly: false,
+    addDirs: [],
+    reasoningEffort: "low",
+  }),
+  ["exec", "resume", "thread-abc123", "--json", "-c", "model_reasoning_effort=low", "--skip-git-repo-check", "--", "continue"],
+  "a resume launch carries the same override when its own help advertises --config",
+);
+assert.ok(
+  !buildCodexExecArgs({
+    prompt: "hello",
+    resumeSessionId: null,
+    capabilities: { ...fullCapabilities, config: false },
+    model: null,
+    readOnly: false,
+    addDirs: [],
+    reasoningEffort: "high",
+  }).includes("-c"),
+  "a help contract without --config omits the override entirely",
+);
+assert.ok(
+  !buildCodexExecArgs({
+    prompt: "hello",
+    resumeSessionId: null,
+    capabilities: fullCapabilities,
+    model: null,
+    readOnly: false,
+    addDirs: [],
+    reasoningEffort: "high; rm -rf /",
+  }).some((arg) => arg.includes("model_reasoning_effort")),
+  "the builder refuses a level that is not a bare lowercase word",
 );
 
 const defensiveResume = buildCodexExecArgs({
