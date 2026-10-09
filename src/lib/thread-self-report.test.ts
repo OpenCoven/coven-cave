@@ -631,7 +631,12 @@ describe("in-chat Thread Signal card builders", () => {
       ["score", "confidence", "tools", "memory", "files", "context"],
     );
     assert.equal(tiles[0].value, "71");
-    assert.equal(tiles[0].formula, "conf x .35 + tools x .25 + memory x .20 + files x .20");
+    assert.equal(tiles[0].formula, "Confidence 35% + Tools 25% + Memory 20% + Files 20%");
+    // #5898: weights read as percentages of the score, not as code.
+    assert.deepEqual(
+      tiles.map((tile) => tile.weight),
+      ["weighted blend", "35% of score", "25% of score", "20% of score", "20% of score", "not scored"],
+    );
     // Only the composite carries a formula line.
     assert.deepEqual(tiles.slice(1).map((tile) => tile.formula), [undefined, undefined, undefined, undefined, undefined]);
     assert.equal(tiles[1].rationale, "Most signals were healthy.");

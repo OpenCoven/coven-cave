@@ -324,6 +324,7 @@ import {
   covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  covenRunSupportsSpeed,
   openCodeRunCapabilities,
 } from "./chat-send-capabilities";
 import {
@@ -344,6 +345,7 @@ import { claudeOpus5Routability } from "@/lib/server/claude-models";
 import {
   appliedModelControls,
   modelControlCapabilities,
+  withForwardableRuntimeCliControls,
   modelControlInputWithLegacy,
   promptOnlyModelControls,
   validateModelControlValues,
@@ -2888,6 +2890,15 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
+  // The Speed control rides `coven run --speed`, which the daemon maps onto
+  // Claude's `--effort`. Gate it on the installed CLI advertising the flag,
+  // exactly like --permission and --add-dir; the SSH builder cannot forward
+  // it, and no other harness launches through this argv with a verified
+  // mapping. The model-state route offers the control on the same probe.
+  const speedForwardingEnabled =
+    !sshRuntime &&
+    binding.harness === "claude" &&
+    ((await probeCovenCapability(covenRunSupportsSpeed)) ?? false);
   const { desiredModel, modelState, invalidSavedModel, suppressedSavedModel } = resolveSendModelMetadata({
     body,
     config,
@@ -3014,8 +3025,11 @@ async function postAdmittedChat(
   // argv is built. A native Hermes control is available only for its verified
   // Responses API transport; the CLI path must fail closed rather than quietly
   // turning a provider setting into prompt prose.
-  const controlCapabilities = modelControlCapabilities(binding.harness, desiredModel)
-    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  const controlCapabilities = withForwardableRuntimeCliControls(
+    modelControlCapabilities(binding.harness, desiredModel)
+      .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
+    { speed: speedForwardingEnabled },
+  );
   const controlValidation = validateModelControlValues(
     controlCapabilities,
     modelControlInputWithLegacy(
@@ -3036,6 +3050,7 @@ async function postAdmittedChat(
     }, { status: 400 });
   }
   body.modelControls = controlValidation.values;
+  const forwardSpeed = speedForwardingEnabled ? controlValidation.values.performance ?? null : null;
   const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
   const appliedModelControlValues = appliedModelControls(controlCapabilities, controlValidation.values);
   const hermesReasoningEffort = controlCapabilities.some(
@@ -3516,6 +3531,10 @@ async function postAdmittedChat(
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
     if (forwardPermission) a.push("--permission", forwardPermission);
+    // The Speed control: `coven run --speed fast|balanced|thorough`, mapped by
+    // the daemon onto Claude's `--effort`. Only an explicit, validated pick is
+    // forwarded; an unset control leaves the runtime's own default in place.
+    if (forwardSpeed) a.push("--speed", forwardSpeed);
     // Trust each granted root at the harness level; repeatable flag.
     for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best

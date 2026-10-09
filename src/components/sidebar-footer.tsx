@@ -37,7 +37,9 @@ export function SidebarFooter({
           title="Dashboard — activity overview and daily reports"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
+            {/* Not ph:squares-four: Canvas uses that glyph, and two rows in one
+                sidebar shouldn't share an icon (#5888). */}
+            <Icon name="ph:chart-line-up" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </Link>

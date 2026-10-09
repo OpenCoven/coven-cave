@@ -29,6 +29,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { BlogDirectionControls } from "./research-blog-directions";
+import { EMPTY_BLOG_DIRECTIONS, studioGenerationDirections, type BlogDirections } from "@/lib/research-blog-directions";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
@@ -599,6 +601,8 @@ export function GenerationConfigModal({
   onSelectSource,
   directions,
   onDirectionsChange,
+  blogDirections = EMPTY_BLOG_DIRECTIONS,
+  onBlogDirectionsChange,
   readiness,
   mediaProvider,
   onMediaProviderChange,
@@ -629,6 +633,8 @@ export function GenerationConfigModal({
   onSelectSource: (id: string) => void;
   directions: string;
   onDirectionsChange: (value: string) => void;
+  blogDirections?: BlogDirections;
+  onBlogDirectionsChange?: (value: BlogDirections) => void;
   readiness: ResearchGenerationReadiness | null;
   mediaProvider: ResearchMediaProvider;
   onMediaProviderChange: (provider: ResearchMediaProvider) => void;
@@ -663,7 +669,9 @@ export function GenerationConfigModal({
 }) {
   const meta = studioMetaForKind(kind);
   const isMedia = !isResearchGenerationKind(kind);
-  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
+  const directionsLength = studioGenerationDirections(kind, directions, blogDirections).length;
+  const overDirectionsCap = directionsLength > RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH;
+  const nearCap = directionsLength >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
   const elevenLabsVoiceOptions: StandardSelectOption<string>[] =
     elevenLabsCatalog.status === "ready"
       ? [
@@ -804,6 +812,9 @@ export function GenerationConfigModal({
           The draft extracts from this run&rsquo;s newest markdown artifact.
           </span>
         </div>
+        {kind === "blog" && onBlogDirectionsChange ? (
+          <BlogDirectionControls value={blogDirections} onChange={onBlogDirectionsChange} />
+        ) : null}
         <div className="research-studio-config__field">
           <label className="research-studio-config__label" htmlFor="research-studio-directions">
             Directions (optional)
@@ -814,16 +825,22 @@ export function GenerationConfigModal({
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
-            aria-describedby="research-studio-directions-count"
+            aria-describedby={overDirectionsCap ? "research-studio-directions-count research-studio-directions-error" : "research-studio-directions-count"}
+            aria-invalid={overDirectionsCap || undefined}
             placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
           />
           <span
             id="research-studio-directions-count"
             className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}
           >
-            {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
+            {directionsLength.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
           </span>
         </div>
+        {overDirectionsCap ? (
+          <p id="research-studio-directions-error" role="alert" className="research-studio-config__error">
+            Directions and choices must fit within 5,000 characters. Shorten the directions or remove a choice.
+          </p>
+        ) : null}
         {isMedia ? (
           <div className="research-studio-config__media">
             <div className="research-studio-config__field">
@@ -1225,7 +1242,8 @@ export function GenerationConfigModal({
           disabled={
             creating ||
             selectedSourceId === null ||
-            mediaConfigurationError !== null
+            mediaConfigurationError !== null ||
+            overDirectionsCap
           }
         >
           {creating ? "Drafting…" : `✦ ${isMedia ? "Draft for review" : "Generate"} ${meta.label}`}

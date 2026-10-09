@@ -83,6 +83,27 @@ const verbosity = (delivery: ModelControlDelivery, parameter?: string): ModelCon
   ...(parameter ? { parameter } : {}),
 });
 
+/** The values are `coven run --speed`'s own vocabulary: the daemon maps them
+ * onto the harness's native effort flag (Claude `--effort low|medium|high`),
+ * so Cave never has to translate a Cave-only word at the launch boundary. */
+const performance = (delivery: ModelControlDelivery, parameter?: string): ModelControlCapability => ({
+  family: "performance",
+  label: delivery === "prompt-only" ? "Speed guidance" : "Speed",
+  delivery,
+  values: [
+    { value: "fast", label: "Fast" },
+    { value: "balanced", label: "Balanced" },
+    { value: "thorough", label: "Thorough" },
+  ],
+  validation: {},
+  ...(parameter ? { parameter } : {}),
+});
+
+/** The one runtime-CLI control Cave forwards today, and the wire flag the
+ * send route and the model-state route both gate on the same `coven run`
+ * help probe. */
+export const COVEN_SPEED_CONTROL_PARAMETER = "speed";
+
 /**
  * Return only controls Cave can truthfully deliver for this runtime/model.
  * Unknown and legacy runtime/model pairs intentionally have no controls: that
@@ -113,14 +134,38 @@ export function modelControlCapabilities(
     ];
   }
 
-  // Claude currently has no verified non-interactive per-turn CLI flag in the
-  // Cave launch contract. Keep an opt-in guidance control distinct from a
-  // native setting until that capability is explicitly probed and mapped.
-  if (canonicalRuntime === "claude" && isModelInCatalog("claude", canonicalModel)) {
-    return [reasoning("prompt-only")];
+  // Claude launches through `coven run claude`, whose `--speed fast|balanced|
+  // thorough` the daemon maps onto Claude's own `--effort low|medium|high`
+  // (verified in coven-cli's harness tests). That flag is CLI-level, so it is
+  // offered for every Claude selection, including the runtime default. The
+  // route still gates it on the installed CLI advertising `--speed`.
+  //
+  // Thinking guidance stays prompt-only: Cave has no verified per-turn flag
+  // for Claude's extended thinking. It applies to the runtime default and to
+  // catalog models, never to a free-typed id whose behaviour is unknown.
+  if (canonicalRuntime === "claude") {
+    return [
+      ...(canonicalModel === "" || isModelInCatalog("claude", canonicalModel)
+        ? [reasoning("prompt-only")]
+        : []),
+      performance("runtime-cli", COVEN_SPEED_CONTROL_PARAMETER),
+    ];
   }
 
   return [];
+}
+
+/** Drop runtime-CLI controls whose wire flag the installed Coven CLI does not
+ * advertise, so a client never renders (or sends) a setting the launch could
+ * not forward. Shared by the model-state and send routes. */
+export function withForwardableRuntimeCliControls(
+  capabilities: readonly ModelControlCapability[],
+  forwardable: { speed: boolean },
+): readonly ModelControlCapability[] {
+  return capabilities.filter((capability) =>
+    capability.delivery !== "runtime-cli" ||
+    (capability.parameter === COVEN_SPEED_CONTROL_PARAMETER && forwardable.speed),
+  );
 }
 
 export function validateModelControlValues(
@@ -164,10 +209,14 @@ export function validateModelControlValues(
 }
 
 /**
- * Translate the two historical request fields only when the selected model
- * advertises a matching typed capability. This keeps old clients useful for
- * verified reasoning controls while preventing legacy Speed from becoming a
- * universal latency promise. Explicit typed values win over the legacy field.
+ * Translate the historical `reasoningEffort` request field only when the
+ * selected model advertises a matching typed capability. This keeps old
+ * clients useful for verified reasoning controls. The legacy `responseSpeed`
+ * field is never migrated: older clients send its default ("fast") on every
+ * turn, and now that Speed is a real runtime flag for Claude, migrating it
+ * would silently pin every such turn to the lowest effort. Only an explicit
+ * typed `performance` value reaches the launch. Explicit typed values win
+ * over the legacy field.
  */
 export function modelControlInputWithLegacy(
   capabilities: readonly ModelControlCapability[],
@@ -182,14 +231,6 @@ export function modelControlInputWithLegacy(
     reasoningCapability.values.some((option) => option.value === legacy.reasoningEffort)
   ) {
     migrated.reasoning = legacy.reasoningEffort;
-  }
-  const performanceCapability = capabilities.find((capability) => capability.family === "performance");
-  if (
-    performanceCapability &&
-    typeof legacy.responseSpeed === "string" &&
-    performanceCapability.values.some((option) => option.value === legacy.responseSpeed)
-  ) {
-    migrated.performance = legacy.responseSpeed;
   }
   if (typed === undefined) return migrated;
   if (!typed || typeof typed !== "object" || Array.isArray(typed)) return typed;

@@ -103,7 +103,9 @@ assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinatio
 // The Home/Chat tabs are retired (cave-fh9so): the sidebar is one list, so the
 // destination column is no longer a tabpanel labelled by an active tab.
 assert.doesNotMatch(source, /role="tabpanel"/, "the destination list is not a tabpanel any more");
-assert.match(source, /<SidebarSection id="navigation" label="Navigation">/, "destinations sit under a Navigation heading");
+// #5888: the primary group keeps its heading for assistive tech but doesn't
+// draw it — it sits directly under New chat inside <nav aria-label="Primary">.
+assert.match(source, /<SidebarSection id="navigation" label="Navigation" labelHidden>/, "destinations keep an accessible Navigation heading, visually hidden");
 assert.match(source, /<SidebarSection\s+id="explore"/, "quiet destinations sit under their own Explore heading");
 // Retiring the SidebarSection assertions took this rule's only coverage with
 // them. Its section-heading half is dead — nothing emits sidebar-section*
@@ -719,4 +721,34 @@ assert.doesNotMatch(
   "the sidebar renders no session list — the docked chat rail owns that surface",
 );
 
+
+// ── #5888 sidebar cleanup ────────────────────────────────────────────────────
+{
+  const section = readFileSync(new URL("./sidebar-section.tsx", import.meta.url), "utf8");
+  assert.match(
+    section,
+    /className=\{`sidebar-section__head-row\$\{labelHidden \? " sr-only" : ""\}`\}/,
+    "a hidden label stays in the accessibility tree as a visually hidden heading",
+  );
+  const css = Array.isArray(styles) ? styles.join("\n") : styles;
+  assert.doesNotMatch(source, /count=\{rooms\.length\}/, "Rooms doesn't repeat the number of rows visible beneath it");
+  assert.match(
+    css,
+    /\.sidebar-folder-row,\s*\.sidebar-actions--footer \.sidebar-action-row \{[^}]*gap: var\(--space-2\);/,
+    "destination rows put 8px between icon and label",
+  );
+  assert.match(css, /\.sidebar-foot-btn \{[^}]*gap: var\(--space-2\);/, "footer rows share the destinations' label column");
+  assert.match(railHeaderCss, /\.rail-header__new \{[^}]*gap: var\(--space-2\);/, "New chat shares the same label column");
+  assert.doesNotMatch(
+    css,
+    /\.sidebar-folder-row--active \{[^}]*box-shadow: inset/,
+    "the active row no longer draws an inset bar that bends around its corners",
+  );
+  assert.match(
+    css,
+    /\.sidebar-folder-row--active::before,\s*\.sidebar-folder-row--split::before \{[^}]*height: var\(--space-4\);[^}]*transform: translateY\(-50%\);/,
+    "the active marker is a short centred bar on the row's straight edge",
+  );
+  assert.match(css, /\.sidebar-foot \{[^}]*margin-inline: var\(--rail-pad\);[^}]*gap: 0;/, "the footer divider spans the rows and the footer keeps the 32px pitch");
+}
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

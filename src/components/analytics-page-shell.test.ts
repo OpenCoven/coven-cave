@@ -89,8 +89,8 @@ assert.doesNotMatch(shell, /<a\b[^>]*\bhref="\/\?mode=chat"/, "New chat is not a
 assert.match(shell, /import \{ SidebarSection \}/, "the standalone rail uses the shared section primitive");
 assert.match(
   shell,
-  /<SidebarSection id="navigation" label="Navigation">/,
-  "…with the same Navigation group as the workspace rail",
+  /<SidebarSection id="navigation" label="Navigation" labelHidden>/,
+  "…with the same Navigation group as the workspace rail, its heading visually hidden (#5888)",
 );
 assert.match(
   shell,

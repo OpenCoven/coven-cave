@@ -7,6 +7,54 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Chat composer: Runtime, Model, Thinking and Speed are separate chips**
+  (#5896). The combined "Runtime · Model" chip and its two-group menu split
+  into a Runtime chip and a Model chip, each with its own menu; picking a
+  runtime still chains into the Model menu. The selected model's reported
+  controls now ride the same row as their own chips, Thinking and Speed,
+  which appear only while `/api/chat/model-state` reports that control for
+  the active runtime and model, with the reported values as the menu and
+  Auto meaning nothing is sent. The Tools menu gains a Runtime… row.
+- **Speed is a real runtime flag for Claude Code**. A Speed pick (Fast,
+  Balanced, Thorough) is forwarded as `coven run --speed`, which the daemon
+  maps onto Claude's `--effort low|medium|high`; it is offered only for a
+  local Claude binding whose installed Coven CLI advertises the flag. The
+  legacy `responseSpeed` request field is no longer migrated into a typed
+  control, so older clients that send its default on every turn cannot pin
+  Claude to its lowest effort.
+
+## [0.5.11] - 2026-10-09
+
+> A calmer left sidebar: one label column, a straight active marker, no redundant headings.
+
+Patch release on top of v0.5.10. Headline: the left navigation sidebar is
+cleaned up. Every label shares one column, the active row's marker no longer
+bends around its corners, and the redundant "Navigation" heading and Rooms
+count are gone. The iOS chat list also learns to show what each chat is doing.
+
+### Added
+- **iOS chat status** (#5850, #5852). Rows on the Chats home carry a status
+  pill when there is something to say: Running, Blocked · credentials,
+  Awaiting you · decision, Failed, or Ready to archive, each with a glyph and a
+  word.
+
+### Fixed
+- **Left sidebar** (#5888, #5889). New chat, destinations and footer rows share
+  one label column; the active marker is a short straight bar; section labels
+  use the design language's 0.08em tracking; the "Navigation" heading is kept
+  for screen readers but not drawn; Rooms no longer counts the rows beneath it;
+  the footer shares the 32px row pitch under a divider that matches the rows;
+  and Dashboard has its own icon instead of Canvas's.
+- **iOS project filters** (#5877, #5886). The chat list's project filter and
+  its accessibility menu offer only projects that have matching chats.
+- **iOS transcript** (#5881, #5882). Short system notes render as compact
+  notices, runs open a Run details view, and repeated steps fold together.
+
+### Changed
+- The iOS simulator script picks an available iPhone automatically when
+  `SIMULATOR_NAME` is unset and prefers the simulator's UDID for `xcodebuild`.
+
 ## [0.5.10] - 2026-10-08
 
 > Voice calls say "Thinking…" while your familiar works on its reply, instead of looking dead.
