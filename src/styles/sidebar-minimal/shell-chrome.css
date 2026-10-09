@@ -172,7 +172,7 @@
 .sidebar-foot {
   flex-shrink: 0;
   /* Inset by margin rather than padding so the divider spans the rows and no
-     further; the rows keep the same x (#5888). */
+     further; the rows keep the same x (issue 5888). */
   margin-inline: var(--rail-pad);
   padding: var(--space-2) 0 0;
   /* Softer than a full hairline — the footer should read as a calm boundary,
@@ -186,7 +186,7 @@
   display: flex;
   flex-direction: column;
   /* No gap: the footer rows share the destinations' 32px pitch instead of
-     sitting 4px further apart (#5888). */
+     sitting 4px further apart (issue 5888). */
   gap: 0;
 }
 

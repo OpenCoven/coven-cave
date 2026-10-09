@@ -56,7 +56,7 @@
   width: 100%;
   min-width: 0;
   /* Same icon→label gap as every sidebar row, so "New chat" shares their
-     label column (#5888). */
+     label column (issue 5888). */
   gap: var(--space-2);
   min-height: var(--rail-control);
   /* Border-compensated, same reason as the scope trigger above (1px here). */

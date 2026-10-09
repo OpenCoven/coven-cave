@@ -102,7 +102,7 @@
   flex: none;
   /* One label column for the whole sidebar: New chat, destinations and the
      footer all put 8px between the icon and the label. Rows used 6px and New
-     chat 10px, so its label sat 4px right of every other one (#5888). The
+     chat 10px, so its label sat 4px right of every other one (issue 5888). The
      icon column is untouched — only the label moves. */
   gap: var(--space-2);
   min-height: var(--rail-control);
@@ -129,7 +129,7 @@
 
 /* The active marker. An inset 2px box-shadow on a row with an 8px radius bent
    around both corners into a crescent; a short centred bar stays on the row's
-   straight edge (#5888). The split state draws the same bar, fainter. */
+   straight edge (issue 5888). The split state draws the same bar, fainter. */
 .sidebar-folder-row--active::before,
 .sidebar-folder-row--split::before {
   content: "";
