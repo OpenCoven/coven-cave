@@ -123,10 +123,31 @@ assert.match(
   /const handleModelControlChange = useCallback\(\s*\n\s*\(family: ModelControlFamily, value: string \| null\) => \{\s*\n\s*setModelControls\(\(current\) => \{[\s\S]*?else delete next\[family\];/,
   "Auto removes the family from the typed controls instead of sending an empty value",
 );
-assert.doesNotMatch(
+// ── Home parity (#5902): the same chips before the first send ───────────────
+assert.match(
+  homeModelState,
+  /controls\?: ModelControlCapability\[\];[\s\S]*?setModelCapabilities\(responseCapabilities\(json\)\);[\s\S]*?setModelCapabilities\(responseCapabilities\(json\)\);/,
+  "the home model-state hook keeps the controls from both the initial GET and every refetch",
+);
+assert.match(
+  homeModelState,
+  /if \(json\.ok && json\.state\) setModelState\(json\.state\);\s*\n[\s\S]{0,200}?refetchModelState\(selectionRevision, familiarId\);/,
+  "a Home model pick re-reads the state so the controls follow the newly saved model",
+);
+assert.match(
   homeComposer,
-  /modelCapabilities=/,
-  "home has no capability resolution and therefore renders no control chips (they appear in Chat once resolved)",
+  /<ComposerContextChips[\s\S]*?modelCapabilities=\{modelCapabilities\}\s*\n\s*modelControls=\{modelControls\}\s*\n\s*onModelControlChange=\{handleModelControlChange\}/,
+  "home threads the capability report and typed controls into the chips",
+);
+assert.match(
+  homeComposer,
+  /runtimeHost \|\| initialModelOverride !== undefined \|\| hasModelControls[\s\S]*?\.\.\.\(hasModelControls \? \{ modelControls \} : \{\}\)/,
+  "a Home Thinking · Speed pick rides the new-chat handoff",
+);
+assert.match(
+  chatView,
+  /const handoffModelControls = cleanModelControlValues\(initialControls\?\.modelControls\);\s*\n\s*if \(Object\.keys\(handoffModelControls\)\.length > 0\) setModelControls\(handoffModelControls\);[\s\S]*?\? \{ modelControls: handoffModelControls \}/,
+  "the opened chat seeds its chips from the handoff and sends the same picks on its first turn",
 );
 
 // ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────

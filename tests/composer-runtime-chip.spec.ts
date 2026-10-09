@@ -73,10 +73,10 @@ type Mutable = {
   sendBodies: Array<Record<string, unknown>>;
 };
 
-async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
+async function seed(page: Page, inventoryAvailable = true, harness = "codex"): Promise<Mutable> {
   const state: Mutable = {
-    harness: "codex",
-    effectiveModel: CODEX_MODEL.id,
+    harness,
+    effectiveModel: harness === "codex" ? CODEX_MODEL.id : "",
     familiarsServed: 0,
     modelStateServed: 0,
     configPatches: [],
@@ -316,4 +316,41 @@ test.describe("composer runtime picker (context chips)", () => {
     })).toHaveCount(0);
     await expect(menu.getByRole("menuitemradio", { name: "Runtime default", exact: true })).toBeEnabled();
   });
+  test("Home shows the same Thinking and Speed chips and carries a pick into the first chat send (#5902)", async ({ page }) => {
+    const state = await seed(page, true, "claude");
+    const PROJECT = { id: "p1", name: "Cave", root: "/repo/cave", access: "write" };
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("p1"));
+    });
+    await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [PROJECT] } }));
+    await page.route("**/api/inbox**", (route) => route.fulfill({ json: { ok: true, items: [] } }));
+    await page.route("**/api/chat/conversation/**", (route) => route.fulfill({
+      json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } },
+    }));
+    await page.goto("/?mode=home");
+    const home = page.locator(".home-composer-root");
+    const toolbar = home.locator(".home-composer-toolbar");
+    const speedChip = toolbar.getByRole("button", { name: /change speed/ });
+    const thinkingChip = toolbar.getByRole("button", { name: /change thinking/ });
+    await expect(speedChip).toBeVisible({ timeout: 45_000 });
+    await expect(speedChip).toContainText("Speed · Auto");
+    await expect(thinkingChip).toContainText("Thinking · Auto");
+
+    await speedChip.click();
+    const speedMenu = page.getByRole("menu", { name: "Speed", exact: true });
+    await speedMenu.getByRole("menuitemradio", { name: "Thorough", exact: true }).click();
+    await expect(speedChip).toContainText("Speed · Thorough");
+
+    await home.getByRole("textbox", { name: "Chat message" }).fill("Start thorough from home");
+    await home.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(() => expect(state.sendBodies.length).toBeGreaterThan(0)).toPass({ timeout: 15_000 });
+    const sent = state.sendBodies.at(-1) as { prompt?: string; modelControls?: Record<string, string> };
+    expect(sent.prompt).toBe("Start thorough from home");
+    expect(sent.modelControls).toEqual({ performance: "thorough" });
+
+    // The opened chat's chips start from the same pick.
+    const chat = page.getByTestId("chat-main");
+    await expect(chat.getByRole("button", { name: /change speed/ })).toContainText("Speed · Thorough", { timeout: 15_000 });
+  });
 });
+

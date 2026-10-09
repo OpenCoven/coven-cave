@@ -143,3 +143,58 @@ test("Home masks the previous familiar while the replacement model state loads",
 });
 
 console.log("use-home-model-state.test.ts: ok");
+
+test("Home keeps the selected model's reported controls and re-reads them after a model pick (#5902)", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = ((input, init) => new Promise((resolve, reject) => {
+    calls.push({ url: requestUrl(input), init, resolve, reject });
+  })) as typeof fetch;
+  const speed = {
+    family: "performance", label: "Speed", delivery: "runtime-cli", parameter: "speed", validation: {},
+    values: [{ value: "fast", label: "Fast" }, { value: "balanced", label: "Balanced" }, { value: "thorough", label: "Thorough" }],
+  };
+
+  let controls;
+  function Probe() {
+    controls = useHomeModelState("milo");
+    return createElement("home-model-probe");
+  }
+
+  let renderer;
+  try {
+    await act(async () => { renderer = create(createElement(Probe)); });
+    assert.deepEqual(controls.modelCapabilities, [], "nothing is offered before the report arrives");
+    await act(async () => {
+      calls[0].resolve(response({ ok: true, state: state("milo", "claude", ""), controls: [speed] }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.deepEqual(
+      controls.modelCapabilities.map((capability) => capability.family),
+      ["performance"],
+      "the initial GET's controls are kept for the Thinking · Speed chips",
+    );
+
+    await act(async () => {
+      controls.selectModel("anthropic/claude-sonnet-5");
+      await Promise.resolve();
+    });
+    assert.equal(calls[1].init.method, "PATCH");
+    await act(async () => {
+      calls[1].resolve(response({ ok: true, state: state("milo", "claude", "anthropic/claude-sonnet-5") }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.equal(calls[2]?.url, "/api/chat/model-state?familiarId=milo", "a saved model pick re-reads the state for the new model's controls");
+    await act(async () => {
+      calls[2].resolve(response({ ok: true, state: state("milo", "claude", "anthropic/claude-sonnet-5"), controls: [] }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.deepEqual(controls.modelCapabilities, [], "a model that reports no controls drops the chips");
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    globalThis.fetch = originalFetch;
+  }
+});

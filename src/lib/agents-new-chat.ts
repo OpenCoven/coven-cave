@@ -55,7 +55,15 @@ function isInitialCommandControls(value: unknown): value is InitialCommandContro
       || controls.modelOverrideScope === "next-message"
       || controls.modelOverrideScope === "session"
       || controls.modelOverrideScope === "runtime-default")
+    && (controls.modelControls === undefined || isModelControlValues(controls.modelControls))
   );
+}
+
+/** Typed controls are a flat family → value map; the send route owns the
+ *  capability-specific validation, this only keeps the shape honest. */
+function isModelControlValues(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every((entry) => typeof entry === "string");
 }
 
 function isAgentsNewChatRequest(value: unknown): value is AgentsNewChatRequest {

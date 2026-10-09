@@ -23,6 +23,7 @@ import {
 import type { SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InitialCommandControls } from "@/lib/command-controls";
+import type { ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
 import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
@@ -253,6 +254,7 @@ export function HomeComposer({
   }, [onRequestActingFamiliar]);
   const {
     modelState,
+    modelCapabilities,
     pendingModelOverride,
     waitForRuntimeWrite,
     selectModel: handleSelectModel,
@@ -262,6 +264,32 @@ export function HomeComposer({
   useEffect(() => {
     if (!selectedFamiliar) setOptionsOpen(false);
   }, [selectedFamiliar]);
+  // Thinking · Speed chips (#5902): the same typed selected-model controls the
+  // chat composer edits, picked before the first send. A model or familiar
+  // switch can change the reported families or values; keep only explicit
+  // picks that remain valid (chat-view parity).
+  const [modelControls, setModelControls] = useState<ModelControlValues>({});
+  useEffect(() => {
+    setModelControls((current) => Object.fromEntries(
+      Object.entries(current).filter(([family, value]) =>
+        modelCapabilities.some((capability) =>
+          capability.family === family && capability.values.some((option) => option.value === value),
+        ),
+      ),
+    ) as ModelControlValues);
+  }, [modelCapabilities]);
+  const handleModelControlChange = useCallback(
+    (family: ModelControlFamily, value: string | null) => {
+      setModelControls((current) => {
+        const next = { ...current };
+        if (value) next[family] = value;
+        else delete next[family];
+        return next;
+      });
+    },
+    [],
+  );
+  const hasModelControls = Object.keys(modelControls).length > 0;
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
@@ -280,12 +308,15 @@ export function HomeComposer({
           ? modelState.effectiveModel
           : undefined;
   const initialChatControls: InitialCommandControls | undefined =
-    runtimeHost || initialModelOverride !== undefined
+    runtimeHost || initialModelOverride !== undefined || hasModelControls
       ? {
           ...(runtimeHost ? { runtimeHost } : {}),
           ...(initialModelOverride !== undefined
             ? { modelOverride: initialModelOverride, modelOverrideScope: "next-message" as const }
             : {}),
+          // Thinking · Speed picks ride the handoff so the opened chat's first
+          // send and its chips start from the same selection (#5902).
+          ...(hasModelControls ? { modelControls } : {}),
         }
       : undefined;
   const selectedProjectRoot = project?.root ?? "";
@@ -1268,6 +1299,9 @@ export function HomeComposer({
               modelOptions={runtimeModelOptions}
               onPickRuntime={handleSelectRuntime}
               onPickModel={handleSelectModel}
+              modelCapabilities={modelCapabilities}
+              modelControls={modelControls}
+              onModelControlChange={handleModelControlChange}
               disabled={sending || !selectedFamiliar}
             />
           </div>

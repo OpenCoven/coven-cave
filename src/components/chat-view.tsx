@@ -331,7 +331,12 @@ import {
   type CommandThinkingEffort,
   type InitialCommandControls,
 } from "@/lib/command-controls";
-import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
+import {
+  cleanModelControlValues,
+  type ModelControlCapability,
+  type ModelControlFamily,
+  type ModelControlValues,
+} from "@/lib/model-control-capabilities";
 import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
@@ -6558,6 +6563,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setThinkingEffort(normalized.thinkingEffort);
         setResponseSpeed(normalized.responseSpeed);
       }
+      // Thinking · Speed picks made on Home (#5902) seed this chat's chips and
+      // ride the first send explicitly — state alone is not synchronous here.
+      const handoffModelControls = cleanModelControlValues(initialControls?.modelControls);
+      if (Object.keys(handoffModelControls).length > 0) setModelControls(handoffModelControls);
       // Host state is initialized before draft ownership. The handoff still
       // rides this first send explicitly so it cannot inherit a later pick.
       const stagedInitialModelOverride = initialModelOverride !== undefined
@@ -6586,7 +6595,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         [],
         initialSendOptions,
         normalized
-          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
+          ? {
+              ...normalized,
+              permissionMode,
+              runtimeHost: initialControls?.runtimeHost,
+              ...(Object.keys(handoffModelControls).length > 0
+                ? { modelControls: handoffModelControls }
+                : {}),
+            }
           : undefined,
       );
     }, 0);

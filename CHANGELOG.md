@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Home composer: Thinking and Speed chips** (#5902). The Home composer shows
+  the same Thinking and Speed chips as Chat, resolved from the selected
+  familiar's model-state report and refreshed after a model pick. A pick rides
+  the new-chat handoff, so the opened chat's first send and its chips start
+  from the same selection.
+
 ## [0.5.12] - 2026-10-09
 
 > The Thread Signal card uses its whole width, and the chat composer splits Runtime and Model.
