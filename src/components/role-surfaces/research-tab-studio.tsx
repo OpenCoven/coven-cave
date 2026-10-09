@@ -23,6 +23,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
   RESEARCH_GENERATION_CREATABLE_KINDS,
+  RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
   RESEARCH_GENERATION_MEDIA_KINDS,
   cancelResearchGeneration,
   createResearchGeneration,
@@ -39,6 +40,7 @@ import {
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
+import { EMPTY_BLOG_DIRECTIONS, studioGenerationDirections, type BlogDirections } from "@/lib/research-blog-directions";
 import type { ElevenLabsDeliveryPresetId } from "@/lib/voice/elevenlabs-shared";
 import {
   loadElevenLabsCatalog,
@@ -76,6 +78,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [configKind, setConfigKind] = useState<ResearchGenerationCreatableKind | null>(null);
   const [directions, setDirections] = useState("");
+  const [blogDirections, setBlogDirections] = useState<BlogDirections>(EMPTY_BLOG_DIRECTIONS);
   const [mediaProvider, setMediaProvider] =
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
@@ -314,6 +317,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const openConfig = useCallback((kind: ResearchGenerationCreatableKind) => {
     setCreateError(null);
     setDirections("");
+    setBlogDirections(EMPTY_BLOG_DIRECTIONS);
     if (!isResearchGenerationKind(kind) && readiness) {
       const elevenLabsShortVideoDefaultIsReady =
         kind === "short-video" &&
@@ -351,14 +355,19 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
 
   const submitCreate = useCallback(async () => {
     if (!configKind || !effectiveSourceId) return;
+    const savedDirections = studioGenerationDirections(configKind, directions, blogDirections);
+    if (savedDirections.length > RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH) {
+      setCreateError("Directions and choices must fit within 5,000 characters. Shorten the directions or remove a choice.");
+      return;
+    }
     setCreating(true);
     setCreateError(null);
-    const hasDirections = directions.trim().length > 0;
+    const hasDirections = savedDirections.trim().length > 0;
     const result = await createResearchGeneration({
       familiarId,
       kind: configKind,
       sourceMissionId: effectiveSourceId,
-      ...(hasDirections ? { directions } : {}),
+      ...(hasDirections ? { directions: savedDirections } : {}),
       ...(!isResearchGenerationKind(configKind)
         ? {
             renderConfig: {
@@ -412,6 +421,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   }, [
     announce,
     configKind,
+    blogDirections,
     directions,
     effectiveSourceId,
     familiarId,
@@ -879,6 +889,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onSelectSource={setSourceId}
           directions={directions}
           onDirectionsChange={setDirections}
+          blogDirections={blogDirections}
+          onBlogDirectionsChange={setBlogDirections}
           readiness={readiness}
           mediaProvider={mediaProvider}
           onMediaProviderChange={(provider) => {

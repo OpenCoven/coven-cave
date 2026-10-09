@@ -193,7 +193,7 @@ type StoredMediaGeneration = Omit<MediaGeneration, "renderConfig"> & {
 
 async function openResearchStudio(page: Page) {
   await page.goto("/");
-  await page.getByRole("navigation").first().waitFor({ timeout: 60_000 });
+  await page.locator("#shell-main-content").waitFor({ timeout: 60_000 });
   await expect(async () => {
     await page.evaluate(() =>
       window.dispatchEvent(
@@ -664,4 +664,70 @@ test.describe("Research Studio media honesty and playback", () => {
     await failed.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(failed).toHaveCount(0);
   });
+});
+
+test("blog directions keep keyboard focus and submit all editorial choices", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await boot(page);
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/research/generations", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 409, json: { ok: false, error: "Fixture keeps the draft open for inspection." } });
+  });
+  await page.locator('.research-studio button[data-kind="blog"]').click();
+  const config = page.getByRole("dialog", { name: "Generate Blog / article" });
+  await expect(config).toBeVisible();
+  for (const [label, choice] of [["Visual direction", "Diagrams"], ["Tone", "Technical"], ["Audience", "Researchers"]]) {
+    const trigger = config.getByRole("button", { name: label, exact: true });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const picker = page.getByRole("dialog", { name: label, exact: true });
+    await picker.getByRole("checkbox", { name: choice, exact: true }).check();
+    await page.keyboard.press("Escape");
+    await expect(picker).not.toBeVisible();
+    await expect(config).toBeVisible();
+    await expect(trigger).toBeFocused();
+  }
+  await config.getByRole("button", { name: "Audience", exact: true }).click();
+  const audience = page.getByRole("dialog", { name: "Audience", exact: true });
+  await audience.getByRole("textbox", { name: "Search audience" }).fill("Platform engineers");
+  await page.keyboard.press("Enter");
+  await expect(audience.getByRole("checkbox", { name: "Platform engineers" })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await config.getByLabel("Directions (optional)", { exact: true }).fill("x".repeat(5000));
+  await expect(config.getByRole("button", { name: /Generate Blog/ })).toBeDisabled();
+  await expect(config.getByRole("alert")).toContainText("5,000");
+  await config.getByLabel("Directions (optional)", { exact: true }).fill("Keep citations.");
+  for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+    await page.evaluate(({ theme, mode }) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.mode = mode;
+    }, { theme, mode });
+    await expect(config).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`blog-${theme}-${mode}.png`) });
+  }
+  await config.getByRole("button", { name: /Generate Blog/ }).click();
+  await expect.poll(() => submitted?.directions).toBe('Keep citations.\n\nVisual direction: ["Diagrams"]\n\nTone: ["Technical"]\n\nAudience: ["Researchers","Platform engineers"]');
+  await expect(config.getByRole("alert")).toHaveText("Fixture keeps the draft open for inspection.");
+  await expect(config.getByRole("button", { name: "Audience", exact: true })).toContainText("Platform engineers");
+});
+
+
+test("blog directions fit a narrow viewport", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page);
+  await page.locator('.research-studio button[data-kind="blog"]').click();
+  const config = page.getByRole("dialog", { name: "Generate Blog / article" });
+  await config.getByRole("button", { name: "Audience", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Audience", exact: true });
+  await picker.getByRole("checkbox", { name: "Researchers", exact: true }).check();
+  const bounds = await picker.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("blog-narrow-picker.png") });
+  await page.keyboard.press("Escape");
+  await expect(config.getByRole("button", { name: "Audience", exact: true })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("blog-narrow.png") });
 });
