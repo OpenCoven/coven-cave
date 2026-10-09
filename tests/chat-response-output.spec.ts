@@ -298,3 +298,66 @@ test("the header archive button sends one archive mutation and leaves the sessio
   await expect.poll(() => archiveRequests).toBe(1);
   await expect(page).not.toHaveURL(/#chat-s-response-complete$/);
 });
+
+for (const surface of ["main", "quick"] as const) {
+test(`${surface}: reduced-motion streaming preserves selected settled prose as new tokens arrive`, async ({ page }) => {
+  await setup(page);
+  const project = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
+  await page.route("**/api/queue/project", (route) => route.fulfill({ json: { ok: true, projectId: project.id, project } }));
+  await page.route("**/api/daemon/connection", (route) => route.fulfill({ json: { ok: true, running: true, connected: true, target: { mode: "local" } } }));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    localStorage.setItem("cave.quick-chat.last-familiar", "nova");
+    const originalFetch = window.fetch.bind(window);
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    Object.assign(window, {
+      caveTestFrame(frame: object) {
+        if (!stream) throw new Error("Chat stream has not opened");
+        stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+        if ((frame as { kind?: string }).kind === "done") stream.close();
+      },
+    });
+    window.fetch = async (...args) => {
+      const input = args[0];
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (new URL(url, location.href).pathname === "/api/chat/send") {
+        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      return originalFetch(...args);
+    };
+  });
+  await page.goto(surface === "main" ? "/?mode=chat#chat-s-response-complete" : "/quick-chat", { waitUntil: "domcontentloaded" });
+  const main = surface === "main" ? page.getByTestId("chat-main") : page.locator(".tray-quick-chat__pane");
+  if (surface === "main") {
+    await expect(main.locator('.cave-bubble-assistant[data-state="complete"]').last()).toBeVisible();
+  } else {
+    await page.getByRole("button", { name: "Project", exact: true }).click();
+    await page.getByRole("menu", { name: "Project options" }).getByText("Response project · Full", { exact: true }).click();
+  }
+  await main.getByRole(surface === "main" ? "textbox" : "combobox", { name: "Message", exact: true }).fill("Stream a selection fixture");
+  await main.getByRole("button", { name: surface === "main" ? "Send message" : "Send", exact: true }).click();
+  const emit = async (frame: object) => page.evaluate((value) => {
+    (window as unknown as { caveTestFrame(frame: object): void }).caveTestFrame(value);
+  }, frame);
+  await emit({ kind: "assistant_chunk", text: "This settled paragraph must keep its selection.\n\nLive text" });
+  const live = main.locator(".streaming-turn-response").last();
+  const settled = live.getByText("This settled paragraph must keep its selection.", { exact: true });
+  await expect(settled).toBeVisible();
+  await settled.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await expect(live.locator(".streaming-turn-current__spinner")).toHaveCSS("animation-name", "none");
+  await emit({ kind: "assistant_chunk", text: " grows while the first paragraph stays selected." });
+  await expect(live.getByText("Live text grows while the first paragraph stays selected.", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("This settled paragraph must keep its selection.");
+  await emit({ kind: "done", sessionId: "s-response-complete" });
+  await expect(live.locator(".streaming-turn-current__spinner")).toHaveCount(0);
+});
+}
