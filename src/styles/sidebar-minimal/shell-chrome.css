@@ -171,7 +171,10 @@
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
 .sidebar-foot {
   flex-shrink: 0;
-  padding: var(--space-2) var(--rail-pad) 0;
+  /* Inset by margin rather than padding so the divider spans the rows and no
+     further; the rows keep the same x (#5888). */
+  margin-inline: var(--rail-pad);
+  padding: var(--space-2) 0 0;
   /* Softer than a full hairline — the footer should read as a calm boundary,
      not a hard rule competing with the nav. */
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
@@ -182,7 +185,9 @@
      One column in both states costs ~34px and moves nothing. */
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  /* No gap: the footer rows share the destinations' 32px pitch instead of
+     sitting 4px further apart (#5888). */
+  gap: 0;
 }
 
 .sidebar-foot-bell,
@@ -193,7 +198,7 @@
   justify-content: flex-start;
   flex: none;
   min-width: 0;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 0 var(--rail-lead);
   border-radius: var(--radius-control);
   border: 0;

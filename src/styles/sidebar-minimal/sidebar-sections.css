@@ -43,8 +43,10 @@
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  /* The design language's eyebrow (§ tokens): 0.08em uppercase. 0.14em at
+     weight 700 made three tiny labels the loudest text in the column (#5888). */
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
