@@ -7,22 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-### Changed
-- **Chat composer: Runtime, Model, Thinking and Speed are separate chips**
-  (#5896). The combined "Runtime · Model" chip and its two-group menu split
-  into a Runtime chip and a Model chip, each with its own menu; picking a
-  runtime still chains into the Model menu. The selected model's reported
-  controls now ride the same row as their own chips, Thinking and Speed,
-  which appear only while `/api/chat/model-state` reports that control for
-  the active runtime and model, with the reported values as the menu and
-  Auto meaning nothing is sent. The Tools menu gains a Runtime… row.
-- **Speed is a real runtime flag for Claude Code**. A Speed pick (Fast,
-  Balanced, Thorough) is forwarded as `coven run --speed`, which the daemon
-  maps onto Claude's `--effort low|medium|high`; it is offered only for a
-  local Claude binding whose installed Coven CLI advertises the flag. The
-  legacy `responseSpeed` request field is no longer migrated into a typed
-  control, so older clients that send its default on every turn cannot pin
-  Claude to its lowest effort.
+## [0.5.12] - 2026-10-09
+
+> The Thread Signal card uses its whole width, and the chat composer splits Runtime and Model.
+
+Patch release on top of v0.5.11. Headline: the in-chat Thread Signal card no
+longer leaves most of its width empty when a report has no signals, its weights
+read as percentages, and the "New response content" pill stops covering it.
+
+### Added
+- **Composer chips** (#5896, #5899). The combined "Runtime · Model" chip is now
+  separate Runtime and Model chips, and Thinking and Speed chips appear when the
+  selected model reports those controls. For Claude Code, Speed maps to the
+  runtime's effort setting.
+
+### Fixed
+- **Thread Signal card** (#5898, #5900). A report with no signals puts the
+  rationale beside the score tiles instead of leaving an empty column; with no
+  tile selected the tiles span the card. Weights read "20% of score" and the
+  formula "Confidence 35% + Tools 25% + Memory 20% + Files 20%". The transcript's
+  "New response content" pill steps aside while a card is open.
 
 ## [0.5.11] - 2026-10-09
 
