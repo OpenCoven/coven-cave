@@ -10,7 +10,11 @@ import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
-import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import {
+  modelControlCapabilities,
+  withForwardableRuntimeCliControls,
+} from "@/lib/model-control-capabilities";
+import { covenRunSupportsSpeed } from "@/app/api/chat/send/chat-send-capabilities";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { harnessSpawnEnv, warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
@@ -186,8 +190,21 @@ export async function GET(req: Request) {
       })
     : null;
   const hermesDirect = bareLocalHermes;
-  const controls = modelControlCapabilities(state.harness, state.effectiveModel)
-    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  // The Speed control is offered only when the send route could forward it:
+  // a local Claude binding whose installed `coven run` advertises `--speed`.
+  // Offering it anywhere else would render a chip whose pick the send route
+  // then rejects as unsupported.
+  const speedForwardable =
+    state.harness === "claude" &&
+    canonicalHarnessId(binding.harness) === "claude" &&
+    !isSshRuntime(binding.runtime) &&
+    !state.runtime?.startsWith("ssh:") &&
+    (await covenRunSupportsSpeed().catch(() => false));
+  const controls = withForwardableRuntimeCliControls(
+    modelControlCapabilities(state.harness, state.effectiveModel)
+      .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
+    { speed: speedForwardable },
+  );
   return NextResponse.json({
     ok: true,
     state,

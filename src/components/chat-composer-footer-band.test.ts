@@ -157,8 +157,8 @@ assert.doesNotMatch(
 // Grammar: Project > Worktree (conditional) > Branch > Model in control order
 assert.match(
   pill,
-  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Runtime: \$\{context\.runtimeName\} · Model: \$\{modelLabel\} — change model`\}/,
-  "the chips read Project / Worktree / Branch / Model as separately labelled controls in order",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Runtime: \$\{context\.runtimeName\} — change runtime`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  "the chips read Project / Worktree / Branch / Runtime / Model as separately labelled controls in order (#5896 split the runtime chip from the model chip)",
 );
 assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");
 assert.match(pill, /const branchRef = useRef/, "branch has its own independent ref anchor");
@@ -180,7 +180,7 @@ assert.match(
 );
 assert.match(
   pill,
-  /ComposerContextView\s*=\s*null\s*\|[\s\S]*?"worktree"/,
+  /ComposerContextView\s*=\s*\|?\s*null\s*\|[\s\S]*?"worktree"/,
   "ComposerContextView supports the worktree picker state",
 );
 assert.match(pill, /context\.hasGit \? \(/, "the branch chip elides for git-less composers (home, no-project chats)");

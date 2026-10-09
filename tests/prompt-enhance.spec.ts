@@ -256,7 +256,7 @@ async function openChat(page: Page) {
   await expect(chat.getByRole("button", { name: /^Project: E2E Project · Full/ })).toBeVisible({
     timeout: 45_000,
   });
-  await expect(chat.getByRole("button", { name: `Runtime: Codex · Model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
+  await expect(chat.getByRole("button", { name: `Model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
     timeout: 45_000,
   });
   await expect(chat.getByRole("button", { name: "Open linked task: Fix the login regression" })).toBeVisible({
@@ -612,7 +612,7 @@ test.describe("Chat agentic prompt enhancement", () => {
     const toolsMenu = page.getByRole("menu", { name: "Tools" });
     await expect(toolsMenu.getByRole("menuitem", { name: "Model & tuning…" })).toBeVisible();
     await toolsMenu.getByRole("menuitem", { name: "Model & tuning…" }).click();
-    const runtimeMenu = page.getByRole("menu", { name: "Runtime and model" });
+    const runtimeMenu = page.getByRole("menu", { name: "Model", exact: true });
     await expect(runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true })).toBeVisible();
     await runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true }).click();
     expect(fixture.modelPatches).toHaveLength(1);

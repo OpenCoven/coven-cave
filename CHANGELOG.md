@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Chat composer: Runtime, Model, Thinking and Speed are separate chips**
+  (#5896). The combined "Runtime · Model" chip and its two-group menu split
+  into a Runtime chip and a Model chip, each with its own menu; picking a
+  runtime still chains into the Model menu. The selected model's reported
+  controls now ride the same row as their own chips, Thinking and Speed,
+  which appear only while `/api/chat/model-state` reports that control for
+  the active runtime and model, with the reported values as the menu and
+  Auto meaning nothing is sent. The Tools menu gains a Runtime… row.
+- **Speed is a real runtime flag for Claude Code**. A Speed pick (Fast,
+  Balanced, Thorough) is forwarded as `coven run --speed`, which the daemon
+  maps onto Claude's `--effort low|medium|high`; it is offered only for a
+  local Claude binding whose installed Coven CLI advertises the flag. The
+  legacy `responseSpeed` request field is no longer migrated into a typed
+  control, so older clients that send its default on every turn cannot pin
+  Claude to its lowest effort.
+
 ## [0.5.11] - 2026-10-09
 
 > A calmer left sidebar: one label column, a straight active marker, no redundant headings.

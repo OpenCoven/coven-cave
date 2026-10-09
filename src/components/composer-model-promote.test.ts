@@ -77,14 +77,16 @@ test("the row is offered only when it would do something", () => {
 
 test("the props are threaded, not dropped mid-way", () => {
   // cave-9f9nj: this test used to assert the FILE contained the prop-passing
-  // text. composer-context-pill has TWO <ComposerRuntimePopover> sites —
+  // text. composer-context-pill has TWO <ComposerModelPopover> sites —
   // ComposerContextPickers (the actions-menu path) and ComposerContextChips
   // (the composer footer's model chip, which is what chat-view and
   // home-composer actually render). Only the first forwarded the props, and a
   // file-level match cannot tell them apart, so the row never rendered from
-  // the chip while this test stayed green. Check EVERY site instead.
-  const sites = chips.match(/<ComposerRuntimePopover[\s\S]*?\/>/g) ?? [];
-  assert.ok(sites.length >= 2, `expected every ComposerRuntimePopover site to be checked, found ${sites.length}`);
+  // the chip while this test stayed green. Check EVERY site instead. (The
+  // row moved from the combined Runtime · Model menu to the Model menu when
+  // the chips split, #5896.)
+  const sites = chips.match(/<ComposerModelPopover[\s\S]*?\/>/g) ?? [];
+  assert.ok(sites.length >= 2, `expected every ComposerModelPopover site to be checked, found ${sites.length}`);
   for (const [i, site] of sites.entries()) {
     assert.match(site, /promotableModel=\{context\.config\.promotableModel \?\? null\}/, `site ${i} passes promotableModel`);
     assert.match(site, /onPromoteModelToDefault=\{context\.config\.onPromoteModelToDefault\}/, `site ${i} passes the handler`);
