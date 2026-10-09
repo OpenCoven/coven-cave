@@ -56,11 +56,11 @@ struct ChatListSnapshot {
     /// or archived), so the familiar filter offers only names that select
     /// something. Unaffected by filtering, like `archivedCount`.
     let familiarIds: Set<String>
-    /// Every registered project bound to at least one conversation (active or
-    /// archived), so the project filter offers only choices that select
-    /// something. Unaffected by filtering, like `familiarIds`.
+    /// Projects with chats matching the current search, familiar and archive
+    /// settings. Ignore the project selection so other nonempty choices remain
+    /// available when switching projects.
     let projectIds: Set<String>
-    /// Whether any conversation (active or archived) is Unassigned.
+    /// Whether any chat matching those same settings is Unassigned.
     let hasUnassigned: Bool
     /// Active conversations per status filter, counted after search and the
     /// familiar/project filters but BEFORE the status filter, so switching
@@ -90,16 +90,20 @@ struct ChatListSnapshot {
         projectFilter: ProjectFilter? = nil, statusFilter: ChatStatusFilter? = nil
     ) -> ChatListSnapshot {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let narrowed = entries.filter {
+        // Project choices come from chats matching search, familiar and
+        // archive settings, ignoring the project selection itself (#5877).
+        let matching = entries.filter {
             Self.matches($0, search: search, includeArchived: includeArchived,
-                         familiarId: familiarId, projectFilter: projectFilter)
+                         familiarId: familiarId, projectFilter: nil)
         }
+        let narrowed = matching.filter { Self.matches($0, projectFilter: projectFilter) }
         return ChatListSnapshot(entries: Self.applying(statusFilter, to: narrowed),
            reflections: statusFilter != nil ? [] : reflections.filter {
             Self.matches($0, search: search, includeArchived: false,
                          familiarId: familiarId, projectFilter: projectFilter)
         }, archivedCount: archivedCount, familiarIds: familiarIds,
-           projectIds: projectIds, hasUnassigned: hasUnassigned,
+           projectIds: Set(matching.compactMap(\.projectId)),
+           hasUnassigned: matching.contains { $0.projectId == nil },
            statusCounts: Self.countStatuses(narrowed))
     }
 
@@ -263,9 +267,15 @@ struct ChatListSnapshot {
         }
         archivedCount = all.lazy.filter(\.archived).count
         familiarIds = Set(all.flatMap(\.familiarIds))
-        projectIds = Set(all.compactMap(\.projectId))
-        hasUnassigned = all.contains { $0.projectId == nil }
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // Project choices come from chats matching search, familiar and
+        // archive settings, ignoring the project selection itself (#5877).
+        let matching = all.filter {
+            Self.matches($0, search: search, includeArchived: includeArchived,
+                         familiarId: familiarId, projectFilter: nil)
+        }
+        projectIds = Set(matching.compactMap(\.projectId))
+        hasUnassigned = matching.contains { $0.projectId == nil }
         let reflectionEntries = reflectionRows.compactMap { session -> Entry? in
             guard session.archivedAt == nil, session.status != "archived" else { return nil }
             let entry = Entry(
@@ -287,9 +297,8 @@ struct ChatListSnapshot {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id < $1.id
         }
-        let narrowed = all.filter {
-            Self.matches($0, search: search, includeArchived: includeArchived,
-                         familiarId: familiarId, projectFilter: projectFilter)
+        let narrowed = matching.filter {
+            Self.matches($0, projectFilter: projectFilter)
         }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
