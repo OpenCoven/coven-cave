@@ -6,17 +6,21 @@ import {
   runtimeModelInventoryScope,
 } from "../src/lib/runtime-models";
 
-// Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
-// split-chip grammar since cave-g21f): the chat composer footer's model chip
-// always shows the effective model and opens the Runtime/Model picker
-// directly with radio semantics; picking a runtime rebinds the familiar
-// through /api/config — flipping the chip, re-listing the Model group in the
-// still-open menu (the pick isn't complete until a model is chosen),
-// refetching the familiar roster (cave:familiars-refresh), and catching the
-// new-chat landing's identity line up without a reload. A model pick then
-// closes the menu.
+// Verifies the composer runtime · model · control chips (cave-yq5l / cave-v25g
+// / cave-bfwk, split-chip grammar since cave-g21f, Runtime and Model split into
+// separate chips plus capability-driven Thinking · Speed chips in #5896): the
+// chat composer footer always shows the active runtime and the effective model
+// as separately labelled chips, each opening its own radio menu; picking a
+// runtime rebinds the familiar through /api/config — flipping the Runtime chip,
+// chaining straight into the Model menu (the pick isn't complete until a model
+// is chosen), refetching the familiar roster (cave:familiars-refresh), and
+// catching the new-chat landing's identity line up without a reload. A model
+// pick then closes the menu. Once the model-state report carries controls for
+// the new runtime, the Thinking and Speed chips appear on their own, a Speed
+// pick rides the next send's typed modelControls, and a runtime without
+// controls shows no such chips at all.
 //
-// Desktop only (the chip lives in the chat composer). All APIs are mocked;
+// Desktop only (the chips live in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
 // the app sees — exactly the loop the feature exists to close.
 
@@ -31,12 +35,42 @@ const FAMILIAR_BASE = {
 const CODEX_MODEL = { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol" };
 const CLAUDE_MODEL = { id: "claude-sonnet-5", label: "Claude Sonnet 5" };
 
+// The shape /api/chat/model-state reports for a local Claude binding whose
+// installed coven CLI advertises `--speed` (see model-control-capabilities).
+const CLAUDE_CONTROLS = [
+  {
+    family: "reasoning",
+    label: "Reasoning guidance",
+    delivery: "prompt-only",
+    values: [
+      { value: "minimal", label: "Minimal" },
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+    ],
+    validation: {},
+  },
+  {
+    family: "performance",
+    label: "Speed",
+    delivery: "runtime-cli",
+    parameter: "speed",
+    values: [
+      { value: "fast", label: "Fast" },
+      { value: "balanced", label: "Balanced" },
+      { value: "thorough", label: "Thorough" },
+    ],
+    validation: {},
+  },
+];
+
 type Mutable = {
   harness: string;
   effectiveModel: string;
   familiarsServed: number;
   modelStateServed: number;
   configPatches: Array<Record<string, unknown>>;
+  sendBodies: Array<Record<string, unknown>>;
 };
 
 async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
@@ -46,6 +80,7 @@ async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
     familiarsServed: 0,
     modelStateServed: 0,
     configPatches: [],
+    sendBodies: [],
   };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -105,6 +140,9 @@ async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
           applicationState: "saved",
           reason: "e2e",
         },
+        // Controls follow the runtime: Claude reports Thinking guidance and
+        // the runtime Speed flag; Codex reports none.
+        controls: state.harness === "claude" ? CLAUDE_CONTROLS : [],
       },
     });
   });
@@ -126,55 +164,78 @@ async function seed(page: Page, inventoryAvailable = true): Promise<Mutable> {
     }
     return route.fulfill({ json: { ok: true, config: {} } });
   });
+  // Capture what a send would carry; no turn actually runs.
+  await page.route("**/api/chat/send", (route) => {
+    state.sendBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ status: 403, json: { ok: false, error: "Synthetic send forbidden" } });
+  });
   return state;
 }
 
 test.describe("composer runtime picker (context chips)", () => {
-  test("always visible with the runtime + model, popover carries radio groups", async ({ page }) => {
+  test("runtime and model are separate chips, each with its own radio menu", async ({ page }) => {
     await seed(page);
     await page.goto("/?mode=chat");
-    const modelChip = page.getByRole("button", { name: /change model/ });
-    await expect(modelChip).toBeVisible({ timeout: 45_000 });
+    const main = page.getByTestId("chat-main");
+    const runtimeChip = main.getByRole("button", { name: /change runtime/ });
+    const modelChip = main.getByRole("button", { name: /change model/ });
+    await expect(runtimeChip).toBeVisible({ timeout: 45_000 });
+    await expect(runtimeChip).toContainText("Codex");
     // toContainText retries — the chip settles once model-state hydrates.
     await expect(modelChip).toContainText(CODEX_MODEL.id, { timeout: 15_000 });
+    await expect(modelChip).not.toContainText("Codex");
 
-    // Split chips (cave-g21f): the model chip opens the picker directly.
-    await modelChip.click();
-    const menu = page.getByRole("menu", { name: "Runtime and model" });
-    await expect(menu).toBeVisible();
-    // Runtime group: all four runtimes, the active one checked.
+    await runtimeChip.click();
+    const runtimeMenu = page.getByRole("menu", { name: "Runtime", exact: true });
+    await expect(runtimeMenu).toBeVisible();
     for (const name of ["Codex", "Claude Code", "Hermes", "OpenClaw"]) {
-      await expect(menu.getByRole("menuitemradio", { name, exact: true })).toBeVisible();
+      await expect(runtimeMenu.getByRole("menuitemradio", { name, exact: true })).toBeVisible();
     }
-    await expect(menu.getByRole("menuitemradio", { name: "Codex", exact: true })).toHaveAttribute("aria-checked", "true");
-    // Model group: the active runtime's reported inventory with the effective model checked.
-    await expect(menu.getByRole("menuitemradio", { name: `${CODEX_MODEL.label} · ${CODEX_MODEL.id}`, exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(runtimeMenu.getByRole("menuitemradio", { name: "Codex", exact: true })).toHaveAttribute("aria-checked", "true");
+    // The runtime menu is runtime-only: no model rows ride along any more.
+    await expect(runtimeMenu.getByRole("menuitemradio", { name: /GPT-6\.1 Sol/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(runtimeMenu).not.toBeVisible();
+
+    await modelChip.click();
+    const modelMenu = page.getByRole("menu", { name: "Model", exact: true });
+    await expect(modelMenu).toBeVisible();
+    await expect(modelMenu.getByRole("menuitemradio", { name: `${CODEX_MODEL.label} · ${CODEX_MODEL.id}`, exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(modelMenu.getByRole("menuitemradio", { name: "Codex", exact: true })).toHaveCount(0);
+
+    // Codex reports no selected-model controls, so no Thinking / Speed chips.
+    await expect(main.getByRole("button", { name: /change thinking/ })).toHaveCount(0);
+    await expect(main.getByRole("button", { name: /change speed/ })).toHaveCount(0);
   });
 
-  test("picking a runtime rebinds via /api/config, flips the chip, and refreshes the roster", async ({ page }) => {
+  test("picking a runtime rebinds via /api/config, chains into the Model menu, refreshes the roster, and reveals the reported control chips", async ({ page }) => {
     const state = await seed(page);
     await page.goto("/?mode=chat");
-    const pill = page.getByRole("button", { name: /change model/ });
-    await expect(pill).toBeVisible({ timeout: 45_000 });
-    await expect(pill).toContainText(CODEX_MODEL.id, { timeout: 15_000 });
+    const main = page.getByTestId("chat-main");
+    const runtimeChip = main.getByRole("button", { name: /change runtime/ });
+    const modelChip = main.getByRole("button", { name: /change model/ });
+    await expect(runtimeChip).toBeVisible({ timeout: 45_000 });
+    await expect(modelChip).toContainText(CODEX_MODEL.id, { timeout: 15_000 });
     // The landing identity line reads the roster's familiar.harness. Scoped
     // to the primary chat panel — the shell also mounts a persistent,
     // closed-by-default auxiliary Chat panel (data-testid="right-chat") that
     // renders its own copy of this same `.home-dash__meta` element while
     // unopened, so an unscoped page-wide locator now matches two elements.
-    await expect(page.getByTestId("chat-main").locator(".home-dash__meta")).toContainText("codex");
+    await expect(main.locator(".home-dash__meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
     const modelStateGetsBefore = state.modelStateServed;
 
-    await pill.click();
-    const menu = page.getByRole("menu", { name: "Runtime and model" });
-    await menu.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
+    await runtimeChip.click();
+    const runtimeMenu = page.getByRole("menu", { name: "Runtime", exact: true });
+    await runtimeMenu.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
 
-    // The menu stays open for the model step — the switch isn't done until a
-    // model is picked, and the Model group re-lists to the new runtime's
-    // reported inventory in place (cave-bfwk).
-    await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true })).toBeVisible();
+    // The runtime menu closes and the Model menu opens on the model chip —
+    // the switch isn't done until a model is picked, and the Model menu lists
+    // the new runtime's reported inventory (cave-bfwk).
+    await expect(runtimeMenu).not.toBeVisible();
+    const modelMenu = page.getByRole("menu", { name: "Model", exact: true });
+    await expect(modelMenu).toBeVisible();
+    await expect(modelMenu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true })).toBeVisible();
 
     // The PATCH carries the harness + explicit runtime-default intent. A
     // reported model is selectable, never an implicit launch override.
@@ -187,32 +248,63 @@ test.describe("composer runtime picker (context chips)", () => {
       expect(fam?.nova?.model).toBe("");
     }).toPass({ timeout: 10_000 });
 
-    // Pill flips (optimistic, then reconciled by the model-state refetch).
-    await expect(pill).toContainText("Claude Code", { timeout: 10_000 });
+    // Runtime chip flips (optimistic, then reconciled by the model-state refetch).
+    await expect(runtimeChip).toContainText("Claude Code", { timeout: 10_000 });
 
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });
     // …so the identity line catches up without a reload. Scoped to the
     // primary chat panel — see the earlier assertion in this test for why.
-    await expect(page.getByTestId("chat-main").locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
+    await expect(main.locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
 
     // Let the runtime pick's reconciling model-state refetch land before the
     // model pick, so a stale in-flight GET can't overwrite the model PATCH.
     await expect(() => expect(state.modelStateServed).toBeGreaterThan(modelStateGetsBefore)).toPass({ timeout: 10_000 });
 
     // Picking a model completes the runtime→model switch and closes the menu.
-    await menu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true }).click();
-    await expect(menu).not.toBeVisible();
-    await expect(pill).toContainText(CLAUDE_MODEL.id, { timeout: 10_000 });
+    await modelMenu.getByRole("menuitemradio", { name: `${CLAUDE_MODEL.label} · ${CLAUDE_MODEL.id}`, exact: true }).click();
+    await expect(modelMenu).not.toBeVisible();
+    await expect(modelChip).toContainText(CLAUDE_MODEL.id, { timeout: 10_000 });
+
+    // The model-state report for Claude carries controls, so the Thinking and
+    // Speed chips appear on their own, unset (Auto) until picked.
+    const thinkingChip = main.getByRole("button", { name: /change thinking/ });
+    const speedChip = main.getByRole("button", { name: /change speed/ });
+    await expect(thinkingChip).toBeVisible({ timeout: 10_000 });
+    await expect(thinkingChip).toContainText("Thinking · Auto");
+    await expect(speedChip).toBeVisible();
+    await expect(speedChip).toContainText("Speed · Auto");
+    await expect(speedChip).toHaveAttribute("title", /Applied by the runtime/);
+    await expect(thinkingChip).toHaveAttribute("title", /Sent as prompt guidance/);
+
+    await speedChip.click();
+    const speedMenu = page.getByRole("menu", { name: "Speed", exact: true });
+    await expect(speedMenu).toBeVisible();
+    await expect(speedMenu.getByRole("menuitemradio", { name: "Auto", exact: true })).toHaveAttribute("aria-checked", "true");
+    for (const name of ["Fast", "Balanced", "Thorough"]) {
+      await expect(speedMenu.getByRole("menuitemradio", { name, exact: true })).toBeVisible();
+    }
+    await speedMenu.getByRole("menuitemradio", { name: "Thorough", exact: true }).click();
+    await expect(speedMenu).not.toBeVisible();
+    await expect(speedChip).toContainText("Speed · Thorough");
+
+    // The pick rides the next send as a typed control, nothing else.
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Run with the thorough speed");
+    await composer.press("Enter");
+    await expect(() => expect(state.sendBodies.length).toBeGreaterThan(0)).toPass({ timeout: 10_000 });
+    const sent = state.sendBodies.at(-1) as { modelControls?: Record<string, string>; responseSpeed?: unknown };
+    expect(sent.modelControls).toEqual({ performance: "thorough" });
+    expect(sent.responseSpeed).toBeUndefined();
   });
 
   test("unavailable inventory preserves the stored ID without offering it as a model", async ({ page }) => {
     await seed(page, false);
     await page.goto("/?mode=chat");
-    const chip = page.getByRole("button", { name: /change model/ });
+    const chip = page.getByTestId("chat-main").getByRole("button", { name: /change model/ });
     await expect(chip).toContainText(CODEX_MODEL.id, { timeout: 45_000 });
     await chip.click();
-    const menu = page.getByRole("menu", { name: "Runtime and model" });
+    const menu = page.getByRole("menu", { name: "Model", exact: true });
     await expect(menu.getByText("No models reported · use runtime default", { exact: true })).toBeVisible();
     const selection = menu.getByRole("menuitemradio", {
       name: `Current selection · ${CODEX_MODEL.id} (not in current inventory)`, exact: true,

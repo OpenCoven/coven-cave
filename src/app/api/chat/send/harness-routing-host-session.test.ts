@@ -138,6 +138,63 @@ assert.match(
   /a\.push\("--permission", forwardPermission\)/,
   "coven run argv forwards --permission when enabled",
 );
+
+// Speed control (#5896): `coven run --speed fast|balanced|thorough` is mapped by
+// the daemon onto Claude's `--effort`. It is forwarded only for a local Claude
+// binding whose installed CLI advertises the flag, and only from an explicit,
+// validated `performance` pick — never from the legacy responseSpeed default.
+const modelStateRoute = await readFile(
+  new URL("../model-state/route.ts", import.meta.url),
+  "utf8",
+);
+const capabilityProbes = await readFile(
+  new URL("./chat-send-capabilities.ts", import.meta.url),
+  "utf8",
+);
+const harnessAdapters = await readFile(
+  new URL("../../../../lib/harness-adapters.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  harnessAdapters,
+  /export function covenRunSupportsSpeedFlag\(helpText: string\): boolean \{[\s\S]*?--speed\(\?!\[\\w-\]\)/,
+  "the --speed probe parses coven run --help like the --permission and --add-dir probes",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunSupportsSpeed\(\): Promise<boolean> \{[\s\S]*?covenRunSupportsSpeedFlag/,
+  "the Speed probe is a cached coven run --help probe",
+);
+assert.match(
+  chatRoute,
+  /const speedForwardingEnabled =\s*\n\s*!sshRuntime &&\s*\n\s*binding\.harness === "claude" &&\s*\n\s*\(\(await probeCovenCapability\(covenRunSupportsSpeed\)\) \?\? false\);/,
+  "Speed forwarding is gated on a local Claude binding and the ready-plan coven run --speed probe",
+);
+assert.match(
+  chatRoute,
+  /withForwardableRuntimeCliControls\(\s*\n\s*modelControlCapabilities\(binding\.harness, desiredModel\)[\s\S]*?\{ speed: speedForwardingEnabled \},\s*\n\s*\);/,
+  "the send route drops the Speed control when it cannot forward it, so a pick is rejected rather than silently ignored",
+);
+assert.match(
+  modelStateRoute,
+  /withForwardableRuntimeCliControls\([\s\S]*?\{ speed: speedForwardable \},/,
+  "the model-state route offers the Speed control on the same probe, so a client never renders a chip the send route would reject",
+);
+assert.match(
+  modelStateRoute,
+  /const speedForwardable =\s*\n\s*state\.harness === "claude" &&\s*\n\s*canonicalHarnessId\(binding\.harness\) === "claude" &&\s*\n\s*!isSshRuntime\(binding\.runtime\) &&/,
+  "the model-state Speed gate matches the send route's local Claude binding condition",
+);
+assert.match(
+  chatRoute,
+  /const forwardSpeed = speedForwardingEnabled \? controlValidation\.values\.performance \?\? null : null;/,
+  "only a validated explicit performance pick is forwarded",
+);
+assert.match(
+  chatRoute,
+  /if \(forwardSpeed\) a\.push\("--speed", forwardSpeed\);/,
+  "coven run argv forwards --speed when enabled",
+);
 assert.match(
   chatRoute,
   /body\.permissionMode === "read"[\s\S]*?!directReadOnlyEnforcement && \(!permissionForwardingEnabled \|\| Boolean\(sshRuntime\)\)[\s\S]*?code: "read_only_unavailable"[\s\S]*?status: 501/,

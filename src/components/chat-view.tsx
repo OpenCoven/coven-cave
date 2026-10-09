@@ -331,7 +331,7 @@ import {
   type CommandThinkingEffort,
   type InitialCommandControls,
 } from "@/lib/command-controls";
-import type { ModelControlCapability, ModelControlValues } from "@/lib/model-control-capabilities";
+import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
 import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
@@ -3079,6 +3079,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ),
     ) as ModelControlValues);
   }, [modelCapabilities]);
+
+  // The Thinking · Speed chips and the Tools → Response options sections edit
+  // the same selection: an explicit value per family, or nothing (Auto), which
+  // leaves the runtime and model on their own default.
+  const handleModelControlChange = useCallback(
+    (family: ModelControlFamily, value: string | null) => {
+      setModelControls((current) => {
+        const next = { ...current };
+        if (value) next[family] = value;
+        else delete next[family];
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -7507,6 +7522,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       onPickModel={handleSelectModel}
       promotableModel={promotableModel}
       onPromoteModelToDefault={handlePromoteModelToDefault}
+      modelCapabilities={modelCapabilities}
+      modelControls={modelControls}
+      onModelControlChange={handleModelControlChange}
       modelDisabled={busy}
       projectRoot={activeProjectRoot}
       onOpenUrl={onOpenUrl}

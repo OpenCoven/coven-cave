@@ -451,8 +451,8 @@ for (const departure of ["project", "new-chat"] as const) {
     const main = page.getByTestId("chat-main");
     const composer = main.getByRole("textbox", { name: "Message", exact: true });
     await composer.fill("Origin message waiting for runtime");
-    await main.getByRole("button", { name: /change model/ }).click();
-    await page.getByRole("menu", { name: "Runtime and model" }).getByRole("menuitemradio", { name: "Codex", exact: true }).click();
+    await main.getByRole("button", { name: /change runtime/ }).click();
+    await page.getByRole("menu", { name: "Runtime", exact: true }).getByRole("menuitemradio", { name: "Codex", exact: true }).click();
     await expect.poll(() => saves).toBe(1);
     await page.keyboard.press("Escape");
     await composer.focus();
