@@ -12,8 +12,13 @@
   color: var(--accent-presence);
 }
 
-/* Runtime identity stays readable; the existing context row can scroll. */
-.cave-context-chip--runtime {
+/* Runtime, model and control identity stay readable instead of truncating
+   to "Runtime default (unr…" inside the chip's general max-width (9rem on
+   phones): the context row itself scrolls (tests/mobile/chat-thread-layout
+   pins that no footer chip label is clipped). */
+.cave-context-chip--runtime,
+.cave-context-chip--model,
+.cave-context-chip--control {
   flex-shrink: 0;
   max-width: none;
 }
