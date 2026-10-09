@@ -98,8 +98,13 @@
    rail's fixed 32px squares no longer matched the panel's pitch. */
 .sidebar-folder-row,
 .sidebar-actions--footer .sidebar-action-row {
+  position: relative;
   flex: none;
-  gap: 6px;
+  /* One label column for the whole sidebar: New chat, destinations and the
+     footer all put 8px between the icon and the label. Rows used 6px and New
+     chat 10px, so its label sat 4px right of every other one (issue 5888). The
+     icon column is untouched — only the label moves. */
+  gap: var(--space-2);
   min-height: var(--rail-control);
   border-radius: var(--radius-control);
   padding: 0 var(--rail-lead);
@@ -119,8 +124,27 @@
 
 .sidebar-folder-row--active {
   background: color-mix(in oklch, var(--accent-presence) 13%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent-presence);
   color: var(--text-primary);
+}
+
+/* The active marker. An inset 2px box-shadow on a row with an 8px radius bent
+   around both corners into a crescent; a short centred bar stays on the row's
+   straight edge (issue 5888). The split state draws the same bar, fainter. */
+.sidebar-folder-row--active::before,
+.sidebar-folder-row--split::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2px;
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  transform: translateY(-50%);
+}
+
+.sidebar-folder-row--split::before {
+  opacity: 0.45;
 }
 
 .sidebar-foot-bell > .relative {

@@ -23,6 +23,11 @@ export type SidebarSectionProps = {
   /** Stable id — emitted as `data-section` so tests and styles can target it. */
   id: string;
   label: string;
+  /** Keep the heading for assistive tech but don't draw it. For a group whose
+   *  place already names it: the primary destinations sit directly under New
+   *  chat inside `<nav aria-label="Primary">`, so a visible "Navigation" title
+   *  repeated what the eye already knows (#5888). */
+  labelHidden?: boolean;
   /** Right-aligned count chip; omitted or 0 renders nothing. */
   count?: number;
   /** Trailing slot in the heading row (rarely needed; kept for hosts that
@@ -36,6 +41,7 @@ export type SidebarSectionProps = {
 export function SidebarSection({
   id,
   label,
+  labelHidden,
   count,
   actions,
   hideWhenEmpty,
@@ -48,7 +54,7 @@ export function SidebarSection({
 
   return (
     <section className="sidebar-section" data-section={id} aria-labelledby={headId}>
-      <div className="sidebar-section__head-row">
+      <div className={`sidebar-section__head-row${labelHidden ? " sr-only" : ""}`}>
         {/* A real heading, not a button: it names the group and nothing more. */}
         <h2 id={headId} className="sidebar-section__label">
           {label}
