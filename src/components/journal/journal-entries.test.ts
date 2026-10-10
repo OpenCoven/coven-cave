@@ -337,14 +337,21 @@ assert.match(auto, /role="switch"\s*\n\s*aria-checked=\{enabled\}/, "the toggle 
 // hour select, not a minute-level time input that would be refused.
 assert.match(auto, /<StandardSelect\s*\n\s*id="journal-auto-time"/, "an hour picker sets the reflection time");
 assert.doesNotMatch(auto, /type="time"/, "no minute-level time input — the daemon cannot run at :30");
-assert.match(auto, /DEFAULT_JOURNAL_ROUTINE_TIME/, "a new routine defaults to 21:00");
+assert.match(auto, /useState<number>\(\(\) => suggestedJournalHour\(familiarId\)\)/, "a new routine defaults to the familiar's staggered morning hour");
+assert.match(auto, /RUN_POLL_LIMIT = Math\.ceil\(\(\(JOURNAL_ROUTINE_TIMEOUT_MINUTES \+ 1\) \* 60_000\) \/ RUN_POLL_MS\)/, "Run now is watched for as long as a run may take");
+assert.match(auto, /reqRef\.current \+= 1;\s*\n\s*try \{/, "a save drops refreshes read before it, so they can't undo it");
+assert.match(auto, /const saveRuntime = routine \? undefined :/, "a save keeps a harness picked elsewhere unless the picker changes it");
+assert.match(auto, /const saveHour = customSchedule \? null : hour;/, "a save keeps a custom schedule instead of overwriting it");
+assert.match(auto, /label: "Custom schedule"/, "a custom schedule is shown as one, not as a made-up hour");
+assert.match(auto, /onRunFinishedRef\.current\?\.\(next\.kind === "ready" \? next\.lastRunEntry : null\)/, "a finished run reports the day it wrote");
+assert.match(entries, /if \(entry\?\.written && entry\.date !== current\.date\) selectDay\(entry\.date, current\.familiar\);/, "and the journal opens that day");
 assert.match(auto, /json\.available === false \|\| res\.status === 503/, "an unreachable daemon is detected");
 assert.match(auto, /Automations service isn&apos;t reachable/, "and said precisely, with no fallback");
 assert.match(auto, /Last run: <span data-run-status=\{wroteNothing \? "empty" : lastRun\.status\}>/, "the last run's status is shown");
 // A signed-out harness exits 0 ("Login expired"), so "succeeded" alone is not
 // proof; the pane trusts the server's check that the entry file landed.
 assert.match(auto, /const wroteNothing = lastRun\?\.status === "succeeded" && lastRunEntry !== null && !lastRunEntry\.written;/, "a succeeded run that wrote nothing is called out");
-assert.match(auto, /<StandardSelect<JournalRuntime>\s*\n\s*id="journal-auto-runtime"/, "the harness the reflection runs on is choosable");
+assert.match(auto, /<StandardSelect\s*\n\s*id="journal-auto-runtime"/, "the harness the reflection runs on is choosable");
 assert.match(auto, /announce\(/, "automation mutations are announced");
 assert.match(css, /\.journal-auto__switch \{/, "the switch is styled in the surface stylesheet");
 assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.journal-auto__switch,/, "the switch respects reduced motion");
