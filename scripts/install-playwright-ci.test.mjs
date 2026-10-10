@@ -44,7 +44,7 @@ test("a healthy runner installs the system packages once, then the browsers", ()
   const { status, calls } = run(0);
   assert.equal(status, 0);
   assert.deepEqual(calls, [
-    "timeout 6m",
+    "timeout 15m",
     "pnpm exec playwright install-deps chromium webkit",
     "pnpm exec playwright install chromium webkit",
   ]);
@@ -57,6 +57,7 @@ test("a slow or failed apt attempt is cleaned up and retried (#5722)", () => {
   // Between attempts: stop stragglers and repair dpkg so the retry can take the lock.
   assert.ok(calls.includes("sudo pkill -x apt-get"));
   assert.ok(calls.includes("sudo dpkg --configure -a"));
+  assert.match(stdout, /attempt 1 of 2 \(limit 15m\)/);
   assert.match(stdout, /::warning::Playwright system packages attempt 1 failed/);
   assert.equal(calls.at(-1), "pnpm exec playwright install chromium webkit");
 });
