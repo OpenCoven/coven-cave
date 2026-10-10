@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { readerOutline, readingStats } from "@/lib/reader-outline";
+import { parseMdDocument } from "@/lib/md-frontmatter";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -83,7 +84,12 @@ export function ChatMarkdownReader({
   const progressRef = useRef<HTMLDivElement | null>(null);
   const headingsRef = useRef<HTMLElement[]>([]);
   const titleId = useId();
-  const outline = useMemo(() => readerOutline(markdown ?? ""), [markdown]);
+  const parsedDocument = useMemo(() => parseMdDocument(markdown ?? ""), [markdown]);
+  const outline = useMemo(() => readerOutline(parsedDocument.body), [parsedDocument.body]);
+  // Keep source comments and formatting intact; exports still use `markdown`.
+  const metadata = parsedDocument.hasFrontmatter && markdown
+    ? markdown.slice(0, markdown.length - parsedDocument.body.length).trimEnd()
+    : null;
 
   const close = useCallback(() => onClose(), [onClose]);
   useFocusTrap(true, dialogRef, { onEscape: close });
@@ -175,7 +181,7 @@ export function ChatMarkdownReader({
         outline.length > 0
           ? `${outline.length} section${outline.length === 1 ? "" : "s"}`
           : null,
-        `${readingStats(markdown).minutes} min read`,
+        `${readingStats(parsedDocument.body).minutes} min read`,
       ]
         .filter(Boolean)
         .join(" · ")
@@ -206,7 +212,7 @@ export function ChatMarkdownReader({
           </span>
           <div className="chat-spec-reader__heading">
             <span className="chat-spec-reader__eyebrow">{eyebrow}</span>
-            <h2 id={titleId}>{title}</h2>
+            <h2 id={titleId} title={parsedDocument.title ?? title}>{parsedDocument.title ?? title}</h2>
           </div>
           <span className="chat-spec-reader__meta">{meta}</span>
           {headerActions}
@@ -277,11 +283,19 @@ export function ChatMarkdownReader({
                   actions={errorActions}
                 />
               ) : markdown ? (
-                <MarkdownBlock
-                  text={markdown}
-                  className="cave-md--reader"
-                  onOpenUrl={onOpenUrl}
-                />
+                <>
+                  {metadata ? (
+                    <details className="chat-spec-reader__metadata">
+                      <summary className="focus-ring">Document details</summary>
+                      <pre>{metadata}</pre>
+                    </details>
+                  ) : null}
+                  <MarkdownBlock
+                    text={parsedDocument.body}
+                    className="cave-md--reader"
+                    onOpenUrl={onOpenUrl}
+                  />
+                </>
               ) : loading ? (
                 <SkeletonRows count={6} />
               ) : null}
