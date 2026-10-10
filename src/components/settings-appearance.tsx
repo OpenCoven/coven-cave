@@ -13,6 +13,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
+import { THEME_SYNC_KEYS } from "@/lib/theme-sync-keys";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import { SettingsTabbed } from "./settings-section-tabs";
@@ -53,9 +54,9 @@ function applyMode(pref: ModePref) {
   updateAppPreferences({ appearance: { theme: { modePreference: pref, resolvedMode } } });
 }
 
-// Color tokens mirrored to the daemon so other clients (e.g. the iOS app over
-// Tailscale) can match the desktop theme via GET /api/theme.
-const THEME_SYNC_KEYS = [
+// Core colors exposed by the existing theme editor. Cross-device publication
+// uses the broader semantic contract in THEME_SYNC_KEYS.
+const THEME_EDITABLE_KEYS = [
   "--bg-base", "--bg-raised", "--bg-elevated",
   "--text-primary", "--text-secondary", "--text-muted",
   "--border-hairline", "--accent-presence",
@@ -101,7 +102,7 @@ function resolveTokens(keys: readonly string[]): Record<string, string> {
   return tokens;
 }
 
-/** Read the active theme's 8 synced tokens, resolved to hex. */
+/** Read the active theme's synced semantic tokens, resolved to hex. */
 function resolveSyncTokens(): Record<string, string> {
   return resolveTokens(THEME_SYNC_KEYS);
 }
@@ -328,7 +329,7 @@ function ThemePresetCard({
 }
 
 // Friendly labels for the 8 overridable core tokens.
-const TOKEN_LABELS: Record<(typeof THEME_SYNC_KEYS)[number], string> = {
+const TOKEN_LABELS: Record<(typeof THEME_EDITABLE_KEYS)[number], string> = {
   "--bg-base": "Background",
   "--bg-raised": "Raised surface",
   "--bg-elevated": "Elevated surface",
@@ -347,7 +348,7 @@ const TOKEN_LABELS: Record<(typeof THEME_SYNC_KEYS)[number], string> = {
 // text-foreground) — otherwise editing one token silently resets the rest of
 // the look to the default theme instead of layering on the selected one.
 const THEME_FORK_SNAPSHOT_KEYS = [
-  ...THEME_SYNC_KEYS,
+  ...THEME_EDITABLE_KEYS,
   "--bg-panel",
   "--bg-hover",
   "--border-strong",
@@ -592,7 +593,7 @@ function ThemeTokenOverrides({
   modeRef.current = mode;
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ key: string; value: string } | null>(null);
-  const dirtyRef = useRef<Set<(typeof THEME_SYNC_KEYS)[number]>>(new Set());
+  const dirtyRef = useRef<Set<(typeof THEME_EDITABLE_KEYS)[number]>>(new Set());
   const flushPendingPreview = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
@@ -615,7 +616,7 @@ function ThemeTokenOverrides({
     };
   }, [flushPendingPreview]);
 
-  const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
+  const handlePick = (key: (typeof THEME_EDITABLE_KEYS)[number], hex: string) => {
     // Preserve the token's original alpha byte (hairline borders are washes).
     const next = withAlphaFrom(valuesRef.current[key], hex);
     setValues((v) => ({ ...v, [key]: next }));
@@ -631,7 +632,7 @@ function ThemeTokenOverrides({
     }
   };
 
-  const handleCommit = (key: (typeof THEME_SYNC_KEYS)[number]) => {
+  const handleCommit = (key: (typeof THEME_EDITABLE_KEYS)[number]) => {
     flushPendingPreview();
     if (!dirtyRef.current.has(key)) return; // opened + closed without a pick
     dirtyRef.current.delete(key);
@@ -649,7 +650,7 @@ function ThemeTokenOverrides({
         selected theme, fork it into a custom theme, and sync immediately.
       </p>
       <div className="flex flex-col divide-y divide-[var(--border-hairline)] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
-        {THEME_SYNC_KEYS.map((key) => (
+        {THEME_EDITABLE_KEYS.map((key) => (
           <TokenColorRow
             key={key}
             token={key}

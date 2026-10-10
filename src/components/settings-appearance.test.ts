@@ -456,7 +456,7 @@ assert.match(
 assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
 assert.match(
   settings,
-  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}<TokenColorRow/,
+  /THEME_EDITABLE_KEYS\.map\(\(key\)[\s\S]{0,500}<TokenColorRow/,
   "the override panel renders an editable color row for each core token",
 );
 assert.match(
@@ -472,7 +472,7 @@ assert.match(
 // token visually resets every other token to the default theme.
 assert.match(
   settings,
-  /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_SYNC_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
+  /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_EDITABLE_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
   "forking a preset must snapshot the hardcoded per-theme tokens AND the legacy-vocab aliases",
 );
 // A fork must capture BOTH mode palettes. Seeding only the edited mode made

@@ -17,6 +17,7 @@ import {
   resolveThemeMode,
   themeRuntimeSignature,
 } from "@/lib/theme-runtime";
+import { THEME_SYNC_KEYS } from "@/lib/theme-sync-keys";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 
 /**
@@ -28,18 +29,6 @@ import { rgbaBytesToHex } from "@/lib/theme-token-hex";
  */
 
 const POLL_MS = 10_000;
-
-// The eight core color tokens consumed by phone clients.
-const THEME_SYNC_KEYS = [
-  "--bg-base",
-  "--bg-raised",
-  "--bg-elevated",
-  "--text-primary",
-  "--text-secondary",
-  "--text-muted",
-  "--border-hairline",
-  "--accent-presence",
-] as const;
 
 /** Resolve the active theme's synced tokens to plain sRGB hex (canvas rasterise). */
 function resolveSyncTokens(): Record<string, string> {

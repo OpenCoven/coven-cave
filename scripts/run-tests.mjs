@@ -585,6 +585,7 @@ export const SUITES = {
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",
+    "src/lib/theme-sync-keys.test.ts",
     "src/lib/theme-runtime.test.ts",
     "src/lib/preferences-schema.test.ts",
     "src/lib/sidecar-smoke-preferences.test.ts",
