@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/chat-origins.test.ts",
     "src/lib/proposal-submission.test.ts",
     "src/lib/proposal-submission-controller.test.ts",
     "src/lib/afs.test.ts",
@@ -1777,6 +1778,7 @@ export const SUITES = {
     "src/lib/server/sessions-list.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/origin-server-mint.test.ts",
+    "src/app/api/chat/send/meta-run-hygiene.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
     "src/app/api/chat/send/openclaw-gateway-outcome.test.ts",
@@ -2228,6 +2230,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/chat/send/meta-run-hygiene.test.ts",
   // the event-plane capability route resolves @/ and next/server (#5830)
   "src/app/api/events/capability/route.test.ts",
   // saved-history mapping uses the existing shared chat-turn-state contract

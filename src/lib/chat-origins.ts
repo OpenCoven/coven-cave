@@ -20,3 +20,15 @@ export function isProjectlessGenerationOrigin(
 ): boolean {
   return Boolean(origin && PROJECTLESS_GENERATION_ORIGINS.has(origin));
 }
+
+/** Utility runs that must use read-only access and omit daily memory. */
+export const META_RUN_ORIGINS: ReadonlySet<SessionOrigin> = new Set([
+  "enhance",
+  "journal",
+]);
+
+export function isMetaRunOrigin(
+  origin: SessionOrigin | null | undefined,
+): boolean {
+  return Boolean(origin && META_RUN_ORIGINS.has(origin));
+}
