@@ -7,7 +7,7 @@ import "@/styles/composer-context-controls.css";
 // Thinking/Speed controls live in a quiet disclosure, retaining their own
 // labelled pickers, values and focus-return anchors on every composer.
 
-import { useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
@@ -278,6 +278,14 @@ export function ComposerContextChips(props: ComposerContextProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsId = useId();
   const optionsRef = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    const trigger = optionsRef.current;
+    // Collapsing reflows the phone row after focus has returned. Keep the
+    // focused trigger visible in that row without scrolling to an unfocused one.
+    if (!optionsOpen && trigger && document.activeElement === trigger) {
+      trigger.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [optionsOpen]);
   const [menu, setMenu] = useState<ComposerContextView>(null);
   const showProject = props.showProject ?? true;
   const projectRef = useRef<HTMLButtonElement | null>(null);
