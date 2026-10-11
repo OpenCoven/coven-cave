@@ -38,6 +38,21 @@
 .cave-context-controls__secondary .cave-context-chip {
   font-size: var(--text-xs);
 }
+/* The engaged phone composer reserves one line for context. Keep each name
+   intact and scroll the row; opening secondary controls may use another line. */
+@media (max-width: 767px) {
+  .cave-context-controls--minimal {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .cave-context-controls--minimal:not(:has(.cave-context-controls__secondary:not([hidden]))) {
+    flex-wrap: nowrap;
+  }
+  .cave-context-controls--minimal > .cave-context-chip {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+}
 @media (pointer: coarse) {
   .cave-context-controls--minimal > .cave-context-chip--options {
     width: var(--touch-target);

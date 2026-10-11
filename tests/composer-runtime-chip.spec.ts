@@ -434,11 +434,15 @@ for (const [runtime, modelId] of [
   test(`${runtime} recovers model discovery in place and carries the reported ID into send`, async ({ page, isMobile }, testInfo) => {
     const state = await seed(page, false, runtime);
     let requests = 0;
-    let release: (() => void) | undefined;
+    let retryRequested = false;
+    let release!: () => void;
+    const recoveryGate = new Promise<void>(resolve => { release = resolve; });
     await page.route(`**/api/runtime-models/${runtime}?*`, async (route) => {
+      // Development Strict Mode can replay the initial discovery effect.
+      // Every mount request fails until the user explicitly asks to retry.
+      if (!retryRequested) return route.fulfill({ status: 503, json: { ok: false } });
       requests += 1;
-      if (requests === 1) return route.fulfill({ status: 503, json: { ok: false } });
-      if (requests === 2) await new Promise<void>(resolve => { release = resolve; });
+      await recoveryGate;
       return route.fulfill({ json: {
         ok: true, runtime, models: [{ id: modelId, label: "Latest reported model" }],
         provenance: "live", freshness: "fresh", refreshState: "ready", availability: "available",
@@ -462,12 +466,13 @@ for (const [runtime, modelId] of [
         await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`model-recovery-${theme}-${mode}.png`) });
       }
     }
+    retryRequested = true;
     await menu.getByRole("menuitem", { name: "Retry model discovery", exact: true }).click();
     await expect(menu.getByText(/Loading .* models/)).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Refreshing models…", exact: true })).toBeDisabled();
     await expect(draft).toHaveValue("Preserve this draft while recovering models");
-    await expect.poll(() => requests).toBe(2);
-    release!();
+    await expect.poll(() => requests).toBe(1);
+    release();
     // Hold persistence so this proves the immediate next send carries the
     // chosen ID even before the familiar default has finished saving.
     let releaseSave!: () => void;
