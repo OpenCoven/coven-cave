@@ -172,7 +172,11 @@ export async function GET(req: Request) {
     !isSshRuntime(binding.runtime) &&
     !state.runtime?.startsWith("ssh:");
   const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
-  const canReadCliInventory = localInventoryRequest &&
+  // Claude and Codex discovery only opens the CLI's control protocol: no
+  // thread, prompt, or tool runs, and results are capped and cached. An
+  // authenticated phone can already start full turns on these same CLIs, so
+  // gating the menu on local origin left iOS with an empty model list.
+  const canReadCliInventory =
     canonicalHarnessId(binding.harness) === state.harness &&
     !isSshRuntime(binding.runtime) && !state.runtime?.startsWith("ssh:");
   const inventory = await listRuntimeModelInventory(
