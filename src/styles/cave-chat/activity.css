@@ -650,6 +650,7 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear-header {
+  container: chat-header / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -746,6 +747,28 @@ details[open] > .cave-tool-summary::before {
      context line, so it reads a notch smaller and in the chrome font. */
   font-size: var(--text-xs);
   letter-spacing: 0.01em;
+}
+
+/* Split panes can be narrow inside a wide window. Give metadata its own
+   readable line before the title and action cluster squeeze it to a column. */
+@container chat-header (max-width: 40rem) {
+  .cave-chat-meta-line {
+    flex-wrap: wrap;
+  }
+  .cave-chat-meta-line .cave-chat-title,
+  .cave-chat-meta-line .cave-chat-title-input {
+    flex: 1 1 0;
+    min-width: min(100%, calc(var(--space-12) * 2));
+    max-width: none;
+  }
+  .cave-chat-meta-line__meta {
+    order: 1;
+    flex: 1 0 100%;
+    max-width: none;
+  }
+  .cave-chat-meta-line .cave-chat-session-actions {
+    flex: none;
+  }
 }
 
 /* Always-visible identity line on settled headers (chat-revamp 1b):
