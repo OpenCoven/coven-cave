@@ -1,3 +1,4 @@
+import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
 import { ReasoningBlockTracker } from "@/lib/server/chat-reasoning-projection";
@@ -2102,6 +2103,12 @@ async function postAdmittedChat(
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // A persisted conversation owns its provenance. Never let a request relabel
+  // an existing user chat as a hidden generator to bypass project checks.
+  const generationOrigin = existingConversation?.origin ?? body.origin;
+  // Classify before capability checks so unsupported runtimes fail closed.
+  const metaRun = isMetaRunOrigin(generationOrigin);
+  if (metaRun) body.permissionMode = "read";
   const flowDiscussionStartsFresh = isUnstartedFlowDiscussion(existingConversation);
   if (body.sessionId && (
     existingConversation?.origin === "flow" ||
@@ -2570,9 +2577,6 @@ async function postAdmittedChat(
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
-  // A persisted conversation owns its provenance. Never let a request relabel
-  // an existing user chat as a hidden generator to bypass project checks.
-  const generationOrigin = existingConversation?.origin ?? body.origin;
   // A hidden generation is exempt from the launch gate only for the familiar's
   // OWN workspace. A resume root — the conversation's persisted runtime, or a
   // daemon session's project_root (cave-yjnr) — names a real project and is
@@ -3203,9 +3207,11 @@ async function postAdmittedChat(
         resolvedFamiliarWorkspace,
       )
     : [];
-  const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
-    resolvedFamiliarWorkspace,
-  );
+  const dailyMemoryContext = metaRun
+    ? null
+    : await readFamiliarDailyMemoryStartupContext(
+        resolvedFamiliarWorkspace,
+      );
   // Operator profile — who the human is. New sessions only: resumed sessions
   // already carry the block in their transcript.
   const operatorProfileContext = body.sessionId
