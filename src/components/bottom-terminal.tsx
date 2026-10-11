@@ -1,6 +1,7 @@
 "use client";
 
 import "@xterm/xterm/css/xterm.css";
+import "@/styles/bottom-terminal-find.css";
 
 import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import type React from "react";
@@ -1144,7 +1145,7 @@ export function BottomTerminal({
             placeholder="Find in terminal…"
             aria-label="Find in terminal"
             aria-describedby={findCountId}
-            className="focus-ring-inset w-44 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="bottom-terminal-find__input focus-ring-inset bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           {/* Match counter is deliberately NOT a live region: the SR mirror
               region below is already aria-live=polite, and a second polite

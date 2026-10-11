@@ -11,6 +11,11 @@ const styles = [
   "src/styles/globals/themes.css",
   "src/styles/globals/primitives.css",
   "src/styles/board/chrome-table.css",
+  "src/styles/daily-report-shipped.css",
+  "src/styles/journal.css",
+  "src/styles/globals/desktop-chrome.css",
+  "src/styles/globals/shared-pickers-and-toasts.css",
+  "src/styles/globals/surface-research-prompt.css",
 ].map((file) => readFileSync(file, "utf8")).join("\n");
 
 test.beforeAll(async () => {
@@ -119,5 +124,34 @@ test("shared search contains its input and clears by button or Escape", async ({
     await search.fill("again");
     await search.press("Escape");
     await expect(search).toHaveValue("");
+  }
+});
+
+
+test("specialized native search fields retain touch sizing over surface styles", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const fields = [
+    "journal-list__filter",
+    "drd-ship-search-input",
+    "familiar-switcher__search",
+    "cave-project-picker__filter",
+    "research-quick-saves__search",
+  ];
+  await page.locator("main").waitFor();
+  await page.locator("main").evaluate((main, classes) => {
+    for (const className of classes) {
+      const input = document.createElement("input");
+      input.className = `ui-search-field ${className}`;
+      input.setAttribute("aria-label", className);
+      main.append(input);
+    }
+  }, fields);
+  for (const field of fields) {
+    const geometry = await page.getByLabel(field).evaluate((input) => ({
+      height: input.getBoundingClientRect().height,
+      fontSize: parseFloat(getComputedStyle(input).fontSize),
+    }));
+    expect(geometry.height, field).toBeGreaterThanOrEqual(44);
+    expect(geometry.fontSize, field).toBeGreaterThanOrEqual(16);
   }
 });

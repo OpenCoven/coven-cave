@@ -580,7 +580,7 @@ export function JournalEntries({
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter entries…"
               aria-label="Filter journal entries"
-              className="journal-list__filter focus-ring-inset"
+              className="ui-search-field journal-list__filter focus-ring-inset"
             />
           ) : null}
           {daysError ? (

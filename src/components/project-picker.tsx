@@ -317,7 +317,7 @@ export function ProjectPickerPopover({
           }}
           placeholder="Filter projects…"
           aria-label="Filter projects"
-          className="cave-project-picker__filter focus-ring-inset"
+          className="ui-search-field cave-project-picker__filter focus-ring-inset"
         />
         <PopoverLabel>Project</PopoverLabel>
         {allProjectsEnabled ? (

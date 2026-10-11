@@ -1707,3 +1707,14 @@ html[data-backdrop-on] .glass-overlay {
   .chat-list-search-control { min-height:var(--touch-target); }
   .chat-list-search-control input { font-size:var(--text-lg); }
 }
+
+/* Native filter inputs that retain surface-specific keyboard/combobox behavior. */
+input.ui-search-field {
+  min-width: 0;
+  min-height: var(--space-8);
+  border-color: var(--border-strong);
+}
+@media (max-width: 767px), (pointer: coarse) {
+  input.ui-search-field { min-height: var(--touch-target); font-size: var(--text-lg); }
+  .ui-search-action { min-width: var(--touch-target); min-height: var(--touch-target); }
+}
