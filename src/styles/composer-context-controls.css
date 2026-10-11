@@ -1,0 +1,61 @@
+/* Quiet primary context; secondary controls only occupy space on request. */
+.cave-context-controls--minimal {
+  flex: 1;
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: var(--space-1);
+}
+.cave-context-controls--minimal > .cave-context-chip {
+  flex: 0 1 auto;
+  max-width: 30%;
+  font-size: var(--text-xs);
+  padding-inline: var(--space-1);
+}
+.cave-context-controls--minimal .cave-context-chip__chevron {
+  display: none;
+}
+.cave-context-controls--minimal .cave-context-chip[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--bg-hover);
+}
+.cave-context-controls--minimal > .cave-context-chip--options {
+  flex: none;
+  margin-inline-start: auto;
+  width: calc(var(--space-6) + var(--space-1));
+  justify-content: center;
+  color: var(--text-muted);
+}
+.cave-context-controls__secondary {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding-block-start: var(--space-1);
+  border-block-start: 1px solid var(--border-hairline);
+}
+.cave-context-controls__secondary[hidden] { display: none; }
+.cave-context-controls__secondary .cave-context-chip {
+  font-size: var(--text-xs);
+}
+/* The engaged phone composer reserves one line for context. Keep each name
+   intact and scroll the row; opening secondary controls may use another line. */
+@media (max-width: 767px) {
+  .cave-context-controls--minimal {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .cave-context-controls--minimal:not(:has(.cave-context-controls__secondary:not([hidden]))) {
+    flex-wrap: nowrap;
+  }
+  .cave-context-controls--minimal > .cave-context-chip {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+}
+@media (pointer: coarse) {
+  .cave-context-controls--minimal > .cave-context-chip--options {
+    width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}

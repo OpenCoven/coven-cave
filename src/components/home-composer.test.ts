@@ -210,7 +210,7 @@ assert.match(
   attachHook,
   /onDrop: \(e: DragEvent\) => \{[\s\S]*hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*addFiles\(e\.dataTransfer\.files\)/,
 );
-assert.match(source, /hc-attachments-clear[\s\S]*onClick=\{clearAttachments\}/);
+assert.match(source, /hc-attachments-clear[\s\S]*onClick=\{\(\) => \{\s*clearAttachments\(\);[\s\S]*?announce\("Attachments cleared\."\);[\s\S]*?textareaRef\.current\?\.focus\(\)/);
 assert.match(source, /isImage && att\.dataUrl \?[\s\S]*hc-attachment-thumb/);
 
 assert.match(source, /import \{ usePromptEnhance \} from "@\/lib\/use-prompt-enhance"/);

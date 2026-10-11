@@ -15,6 +15,7 @@ import "@/styles/cave-composer.css";
 // ComposerHostChip's Popover conventions; the chips themselves live in
 // ComposerContextChips (composer-context-pill.tsx).
 
+import { ModelInventoryFeedback, type ComposerModelInventory } from "@/components/model-inventory-feedback";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   Popover,
@@ -178,6 +179,7 @@ export function ComposerModelPopover({
   runtime,
   modelValue,
   modelOptions,
+  modelInventory,
   onPickModel,
   promotableModel = null,
   onPromoteModelToDefault,
@@ -189,6 +191,7 @@ export function ComposerModelPopover({
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
+  modelInventory?: ComposerModelInventory;
   onPickModel: (id: string | null) => void;
   /** cave-pkapw: a session-scoped model id to offer promoting to the familiar
    *  default. This component renders the row whenever the value is non-null and
@@ -220,9 +223,7 @@ export function ComposerModelPopover({
         >
           Runtime default
         </PopoverItem>
-        {modelOptions.length === 0 ? (
-          <PopoverLabel>No models reported · use runtime default</PopoverLabel>
-        ) : null}
+        <ModelInventoryFeedback runtime={runtime} modelInventory={modelInventory} modelCount={modelOptions.length} menu />
         {modelIsOutsideInventory ? (
           <PopoverItem checked disabled title={modelValue}>
             Current selection · {modelValue} (not in current inventory)

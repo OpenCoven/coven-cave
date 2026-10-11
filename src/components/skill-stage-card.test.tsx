@@ -80,7 +80,7 @@ describe("SkillRunSummary", () => {
         "Open details for skill test-driven-development: done — Governance and CI contracts passed red-green.",
     });
     await act(async () => {
-      trigger.props.onClick();
+      trigger.props.onClick({ currentTarget: { focus: vi.fn() } });
     });
 
     const modal = renderer.root.findByProps({ "data-modal": true });
@@ -113,7 +113,7 @@ describe("SkillRunSummary", () => {
       "aria-label": "Open details for skill verification-before-completion: running",
     });
     await act(async () => {
-      trigger.props.onClick();
+      trigger.props.onClick({ currentTarget: { focus: vi.fn() } });
     });
 
     expect(textContent(renderer!.root.findByProps({ "data-modal": true }))).toContain(

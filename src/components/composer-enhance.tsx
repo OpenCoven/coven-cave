@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-composer.css";
+import "@/styles/composer-enhance.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
@@ -37,14 +38,49 @@ export function EnhanceControl({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainRef = useRef<HTMLButtonElement | null>(null);
+  const optionsRef = useRef<HTMLButtonElement | null>(null);
+  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const keyboardOpenRequested = useRef(false);
+  const consumedPress = useRef(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOrigin = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const loading = state.phase === "loading";
 
   const clearPress = useCallback(() => {
     if (pressTimer.current) clearTimeout(pressTimer.current);
     pressTimer.current = null;
   }, []);
+  const abandonPress = useCallback(() => {
+    if (pressOrigin.current) consumedPress.current = true;
+    pressOrigin.current = null;
+    clearPress();
+  }, [clearPress]);
   useEffect(() => clearPress, [clearPress]);
+  useEffect(() => {
+    if (disabled || loading) {
+      abandonPress();
+      setMenuOpen(false);
+    }
+  }, [abandonPress, disabled, loading]);
+
+  const focusFirstIntent = useCallback(() => {
+    keyboardOpenRequested.current = false;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, []);
+  useEffect(() => {
+    if (!menuOpen || !keyboardOpenRequested.current) return;
+    const frame = requestAnimationFrame(focusFirstIntent);
+    return () => cancelAnimationFrame(frame);
+  }, [focusFirstIntent, menuOpen]);
+
+  const openFromKeyboard = (anchor: HTMLButtonElement | null) => {
+    if (loading || disabled) return;
+    keyboardOpenRequested.current = true;
+    menuAnchorRef.current = anchor;
+    if (menuOpen) focusFirstIntent();
+    else setMenuOpen(true);
+  };
 
   // Both segments share one hairline rectangle — borderless inside, split by
   // a hairline divider, height matched to the composer's Send button. They use
@@ -61,73 +97,140 @@ export function EnhanceControl({
         ref={mainRef}
         type="button"
         className={`${segmentBtn} px-2`}
-        title="Enhance prompt"
-        aria-label="Enhance prompt"
+        title={loading ? "Cancel enhancement" : "Enhance prompt"}
+        aria-label={loading ? "Cancel enhancement" : "Enhance prompt"}
         disabled={disabled && !loading}
-        onClick={() => {
+        onClick={(event) => {
           clearPress();
+          // A long press ends in a click on touch and pointer devices. Opening
+          // the menu consumes that click; a later keyboard activation does not.
+          if (consumedPress.current && event.detail !== 0) {
+            consumedPress.current = false;
+            return;
+          }
+          consumedPress.current = false;
           if (loading) onCancel();
           else onEnhance("auto");
         }}
-        onPointerDown={() => {
-          if (loading || disabled) return;
+        onPointerDown={(event) => {
+          if (event.button !== 0 || event.isPrimary === false) return;
           clearPress();
-          pressTimer.current = setTimeout(() => setMenuOpen(true), LONG_PRESS_MS);
+          pressOrigin.current = null;
+          keyboardOpenRequested.current = false;
+          consumedPress.current = false;
+          if (loading || disabled) return;
+          // Context chips can wrap while a finger or mouse is stationary.
+          // Capture keeps that layout shift from cancelling the hold; actual
+          // movement still abandons it and consumes the captured release click.
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            return;
+          }
+          pressOrigin.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+          pressTimer.current = setTimeout(() => {
+            consumedPress.current = true;
+            menuAnchorRef.current = mainRef.current;
+            // Safari does not focus buttons on pointer activation. Establish
+            // the trigger before opening so Escape cannot leave focus behind.
+            mainRef.current?.focus();
+            setMenuOpen(true);
+          }, LONG_PRESS_MS);
         }}
-        onPointerUp={clearPress}
-        onPointerLeave={clearPress}
+        onPointerMove={(event) => {
+          const origin = pressOrigin.current;
+          if (origin?.pointerId === event.pointerId && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 8) abandonPress();
+        }}
+        onPointerUp={(event) => {
+          if (pressOrigin.current && pressOrigin.current.pointerId !== event.pointerId) return;
+          pressOrigin.current = null;
+          clearPress();
+        }}
+        onPointerCancel={(event) => {
+          if (pressOrigin.current?.pointerId === event.pointerId) abandonPress();
+        }}
+        onLostPointerCapture={(event) => {
+          if (pressOrigin.current?.pointerId === event.pointerId) abandonPress();
+        }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            setMenuOpen(true);
+            openFromKeyboard(mainRef.current);
           }
         }}
       >
         {loading ? (
           <Icon
-            name="ph:sparkle"
+            name="ph:stop-fill"
             width={15}
             aria-hidden
-            className="animate-pulse text-[var(--accent-presence)]"
+            className="text-[var(--text-primary)]"
           />
         ) : (
           <Icon name="ph:sparkle" width={15} aria-hidden />
         )}
       </button>
       <button
+        ref={optionsRef}
         type="button"
         className={`${segmentBtn} w-[18px] border-l border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}
         aria-label="Enhance options"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         disabled={disabled || loading}
-        onClick={() => setMenuOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown") return;
+          event.preventDefault();
+          openFromKeyboard(optionsRef.current);
+        }}
+        onClick={(event) => {
+          keyboardOpenRequested.current = event.detail === 0;
+          menuAnchorRef.current = optionsRef.current;
+          optionsRef.current?.focus();
+          setMenuOpen((v) => !v);
+        }}
       >
         <Icon name="ph:caret-down-bold" width={9} aria-hidden />
       </button>
       <Popover
         open={menuOpen}
         onOpenChange={setMenuOpen}
-        anchorRef={mainRef}
+        anchorRef={menuAnchorRef}
         placement="top-end"
         minWidth={200}
         ariaLabel="Enhance options"
       >
-        <PopoverBody role="menu" ariaLabel="Enhance options">
-          {ENHANCE_INTENTS.map((intent, i) => (
-            <span key={intent.id}>
-              <PopoverItem
-                onSelect={() => {
-                  setMenuOpen(false);
-                  onEnhance(intent.id);
-                }}
-              >
-                {intent.label}
-              </PopoverItem>
-              {i === 0 ? <PopoverSeparator /> : null}
-            </span>
-          ))}
-        </PopoverBody>
+        <div ref={menuRef} onKeyDown={(event) => {
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+          const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+          if (!items.length) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const current = items.indexOf(document.activeElement as HTMLElement);
+          const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+            : event.key === "ArrowDown" ? (current + 1) % items.length
+              : current <= 0 ? items.length - 1 : current - 1;
+          items[next]?.focus();
+        }}>
+          <PopoverBody role="menu" ariaLabel="Enhance options">
+            {ENHANCE_INTENTS.map((intent, i) => (
+              <span key={intent.id}>
+                <PopoverItem
+                  onSelect={() => {
+                    // The options trigger disables during loading. Keep focus
+                    // on the main segment, which becomes the Cancel control.
+                    mainRef.current?.focus();
+                    setMenuOpen(false);
+                    onEnhance(intent.id);
+                  }}
+                >
+                  {intent.label}
+                </PopoverItem>
+                {i === 0 ? <PopoverSeparator /> : null}
+              </span>
+            ))}
+          </PopoverBody>
+        </div>
       </Popover>
     </span>
   );
@@ -155,9 +258,15 @@ export function EnhanceStrip({
   if (state.phase === "idle") return null;
   const recommendation =
     state.phase === "suggested" || state.phase === "applied" ? state.recommendation : null;
+  const evidenceGroups = new Map<string, { label: string; count: number }>();
+  for (const evidence of recommendation?.evidenceRefs ?? []) {
+    const key = `${evidence.kind}:${evidence.label}`;
+    const previous = evidenceGroups.get(key);
+    evidenceGroups.set(key, { label: evidence.label, count: (previous?.count ?? 0) + 1 });
+  }
 
-  const pillBtn =
-    "focus-ring rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-2.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+  const actionClass =
+    "composer-enhance-strip__action focus-ring";
   const focusComposerAfterAction = () => {
     requestAnimationFrame(() => onFocusComposer?.());
   };
@@ -166,13 +275,13 @@ export function EnhanceStrip({
     return (
       <div
         role="alert"
-        className="composer-enhance-strip flex items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
+        className="composer-enhance-strip composer-enhance-strip--error"
       >
         <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0 text-[var(--color-warning)]" />
-        <span className="min-w-0 flex-1 truncate">{state.message}</span>
+        <span className="composer-enhance-strip__message">{state.message}</span>
         <button
           type="button"
-          className={pillBtn}
+          className={actionClass}
           onClick={() => {
             onDismiss();
             focusComposerAfterAction();
@@ -187,90 +296,97 @@ export function EnhanceStrip({
 
   return (
     <div
-      role="status"
-      className="composer-enhance-strip flex items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
+      className="composer-enhance-strip"
+      data-phase={state.phase}
     >
-      {state.phase === "loading" ? (
-        <>
-          <Icon name="ph:sparkle" width={12} aria-hidden className="shrink-0 animate-pulse text-[var(--accent-presence)]" />
-          <span className="min-w-0 flex-1 truncate">
-            {state.preview ? state.preview : "Enhancing…"}
-          </span>
-          <button
-            type="button"
-            className={pillBtn}
-            onClick={() => {
-              onCancel();
-              focusComposerAfterAction();
-            }}
-            aria-label="Cancel enhance"
-          >
-            Cancel
-          </button>
-        </>
-      ) : state.phase === "suggested" ? (
-        <>
-          <Icon name="ph:sparkle" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
-          <span className="min-w-0 flex-1 truncate" title={state.enhanced}>
-            Enhanced version ready{state.offline ? " (offline)" : ""}: {state.enhanced}
-          </span>
-          <button
-            type="button"
-            className={pillBtn}
-            onClick={() => {
-              onApply();
-              focusComposerAfterAction();
-            }}
-            aria-label="Apply enhanced prompt"
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            className={pillBtn}
-            onClick={() => {
-              onDismiss();
-              focusComposerAfterAction();
-            }}
-            aria-label="Dismiss enhanced prompt"
-          >
-            Dismiss
-          </button>
-        </>
-      ) : state.phase === "applied" ? (
-        <>
-          <Icon name="ph:check" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
-          <span className="min-w-0 flex-1 truncate">
-            Prompt improved{state.offline ? " (offline)" : ""}.
-          </span>
-          <button
-            type="button"
-            className={pillBtn}
-            onClick={() => {
-              onRevert();
-              focusComposerAfterAction();
-            }}
-            aria-label="Revert enhanced prompt"
-          >
-            Revert
-          </button>
-        </>
+      <div className="composer-enhance-strip__row" role="status">
+        {state.phase === "loading" ? (
+          <>
+            <Icon name="ph:sparkle" width={12} aria-hidden className="shrink-0 animate-pulse text-[var(--accent-presence)]" />
+            <span className="composer-enhance-strip__message">Enhancing…</span>
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                onCancel();
+                focusComposerAfterAction();
+              }}
+              aria-label="Cancel enhance"
+            >
+              Cancel
+            </button>
+          </>
+        ) : state.phase === "suggested" ? (
+          <>
+            <Icon name="ph:sparkle" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
+            <span className="composer-enhance-strip__message">
+              Enhanced version ready{state.offline ? " (offline)" : ""}.
+            </span>
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                onApply();
+                focusComposerAfterAction();
+              }}
+              aria-label="Apply enhanced prompt"
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                onDismiss();
+                focusComposerAfterAction();
+              }}
+              aria-label="Dismiss enhanced prompt"
+            >
+              Dismiss
+            </button>
+          </>
+        ) : state.phase === "applied" ? (
+          <>
+            <Icon name="ph:check" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
+            <span className="composer-enhance-strip__message">
+              Prompt improved{state.offline ? " (offline)" : ""}.
+            </span>
+            <button
+              type="button"
+              className={actionClass}
+              onClick={() => {
+                onRevert();
+                focusComposerAfterAction();
+              }}
+              aria-label="Revert enhanced prompt"
+            >
+              Revert
+            </button>
+          </>
+        ) : null}
+      </div>
+      {state.phase === "suggested" ? (
+        <div className="composer-enhance-strip__preview focus-ring" role="region" aria-label="Enhanced prompt preview" tabIndex={0}>
+          {state.enhanced}
+        </div>
+      ) : state.phase === "loading" && state.preview ? (
+        <div className="composer-enhance-strip__preview" aria-hidden="true">{state.preview}</div>
       ) : null}
       {recommendation ? (
-        <details className="agentic-recommendation-card__why basis-full">
+        <details className="composer-enhance-strip__details" key={recommendation.id}>
           <summary className="focus-ring">Why this?</summary>
           <p>{recommendation.rationale}</p>
           {recommendation.evidenceRefs.length > 0 ? (
-            <div className="agentic-recommendation-card__evidence" aria-label="Evidence">
-              <span className="agentic-recommendation-card__label">Evidence</span>
-              <div className="agentic-recommendation-card__pills">
-                {recommendation.evidenceRefs.map((evidence) => (
-                  <span className="ui-pill" key={`${evidence.kind}:${evidence.id}`}>
-                    {evidence.kind}: {evidence.label}
-                  </span>
-                ))}
-              </div>
-            </div>
+            <ul className="composer-enhance-strip__evidence" aria-label="Evidence">
+              {Array.from(
+                evidenceGroups,
+                ([key, evidence]) => (
+                  <li key={key}>
+                    {evidence.label}{evidence.count > 1 ? ` × ${evidence.count}` : ""}
+                  </li>
+                ),
+              )}
+            </ul>
           ) : null}
         </details>
       ) : null}

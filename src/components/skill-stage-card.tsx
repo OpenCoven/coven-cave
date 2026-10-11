@@ -90,7 +90,12 @@ export function SkillStageCard({
         className={`${className} focus-ring transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]`}
         data-skill-stage={stage}
         aria-label={`Open details for skill ${name}: ${v.label}${note ? ` — ${note}` : ""}`}
-        onClick={onSelect}
+        onClick={(event) => {
+          // Pointer activation does not focus buttons in every browser. Give
+          // the details dialog a consistent return target before it opens.
+          event.currentTarget.focus({ preventScroll: true });
+          onSelect();
+        }}
       >
         {content}
       </button>

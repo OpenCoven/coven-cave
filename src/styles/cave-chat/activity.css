@@ -650,6 +650,7 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear-header {
+  container: chat-header / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -744,8 +745,30 @@ details[open] > .cave-tool-summary::before {
   /* Quiet UI-sans secondary text (Codex/ChatGPT vocabulary) rather than a
      monospace "code" string — the title is the hero, this is the demoted
      context line, so it reads a notch smaller and in the chrome font. */
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   letter-spacing: 0.01em;
+}
+
+/* Split panes can be narrow inside a wide window. Give metadata its own
+   readable line before the title and action cluster squeeze it to a column. */
+@container chat-header (max-width: 40rem) {
+  .cave-chat-meta-line {
+    flex-wrap: wrap;
+  }
+  .cave-chat-meta-line .cave-chat-title,
+  .cave-chat-meta-line .cave-chat-title-input {
+    flex: 1 1 0;
+    min-width: min(100%, calc(var(--space-12) * 2));
+    max-width: none;
+  }
+  .cave-chat-meta-line__meta {
+    order: 1;
+    flex: 1 0 100%;
+    max-width: none;
+  }
+  .cave-chat-meta-line .cave-chat-session-actions {
+    flex: none;
+  }
 }
 
 /* Always-visible identity line on settled headers (chat-revamp 1b):
@@ -798,31 +821,14 @@ details[open] > .cave-tool-summary::before {
   opacity: 0.75;
 }
 
-.cave-chat-meta-line__dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 14%, transparent);
-}
-
 .cave-chat-back-button {
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
 }
 
-.cave-chat-meta-line--streaming {
-  color: var(--color-warning);
-}
-.cave-chat-meta-line--streaming .cave-chat-meta-line__meta {
-  color: var(--color-warning);
-}
-.cave-chat-meta-line--streaming .cave-chat-meta-line__dot {
-  animation: cave-chat-meta-blip 1.2s ease-in-out infinite;
-}
-
+/* Response state belongs to SessionStatusPill. Keep the conversation title
+   and recorded runtime/model neutral during streaming, failure and outages. */
 /* One-shot session-settle flare (cave-q06w) — the summoning bloom (700ms,
    decelerate, radiate + fade) in success green as a LONG run settles.
    Shadow-only: the meta line is borderless and nothing may shift layout.
@@ -844,15 +850,6 @@ details[open] > .cave-tool-summary::before {
 }
 @media (prefers-reduced-motion: reduce) {
   .cave-chat-meta-line--reward { animation: none; }
-}
-
-.cave-chat-meta-line--failed,
-.cave-chat-meta-line--offline {
-  color: var(--color-danger);
-}
-.cave-chat-meta-line--failed .cave-chat-meta-line__meta,
-.cave-chat-meta-line--offline .cave-chat-meta-line__meta {
-  color: var(--color-danger);
 }
 
 /* Inline remedy inside the offline meta line — a real button (keyboard
@@ -998,11 +995,6 @@ details[open] > .cave-tool-summary::before {
     transition: none;
     transform: none;
   }
-}
-
-@keyframes cave-chat-meta-blip {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 1; }
 }
 
 /* ── Find band (Chat.dc.html 2a, cave-7gr08) ─────────────────────────────── */

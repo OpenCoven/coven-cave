@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// These journeys mock API responses, including after a full navigation.
+// A production service worker would otherwise bypass those browser routes.
+test.use({ serviceWorkers: "block" });
+
 const FAMILIARS = [
   { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: "codex", icon: "ph:sparkle-fill" },
   { id: "cody", display_name: "Cody", role: "Code familiar", status: "active", harness: "codex", icon: "ph:code-bold" },
@@ -181,3 +185,139 @@ for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "da
     }
   });
 }
+
+for (const surface of ["Home", "Quick Chat"] as const) {
+  test(`${surface} preserves readable attachments and keyboard focus through recovery`, async ({ page }, testInfo) => {
+    await seed(page);
+    await page.addInitScript(() => localStorage.setItem("cave.quick-chat.last-familiar", "nova"));
+    await page.goto(surface === "Home" ? "/?mode=home" : "/quick-chat");
+    const composer = surface === "Home" ? page.locator(".home-composer-root") : page.locator(".quick-chat-overlay__composer");
+    const input = surface === "Home" ? page.getByRole("textbox", { name: "Chat message" }) : page.getByRole("combobox", { name: "Message", exact: true });
+    await expect(input).toBeVisible({ timeout: 45_000 });
+    await input.fill("Keep this draft through attachment recovery.");
+    await page.evaluate(() => {
+      const slice = File.prototype.slice;
+      File.prototype.slice = function(...args) {
+        const blob = slice.apply(this, args);
+        if (this.name === "unreadable.txt") blob.text = async () => { throw new Error("Synthetic read failure"); };
+        return blob;
+      };
+    });
+    await input.evaluate(element => {
+      const data = new DataTransfer();
+      data.items.add(new File(["Good evidence"], "readable.txt", { type: "text/plain" }));
+      data.items.add(new File(["Bad evidence"], "unreadable.txt", { type: "text/plain" }));
+      element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+    });
+    const notice = page.getByRole("region", { name: "Attachment notice" });
+    await expect(notice).toContainText("unreadable.txt couldn't be read");
+    const remove = page.getByRole("button", { name: "Remove readable.txt", exact: true });
+    await expect(remove).toBeVisible();
+    const touch = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+    const target = await remove.boundingBox();
+    expect(target!.width).toBeGreaterThanOrEqual(touch ? 44 : 24);
+    expect(target!.height).toBeGreaterThanOrEqual(touch ? 44 : 24);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(input).toHaveValue("Keep this draft through attachment recovery.");
+    await testInfo.attach(`${surface}-attachment-recovery`, { body: await page.screenshot({ path: testInfo.outputPath("attachment-recovery.png") }), contentType: "image/png" });
+    await page.getByRole("button", { name: "Dismiss attachment notice" }).click();
+    await expect(input).toBeFocused();
+    await page.getByRole("button", { name: "Remove readable.txt", exact: true }).click();
+    await expect(input).toBeFocused();
+    await expect(composer.getByRole("button", { name: "Remove readable.txt", exact: true })).toHaveCount(0);
+  });
+}
+
+test("chat rail resizes with pointer and keyboard, persists, and keeps composer options quiet", async ({ page }, testInfo) => {
+  await seed(page);
+  await page.route("**/api/daemon/connection**", (route) => route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }));
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.route("**/api/changes**", (route) => route.fulfill({ json: { ok: true, repo: true, branch: "main", files: [] } }));
+  await page.goto("/?mode=chat");
+  await expect(page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true })).toBeVisible({ timeout: 20_000 });
+  const grip = page.getByRole("separator", { name: "Resize chat list", exact: true });
+  await expect(grip).toBeVisible({ timeout: 20_000 });
+  const rail = page.locator("aside.chat-inner-rail");
+  const width = async () => (await rail.boundingBox())!.width;
+  const initial = await width();
+  await grip.focus();
+  await grip.press("ArrowRight");
+  await expect.poll(width).toBe(initial + 16);
+  const box = (await grip.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 64, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(width).toBe(initial + 80);
+  await page.getByRole("button", { name: "Collapse chat list", exact: true }).click();
+  await page.getByRole("button", { name: "Expand chat list", exact: true }).click();
+  await expect.poll(width).toBe(initial + 80);
+  await page.goto("/?mode=chat");
+  await expect(grip).toBeVisible({ timeout: 20_000 });
+  await expect.poll(width).toBe(initial + 80);
+  await expect(page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true })).toBeVisible({ timeout: 20_000 });
+  await grip.focus();
+  await grip.press("Home");
+  await expect.poll(width).toBe(220);
+  await grip.press("End");
+  await expect.poll(width).toBe(440);
+  await grip.dblclick();
+  await expect.poll(width).toBe(280);
+  const context = page.getByTestId("chat-main").locator('.cave-context-controls');
+  const more = context.getByRole("button", { name: "More composer options", exact: true });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(context.getByRole("button", { name: /^Runtime:/ })).toBeVisible();
+  await expect(context.getByRole("button", { name: /^Model:/ })).toBeVisible();
+  await expect(context.getByRole("button", { name: /^Branch:/ })).toBeHidden();
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await expect(context.getByRole("button", { name: /^Branch:/ })).toBeVisible();
+  await context.getByRole("button", { name: /^Branch:/ }).click();
+  await expect(page.getByRole("menu", { name: "Branches", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(context.getByRole("button", { name: /^Branch:/ })).toBeFocused();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(more).toBeFocused();
+  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("chat-minimal-dark.png") });
+  for (const [theme, mode] of [["coven", "light"], ["tide", "dark"]]) {
+    await page.evaluate(({ theme, mode }) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.mode = mode;
+    }, { theme, mode });
+    await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`chat-minimal-${theme}-${mode}.png`) });
+  }
+  // An open Code rail must yield when the thread rail takes more room.
+  await page.goto("/?mode=chat#chat-entry-recent");
+  await expect(grip).toBeVisible({ timeout: 20_000 });
+  await page.locator(".chat-surface").evaluate((element) => { element.style.maxWidth = "980px"; });
+  await expect(page.locator(".workspace-rail-reopen")).toBeVisible();
+  const stableReopen = await page.evaluate(async () => {
+    const visible: boolean[] = [];
+    for (let frame = 0; frame < 20; frame++) {
+      await new Promise(requestAnimationFrame);
+      visible.push(Boolean(document.querySelector(".workspace-rail-reopen")));
+    }
+    return visible.every(Boolean);
+  });
+  expect(stableReopen).toBe(true);
+  await page.locator(".chat-surface").evaluate((element) => { element.style.maxWidth = ""; });
+  await page.getByRole("button", { name: "Show code rail", exact: true }).click();
+  await expect(page.locator('[data-panel="true"][id="code-rail"]')).toBeVisible();
+  await page.locator(".chat-surface").evaluate((element) => { element.style.maxWidth = "840px"; });
+  await grip.focus();
+  await grip.press("End");
+  await expect.poll(width).toBe(440);
+  await expect(page.locator('[data-panel="true"][id="code-rail"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show code rail", exact: true })).toHaveAttribute("aria-haspopup", "dialog");
+  expect((await page.getByTestId("chat-main").boundingBox())!.width).toBeGreaterThanOrEqual(399);
+  // A narrow split inside a wide desktop uses the sheet too.
+  await page.locator(".chat-surface").evaluate((element) => { element.style.maxWidth = "600px"; });
+  await expect(grip).toBeHidden();
+  await expect(page.getByRole("button", { name: "Show chat list", exact: true })).toBeVisible();
+  await page.locator(".chat-surface").evaluate((element) => { element.style.maxWidth = ""; });
+  await page.setViewportSize({ width: 800, height: 850 });
+  await expect(grip).toBeHidden();
+  await expect(page.getByRole("button", { name: "Show chat list", exact: true })).toBeVisible();
+});

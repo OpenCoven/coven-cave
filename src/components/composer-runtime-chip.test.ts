@@ -244,7 +244,7 @@ assert.match(
 );
 assert.match(
   chip,
-  /ariaLabel="Model"[\s\S]*?Runtime default[\s\S]*?No models reported · use runtime default/,
+  /ariaLabel="Model"[\s\S]*?Runtime default[\s\S]*?ModelInventoryFeedback/,
   "the model menu exposes runtime-owned defaults even when no inventory is available",
 );
 assert.match(

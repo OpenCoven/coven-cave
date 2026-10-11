@@ -16,8 +16,8 @@ const quick = await readFile(new URL("./quick-chat-controls.tsx", import.meta.ur
 // ── EnhanceControl: split-button a11y ────────────────────────────────────────
 assert.match(
   source,
-  /aria-label="Enhance prompt"/,
-  "the main sparkle button keeps the established accessible name",
+  /aria-label=\{loading \? "Cancel enhancement" : "Enhance prompt"\}/,
+  "the main button describes enhancement or cancellation truthfully",
 );
 assert.match(
   source,
@@ -26,18 +26,18 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(e\.key === "ArrowDown"\) \{[\s\S]*?setMenuOpen\(true\)/,
+  /if \(e\.key === "ArrowDown"\) \{[\s\S]*?openFromKeyboard\(mainRef\.current\)/,
   "ArrowDown on the main button opens the intent menu (keyboard path to variants)",
 );
 assert.match(
   source,
-  /pressTimer\.current = setTimeout\(\(\) => setMenuOpen\(true\), LONG_PRESS_MS\)/,
+  /pressTimer\.current = setTimeout\(\(\) => \{[\s\S]*?consumedPress\.current = true;[\s\S]*?setMenuOpen\(true\)/,
   "long-pressing the main button opens the intent menu (board-kanban timer idiom)",
 );
 assert.match(
   source,
-  /onPointerUp=\{clearPress\}[\s\S]*?onPointerLeave=\{clearPress\}/,
-  "releasing or leaving cancels the long-press timer",
+  /onPointerUp=\{\(event\) => \{[\s\S]*?clearPress\(\);[\s\S]*?onPointerCancel=[\s\S]*?abandonPress\(\);[\s\S]*?onLostPointerCapture=[\s\S]*?abandonPress\(\);/,
+  "release, cancellation and unexpected capture loss end the gesture",
 );
 assert.match(
   source,
@@ -56,8 +56,8 @@ assert.match(
 );
 assert.match(
   source,
-  /animate-pulse text-\[var\(--accent-presence\)\]/,
-  "accent marks presence only — the sparkle tints while loading, never at rest",
+  /name="ph:stop-fill"/,
+  "loading has a static cancel icon, including under reduced motion",
 );
 
 // ── EnhanceControl: one combined rectangle, not two floating rounds ──────────
@@ -139,8 +139,8 @@ assert.match(source, /role="status"/, "the strip is a status live region");
 }
 assert.match(
   source,
-  /state\.phase === "loading" \?[\s\S]*?\{state\.preview \? state\.preview : "Enhancing…"\}[\s\S]*?Cancel/,
-  "loading shows the streaming preview with a Cancel action",
+  /state\.phase === "loading" \?[\s\S]*?Enhancing…[\s\S]*?Cancel/,
+  "loading has stable status text and a Cancel action",
 );
 assert.match(
   source,
@@ -159,8 +159,8 @@ assert.match(
 );
 assert.match(
   source,
-  /rounded-\[var\(--radius-pill\)\] border border-\[var\(--border-hairline\)\]/,
-  "strip actions use the pill token + hairline language (tracks the corner radius setting)",
+  /composer-enhance-strip__action focus-ring/,
+  "strip actions use the shared quiet action style and visible focus",
 );
 assert.match(
   source,

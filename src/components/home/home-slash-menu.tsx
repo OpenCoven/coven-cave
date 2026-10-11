@@ -24,7 +24,7 @@ type Props = {
   ariaLabel: string;
   items: HomeSlashMenuItem[];
   activeIndex: number;
-  footer: string;
+  footer: ReactNode;
   onHover: (index: number) => void;
   onPick: (index: number) => void;
   /** Optional side panel (the /skill menu's detail preview). */

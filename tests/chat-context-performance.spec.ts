@@ -37,7 +37,7 @@ const sessions = [
   attention: { state: "none", since: null, reason: null },
 }));
 
-async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promise<void>) {
+async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promise<void>, pendingHistory?: Promise<void>) {
   const conversationRequests: string[] = [];
   // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
   await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
@@ -79,6 +79,7 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
     else if (url.pathname === "/api/inbox") payload = { ok: true, items: [] };
     else if (url.pathname === "/api/github/tasks") payload = { ok: true, tasks: [] };
     else if (url.pathname.startsWith("/api/chat/conversation/")) {
+      if (pendingHistory) await pendingHistory;
       const id = url.pathname.split("/").at(-1)!;
       conversationRequests.push(id);
       const turns = Array.from({ length: 1_000 }, (_, index) => ({
@@ -151,13 +152,11 @@ for (const clearFirst of [false, true]) {
   test(clearFirst
     ? "an explicit clear still fences pending history after a later informational command"
     : "informational commands do not suppress a pending conversation history load", async ({ page }) => {
-    await setup(page);
     let release!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });
-    await page.route((url) => url.pathname === "/api/chat/conversation/context-a", async (route) => {
-      await pending;
-      await route.fallback();
-    });
+    // Install the history gate before boot: shell prefetch can otherwise fill
+    // the conversation cache before a later route override starts delaying it.
+    await setup(page, "cody", undefined, pending);
     try {
       await page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first().click();
       const main = page.getByTestId("chat-main");
@@ -457,8 +456,14 @@ for (const departure of ["project", "new-chat"] as const) {
     await expect.poll(() => saves).toBe(1);
     await page.keyboard.press("Escape");
     await composer.focus();
+    await expect(composer).toHaveValue("Origin message waiting for runtime");
     await composer.press("Enter");
     await expect(composer).toHaveValue("");
+    // The draft clearing alone can precede the committed send render. Confirm
+    // the origin submission was recorded before replacing its ChatView.
+    await expect.poll(() => page.evaluate(() =>
+      JSON.parse(localStorage.getItem("cave:chat-composer-history:v1") ?? "[]"),
+    )).toContain("Origin message waiting for runtime");
     try {
       if (departure === "project") {
         await main.getByRole("button", { name: /^Project:/ }).click();
@@ -470,8 +475,22 @@ for (const departure of ["project", "new-chat"] as const) {
       }
       await composer.fill("Destination draft must survive");
       await expect.poll(() => page.evaluate(() => Object.values(localStorage).includes("Destination draft must survive"))).toBe(true);
+      // Live-region messages clear after 250ms. Record the DOM mutation before
+      // releasing the save rather than racing Playwright's polling interval.
+      await page.evaluate(() => {
+        const region = document.querySelector('div.sr-only[role="alert"][aria-live="assertive"]');
+        if (!region) throw new Error("Assertive live region is unavailable");
+        const expected = "Chat changed while saving runtime settings. Your message was kept as a draft.";
+        const observer = new MutationObserver(() => {
+          if (region.textContent === expected) {
+            document.documentElement.dataset.runtimeDepartureAnnounced = "true";
+            observer.disconnect();
+          }
+        });
+        observer.observe(region, { childList: true, subtree: true, characterData: true });
+      });
       releaseSave();
-      await expect(page.getByText("Chat changed while saving runtime settings. Your message was kept as a draft.", { exact: true })).toBeAttached();
+      await expect(page.locator("html")).toHaveAttribute("data-runtime-departure-announced", "true");
       expect(sends).toBe(0);
       await expect(composer).toHaveValue("Destination draft must survive");
       await expect.poll(() => page.evaluate(() => Object.values(localStorage).includes("Destination draft must survive"))).toBe(true);
