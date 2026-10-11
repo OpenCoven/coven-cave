@@ -179,6 +179,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/reminders", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/familiars/[id]/notes/generate", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/outcomes", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-reports/[sessionId]", methods: ["GET"], kind: "json", pathGuard: true },

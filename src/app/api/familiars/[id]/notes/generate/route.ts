@@ -8,7 +8,7 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, ctx: Context) {
   const { id } = await ctx.params;
-  if (!isValidFamiliarId(id)) return NextResponse.json({ ok: false, error: "Invalid familiar id." }, { status: 400 });
+  if (!isValidFamiliarId(id)) return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   const params = new URL(req.url).searchParams;
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
@@ -25,10 +25,14 @@ export async function GET(req: Request, ctx: Context) {
 
 export async function POST(req: Request, ctx: Context) {
   const { id } = await ctx.params;
-  if (!isValidFamiliarId(id)) return NextResponse.json({ ok: false, error: "Invalid familiar id." }, { status: 400 });
+  if (!isValidFamiliarId(id)) return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   let body;
   try {
     body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+  }
+  try {
     if (!body || typeof body.date !== "string" || typeof body.reflection !== "string" || !body.reflection.trim() || body.reflection.length > 50_000) throw new Error("Invalid reflection.");
     validateNoteRange(body.date, body.date);
   } catch {

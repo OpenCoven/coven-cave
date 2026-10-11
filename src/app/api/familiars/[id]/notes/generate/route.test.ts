@@ -12,8 +12,14 @@ const ctx = { params: Promise.resolve({ id: "sage" }) };
 const post = (body) => POST(new Request("http://localhost/api/familiars/sage/notes/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), ctx);
 try {
   for (const body of [null, {}, { date: "2026-02-30", reflection: "Hello" }, { date: "2999-01-01", reflection: "Hello" }, { date: "2026-10-01", reflection: " " }]) assert.equal((await post(body)).status, 400);
-  assert.equal((await GET(new Request("http://localhost/?from=2026-10-01&to=2026-10-02"), { params: Promise.resolve({ id: "../sage" }) })).status, 400);
+  assert.equal((await GET(new Request("http://localhost/?from=2026-10-01&to=2026-10-02"), { params: Promise.resolve({ id: "../sage" }) })).status, 403);
   assert.equal((await GET(new Request("http://localhost/?from=2026-01-01&to=2026-10-02"), ctx)).status, 400);
+  const malformed = await POST(new Request("http://localhost/", { method: "POST", body: "{" }), ctx);
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error, "invalid json");
+  const denied = await POST(new Request("http://localhost/", { method: "POST", body: "{}" }), { params: Promise.resolve({ id: "../sage" }) });
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).error, "path not allowed");
   const inactive = await post({ date: "2026-10-01", reflection: "An invented day" });
   assert.equal((await inactive.json()).status, "inactive");
   const file = path.join(root, "workspaces/familiars/sage/memory/lesson.md");
