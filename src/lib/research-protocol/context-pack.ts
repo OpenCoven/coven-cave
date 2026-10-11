@@ -1,11 +1,17 @@
 import {
+  childPath,
+  hasOwn,
+  parseObject,
+  parseRequiredField,
+  parseOpaqueIdentifier,
+  parseSha256,
+  indexPath,
+  parseEnumValue,
+  parseBoolean,
+  parseUtc,
   copyProtocolJsonValue,
   fail,
   isJsonPointer,
-  isOpaqueId,
-  isRecord,
-  isSha256,
-  isUtcTimestamp,
   pass,
   type ProtocolParseResult,
   type UnknownFields,
@@ -149,60 +155,6 @@ export type ContextPackV1 = {
   transforms: ContextPackTransformsV1;
 } & UnknownFields;
 
-function childPath(path: string, key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
-    ? `${path}.${key}`
-    : `${path}[${JSON.stringify(key)}]`;
-}
-
-function indexPath(path: string, index: number): string {
-  return `${path}[${index}]`;
-}
-
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
-}
-
-function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
-  if (!isRecord(value)) {
-    return fail("invalid_type", path, "Expected an object");
-  }
-  return pass(value);
-}
-
-function parseRequiredField(
-  record: Record<string, unknown>,
-  key: string,
-  path: string,
-): ProtocolParseResult<unknown> {
-  if (!hasOwn(record, key)) {
-    return fail("missing_field", childPath(path, key), `Missing required field ${key}`);
-  }
-  return pass(record[key]);
-}
-
-function parseEnumValue<const T extends readonly string[]>(
-  value: unknown,
-  allowed: T,
-  path: string,
-  label: string,
-): ProtocolParseResult<T[number]> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!allowed.includes(value as T[number])) {
-    return fail("invalid_value", path, `${label} must be one of ${allowed.join(", ")}`);
-  }
-  return pass(value as T[number]);
-}
-
-function parseBoolean(value: unknown, path: string, label: string): ProtocolParseResult<boolean> {
-  if (typeof value !== "boolean") {
-    return fail("invalid_type", path, `${label} must be a boolean`);
-  }
-  return pass(value);
-}
-
 function parseString(
   value: unknown,
   path: string,
@@ -227,41 +179,6 @@ function parseOptionalString(
     return pass(undefined);
   }
   return parseString(record[key], childPath(path, key), key, { allowEmpty: true });
-}
-
-function parseSha256(value: unknown, path: string, label: string): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!isSha256(value)) {
-    return fail("invalid_value", path, `${label} must be a lowercase SHA-256 digest`);
-  }
-  return pass(value);
-}
-
-function parseUtc(value: unknown, path: string, label: string): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
-  }
-  return pass(value);
-}
-
-function parseOpaqueIdentifier(
-  value: unknown,
-  prefix: string,
-  path: string,
-  label: string,
-): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!isOpaqueId(value, prefix)) {
-    return fail("invalid_value", path, `${label} must match ${prefix}_...`);
-  }
-  return pass(value);
 }
 
 function parseSafeInteger(

@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { buildServer } from "./build-server.mjs";
 
 const [
   src,
@@ -25,21 +26,16 @@ const [
   readFile(new URL("./sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/src/sidecar_archive_manifest.rs", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
-  readFile(new URL("../server.mjs", import.meta.url), "utf8"),
+  buildServer({ write: false }).then((result) => result.outputFiles[0].text),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 const packageJson = JSON.parse(packageSource);
 
-assert.match(
+assert.equal(
   packageJson.scripts["build:server"],
-  /--alias:yaml=\.\/node_modules\/yaml\/dist\/index\.js/,
-  "server builds must bundle yaml instead of depending on platform-specific Next traces",
-);
-assert.match(
-  packageJson.scripts["build:server"],
-  /--banner:js="import \{ createRequire as __covenCreateRequire \} from 'node:module'; const require = __covenCreateRequire\(import\.meta\.url\);"/,
-  "the ESM server bundle must provide CommonJS require for yaml's Node entry",
+  "node scripts/build-server.mjs",
+  "production and security tests must use the same server builder",
 );
 assert.doesNotMatch(
   serverBundleSource,
@@ -49,7 +45,7 @@ assert.doesNotMatch(
 assert.match(
   serverBundleSource,
   /^import \{ createRequire as __covenCreateRequire \} from 'node:module'; const require = __covenCreateRequire\(import\.meta\.url\);/,
-  "the committed server must initialize require before bundled CommonJS modules execute",
+  "the generated server must initialize require before bundled CommonJS modules execute",
 );
 
 assert.match(
