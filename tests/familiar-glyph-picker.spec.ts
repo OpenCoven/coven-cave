@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.use({ serviceWorkers: "block" });
+
 // Issue #5192 — the Familiar identity picker reported ~800 icons but rendered
 // nearly all of them as the same sparkle glyph. The lazy full-catalogue load
 // completed, but the "catalogue landed" signal rode a setState whose value the
@@ -85,10 +87,12 @@ test("identity icon picker renders distinct glyphs once the catalog loads", asyn
 
   // The app's own "Manage skills" handoff: switches the chat surface to the
   // Familiar scope, whose mount consumes the pending settings target and
-  // renders Settings → Identity → the Icon picker.
+  // renders Settings → Identity. Appearance reveals the deferred Icon picker.
   await page.evaluate(() => {
     window.dispatchEvent(new CustomEvent("cave:chat-open-skills"));
   });
+  await page.getByRole("region", { name: "Settings for Nova" })
+    .getByRole("button", { name: "Appearance", exact: true }).click();
 
   const panel = page.locator(".familiar-glyph-picker-panel").first();
   await panel.waitFor({ state: "visible", timeout: 120_000 });
