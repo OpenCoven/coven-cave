@@ -408,50 +408,91 @@ struct ChatsHomeView: View {
         presentNewChat()
     }
 
+    private var navigationButton: some View {
+        CircularIconButton(systemImage: "line.3.horizontal",
+                           label: "Open navigation") {
+            app.navigationDrawerOpen = true
+        }
+    }
+
+    /// The header title at accessibility sizes. Inline it is held to one
+    /// line so `ViewThatFits` sees "does not fit" rather than a wrapped
+    /// word; on its own line it may wrap like any other text.
+    private func accessibilityTitle(oneLine: Bool) -> some View {
+        Text("Chats")
+            .font(.system(.title2, design: .serif).weight(.semibold))
+            .lineLimit(oneLine ? 1 : nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func listOptionsMenu(_ snapshot: ChatListSnapshot) -> some View {
+        Menu {
+            familiarFilterPicker(snapshot)
+            Divider()
+            Button { showArchived.toggle() } label: {
+                Label(
+                    showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
+                    systemImage: "archivebox"
+                )
+            }
+        } label: {
+            // The same round glass well as the navigation button, so
+            // the header's two controls read as a matched pair.
+            Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
+                .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
+                .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
+                .scaledControlFrame(ChatChrome.control)
+                .glass(.control, in: Circle())
+                .accentGlow(active: familiarFilter != nil)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
+        .accessibilityIdentifier("Chat list options")
+    }
+
     private func header(_ snapshot: ChatListSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                CircularIconButton(systemImage: "line.3.horizontal",
-                                   label: "Open navigation") {
-                    app.navigationDrawerOpen = true
+            if dynamicTypeSize.isAccessibilitySize {
+                // The serif title grows with the text size but the room
+                // between the two round controls does not: an iPad sidebar
+                // column at the largest size leaves about 80pt for a 140pt
+                // word, and "Chats" broke into "Ch / ats". Keep the title
+                // inline where it fits (an iPhone) and otherwise give it its
+                // own full-width line under the controls, rather than
+                // shrinking the size the reader asked for.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        navigationButton
+                        accessibilityTitle(oneLine: true)
+                            .fixedSize()
+                        Spacer(minLength: 0)
+                        listOptionsMenu(snapshot)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            navigationButton
+                            Spacer(minLength: 0)
+                            listOptionsMenu(snapshot)
+                        }
+                        accessibilityTitle(oneLine: false)
+                    }
                 }
-                if dynamicTypeSize.isAccessibilitySize {
-                    Text("Chats")
-                        .font(.system(.title2, design: .serif).weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                } else if sizeClass == .regular {
-                    EditorialSurfaceTitle(title: "Chats", large: true)
-                } else {
-                    EditorialSurfaceTitle(
-                        title: "Chats",
-                        detail: visibleConversationLabel(snapshot.entries.count),
-                        large: true
-                    )
-                }
-                Spacer(minLength: 0)
-                Menu {
-                    familiarFilterPicker(snapshot)
-                    Divider()
-                    Button { showArchived.toggle() } label: {
-                        Label(
-                            showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
-                            systemImage: "archivebox"
+            } else {
+                HStack(spacing: 12) {
+                    navigationButton
+                    if sizeClass == .regular {
+                        EditorialSurfaceTitle(title: "Chats", large: true)
+                    } else {
+                        EditorialSurfaceTitle(
+                            title: "Chats",
+                            detail: visibleConversationLabel(snapshot.entries.count),
+                            large: true
                         )
                     }
-                } label: {
-                    // The same round glass well as the navigation button, so
-                    // the header's two controls read as a matched pair.
-                    Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
-                        .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
-                        .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
-                        .scaledControlFrame(ChatChrome.control)
-                        .glass(.control, in: Circle())
-                        .accentGlow(active: familiarFilter != nil)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
+                    Spacer(minLength: 0)
+                    listOptionsMenu(snapshot)
                 }
-                .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
-                .accessibilityIdentifier("Chat list options")
             }
             if dynamicTypeSize.isAccessibilitySize || sizeClass == .regular,
                let detail = visibleConversationLabel(snapshot.entries.count) {

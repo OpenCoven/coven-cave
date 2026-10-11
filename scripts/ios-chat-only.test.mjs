@@ -50,6 +50,11 @@ test("the largest type sizes keep conversation titles and counts readable", () =
     "selected iPad rows use the accent's contrasting foreground");
   assert.match(home, /if dynamicTypeSize\.isAccessibilitySize \{\s*projectFilterMenu\(projectChoices\)\s*\} else \{\s*projectFilterStrip\(projectChoices\)/,
     "at accessibility sizes the project strip becomes one menu instead of screen-wide chips");
+  assert.match(home, /if dynamicTypeSize\.isAccessibilitySize \{[^}]*?\n\s*ViewThatFits\(in: \.horizontal\) \{\s*HStack\(spacing: 12\) \{\s*navigationButton\s*accessibilityTitle\(oneLine: true\)\s*\.fixedSize\(\)/,
+    "at accessibility sizes the header title stays inline only where it fits, else drops to its own line instead of wrapping mid-word");
+  assert.match(home, /VStack\(alignment: \.leading, spacing: 8\) \{\s*HStack\(spacing: 12\) \{\s*navigationButton\s*Spacer\(minLength: 0\)\s*listOptionsMenu\(snapshot\)\s*\}\s*accessibilityTitle\(oneLine: false\)/,
+    "the fallback keeps both header controls on one row with the title underneath");
+  assert.doesNotMatch(home, /minimumScaleFactor/, "the header never shrinks the reader's chosen text size");
 });
 
 test("the native guide describes chat-only navigation without weakening pairing", () => {
