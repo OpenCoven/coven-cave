@@ -7944,8 +7944,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 reading={attachmentsReading}
                 onDismiss={() => {
                   dismissAttachmentNotice();
-                  // Clearing the last recovery notice may hide an empty dock
-                  // while reading earlier output. Focus the surviving control.
+                  // Return focus after the notice is removed. The mounted composer
+                  // remains the primary destination while reading earlier output.
                   requestAnimationFrame(() => {
                     (inputRef.current ?? latestResponseControlRef.current)?.focus();
                   });

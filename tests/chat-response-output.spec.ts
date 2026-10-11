@@ -251,6 +251,7 @@ test("run skills open one complete ledger and return focus after closing", async
     name: /Open details for skill verification-before-completion/,
   });
   await expect(verificationCard).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("textbox", { name: "Message", exact: true }).focus();
   await verificationCard.click();
 
   const dialog = page.getByRole("dialog");
