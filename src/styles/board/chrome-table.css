@@ -25,26 +25,54 @@
    chips inline, and a typeahead popover suggests keys/values. */
 .board-token-search { position:relative; flex:1 1 auto; min-width:0; }
 .board-token-search-scrim { position:fixed; inset:0; z-index:30; }
-.board-token-field { position:relative; z-index:31; display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:36px; padding:4px 10px; background:var(--bg-sunken); border:1px solid var(--border-hairline); border-radius:6px; transition:border-color .12s; }
-.board-token-field:focus-within { border-color:var(--accent-presence); }
-.board-token-search-icon { flex-shrink:0; color:var(--text-muted); }
-.board-token-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 3px 0 8px; background:color-mix(in oklch,var(--accent-presence) 14%,transparent); border:1px solid color-mix(in oklch,var(--accent-presence) 30%,transparent); border-radius:4px; font-size:12px; color:var(--accent-presence); white-space:nowrap; }
+.board-token-field {
+  position: relative;
+  z-index: 31;
+  display: grid;
+  box-sizing: border-box;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: calc(var(--space-8) + var(--space-1));
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+.board-token-field:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+  background: var(--bg-elevated);
+}
+.board-token-search-icon { grid-column:1; grid-row:1; color:var(--text-muted); }
+.board-token-chips { grid-column:1 / -1; grid-row:2; display:flex; flex-wrap:wrap; min-width:0; gap:var(--space-1); }
+.board-token-chip { max-width:100%; overflow-wrap:anywhere; display:inline-flex; align-items:center; gap:5px; min-height:24px; padding:0 3px 0 8px; background:color-mix(in oklch,var(--accent-presence) 14%,transparent); border:1px solid color-mix(in oklch,var(--accent-presence) 30%,transparent); border-radius:4px; font-size:12px; color:var(--accent-presence); white-space:normal; }
 .board-token-chip-key { font-family:var(--font-mono); font-weight:600; opacity:.8; }
-.board-token-chip-remove { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; background:transparent; border:0; border-radius:3px; color:inherit; cursor:pointer; opacity:.7; transition:opacity .12s,background .12s; }
+.board-token-chip-remove { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; background:transparent; border:0; border-radius:3px; color:inherit; cursor:pointer; opacity:.7; transition:opacity .12s,background .12s; }
 .board-token-chip-remove:hover { opacity:1; background:color-mix(in oklch,var(--accent-presence) 22%,transparent); }
 /* Base font-size stays at the iOS anti-zoom floor (16px); the design's tighter
    13.5px is applied desktop-only via @media (pointer: fine) below, so touch
    devices never trigger Safari's focus-zoom. */
-.board-token-input { flex:1; min-width:140px; height:26px; background:transparent; border:0; outline:none; color:var(--text-primary); font-family:inherit; font-size:16px; }
-.board-token-input::placeholder { color:var(--text-muted); }
-@media (pointer: fine) { .board-token-input { font-size:13.5px; } }
-.board-token-kbd { flex-shrink:0; font-family:var(--font-mono); font-size:12px; color:var(--text-muted); border:1px solid var(--border-hairline); border-radius:4px; padding:0 6px; line-height:18px; }
-.board-token-suggest { position:absolute; top:45px; left:0; min-width:290px; max-width:380px; background:var(--popover); border:1px solid var(--border-hairline); border-radius:var(--radius-control); box-shadow:0 14px 36px -10px color-mix(in oklch,var(--shadow-color) 62%,transparent); padding:5px; z-index:40; }
+.board-token-input { grid-column:2; grid-row:1; width:100%; min-width:0; height:calc(var(--space-6) + var(--space-1)); padding:0; appearance:none; background:transparent; border:0; outline:none; color:var(--text-primary); font-family:inherit; font-size:16px; }
+.board-token-input::placeholder { color:var(--text-muted); opacity:1; }
+.board-token-input::-webkit-search-cancel-button,
+.board-token-input::-webkit-search-decoration { appearance:none; }
+.board-token-chip-remove:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+@media (max-width: 767px), (pointer: coarse) {
+  .board-token-input { font-size:var(--text-lg); }
+  .board-token-field { min-height:var(--touch-target); }
+  .board-token-chip-remove { min-width:var(--touch-target); min-height:var(--touch-target); }
+  .board-token-kbd { display:none; }
+}
+@media (min-width: 768px) and (pointer: fine) { .board-token-input { font-size:13.5px; } }
+.board-token-kbd { grid-column:3; grid-row:1; font-family:var(--font-mono); font-size:12px; color:var(--text-muted); border:1px solid var(--border-hairline); border-radius:4px; padding:0 6px; line-height:18px; }
+.board-token-suggest { position:absolute; top:calc(100% + var(--space-2)); left:0; width:100%; min-width:0; max-width:100%; background:var(--popover); border:1px solid var(--border-hairline); border-radius:var(--radius-control); box-shadow:0 14px 36px -10px color-mix(in oklch,var(--shadow-color) 62%,transparent); padding:5px; z-index:40; }
 .board-token-suggest-label { font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted); padding:6px 9px 5px; }
-.board-token-suggest-item { display:flex; align-items:center; gap:11px; width:100%; height:33px; padding:0 9px; background:transparent; border:0; border-radius:4px; cursor:pointer; font-family:inherit; font-size:12.5px; color:var(--text-secondary); transition:background .12s,color .12s; }
+.board-token-suggest-item { display:flex; align-items:center; gap:11px; width:100%; min-height:33px; padding:var(--space-2); flex-wrap:wrap; background:transparent; border:0; border-radius:4px; cursor:pointer; font-family:inherit; font-size:12.5px; color:var(--text-secondary); transition:background .12s,color .12s; }
 .board-token-suggest-item:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-token-suggest-tag { font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--accent-presence); min-width:96px; text-align:left; }
-.board-token-suggest-desc { flex:1; text-align:left; color:var(--text-muted); }
+.board-token-suggest-desc { min-width:0; overflow-wrap:anywhere; flex:1 1 100%; text-align:left; color:var(--text-muted); }
 
 /* ── Small square/labelled toolbar buttons ───────────────────────────────────
    Shared shell for Select-multiple and Delete-selected verbs. */

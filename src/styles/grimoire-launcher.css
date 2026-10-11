@@ -776,6 +776,11 @@
   border-color: var(--ring-focus);
 }
 
+.gl-search:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+
 .gl-search input,
 .gl-capture input {
   min-width: 0;
@@ -803,6 +808,24 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.gl-search input::-webkit-search-cancel-button,
+.gl-search input::-webkit-search-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .gl-search input {
+    min-height: var(--touch-target);
+    font-size: var(--text-lg);
+  }
+  .gl-search__clear {
+    flex-shrink: 0;
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
 }
 
 .gl-results {

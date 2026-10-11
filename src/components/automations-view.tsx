@@ -151,7 +151,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [setStoredActiveTab]);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [manageMenuOpen, setManageMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(true);
   const [overviewPane, setOverviewPane] = useState<RitualOverviewPane>("log");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
@@ -848,7 +847,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
-    setSearchOpen(false);
     inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
     // Clear any open detail on switch — the new tab may not host that type.
     setSelectedItem(null);
@@ -952,64 +950,26 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               )}
             </div>
           )}
-          <div className="surface-compact-actions">
-            {activeTab === "overview" && searchOpen && initialLoadDone ? (
-              <div className="surface-compact-search">
-                <SearchInput
-                  value={query}
-                  onValueChange={setQuery}
-                  onClear={() => { setQuery(""); setSearchOpen(false); }}
-                  placeholder="Filter rituals…"
-                  aria-label="Filter rituals"
-                />
-              </div>
-            ) : null}
-            {activeTab === "overview" && !searchOpen ? (
-              <Button
-                aria-label="Search rituals"
-                size="sm"
-                variant="ghost"
-                leadingIcon="ph:magnifying-glass"
-                onClick={() => setSearchOpen(true)}
+          <div className={`surface-compact-actions${activeTab !== "calendar" ? " rituals-search-actions" : ""}`}>
+            {activeTab === "overview" ? (
+              <SearchInput
+                containerClassName="surface-compact-search"
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Filter rituals…"
+                aria-label="Filter rituals"
               />
             ) : null}
-            {activeTab === "crons" && initialLoadDone && codexAutos.length > 0 ? (
-              /* Below 700px the field collapses to its magnifier, which then
-                 opens it — the CTA beside it must never be the thing that
-                 wraps. */
-              <>
-                {searchOpen ? (
-                  <div className="surface-compact-search">
-                    <SearchInput
-                      value={query}
-                      onValueChange={setQuery}
-                      onClear={() => { setQuery(""); setSearchOpen(false); }}
-                      placeholder="Filter crons…"
-                      aria-label="Filter crons"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="surface-compact-search rituals-crons-search-field">
-                      <SearchInput
-                        value={query}
-                        onValueChange={setQuery}
-                        onClear={() => setQuery("")}
-                        placeholder="Filter crons…"
-                        aria-label="Filter crons"
-                      />
-                    </div>
-                    <Button
-                      aria-label="Filter crons"
-                      size="sm"
-                      variant="ghost"
-                      className="rituals-crons-search-toggle"
-                      leadingIcon="ph:magnifying-glass"
-                      onClick={() => setSearchOpen(true)}
-                    />
-                  </>
-                )}
-              </>
+            {activeTab === "crons" ? (
+              <SearchInput
+                containerClassName="surface-compact-search"
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Filter crons…"
+                aria-label="Filter crons"
+              />
             ) : null}
             {activeTab === "overview" ? (
               <>

@@ -2054,7 +2054,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  flex: none;
+  flex: 0 1 240px;
+  min-width:0;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -2903,4 +2904,13 @@
   .cr-graph__node {
     transition: none;
   }
+}
+
+/* Search stays readable and keyboard-visible in narrow panes and on touch. */
+.cr-filter { min-width:0; max-width:100%; min-height:var(--space-8); border-color:var(--border-strong); }
+.cr-filter:focus-within { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+.cr-filter input { min-width:0; width:100%; }
+@media (max-width:767px), (pointer:coarse) {
+  .cr-filter { height:auto; min-height:var(--touch-target); }
+  .cr-filter input { min-height:var(--touch-target); font-size:var(--text-lg); }
 }

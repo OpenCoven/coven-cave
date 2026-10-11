@@ -160,20 +160,24 @@ export function BoardTokenSearch({ value, onChange, familiars, cards, inputRef }
       <div className="board-token-field">
         <Icon name="ph:magnifying-glass" width={15} className="board-token-search-icon" />
         <label className="sr-only" htmlFor="board-search">Search tasks</label>
-        {chips.map((chip, i) => (
-          <span key={`${chip.key}:${chip.value}`} className="board-token-chip">
-            <span className="board-token-chip-key">{chip.key}:</span>
-            {chip.value}
-            <button
-              type="button"
-              className="board-token-chip-remove"
-              onClick={() => removeChip(i)}
-              aria-label={`Remove ${chip.key} filter`}
-            >
-              <Icon name="ph:x-bold" width={10} />
-            </button>
-          </span>
-        ))}
+        {chips.length > 0 ? (
+          <div className="board-token-chips">
+            {chips.map((chip, i) => (
+              <span key={`${chip.key}:${chip.value}`} className="board-token-chip">
+                <span className="board-token-chip-key">{chip.key}:</span>
+                {chip.value}
+                <button
+                  type="button"
+                  className="board-token-chip-remove"
+                  onClick={() => removeChip(i)}
+                  aria-label={`Remove ${chip.key} filter`}
+                >
+                  <Icon name="ph:x-bold" width={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <input
           ref={ref}
           id="board-search"

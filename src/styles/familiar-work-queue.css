@@ -150,10 +150,10 @@
   min-width: 180px;
 }
 .fwq-toolbar-search .ui-search-input {
-  height: 40px;
+  min-height: var(--space-10);
   background: var(--bg-sunken);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control, 6px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
 }
 .fwq-toolbar-search .ui-search-input:focus-within {
   border-color: var(--accent-presence);

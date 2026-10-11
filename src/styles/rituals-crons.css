@@ -79,30 +79,28 @@
   color: var(--text-muted);
 }
 
-/* Responsive hiding lives here, not on a Tailwind `@max-[…]:hidden` utility.
-   `.ui-btn` and `.rituals-crons-chip` set `display` from a plain class, and a
-   component-imported sheet has no guaranteed order against the utility bundle,
-   so the utility silently lost and the chips/toggle never collapsed. Two
-   classes of specificity settles it regardless of order.
-
-   Below 780px the two readouts drop and the failing TOGGLE stays: it is the one
-   that costs something to miss. Below 700px the filter field collapses to its
-   magnifier so the CTA is never what wraps. */
+/* Keep frequent search visible while secondary status readouts collapse. */
 @container (max-width: 780px) {
   .rituals-crons-chips .rituals-crons-chip--readout {
     display: none;
   }
 }
 
-@container (min-width: 700px) {
-  .surface-compact-actions .rituals-crons-search-toggle {
-    display: none;
-  }
+.rituals-search-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.rituals-search-actions .surface-compact-search {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 
 @container (max-width: 700px) {
-  .surface-compact-actions .rituals-crons-search-field {
-    display: none;
+  .rituals-search-actions {
+    width: 100%;
+    margin-left: 0;
   }
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { SearchInput } from "@/components/ui/search-input";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Icon, type IconName } from "@/lib/icon";
@@ -454,25 +456,13 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
           </div>
           {projects.length > 6 ? (
             <div className="border-b border-[var(--border-hairline)] px-4 py-2">
-              <label className="flex items-center gap-2">
-                <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                <input
-                  type="search"
-                  value={projectQuery}
-                  onChange={(e) => setProjectQuery(e.target.value)}
-                  placeholder="Filter projects…"
-                  aria-label="Filter projects by name or path"
-                  className="w-full bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
-                />
-                {projectQuery ? (
-                  <IconButton
-                    icon="ph:x-bold"
-                    size="xs"
-                    aria-label="Clear project filter"
-                    onClick={() => setProjectQuery("")}
-                  />
-                ) : null}
-              </label>
+              <SearchInput
+                value={projectQuery}
+                onValueChange={setProjectQuery}
+                onClear={() => setProjectQuery("")}
+                placeholder="Filter projects…"
+                aria-label="Filter projects by name or path"
+              />
             </div>
           ) : null}
           {q && visibleProjects.length === 0 ? (
