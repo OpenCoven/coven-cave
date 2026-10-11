@@ -80,4 +80,42 @@ assert.equal(
   "omits the memory block when there are no memory files",
 );
 
+
+// Scheduled scaffolding must obey the same active-day rule as the UI.
+{
+  const { readFileSync } = await import("node:fs");
+  const generator = readFileSync(new URL("../../scripts/generate-daily-notes.mjs", import.meta.url), "utf8");
+  assert.match(generator, /if \(!sessions\.length && !memory\.length\)[\s\S]*?continue;/, "inactive days never get scaffolds, including explicit regeneration");
+}
+
+// Exercise the scheduled seeder against isolated data, including explicit
+// digest refreshes. Never read the developer's real familiar registry/socket.
+{
+  const { mkdtemp, mkdir, rm, writeFile, utimes, readFile, access } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const root = await mkdtemp(join(tmpdir(), "cave-note-seeder-"));
+  const workspace = join(root, "sage");
+  const date = "2026-10-01";
+  const noteFile = join(workspace, "notes", `${date}.md`);
+  const run = () => promisify(execFile)(process.execPath, ["--experimental-strip-types", new URL("../../scripts/generate-daily-notes.mjs", import.meta.url).pathname, date, "--section", "notes"], { env: { ...process.env, COVEN_HOME: root }, timeout: 10000 });
+  try {
+    await writeFile(join(root, "familiars.toml"), `[[familiar]]\nid = "sage"\nworkspace = "${workspace}"\n`);
+    await run();
+    await assert.rejects(() => access(noteFile), "an inactive familiar gets no file");
+    await mkdir(join(workspace, "memory"), { recursive: true });
+    const memoryFile = join(workspace, "memory", "lesson.md");
+    await writeFile(memoryFile, "A real lesson.");
+    const stamp = new Date(2026, 9, 1, 12);
+    await utimes(memoryFile, stamp, stamp);
+    await run();
+    assert.match(await readFile(noteFile, "utf8"), /lesson.md/);
+    await writeFile(noteFile, formatDailyNote(date, { notes: "Old digest", reflection: "My authored reflection" }));
+    await run();
+    assert.equal(parseDailyNote(await readFile(noteFile, "utf8")).reflection, "My authored reflection");
+  } finally { await rm(root, { recursive: true, force: true }); }
+}
+
 console.log("daily-note: all assertions passed");

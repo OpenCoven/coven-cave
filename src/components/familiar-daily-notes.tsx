@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FamiliarNoteGenerationControls } from "@/components/familiar-note-generation-controls";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import { DAILY_NOTE_SECTIONS } from "@/lib/daily-note";
 import { dateSlug, longDateLabel, parseDateSlug, relativeTime } from "@/lib/daily-report";
@@ -30,6 +32,8 @@ function shiftDay(slug: string, delta: number): string {
  */
 export function FamiliarDailyNotes({ familiar }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const { announce } = useAnnouncer();
+  const [generating, setGenerating] = useState(false);
   const today = useMemo(() => dateSlug(new Date()), []);
   const [date, setDate] = useState<string>(today);
   const [notes, setNotes] = useState("");
@@ -44,12 +48,14 @@ export function FamiliarDailyNotes({ familiar }: Props) {
   // familiar-switch: a late response would otherwise overwrite the editor with
   // the wrong day's body AND silently clear the unsaved-edit dirty flag.
   const loadSeq = useRef(0);
+  const datesSeq = useRef(0);
 
   const loadDates = useCallback(async () => {
+    const seq = ++datesSeq.current;
     try {
       const res = await fetch(`/api/familiars/${familiar.id}/notes`);
       const data = await res.json();
-      if (data?.ok && Array.isArray(data.dates)) setDates(data.dates as NoteSummary[]);
+      if (seq === datesSeq.current && data?.ok && Array.isArray(data.dates)) setDates(data.dates as NoteSummary[]);
     } catch {
       // The date rail is a convenience; a fetch hiccup shouldn't block editing.
     }
@@ -83,9 +89,13 @@ export function FamiliarDailyNotes({ familiar }: Props) {
 
   // Reset to today whenever the active familiar changes, then load that day.
   useEffect(() => {
+    setGenerating(false);
+    setSaving(false);
+    setDates([]);
     setDate(today);
     void loadDates();
     void loadDay(today);
+    return () => { loadSeq.current += 1; datesSeq.current += 1; };
   }, [familiar.id, today, loadDates, loadDay]);
 
   const selectDate = useCallback(
@@ -98,6 +108,8 @@ export function FamiliarDailyNotes({ familiar }: Props) {
   );
 
   const save = useCallback(async () => {
+    if (!loaded || generating || saving) return;
+    const seq = loadSeq.current;
     setSaving(true);
     setError(null);
     try {
@@ -107,16 +119,18 @@ export function FamiliarDailyNotes({ familiar }: Props) {
         body: JSON.stringify({ date, notes, reflection }),
       });
       const data = await res.json();
+      if (seq !== loadSeq.current) return;
       if (!data?.ok) throw new Error(data?.error || "Failed to save notes");
-      setSavedAt(data.modified ?? new Date().toISOString());
+      setSavedAt(data.modified ?? null);
       dirtyRef.current = false;
+      announce("Daily note saved.");
       void loadDates();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save notes");
+      if (seq === loadSeq.current) setError(err instanceof Error ? err.message : "Failed to save notes");
     } finally {
-      setSaving(false);
+      if (seq === loadSeq.current) setSaving(false);
     }
-  }, [familiar.id, date, notes, reflection, loadDates]);
+  }, [familiar.id, date, notes, reflection, loadDates, loaded, generating, saving, announce]);
 
   const handleBlurSave = useCallback(() => {
     if (dirtyRef.current && !saving) void save();
@@ -146,6 +160,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
             type="button"
             onClick={() => selectDate(shiftDay(date, -1))}
             className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            disabled={generating || saving}
             aria-label="Previous day"
             title="Previous day"
           >
@@ -154,7 +169,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           <button
             type="button"
             onClick={() => selectDate(shiftDay(date, 1))}
-            disabled={date >= today}
+            disabled={generating || saving || date >= today}
             className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Next day"
             title="Next day"
@@ -169,6 +184,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           ) : (
             <button
               type="button"
+              disabled={generating || saving}
               onClick={() => selectDate(today)}
               className="focus-ring rounded-md px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
             >
@@ -183,7 +199,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           <button
             type="button"
             onClick={() => void save()}
-            disabled={saving}
+            disabled={saving || generating || !loaded}
             className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[length:var(--text-xs)] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80 disabled:opacity-50"
           >
             <Icon name="ph:floppy-disk-bold" width={12} />
@@ -200,6 +216,16 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           </div>
         ) : null}
 
+        <FamiliarNoteGenerationControls
+          key={familiar.id}
+          familiarId={familiar.id}
+          date={date}
+          exists={savedAt !== null}
+          disabled={!loaded || saving || Boolean(error) || dirtyRef.current}
+          onBusyChange={setGenerating}
+          onComplete={() => { void loadDates(); if (!dirtyRef.current) void loadDay(date); }}
+        />
+
         <section className="flex flex-col">
           <label
             htmlFor="daily-notes-body"
@@ -211,7 +237,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           <textarea
             id="daily-notes-body"
             value={notes}
-            disabled={!loaded}
+            disabled={!loaded || generating || saving}
             onChange={(e) => {
               setNotes(e.target.value);
               dirtyRef.current = true;
@@ -236,7 +262,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
           <textarea
             id="daily-notes-reflection"
             value={reflection}
-            disabled={!loaded}
+            disabled={!loaded || generating || saving}
             onChange={(e) => {
               setReflection(e.target.value);
               dirtyRef.current = true;
@@ -258,6 +284,7 @@ export function FamiliarDailyNotes({ familiar }: Props) {
                 <li key={entry.date}>
                   <button
                     type="button"
+                    disabled={generating || saving}
                     onClick={() => selectDate(entry.date)}
                     aria-current={entry.date === date ? "true" : undefined}
                     className={`focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)] ${

@@ -74,6 +74,7 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
     }
     else if (url.pathname === "/api/queue/project") payload = { ok: true, projectId: "alpha", project: projects[0] };
     else if (url.pathname === "/api/daemon/connection") payload = { ok: true, connected: true, running: true, target: { mode: "local" } };
+    else if (url.pathname === "/api/memory") payload = { ok: true, entries: [] };
     else if (url.pathname === "/api/board") payload = { ok: true, cards: [] };
     else if (url.pathname === "/api/inbox") payload = { ok: true, items: [] };
     else if (url.pathname === "/api/github/tasks") payload = { ok: true, tasks: [] };
@@ -510,4 +511,87 @@ test("a slow transcript for the previous thread never paints into the thread you
   } finally {
     release();
   }
+});
+
+test("scrolling history keeps the same empty composer mounted and the viewport stable", async ({ page }, testInfo) => {
+  await setup(page);
+  await openThread(page, "A");
+  const main = page.getByTestId("chat-main");
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  await expect(composer).toBeVisible();
+  const handle = await composer.elementHandle();
+  const scroll = main.locator(".cave-chat-transcript");
+  for (const width of [1280, 740, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const before = await scroll.boundingBox();
+    await scroll.hover();
+    for (const delta of [-500, -500, 180, -200, 500, 500]) {
+      await page.mouse.wheel(0, delta);
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(composer).toBeVisible();
+      expect(await handle!.evaluate((node) => node.isConnected)).toBe(true);
+      expect((await scroll.boundingBox())!.height).toBe(before!.height);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`composer-${width}.png`) });
+  }
+  await composer.fill("A stable draft while reading history");
+  await scroll.hover();
+  await page.mouse.wheel(0, -800);
+  await expect(composer).toHaveValue("A stable draft while reading history");
+});
+
+test("daily notes generate and backfill only missing active days", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:surface-preferences:v1", JSON.stringify({ version: 1, values: {
+      "familiars.selectedId": "cody", "familiars.viewMode": "detail", "familiars.detailTab": "daily-notes",
+    } }));
+  });
+  await setup(page);
+  const saved = new Map<string, string>([["2026-10-02", "An existing reflection"]]);
+  const generated: string[] = [];
+  const activity = (date: string) => ({ date, digest: "Recorded work", context: `Evidence for ${date}`, exists: saved.has(date) });
+  await page.route("**/api/familiars/cody/notes**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/generate")) {
+      if (route.request().method() === "POST") {
+        const { date, reflection } = route.request().postDataJSON();
+        const exists = saved.has(date);
+        if (!exists) { saved.set(date, reflection); generated.push(date); }
+        return route.fulfill({ json: { ok: true, status: exists ? "existing" : "generated" } });
+      }
+      const from = url.searchParams.get("from")!;
+      const to = url.searchParams.get("to")!;
+      return route.fulfill({ json: { ok: true, days: from === to ? (from === "2026-10-03" ? [] : [activity(from)]) : [activity("2026-10-01"), activity("2026-10-02")], continuity: "An earlier intention." } });
+    }
+    const date = url.searchParams.get("date");
+    return route.fulfill({ json: date ? { ok: true, exists: saved.has(date), note: { notes: saved.has(date) ? "Recorded work" : "", reflection: saved.get(date) ?? "" }, modified: saved.has(date) ? now : null }
+      : { ok: true, dates: [...saved].map(([date, reflection]) => ({ date, preview: reflection, hasReflection: true, modified: now })) } });
+  });
+  await page.route("**/api/chat/generate/journal", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.familiarId).toBe("cody");
+    expect(body.permissionMode).toBe("read");
+    return route.fulfill({ contentType: "text/event-stream", body: 'data: {"kind":"assistant_chunk","text":"I learned to check the evidence."}\n\ndata: {"kind":"done"}\n\n' });
+  });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } })));
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeEnabled({ timeout: 30000 });
+  await generate.click();
+  await expect(page.locator("#daily-notes-reflection")).toHaveValue("I learned to check the evidence.");
+  await expect(generate).toBeDisabled();
+  await page.getByText("Backfill previous days", { exact: true }).click();
+  await page.getByLabel("From", { exact: true }).fill("2026-10-01");
+  await page.getByLabel("Through", { exact: true }).fill("2026-10-03");
+  await page.getByRole("button", { name: "Backfill active days" }).click();
+  await expect.poll(() => generated.includes("2026-10-01")).toBe(true);
+  expect(generated).toHaveLength(2);
+  expect(saved.get("2026-10-02")).toBe("An existing reflection");
+  expect(saved.has("2026-10-03")).toBe(false);
+  await expect(page.getByRole("status").filter({ hasText: "1 note generated." }).first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("daily-notes-dark.png") });
+  await page.evaluate(() => { document.documentElement.dataset.mode = "light"; document.documentElement.dataset.theme = "tide"; });
+  await page.setViewportSize({ width: 740, height: 900 });
+  await expect(generate).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("daily-notes-light-tide.png") });
 });

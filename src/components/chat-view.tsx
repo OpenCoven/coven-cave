@@ -2850,9 +2850,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
-  const [releasedScrollDistance, setReleasedScrollDistance] = useState(0);
-  const [composerHeight, setComposerHeight] = useState(0);
-  const composerDockRef = useRef<HTMLElement | null>(null);
   const [newResponseContent, setNewResponseContent] = useState(false);
   const observedAssistantTurnIdRef = useRef<string | null>(null);
   const observedAssistantSourceRef = useRef("");
@@ -2923,7 +2920,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFollowing(next);
     if (next) {
       setTranscriptWindowStart(null);
-      setReleasedScrollDistance(0);
       setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
@@ -2932,10 +2928,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     } else {
       setTranscriptWindowStart((start) => start ?? chatTranscriptWindow(transcriptGroupCountRef.current, null).start);
-      const el = scrollRef.current;
-      if (el) {
-        setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
-      }
     }
     if (!next) {
       captureReleasedScrollAnchor();
@@ -4608,7 +4600,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (followingRef.current) return;
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setReleasedScrollDistance(Math.max(0, gap));
       const mountedWindow = chatTranscriptWindow(
         transcriptGroupCountRef.current,
         transcriptWindowStartRef.current,
@@ -7504,25 +7495,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     taskArmed ||
     dictation.listening ||
     dropActive;
-  const showDockedComposer = !flowBackedSession && shouldShowDockedComposer({
-    following,
-    hasStagedInput: hasStagedComposerInput,
-    releasedScrollDistance,
-    composerHeight,
-  });
-  useLayoutEffect(() => {
-    const node = composerDockRef.current;
-    if (!node) return;
-    const measure = () => {
-      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
-      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [inlineComposer, showDockedComposer]);
+  const showDockedComposer = shouldShowDockedComposer({ readOnly: flowBackedSession });
   const chatContextControls = (
     <ComposerContextChips
       projects={projects}
@@ -7554,7 +7527,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const composerNode = (
     <footer
-      ref={composerDockRef}
       className="cave-composer-dock"
     >
       {historyState === "revalidating" && sessionId ? (
