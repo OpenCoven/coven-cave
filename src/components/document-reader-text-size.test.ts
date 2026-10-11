@@ -245,7 +245,12 @@ test("the shared reader uses character-based prose and a separate wide track", (
   );
   assert.match(
     sharedCss,
-    /--document-reader-wide-measure:\s*min\(\s*88ch,\s*calc\(/,
+    /--document-reader-wide-measure:\s*min\(\s*88ch,\s*100cqw\s*\)/,
+  );
+  assert.match(
+    sharedCss,
+    /\.document-reader__scroll\s*\{[^}]*container-type:\s*inline-size/,
+    "wide content measures the reading pane, excluding the Contents rail and gutters",
   );
   assert.match(
     sharedCss,
