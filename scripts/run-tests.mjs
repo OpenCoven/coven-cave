@@ -397,6 +397,7 @@ export const SUITES = {
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
     "src/lib/own-pr-review.test.ts",
+    "src/lib/own-pr-auto-review.test.ts",
     "src/components/own-pr-review-wiring.test.ts",
     "src/components/settings-reviews.test.ts",
     "src/lib/chat-starter-suggestions.test.ts",

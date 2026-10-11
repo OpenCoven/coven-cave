@@ -398,6 +398,24 @@ request"). The surfaces offer only what GitHub accepts:
   The Code PR panel drops Approve. Merge stays, because GitHub lets the author
   merge. Each surface shows the one-line reason from `src/lib/own-pr-review.ts`.
 
+**Automatic review when marked ready is not built yet.** The trigger rules are
+pinned as a pure function, `planOwnPrAutoReviews` in
+`src/lib/own-pr-auto-review.ts`:
+
+- Turning it on records a baseline, so PRs that are already ready do not fire.
+- A PR fires when it goes from draft to ready, or when it first appears
+  already ready after the baseline.
+- Each PR fires once. Pushes and a second draft-to-ready do not re-fire it.
+- Closed and merged PRs drop out of state. A capped search page prunes
+  nothing, because an absent PR may only be past the first page.
+- Polls run at most every 3 minutes, wait out an exhausted rate limit, and
+  back off on other failures (`nextOwnPrPollDelayMs`).
+
+The watcher, its preferences and its Settings controls wait on a supported
+way to start a read-only background familiar session from the Cave server.
+Issue #5930 records what is missing. Until then, no draft reads "reviews when
+ready", and nothing starts a session or posts to GitHub on its own.
+
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
