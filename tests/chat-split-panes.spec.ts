@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// Route fixtures must also own requests after a production-page reload.
+test.use({ serviceWorkers: "block" });
+
 // Multipane chat (cave-e3dj): two conversations side by side, driven entirely
 // from the keyboard, surviving a reload.
 //
@@ -131,4 +134,53 @@ test("keyboard split: two conversations side by side, focus moves, reload restor
   await expect(page.locator("[data-chat-split-pane]")).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText("Beta reply text")).toBeHidden();
   await expect(page.getByText("Alpha reply text")).toBeVisible();
+});
+
+test("split-pane headers keep metadata readable and actions separate at 320–600px", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await setup(page);
+  const model = "openai/gpt-6.1-sol-production-long-context";
+  await page.route("**/api/chat/conversation/**", (route) => route.fulfill({ json: {
+    ok: true,
+    conversation: { turns: [{
+      id: "header-response", role: "assistant", text: "Header layout reply", createdAt: ISO,
+      responseMetadata: {
+        familiarId: "nova", harness: "codex", model, runtime: "local:/tmp/cave",
+        runtimeIdentity: { schemaVersion: 1, harness: "codex", version: "1.2.3", model },
+      },
+    }] },
+  } }));
+  await openChatSurface(page);
+  await page.getByRole("button", { name: /Alpha planning thread/ }).first().click();
+  const beta = page.getByRole("button", { name: /Beta review thread/ }).first();
+  await beta.focus();
+  await page.keyboard.press("Alt+Enter");
+  const chat = pane(page, "s-beta").locator(".cave-chat-linear");
+  const header = chat.locator(".cave-chat-linear-header");
+  const meta = header.locator(".cave-chat-meta-line__meta");
+  await expect(meta).toContainText(model);
+  await page.mouse.move(0, 0);
+  for (const width of [320, 440, 600]) {
+    // Constrain the actual split-pane chat, independently of the desktop viewport.
+    await chat.evaluate((node, width) => { node.style.width = `${width}px`; node.style.flex = "none"; }, width);
+    await expect(async () => {
+      const geometry = await header.evaluate((node) => {
+        const meta = node.querySelector(".cave-chat-meta-line__meta")!.getBoundingClientRect();
+        const actions = node.querySelector(".cave-chat-session-actions")!.getBoundingClientRect();
+        const title = node.querySelector(".cave-chat-title")!.getBoundingClientRect();
+        return { header: node.getBoundingClientRect().toJSON(), meta: meta.toJSON(), actions: actions.toJSON(), title: title.toJSON() };
+      });
+      expect(geometry.header.width).toBeCloseTo(width, 0);
+      expect(geometry.title.width, "the conversation title remains legible").toBeGreaterThanOrEqual(96);
+      expect(geometry.meta.width, "metadata gets a readable line, not a character column").toBeGreaterThanOrEqual(160);
+      expect(geometry.header.height, "header leaves room for the conversation").toBeLessThanOrEqual(144);
+      expect(geometry.actions.right).toBeLessThanOrEqual(geometry.header.right);
+      const overlaps = geometry.meta.left < geometry.actions.right && geometry.actions.left < geometry.meta.right
+        && geometry.meta.top < geometry.actions.bottom && geometry.actions.top < geometry.meta.bottom;
+      expect(overlaps, "metadata does not overlap the action buttons").toBe(false);
+    }).toPass({ timeout: 5_000 });
+    await header.screenshot({ animations: "disabled", path: testInfo.outputPath(`header-${width}.png`) });
+  }
+  await header.getByRole("button", { name: "Find in conversation", exact: true }).click();
+  await expect(chat.getByRole("textbox", { name: /Find in conversation/ })).toBeVisible();
 });
