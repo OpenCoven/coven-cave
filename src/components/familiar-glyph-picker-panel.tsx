@@ -73,18 +73,6 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeIndex]);
 
-  // Cmd/Ctrl+Backspace clears the current override.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
-        e.preventDefault();
-        clearGlyphOverride(familiar.id);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [familiar.id]);
-
   const resolved = useResolvedFamiliars([familiar])[0];
   const currentGlyph: FamiliarGlyph = resolved?.glyph ?? { kind: "icon", name: "ph:sparkle-fill" };
 
@@ -140,7 +128,14 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
   }
 
   return (
-    <div className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col">
+    <div className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col" onKeyDown={event => {
+      // Reset belongs to a focused glyph button, never another editor or search.
+      if (event.defaultPrevented || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key !== "Backspace" ||
+          !(event.target instanceof HTMLElement) || !event.target.closest('[data-glyph-button="true"]')) return;
+      event.preventDefault();
+      clearGlyphOverride(familiar.id);
+    }}>
       {/* Search */}
       <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
         <SearchInput
