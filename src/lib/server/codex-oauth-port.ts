@@ -14,7 +14,7 @@
  *
  *   1. Tries to bind 127.0.0.1:1455 ourselves. If we can, the port is
  *      free; we drop the listener and return PortFree.
- *   2. If bind fails with EADDRINUSE, asks `lsof -ti tcp:1455` for the
+ *   2. If bind fails with EADDRINUSE, asks `lsof -a -ti tcp:1455 -sTCP:LISTEN` for the
  *      holding pid.
  *   3. Looks the pid up with `ps -o command=` to get a process descriptor
  *      and only kills it if its argv/path clearly contains a `codex`
@@ -61,7 +61,7 @@ export async function portIsFree(port: number): Promise<boolean> {
 }
 
 /**
- * Find the single pid holding `port` on localhost via `lsof -ti tcp:<port>`.
+ * Find the single listening pid for `port`, excluding established connections.
  * Returns null if lsof is missing, the port has no holder, or multiple
  * processes hold it (refuses to disambiguate — safer to print instructions).
  */
@@ -73,7 +73,7 @@ export async function pidHoldingPort(port: number): Promise<number | null> {
   if (process.platform === "win32") return null;
   let stdout: string;
   try {
-    const result = await execFileAsync("lsof", ["-ti", `tcp:${port}`], {
+    const result = await execFileAsync("lsof", ["-a", "-ti", `tcp:${port}`, "-sTCP:LISTEN"], {
       windowsHide: true,
       timeout: 2000,
     });
