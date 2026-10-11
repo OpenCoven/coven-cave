@@ -108,8 +108,10 @@ export async function saveGeneratedDailyNote(args: Omit<ActivityArgs, "from" | "
   if (!activity) return { status: "inactive" as const };
   const directory = path.join(await familiarWorkspace(args.id), "notes");
   await mkdir(/* turbopackIgnore: true */ directory, { recursive: true });
-  const target = path.join(directory, `${args.date}.md`);
-  const temporary = path.join(directory, `.${args.date}.${randomUUID()}.tmp`);
+  // Match the existing notes writer: a validated date is one basename.
+  const target = path.join(directory, `${path.basename(args.date)}.md`);
+  if (path.relative(directory, target).startsWith("..")) throw new Error("Path not allowed.");
+  const temporary = path.join(directory, `.daily-note.${randomUUID()}.tmp`);
   try {
     await writeFile(/* turbopackIgnore: true */ temporary, formatDailyNote(args.date, { notes: activity.digest, reflection }), { flag: "wx" });
     await link(/* turbopackIgnore: true */ temporary, target);

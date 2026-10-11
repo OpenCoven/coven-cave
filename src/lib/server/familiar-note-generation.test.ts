@@ -36,6 +36,9 @@ try {
   assert.match(days[0].context, /Worked on day 2/);
   assert.doesNotMatch(days[0].context, /Worked on day 4|Other familiar/);
   assert.match(days[2].digest, /fact.md/);
+  for (const date of ["../2026-10-02", "2026-10-02/../other", "2026-10-02\\other", "2026-10-02%2fother"]) {
+    await assert.rejects(() => saveGeneratedDailyNote({ ...args, date, reflection: "Invalid path" }), /Choose up to 31 days/);
+  }
   assert.equal((await saveGeneratedDailyNote({ ...args, date: "2026-10-03", reflection: "Invented" })).status, "inactive");
   assert.equal((await readDailyNote("sage", "2026-10-03")).exists, false);
   const results = await Promise.all(["First", "Second"].map((reflection) => saveGeneratedDailyNote({ ...args, date: "2026-10-02", reflection })));
