@@ -29,8 +29,13 @@ assert.match(
 assert.match(route, /\n\s*inventory,\n/);
 assert.match(
   route,
-  /canReadCliInventory = localInventoryRequest &&\s*canonicalHarnessId\(binding\.harness\) === state\.harness &&\s*!isSshRuntime\(binding\.runtime\) && !state\.runtime\?\.startsWith\("ssh:"\)[\s\S]*?allowCliInventory: canReadCliInventory/,
+  /canReadCliInventory =\s*canonicalHarnessId\(binding\.harness\) === state\.harness &&\s*!isSshRuntime\(binding\.runtime\) && !state\.runtime\?\.startsWith\("ssh:"\)[\s\S]*?allowCliInventory: canReadCliInventory/,
   "aggregate model discovery cannot substitute a local CLI inventory for an SSH or different harness binding",
+);
+assert.doesNotMatch(
+  route,
+  /canReadCliInventory =[^;]*localInventoryRequest/,
+  "Claude/Codex model menus must reach authenticated mobile (iOS) requests, not only loopback ones",
 );
 assert.match(
   route,
