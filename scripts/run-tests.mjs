@@ -353,6 +353,7 @@ export const SUITES = {
     "src/lib/needs-you-seen.test.ts",
     "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
+    "src/lib/ui-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/citations-directive.test.ts",
     "src/lib/github-item-url.test.ts",
