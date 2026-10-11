@@ -1495,7 +1495,7 @@ export function GrimoireGraphView({
             }}
             placeholder="Search documents…"
             aria-label="Highlight graph nodes"
-            className="focus-ring min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="ui-search-field focus-ring min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           <button
             type="button"
@@ -1506,7 +1506,7 @@ export function GrimoireGraphView({
             aria-label={prefs.panelOpen ? "Collapse graph filters" : "Expand graph filters"}
             title="Filters and forces"
             onClick={() => setPrefs((p) => ({ ...p, panelOpen: !p.panelOpen }))}
-            className="focus-ring inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            className="ui-search-action focus-ring inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:sliders-horizontal" width={12} aria-hidden />
           </button>

@@ -732,3 +732,13 @@
    the space and the hover reveal. (.gh-action-wrap is already inline-flex; it
    does not need restating here.) */
 .gh-stream-handoff { display:inline-flex; align-items:center; }
+
+/* Search stays readable and keyboard-visible in narrow panes and on touch. */
+.gh-search { min-width:0; max-width:100%; min-height:var(--space-8); border-color:var(--border-strong); }
+.gh-search:focus-within { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+.gh-search input { min-width:0; width:100%; }
+@media (max-width:767px), (pointer:coarse) {
+  .gh-search { height:auto; min-height:var(--touch-target); }
+  .gh-search input { min-height:var(--touch-target); font-size:var(--text-lg); }
+}
+@media (max-width:767px), (pointer:coarse) { .gh-search-clear { width:var(--touch-target); height:var(--touch-target); } }

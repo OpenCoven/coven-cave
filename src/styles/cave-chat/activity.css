@@ -1020,10 +1020,11 @@ details[open] > .cave-tool-summary::before {
 /* The design's 37px control row. */
 .cave-find-band__controls {
   display: flex;
+  flex-wrap: wrap;
   min-height: 37px;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 
 .cave-find-band__glyph {
@@ -1032,14 +1033,33 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-find-band__input {
-  min-width: 0;
-  flex: 1 1 auto;
+  min-width: min(100%, 10rem);
+  min-height: var(--space-6);
+  flex: 1 1 10rem;
   border: 0;
   background: transparent;
   outline: none;
   color: var(--text-primary);
   font-size: var(--text-sm);
   line-height: 20px;
+}
+
+.cave-find-band__input:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+  border-radius: var(--radius-control);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .cave-find-band .cave-find-band__input {
+    min-height: var(--touch-target);
+    font-size: var(--text-lg);
+  }
+  .cave-find-band .cave-find-band__toggle,
+  .cave-find-band .cave-find-band__nav {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
 }
 
 .cave-find-band__input::placeholder {

@@ -32,7 +32,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
 ) {
   const showClear = value.length > 0 && onClear;
   return (
-    <div className={containerClassName}>
+    <div className={["ui-search-control", containerClassName ?? ""].filter(Boolean).join(" ")}>
       <div className="ui-search-input">
         <span className="ui-search-input-leading" aria-hidden>
           <Icon name={leadingIcon} width={13} />
