@@ -269,6 +269,7 @@ import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
 import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
+import { sliceUiBlocks } from "@/lib/ui-blocks";
 import {
   AUTO_BRIEFED_KEY,
   AUTO_MISSION_CHANGED_EVENT,
@@ -308,6 +309,7 @@ import { ChatSpecCard } from "@/components/chat-spec-card";
 import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
+import { ChatUiBlock, UiBlockHostContext, type UiBlockHost } from "@/components/chat-ui-block";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -3312,6 +3314,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
+  // never sends; an existing draft is kept and the text is appended below it.
+  const prefillComposerFromUiBlock = useCallback((text: string) => {
+    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    requestAnimationFrame(() => {
+      const field = inputRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+    announce("Draft added to the composer. Nothing was sent.");
+  }, [announce, setInput]);
   const toggleMobileAutoMode = useCallback(() => {
     if (autoMissionActive) {
       const statusDraft = autoMissionStatusDraft(input);
@@ -7496,6 +7510,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
+  // Native UI tier host: opts this chat's transcript into coven:ui rendering.
+  // Memoized so the context value is stable across composer keystrokes.
+  const uiBlockHost = useMemo<UiBlockHost>(
+    () => ({ prefill: offlineReadOnly ? null : prefillComposerFromUiBlock }),
+    [offlineReadOnly, prefillComposerFromUiBlock],
+  );
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -8204,6 +8224,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 
   return (
+    <UiBlockHostContext.Provider value={uiBlockHost}>
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
@@ -8857,6 +8878,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       </Modal>
     </section>
+    </UiBlockHostContext.Provider>
   );
 });
 
@@ -8982,6 +9004,30 @@ function splitSegmentsForSpecs(
         kind: "block" as const,
         key: `${piece.spec.kind}-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
         node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
+      }];
+    });
+  });
+}
+
+/**
+ * Native UI tier (docs/chat-native-ui-tier.md): replace each top-level
+ * ```coven:ui fence with a ChatUiBlock rendered from the saved turn text.
+ * It runs innermost, so no later splitter ever sees the block's markup; a
+ * coven:ui example inside another fence stays literal (sliceUiBlocks).
+ */
+function splitSegmentsForUiBlocks(segments: MessageBubbleSegment[]): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    const pieces = sliceUiBlocks(segment.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") return [segment];
+    return pieces.flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim() ? [{ kind: "text" as const, text: piece.text }] : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `ui-${segmentIndex}-${pieceIndex}`,
+        node: <ChatUiBlock source={piece.source} />,
       }];
     });
   });
@@ -9682,7 +9728,7 @@ function TurnRowImpl({
           splitSegmentsForApprove(
             splitSegmentsForImages(
               splitSegmentsForPreviews(
-                splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+                splitSegmentsForSpecs(splitSegmentsForUiBlocks([{ kind: "text", text: protectedQuestions.text }]), onOpenUrl),
                 onOpenPreview,
                 onOpenUrl,
               ),

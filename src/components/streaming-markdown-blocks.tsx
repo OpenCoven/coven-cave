@@ -1,8 +1,10 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useContext } from "react";
 
 import type { StreamingContentBlock } from "@/lib/streaming-markdown-blocks";
+import { isPartialUiFenceOpener, stableUiBlockKey, uiFenceBody } from "@/lib/ui-blocks";
+import { ChatUiBlock, UiBlockHostContext } from "./chat-ui-block";
 import { ProgressiveMarkdownBlock } from "./message-bubble";
 
 function stripListMarker(source: string): string {
@@ -146,16 +148,32 @@ export function StreamingMarkdownBlocks({
   live: boolean;
 }) {
   const blocks = activeBlock ? [...committedBlocks, activeBlock] : committedBlocks;
+  const uiBlocksEnabled = useContext(UiBlockHostContext) !== null;
 
   return (
     <div className="streaming-markdown-blocks">
-      {blocks.map((block) => (
-        <StreamingBlock
-          key={block.id}
-          block={block}
-          live={live && block.id === activeBlock?.id}
-        />
-      ))}
+      {blocks.map((block) => {
+        const active = live && block.id === activeBlock?.id;
+        // Native UI tier: a ```coven:ui fence renders progressively from every
+        // prefix. Its key is the block START (the id also carries the growing
+        // end offset), so one renderer and its State survive each chunk.
+        const uiFence = uiBlocksEnabled && block.kind === "markdown" ? uiFenceBody(block.source) : null;
+        if (uiFence) {
+          return (
+            <div key={stableUiBlockKey(block.id)} data-stream-block-id={block.id}>
+              <ChatUiBlock source={uiFence.body} streaming={active && !uiFence.closed} />
+            </div>
+          );
+        }
+        if (uiBlocksEnabled && active && block.kind === "markdown" && isPartialUiFenceOpener(block.source)) return null;
+        return (
+          <StreamingBlock
+            key={block.id}
+            block={block}
+            live={active}
+          />
+        );
+      })}
     </div>
   );
 }

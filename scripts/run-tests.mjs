@@ -354,6 +354,7 @@ export const SUITES = {
     "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
     "src/lib/ui-blocks.test.ts",
+    "src/components/chat-ui-block.test.tsx",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/citations-directive.test.ts",
     "src/lib/github-item-url.test.ts",
@@ -2768,6 +2769,8 @@ const VITEST_TESTS = new Set([
   "src/components/chat-sidebar-wiring.behavior.test.ts",
   // renders streaming turns through the Vite transform (JSX)
   "src/components/streaming-turn-response.test.tsx",
+  // renders coven:ui blocks (native UI tier) through react-test-renderer (JSX)
+  "src/components/chat-ui-block.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",
   "src/components/right-chat-panel-behavior.test.tsx",
   "src/components/chat-router-removal-race.test.tsx",
