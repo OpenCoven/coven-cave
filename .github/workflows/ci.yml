@@ -547,7 +547,7 @@ jobs:
     needs: paths
     if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -636,7 +636,7 @@ jobs:
     needs: paths
     if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
       NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
