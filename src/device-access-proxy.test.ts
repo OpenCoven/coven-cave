@@ -1,7 +1,7 @@
+import { buildServer } from "../scripts/build-server.mjs";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
@@ -35,9 +35,11 @@ const loaded = { exports: {} };
 new Function("module", "exports", "require", built.outputFiles[0].text)(loaded, loaded.exports, require);
 const { proxy } = loaded.exports as { proxy: (request: NextRequest) => Promise<Response> };
 
-// Execute the committed bundle's gateway and deferred wrapper without booting
+// Execute the freshly built bundle's gateway and deferred wrapper without booting
 // its server or touching live host configuration.
-const serverBundle = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+const { outputFiles } = await buildServer({ write: false });
+assert.ok(outputFiles?.[0], "server builder produces an in-memory artifact");
+const serverBundle = outputFiles[0].text;
 const gatewayStart = serverBundle.lastIndexOf("// src/lib/server/device-access/gateway.ts\n");
 const gatewayEnd = serverBundle.indexOf("// server.ts\n", gatewayStart);
 assert.ok(gatewayStart >= 0 && gatewayEnd > gatewayStart, "bundled device boundary is present");
