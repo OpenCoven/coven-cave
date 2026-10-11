@@ -6,6 +6,8 @@ import {
   runtimeModelInventoryScope,
 } from "../src/lib/runtime-models";
 
+test.use({ serviceWorkers: "block" });
+
 // Verifies the composer runtime · model · control chips (cave-yq5l / cave-v25g
 // / cave-bfwk, split-chip grammar since cave-g21f, Runtime and Model split into
 // separate chips plus capability-driven Thinking · Speed chips in #5896): the
@@ -20,7 +22,7 @@ import {
 // pick rides the next send's typed modelControls, and a runtime without
 // controls shows no such chips at all.
 //
-// Desktop only (the chips live in the chat composer). All APIs are mocked;
+// Desktop and phone recovery use the same composer controls. All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
 // the app sees — exactly the loop the feature exists to close.
 
@@ -87,6 +89,7 @@ type Mutable = {
   harness: string;
   /** Opt the Codex fixture into reporting its Thinking control (#5905). */
   codexControls?: boolean;
+  modelSaveGate?: Promise<void>;
   effectiveModel: string;
   familiarsServed: number;
   modelStateServed: number;
@@ -107,6 +110,8 @@ async function seed(page: Page, inventoryAvailable = true, harness = "codex"): P
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
+  await page.route("**/api/daemon/connection**", (route) => route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }));
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [{ id: "p1", name: "Cave", root: "/tmp/cave-models-fixture", access: "full", familiarIds: ["nova"], defaultFamiliarId: "nova" }] } }));
   await page.route("**/api/familiars**", (route) => {
     state.familiarsServed += 1;
     return route.fulfill({
@@ -142,9 +147,10 @@ async function seed(page: Page, inventoryAvailable = true, harness = "codex"): P
     route.fulfill({ json: { ok: true, sessions: [] } }),
   );
   await page.route("**/api/board**", (route) => route.fulfill({ json: { ok: true, cards: [] } }));
-  await page.route("**/api/chat/model-state**", (route) => {
+  await page.route("**/api/chat/model-state**", async (route) => {
     if (route.request().method() === "PATCH") {
       const body = route.request().postDataJSON() as { model?: string };
+      if (state.modelSaveGate) await state.modelSaveGate;
       if (body?.model) state.effectiveModel = body.model;
     } else {
       state.modelStateServed += 1;
@@ -193,6 +199,16 @@ async function seed(page: Page, inventoryAvailable = true, harness = "codex"): P
     return route.fulfill({ status: 403, json: { ok: false, error: "Synthetic send forbidden" } });
   });
   return state;
+}
+
+async function openModelChat(page: Page, isMobile: boolean) {
+  if (isMobile) {
+    // Phone starts on the list. Its New session action requires an explicit
+    // project, matching the fixture's authorized crew and send permission.
+    await page.addInitScript(() => localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("p1")));
+  }
+  await page.goto("/?mode=chat");
+  if (isMobile) await page.getByRole("button", { name: "New session", exact: true }).click();
 }
 
 test.describe("composer runtime picker (context chips)", () => {
@@ -291,6 +307,7 @@ test.describe("composer runtime picker (context chips)", () => {
 
     // The model-state report for Claude carries controls, so the Thinking and
     // Speed chips appear on their own, unset (Auto) until picked.
+    await main.getByRole("button", { name: "More composer options", exact: true }).click();
     const thinkingChip = main.getByRole("button", { name: /change thinking/ });
     const speedChip = main.getByRole("button", { name: /change speed/ });
     await expect(thinkingChip).toBeVisible({ timeout: 10_000 });
@@ -328,7 +345,7 @@ test.describe("composer runtime picker (context chips)", () => {
     await expect(chip).toContainText(CODEX_MODEL.id, { timeout: 45_000 });
     await chip.click();
     const menu = page.getByRole("menu", { name: "Model", exact: true });
-    await expect(menu.getByText("No models reported · use runtime default", { exact: true })).toBeVisible();
+    await expect(menu.getByText(/Couldn’t load Codex models/)).toBeVisible();
     const selection = menu.getByRole("menuitemradio", {
       name: `Current selection · ${CODEX_MODEL.id} (not in current inventory)`, exact: true,
     });
@@ -355,6 +372,7 @@ test.describe("composer runtime picker (context chips)", () => {
     const toolbar = home.locator(".home-composer-toolbar");
     const speedChip = toolbar.getByRole("button", { name: /change speed/ });
     const thinkingChip = toolbar.getByRole("button", { name: /change thinking/ });
+    await toolbar.getByRole("button", { name: "More composer options", exact: true }).click();
     await expect(speedChip).toBeVisible({ timeout: 45_000 });
     await expect(speedChip).toContainText("Speed · Auto");
     await expect(thinkingChip).toContainText("Thinking · Auto");
@@ -373,6 +391,7 @@ test.describe("composer runtime picker (context chips)", () => {
 
     // The opened chat's chips start from the same pick.
     const chat = page.getByTestId("chat-main");
+    await chat.getByRole("button", { name: "More composer options", exact: true }).click();
     await expect(chat.getByRole("button", { name: /change speed/ })).toContainText("Speed · Thorough", { timeout: 15_000 });
   });
   test("Codex gets a Thinking chip when its direct transport reports the control, and the pick rides the send (#5905)", async ({ page }) => {
@@ -381,6 +400,7 @@ test.describe("composer runtime picker (context chips)", () => {
     await page.goto("/?mode=chat");
     const main = page.getByTestId("chat-main");
     const thinkingChip = main.getByRole("button", { name: /change thinking/ });
+    await main.getByRole("button", { name: "More composer options", exact: true }).click();
     await expect(thinkingChip).toBeVisible({ timeout: 45_000 });
     await expect(thinkingChip).toContainText("Thinking · Auto");
     await expect(thinkingChip).toHaveAttribute("title", /Applied by the runtime/);
@@ -402,3 +422,76 @@ test.describe("composer runtime picker (context chips)", () => {
   });
 });
 
+
+for (const [runtime, modelId] of [
+  ["codex", "openai/gpt-6-astra"],
+  ["claude", "anthropic/claude-opus-5-5"],
+  ["copilot", "github/future-model"],
+  ["grok", "xai/future-model"],
+  ["hermes", "openrouter/provider/future-model"],
+  ["opencode", "provider/future-model"],
+]) {
+  test(`${runtime} recovers model discovery in place and carries the reported ID into send`, async ({ page, isMobile }, testInfo) => {
+    const state = await seed(page, false, runtime);
+    let requests = 0;
+    let release: (() => void) | undefined;
+    await page.route(`**/api/runtime-models/${runtime}?*`, async (route) => {
+      requests += 1;
+      if (requests === 1) return route.fulfill({ status: 503, json: { ok: false } });
+      if (requests === 2) await new Promise<void>(resolve => { release = resolve; });
+      return route.fulfill({ json: {
+        ok: true, runtime, models: [{ id: modelId, label: "Latest reported model" }],
+        provenance: "live", freshness: "fresh", refreshState: "ready", availability: "available",
+        defaultOwner: "runtime", allowCustom: true, scope: runtimeModelInventoryScope(runtime, "nova"),
+      } });
+    });
+    await openModelChat(page, isMobile);
+    const main = page.getByTestId("chat-main");
+    const draft = main.getByRole("textbox", { name: "Message", exact: true });
+    await draft.fill("Preserve this draft while recovering models");
+    const chip = main.getByRole("button", { name: /change model/ });
+    await chip.click();
+    const menu = page.getByRole("menu", { name: "Model", exact: true });
+    await expect(menu.getByText(/Couldn’t load .* models/)).toBeVisible();
+    if (runtime === "codex") {
+      for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+        await page.evaluate(({ theme, mode }) => {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.mode = mode;
+        }, { theme, mode });
+        await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`model-recovery-${theme}-${mode}.png`) });
+      }
+    }
+    await menu.getByRole("menuitem", { name: "Retry model discovery", exact: true }).click();
+    await expect(menu.getByText(/Loading .* models/)).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Refreshing models…", exact: true })).toBeDisabled();
+    await expect(draft).toHaveValue("Preserve this draft while recovering models");
+    await expect.poll(() => requests).toBe(2);
+    release!();
+    // Hold persistence so this proves the immediate next send carries the
+    // chosen ID even before the familiar default has finished saving.
+    let releaseSave!: () => void;
+    state.modelSaveGate = new Promise<void>(resolve => { releaseSave = resolve; });
+    try {
+      await menu.getByRole("menuitemradio", { name: `Latest reported model · ${modelId}`, exact: true }).click();
+      await expect(chip).toContainText(modelId);
+      await expect(draft).toHaveValue("Preserve this draft while recovering models");
+      await main.getByRole("button", { name: "Send message", exact: true }).click();
+      await expect.poll(() => state.sendBodies.length).toBe(1);
+      expect(state.sendBodies[0].modelOverride).toBe(modelId);
+    } finally {
+      releaseSave();
+    }
+  });
+}
+
+test("OpenClaw explains managed models without claiming local discovery", async ({ page, isMobile }) => {
+  await seed(page, false, "openclaw");
+  await openModelChat(page, isMobile);
+  if (isMobile) await page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true }).fill("Keep runtime default");
+  await page.getByTestId("chat-main").getByRole("button", { name: /change model/ }).click();
+  const menu = page.getByRole("menu", { name: "Model", exact: true });
+  await expect(menu.getByText(/OpenClaw manages its own models/)).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Retry model discovery" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitemradio", { name: "Runtime default", exact: true })).toBeEnabled();
+});

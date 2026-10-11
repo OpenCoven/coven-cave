@@ -171,7 +171,7 @@ export async function listCliRuntimeModels(runtime: Runtime, familiarId?: string
   if (!pending) {
     if (inFlight.size >= 4) return unavailable();
     pending = query(runtime, launch, env, dependencies).then((models) => {
-      if (models) {
+      if (models?.length) {
         cache.set(key, { models, expiresAt: (dependencies.now ?? Date.now)() + 60_000 });
         while (cache.size > 64) cache.delete(cache.keys().next().value!);
       }

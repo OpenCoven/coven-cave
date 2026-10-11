@@ -36,9 +36,8 @@ export async function GET(
       { status: 404 },
     );
   }
-  // Credential-backed discovery is a desktop-local capability. Remote clients
-  // still receive the shared, safe runtime-managed inventory contract instead
-  // of being denied the whole endpoint.
+  // OpenCode and Hermes provider discovery remains desktop-local. Other
+  // authenticated clients can read the bounded CLI control catalog.
   const localInventoryRequest = rejectNonLocalRequest(req) === null;
   const rawFamiliarId = new URL(req.url).searchParams.get("familiarId");
   const familiarId = cleanFamiliarId(rawFamiliarId);
@@ -48,23 +47,28 @@ export async function GET(
       { status: 400 },
     );
   }
+  const binding = familiarId ? bindingFor(await loadConfig(), familiarId) : null;
+  const remoteRuntime = new URL(req.url).searchParams.get("remote") === "true" || Boolean(binding && isSshRuntime(binding.runtime));
   let allowHermesInventory =
     runtime === "hermes" && localInventoryRequest && familiarId === null;
-  if (runtime === "hermes" && localInventoryRequest && familiarId) {
-    const binding = bindingFor(await loadConfig(), familiarId);
+  if (runtime === "hermes" && localInventoryRequest && binding) {
     allowHermesInventory =
       canonicalHarnessId(binding.harness) === "hermes" &&
       !binding.hermesProfile &&
       !binding.hasInvalidHermesProfileBinding &&
       !isSshRuntime(binding.runtime);
   }
-  let allowCliInventory = localInventoryRequest;
-  if (allowCliInventory && familiarId && (runtime === "codex" || runtime === "claude")) {
-    const binding = bindingFor(await loadConfig(), familiarId);
-    allowCliInventory = canonicalHarnessId(binding.harness) === runtime && !isSshRuntime(binding.runtime);
-  }
+  // This endpoint is authenticated by the proxy. CLI control discovery reads
+  // public model metadata without creating a thread, prompt, or tool call.
+  // A conversation may retain its runtime after the familiar is rebound.
+  const allowCliInventory = !remoteRuntime;
+  const inventoryRestriction = remoteRuntime ? "remote-runtime"
+    : (runtime === "hermes" || runtime === "opencode") && !localInventoryRequest ? "local-only"
+    : runtime === "hermes" && !allowHermesInventory ? "profile-managed"
+    : undefined;
   const inventory = await listRuntimeModelInventory(runtime, familiarId, {
     allowCliInventory,
+    inventoryRestriction,
     allowOpenCodeInventory: runtime === "opencode" && localInventoryRequest,
     allowHermesInventory,
   });

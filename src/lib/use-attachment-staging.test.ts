@@ -16,22 +16,15 @@ assert.match(
   "the hook returns the full staging surface: list, add/remove/clear, paste, and the drag-handler bundle",
 );
 
-// ── Cap semantics ────────────────────────────────────────────────────────────
-assert.match(
-  src,
-  /const room = Math\.max\(0, maxFiles - attachments\.length\);\s*\n\s*const selected = Array\.from\(files\)\.slice\(0, room\);/,
-  "adds are capped to the remaining room, not rejected wholesale",
-);
-assert.match(
-  src,
-  /if \(selected\.length === 0\) \{\s*\n\s*onLimit\?\.\(\);\s*\n\s*return;\s*\n\s*\}/,
-  "a fully-swallowed pick fires onLimit (home toasts; chat passes nothing and stays silent)",
-);
-assert.match(
-  src,
-  /onAdded\?\.\(next\.length\);\s*\n\s*focus\?\.\(\);/,
-  "staged adds report their count and return focus via the caller's own callbacks",
-);
+// ── Async staging boundaries ─────────────────────────────────────────────────
+assert.match(src, /maxFiles - attachmentsRef\.current\.length - pendingRef\.current/,
+  "in-flight reads reserve capacity before another pick or drop can enter");
+assert.match(src, /Promise\.allSettled\(selected\.map\(fileToAttachment\)\)/,
+  "one read failure cannot discard successful siblings");
+assert.match(src, /generation !== generationRef\.current\) return/,
+  "stale reads cannot repopulate a cleared or unmounted composer");
+assert.match(src, /if \(next\.length\) \{[\s\S]*onAdded\?\.\(next\.length\)/,
+  "only captured files are announced as attached");
 
 // ── Drag overlay (dragDepth-counted so child transitions never flicker) ──────
 assert.match(
