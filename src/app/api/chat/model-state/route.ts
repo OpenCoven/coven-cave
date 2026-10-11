@@ -172,14 +172,19 @@ export async function GET(req: Request) {
     !isSshRuntime(binding.runtime) &&
     !state.runtime?.startsWith("ssh:");
   const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
-  const canReadCliInventory = localInventoryRequest &&
-    canonicalHarnessId(binding.harness) === state.harness &&
+  // Authenticated callers may read the CLI control catalog. Conversations
+  // retain their own harness after rebind; discovery follows that harness.
+  const canReadCliInventory =
     !isSshRuntime(binding.runtime) && !state.runtime?.startsWith("ssh:");
   const inventory = await listRuntimeModelInventory(
     state.harness,
     familiarId,
     {
       allowCliInventory: canReadCliInventory,
+      inventoryRestriction: !canReadCliInventory ? "remote-runtime"
+        : (state.harness === "hermes" || state.harness === "opencode") && !localInventoryRequest ? "local-only"
+        : state.harness === "hermes" && !bareLocalHermes ? "profile-managed"
+        : undefined,
       allowOpenCodeInventory: canReadOpenCodeInventory,
       allowHermesInventory: canReadHermesInventory,
     },

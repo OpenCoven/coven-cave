@@ -29,7 +29,7 @@ const css = [
 
 // ── Composer controls: edge Tools · voice · live context · enhance · send ───
 const edgeActionsMatch = source.match(
-  /<div className="cave-composer-edge-actions">[\s\S]*?<\/div>\s*\{attachments\.length > 0/,
+  /<div className="cave-composer-edge-actions">[\s\S]*?<\/div>\s*<ComposerAttachmentFeedback[\s\S]*?\/>\s*\{attachments\.length > 0/,
 );
 assert.ok(edgeActionsMatch, "expected the composer edge-actions row in ChatView");
 const edgeActions = edgeActionsMatch[0];
@@ -154,12 +154,9 @@ assert.doesNotMatch(
 );
 
 // ── Each chip opens its own picker; the hub popover is gone ─────────────────
-// Grammar: Project > Worktree (conditional) > Branch > Model in control order
-assert.match(
-  pill,
-  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Runtime: \$\{context\.runtimeName\} — change runtime`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
-  "the chips read Project / Worktree / Branch / Runtime / Model as separately labelled controls in order (#5896 split the runtime chip from the model chip)",
-);
+// Project, runtime and model stay primary; git and tuning live in the disclosure.
+assert.match(pill, /aria-label=\{`Project:[\s\S]*?aria-label=\{`Runtime:[\s\S]*?aria-label=\{`Model:[\s\S]*?aria-label="More composer options"/, "primary choices remain independently labelled");
+assert.match(pill, /className="cave-context-controls__secondary" hidden=\{!optionsOpen\}[\s\S]*?aria-label=\{`Worktree:[\s\S]*?aria-label=\{`Branch:[\s\S]*?context\.controlChips\.map/, "secondary options retain independent pickers behind the disclosure");
 assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");
 assert.match(pill, /const branchRef = useRef/, "branch has its own independent ref anchor");
 assert.match(pill, /name="ph:tree-structure"/, "the worktree chip uses the tree-structure icon");

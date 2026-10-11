@@ -271,6 +271,17 @@ test("run skills open one complete ledger and reading older output hides the com
   await transcript.hover();
   await page.mouse.wheel(0, -900);
   await expect(composer).toHaveCount(0);
+  // A failed drop still needs a persistent recovery path when an empty
+  // composer would otherwise be hidden while reading earlier output.
+  await mainChat.locator(".cave-chat-linear").evaluate(element => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array(6 * 1024 * 1024)], "oversized.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  });
+  await expect(mainChat.getByRole("region", { name: "Attachment notice" })).toContainText("oversized.png is too large");
+  await mainChat.getByRole("button", { name: "Dismiss attachment notice" }).click();
+  await expect(composer).toHaveCount(0);
+  await expect(mainChat.getByRole("button", { name: "Latest" })).toBeFocused();
   await mainChat.getByRole("button", { name: "Latest" }).click();
   await expect(composer).toBeVisible();
 });

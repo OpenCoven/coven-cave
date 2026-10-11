@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-composer.css";
+import { ModelInventoryFeedback } from "@/components/model-inventory-feedback";
 import "@/styles/home-composer.css";
 
 /**
@@ -47,6 +48,7 @@ import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/us
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { ComposerAttachmentFeedback } from "@/components/composer-attachment-feedback";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
@@ -219,7 +221,7 @@ export function HomeComposer({
   }, []);
   // Attachments staged in the composer (cap 10, mirroring the chat composer);
   // handed to the opened chat on submit. Shared hook — home adds the limit
-  // toast + SR announce and defers refocus a tick (the chat composer is silent).
+  // toast + SR announce and defers refocus a tick.
   const {
     attachments,
     addFiles,
@@ -228,6 +230,9 @@ export function HomeComposer({
     handlePaste,
     dropActive,
     dropHandlers,
+    notice: attachmentNotice,
+    dismissNotice: dismissAttachmentNotice,
+    isReading: attachmentsReading,
   } = useAttachmentStaging({
     onLimit: () => onToast("Attachment limit reached (10)."),
     onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
@@ -323,7 +328,7 @@ export function HomeComposer({
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
-  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId);
+  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId, modelState?.runtime, runtimeHost);
   const runtimeModelOptions = runtimeModelInventory.models;
   const runtimeOwnsDefault = runtimeModelInventory.defaultOwner === "runtime";
   const effectiveModel =
@@ -576,7 +581,7 @@ export function HomeComposer({
     const prompt = (promptOverride ?? text).trim();
     // Allow an attachments-only send (chat can carry files with no text); every
     // other path still needs a prompt and is guarded per-destination below.
-    if ((!prompt && attachments.length === 0) || sending) return;
+    if ((!prompt && attachments.length === 0) || sending || attachmentsReading) return;
 
     // Slash commands bypass the destination model entirely — same contract
     // as the chat composer's slash dispatch.
@@ -829,6 +834,7 @@ export function HomeComposer({
     waitForRuntimeWrite,
     sending,
     attachments,
+    attachmentsReading,
     clearDraft,
     clearAttachments,
     pushHistory,
@@ -929,7 +935,7 @@ export function HomeComposer({
             ariaLabel="Models"
             items={modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
             activeIndex={slashIdx}
-            footer="↑↓ navigate · Enter switch · Esc cancel"
+            footer={<><ModelInventoryFeedback runtime={modelHarness} modelInventory={runtimeModelInventory} modelCount={runtimeModelOptions.length} /><span>↑↓ navigate · Enter switch · Esc cancel</span></>}
             onHover={setSlashIdx}
             onPick={(i) => {
               const m = modelOptions[i];
@@ -1017,14 +1023,23 @@ export function HomeComposer({
 
         {/* Staged attachments — chat-style strip above the textarea, plus a
             count + clear-all header (each chip has its own remove control). */}
+        <ComposerAttachmentFeedback
+          notice={attachmentNotice}
+          reading={attachmentsReading}
+          onDismiss={() => { dismissAttachmentNotice(); textareaRef.current?.focus(); }}
+        />
         {attachments.length > 0 && (
           <div className="hc-attachments-wrap">
             <div className="hc-attachments-head">
               <span className="hc-attachments-count">{attachments.length}/10 attached</span>
               <button
                 type="button"
-                className="hc-attachments-clear"
-                onClick={clearAttachments}
+                className="hc-attachments-clear focus-ring"
+                onClick={() => {
+                  clearAttachments();
+                  announce("Attachments cleared.");
+                  textareaRef.current?.focus();
+                }}
                 disabled={sending}
               >
                 Clear all
@@ -1044,8 +1059,12 @@ export function HomeComposer({
                 <span className="hc-attachment-name" title={att.name}>{att.name}</span>
                 <button
                   type="button"
-                  className="hc-attachment-remove"
-                  onClick={() => removeAttachment(att.id)}
+                  className="hc-attachment-remove composer-attachment-remove focus-ring"
+                  onClick={() => {
+                    removeAttachment(att.id);
+                    announce(`Removed ${att.name}.`);
+                    textareaRef.current?.focus();
+                  }}
                   aria-label={`Remove ${att.name}`}
                   title="Remove"
                 >
@@ -1222,7 +1241,7 @@ export function HomeComposer({
                 onClick={() => void handleSubmit()}
                 disabled={
                   (!text.trim() && attachments.length === 0) ||
-                  sending
+                  attachmentsReading || sending
                 }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
@@ -1297,6 +1316,7 @@ export function HomeComposer({
               runtime={selectedRuntime}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}
+              modelInventory={runtimeModelInventory}
               onPickRuntime={handleSelectRuntime}
               onPickModel={handleSelectModel}
               modelCapabilities={modelCapabilities}

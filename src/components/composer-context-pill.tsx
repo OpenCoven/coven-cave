@@ -1,21 +1,13 @@
 "use client";
 
 import "@/styles/cave-composer.css";
+import "@/styles/composer-context-controls.css";
 
-// ComposerContextChips — adaptive context controls (cave-g21f):
-// Placed in the new-chat composer footer and active-chat header. Project,
-// (for repo-rooted chats) worktree/branch, runtime, model, and the selected
-// model's reported controls (Thinking · Speed, #5896) ride as independent,
-// individually labelled chips. Each opens its own picker popover anchored to
-// the chip itself (ProjectPickerPopover, ComposerRuntimePopover,
-// ComposerModelPopover, ComposerModelControlPopover, GitBranchMenuPopover), so
-// every workflow — project switching + add-project, runtime switching, model
-// switching, thinking/speed, branch switch / new worktree / PR open /
-// git-changes drill-through — stays one click away. This replaced the combined
-// "Project · Model · branch" pill and its hub popover (2026-07-22); the
-// combined "Runtime · Model" chip split on 2026-10-09.
+// Primary context stays in view. Branch/worktree and capability-reported
+// Thinking/Speed controls live in a quiet disclosure, retaining their own
+// labelled pickers, values and focus-return anchors on every composer.
 
-import { useMemo, useRef, useState, type RefObject } from "react";
+import { useId, useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
@@ -56,6 +48,8 @@ export type ComposerContextView =
   | "worktree"
   | `control:${ModelControlFamily}`;
 
+import type { RuntimeModelInventoryResult } from "@/lib/use-runtime-model-options";
+
 export type ComposerContextProps = {
   projects: CaveProject[];
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
@@ -79,6 +73,7 @@ export type ComposerContextProps = {
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
+  modelInventory?: RuntimeModelInventoryResult;
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
   /** cave-pkapw: the session's current model when it differs from the
@@ -250,6 +245,7 @@ export function ComposerContextPickers({
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
+        modelInventory={context.config.modelInventory}
         onPickModel={context.config.onPickModel}
         promotableModel={context.config.promotableModel ?? null}
         onPromoteModelToDefault={context.config.onPromoteModelToDefault}
@@ -279,6 +275,9 @@ export function ComposerContextPickers({
 }
 
 export function ComposerContextChips(props: ComposerContextProps) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsId = useId();
+  const optionsRef = useRef<HTMLButtonElement | null>(null);
   const [menu, setMenu] = useState<ComposerContextView>(null);
   const showProject = props.showProject ?? true;
   const projectRef = useRef<HTMLButtonElement | null>(null);
@@ -305,7 +304,20 @@ export function ComposerContextChips(props: ComposerContextProps) {
   const modelLabel = context.modelLabel ?? context.runtimeName;
 
   return (
-    <div className="cave-context-controls" role="group" aria-label={props.ariaLabel ?? "Chat context"}>
+    <div
+      className="cave-context-controls cave-context-controls--minimal"
+      role="group"
+      aria-label={props.ariaLabel ?? "Chat context"}
+      onKeyDown={(event) => {
+        // Picker portals own their first Escape. A second Escape folds the row.
+        if (event.key === "Escape" && optionsOpen && !menu && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOptionsOpen(false);
+          optionsRef.current?.focus();
+        }
+      }}
+    >
       {showProject ? (
         <button
           ref={projectRef}
@@ -320,7 +332,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
               ? `${context.selectedProject.root}${projectAccess ? ` · ${projectAccess} access` : ""}`
               : context.emptyProjectLabel
           }
-          onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
+          onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "project" ? null : "project")); }}
         >
           <span className="cave-context-chip__lead" aria-hidden>
             {context.selectedProject ? (
@@ -338,6 +350,55 @@ export function ComposerContextChips(props: ComposerContextProps) {
           <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
         </button>
       ) : null}
+      <button
+        ref={runtimeRef}
+        type="button"
+        className="cave-context-chip cave-context-chip--runtime focus-ring"
+        disabled={props.disabled || context.config.modelDisabled}
+        aria-haspopup="menu"
+        aria-expanded={menu === "runtime"}
+        aria-label={`Runtime: ${context.runtimeName} — change runtime`}
+        title={`Runtime: ${context.runtimeName}`}
+        onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "runtime" ? null : "runtime")); }}
+      >
+        <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
+          <RuntimeLogo runtime={context.config.runtime} size={13} />
+        </span>
+        <span className="cave-context-chip__text">{context.runtimeName}</span>
+        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+      </button>
+      <button
+        ref={modelRef}
+        type="button"
+        className="cave-context-chip cave-context-chip--model focus-ring"
+        disabled={props.disabled || context.config.modelDisabled}
+        aria-haspopup="menu"
+        aria-expanded={menu === "model"}
+        aria-label={`Model: ${modelLabel} — change model`}
+        title={`Model: ${modelLabel}`}
+        onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "model" ? null : "model")); }}
+      >
+        <span className="cave-context-chip__lead" aria-hidden>
+          <Icon name="ph:cube" width={13} aria-hidden />
+        </span>
+        <span className="cave-context-chip__text">{modelLabel}</span>
+        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+      </button>
+      {(context.hasGit || context.controlChips.length > 0) ? (
+        <button
+          ref={optionsRef}
+          type="button"
+          className="cave-context-chip cave-context-chip--options focus-ring"
+          aria-label="More composer options"
+          title="Branch, thinking and speed"
+          aria-expanded={optionsOpen}
+          aria-controls={optionsId}
+          onClick={(event) => { event.currentTarget.focus(); setMenu(null); setOptionsOpen((open) => !open); }}
+        >
+          <Icon name="ph:sliders-horizontal" width={14} aria-hidden />
+        </button>
+      ) : null}
+      <div id={optionsId} className="cave-context-controls__secondary" hidden={!optionsOpen}>
       {context.hasGit && context.worktree ? (
         <button
           ref={worktreeRef}
@@ -348,7 +409,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
           aria-expanded={menu === "worktree"}
           aria-label={`Worktree: ${context.worktree} — open worktree actions`}
           title={`Worktree: ${context.worktree} · ${context.dirtyLabel}`}
-          onClick={() => setMenu((c) => (c === "worktree" ? null : "worktree"))}
+          onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "worktree" ? null : "worktree")); }}
         >
           <span className="cave-context-chip__lead" aria-hidden>
             <Icon name="ph:tree-structure" width={13} aria-hidden />
@@ -367,7 +428,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
           aria-expanded={menu === "branch"}
           aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
           title={`Branch: ${context.branch} · ${context.dirtyLabel}`}
-          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
+          onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "branch" ? null : "branch")); }}
         >
           <span className="cave-context-chip__lead" aria-hidden>
             <Icon name="ph:git-branch" width={13} aria-hidden />
@@ -379,40 +440,6 @@ export function ComposerContextChips(props: ComposerContextProps) {
           <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
         </button>
       ) : null}
-      <button
-        ref={runtimeRef}
-        type="button"
-        className="cave-context-chip cave-context-chip--runtime focus-ring"
-        disabled={props.disabled || context.config.modelDisabled}
-        aria-haspopup="menu"
-        aria-expanded={menu === "runtime"}
-        aria-label={`Runtime: ${context.runtimeName} — change runtime`}
-        title={`Runtime: ${context.runtimeName}`}
-        onClick={() => setMenu((c) => (c === "runtime" ? null : "runtime"))}
-      >
-        <span className="cave-context-chip__lead cave-runtime-chip__logo" aria-hidden>
-          <RuntimeLogo runtime={context.config.runtime} size={13} />
-        </span>
-        <span className="cave-context-chip__text">{context.runtimeName}</span>
-        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-      </button>
-      <button
-        ref={modelRef}
-        type="button"
-        className="cave-context-chip cave-context-chip--model focus-ring"
-        disabled={props.disabled || context.config.modelDisabled}
-        aria-haspopup="menu"
-        aria-expanded={menu === "model"}
-        aria-label={`Model: ${modelLabel} — change model`}
-        title={`Model: ${modelLabel}`}
-        onClick={() => setMenu((c) => (c === "model" ? null : "model"))}
-      >
-        <span className="cave-context-chip__lead" aria-hidden>
-          <Icon name="ph:cube" width={13} aria-hidden />
-        </span>
-        <span className="cave-context-chip__text">{modelLabel}</span>
-        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-      </button>
       {/* Thinking · Speed: one chip per control the runtime reports for the
           selected model (#5896). They come and go with the capability report,
           so a model without a Speed flag simply shows no Speed chip. */}
@@ -432,7 +459,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
             aria-expanded={menu === view}
             aria-label={`${label}: ${valueLabel} — change ${label.toLowerCase()}`}
             title={`${label}: ${valueLabel} · ${controlDeliveryNote(capability)}`}
-            onClick={() => setMenu((c) => (c === view ? null : view))}
+            onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === view ? null : view)); }}
           >
             <span className="cave-context-chip__lead" aria-hidden>
               <ControlChipIcon capability={capability} />
@@ -442,6 +469,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
           </button>
         );
       })}
+
+      </div>
 
       {showProject ? (
         <ProjectPickerPopover
@@ -481,6 +510,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
+        modelInventory={context.config.modelInventory}
         onPickModel={context.config.onPickModel}
         promotableModel={context.config.promotableModel ?? null}
         onPromoteModelToDefault={context.config.onPromoteModelToDefault}

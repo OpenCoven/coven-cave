@@ -23,6 +23,8 @@ import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { ChatThreadsSheet } from "@/components/chat-threads-sheet";
 import { ChatPhoneHeaderControlsContext, type ChatPhoneHeaderControlsValue } from "@/components/chat-phone-header-controls";
+import { ChatThreadRail } from "@/components/chat-thread-rail";
+import { useMeasuredWidth } from "@/lib/use-measured-width";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
 import {
   CHAT_RAIL_TOGGLE_EVENT,
@@ -297,6 +299,8 @@ export function ChatSurface({
     [],
   );
   const surfaceRef = useRef<HTMLElement | null>(null);
+  const surfaceWidth = useMeasuredWidth(surfaceRef);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const consumedPendingActionNonce = useRef<number | null>(null);
   const snapshot = useChatDebugSnapshot();
   const activeSession = snapshot.session;
@@ -319,7 +323,8 @@ export function ChatSurface({
     [onSetActiveFamiliar, routerRef],
   );
   const railController = useWorkspaceRailController({
-    containerRef: surfaceRef,
+    // Measure the room left AFTER the resizable threads rail.
+    containerRef: contentRef,
     projectRoot: railProjectRoot,
     sessionId: snapshot.sessionId ?? null,
     sessionRunning,
@@ -579,7 +584,7 @@ export function ChatSurface({
         </button>
       ) : null}
       {railAvailable && railOpen ? (
-        <aside className="chat-inner-rail" aria-label="Chat threads">
+        <ChatThreadRail availableWidth={surfaceWidth}>
           <SidebarChatsSection
             sessions={browseSessions}
             reflectionSourceSessions={sessions}
@@ -595,9 +600,10 @@ export function ChatSurface({
             onSessionsChanged={onSessionsChanged}
             onOpenUrl={onOpenUrl}
           />
-        </aside>
+        </ChatThreadRail>
       ) : null}
       {/* Main content */}
+      <div ref={contentRef} className="chat-surface__content flex min-h-0 min-w-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
             Chat keeps Projects discoverable as a first-class tab. The familiar
@@ -716,7 +722,7 @@ export function ChatSurface({
             defaultLayout={defaultLayout}
             onLayoutChanged={onLayoutChanged}
           >
-            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
+            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize={showCodeRail ? "400px" : "45%"}>
               <div className="min-h-0 min-w-0 flex-1">
                 <ChatRouter
                   ref={routerRef}
@@ -788,6 +794,7 @@ export function ChatSurface({
           onOpen={railController.openChanges}
         />
       )}
+      </div>
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
           a full-height right-edge slide-over sheet over the full-screen chat
           instead of a third-column Panel. Opened by the toggle button in the

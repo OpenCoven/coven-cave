@@ -128,10 +128,10 @@ assert.match(
   "cave-chat-meta-line CSS rule is defined",
 );
 
-assert.match(
+assert.doesNotMatch(
   styles,
-  /\.cave-chat-meta-line--streaming[\s\S]*\.cave-chat-meta-line--failed/,
-  "Meta line has streaming/failed state modifiers",
+  /\.cave-chat-meta-line--(?:streaming|failed|offline)[^{]*\{[^}]*color:/,
+  "State colors belong to the status pill, not historical provenance",
 );
 
 assert.match(
@@ -142,7 +142,7 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?font-size:\s*11\.5px/,
+  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?font-size:\s*var\(--text-xs\)/,
   "Header meta is the demoted context line — a notch under the title, not fine print",
 );
 assert.doesNotMatch(

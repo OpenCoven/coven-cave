@@ -7,6 +7,7 @@ import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObse
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
+import { ModelInventoryFeedback } from "@/components/model-inventory-feedback";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import dynamic from "next/dynamic";
@@ -364,6 +365,7 @@ import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { ComposerAttachmentFeedback } from "@/components/composer-attachment-feedback";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
@@ -1634,10 +1636,10 @@ function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: str
   const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
   return (
     <span className="cave-composer-context-meter" data-level={meter.level} title={title}>
-      <meter className="cave-composer-context-meter__track" min={0} max={100} value={meter.percent}>
+      <meter className="cave-composer-context-meter__track" aria-label={title} min={0} max={100} value={meter.percent}>
         {meter.percent}%
       </meter>
-      <span>{`Context ${meter.percent}%`}</span>
+      <span>{`Context ${meter.known ? "" : "≈"}${meter.percent}%`}</span>
     </span>
   );
 }
@@ -1661,11 +1663,11 @@ function UsagePlanChip({ usagePlan }: { usagePlan: ChatUsagePlanSnapshot | null 
   );
 }
 
-/** Single header row: editable title left, harness/model/status meta right.
- *  Ephemeral state (streaming, failed, daemon offline) recolors the line and
- *  rewrites the meta string instead of emitting separate pills/bars. */
+/** Single header row: title and quiet provenance, with one status pill
+ *  carrying the response state and transport indicator. */
 function MetaLine({
   session,
+  hasResponse,
   linkedContext,
   busy,
   lifecycle,
@@ -1685,6 +1687,7 @@ function MetaLine({
   children,
 }: {
   session: SessionRow | null;
+  hasResponse: boolean;
   linkedContext: ChatLinkedContext | null;
   busy: boolean;
   lifecycle: ChatTurnLifecycle | null;
@@ -1708,8 +1711,7 @@ function MetaLine({
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
   // The pill speaks the list's five-state vocabulary; `state` above stays the
-  // four-way STYLING key this row has always used (it drives the row's tint
-  // and the live dot). Two derivations of one truth, not two truths: both read
+  // four-way presentation key for provenance and recovery actions. Both read
   // the same lifecycle, and the pill is what the user is told.
   const sessionState = chatSessionStateFromLifecycle({ lifecycle, busy, error, daemonRunning });
   // Session-settle flare (cave-q06w): the summoning bloom fires when a LONG
@@ -1737,7 +1739,9 @@ function MetaLine({
   const metaHarness = identity
     ? `${identity.harness}${identity.version ? ` ${identity.version}` : " · Version not reported"}`
     : "Runtime not recorded";
-  const segments = metaLineSegments({
+  // Historical diagnostics describe a response, never the selection for an
+  // unsent message. Keep first-run settings in the composer until a run exists.
+  const segments = hasResponse ? metaLineSegments({
     state,
     lifecycle,
     harness: metaHarness,
@@ -1747,7 +1751,7 @@ function MetaLine({
     durationMs,
     usage,
     costUsd,
-  });
+  }) : [];
   // Settled headers keep runtime and model visible in the identity line;
   // the hover cluster carries directory, duration, and usage only.
   const provenanceSegments =
@@ -1777,7 +1781,6 @@ function MetaLine({
     // text that actually changes keeps the announcements and takes the
     // controls out of them (cave-fh9so).
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
-      {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
       {/* Chat-revamp 1b: the session's familiar leads the header as a small
           circular avatar, so the title row reads avatar · title · meta. */}
       <span className="cave-chat-header-avatar" aria-hidden="true">
@@ -1815,8 +1818,8 @@ function MetaLine({
         {state === "complete" ? (
           <span className="cave-chat-meta-line__identity">
             {familiar.display_name}
-            {metaHarness ? ` · ${metaHarness}` : ""}
-            {metaModel ? ` · ${responseModelLabel(metaModel)}` : " · Model not reported"}
+            {hasResponse ? ` · ${metaHarness}` : ""}
+            {hasResponse ? (metaModel ? ` · ${responseModelLabel(metaModel)}` : " · Model not reported") : null}
             {gitBranch ? (
               <>
                 {" · "}
@@ -2832,6 +2835,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   transcriptGroupCountRef.current = groupedTurns.length;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const latestResponseControlRef = useRef<HTMLButtonElement | null>(null);
   // The retired activity-map toggle wrote `cave:chat:thread-instruments`, and an
   // opt-out "0" can still be sitting in a browser from an older build. Nothing
   // reads it any more — the rail is automatic (cave-5m5hv) — so clear it once
@@ -3339,7 +3343,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Attachments staged in the composer (cap 10) with drag-and-drop
   // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
   // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
-  // Shared hook — chat stays silent on cap/add, unlike home's toast+announce.
+  // Announce staging changes without moving focus away from the draft.
   const {
     attachments,
     addFiles,
@@ -3348,8 +3352,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     handlePaste,
     dropActive,
     dropHandlers,
+    notice: attachmentNotice,
+    dismissNotice: dismissAttachmentNotice,
+    isReading: attachmentsReading,
   } = useAttachmentStaging({
     focus: () => inputRef.current?.focus(),
+    onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}.`),
+    onLimit: () => announce("Attachment limit reached. Remove a file before adding another."),
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
@@ -3867,7 +3876,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
-  const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id);
+  const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id, modelState?.runtime ?? session?.runtime, runtimeHost);
   const composerModelOptions = composerModelInventory.models;
   const composerRuntimeOwnsDefault = composerModelInventory.defaultOwner === "runtime";
   const composerModelValue =
@@ -6355,6 +6364,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
+    if (attachmentsReading) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
       setProjectRootRequired(true);
@@ -7500,6 +7510,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const hasStagedComposerInput =
     input.length > 0 ||
     attachments.length > 0 ||
+    attachmentsReading ||
+    Boolean(attachmentNotice) ||
     replyTarget !== null ||
     taskArmed ||
     dictation.listening ||
@@ -7534,6 +7546,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runtime={modelHarness}
       modelValue={composerModelValue}
       modelOptions={composerModelOptions}
+      modelInventory={composerModelInventory}
       onPickRuntime={handleSelectRuntime}
       onPickModel={handleSelectModel}
       promotableModel={promotableModel}
@@ -7672,6 +7685,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   })}
                 </ul>
                 <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  <ModelInventoryFeedback runtime={modelHarness} modelInventory={composerModelInventory} modelCount={composerModelOptions.length} />
                   {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
                 </div>
               </div>
@@ -7882,6 +7896,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     runtime: modelHarness,
                     modelValue: composerModelValue,
                     modelOptions: composerModelOptions,
+                    modelInventory: composerModelInventory,
                     onPickRuntime: handleSelectRuntime,
                     onPickModel: handleSelectModel,
                     modelDisabled: busy,
@@ -7952,6 +7967,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </button>
                 ) : null}
               </div>
+              <ComposerAttachmentFeedback
+                notice={attachmentNotice}
+                reading={attachmentsReading}
+                onDismiss={() => {
+                  dismissAttachmentNotice();
+                  // Clearing the last recovery notice may hide an empty dock
+                  // while reading earlier output. Focus the surviving control.
+                  requestAnimationFrame(() => {
+                    (inputRef.current ?? latestResponseControlRef.current)?.focus();
+                  });
+                }}
+              />
               {attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                   {attachments.map((attachment) => (
@@ -7966,8 +7993,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       <span className="shrink-0 text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
                       <button
                         type="button"
-                        onClick={() => removeAttachment(attachment.id)}
-                        className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                        onClick={() => {
+                          removeAttachment(attachment.id);
+                          announce(`Removed ${attachment.name}.`);
+                          inputRef.current?.focus();
+                        }}
+                        className="composer-attachment-remove focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                         title={`Remove ${attachment.name}`}
                         aria-label={`Remove ${attachment.name}`}
                       >
@@ -8123,6 +8154,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onClick={() => void send()}
                         data-typing={input.trim() ? "true" : undefined}
                         className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
+                        disabled={attachmentsReading}
                         title="Queue message"
                         aria-label="Queue message"
                       >
@@ -8161,7 +8193,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       <button
                         type="button"
                         onClick={() => void send()}
-                        disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
+                        disabled={attachmentsReading || !projectLaunchReady || (!input.trim() && attachments.length === 0)}
                         data-typing={input.trim() ? "true" : undefined}
                         className="cave-composer-send focus-ring transition-colors"
                         title={`Send message (${keys.enter})`}
@@ -8269,6 +8301,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ) : null}
         <MetaLine
           session={session ?? launchStubSession}
+          hasResponse={Boolean(activePendingTurn || lastSettledAssistantTurn)}
           linkedContext={linkedContext}
           busy={busy}
           lifecycle={activeLifecycle}
@@ -8587,6 +8620,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {/* Released-reader response control (CHAT-D10-03). */}
         {!following && (
           <button
+            ref={latestResponseControlRef}
             type="button"
             className="cave-new-response-content focus-ring"
             onClick={() => {
