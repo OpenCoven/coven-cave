@@ -39,7 +39,7 @@ import {
 } from "@/components/chat-start-from-bands";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
-import { reviewRequestLabel } from "@/lib/chat-review-requests";
+import { reviewRequestLabel, reviewRequestSub } from "@/lib/chat-review-requests";
 import { useReviewRequests } from "@/lib/use-review-requests";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
@@ -322,7 +322,7 @@ export function ChatNewDashboard({
         id: row.id,
         title: row.title,
         badge: row.badge,
-        sub: startFromSub([row.need]),
+        sub: startFromSub(reviewRequestSub(row)),
         ariaLabel: reviewRequestLabel(row),
         hint: `Review ${row.title}`,
         onPick: () => startReview(familiar.id, row.url),

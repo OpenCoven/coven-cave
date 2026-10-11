@@ -32,7 +32,7 @@ const SESSION = {
   updated_at: ISO,
 };
 
-function itemPayload(merged: boolean) {
+function itemPayload(merged: boolean, viewerIsAuthor = false) {
   return {
     ok: true,
     title: "feat: ship the thing",
@@ -61,11 +61,17 @@ function itemPayload(merged: boolean) {
       mergeable: true,
       mergeableState: "clean",
       reviews: { approved: 1, changesRequested: 0, commented: 0 },
+      // #5930: the token's login wrote this PR (GitHub refuses the author's
+      // approve and request-changes).
+      viewerIsAuthor,
     },
   };
 }
 
-async function boot(page: Page, opts: { mergedRef: { merged: boolean }; mergeCalls: unknown[] }) {
+async function boot(
+  page: Page,
+  opts: { mergedRef: { merged: boolean }; mergeCalls: unknown[]; viewerIsAuthor?: boolean },
+) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
@@ -97,7 +103,9 @@ async function boot(page: Page, opts: { mergedRef: { merged: boolean }; mergeCal
       },
     }),
   );
-  await page.route("**/api/github/item**", (route) => route.fulfill({ json: itemPayload(opts.mergedRef.merged) }));
+  await page.route("**/api/github/item**", (route) =>
+    route.fulfill({ json: itemPayload(opts.mergedRef.merged, opts.viewerIsAuthor === true) }),
+  );
   await page.route("**/api/github/checks**", (route) =>
     route.fulfill({
       json: {
@@ -226,6 +234,36 @@ test.describe("github chat cards", () => {
     await input.press("Escape");
     await expect(input).toHaveValue("review ");
     await expect(prCard).not.toContainText("SUBCOMMAND");
+    expect(mergeCalls.length).toBe(0);
+  });
+
+  // #5930: GitHub rejects APPROVE and REQUEST_CHANGES from a PR's author, so
+  // on your own PR the composer offers Comment (and Merge) only, says why, and
+  // its palette cannot reach the refused verbs.
+  test("your own PR offers Comment only and says why", async ({ page }) => {
+    const mergedRef = { merged: false };
+    const mergeCalls: unknown[] = [];
+    await boot(page, { mergedRef, mergeCalls, viewerIsAuthor: true });
+    await page.locator(".chat-sidebar").getByText("Ship the thing", { exact: false }).first().click();
+    const prCard = page.locator('[data-gh-kind="pr"]').first();
+    await expect(prCard).toBeVisible({ timeout: 15_000 });
+
+    const pill = prCard.getByRole("button", { name: "Reply to acme/rocket#7" });
+    await expect(pill).toBeVisible({ timeout: 60_000 });
+    await pill.click();
+
+    await expect(prCard.getByRole("button", { name: "Comment", exact: true })).toBeVisible();
+    await expect(prCard.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
+    await expect(prCard.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+    await expect(prCard.getByRole("button", { name: "Request changes", exact: true })).toHaveCount(0);
+    await expect(prCard).toContainText("GitHub doesn't let its author approve or request changes");
+
+    const input = prCard.getByLabel("Reply to acme/rocket#7");
+    await input.fill("/review ");
+    await expect(prCard).toContainText("SUBCOMMAND");
+    await expect(prCard).toContainText("review comment, no verdict");
+    await expect(prCard).not.toContainText("request-changes");
+    await expect(prCard).not.toContainText("approve with no changes requested");
     expect(mergeCalls.length).toBe(0);
   });
 });

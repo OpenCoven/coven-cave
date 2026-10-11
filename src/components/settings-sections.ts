@@ -56,6 +56,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Chat", keywords: "chat stop phrases cancel halt abort interrupt running task" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
+  { section: "general", group: "Reviews", keywords: "reviews pull requests own my self-review github launcher" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "voice", group: "Default for new familiars", keywords: "voice provider model default new familiar tts speech" },
   { section: "voice", group: "ElevenLabs", keywords: "elevenlabs key vault saved voices tts models cloud" },

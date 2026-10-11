@@ -30,6 +30,7 @@ import { formatHostWorkspaceText, parseHostWorkspaceText } from "./settings-mult
 import { showSettingsSavedAfterPreferencesFlush, showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 import { SettingsPage, SettingsRow } from "./settings-layout";
+import { ReviewsSettingsGroup } from "./settings-reviews";
 import { GeneralSettingsDataProvider, useGeneralSettingsData, type BackupSyncOverview } from "./settings-general-data";
 const AppearanceSection = dynamic(() => import("./settings-appearance").then((m) => m.AppearanceSection), { loading: SettingsSectionFallback });
 
@@ -366,6 +367,7 @@ function GeneralSection() {
           <CelebrationsToggle />
         </div>
       </SettingsGroup>
+      <ReviewsSettingsGroup />
       <BackupSettingsGroup />
     </SettingsPage>
     </GeneralSettingsDataProvider>

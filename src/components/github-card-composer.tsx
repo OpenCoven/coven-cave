@@ -41,6 +41,7 @@ import {
 import { copyText } from "@/lib/clipboard";
 import { clearDraft, readDraft, writeDraft } from "@/lib/gh-card-draft";
 import { generateReviewDraft, type GhDraftScopes } from "@/lib/gh-review-draft";
+import { OWN_PR_REVIEW_NOTE } from "@/lib/own-pr-review";
 import "@/styles/gh-card-composer.css";
 
 export type GhComposerItem = {
@@ -61,6 +62,9 @@ export type GhComposerItem = {
     baseRef: string | null;
     commits: number | null;
     reviews: { approved: number; changesRequested: number } | null;
+    /** You wrote this PR (#5930): GitHub refuses the author's approve and
+     *  request-changes, so only Comment (and merge) is offered. */
+    viewerIsAuthor?: boolean | null;
   } | null;
 };
 
@@ -206,7 +210,14 @@ export function GitHubCardComposer({
 
   const open = item.state === "open" && !item.merged;
   const mergeable = item.isPull && open;
+  // Your own PR (#5930): GitHub rejects the author's approve and
+  // request-changes, so neither is offered and the sheet says why.
+  const ownPull = item.isPull && item.pull?.viewerIsAuthor === true;
   const unresolved = (threads ?? []).filter((t) => !t.isResolved);
+
+  useEffect(() => {
+    if (ownPull && (mode === "approve" || mode === "request")) setMode("comment");
+  }, [ownPull, mode]);
 
   // ── draft persistence ─────────────────────────────────────────────────────
 
@@ -353,6 +364,7 @@ export function GitHubCardComposer({
         })),
         familiars: familiar ? [{ id: familiar.id, name: familiar.name }] : [],
         commitCount: item.pull?.commits ?? null,
+        viewerIsAuthor: item.pull?.viewerIsAuthor ?? null,
       }),
     [repo, number, item, checks, unresolved, palette, labels, familiar],
   );
@@ -1205,10 +1217,17 @@ export function GitHubCardComposer({
           />
         ) : null}
 
+        {ownPull && mergeable ? <p className="ghc-own-note">{OWN_PR_REVIEW_NOTE}</p> : null}
+
         {/* ── footer ── */}
         <div className="ghc-foot">
           <div className="ghc-seg ghc-seg--sunken">
-            {(mergeable ? (["comment", "approve", "request", "merge"] as Mode[]) : (["comment"] as Mode[])).map((m) => (
+            {(mergeable
+              ? ownPull
+                ? (["comment", "merge"] as Mode[])
+                : (["comment", "approve", "request", "merge"] as Mode[])
+              : (["comment"] as Mode[])
+            ).map((m) => (
               <button
                 key={m}
                 type="button"

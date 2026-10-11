@@ -366,6 +366,38 @@ can be recovered. It removes the **additional comparison server** dependency.
 extractor; `canvas-preview-csp-chromium.test.ts` reopens that example in fresh
 offline browser contexts after shutting down its fixture server.
 
+## §12 Reviewing your own pull requests (#5930)
+
+**Reviews includes your own PRs.** The new-session launcher's Reviews group
+used to admit only review requests. It now also offers your own open pull
+requests while **Include my pull requests in Reviews** is on (Settings ›
+General › Reviews, `github.reviewOwnPrs`, default on).
+
+- `/api/github/assigned` marks every row from its `author:@me` search
+  `authored: true`, and both searches keep GitHub's `draft` flag. The
+  dedupe-by-URL loop keeps the first copy it sees, so it merges `authored`
+  onto an assigned copy of a PR you also wrote.
+- `reviewRequests(items, { includeOwn })` in `src/lib/chat-review-requests.ts`
+  admits open `kind: "pr"` items with `authored: true`. An assigned PR someone
+  else wrote still does not qualify.
+- Your rows carry the badge `yours` and the need `self-review`. Your draft
+  reads `draft · blocked`. Review requests sort first and your own PRs after
+  them, so a review someone is waiting on is never buried under your own work.
+
+**On your own PR, the review verbs are Comment only.** GitHub rejects APPROVE
+and REQUEST_CHANGES from a PR's author ("Can not approve your own pull
+request"). The surfaces offer only what GitHub accepts:
+
+- `/api/github/item?pull=1` and `/api/github/checks` report `viewerIsAuthor`.
+  The token's login comes from one cached REST `/user` read per token
+  (`src/lib/server/github-viewer.ts`). The routes never use GraphQL, whose budget
+  is shared by every agent signed in as the user. `null` means unknown, and an
+  unknown viewer keeps every verb.
+- The card composer drops Approve and Request changes on your own PR, and so
+  does its `/review` palette group, so `parseCommand` cannot decode them either.
+  The Code PR panel drops Approve. Merge stays, because GitHub lets the author
+  merge. Each surface shows the one-line reason from `src/lib/own-pr-review.ts`.
+
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
