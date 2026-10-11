@@ -241,7 +241,7 @@ test("interrupted responses preserve partial text and keep Retry visible", async
   await expect(bubble.getByRole("button", { name: "Retry response" })).toBeVisible();
 });
 
-test("run skills open one complete ledger and reading older output hides the composer", async ({
+test("run skills open one complete ledger and return focus after closing", async ({
   page,
 }) => {
   await setup(page);
@@ -263,16 +263,25 @@ test("run skills open one complete ledger and reading older output hides the com
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(verificationCard).toBeFocused();
+});
+
+test("reading older output retains the same visible composer", async ({ page }) => {
+  await setup(page);
+  await page.goto("/?mode=chat#chat-s-response-complete", { waitUntil: "domcontentloaded" });
 
   const mainChat = page.getByTestId("chat-main");
   const transcript = mainChat.locator(".cave-chat-transcript");
   const composer = mainChat.locator(".cave-composer-dock");
-  await expect(composer).toBeVisible();
+  await expect(composer).toBeVisible({ timeout: 30_000 });
+  const originalComposer = await composer.elementHandle();
   await transcript.hover();
   await page.mouse.wheel(0, -900);
-  await expect(composer).toHaveCount(0);
+  await expect(mainChat.getByRole("button", { name: "Latest" })).toBeVisible();
+  await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
   await mainChat.getByRole("button", { name: "Latest" }).click();
   await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
 });
 
 test("the header archive button sends one archive mutation and leaves the session", async ({

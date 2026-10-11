@@ -1,51 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { shouldShowDockedComposer } from "./chat-composer-visibility.ts";
 
-test("keeps the dock visible while following the latest turn", () => {
-  assert.equal(
-    shouldShowDockedComposer({
-      following: true,
-      hasStagedInput: false,
-      releasedScrollDistance: 800,
-      composerHeight: 160,
-    }),
-    true,
-  );
+test("writable chats always retain their dock; flow executions remain read-only", () => {
+  assert.equal(shouldShowDockedComposer({ readOnly: false }), true);
+  assert.equal(shouldShowDockedComposer({ readOnly: true }), false);
 });
 
-test("keeps staged input visible regardless of scroll distance", () => {
-  assert.equal(
-    shouldShowDockedComposer({
-      following: false,
-      hasStagedInput: true,
-      releasedScrollDistance: 800,
-      composerHeight: 160,
-    }),
-    true,
-  );
-});
-
-test("hides only after released scroll passes the measured dock height", () => {
-  const input = {
-    following: false,
-    hasStagedInput: false,
-    composerHeight: 160,
-  };
-
-  assert.equal(shouldShowDockedComposer({ ...input, releasedScrollDistance: 159 }), true);
-  assert.equal(shouldShowDockedComposer({ ...input, releasedScrollDistance: 160 }), true);
-  assert.equal(shouldShowDockedComposer({ ...input, releasedScrollDistance: 161 }), false);
-});
-
-test("fails closed when no dock height has been measured", () => {
-  assert.equal(
-    shouldShowDockedComposer({
-      following: false,
-      hasStagedInput: false,
-      releasedScrollDistance: 0,
-      composerHeight: 0,
-    }),
-    false,
-  );
+test("scrolling and dock measurements cannot change composer mounting", () => {
+  const source = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+  assert.match(source, /const showDockedComposer = shouldShowDockedComposer\(\{ readOnly: flowBackedSession \}\);/);
+  assert.doesNotMatch(source, /setReleasedScrollDistance|setComposerHeight|composerDockRef/);
 });

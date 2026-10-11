@@ -262,7 +262,7 @@ describe("Flow execution history", () => {
     expect(list).toContain("Flow runs");
     expect(chat).not.toMatch(/title\.startsWith\("Flow/);
     expect(chat).toMatch(/if \(flowBackedSession\) \{[\s\S]{0,240}return;/);
-    expect(chat).toMatch(/!flowBackedSession && shouldShowDockedComposer/);
+    expect(chat).toMatch(/shouldShowDockedComposer\(\{ readOnly: flowBackedSession \}\)/);
     expect(chat).toContain("Discuss in Chat");
     // Flow transcript transport and fallback ownership now execute in
     // chat/history-sources.test.ts and chat/history-load.test.ts.

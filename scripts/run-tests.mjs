@@ -566,7 +566,10 @@ export const SUITES = {
     "src/lib/schedule-plan-model.test.ts",
     "src/lib/daily-report.test.ts",
     "src/lib/daily-note.test.ts",
+    "src/lib/daily-note-generation.test.ts",
+    "src/lib/server/familiar-note-generation.test.ts",
     "src/components/familiar-daily-notes.test.ts",
+    "src/components/familiar-note-generation-controls.test.tsx",
     "src/lib/dashboard-model.test.ts",
     "src/lib/dashboard-analytics.test.ts",
     "src/lib/activity-heatmap-window.test.ts",
@@ -863,6 +866,7 @@ export const SUITES = {
     "src/lib/image-generation.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-entries.test.ts",
+    "src/app/api/familiars/[id]/notes/generate/route.test.ts",
     "src/app/api/journal/route.test.ts",
     "src/app/api/running-activity/route.test.ts",
     "src/lib/journal.test.ts",
@@ -2231,6 +2235,10 @@ export const SUITE_PREFLIGHTS = {
 
 const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/meta-run-hygiene.test.ts",
+  // Daily-note generation imports application aliases and Next route modules.
+  "src/lib/daily-note-generation.test.ts",
+  "src/lib/server/familiar-note-generation.test.ts",
+  "src/app/api/familiars/[id]/notes/generate/route.test.ts",
   // the event-plane capability route resolves @/ and next/server (#5830)
   "src/app/api/events/capability/route.test.ts",
   // saved-history mapping uses the existing shared chat-turn-state contract
@@ -2660,6 +2668,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/familiar-note-generation-controls.test.tsx",
   "src/components/automations/ritual-finished-group.behavior.test.tsx",
   "src/components/chat-run-rail-lifecycle.test.tsx",
   "src/components/chat-turn-timeline.test.tsx",
