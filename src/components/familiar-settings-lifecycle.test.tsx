@@ -31,8 +31,11 @@ beforeEach(() => {
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
 });
 afterEach(() => { act(() => tree?.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
+function renderSettings(scrollWithPanel = false) {
+  return <FamiliarSettingsSection familiar={{ id: "nova", display_name: "Nova" } as ResolvedFamiliar} familiars={[]} allFamiliars={[]} scrollWithPanel={scrollWithPanel} />;
+}
 function setup() {
-  act(() => { tree = create(<FamiliarSettingsSection familiar={{ id: "nova", display_name: "Nova" } as ResolvedFamiliar} familiars={[]} allFamiliars={[]} />); });
+  act(() => { tree = create(renderSettings()); });
   act(() => tree.root.findByProps({ "data-action": "remove" }).props.onClick());
 }
 function tab(id: string) { act(() => tree.root.findByProps({ "data-tab": id }).props.onClick()); }
@@ -52,4 +55,16 @@ test("a pending removal commits once at its normal deadline while Identity is hi
   expect(remove).toHaveBeenCalledTimes(1);
   tab("identity"); tab("chat");
   expect(remove).toHaveBeenCalledTimes(1);
+});
+
+
+test("keyboard viewport changes retain a pending removal and its Undo", async () => {
+  setup();
+  act(() => tree.update(renderSettings(true)));
+  expect(remove).not.toHaveBeenCalled();
+  act(() => tree.update(renderSettings(false)));
+  expect(remove).not.toHaveBeenCalled();
+  act(() => tree.root.findByProps({ "data-action": "undo" }).props.onClick());
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(remove).not.toHaveBeenCalled();
 });

@@ -38,6 +38,7 @@ type Props = {
   allFamiliars: ResolvedFamiliar[];
   initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
+  scrollWithPanel?: boolean;
 };
 
 export function FamiliarSettingsSection(props: Props) {
@@ -45,7 +46,7 @@ export function FamiliarSettingsSection(props: Props) {
   return <FamiliarSettingsBody key={props.familiar.id} {...props} />;
 }
 
-function FamiliarSettingsBody({ familiar, familiars, allFamiliars, initialTab, onRosterChanged }: Props) {
+function FamiliarSettingsBody({ familiar, familiars, allFamiliars, initialTab, onRosterChanged, scrollWithPanel = false }: Props) {
   const { value: tab, select, show } = useSurfaceHistory<FamiliarSettingsTab>({
     id: `familiar:settings:${familiar.id}`,
     initial: initialTab && initialTab !== "projects" ? initialTab : "identity",
@@ -56,8 +57,8 @@ function FamiliarSettingsBody({ familiar, familiars, allFamiliars, initialTab, o
   const body = useRef<HTMLDivElement>(null);
   const identityScroll = useRef(0);
   useLayoutEffect(() => {
-    if (body.current) body.current.scrollTop = displayedTab === "identity" ? identityScroll.current : 0;
-  }, [displayedTab]);
+    if (body.current && !scrollWithPanel) body.current.scrollTop = displayedTab === "identity" ? identityScroll.current : 0;
+  }, [displayedTab, scrollWithPanel]);
   // Identity owns explicit-save drafts and an undoable lifecycle transaction.
   // Keep it mounted when hidden: effect cleanup must not commit a pending
   // removal on a section switch. It has no background polling. Other editors
@@ -96,7 +97,7 @@ function FamiliarSettingsBody({ familiar, familiars, allFamiliars, initialTab, o
           <p>{current.description}</p>
         </header>
         <div ref={body} className="familiar-tab__settings-body familiar-studio__body"
-          onScroll={event => { if (displayedTab === "identity") identityScroll.current = event.currentTarget.scrollTop; }}>
+          onScroll={event => { if (!scrollWithPanel && displayedTab === "identity") identityScroll.current = event.currentTarget.scrollTop; }}>
           {SETTINGS_TABS.map(item => (
             <div key={item.id} role="tabpanel" id={`${idPrefix}-panel-${item.id}`}
               aria-label={item.label} hidden={displayedTab !== item.id} tabIndex={0} className="familiar-settings-panel focus-ring-inset">

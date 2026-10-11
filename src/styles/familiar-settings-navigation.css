@@ -39,3 +39,10 @@
 }
 
 .familiar-tab__section[data-section="settings"] { overflow: hidden; }
+
+/* A keyboard or short window leaves too little room for fixed chrome plus an
+   inner editor. Keep the same mounted tree, with one outer scroll owner. */
+.familiar-tab__main[data-short-viewport="true"] { overflow-y: auto; overflow-x: hidden; }
+.familiar-tab__main[data-short-viewport="true"] .familiar-tab__section { flex: none; overflow: visible; }
+.familiar-tab__main[data-short-viewport="true"] .familiar-tab__settings { flex: none; grid-template-rows: auto; }
+.familiar-tab__main[data-short-viewport="true"] .familiar-tab__settings-body { flex: none; overflow: visible; }

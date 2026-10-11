@@ -22,6 +22,7 @@
 import "@/styles/settings-familiars.css";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVisualViewport } from "@/lib/use-viewport";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -488,6 +489,16 @@ function FamiliarScopeOverview({
 
 type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory" | "settings";
 
+function revealPanelFocus(panel: HTMLElement | null, target: Element | null, visualViewport: { height: number; offsetTop: number }) {
+  if (!panel || !(target instanceof HTMLElement) || !panel.contains(target)) return;
+  const viewport = panel.getBoundingClientRect();
+  const bounds = target.getBoundingClientRect();
+  const top = Math.max(viewport.top, visualViewport.offsetTop);
+  const bottom = Math.min(viewport.bottom, visualViewport.offsetTop + visualViewport.height);
+  if (bounds.top < top) panel.scrollTop += Math.floor(bounds.top - top);
+  else if (bounds.bottom > bottom) panel.scrollTop += Math.ceil(bounds.bottom - bottom);
+}
+
 function FamiliarCapabilityPanel({
   familiar,
   familiars,
@@ -515,6 +526,25 @@ function FamiliarCapabilityPanel({
   } = useSurfaceHistory<FamiliarSectionId>({ id: "familiar:capability", initial: "skills" });
   const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
   const sectionTabsRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const viewport = useVisualViewport();
+  const shortViewport = section === "settings" && viewport.height > 0 && viewport.height < 480;
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || !shortViewport) return;
+    const fit = () => {
+      // Safari's keyboard shrinks the visual viewport, not the CSS viewport.
+      // Bound one outer scroller so all chrome and fields stay reachable.
+      const available = Math.max(0, viewport.offsetTop + viewport.height - panel.getBoundingClientRect().top);
+      panel.style.maxHeight = `${available}px`;
+      revealPanelFocus(panel, document.activeElement, viewport);
+    };
+    fit();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(panel.parentElement ?? panel);
+    return () => { observer?.disconnect(); panel.style.removeProperty("max-height"); };
+  }, [shortViewport, viewport.height, viewport.offsetTop]);
 
   useEffect(() => {
     const target = consumeFamiliarSettingsPending();
@@ -564,7 +594,8 @@ function FamiliarCapabilityPanel({
   const sectionNeedsSnapshot = section === "identity" || section === "skills" || section === "mcp";
 
   return (
-    <div className="familiar-tab__main">
+    <div ref={panelRef} className="familiar-tab__main" data-short-viewport={shortViewport ? "true" : undefined}
+      onFocusCapture={event => { if (shortViewport) revealPanelFocus(panelRef.current, event.target, viewport); }}>
       <FamiliarIdentityHero
         familiar={familiar}
         harnesses={snapshot.harnesses}
@@ -626,6 +657,7 @@ function FamiliarCapabilityPanel({
             allFamiliars={allFamiliars}
             initialTab={settingsTab}
             onRosterChanged={onRosterChanged}
+            scrollWithPanel={shortViewport}
           />
         ) : null}
       </div>
