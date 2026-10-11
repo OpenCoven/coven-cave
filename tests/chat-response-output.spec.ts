@@ -279,6 +279,18 @@ test("reading older output retains the same visible composer", async ({ page }) 
   await expect(mainChat.getByRole("button", { name: "Latest" })).toBeVisible();
   await expect(composer).toBeVisible();
   expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
+  // Failed drops remain recoverable while reading earlier output, without
+  // replacing the persistent composer or losing its focus-return destination.
+  await mainChat.locator(".cave-chat-linear").evaluate(element => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array(6 * 1024 * 1024)], "oversized.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  });
+  await expect(mainChat.getByRole("region", { name: "Attachment notice" })).toContainText("oversized.png is too large");
+  await mainChat.getByRole("button", { name: "Dismiss attachment notice" }).click();
+  await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
+  await expect(mainChat.getByRole("textbox", { name: "Message", exact: true })).toBeFocused();
   await mainChat.getByRole("button", { name: "Latest" }).click();
   await expect(composer).toBeVisible();
   expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);

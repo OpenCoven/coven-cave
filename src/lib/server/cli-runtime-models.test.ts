@@ -112,4 +112,37 @@ for (const mode of ["timeout", "malformed", "oversized", "repeated-cursor", "bro
   assert.deepEqual(result, unavailable, `${mode} fails closed with no partial inventory`);
   assert.equal(killed, true, `${mode} terminates its probe`);
 }
+// A successful protocol response may contain no selectable models. It must
+// remain retryable immediately after runtime setup or sign-in changes.
+for (const runtime of ["codex", "claude"] as const) {
+  for (const firstRows of [[], [{ model: "hidden", hidden: true, value: "unresolved-alias" }]]) {
+    clearCliRuntimeModelCache();
+    let attempts = 0;
+    const recoverySpawn = (() => {
+      const attempt = ++attempts;
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
+        kill() { queueMicrotask(() => child.emit("close", 0)); return true; },
+      });
+      child.stdin.on("data", (bytes) => {
+        const request = JSON.parse(String(bytes));
+        if (request.method === "initialized") return;
+        const models = attempt === 1 ? firstRows : runtime === "codex"
+          ? [{ model: "gpt-6-astra" }]
+          : [{ value: "opus", resolvedModel: "claude-opus-5-5" }];
+        const frame = runtime === "codex"
+          ? { id: request.id, result: request.method === "initialize" ? {} : { data: models, nextCursor: null } }
+          : { type: "control_response", response: { subtype: "success", request_id: request.request_id, response: { models } } };
+        queueMicrotask(() => child.stdout.write(JSON.stringify(frame) + "\n"));
+      });
+      return child;
+    }) as unknown as typeof import("node:child_process").spawn;
+    const recoveryDeps = { ...dependencies, spawnImpl: recoverySpawn };
+    assert.deepEqual((await listCliRuntimeModels(runtime, "retry", recoveryDeps)).models, []);
+    const retry = await listCliRuntimeModels(runtime, "retry", recoveryDeps);
+    assert.equal(attempts, 2, `${runtime} retries an empty or filtered catalog immediately`);
+    assert.equal(retry.provenance, "live");
+    assert.equal(retry.models.length, 1);
+  }
+}
 console.log("cli-runtime-models.test.ts: ok");

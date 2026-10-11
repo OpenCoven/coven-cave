@@ -79,7 +79,7 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /disabled=\{!projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
+  /disabled=\{attachmentsReading \|\| !projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
   "the typed send control should be disabled without a launchable project",
 );
 assert.match(

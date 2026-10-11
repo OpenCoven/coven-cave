@@ -440,10 +440,11 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /\.cave-chat-meta-line--streaming[\s\S]*cave-chat-meta-blip/,
-  "Streaming meta line state should match the class ChatView emits",
+  source,
+  /<SessionStatusPill[\s\S]*?status=\{sessionState.key\}[\s\S]*?transport=\{sessionState.transport\}/,
+  "The header status pill carries lifecycle and transport state",
 );
+assert.doesNotMatch(source, /className="cave-chat-meta-line__dot"/, "The header does not duplicate the status indicator");
 
 assert.match(
   styles,

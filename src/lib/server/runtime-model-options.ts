@@ -8,6 +8,7 @@ import {
   runtimeModelInventoryRefreshState,
   runtimeModelInventoryScope,
   type RuntimeModelInventory,
+  type RuntimeModelDiscoveryIssue,
   type RuntimeModelInventoryProvenance,
   type RuntimeModelOption,
 } from "../runtime-models.ts";
@@ -22,6 +23,7 @@ import { listOpenCodeModels } from "./opencode-models.ts";
 
 export type RuntimeModelOptionsDependencies = {
   allowOpenCodeInventory?: boolean;
+  inventoryRestriction?: RuntimeModelDiscoveryIssue;
   /** Local discovery cannot describe an SSH/profile-bound runtime. */
   allowCliInventory?: boolean;
   listCodexInventory?: (familiarId?: string | null) => ReturnType<typeof listCliRuntimeModels>;
@@ -60,8 +62,10 @@ function withProvenance(
   provenance: RuntimeModelInventoryProvenance,
   models: RuntimeModelOption[] = inventory.models,
 ): RuntimeModelInventory {
+  const { discoveryIssue, ...base } = inventory;
   return {
-    ...inventory,
+    ...base,
+    ...(models.length === 0 && discoveryIssue ? { discoveryIssue } : {}),
     models,
     provenance,
     freshness: runtimeModelInventoryFreshness(provenance),
@@ -84,6 +88,8 @@ function fallbackInventory(
     models,
     defaultOwner: catalog?.defaultOwner ?? "runtime",
     allowCustom: catalog?.allowCustom ?? false,
+    discoveryIssue: ["codex", "claude", "copilot", "grok", "hermes", "opencode"].includes(runtime)
+      ? "discovery-failed" : "runtime-managed",
     scope: runtimeModelInventoryScope(runtime, familiarId),
     provenance,
     freshness: runtimeModelInventoryFreshness(provenance),
@@ -100,6 +106,9 @@ export async function listRuntimeModelInventory(
 ): Promise<RuntimeModelInventory> {
   const canonicalRuntime = canonicalHarnessId(runtime);
   const fallback = fallbackInventory(canonicalRuntime, familiarId);
+  if (dependencies.inventoryRestriction) {
+    return { ...fallback, discoveryIssue: dependencies.inventoryRestriction };
+  }
   const degraded = canonicalRuntime === "hermes"
     ? withProvenance(fallback, "runtime-managed", [])
     : fallback;

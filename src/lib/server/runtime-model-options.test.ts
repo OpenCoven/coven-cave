@@ -247,3 +247,32 @@ assert.equal(
 );
 
 console.log("server/runtime-model-options.test.ts: ok");
+
+for (const runtime of ["codex", "claude", "copilot", "grok", "hermes", "opencode"]) {
+  const inventory = await listRuntimeModelInventory(runtime, "sage", {
+    allowHermesInventory: true, allowOpenCodeInventory: true,
+    listCodexInventory: async () => ({ models: [], provenance: "unavailable" }),
+    listClaude: async () => [], listCopilot: async () => [], listGrok: async () => [],
+    listHermes: async () => [], listOpenCode: async () => [],
+  });
+  assert.equal(inventory.discoveryIssue, "discovery-failed", `${runtime} discovery failure must remain distinguishable from managed models`);
+}
+assert.equal((await listRuntimeModelInventory("openclaw")).discoveryIssue, "runtime-managed");
+
+for (const [runtime, id] of [
+  ["codex", "openai/gpt-99-sol"], ["claude", "anthropic/claude-future-99"],
+  ["copilot", "github/future-model"], ["grok", "xai/grok-future"],
+  ["hermes", "openrouter/provider/future-model"], ["opencode", "provider/future-model"],
+]) {
+  const models = [{ id, label: "Fresh runtime-reported model" }];
+  let probes = 0;
+  const report = async () => { probes++; return models; };
+  const discovery = async () => ({ models: await report(), provenance: "live" as const });
+  const dependencies = { allowHermesInventory: true, allowOpenCodeInventory: true,
+    listCodexInventory: discovery, listClaudeInventory: discovery, listCopilot: report,
+    listGrok: report, listHermes: report, listOpenCode: report };
+  assert.deepEqual((await listRuntimeModelInventory(runtime, "sage", dependencies)).models, models, `${runtime} must not require a seed update to support new models`);
+  assert.equal(probes, 1);
+  assert.deepEqual((await listRuntimeModelInventory(runtime, "sage", { ...dependencies, inventoryRestriction: "remote-runtime" })).models, []);
+  assert.equal(probes, 1, `${runtime} must not probe local credentials for an SSH binding`);
+}

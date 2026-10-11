@@ -461,7 +461,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const canSend = Boolean\(draft\.trim\(\) \|\| attachments\.length > 0\)/,
+  /const canSend = !attachmentsReading && Boolean\(draft\.trim\(\) \|\| attachments\.length > 0\)/,
   "attachment-only sends are allowed — files with no text still go",
 );
 assert.match(

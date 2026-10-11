@@ -1,0 +1,49 @@
+.composer-attachment-feedback {
+  min-width: 0;
+  max-width: calc(100% - var(--space-6));
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+.composer-attachment-feedback p { margin: 0; }
+.composer-attachment-feedback__notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.composer-attachment-feedback__notice p { flex: 1; min-width: 0; }
+.composer-attachment-feedback__message {
+  max-height: 8lh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-control);
+}
+.composer-attachment-feedback button {
+  flex-shrink: 0;
+  min-height: var(--space-6);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.composer-attachment-feedback button:hover { background: var(--bg-hover); }
+@media (pointer: coarse) {
+  .composer-attachment-feedback button { min-height: var(--touch-target); }
+}
+
+/* File removal stays compact with a pointer and reachable on touch screens. */
+.composer-attachment-remove {
+  min-width: var(--space-6);
+  min-height: var(--space-6);
+}
+@media (pointer: coarse) {
+  .composer-attachment-remove {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}
