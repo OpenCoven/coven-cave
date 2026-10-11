@@ -1,4 +1,5 @@
 import {
+  childPath,
   fail,
   isRecord,
   pass,
@@ -138,12 +139,6 @@ export function isSensitiveExtensionKey(key: string): boolean {
       SENSITIVE_EXTENSION_KEY_RE.test(component),
     )
   );
-}
-
-function childPath(path: string, key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
-    ? `${path}.${key}`
-    : `${path}[${JSON.stringify(key)}]`;
 }
 
 function extensionPathComponents(key: string): string[] {

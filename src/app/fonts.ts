@@ -303,10 +303,10 @@ export const fredoka = localFont({
   variable: "--font-fredoka",
   src: [
     { path: "../assets/fonts/fredoka-normal-300.woff2", weight: "300", style: "normal" },
-    { path: "../assets/fonts/fredoka-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/fredoka-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/fredoka-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/fredoka-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/fredoka-normal-300.woff2", weight: "400", style: "normal" },
+    { path: "../assets/fonts/fredoka-normal-300.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/fredoka-normal-300.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/fredoka-normal-300.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: "Arial",
@@ -315,10 +315,10 @@ export const fredoka = localFont({
 const fredokaHebrew = localFont({
   src: [
     { path: "../assets/fonts/fredoka-hebrew-normal-300.woff2", weight: "300", style: "normal" },
-    { path: "../assets/fonts/fredoka-hebrew-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/fredoka-hebrew-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/fredoka-hebrew-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/fredoka-hebrew-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/fredoka-hebrew-normal-300.woff2", weight: "400", style: "normal" },
+    { path: "../assets/fonts/fredoka-hebrew-normal-300.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/fredoka-hebrew-normal-300.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/fredoka-hebrew-normal-300.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -327,10 +327,10 @@ const fredokaHebrew = localFont({
 const fredokaLatinExt = localFont({
   src: [
     { path: "../assets/fonts/fredoka-latin-ext-normal-300.woff2", weight: "300", style: "normal" },
-    { path: "../assets/fonts/fredoka-latin-ext-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/fredoka-latin-ext-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/fredoka-latin-ext-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/fredoka-latin-ext-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/fredoka-latin-ext-normal-300.woff2", weight: "400", style: "normal" },
+    { path: "../assets/fonts/fredoka-latin-ext-normal-300.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/fredoka-latin-ext-normal-300.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/fredoka-latin-ext-normal-300.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -689,9 +689,9 @@ const ibmPlexSans = localFont({
   variable: "--font-ibm-plex-sans",
   src: [
     { path: "../assets/fonts/ibm-plex-sans-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: "Arial",
@@ -700,9 +700,9 @@ const ibmPlexSans = localFont({
 const ibmPlexSansCyrillicExt = localFont({
   src: [
     { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-ext-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -711,9 +711,9 @@ const ibmPlexSansCyrillicExt = localFont({
 const ibmPlexSansCyrillic = localFont({
   src: [
     { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-cyrillic-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -722,9 +722,9 @@ const ibmPlexSansCyrillic = localFont({
 const ibmPlexSansGreek = localFont({
   src: [
     { path: "../assets/fonts/ibm-plex-sans-greek-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-greek-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-greek-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-greek-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-greek-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-greek-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-greek-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -733,9 +733,9 @@ const ibmPlexSansGreek = localFont({
 const ibmPlexSansVietnamese = localFont({
   src: [
     { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-vietnamese-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
@@ -744,9 +744,9 @@ const ibmPlexSansVietnamese = localFont({
 const ibmPlexSansLatinExt = localFont({
   src: [
     { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-400.woff2", weight: "400", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-500.woff2", weight: "500", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-600.woff2", weight: "600", style: "normal" },
-    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-700.woff2", weight: "700", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-400.woff2", weight: "500", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-400.woff2", weight: "600", style: "normal" },
+    { path: "../assets/fonts/ibm-plex-sans-latin-ext-normal-400.woff2", weight: "700", style: "normal" },
   ],
   preload: false,
   adjustFontFallback: false,
