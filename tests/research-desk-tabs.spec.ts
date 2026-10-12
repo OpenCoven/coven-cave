@@ -948,7 +948,12 @@ test.describe("research desk tabs", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await openResearchDesk(page);
     const title = page.locator("#research-mission-title");
-    const originalTitleSize = await title.evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+    await expect(title).toBeVisible();
+    let originalTitleSize = Number.NaN;
+    await expect.poll(async () => {
+      originalTitleSize = await title.evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+      return originalTitleSize;
+    }).toBeGreaterThan(0);
     await page.locator("html").evaluate(node => {
       const styles = getComputedStyle(node);
       const rootSize = parseFloat(styles.fontSize);
