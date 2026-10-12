@@ -64,14 +64,27 @@ import {
 
 type StudioFilter = "all" | ResearchGenerationCreatableKind;
 
-export function ResearchTabStudio({ research, context, onNavigate }: ResearchTabProps) {
+export function ResearchTabStudio(props: ResearchTabProps) {
+  // Draft configuration, open viewers and pending actions belong to one
+  // familiar. Never carry that state into another familiar's Studio.
+  return <ResearchStudioBody key={props.context.activeFamiliar.id} {...props} />;
+}
+
+function ResearchStudioBody({ research, context, onNavigate }: ResearchTabProps) {
   const familiarId = context.activeFamiliar.id;
   const { announce } = useAnnouncer();
   const { flash, copy } = useCopyFlash();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const [generations, setGenerations] = useState<ResearchGeneration[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [readiness, setReadiness] = useState<ResearchGenerationReadiness | null>(null);
   const providerChips = useMemo(() => researchProviderChips(readiness), [readiness]);
 
@@ -108,6 +121,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; message: string } | null>(null);
+  const [cancellingIds, setCancellingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const cancelInFlight = useRef(new Set<string>());
+  const removeInFlight = useRef(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   // One load per familiar plus explicit retry. The same effect is also the
@@ -121,7 +137,13 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   // shows loading/empty, never another familiar's generations) and the kind
   // filter resets to All so a kind that familiar lacks can't strand the view.
   const loadSeq = useRef(0);
-  const loadedFamiliarRef = useRef(familiarId);
+  const mutationRevision = useRef(0);
+  // Successful removals win even if a prior POST response arrives after a poll.
+  const removedGenerationIds = useRef(new Set<string>());
+  const configEpoch = useRef(0);
+  const dialogEpoch = useRef(0);
+  const createInFlight = useRef(false);
+  const renderInFlight = useRef(false);
   const previousGenerationsRef = useRef<Map<string, ResearchGeneration["status"]>>(new Map());
   const listInFlightRef = useRef(false);
   const listControllerRef = useRef<AbortController | null>(null);
@@ -130,10 +152,11 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const elevenLabsCatalogControllerRef = useRef<AbortController | null>(null);
   const retryInFlightRef = useRef<string | null>(null);
 
-  const loadGenerations = useCallback(async (showLoading: boolean) => {
+  const loadGenerations = useCallback(async function load(showLoading: boolean): Promise<void> {
     if (listInFlightRef.current) return;
     listInFlightRef.current = true;
     const seq = ++loadSeq.current;
+    const revision = mutationRevision.current;
     const controller = new AbortController();
     listControllerRef.current = controller;
     if (showLoading) {
@@ -145,21 +168,22 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         familiarId,
         controller.signal,
       );
-      if (controller.signal.aborted || seq !== loadSeq.current) return;
+      if (controller.signal.aborted || seq !== loadSeq.current || revision !== mutationRevision.current) return;
       if (!result.ok || !result.generations) {
         setListError(result.error ?? "Generations could not load");
         return;
       }
       const previous = previousGenerationsRef.current;
-      setGenerations(result.generations);
+      const currentGenerations = result.generations.filter((generation) => !removedGenerationIds.current.has(generation.id));
+      setGenerations(currentGenerations);
       setListError(null);
       previousGenerationsRef.current = new Map(
-        result.generations.map((generation) => [
+        currentGenerations.map((generation) => [
           generation.id,
           generation.status,
         ]),
       );
-      for (const generation of result.generations) {
+      for (const generation of currentGenerations) {
         const before = previous.get(generation.id);
         if (
           before &&
@@ -180,7 +204,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         }
       }
     } catch (error) {
-      if (controller.signal.aborted || seq !== loadSeq.current) return;
+      if (controller.signal.aborted || seq !== loadSeq.current || revision !== mutationRevision.current) return;
       setListError(
         error instanceof Error
           ? error.message
@@ -191,24 +215,39 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         listControllerRef.current = null;
         listInFlightRef.current = false;
       }
-      if (seq === loadSeq.current) setLoading(false);
+      if (seq === loadSeq.current && mounted.current) {
+        setLoading(false);
+        // A mutation may have committed after this read took its snapshot.
+        // Refresh once so existing rows are retained alongside local updates.
+        if (revision !== mutationRevision.current) void load(false);
+      }
     }
   }, [announce, familiarId]);
 
   const loadReadiness = useCallback(async () => {
     if (readinessInFlightRef.current) return;
     readinessInFlightRef.current = true;
+    setCheckingReadiness(true);
     const controller = new AbortController();
     readinessControllerRef.current = controller;
     try {
       const result = await getResearchGenerationReadiness(controller.signal);
-      if (!controller.signal.aborted && result.ok) setReadiness(result);
-    } catch {
-      // Keep the last verified readiness snapshot through transient failures.
+      if (controller.signal.aborted) return;
+      if (!result.ok) {
+        setReadinessError(result.error ?? "Media availability could not be checked.");
+      } else {
+        setReadiness(result);
+        setReadinessError(null);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setReadinessError(error instanceof Error ? error.message : "Media availability could not be checked.");
+      }
     } finally {
       if (readinessControllerRef.current === controller) {
         readinessControllerRef.current = null;
         readinessInFlightRef.current = false;
+        if (mounted.current) setCheckingReadiness(false);
       }
     }
   }, []);
@@ -228,12 +267,6 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   }, []);
 
   useEffect(() => {
-    if (loadedFamiliarRef.current !== familiarId) {
-      loadedFamiliarRef.current = familiarId;
-      setGenerations([]);
-      setFilter("all");
-      previousGenerationsRef.current = new Map();
-    }
     void loadGenerations(true);
     return () => {
       loadSeq.current += 1;
@@ -315,6 +348,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   }, [generations, filter]);
 
   const openConfig = useCallback((kind: ResearchGenerationCreatableKind) => {
+    configEpoch.current += 1;
     setCreateError(null);
     setDirections("");
     setBlogDirections(EMPTY_BLOG_DIRECTIONS);
@@ -354,12 +388,15 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   }, [mediaLength, mediaProvider, mediaVoice, readiness]);
 
   const submitCreate = useCallback(async () => {
-    if (!configKind || !effectiveSourceId) return;
+    if (!configKind || !effectiveSourceId || createInFlight.current) return;
     const savedDirections = studioGenerationDirections(configKind, directions, blogDirections);
     if (savedDirections.length > RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH) {
       setCreateError("Directions and choices must fit within 5,000 characters. Shorten the directions or remove a choice.");
       return;
     }
+    createInFlight.current = true;
+    const epoch = configEpoch.current;
+    const currentReview = dialogEpoch.current;
     setCreating(true);
     setCreateError(null);
     const hasDirections = savedDirections.trim().length > 0;
@@ -400,22 +437,31 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       generation: undefined,
       error: error instanceof Error ? error.message : "Generation failed",
     }));
+    if (!mounted.current) return;
+    createInFlight.current = false;
     setCreating(false);
     if (!result.ok || !result.generation) {
       // Surfaces the server's own message inline — notably the 409 when the
       // mission has no markdown artifact yet.
-      setCreateError(result.error ?? "Generation failed");
+      if (epoch === configEpoch.current) setCreateError(result.error ?? "Generation failed");
       return;
     }
+    if (removedGenerationIds.current.has(result.generation.id)) return;
+    mutationRevision.current += 1;
     const created = result.generation;
     setGenerations((prev) => [created, ...prev.filter((g) => g.id !== created.id)]);
-    setConfigKind(null);
-    setDirections("");
+    if (epoch === configEpoch.current) {
+      setConfigKind(null);
+      setDirections("");
+    }
     if (isResearchGenerationKind(created.kind)) {
       announce(`${studioMetaForKind(created.kind).label} drafted from ${created.sourceTitle}`);
     } else {
-      setReviewError(null);
-      setReviewGeneration(created);
+      if (epoch === configEpoch.current && currentReview === dialogEpoch.current) {
+        dialogEpoch.current += 1;
+        setReviewError(null);
+        setReviewGeneration(created);
+      }
       announce(`${studioMetaForKind(created.kind).label} draft ready for review`);
     }
   }, [
@@ -436,7 +482,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   ]);
 
   const renderReview = useCallback(async () => {
-    if (!reviewGeneration) return;
+    if (!reviewGeneration || renderInFlight.current) return;
+    renderInFlight.current = true;
+    const epoch = dialogEpoch.current;
     setRenderingReview(true);
     setReviewError(null);
     const result = await renderResearchGeneration(reviewGeneration.id, familiarId).catch((error) => ({
@@ -444,25 +492,35 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       generation: undefined,
       error: error instanceof Error ? error.message : "Render failed",
     }));
+    if (!mounted.current) return;
+    renderInFlight.current = false;
     setRenderingReview(false);
     if (!result.ok || !result.generation) {
-      setReviewError(result.error ?? "Render failed");
+      if (epoch === dialogEpoch.current) setReviewError(result.error ?? "Render failed");
       return;
     }
+    mutationRevision.current += 1;
     setGenerations((previous) => previous.map((entry) => entry.id === result.generation!.id ? result.generation! : entry));
-    setReviewGeneration(null);
+    if (epoch === dialogEpoch.current) setReviewGeneration(null);
     announce(`${studioMetaForKind(result.generation.kind).label} render queued`);
   }, [announce, familiarId, reviewGeneration]);
 
   const cancelGeneration = useCallback(async (generation: ResearchGeneration) => {
+    if (cancelInFlight.current.has(generation.id)) return;
+    cancelInFlight.current.add(generation.id);
+    setCancellingIds(new Set(cancelInFlight.current));
     const result = await cancelResearchGeneration(generation.id, familiarId).catch((error) => ({
       ok: false as const,
       error: error instanceof Error ? error.message : "Cancel failed",
     }));
+    cancelInFlight.current.delete(generation.id);
+    if (!mounted.current) return;
+    setCancellingIds(new Set(cancelInFlight.current));
     if (!result.ok || !result.generation) {
       setListError(result.error ?? "Cancel failed");
       return;
     }
+    mutationRevision.current += 1;
     setGenerations((previous) =>
       previous.map((entry) =>
         entry.id === result.generation!.id ? result.generation! : entry,
@@ -474,6 +532,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const retryGeneration = useCallback(async (generation: ResearchGeneration) => {
     if (retryInFlightRef.current) return;
     retryInFlightRef.current = generation.id;
+    const configAtStart = configEpoch.current;
+    const reviewAtStart = dialogEpoch.current;
     setRetryingId(generation.id);
     const result = await createResearchGeneration({
         familiarId,
@@ -489,31 +549,41 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       }))
       .finally(() => {
         retryInFlightRef.current = null;
-        setRetryingId(null);
+        if (mounted.current) setRetryingId(null);
       });
+    if (!mounted.current) return;
     if (!result.ok || !result.generation) {
       setListError(result.error ?? "Retry failed");
       return;
     }
+    if (removedGenerationIds.current.has(result.generation.id)) return;
+    mutationRevision.current += 1;
     setGenerations((previous) => [
       result.generation!,
       ...previous.filter((entry) => entry.id !== result.generation!.id),
     ]);
-    setReviewError(null);
-    setReviewGeneration(result.generation);
+    if (configAtStart === configEpoch.current && reviewAtStart === dialogEpoch.current) {
+      setReviewError(null);
+      dialogEpoch.current += 1;
+      setReviewGeneration(result.generation);
+    }
     announce(`${studioMetaForKind(generation.kind).label} draft ready for review`);
   }, [announce, familiarId]);
 
   const confirmRemove = useCallback(
     async (generation: ResearchGeneration) => {
+      if (removeInFlight.current) return;
+      removeInFlight.current = true;
       setRemoveError(null);
       setRemovingId(generation.id);
       const result = await removeResearchGeneration(generation.id, familiarId).catch((error) => ({
         ok: false as const,
         error: error instanceof Error ? error.message : "Remove failed",
       }));
+      removeInFlight.current = false;
+      if (!mounted.current) return;
       setRemovingId(null);
-      setConfirmRemoveId(null);
+      setConfirmRemoveId((current) => current === generation.id ? null : current);
       // The DELETE route 404s ("generation not found") when the record is
       // already gone server-side — that outcome IS the removal, so drop the
       // row locally instead of stranding a phantom entry behind an error.
@@ -522,6 +592,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         setRemoveError({ id: generation.id, message: result.error ?? "Remove failed" });
         return;
       }
+      removedGenerationIds.current.add(generation.id);
+      mutationRevision.current += 1;
       setGenerations((prev) => prev.filter((g) => g.id !== generation.id));
       setViewerId((current) => (current === generation.id ? null : current));
       setEditorId((current) => (current === generation.id ? null : current));
@@ -537,10 +609,12 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     <section className="research-studio" aria-label="Research studio">
       <header className="research-studio__header">
         <h2>Studio</h2>
-        <p>Turn finished research into shareable drafts — extracted from each run&rsquo;s cited findings.</p>
+        <p>Turn research into shareable drafts, grounded in each run&rsquo;s cited findings.</p>
         {/* Provider strip: why a card is disabled, before you click it. Each
             chip carries the readiness endpoint's own hint, so the chip and the
             card it blocks say the same thing. */}
+        <details className="research-studio__availability">
+          <summary className="focus-ring">Media availability</summary>
         <div
           className="research-studio__providers"
           role="group"
@@ -559,14 +633,23 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
             </span>
           ))}
         </div>
+        </details>
       </header>
 
+      {readinessError ? (
+        <p className="research-studio__error" role="alert">
+          {readinessError}{readiness ? " Showing the last checked availability." : ""}{" "}
+          <button type="button" className="research-studio-act focus-ring"
+            aria-label="Retry media readiness" disabled={checkingReadiness}
+            onClick={() => void loadReadiness()}>{checkingReadiness ? "Checking…" : "Retry"}</button>
+        </p>
+      ) : null}
       <div className="research-studio__sources">
         {sources.length === 0 ? (
           <>
             <span className="research-studio__sources-label">Draft from</span>
             <span className="research-studio__sources-hint">
-              No runs with a markdown artifact yet — the Studio drafts from finished research.
+              Research needs a saved Markdown artifact before you can create a draft.
             </span>
           </>
         ) : (
@@ -606,7 +689,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
             : !mediaReady
               ? (kind === "podcast" ? readiness?.podcast.hint
                 : kind === "short-video" ? readiness?.shortVideo.hint
-                  : readiness?.longVideo.hint) ?? "Media readiness is still loading."
+                  : readiness?.longVideo.hint) ?? (readinessError ? "Media availability could not be checked. Retry above." : "Media readiness is still loading.")
               : null;
           return (
             <button
@@ -627,13 +710,6 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   <i className="research-studio-card__format">{meta.format}</i>
                 </span>
                 <span className="research-studio-card__blurb">{meta.blurb}</span>
-                <span className="research-studio-card__tags">
-                  {meta.tags.map((tag) => (
-                    <span key={tag} className="research-studio-card__tag">
-                      {tag}
-                    </span>
-                  ))}
-                </span>
                 {hint ? (
                   <span className="research-studio-card__hint">
                     {hint}
@@ -661,7 +737,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           >
             All <span className="research-studio__chip-count">{counts.get("all") ?? 0}</span>
           </button>
-          {RESEARCH_GENERATION_CREATABLE_KINDS.map((kind) => (
+          {RESEARCH_GENERATION_CREATABLE_KINDS.filter((kind) => filter === kind || (counts.get(kind) ?? 0) > 0).map((kind) => (
             <button
               key={kind}
               type="button"
@@ -697,8 +773,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       {!loading && !listError && generations.length === 0 ? (
         <div className="research-studio__empty">
           <p>
-            Generations draft from finished research — complete a run, then turn it into a
-            diagram, thread, or draft post.
+            {sources.length > 0
+              ? "Choose a format above to create your first draft from the selected research."
+              : "Start a research run and save its findings to create your first draft."}
           </p>
           {sources.length === 0 ? (
             <button
@@ -749,7 +826,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   <button
                     type="button"
                     className="research-studio-row__title"
-                    onClick={() => setViewerId(generation.id)}
+                    onClick={() => { dialogEpoch.current += 1; setViewerId(generation.id); }}
                   >
                     {title}
                   </button>
@@ -806,7 +883,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   <button
                     type="button"
                     className="research-studio-act"
-                    onClick={() => setViewerId(generation.id)}
+                    onClick={() => { dialogEpoch.current += 1; setViewerId(generation.id); }}
                   >
                     {generation.kind === "blog" ? "↗ Open draft" : "↗ Open"}
                   </button>
@@ -815,9 +892,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   <button
                     type="button"
                     className="research-studio-act research-studio-act--danger"
+                    disabled={cancellingIds.has(generation.id)}
                     onClick={() => cancelGeneration(generation)}
                   >
-                    Cancel
+                    {cancellingIds.has(generation.id) ? "Canceling…" : "Cancel"}
                   </button>
                 ) : null}
                 {!isResearchGenerationKind(generation.kind) &&
@@ -827,6 +905,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                     className="research-studio-act"
                     onClick={() => {
                       setReviewError(null);
+                      dialogEpoch.current += 1;
                       setReviewGeneration(generation);
                     }}
                   >
@@ -849,7 +928,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                     <button
                       type="button"
                       className="research-studio-act research-studio-act--danger"
-                      disabled={removing}
+                      disabled={removingId !== null}
                       onClick={() => confirmRemove(generation)}
                     >
                       {removing ? "Removing…" : "Remove"}
@@ -867,7 +946,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   <button
                     type="button"
                     className="research-studio-act"
+                    disabled={removingId !== null}
                     onClick={() => {
+                      if (removeInFlight.current) return;
                       setRemoveError(null);
                       setConfirmRemoveId(generation.id);
                     }}
@@ -918,7 +999,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           error={createError}
           creating={creating}
           onSubmit={submitCreate}
-          onClose={() => setConfigKind(null)}
+          onClose={() => { configEpoch.current += 1; setConfigKind(null); }}
         />
       ) : null}
 
@@ -928,28 +1009,28 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           rendering={renderingReview}
           error={reviewError}
           onRender={renderReview}
-          onClose={() => setReviewGeneration(null)}
+          onClose={() => { dialogEpoch.current += 1; setReviewGeneration(null); }}
         />
       ) : null}
 
       {viewerGeneration ? (
         <GenerationViewerModal
+          key={`viewer:${viewerGeneration.id}`}
           generation={viewerGeneration}
-          // While the editor is stacked on top, park the viewer: one live
-          // focus trap and one Escape target at a time (first Escape closes
-          // only the editor; the second closes the viewer).
+          // Hide the parked viewer from input and AT. The shared focus stack
+          // retains both return targets and routes Escape only to the top.
           active={editorGeneration === null}
           onClose={() => setViewerId(null)}
           onOpenEditor={
             viewerGeneration.content?.kind === "blog"
-              ? () => setEditorId(viewerGeneration.id)
+              ? () => { dialogEpoch.current += 1; setEditorId(viewerGeneration.id); }
               : undefined
           }
         />
       ) : null}
 
       {editorGeneration ? (
-        <MarkdownEditorModal generation={editorGeneration} onClose={() => setEditorId(null)} />
+        <MarkdownEditorModal key={`editor:${editorGeneration.id}`} generation={editorGeneration} onClose={() => setEditorId(null)} />
       ) : null}
     </section>
   );

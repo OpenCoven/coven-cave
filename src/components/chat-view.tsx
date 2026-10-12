@@ -6699,7 +6699,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               lifecycle: "streaming",
               // CHAT-D12-01: settle the synthetic row the moment text is
               // flowing — the streamed text IS the live signal from here
-              // on. Leaving it "running" kept the auto-open ProgressGroup
+              // on. Leaving it "running" kept the activity timeline
               // pulsing for the entire stream. Same evidence settles the
               // server's "Starting <harness>" step, which the server itself
               // only closes at process exit.
@@ -9845,7 +9845,7 @@ function TurnRowImpl({
       ? (
           <div data-main-chat-activity-details={true}>
             {turn.progress?.length ? (
-              <ProgressGroup progress={turn.progress} pending={pending} collapsible />
+              <ProgressGroup progress={turn.progress} pending={pending} />
             ) : null}
             {!timeline && pending
               ? bubbleSegments?.map((segment) =>
@@ -10170,155 +10170,79 @@ function currentProgress(progress: ProgressEvent[]): ProgressEvent | undefined {
   );
 }
 
-/**
- * The step list for a run, with a bar instead of a second set of counts.
- *
- * Inside RunActivityStrip this used to be a <details> nested in the strip's OWN
- * expanded panel — a disclosure reachable only by opening a disclosure — whose
- * summary re-rendered the exact chips ("2 running", "4 done") already showing
- * one row above it, under a shouted "PROGRESS" label that named the card rather
- * than saying anything about the run.
- *
- * A bar and "3 of 4" carry the same fact in one line, and carry it better:
- * counts make you do the division, a bar does not. The counts are not lost —
- * they are still one row up, where they were first.
- *
- * `collapsible` is why this is a prop rather than one shape. The card renders in
- * TWO places, and they are not the same situation: in the strip the reader has
- * already opened a panel to ask for it, so a second disclosure is pure friction;
- * in the transcript nobody asked, and expanding every assistant turn's full step
- * list by default buries the reply it belongs to. So the transcript keeps a
- * disclosure — it just gets the bar in its summary instead of duplicate chips.
- */
-function ProgressGroup({
-  progress,
-  pending,
-  collapsible = false,
-}: {
+/** Activity is already behind the turn or run-strip disclosure. Keep this
+ * inner timeline flat; individual diagnostics open only when requested. */
+function ProgressGroup({ progress, pending }: {
   progress: ProgressEvent[];
-  /** Whether the run is still in flight; drives the disclosure's default state. */
   pending: boolean;
-  /** Render as a <details>. True in the transcript, false inside the strip. */
-  collapsible?: boolean;
 }) {
   const settled = progress.filter((event) => event.status !== "running").length;
   const total = progress.length;
   const current = currentProgress(progress);
-  // Deliberately NOT "total when settled". A finished run can still carry a
-  // step marked running — the stream ends without a final event for it — and
-  // reporting "4 of 4" beside a row that is visibly still spinning is the exact
-  // self-contradiction this card is being repaired for. Counting what actually
-  // settled says "3 of 4", which is both honest and the more useful fact: the
-  // run ended without finishing that step.
+  const errors = progress.some((event) => event.status === "error");
+  const notices = progress.filter((event) => event.status === "notice").length;
   const percent = total > 0 ? Math.round((settled / total) * 100) : 0;
-  const label = current?.label ?? (pending ? "Working…" : "Steps");
-
-  const head = (
-    /* Utilities, not new classes: this card is reachable from the startup
-       graph, so a bespoke selector here is paid for by every route, and the
-       home CSS budget sits near zero headroom. The count reuses the
-       .cave-tool-count chip the strip above already ships. */
-    <>
-      <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]" title={label}>
-        {label}
-      </span>
-      <span className="cave-tool-count shrink-0 tabular-nums">
-        {settled} of {total}
-      </span>
-    </>
-  );
-
-  const bar = (
-    /* The bar restates the count for scanning, so it is aria-hidden: the
-       numbers beside it are the accessible version, and announcing both would
-       read the same fact twice — the failure this card is being repaired for. */
-    <span className="cave-progress-bar" aria-hidden>
-      {/* The 2% floor keeps a just-started run's fill visible instead of
-          collapsing it to an invisible sliver — but it applies only once
-          something HAS settled. Clamping unconditionally drew a bar at
-          "0 of 4", the card asserting progress that had not happened: the
-          same self-contradiction this rebuild removed from the counts,
-          reintroduced in the graphic beside them. */}
-      <span
-        className="cave-progress-bar__fill"
-        style={{ width: percent > 0 ? `${Math.max(2, percent)}%` : "0%" }}
-      />
-    </span>
-  );
-
-  const list = (
-    <div className="cave-progress-list">
-      {progress.map((event) => (
-        <ProgressRow key={event.id} event={event} />
-      ))}
-    </div>
-  );
-
-  if (!collapsible) {
-    return (
-      <div className="cave-progress-group mt-3">
-        <div className="flex min-w-0 items-baseline gap-2">{head}</div>
-        {bar}
-        {list}
-      </div>
-    );
-  }
+  const label = errors ? "Activity needs attention" : pending ? "Activity in progress" : "Run activity";
 
   return (
-    <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
-      <summary className="cave-tool-summary">
-        <span className="flex min-w-0 flex-1 items-baseline gap-2 normal-case tracking-normal">{head}</span>
-      </summary>
-      {bar}
-      {list}
-    </details>
+    <section className="cave-progress-group" aria-label={label} data-pending={pending || undefined}>
+      <div className="cave-progress-head">
+        <span className="cave-progress-heading">{label}</span>
+        <span className="cave-progress-count">{settled} of {total} settled</span>
+      </div>
+      {pending && current?.status === "running" ? <p className="cave-progress-current">{current.label}</p> : null}
+      {notices > 0 ? <p className="cave-progress-notices">{notices} {notices === 1 ? "notice" : "notices"} recorded</p> : null}
+      {pending ? (
+        <span className="cave-progress-bar" aria-hidden>
+          <span className="cave-progress-bar__fill" style={{ width: `${percent}%` }} />
+        </span>
+      ) : null}
+      <ol className="cave-progress-list" role="list">
+        {progress.map((event) => <ProgressRow key={event.id} event={event} pending={pending} />)}
+      </ol>
+    </section>
   );
 }
 
-// A single progress step. Its `detail` (often a long file path or tool call)
-// truncates inline; clicking it expands a full, wrapped, selectable panel below
-// the row so the cut-off text can actually be read on desktop and touch alike.
-// `title` keeps a hover tooltip as a fallback.
-function ProgressRow({ event }: { event: ProgressEvent }) {
-  const [open, setOpen] = useState(false);
-  const statusIcon =
-    event.status === "error"
-      ? "ph:warning-circle"
-      : event.status === "notice"
-        ? "ph:info"
-      : event.status === "done"
-        ? "ph:check-circle"
-        : "ph:circle-dashed";
+function ProgressRow({ event, pending }: { event: ProgressEvent; pending: boolean }) {
+  const statusIcon = event.status === "error" ? "ph:warning-circle"
+    : event.status === "notice" ? "ph:info"
+    : event.status === "done" ? "ph:check-circle" : "ph:circle-dashed";
+  const statusLabel = event.status === "error" ? "Error"
+    : event.status === "notice" ? "Notice"
+    : event.status === "done" ? "Complete" : pending ? "Running" : "Unfinished";
+  // Older runtime diagnostics use their whole explanation as the label. Keep
+  // that evidence intact and reachable, while giving the row a useful title.
+  const compatibilityNotice = event.status === "notice" && /compatibility/.test(event.id);
+  const longLabel = event.label.length > 120 || event.label.includes("\n");
+  const label = compatibilityNotice ? "Runtime compatibility notice"
+    : longLabel ? `${statusLabel} details` : event.label;
+  const detail = label !== event.label
+    ? [event.label, event.detail].filter(Boolean).join("\n\n") : event.detail;
+  const row = (
+    <>
+      <Icon name={statusIcon} width={14} aria-hidden />
+      <span className="cave-progress-label"><span className="sr-only">{statusLabel}: </span>{label}</span>
+      <span className="cave-progress-meta"><DurationText durationMs={event.durationMs} /></span>
+      {detail ? <Icon name="ph:caret-down" width={12} className="cave-progress-caret" aria-hidden /> : null}
+    </>
+  );
+  const rowClass = `cave-progress-row cave-progress-row--${event.status}`;
   return (
-    <div>
-      <div className={`cave-progress-row cave-progress-row--${event.status}`}>
-        <Icon name={statusIcon} width={12} aria-hidden />
-        <span className="min-w-0 flex-1 truncate" title={event.label}>{event.label}</span>
-        {event.detail ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            title={open ? "Hide detail" : event.detail}
-            className="focus-ring inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-          >
-            <span className="truncate">{event.detail}</span>
-            <Icon
-              name="ph:caret-down"
-              width={9}
-              className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-              aria-hidden
-            />
-          </button>
-        ) : null}
-        <DurationText durationMs={event.durationMs} />
-      </div>
-      {open && event.detail ? (
-        <div className="mt-1 ml-5 whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[length:var(--text-2xs)] leading-relaxed text-[var(--text-secondary)]">
-          {event.detail}
-        </div>
-      ) : null}
-    </div>
+    <li className="cave-progress-step" data-running={pending && event.status === "running" || undefined}>
+      {detail ? (
+        <details className="cave-progress-disclosure" onKeyDown={(keyEvent) => {
+          if (keyEvent.key !== "Escape" || !keyEvent.currentTarget.open) return;
+          keyEvent.preventDefault();
+          keyEvent.stopPropagation();
+          keyEvent.currentTarget.open = false;
+          keyEvent.currentTarget.querySelector("summary")?.focus();
+        }}>
+          <summary className={`${rowClass} focus-ring`}>{row}</summary>
+          <div className="cave-progress-detail">{detail}</div>
+        </details>
+      ) : <div className={rowClass}>{row}</div>}
+    </li>
   );
 }
 
@@ -10961,7 +10885,7 @@ function RunActivityStrip({
   } else if (live) {
     headline = step?.label ?? "Working…";
   } else {
-    headline = step?.label ?? "Last run";
+    headline = issues ? "Last run needs attention" : "Last run";
   }
 
   return (

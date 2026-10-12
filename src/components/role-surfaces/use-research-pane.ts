@@ -59,6 +59,7 @@ export type ResearchPane = {
   setCollapsed(next: boolean): void;
   /** Bind to the separator element. */
   separatorProps: {
+    ref(node: HTMLElement | null): void;
     role: "separator";
     tabIndex: 0;
     "aria-orientation": "vertical";
@@ -77,6 +78,13 @@ export function useResearchPane(options: ResearchPaneOptions): ResearchPane {
   // module import-safe under node --test).
   const [width, setWidth] = useState(options.initial);
   const [collapsed, setCollapsed] = useState(false);
+  const dragCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragCleanup.current?.(), []);
+  const separatorRef = useCallback((node: HTMLElement | null) => {
+    // The separator can disappear while the Desk and this hook stay mounted.
+    // A detached capture target sends lostpointercapture to document instead.
+    if (!node) dragCleanup.current?.();
+  }, []);
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
@@ -102,24 +110,35 @@ export function useResearchPane(options: ResearchPaneOptions): ResearchPane {
     // Only a primary-button drag resizes; right-click belongs to the browser.
     if (event.button !== 0) return;
     event.preventDefault();
+    dragCleanup.current?.();
     const startX = event.clientX;
     const startWidth = width;
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     let latest = startWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    let ended = false;
 
     const move = (moveEvent: PointerEvent) => {
       latest = commit(startWidth + direction * (moveEvent.clientX - startX));
     };
     const end = () => {
+      if (ended) return;
+      ended = true;
+      dragCleanup.current = null;
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", end);
       target.removeEventListener("pointercancel", end);
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
+      target.removeEventListener("lostpointercapture", end);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
       persist(latest);
     };
 
+    dragCleanup.current = end;
+    target.addEventListener("lostpointercapture", end);
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", end);
     target.addEventListener("pointercancel", end);
@@ -148,6 +167,7 @@ export function useResearchPane(options: ResearchPaneOptions): ResearchPane {
     collapsed,
     setCollapsed,
     separatorProps: {
+      ref: separatorRef,
       role: "separator",
       tabIndex: 0,
       "aria-orientation": "vertical",

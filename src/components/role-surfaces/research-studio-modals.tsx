@@ -23,7 +23,9 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -33,7 +35,7 @@ import { BlogDirectionControls } from "./research-blog-directions";
 import { EMPTY_BLOG_DIRECTIONS, studioGenerationDirections, type BlogDirections } from "@/lib/research-blog-directions";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
-import { AuthedImage } from "@/components/ui/authed-image";
+import { useAuthedImageState } from "@/lib/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import {
   StandardSelect,
@@ -66,7 +68,13 @@ import {
 } from "@/lib/voice/elevenlabs-shared";
 import type { ElevenLabsCatalogState } from "@/lib/voice/settings-client";
 import type { ResearchMission } from "@/lib/research-missions";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import {
+  FocusTrapPortalLayersContext,
+  PortalLayerDepthContext,
+  PortalLayerRootContext,
+  useFocusTrap,
+  usePortalLayerRootId,
+} from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 // ── kind presentation (real kinds — the creatable union) ─────────────────────
@@ -334,21 +342,38 @@ export function downloadGenerationMarkdown(
  * `/api/` gate. Mirrors `downloadGenerationMarkdown`'s blob-anchor flow.
  */
 async function downloadGenerationArtifact(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed (${res.status}). Try again.`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
   try {
-    const res = await fetch(url);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
     anchor.href = objectUrl;
     anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
+  } finally {
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
-  } catch {
-    // Network failure: leave the surface as-is; the action is retryable.
   }
+}
+
+function InfographicPreview({ src, alt }: { src: string; alt: string }) {
+  const [attempt, setAttempt] = useState(0);
+  const [decodeFailed, setDecodeFailed] = useState(false);
+  const { url, status } = useAuthedImageState(`${src}&previewAttempt=${attempt}`);
+  if (status === "error" || decodeFailed) return (
+    <div role="alert">
+      <p className="research-studio__error">Couldn’t load the infographic preview.</p>
+      <button type="button" className="research-studio-act focus-ring" onClick={() => {
+        setDecodeFailed(false);
+        setAttempt((value) => value + 1);
+      }}>Retry preview</button>
+    </div>
+  );
+  if (!url) return <p className="research-studio__note" role="status">Loading infographic preview…</p>;
+  return <img className="research-studio-viewer__infographic" src={url} alt={alt}
+    onError={() => setDecodeFailed(true)} />;
 }
 
 // ── copy flash (design genAct: ⧉ → ✓ for 1200ms) ────────────────────────────
@@ -407,17 +432,16 @@ type StudioModalProps = {
   announceText: string;
   /**
    * False parks this dialog under a stacked one (viewer under editor):
-   * its focus trap AND Escape handling are disabled — one live trap at a
-   * time — and the subtree goes inert/aria-hidden so Tab and AT only see
-   * the top dialog. Escape therefore closes only the top dialog; closing
-   * it re-activates this one (default true).
+   * the subtree goes inert/aria-hidden so Tab and AT only see the top dialog.
+   * Keep its trap registered to preserve the original return target; the
+   * shared stack gives only the top dialog ownership of Tab and Escape.
    */
   active?: boolean;
   children: ReactNode;
 };
 
 /** Mounted only while open. Focus trap + Escape + focus restore come from
- *  useFocusTrap, gated on `active`; backdrop click closes; open is announced
+ *  useFocusTrap's shared stack; backdrop click closes; open is announced
  *  to AT. */
 function StudioModal({
   onClose,
@@ -428,7 +452,28 @@ function StudioModal({
   children,
 }: StudioModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(active, dialogRef, { onEscape: onClose });
+  const portalElements = useRef(new Map<HTMLElement, number>());
+  const ownerDepth = useContext(PortalLayerDepthContext);
+  const portalRootId = usePortalLayerRootId();
+  // StandardSelect menus live under document.body; include them in the same
+  // focus boundary and Escape hierarchy as the dialog that opened them.
+  const portalLayers = useMemo(() => ({
+    register: (element: HTMLElement) => {
+      portalElements.current.set(element, (portalElements.current.get(element) ?? 0) + 1);
+      return () => {
+        const count = (portalElements.current.get(element) ?? 1) - 1;
+        if (count === 0) portalElements.current.delete(element);
+        else portalElements.current.set(element, count);
+      };
+    },
+    contains: (node: Node | null) => {
+      if (!node) return false;
+      for (const element of portalElements.current.keys()) if (element.contains(node)) return true;
+      return false;
+    },
+    elements: () => Array.from(portalElements.current.keys()),
+  }), []);
+  useFocusTrap(true, dialogRef, { onEscape: onClose, containTabFocus: true, portalLayers, portalRootId });
   const { announce } = useAnnouncer();
   const announcedRef = useRef(false);
 
@@ -454,7 +499,13 @@ function StudioModal({
         className={`research-studio-modal research-studio-modal--${variant}`}
         onClick={(event) => event.stopPropagation()}
       >
-        {children}
+        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
+          <PortalLayerRootContext.Provider value={portalRootId}>
+            <PortalLayerDepthContext.Provider value={ownerDepth + 1}>
+              {children}
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
+        </FocusTrapPortalLayersContext.Provider>
       </div>
     </div>
   );
@@ -569,7 +620,11 @@ export function GenerationReviewModal({
         ) : content?.kind === "short-video" ? (
           <ol className="research-studio-review__list">
             {content.storyboard.map((scene) => (
-              <li key={scene.id}><strong>{scene.title}</strong><span>{scene.narration}</span></li>
+              <li key={scene.id}>
+                <strong>{scene.title}</strong>
+                <ul>{scene.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>
+                <span>{scene.narration}</span>
+              </li>
             ))}
           </ol>
         ) : content?.kind === "long-video" ? (
@@ -577,7 +632,13 @@ export function GenerationReviewModal({
             {content.chapters.map((chapter) => (
               <li key={chapter.id}>
                 <strong>{chapter.title}</strong>
-                <span>{chapter.scenes.map((scene) => scene.narration).join(" ")}</span>
+                <ol>
+                  {chapter.scenes.map((scene) => <li key={scene.id}>
+                    <strong>{scene.title}</strong>
+                    <ul>{scene.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>
+                    <span>{scene.narration}</span>
+                  </li>)}
+                </ol>
               </li>
             ))}
           </ol>
@@ -1366,14 +1427,52 @@ export function GenerationViewerModal({
   onClose: () => void;
   /** Blog only: open the markdown editor over the viewer. */
   onOpenEditor?: () => void;
-  /** False while the markdown editor is stacked on top — parks this dialog's
-   *  focus trap and Escape handling so only the editor responds. */
+  /** False while the markdown editor is stacked on top — hides this dialog
+   *  while the shared trap stack gives the editor keyboard ownership. */
   active?: boolean;
 }) {
   const meta = studioMetaForKind(generation.kind);
   const content = generation.content;
   const title = generationTitle(generation);
   const { flash, copy } = useCopyFlash();
+  const editorOpener = useRef<HTMLButtonElement>(null);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    // Parking the viewer makes its opener inert before the editor can capture
+    // it. Restore that known target after the editor's trap has cleaned up.
+    if (active && !wasActive.current) editorOpener.current?.focus();
+    wasActive.current = active;
+  }, [active]);
+
+  const { announce } = useAnnouncer();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const downloadPending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const downloadArtifact = async (url: string, filename: string) => {
+    if (downloadPending.current) return;
+    downloadPending.current = true;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadGenerationArtifact(url, filename);
+      if (mounted.current) announce("Download started");
+    } catch (error) {
+      if (mounted.current) {
+        const message = error instanceof Error && error.message.startsWith("Download failed")
+          ? error.message : "Download failed. Check your connection and try again.";
+        setDownloadError(message);
+        announce(message, "assertive");
+      }
+    } finally {
+      downloadPending.current = false;
+      if (mounted.current) setDownloading(false);
+    }
+  };
 
   const points =
     content?.kind === "thread"
@@ -1480,6 +1579,7 @@ export function GenerationViewerModal({
               <span className="research-studio-viewer__label">Draft — read-only preview</span>
               {onOpenEditor ? (
                 <button
+                  ref={editorOpener}
                   type="button"
                   className="research-studio-act research-studio-act--accent"
                   onClick={onOpenEditor}
@@ -1560,11 +1660,10 @@ export function GenerationViewerModal({
           <div className="research-studio-viewer__media">
             <span className="research-studio-viewer__label">Infographic preview</span>
             {/* SVG format keeps the preview crisp at any zoom; the PNG export
-                below rasterizes the same server-rendered poster. AuthedImage
+                below rasterizes the same server-rendered poster. The preview
                 fetches through the patched window.fetch so the packaged app's
                 /api auth gate doesn't 401 the native image load. */}
-            <AuthedImage
-              className="research-studio-viewer__infographic"
+            <InfographicPreview
               src={`${infographicUrl}&format=svg`}
               alt={`Infographic poster with ${content?.kind === "infographic" ? content.stats.length : 0} extracted stats from ${generation.sourceTitle}`}
             />
@@ -1603,6 +1702,8 @@ export function GenerationViewerModal({
           </div>
         ) : null}
       </div>
+      {downloadError ? <p role="alert" className="research-studio-config__error">{downloadError}</p> : null}
+      {downloading ? <p role="status" className="research-studio__note">Preparing download…</p> : null}
       <footer className="research-studio-modal__footer">
         {footerCopyText ? (
           <button
@@ -1636,9 +1737,10 @@ export function GenerationViewerModal({
           <>
             <button
               type="button"
-              className="research-studio-act"
+              className="research-studio-act focus-ring"
+              disabled={downloading}
               onClick={() =>
-                void downloadGenerationArtifact(
+                downloadArtifact(
                   infographicUrl,
                   `infographic-${slugify(generation.sourceTitle) || generation.id}.png`,
                 )
@@ -1648,9 +1750,10 @@ export function GenerationViewerModal({
             </button>
             <button
               type="button"
-              className="research-studio-act"
+              className="research-studio-act focus-ring"
+              disabled={downloading}
               onClick={() =>
-                void downloadGenerationArtifact(
+                downloadArtifact(
                   `${infographicUrl}&format=svg`,
                   `infographic-${slugify(generation.sourceTitle) || generation.id}.svg`,
                 )
@@ -1678,8 +1781,8 @@ export function GenerationViewerModal({
  * Edits the blog generation's markdown. Decision (Phase B4): the backend
  * exposes no update fetcher — research-generations.ts is list/create/remove
  * only — so this editor does not pretend to persist. The primary action
- * copies the updated draft to the clipboard and the footer says plainly that
- * drafts save back when generation editing lands (gap filed for Phase C).
+ * copies the updated draft to the clipboard; the footer asks users to copy
+ * or download their local edits before closing.
  * The seg toggle implements Markdown (textarea, source of truth) as primary;
  * "Rich" is a read-only rendered preview of the same text — no execCommand.
  */
@@ -1753,8 +1856,7 @@ export function MarkdownEditorModal({
       )}
       <footer className="research-studio-modal__footer">
         <span className="research-studio-editor__note">
-          {words} word{words === 1 ? "" : "s"} · edits live here for now — drafts save back when
-          generation editing lands.
+          {words} word{words === 1 ? "" : "s"} · Edits stay in this window. Copy or download before closing.
         </span>
         <button
           type="button"
