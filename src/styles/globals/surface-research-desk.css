@@ -974,7 +974,7 @@
     grid-template-columns: minmax(0, 1fr);
     overflow: hidden;
   }
-  .research-desk-handle { display: none; }
+  .research-desk__workspace > .research-desk-handle { display: none; }
   .research-desk__workspace[data-compact-pane="run"] > .research-mission-nav,
   .research-desk__workspace[data-compact-pane="run"] > .research-desk-spine,
   .research-desk__workspace[data-compact-pane="queue"] > .research-desk__main { display: none; }
