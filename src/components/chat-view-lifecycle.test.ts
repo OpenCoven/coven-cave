@@ -99,59 +99,20 @@ assert.match(
   "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
 );
 
-// The timeline used to be a <details open={pending}> — a disclosure nested
-// inside RunActivityStrip's OWN expanded panel, so reaching the steps took two
-// opens, and its summary re-rendered the count chips already showing one row
-// above it (cave-dkdev). The strip's disclosure is the only one now: by the
-// time this renders the user has already asked for it, so it shows the steps
-// directly, with a bar and an "N of M" carrying the completion the chips used
-// to spell out.
-assert.match(
-  source,
-  /function ProgressGroup[\s\S]*cave-progress-bar[\s\S]*progress\.map/,
-  "Progress events should render as an activity timeline with a completion bar",
-);
-const progressGroupSource =
-  source.match(/function ProgressGroup\(\{[\s\S]*?\n\}\n/)?.[0] ?? "";
+// The turn and run strip already disclose activity. The progress timeline
+// is flat inside either; only individual diagnostics need another interaction.
+const progressGroupSource = source.match(/function ProgressGroup\([\s\S]*?\n\}\n/)?.[0] ?? "";
 assert.ok(progressGroupSource, "ProgressGroup body should be locatable");
-
-// A finished run can still carry a step marked running (the stream ends without
-// a final event for it). Counting `total` there printed "4 of 4" beside a row
-// that was visibly still spinning — the card contradicting itself, which is the
-// exact failure it was restructured to remove. Caught by driving the real app.
-assert.match(
-  source,
-  /function ProgressGroup[\s\S]*const settled = progress\.filter\(\(event\) => event\.status !== "running"\)\.length;/,
-  "the count reports steps that actually settled, never the total",
-);
-assert.doesNotMatch(
-  progressGroupSource,
-  /pending \? settled : total/,
-  "a settled run must not round its step count up past what settled",
-);
-// The card renders in two places and only one of them was asked for: the strip
-// opens it on request, the transcript shows it under every assistant turn. The
-// transcript keeps a disclosure so a long thread is not buried in step lists.
-assert.match(
-  source,
-  /<ProgressGroup progress=\{turn\.progress\} pending=\{pending\} collapsible \/>/,
-  "the in-transcript copy stays collapsible",
-);
-// Bounded to ProgressGroup's own body: an unbounded [\s\S]* runs past the end
-// of the function and finds ToolGroup's legitimate <details>, which would make
-// this assertion pass for the wrong reason and then fail once it is restored.
-// The strip's own call site passes no `collapsible`, so the copy inside its
-// already-expanded panel renders flat — no disclosure inside a disclosure.
-assert.match(
-  source,
-  /<ProgressGroup progress=\{progress\} pending=\{live\} \/>/,
-  "the strip's copy stays flat inside the panel the reader already opened",
-);
-assert.match(
-  progressGroupSource,
-  /if \(!collapsible\) \{/,
-  "the flat variant is the default, and the disclosure is opt-in",
-);
+assert.match(progressGroupSource, /cave-progress-bar[\s\S]*progress\.map/, "live progress retains its meter and ordered events");
+assert.match(progressGroupSource, /const settled = progress\.filter\(\(event\) => event\.status !== "running"\)\.length;/, "count only recorded settled events");
+assert.doesNotMatch(progressGroupSource, /pending \? settled : total/, "completion must not invent settled events");
+assert.match(source, /<ProgressGroup progress=\{turn\.progress\} pending=\{pending\} \/>/, "turn disclosure owns the transcript expansion");
+assert.match(source, /<ProgressGroup progress=\{progress\} pending=\{live\} \/>/, "run-strip disclosure owns its expansion");
+assert.doesNotMatch(progressGroupSource, /<details|<summary/, "do not nest a redundant group disclosure");
+assert.match(progressGroupSource, /Activity needs attention/, "errors remain visible in the summary");
+assert.match(source, /Runtime compatibility notice/, "legacy verbose runtime diagnostics have a compact title");
+assert.match(styles, /grid-template-columns: var\(--icon-sm\) minmax\(0, 1fr\)/, "long labels must shrink inside the row");
+assert.match(styles, /\.cave-progress-detail[\s\S]*?overflow-wrap: anywhere/, "full diagnostics wrap without leaving the card");
 
 assert.match(
   source,
