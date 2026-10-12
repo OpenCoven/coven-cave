@@ -22,6 +22,9 @@ type Options = {
    *  focusable child exists, focuses the container itself — caller MUST give
    *  the container `tabIndex={-1}` so this is reachable. */
   focusFirst?: boolean;
+  /** Recapture native Tab focus escapes. Callers with portaled
+   *  controls must register them through portalLayers. Defaults to false. */
+  containTabFocus?: boolean;
   /** Late-bound restoration gate for transitions directly into another layer. */
   restoreFocus?: () => boolean;
   /** Body-portaled descendants that remain part of this trap's focus boundary. */
@@ -281,6 +284,7 @@ export function useFocusTrap(
   {
     onEscape,
     focusFirst = true,
+    containTabFocus = false,
     restoreFocus = () => true,
     portalLayers,
     portalRootId,
@@ -337,6 +341,40 @@ export function useFocusTrap(
       }
     }
 
+    let tabBackward = false;
+    let tabFocusPending = false;
+    let tabResetTimer: ReturnType<typeof setTimeout> | undefined;
+    function getFocusables() {
+      return Array.from(
+        new Set([
+          ...container!.querySelectorAll<HTMLElement>(FOCUSABLE),
+          ...(portalLayers?.elements() ?? []).flatMap((layer) =>
+            Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)),
+          ),
+        ]),
+      ).filter(
+        (el) =>
+          !el.hasAttribute("disabled") &&
+          // Roving rows and controls hidden by a dialog mode are not Tab stops.
+          !(el.tabIndex < 0) &&
+          (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
+      );
+    }
+
+    function onFocusIn() {
+      if (!tabFocusPending || !isTopmostTrap(trapId)) return;
+      tabFocusPending = false;
+      clearTimeout(tabResetTimer);
+      const activeEl = document.activeElement;
+      if (container!.contains(activeEl) || portalLayers?.contains(activeEl)) return;
+      // Native navigation can skip buttons on macOS and leave the dialog from
+      // an interior control. Preserve native traversal (including media), then
+      // wrap only when focus actually moves outside the registered boundary.
+      const focusables = getFocusables();
+      const target = tabBackward ? focusables.at(-1) : focusables[0];
+      (target ?? container!).focus();
+    }
+
     function onKey(e: KeyboardEvent) {
       // Only the topmost active trap owns the keyboard (see trapStack doc
       // comment above) — a background trap is a silent no-op here, and
@@ -350,22 +388,15 @@ export function useFocusTrap(
         return;
       }
       if (e.key === "Tab" && container) {
-        const focusables = Array.from(
-          new Set([
-            ...container.querySelectorAll<HTMLElement>(FOCUSABLE),
-            ...(portalLayers?.elements() ?? []).flatMap((layer) =>
-              Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)),
-            ),
-          ]),
-        ).filter(
-          (el) =>
-            !el.hasAttribute("disabled") &&
-            // Only real Tab stops. A roving-tabindex row (`tabindex="-1"` on a
-            // button) matches FOCUSABLE but Tab never lands on it; counting it
-            // as `last` meant Tab from the true last stop left the dialog (#5527).
-            !(el.tabIndex < 0) &&
-            (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
-        );
+        tabBackward = e.shiftKey;
+        if (containTabFocus) {
+          clearTimeout(tabResetTimer);
+          tabFocusPending = true;
+          // Tab's native focus move happens before the next task. Do not
+          // intercept later programmatic focus, such as clipboard fallback.
+          tabResetTimer = setTimeout(() => { tabFocusPending = false; }, 0);
+        }
+        const focusables = getFocusables();
         if (focusables.length === 0) {
           e.preventDefault();
           return;
@@ -395,6 +426,9 @@ export function useFocusTrap(
           first.focus();
         } else if (
           !focusables.includes(activeEl) &&
+          // Let native summary/media controls traverse their own controls.
+          // Programmatic-only roving rows still need the existing fallback.
+          (!containTabFocus || activeEl.tabIndex < 0) &&
           typeof activeEl.compareDocumentPosition === "function"
         ) {
           // Focus sits on a programmatic-only element inside the trap (an
@@ -412,8 +446,12 @@ export function useFocusTrap(
     }
 
     window.addEventListener("keydown", onKey);
+    if (containTabFocus) window.addEventListener("focusin", onFocusIn);
     return () => {
       window.removeEventListener("keydown", onKey);
+      if (containTabFocus) window.removeEventListener("focusin", onFocusIn);
+      tabFocusPending = false;
+      clearTimeout(tabResetTimer);
       const { hadTrapAbove, nextTopmost, rootReturnFocus } = unregisterTrap(trapId);
       // Skip restoring focus if a still-active nested trap sits above where
       // we were: an ancestor closing out from under an open child must not
@@ -436,6 +474,7 @@ export function useFocusTrap(
     active,
     containerRef,
     focusFirst,
+    containTabFocus,
     portalLayers,
     ownerLayerDepth,
     trapRootId,

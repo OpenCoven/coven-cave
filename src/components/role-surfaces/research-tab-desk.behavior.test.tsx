@@ -3,7 +3,10 @@ import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-vi.mock("./research-mission-detail", () => ({ ResearchMissionDetail: () => null }));
+vi.mock("./research-mission-detail", () => ({ ResearchMissionDetail: ({ showEvidence, onOpenEvidence }) =>
+  createElement("section", { "data-evidence": showEvidence },
+    createElement("button", { "data-open-evidence": true, onClick: onOpenEvidence }, "Show evidence")),
+}));
 vi.mock("./research-mission-list", () => ({ ResearchMissionList: () => null }));
 vi.mock("./research-topic-discovery", () => ({ ResearchTopicDiscovery: () => null }));
 vi.mock("./use-research-pane", () => ({
@@ -53,6 +56,7 @@ beforeEach(() => {
   const window = new EventTarget();
   window.localStorage = { getItem: () => null, setItem: vi.fn() };
   vi.stubGlobal("window", window);
+  vi.stubGlobal("requestAnimationFrame", (callback) => { callback(); return 0; });
 });
 afterEach(async () => {
   await act(async () => { for (const renderer of renderers.splice(0)) renderer.unmount(); });
@@ -71,6 +75,13 @@ test("/chat creates a discussion for the exact executor and navigates to the ret
     method: "POST", body: JSON.stringify({ sessionId: "executor-a" }),
   }));
   expect(openSession).toHaveBeenCalledExactlyOnceWith("discussion-a", "familiar-owner");
+});
+
+test("evidence starts closed and remains one action away", async () => {
+  const renderer = await mount(vi.fn());
+  expect(renderer.root.findByType("section").props["data-evidence"]).toBe(false);
+  act(() => renderer.root.findByProps({ "data-open-evidence": true }).props.onClick());
+  expect(renderer.root.findByType("section").props["data-evidence"]).toBe(true);
 });
 
 test("/chat surfaces API failure and never falls back to opening the executor", async () => {

@@ -147,7 +147,7 @@ test("grid/rows view persists under cave:research:res-view with an SSR guard", (
 });
 
 test("detail overlay is a focus-trapped dialog with honest copy/open actions", () => {
-  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{ onEscape: handleOverlayEscape \}\)/);
+  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{\s*onEscape: handleOverlayEscape,\s*containTabFocus: true,\s*\}\)/);
   assert.match(source, /role="dialog"/);
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /aria-labelledby="research-res-overlay-title"/);

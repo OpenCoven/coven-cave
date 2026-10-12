@@ -33,7 +33,7 @@ import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 import { RESEARCHER_SURFACE_ID } from "./ids";
 import { ResearchTabDesk } from "./research-tab-desk";
-import { researchEngineStatus, researchLiveRunCount } from "./researcher-status";
+import { researchLiveRunCount } from "./researcher-status";
 import { useResearchMissions } from "./use-research-missions";
 
 function ResearchTabLoading() {
@@ -228,7 +228,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   const checkpointCount = research.missions.filter(
     (mission) => mission.status === "checkpoint",
   ).length;
-  const engine = researchEngineStatus(context.runtimeState.daemonRunning, liveRunCount);
 
   return (
     <div className="research-desk">
@@ -242,19 +241,8 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
           size="sm"
           bordered={false}
         />
-        {/* Status cluster: engine readiness, live runs, and the review queue —
-            the three numbers the frame keeps permanently on screen so the desk
-            never has to be opened to learn there is work waiting. The review
-            segment is a button because it has somewhere to go. */}
+        {/* Runtime status belongs to the room header. Keep only the actionable review queue here. */}
         <div className="research-desk__status">
-          <span className="research-desk__status-seg" data-tone={engine.tone} title={engine.label}>
-            <i aria-hidden />
-            engine
-            <span className="sr-only"> — {engine.label}</span>
-          </span>
-          <span className="research-desk__status-seg" title={`${liveRunCount} live`}>
-            {liveRunCount} live
-          </span>
           {checkpointCount > 0 ? (
             <button
               type="button"
