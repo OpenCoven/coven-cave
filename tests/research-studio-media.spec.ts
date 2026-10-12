@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createServer, request as proxyRequest, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
+import type { Socket } from "node:net";
 import { DEFAULT_ELEVENLABS_VOICE_ID } from "../src/lib/voice/elevenlabs-shared";
 
 const FAMILIAR_ID = "rida";
@@ -40,6 +41,7 @@ const SILENT_WAV = createSilentWav();
 // loopback so playback and completed downloads exercise actual browser I/O.
 let mediaServer: Server;
 let mediaOrigin: string;
+const mediaSockets = new Set<Socket>();
 test.beforeAll(async ({}, testInfo) => {
   const upstreamOrigin = new URL(String(testInfo.project.use.baseURL));
   mediaServer = createServer((request, response) => {
@@ -77,6 +79,44 @@ test.beforeAll(async ({}, testInfo) => {
     });
     response.end(body);
   });
+  mediaServer.on("connection", socket => {
+    mediaSockets.add(socket);
+    socket.once("close", () => mediaSockets.delete(socket));
+  });
+  // Next's development RSC debug channel uses HMR. Forward its upgrade too:
+  // serving the document and assets alone leaves hydration waiting forever.
+  mediaServer.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const upstream = proxyRequest({
+      protocol: upstreamOrigin.protocol,
+      hostname: upstreamOrigin.hostname,
+      port: upstreamOrigin.port,
+      path: `${url.pathname}${url.search}`,
+      method: request.method,
+      headers: { ...request.headers, host: upstreamOrigin.host },
+    });
+    upstream.once("upgrade", (response, upstreamSocket, upstreamHead) => {
+      socket.write(`HTTP/${response.httpVersion} ${response.statusCode} ${response.statusMessage}\r\n`);
+      for (let index = 0; index < response.rawHeaders.length; index += 2) {
+        socket.write(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}\r\n`);
+      }
+      socket.write("\r\n");
+      if (upstreamHead.length) socket.write(upstreamHead);
+      if (head.length) upstreamSocket.write(head);
+      upstreamSocket.on("error", () => socket.destroy());
+      upstreamSocket.once("close", () => socket.destroy());
+      socket.once("close", () => upstreamSocket.destroy());
+      upstreamSocket.pipe(socket).pipe(upstreamSocket);
+    });
+    upstream.once("response", response => {
+      response.resume();
+      socket.destroy();
+    });
+    upstream.once("error", () => socket.destroy());
+    socket.on("error", () => upstream.destroy());
+    socket.once("close", () => upstream.destroy());
+    upstream.end();
+  });
   await new Promise<void>(resolve => mediaServer.listen(0, "127.0.0.1", resolve));
   const address = mediaServer.address();
   if (!address || typeof address === "string") throw new Error("Media fixture did not bind");
@@ -84,6 +124,7 @@ test.beforeAll(async ({}, testInfo) => {
 });
 test.afterAll(async () => {
   if (!mediaServer) return;
+  for (const socket of mediaSockets) socket.destroy();
   mediaServer.closeAllConnections();
   await new Promise<void>((resolve, reject) => mediaServer.close(error => error ? reject(error) : resolve()));
 });
