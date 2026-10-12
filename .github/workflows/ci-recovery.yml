@@ -29,19 +29,15 @@ jobs:
         with:
           node-version: 24
 
-      # scripts/ci-recovery.mjs imports "yaml"; without an install the job dies
-      # at module resolution before it can assess a single PR.
+      # Recovery reads each candidate's workflow guards with the YAML parser.
       - run: pnpm install --frozen-lockfile
 
       - name: Detect and recover missing CI
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        # A red run here no longer means "nothing was recovered". Every
-        # recoverable PR is dispatched first; the non-zero exit reports only the
-        # candidates dropped for a reason a human should fix — an ambiguous
-        # guard contract (`workflow_contract_partial`, usually an un-rebased
-        # branch carrying an older ci.yml shape) or a REST failure. Read the
-        # `#<pr> skipped <reason>` lines to see which. Recovery for every other
-        # open PR already happened in this same run.
+        # Only full retries of eligible cancelled pull_request runs are automatic.
+        # Missing PR events, approval gates, stale snapshots and partial guards
+        # report the exact maintainer action. API/evidence faults fail this job.
+        # A rerun request is not a passing required check or merge permission.
         run: node scripts/ci-recovery.mjs --apply
