@@ -41,13 +41,19 @@ const SILENT_WAV = createSilentWav();
 let mediaServer: Server;
 let mediaOrigin: string;
 test.beforeAll(async ({}, testInfo) => {
-  const upstreamOrigin = String(testInfo.project.use.baseURL);
+  const upstreamOrigin = new URL(String(testInfo.project.use.baseURL));
   mediaServer = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/api/research/generations/media") {
-      const upstream = proxyRequest(new URL(request.url ?? "/", upstreamOrigin), {
+      // Request targets supply only a path; the connection authority always
+      // comes from trusted Playwright configuration, even for absolute URLs.
+      const upstream = proxyRequest({
+        protocol: upstreamOrigin.protocol,
+        hostname: upstreamOrigin.hostname,
+        port: upstreamOrigin.port,
+        path: `${url.pathname}${url.search}`,
         method: request.method,
-        headers: { ...request.headers, host: new URL(upstreamOrigin).host },
+        headers: { ...request.headers, host: upstreamOrigin.host },
       }, upstreamResponse => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);
@@ -80,6 +86,35 @@ test.afterAll(async () => {
   if (!mediaServer) return;
   mediaServer.closeAllConnections();
   await new Promise<void>((resolve, reject) => mediaServer.close(error => error ? reject(error) : resolve()));
+});
+
+test("media fixture keeps absolute and network-path targets on its configured upstream", async () => {
+  const unexpectedRequests: string[] = [];
+  const otherServer = createServer((request, response) => {
+    unexpectedRequests.push(request.url ?? "");
+    response.end("Unexpected upstream");
+  });
+  await new Promise<void>(resolve => otherServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = otherServer.address();
+    if (!address || typeof address === "string") throw new Error("Origin probe did not bind");
+    const authority = `127.0.0.1:${address.port}`;
+    for (const target of [`http://${authority}/proxy-origin-probe`, `//${authority}/proxy-origin-probe`, `/\\${authority}/proxy-origin-probe`]) {
+      await new Promise<void>((resolve, reject) => {
+        const request = proxyRequest(mediaOrigin, { path: target }, response => {
+          response.resume();
+          response.once("end", resolve);
+          response.once("error", reject);
+        });
+        request.once("error", reject);
+        request.end();
+      });
+    }
+    expect(unexpectedRequests).toEqual([]);
+  } finally {
+    otherServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => otherServer.close(error => error ? reject(error) : resolve()));
+  }
 });
 
 
