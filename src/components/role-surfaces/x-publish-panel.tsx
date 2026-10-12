@@ -27,19 +27,18 @@
  *    `uncertain` record. This panel holds the whole composer on that, not just
  *    the record — see `composerGate` for why the wider hold is the right one
  *    in front of a person.
- *  - **A refusal is shown, never worked around.** Publishing not granted for
- *    this familiar renders the server's own sentence and nothing else — no
- *    composer underneath to fill in meanwhile.
- *
- *    A missing X connection is deliberately NOT that shape. The route serves
- *    this history without one, so the backlog stays readable after a
- *    disconnect; the panel therefore loads normally and the refusal arrives at
- *    the publish, in the server's own words. Either way there is no local
- *    fallback path, because the point of the grant is that there isn't one.
+ *  - **A refusal is shown, never worked around.** A revoked publishing grant
+ *    closes the composer while keeping existing wording readable and the
+ *    connection controls reachable. Refreshing must confirm the grant again.
+ *    Missing X connections leave history readable; structured action errors
+ *    offer repair in place, followed by a fresh wording/account review.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { ErrorState } from "@/components/ui/error-state";
+import { Button } from "@/components/ui/button";
+import { XPublishError, XPublishRecovery, xPublishRecovery } from "./x-publish-recovery";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
@@ -64,11 +63,13 @@ import { SurfaceError, SurfaceLoading } from "./surface-room";
  */
 type PublicationsState =
   | { ok: true; publications: XPublicationRecord[] }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; code?: string };
 
 type PublishWire = {
   ok?: boolean;
   error?: string;
+  code?: string;
+  retryAt?: string;
   publications?: XPublicationRecord[];
   publication?: XPublicationRecord;
   confirmationToken?: string;
@@ -99,19 +100,28 @@ async function postPublishAction(body: Record<string, unknown>): Promise<Publish
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
     cache: "no-store",
+  }).catch(() => {
+    throw new XPublishError(
+      "The Cave connection was interrupted. Your wording is still here. Check the connection, then try this action again.",
+      body.action === "publish" ? "connection-lost" : undefined,
+    );
   });
   const json = (await res.json().catch(() => null)) as PublishWire | null;
   if (!res.ok || !json?.ok) {
-    throw new Error(json?.error?.trim() || "The Cave refused that X action.");
+    throw new XPublishError(
+      typeof json?.error === "string" ? json.error.trim() : "The Cave could not complete that X action.",
+      typeof json?.code === "string" ? json.code : !json && body.action === "publish" ? "invalid-response" : undefined,
+      typeof json?.retryAt === "string" ? json.retryAt : undefined,
+    );
   }
   return json;
 }
 
-export function XPublishPanel({ familiarId }: { familiarId: string }) {
+export function XPublishPanel({ familiarId, connectionSettings }: { familiarId: string; connectionSettings?: ReactNode }) {
   const [text, setText] = useState("");
   const [confirmation, setConfirmation] = useState<XComposerConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [postIdDrafts, setPostIdDrafts] = useState<Record<string, string>>({});
   const { announce } = useAnnouncer();
@@ -135,7 +145,11 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       if (!Array.isArray(json.publications)) throw new Error("bad response");
       return { ok: true, publications: json.publications };
     }
-    return { ok: false, reason: json.error?.trim() || REFUSAL_FALLBACK };
+    return {
+      ok: false,
+      reason: json.error?.trim() || REFUSAL_FALLBACK,
+      code: typeof json.code === "string" ? json.code : undefined,
+    };
   }, [familiarId]);
 
   const { data, error, reload } = useLatestAsyncData<PublicationsState>({
@@ -183,7 +197,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
    */
   const busyRef = useRef(false);
   const run = useCallback(async (action: () => Promise<void>) => {
-    if (busyRef.current) return;
+    if (busyRef.current || error) return;
     busyRef.current = true;
     setBusy(true);
     setActionError(null);
@@ -191,11 +205,26 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     try {
       await action();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setActionError(message);
-      announce(message, "assertive");
+      const failure = cause instanceof Error ? cause : new Error("This X action could not be completed.");
+      setActionError(failure);
+      const recovery = xPublishRecovery(failure);
+      announce(`${recovery.title}. ${recovery.hint}`, "assertive");
     } finally {
-      await reload({ retainData: true });
+      const refreshed = await reload({ retainData: true });
+      if (!refreshed) announce("Post history is unavailable. Your wording is still here. Refresh post history before taking another action.", "assertive");
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [announce, error, reload]);
+
+  const refreshHistory = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const refreshed = await reload({ retainData: true });
+      announce(refreshed ? "Post history refreshed." : "Post history is still unavailable.", refreshed ? "polite" : "assertive");
+    } finally {
       busyRef.current = false;
       setBusy(false);
     }
@@ -344,7 +373,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     announce(settled);
   }, [announce, confirmation, publications]);
 
-  if (error) {
+  if (error && data == null) {
     return (
       <section className="role-surface-section">
         <div className="role-surface-section-head">
@@ -370,27 +399,45 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     );
   }
 
-  // A refusal ends the panel. There is deliberately no composer underneath it
-  // to fill in "while you sort that out" — the grant is the whole gate.
+  // Keep the grant closed while allowing repair. If it was revoked mid-draft,
+  // retain the wording as a read-only preview; recovery never enables posting.
   if (!data.ok) {
     return (
       <section className="role-surface-section">
         <div className="role-surface-section-head">
           <h3>X publishing</h3>
         </div>
-        <p className="role-surface-notice role-surface-notice--warn">
-          <Icon name="ph:lock-simple" width={13} height={13} aria-hidden />
-          {data.reason}
-        </p>
+        <XPublishRecovery
+          error={new XPublishError(data.reason, data.code)}
+          connectionSettings={connectionSettings}
+          busy={busy}
+        />
+        {text && (
+          <>
+            <p className="role-surface-hint">Your draft wording</p>
+            <pre className="role-surface-content">{text}</pre>
+          </>
+        )}
+        <Button size="sm" disabled={busy} onClick={() => void refreshHistory()}>Refresh post history</Button>
       </section>
     );
   }
+
+  const historyError = error ? (
+    <ErrorState
+      compact
+      live={false}
+      headline="Post history is unavailable"
+      subtitle="Your wording is still here. Refresh the history to check the last attempt before taking another action."
+      actions={<Button size="sm" disabled={busy} onClick={() => void refreshHistory()}>Refresh post history</Button>}
+    />
+  ) : null;
 
   return (
     <section className="role-surface-section">
       <div className="role-surface-section-head">
         <h3>X publishing</h3>
-        <span className="role-surface-tag">one post, one confirmation</span>
+        <span className="role-surface-hint">Review before publishing</span>
       </div>
 
       {gate.kind === "resolve-first" && (
@@ -427,7 +474,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
                 <button
                   type="button"
                   className="role-surface-chip focus-ring"
-                  disabled={busy}
+                  disabled={busy || Boolean(error)}
                   onClick={() => void resolve(publication.id, "published")}
                 >
                   It posted
@@ -435,7 +482,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
                 <button
                   type="button"
                   className="role-surface-chip focus-ring"
-                  disabled={busy}
+                  disabled={busy || Boolean(error)}
                   onClick={() => void resolve(publication.id, "abandoned")}
                 >
                   It did not post
@@ -490,8 +537,10 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         text is not guaranteed to be spoken at all.
       */}
       {actionError && gate.kind !== "publish" && (
-        <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
+        <XPublishRecovery error={actionError} connectionSettings={connectionSettings} busy={busy} />
       )}
+
+      {gate.kind !== "publish" && historyError}
 
       {notice && <p className="role-surface-notice">{notice}</p>}
 
@@ -499,7 +548,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         <button
           type="button"
           className="role-surface-chip focus-ring"
-          disabled={busy || gate.kind !== "confirm"}
+          disabled={busy || Boolean(error) || gate.kind !== "confirm"}
           onClick={() => void confirm()}
         >
           Review this wording
@@ -535,7 +584,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
               <button
                 type="button"
                 className="role-surface-chip role-surface-chip--accent focus-ring"
-                disabled={busy}
+                disabled={busy || Boolean(error)}
                 onClick={actionError ? () => void confirm() : () => void publish()}
               >
                 {actionError ? "Review again" : "Publish to X"}
@@ -543,13 +592,16 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
             </>
           )}
         >
-          <p className="role-surface-notice">
-            <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
-            This exact text is confirmed. Publishing sends it once.
-          </p>
-          {actionError && (
-            <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
+          {!actionError && (
+            <p className="role-surface-notice">
+              <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
+              This exact text is confirmed. Publishing sends it once.
+            </p>
           )}
+          {actionError && (
+            <XPublishRecovery error={actionError} connectionSettings={connectionSettings} busy={busy} />
+          )}
+          {historyError}
           <pre className="role-surface-content">{gate.confirmation.text}</pre>
           <p className="role-surface-hint">
             {gate.confirmation.account
@@ -597,7 +649,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
                 <button
                   type="button"
                   className="role-surface-chip focus-ring"
-                  disabled={busy}
+                  disabled={busy || Boolean(error)}
                   onClick={() => void retire(publication.id)}
                 >
                   Retire
