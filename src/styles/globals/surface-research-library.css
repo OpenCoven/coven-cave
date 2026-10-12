@@ -18,7 +18,7 @@
   align-items: center;
   gap: 10px;
   flex: none;
-  padding: var(--space-2) 22px;
+  padding: var(--space-2) var(--space-6);
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklch, var(--research-accent) 6%, transparent);
   font-size: var(--text-2xs);
@@ -58,7 +58,7 @@
 .research-library__ticker-watch:hover { text-decoration: underline; }
 
 /* ── Header: title, real counts, sort note. ── */
-.research-library__body { padding: 20px 22px 32px; }
+.research-library__body { padding: var(--space-5) var(--space-6) var(--space-8); min-width: 0; }
 .research-library__head {
   display: flex;
   align-items: baseline;
