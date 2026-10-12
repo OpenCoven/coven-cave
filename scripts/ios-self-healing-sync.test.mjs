@@ -19,7 +19,7 @@ assert.match(model, /private let connectionMonitor = NWPathMonitor\(\)/, "AppMod
 assert.match(model, /func startConnectionSupervisor\(\)/, "AppModel should expose a connection supervisor starter");
 assert.match(
   model,
-  /pathUpdateHandler = \{[\s\S]*?path\.status == \.satisfied[\s\S]*?updateConnectionPath\(available: pathAvailable\)/,
+  /pathUpdateHandler = \{[\s\S]*?ConnectionPathPolicy\.allowsAttempt\(path\.status\)[\s\S]*?updateConnectionPath\(available: pathAvailable\)/,
   "network-path changes should feed the shared connection supervisor",
 );
 assert.match(
