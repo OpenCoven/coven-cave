@@ -68,7 +68,7 @@ rollback target exists; they do not require tag-by-tag repair.
 
 ### When the Windows MSI build fails
 
-An MSI signing failure is different from a red rollback gate: `build` is
+An MSI build failure is different from a red rollback gate: `build` is
 partial, so `checksums` and the Homebrew bump do not run. The GitHub Release
 can still contain macOS and Linux installers, but has no MSI or `SHA256SUMS`.
 The `partial-release-notes` job writes install links from the assets actually
@@ -78,21 +78,22 @@ install table must also point Windows users to a verified earlier MSI. For the
 current incident, that is [v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
 
 After a new release publishes, check its public page in the same shape
-as v0.5.7: direct links for each published DMG, AppImage, and signed MSI;
+as v0.5.7: direct links for each published DMG, AppImage, and MSI;
 `SHA256SUMS` with a verification command; and the compare link. Compare those
 links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
 '.assets[].name'`. An asset listed in prose but absent from the API is a
 release-page defect, even if the build job was green.
 
-For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), configure
-the SSL.com eSigner secrets and `WINDOWS_SIGNING_CERT_THUMBPRINT`, then follow
-the [release and candidate sequence](branching.md#release-and-testflight) for
-a new version from clean `main`. The rollback gate selects v0.5.7,
-the newest older release with the required assets, and verifies its manifest.
-Verify the new release's Authenticode-checked MSI, checksum entry,
-`latest.json`, updater signatures, and public release page before directing
-downloads to it. The incomplete v0.5.8 through v0.5.12 tags do not need to be replayed.
-The current `latest` alias intentionally points to v0.5.8 meanwhile.
+For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), follow the
+[release and candidate sequence](branching.md#release-and-testflight) for a new
+version from clean `main`. The Windows MSI path uses the v0.5.7 build, budget,
+upload, updater signature, and attestation sequence. This MSI is **not
+Authenticode-signed**; do not describe it as code-signed. Check the new MSI's
+checksum entry, `latest.json`, updater signature, and public release page
+before directing downloads to it. The rollback gate selects v0.5.7, the
+newest older release with the required assets, and verifies its manifest.
+The incomplete v0.5.8 through v0.5.12 tags do not need to be replayed. The
+current `latest` alias intentionally points to v0.5.8 meanwhile.
 
 ## What it checks
 
