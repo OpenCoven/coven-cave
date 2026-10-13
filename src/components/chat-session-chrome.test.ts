@@ -159,6 +159,10 @@ test("2a ④ — the user turn is a card in the reading column, not a right-alig
   assert.match(bubble, /border-radius: var\(--radius-card\)/, "uniform 12px corners");
   assert.match(bubble, /background: color-mix\(in oklch, var\(--bg-raised\)/, "neutral raised fill");
   assert.doesNotMatch(bubble, /14px 14px 4px 14px/, "the old tail-cornered bubble is gone");
+  // #5954: sized to its content, up to ~80% of the column, instead of a
+  // full-width card for a one-line message.
+  assert.match(bubble, /width: fit-content;/, "a short message gets a short card");
+  assert.match(bubble, /max-width: min\(80%, 800px\);/, "a long one stops at about 80% of the column");
 });
 
 test("2b — the new session leads with a mono eyebrow and one serif line", () => {
