@@ -104,7 +104,12 @@ test("2a ③ — the instrument strip keeps every metric reachable at narrow wid
   );
   assert.match(styles, /\.cave-chat-context-stat--action/, "detail metrics have trigger styling");
   assert.match(styles, /\.cave-chat-context-popover/, "breakdown cards have a scoped surface");
-  assert.match(styles, /\.cave-chat-context-breakdown__bar/, "context detail includes a segmented bar");
+  // Context fill has one home, the composer meter (#5944). The strip and the
+  // title line used to repeat it, and on a run total each read a different red.
+  assert.doesNotMatch(contextRow, /stat\.id === "context"/, "the strip carries no context card");
+  assert.doesNotMatch(styles, /\.cave-chat-context-breakdown__bar/, "the context card's segmented bar is gone with it");
+  assert.doesNotMatch(chatView, /<ContextMeterChip\b/, "the title line's hover cluster carries no context meter");
+  assert.equal(chatView.match(/<ComposerContextMeter\b/g)?.length, 1, "the composer renders the one context meter");
   // The rule BODY is [^}]* rather than [\s\S]*?: `styles` is the whole expanded
   // facade, so a body that may cross `}` matches an @media here, this selector
   // there, and a `display: none` from an unrelated rule in a different imported

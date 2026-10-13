@@ -105,7 +105,7 @@ test("computeContextMeter computes percent and level against the window", () => 
   assert.equal(m.known, true);
 });
 
-test("computeContextMeter bands warn at >=70% and high at >=90%, clamping at 100%", () => {
+test("computeContextMeter bands warn at >=70% and high at >=90%", () => {
   const warn = computeContextMeter(
     { inputTokens: 150_000, outputTokens: 0 },
     "anthropic/claude-haiku-4-5",
@@ -119,13 +119,30 @@ test("computeContextMeter bands warn at >=70% and high at >=90%, clamping at 100
   );
   assert.equal(high?.level, "high");
 
-  // Over the window clamps to 100% / fraction 1.
-  const over = computeContextMeter(
-    { inputTokens: 500_000, outputTokens: 0 },
+  const full = computeContextMeter(
+    { inputTokens: 200_000, outputTokens: 0 },
     "anthropic/claude-haiku-4-5",
   );
-  assert.equal(over?.percent, 100);
-  assert.equal(over?.fraction, 1);
+  assert.equal(full?.percent, 100);
+  assert.equal(full?.level, "high");
+});
+
+test("computeContextMeter reads usage past the window as no fill reading at all", () => {
+  // A prompt cannot be larger than the window that holds it, so more tokens
+  // than the window means the harness reported a run total (every model call
+  // summed), not one prompt. Clamping that to a red 100% invented a full window.
+  assert.equal(
+    computeContextMeter({ inputTokens: 500_000, outputTokens: 0 }, "anthropic/claude-haiku-4-5"),
+    null,
+  );
+  // The Codex case from the ultrawide review: 10.9M against the 200k fallback.
+  assert.equal(
+    computeContextMeter(
+      { inputTokens: 1_200_000, outputTokens: 40_000, cacheReadTokens: 9_700_000 },
+      undefined,
+    ),
+    null,
+  );
 });
 
 test("computeContextMeter marks unknown-model windows as estimates", () => {

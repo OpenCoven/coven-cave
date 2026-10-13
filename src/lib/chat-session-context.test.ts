@@ -10,7 +10,7 @@ import {
   formatContextDuration,
 } from "./chat-session-context.ts";
 
-test("detail cards aggregate successful tools, elapsed time and context composition", () => {
+test("detail cards aggregate successful tools and elapsed time", () => {
   const details = chatContextDetails({
     turns: [
       {
@@ -42,12 +42,12 @@ test("detail cards aggregate successful tools, elapsed time and context composit
   ]);
   assert.equal(details.elapsed?.value, "23m 10s");
   assert.deepEqual(details.elapsed?.rows.map((row) => row.label), ["thinking", "tools"]);
-  assert.equal(details.context?.value, "14.5k / 200k");
-  assert.equal(details.context?.rows.at(-1)?.label, "free");
-  assert.equal(details.context?.rows.at(-1)?.value, "185.5k");
+  // Context fill has one home, the composer meter (#5944), so the header's
+  // detail cards no longer carry a context card.
+  assert.equal("context" in details, false);
 });
 
-test("stats carry the context meter, tokens, cost and duration — each only when real", () => {
+test("stats carry steps, active time, tokens and cost — each only when real", () => {
   assert.deepEqual(chatContextStats({}), []);
   const stats = chatContextStats({
     turns: [{
@@ -59,11 +59,22 @@ test("stats carry the context meter, tokens, cost and duration — each only whe
     costUsd: 0.08,
     model: "claude-opus-5",
   });
-  assert.deepEqual(stats.map((stat) => stat.id), ["done", "elapsed", "context", "tokens", "cost"]);
-  const context = stats[2];
-  assert.equal(typeof context.percent, "number");
-  assert.match(context.title, /tokens/);
+  assert.deepEqual(stats.map((stat) => stat.id), ["done", "elapsed", "tokens", "cost"]);
   assert.equal(stats[1].value, "38s");
+});
+
+test("the header strip never repeats the composer's context meter", () => {
+  // A Codex run that reported no model: its run total (10.9M) used to read
+  // "context 10.9M / 200k" in red here while the composer read "≈100%".
+  const stats = chatContextStats({
+    usage: { inputTokens: 1_200_000, outputTokens: 40_000, cacheReadTokens: 9_700_000 },
+  });
+  assert.deepEqual(stats.map((stat) => stat.id), ["tokens"]);
+  const fits = chatContextStats({
+    usage: { inputTokens: 12_000, outputTokens: 400 },
+    model: "claude-opus-5",
+  });
+  assert.deepEqual(fits.map((stat) => stat.id), ["tokens"]);
 });
 
 test("a zero-cost, zero-token run reports nothing rather than zeroes", () => {
