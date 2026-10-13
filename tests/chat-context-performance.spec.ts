@@ -432,6 +432,10 @@ for (const departure of ["project", "new-chat"] as const) {
     await setup(page);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "cody" } })));
     await switchProject(page, "alpha");
+    // switchProject returns as soon as the row is clicked. Typing before the
+    // composer binds to Alpha writes the draft under the previous key, and the
+    // key change then shows Alpha's empty draft — the "Received: ''" flake.
+    await expect(page.getByTestId("chat-main").getByRole("button", { name: /^Project: Context alpha/ })).toBeVisible();
     let releaseSave!: () => void;
     const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
     let saves = 0;

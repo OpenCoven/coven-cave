@@ -158,6 +158,7 @@ import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
 import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
+import { runtimeDisplayName } from "@/components/runtime-logo";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
@@ -351,7 +352,6 @@ import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
-import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { ChatReasoningDisclosure } from "./chat-reasoning-disclosure";
@@ -1739,14 +1739,6 @@ function MetaLine({
       ? segments.slice(identitySegmentCount)
       : segments;
   const task = linkedContext?.task ?? null;
-  // Chat-revamp 1b: the header meta carries the session's live git branch
-  // beside the familiar + model. The fetch rides the shared changes-summary
-  // gate (cave-v8hh) — the composer git chip already polls the same root, so
-  // this subscriber adds no extra requests.
-  const { branch: gitBranch } = useChangesSummary(
-    session?.project_root ?? projectRoot ?? undefined,
-    Boolean(session?.project_root ?? projectRoot),
-  );
   // Same defense-in-depth override as the old headline row: hide a raw
   // "Task context: …" seed prompt that leaked through as the title.
   const titleOverride =
@@ -1804,15 +1796,6 @@ function MetaLine({
               <>
                 {" · "}
                 <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
-              </>
-            ) : null}
-            {gitBranch ? (
-              <>
-                {" · "}
-                <span className="cave-chat-meta-line__branch" title={`Branch: ${gitBranch}`}>
-                  <Icon name="ph:git-branch" width={10} aria-hidden />
-                  {gitBranch}
-                </span>
               </>
             ) : null}
           </span>
@@ -3852,7 +3835,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
   // command runs the highlighted suggestion's intent — never the partially
   // typed text, and never recorded in ↑ history (send() owns that push).
-  const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
+  // Before model-state answers, a chat stays on its own saved runtime rather
+  // than borrowing the familiar's current one (#5954: cody rebound to Claude
+  // while this chat still runs Codex).
+  const modelHarness = canonicalHarnessId(modelState?.harness ?? session?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
   const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id, modelState?.runtime ?? session?.runtime, runtimeHost);
@@ -8229,11 +8215,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
               <div className="truncate text-[length:var(--text-base)] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
+              {/* The composer's resolved runtime and selected model, so the
+                  phone states the same facts as the composer below it rather
+                  than the familiar's config (#5954). */}
               <div className="truncate font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]">
-                {familiar.harness ?? "cave"}
-                {visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)
-                  ? ` · ${visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)}`
-                  : ""}
+                {runtimeDisplayName(modelHarness)}
+                {composerModelValue ? ` · ${composerModelValue}` : ""}
               </div>
             </div>
           </div>

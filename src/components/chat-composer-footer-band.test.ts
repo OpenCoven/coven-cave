@@ -155,7 +155,7 @@ assert.doesNotMatch(
 
 // ── Each chip opens its own picker; the hub popover is gone ─────────────────
 // Project, runtime and model stay primary; git and tuning live in the disclosure.
-assert.match(pill, /aria-label=\{`Project:[\s\S]*?aria-label=\{`Runtime:[\s\S]*?aria-label=\{`Model:[\s\S]*?aria-label="More composer options"/, "primary choices remain independently labelled");
+assert.match(pill, /aria-label=\{`Project:[\s\S]*?aria-label=\{`Runtime:[\s\S]*?aria-label=\{`Selected model:[\s\S]*?aria-label="More composer options"/, "primary choices remain independently labelled (the model as the selection for the next message, #5954)");
 assert.match(pill, /className="cave-context-controls__secondary" hidden=\{!optionsOpen\}[\s\S]*?aria-label=\{`Worktree:[\s\S]*?aria-label=\{`Branch:[\s\S]*?context\.controlChips\.map/, "secondary options retain independent pickers behind the disclosure");
 assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");
 assert.match(pill, /const branchRef = useRef/, "branch has its own independent ref anchor");

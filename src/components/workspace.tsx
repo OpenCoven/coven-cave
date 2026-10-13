@@ -4697,8 +4697,10 @@ export function Workspace() {
   const statusPr = sessionPrStatus(statusSession?.pullRequest);
   const primaryStatusPageId = primaryPaneRequest?.requestedPageId ?? mode;
   const statusBarVisibility = statusContextPolicy(primaryStatusPageId);
+  // One home per scope item (#5954): in Chat the composer owns the selected
+  // model and the project, so the status bar keeps branch, PR and Tasks.
   const statusModel =
-    mode === "home" || mode === "chat"
+    mode === "home"
       ? statusSession?.model ?? active?.model ?? null
       : null;
   const statusBarHasContext = Boolean(
@@ -4716,7 +4718,7 @@ export function Workspace() {
       ? null
       : statusBarVisibility === "persistent" || (statusBarVisibility === "contextual" && statusBarHasContext) ? (
       <StatusBar
-        projectName={statusProject?.name ?? selectedWorkspaceProject?.name ?? null}
+        projectName={mode === "chat" ? null : statusProject?.name ?? selectedWorkspaceProject?.name ?? null}
         model={statusModel}
         branch={statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null}
         cwd={statusSession?.project_root ?? null}

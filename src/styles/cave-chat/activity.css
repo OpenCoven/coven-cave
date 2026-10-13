@@ -819,22 +819,10 @@ details[open] > .cave-tool-summary::before {
 }
 
 /* Always-visible identity line on settled headers (chat-revamp 1b):
-   "· <familiar> · <model> · <branch>". The branch renders as one token —
-   glyph + name — like the meta line's cwd segment. */
+   "<familiar> · <runtime> · <model or unverified>". The branch's one home is
+   the status bar (#5954), so it no longer repeats here. */
 .cave-chat-meta-line__identity {
   display: inline;
-}
-
-.cave-chat-meta-line__branch {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  vertical-align: bottom;
-}
-
-.cave-chat-meta-line__branch svg {
-  flex-shrink: 0;
-  opacity: 0.75;
 }
 
 /* Slim header (cave-xsq.3): the settled turn's static provenance
