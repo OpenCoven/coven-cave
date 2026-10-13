@@ -383,7 +383,7 @@ export function OnboardingOverlay({
             {state.complete
               ? "Cave is ready."
               : running
-                ? "Setup continues if you close this window."
+                ? "Setup continues if you close this dialog."
                 : started
                   ? "Setup is ready to resume."
                   : "No provider credentials or administrator access are requested."}

@@ -44,6 +44,7 @@ import {
   REPO_FILE_PREVIEW_BYTE_LIMIT,
   type RepoTreeRow,
 } from "@/lib/research-github-repo-browser";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 export type ResearchGithubRepoViewerProps = {
   /** Always present — the saved list already carries repository metadata, so
@@ -150,6 +151,7 @@ export function ResearchGithubRepoViewer({
   removeSlot,
   addToRunSlot,
 }: ResearchGithubRepoViewerProps) {
+  const keys = useKeySymbols();
   const { announce } = useAnnouncer();
   const helpTitleId = useId();
 
@@ -376,7 +378,10 @@ export function ResearchGithubRepoViewer({
   // The label already names the destination when nothing is selected, so the
   // tooltip must not append it a second time.
   const primaryLabel = selectedName ? `Open ${selectedName}` : "Open on GitHub";
-  const primaryTitle = selectedName ? `Open ${selectedName} on GitHub  ⌘↵` : "Open on GitHub  ⌘↵";
+  const primaryTitle = platformizeHint(
+    selectedName ? `Open ${selectedName} on GitHub  ⌘↵` : "Open on GitHub  ⌘↵",
+    keys,
+  );
 
   const copyRepoUrl = useCallback(() => {
     void copyText(repoUrl).then((ok) => {
@@ -656,7 +661,7 @@ export function ResearchGithubRepoViewer({
             className="research-gh__meta-url focus-ring"
             data-copied={flash === "url" || undefined}
             onClick={copyRepoUrl}
-            title="Copy repository URL  ⌘⇧U"
+            title={platformizeHint("Copy repository URL  ⌘⇧U", keys)}
           >
             <span>{flash === "url" ? "Copied" : repoUrl.replace(/^https:\/\//, "")}</span>
             <Icon name={flash === "url" ? "ph:check" : "ph:copy"} width={11} height={11} aria-hidden />
@@ -736,7 +741,7 @@ export function ResearchGithubRepoViewer({
               type="button"
               className="research-gh__rail-head focus-ring"
               onClick={() => setRailOpen(false)}
-              title="Hide file browser  ⌘\"
+              title={platformizeHint("Hide file browser  ⌘\\", keys)}
             >
               <span>File browser</span>
               <Icon name="ph:sidebar-simple" width={12} height={12} aria-hidden />
@@ -908,7 +913,7 @@ export function ResearchGithubRepoViewer({
             type="button"
             className="research-gh__rail-stub focus-ring"
             onClick={() => setRailOpen(true)}
-            title="Show file browser  ⌘\"
+            title={platformizeHint("Show file browser  ⌘\\", keys)}
           >
             <Icon name="ph:sidebar-simple" width={15} height={15} aria-hidden />
             <span className="research-gh__rail-stub-label">File browser</span>
@@ -957,7 +962,7 @@ export function ResearchGithubRepoViewer({
                 className="research-gh__tool focus-ring"
                 data-copied={flash === "path" || undefined}
                 onClick={copySelectionPath}
-                title="Copy path  ⌘⇧C"
+                title={platformizeHint("Copy path  ⌘⇧C", keys)}
               >
                 <Icon name={flash === "path" ? "ph:check" : "ph:copy"} width={12} height={12} aria-hidden />
                 {flash === "path" ? "Copied" : "Path"}
@@ -969,7 +974,7 @@ export function ResearchGithubRepoViewer({
                   data-on={wrap || undefined}
                   aria-pressed={wrap}
                   onClick={() => setWrap((current) => !current)}
-                  title="Soft wrap  ⌥Z"
+                  title={platformizeHint("Soft wrap  ⌥Z", keys)}
                 >
                   <Icon name="ph:text-align-left" width={12} height={12} aria-hidden />
                   Wrap
@@ -1090,7 +1095,7 @@ export function ResearchGithubRepoViewer({
               >
                 <Icon name="ph:globe" width={14} height={14} aria-hidden />
                 <span>Preview in browser</span>
-                <kbd>⌘B</kbd>
+                <kbd>{platformizeHint("⌘B", keys)}</kbd>
               </button>
               <button
                 type="button"
@@ -1100,7 +1105,7 @@ export function ResearchGithubRepoViewer({
               >
                 <Icon name="ph:link-simple" width={14} height={14} aria-hidden />
                 <span>Copy repo URL</span>
-                <kbd>⌘⇧U</kbd>
+                <kbd>{platformizeHint("⌘⇧U", keys)}</kbd>
               </button>
               <button
                 type="button"
@@ -1171,7 +1176,7 @@ export function ResearchGithubRepoViewer({
               {SHORTCUTS.map((shortcut) => (
                 <div key={shortcut.label}>
                   <dt>{shortcut.label}</dt>
-                  <dd><kbd>{shortcut.keys}</kbd></dd>
+                  <dd><kbd>{platformizeHint(shortcut.keys, keys)}</kbd></dd>
                 </div>
               ))}
             </dl>

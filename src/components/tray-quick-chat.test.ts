@@ -164,7 +164,7 @@ assert.match(
 );
 assert.match(
   component,
-  /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · ⌘N new chat/,
+  /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · \{platformizeHint\("⌘N new chat", keys\)\}/,
   "once a familiar is chosen, the composer hint area shows negotiated capabilities (e.g. Thinking) plus Model as quiet meta chips; the @id switch hint remains for the unpicked state",
 );
 assert.match(

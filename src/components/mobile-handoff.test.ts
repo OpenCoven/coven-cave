@@ -303,7 +303,7 @@ assert.match(
 );
 assert.match(
   modal,
-  /Don’t type your Mac’s 127\.0\.0\.1 or Wi‑Fi LAN address/,
+  /Don’t type this computer’s 127\.0\.0\.1 or Wi‑Fi LAN address/,
   "the host card warns against typing loopback/LAN addresses into the phone (aligns with the iOS-side advice)",
 );
 assert.match(

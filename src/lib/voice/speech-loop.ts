@@ -153,7 +153,7 @@ export function resolveSpeechRecognition(): (new () => SpeechRecognitionLike) | 
 }
 
 export const STT_UNAVAILABLE_HINT =
-  "This window has no speech recognition engine. The desktop app hears through native macOS recognition; on the web this voice mode needs a Chromium browser. The sidecar Whisper engine is on the roadmap — or pick a cloud voice provider in Familiar Studio → Brain.";
+  "This window has no speech recognition engine. The macOS desktop app hears through native recognition. On Windows and Linux, and in a browser without one, pick the Whisper engine or a cloud voice provider in Familiar Studio → Brain.";
 
 /** Callbacks the loop hands to an ears implementation. */
 export type SpeechEarsHandlers = {
