@@ -248,12 +248,6 @@
   line-height: 1.2;
 }
 
-.cave-linear-turn-badge--op {
-  background: color-mix(in oklch, var(--accent-presence) 35%, var(--bg-raised));
-  color: color-mix(in oklch, var(--accent-presence) 30%, var(--text-primary));
-  text-transform: uppercase;
-}
-
 .cave-linear-turn-recency {
   color: var(--text-muted);
   /* Chat-revamp 1b: 11px muted timestamp beside the name. */

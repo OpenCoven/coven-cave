@@ -24,9 +24,10 @@ const DAY = 24 * HOUR;
  * Label for the pause between two turns, or `null` when there is no pause worth
  * naming (too short, unknown, or backwards).
  *
- * Rounds toward the coarser unit deliberately: "3 hr gap" is what a reader
- * needs, and "2 hr 47 min gap" spends the divider's whole width on precision
- * nobody acts on.
+ * Rounds toward the coarser unit deliberately: "3 hours later" is what a
+ * reader needs, and "2 hours 47 minutes later" spends the divider's whole width
+ * on precision nobody acts on. Worded as when the next turn came ("5 hours
+ * later"), not as an abbreviation ("5 HR GAP") (#5954).
  */
 export function chatTurnGapLabel(
   previousIso: string | null | undefined,
@@ -40,11 +41,11 @@ export function chatTurnGapLabel(
   // A backwards gap means the transcript is out of order — a divider claiming
   // negative time is worse than no divider.
   if (gap < CHAT_TURN_GAP_MIN_MS) return null;
-  if (gap < HOUR) return `${Math.round(gap / MINUTE)} min gap`;
+  if (gap < HOUR) return `${Math.round(gap / MINUTE)} minutes later`;
   if (gap < DAY) {
     const hours = Math.round(gap / HOUR);
-    return `${hours} hr gap`;
+    return hours === 1 ? "1 hour later" : `${hours} hours later`;
   }
   const days = Math.round(gap / DAY);
-  return days === 1 ? "1 day gap" : `${days} days gap`;
+  return days === 1 ? "1 day later" : `${days} days later`;
 }

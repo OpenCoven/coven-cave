@@ -57,6 +57,18 @@
   transition: opacity 180ms ease;
 }
 
+/* One timestamp per turn (#5954): where the spine prints its stamps, the
+   message header's time steps back visually. It stays in the accessibility
+   tree, which the gap divider's aria-hidden label relies on. */
+.cave-chat-transcript:has(.cave-thread-spine) time.cave-linear-turn-recency {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .cave-chat-transcript:hover .cave-thread-spine,
 .cave-thread-spine:focus-within {
   opacity: 1;
