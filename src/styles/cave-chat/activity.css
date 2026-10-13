@@ -1013,6 +1013,15 @@ details[open] > .cave-tool-summary::before {
   }
 }
 
+/* A split pane or narrow window: the identity takes the whole first line so
+   the title and its runtime/model line stay readable, and the actions and
+   run status wrap beneath it instead of squeezing the title to a sliver. */
+@container chat-header (max-width: 40rem) {
+  .cave-chat-header-row > .cave-chat-meta-line {
+    flex-basis: 100%;
+  }
+}
+
 /* The runtime's unreported identity, as one muted marker; the gaps are named
    on hover (#5953). */
 .cave-chat-meta-line__unverified {

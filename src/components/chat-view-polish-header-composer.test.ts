@@ -369,6 +369,11 @@ assert.match(
   /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
   "the title row wraps its status cluster onto its own line when the header is narrow",
 );
+assert.match(
+  styles,
+  /@container chat-header \(max-width: 40rem\) \{\s*\.cave-chat-header-row > \.cave-chat-meta-line \{\s*flex-basis: 100%;/,
+  "in a split pane the identity keeps a full line, so the title stays legible (chat-split-panes.spec)",
+);
 // The runtime's unreported identity reads as ONE muted marker, not two
 // "not reported" phrases; the gaps are named on hover (#5953).
 const metaLine = source.slice(source.indexOf("function MetaLine("), source.indexOf("\n}\n", source.indexOf("function MetaLine(")));

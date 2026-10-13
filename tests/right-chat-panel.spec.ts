@@ -433,9 +433,12 @@ test("fix-thread popup opens sidechat and sends once without replacing main Chat
   test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
   const fixture = await bootFixThread(page, { selectedProjectId: null });
   await page.mouse.move(0, 0);
-  await expect(fixture.main.getByRole("button", { name: "Delete this chat", exact: true })).toHaveCSS("opacity", "1");
+  // Session actions stay visible without hover. Delete moved into the kebab
+  // with its confirm step (#5953), so the kebab is the always-visible anchor.
+  await expect(fixture.main.getByRole("button", { name: "Session options", exact: true })).toHaveCSS("opacity", "1");
   await expect(fixture.main.locator(".voice-call-button")).not.toHaveClass(/reveal-on-hover/);
   await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Delete chat…", exact: true })).toBeVisible();
   await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
   const card = page.getByRole("article", { name: "Thread Signal" });
   await expect(card).toBeVisible();
