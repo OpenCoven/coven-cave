@@ -59,17 +59,16 @@ current", and `src/components/update-available.tsx` renders that as a "Native
 updater unavailable" banner offering a manual download. Support will hear about
 it, which is the right outcome but not a substitute for acting.
 
-Treat a red gate as time-critical, and pick one of two exits. Repair the
-baseline release, then re-run the cut so `updater-manifest` gets to publish —
-`workflow_dispatch` with the same `tag` is the reliable way, since `build`
-reuses the existing release and re-uploads with `--clobber`. Or, if the new
-release should not ship at all, demote it with the step-1 command under
-[Rolling back](#rolling-back), which restores the alias to the baseline's
-manifest and ends the outage in one call.
+Treat a red gate as time-critical. If no older complete rollback target exists,
+repair one and re-run the cut with `workflow_dispatch` and the same `tag`.
+If the new release should not ship, demote it with the step-1 command under
+[Rolling back](#rolling-back), which restores the alias to an earlier release's
+manifest. Incomplete intermediate releases are skipped when an older complete
+rollback target exists; they do not require tag-by-tag repair.
 
 ### When the Windows MSI build fails
 
-An MSI signing failure is different from a red rollback gate: `build` is
+An MSI build failure is different from a red rollback gate: `build` is
 partial, so `checksums` and the Homebrew bump do not run. The GitHub Release
 can still contain macOS and Linux installers, but has no MSI or `SHA256SUMS`.
 The `partial-release-notes` job writes install links from the assets actually
@@ -78,29 +77,31 @@ never link to a guessed MSI name. The release marked latest and the README
 install table must also point Windows users to a verified earlier MSI. For the
 current incident, that is [v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
 
-Before promoting a repaired release, check its public page in the same shape
-as v0.5.7: direct links for each published DMG, AppImage, and signed MSI;
+After a new release publishes, check its public page in the same shape
+as v0.5.7: direct links for each published DMG, AppImage, and MSI;
 `SHA256SUMS` with a verification command; and the compare link. Compare those
 links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
 '.assets[].name'`. An asset listed in prose but absent from the API is a
 release-page defect, even if the build job was green.
 
-For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), configure
-the SSL.com eSigner secrets and `WINDOWS_SIGNING_CERT_THUMBPRINT` first. Repair
-v0.5.8 through v0.5.12 in version order with `workflow_dispatch` and the exact
-existing tag. After each run, verify the Authenticode-checked MSI, its checksum
-entry, `latest.json` and updater signatures before moving to the next tag.
-Only make the newest fully verified release `latest` after the chain is repaired;
-the current `latest` alias intentionally points to v0.5.8 meanwhile.
+For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), follow the
+[release and candidate sequence](branching.md#release-and-testflight) for a new
+version from clean `main`. The Windows MSI path uses the v0.5.7 build, budget,
+upload, updater signature, and attestation sequence. This MSI is **not
+Authenticode-signed**; do not describe it as code-signed. Check the new MSI's
+checksum entry, `latest.json`, updater signature, and public release page
+before directing downloads to it. The rollback gate selects v0.5.7, the
+newest older release with the required assets, and verifies its manifest.
+The incomplete v0.5.8 through v0.5.12 tags do not need to be replayed. The
+current `latest` alias intentionally points to v0.5.8 meanwhile.
 
 ## What it checks
 
 It resolves the **rollback baseline** — the newest published release strictly
-below the one being shipped, skipping drafts, prereleases, anything without a
-publish timestamp, and anything whose tag is not a plain `vMAJOR.MINOR.PATCH`
-(so a release cut from an `-rc` tag is never a rollback target even if it was
-published as a normal release) — and refuses unless that release is a complete
-rollback target:
+below the one being shipped that has the required installers, `SHA256SUMS`, and
+`latest.json`. It skips drafts, prereleases, unpublished rows, partial releases,
+and tags other than plain `vMAJOR.MINOR.PATCH`. It then validates the selected
+release's manifest; malformed or unavailable metadata remains fatal:
 
 | Requirement | Why a rollout depends on it |
 | --- | --- |
@@ -166,12 +167,11 @@ would be noise on every run until someone edited a constant.
 Each refusal names the shortfall and the release it found:
 
 ```text
-release-rollback-readiness: v0.3.7 is not a usable rollback target: no SHA256SUMS, so a
-rollback artifact cannot be checked before it runs
+release-rollback-readiness: no complete rollback target below v0.3.8; newest v0.3.7 is not usable: no SHA256SUMS, so a rollback artifact cannot be checked before it runs
 ```
 
-That is a fail-closed result, not a flake — do not rerun it. Either repair the
-baseline release (re-upload the missing asset, regenerate `latest.json`) or
+That is a fail-closed result, not a flake — do not rerun it. Repair a
+rollback baseline (re-upload the missing asset, regenerate `latest.json`) or
 choose a different rollout plan. The one shortfall the gate cannot repair for
 you is a manifest whose signatures were produced by a key the shipped clients
 do not pin; that is verified separately by `scripts/verify-release-updater.mjs`.
