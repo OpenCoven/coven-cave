@@ -277,6 +277,13 @@ test("the spine is an overlay: self-gated by pane width, jumps via data-turn-id"
     /\.cave-thread-spine \{[^}]*position: absolute;/,
     "the spine is an overlay, never layout",
   );
+  // It sits just left of the reading column, not at the pane's edge, which on
+  // an ultrawide pane was ~950px from the turns it indexes (#5950).
+  assert.match(
+    instrumentStyles,
+    /\.cave-thread-spine \{[^}]*left: max\(0px, calc\(\(100% - var\(--cave-chat-measure\)\) \/ 2 - var\(--cave-spine-width\) - var\(--space-3\)\)\);/,
+    "the spine is anchored to the column's left edge",
+  );
   // rAF-coalescing refs must null on cancel (the #2659 wedge). One guard now
   // that the minimap's scroll tracker is gone; the count is the assertion, so
   // a re-added guard that forgets to null still fails.

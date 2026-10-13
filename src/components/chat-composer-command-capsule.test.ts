@@ -60,8 +60,8 @@ assert.match(
 assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*?max-width:\s*100%;/,
-  "the composer spans the available chat dock",
+  /\.cave-chat-linear \.cave-composer-shell \{[^}]*max-width:\s*var\(--cave-chat-measure\);/,
+  "the composer caps at the reading column (#5950)",
 );
 assert.match(
   transcriptCss,
