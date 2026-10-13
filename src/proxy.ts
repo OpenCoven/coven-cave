@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { MAX_PROXY_BODY_BYTES } from "./lib/request-body-limit.ts";
 
 import {
   ACCESS_TOKEN_COOKIE,
@@ -308,6 +309,13 @@ function nextWithInternalAuthMarkers(
   clientV1AdminSecret?: string,
   validatedSidecarQuery = false,
 ) {
+  // Only reached after the ingress checks. Refuse known oversized bodies
+  // explicitly instead of forwarding Next's silently truncated JSON.
+  const contentLength = req.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength)
+    && BigInt(contentLength) > BigInt(MAX_PROXY_BODY_BYTES)) {
+    return jsonError(413, "Request too large (80 MiB limit). Send fewer attachments at a time.");
+  }
   const requestHeaders = new Headers(req.headers);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);
   requestHeaders.delete(CLIENT_V1_ADMIN_HEADER);
