@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './ui/modal';
 import { Button } from './ui/button';
 import { TextInput } from './ui/text-input';
 import { IconButton } from './ui/icon-button';
 import { useAnnouncer } from './ui/live-region';
+import { usePausablePoll } from '@/lib/use-pausable-poll';
 import { SCHEDULE_HOST_NOTICE, scheduledReplyLabel, type ScheduledChatMessage, type ScheduledChatReply } from '@/lib/scheduled-chat';
 import '@/styles/chat-send-later.css';
 
@@ -29,23 +30,27 @@ export function ChatSendLater({ sessionId, captureMessage, onScheduled }: {
   const attempt = useRef<{ id: string; sendAt: string; message: ScheduledChatMessage } | null>(null);
   const mutation = useRef(false);
   const [refresh, setRefresh] = useState(0);
+  const loadController = useRef<AbortController | null>(null);
+  const load = useCallback(async () => {
+    if (!open) return;
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/chat/scheduled?${new URLSearchParams({ sessionId })}`, { signal: controller.signal, cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error || "Couldn't load scheduled replies.");
+      setItems(body.items);
+    } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Couldn't load scheduled replies."); }
+    finally { if (!controller.signal.aborted) setLoading(false); }
+  }, [open, sessionId]);
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
-    async function load() {
-      setLoading(true);
-      try {
-        const response = await fetch(`/api/chat/scheduled?${new URLSearchParams({ sessionId })}`, { signal: controller.signal, cache: 'no-store' });
-        const body = await response.json();
-        if (!response.ok || !body.ok) throw new Error(body.error || "Couldn't load scheduled replies.");
-        setItems(body.items);
-      } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Couldn't load scheduled replies."); }
-      finally { if (!controller.signal.aborted) setLoading(false); }
-    }
     void load();
-    const timer = setInterval(() => { void load(); }, 15_000);
-    return () => { controller.abort(); clearInterval(timer); };
-  }, [open, sessionId, refresh]);
+    return () => { loadController.current?.abort(); };
+  }, [open, refresh, load]);
+  usePausablePoll(load, 15_000, { enabled: open, serialize: true });
   function show() {
     setError(null);
     setMessage(null);
