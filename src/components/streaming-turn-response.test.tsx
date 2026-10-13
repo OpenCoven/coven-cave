@@ -885,6 +885,33 @@ describe("StreamingTurnResponse", () => {
     expect(answering.root.findAllByProps({ role: "status" })).toHaveLength(1);
   });
 
+  it("lets Main Chat state the author once on the status row, with Copy waiting for hover", async () => {
+    // #5954: Main Chat used to print "Cody · 09:30" above the bubble and then
+    // "Cody · Completed in 3:01 … Copy" inside it. The row is now the author
+    // line; Quick Chat (no author prop) keeps its own row.
+    const renderer = await render(response({
+      author: {
+        name: <span className="cave-linear-turn-name">Cody</span>,
+        meta: <time dateTime="2026-10-11T14:30:00Z">09:30</time>,
+      },
+      copyReveal: "hover",
+      onCopyCompleted: vi.fn(),
+      durationMs: 181_000,
+      model: model({ status: "complete", activeBlock: null }),
+    }));
+    const phase = renderer.root.findByProps({ className: "streaming-turn-current__phase" });
+    expect(textContent(phase)).toBe("Cody · Completed in 3:01");
+    expect(phase.findAllByType("strong")).toHaveLength(0);
+    expect(textContent(renderer.root.findByProps({ className: "streaming-turn-current__author-meta" }))).toBe("09:30");
+    expect(renderer.root.findByProps({ "data-streaming-turn-response": true }).props["data-copy-reveal"]).toBe("hover");
+    const copy = buttons(renderer, "Copy completed response")[0]!;
+    expect(String(copy.props.className)).toContain("streaming-turn-current__copy");
+
+    const quick = await render(response({ onCopyCompleted: vi.fn(), model: model({ status: "complete", activeBlock: null }) }));
+    expect(quick.root.findByProps({ "data-streaming-turn-response": true }).props["data-copy-reveal"]).toBeUndefined();
+    expect(textContent(quick.root.findByProps({ className: "streaming-turn-current__phase" }))).toContain("Nova · Completed");
+  });
+
   it("keeps the ticking elapsed time outside the live status region", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-23T12:00:18Z"));

@@ -47,8 +47,24 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
-  "User turns should render a Discord-like avatar/name/badge/recency header",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-recency/,
+  "User turns should render an avatar/name/recency header",
+);
+// #5954: Main Chat is one-to-one, so an "OP" badge on every user turn named
+// nobody new. Group chat runs on its own surface.
+assert.doesNotMatch(turnRow, /cave-linear-turn-badge--op/, "no OP badge in a one-to-one chat");
+assert.doesNotMatch(styles, /cave-linear-turn-badge--op/, "its styling goes with it");
+// The assistant's author line is the response's status row (#5954): name,
+// "Completed in 3:01", time and the hover extras on one line, Copy on hover.
+assert.match(
+  turnRow,
+  /<StreamingTurnResponse[\s\S]*?author=\{\{ name: authorName, meta: authorMeta \}\}[\s\S]*?copyReveal="hover"/,
+  "Main Chat hands the author line to the response row",
+);
+assert.match(
+  turnRow,
+  /\{showEmptySuccessfulFallback \? \(\s*<div className=\{`cave-linear-turn-meta/,
+  "the separate author row remains only for the empty-success fallback, which has no response row",
 );
 assert.match(
   styles,
@@ -58,8 +74,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size=\{expanded \? "xl" : "md"\} \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
-  "Assistant turns render a compact circular avatar (chat-revamp 1b; grows when the inline card opens) + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*const authorName = <span className="cave-linear-turn-name">\{familiar\.display_name\}<\/span>[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size=\{expanded \? "xl" : "md"\} \/>[\s\S]*author=\{\{ name: authorName, meta: authorMeta \}\}/,
+  "Assistant turns render a compact circular avatar (chat-revamp 1b; grows when the inline card opens) + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2), all on the response's one author line (#5954)",
 );
 // Lean meta (cave-xsq.2): the static extras collapse into a reveal-on-hover
 // cluster so the default row is just name + time; the turn content is the
