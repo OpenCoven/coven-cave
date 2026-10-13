@@ -28,14 +28,6 @@ function StatBody({ stat }: { stat: ChatContextStat }) {
       <span className="cave-chat-context-stat__dot" aria-hidden />
       <span className="cave-chat-context-stat__key">{stat.label}</span>
       <span className="cave-chat-context-stat__value">{stat.value}</span>
-      {stat.percent != null ? (
-        <span className="cave-chat-context-stat__meter" aria-hidden>
-          <span
-            className="cave-chat-context-stat__fill"
-            style={{ width: `${Math.max(3, Math.min(100, stat.percent))}%` }}
-          />
-        </span>
-      ) : null}
     </>
   );
 }
@@ -81,17 +73,6 @@ function StatPopover({ stat }: { stat: ChatContextStat }) {
             <span>{stat.detail.heading}</span>
             <span className="cave-chat-context-breakdown__total">{stat.value}</span>
           </div>
-          {stat.id === "context" ? (
-            <div className="cave-chat-context-breakdown__bar" aria-hidden>
-              {stat.detail.rows.map((row) => (
-                <span
-                  key={row.id}
-                  className={`cave-chat-context-breakdown__segment is-${row.tint}`}
-                  style={{ width: `${Math.max(0, Math.min(100, row.percent ?? 0))}%` }}
-                />
-              ))}
-            </div>
-          ) : null}
           <div className="cave-chat-context-breakdown__rows">
             {stat.detail.rows.map((row) => (
               <div key={row.id} className={`cave-chat-context-breakdown__row is-${row.tint}`}>
@@ -101,9 +82,6 @@ function StatPopover({ stat }: { stat: ChatContextStat }) {
               </div>
             ))}
           </div>
-          {stat.detail.note ? (
-            <div className="cave-chat-context-breakdown__note">{stat.detail.note}</div>
-          ) : null}
         </PopoverBody>
       </Popover>
     </>
@@ -121,15 +99,13 @@ export function ChatSessionContextRow({
   usage,
   costUsd,
   durationMs,
-  model,
 }: {
   turns?: ChatContextTurn[];
   usage?: TurnUsage;
   costUsd?: number;
   durationMs?: number;
-  model?: string | null;
 }) {
-  const stats = chatContextStats({ turns, usage, costUsd, durationMs, model });
+  const stats = chatContextStats({ turns, usage, costUsd, durationMs });
   // An empty row is chrome for nothing — a brand-new session with no run yet
   // renders nothing at all.
   if (!stats.length) return null;

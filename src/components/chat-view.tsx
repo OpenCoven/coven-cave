@@ -1601,35 +1601,6 @@ function MetaLineElapsed({ since }: { since: string }) {
   );
 }
 
-/** Compact context-window meter for the completed-turn meta line: a tiny bar +
- *  percentage sized against the model's context window, fed by the latest
- *  turn's token usage. Null when the harness reported no usage (e.g. the
- *  OpenClaw bridge) or the model/window can't be resolved. The bar fill warms
- *  from accent → amber → red as the window fills. */
-function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string }) {
-  const meter = computeContextMeter(usage, model);
-  if (!meter) return null;
-  const fill =
-    meter.level === "high"
-      ? "var(--color-danger)"
-      : meter.level === "warn"
-        ? "var(--color-warning)"
-        : "var(--accent-presence)";
-  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
-  return (
-    <span className="cave-chat-meta-line__context inline-flex items-center gap-1" title={title}>
-      {" · "}
-      <span
-        aria-hidden
-        className="inline-block h-[5px] w-7 overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--text-muted)_28%,transparent)]"
-      >
-        <span className="block h-full rounded-full" style={{ width: `${Math.max(3, meter.percent)}%`, background: fill }} />
-      </span>
-      <span aria-label={`Context ${meter.percent} percent full`}>{`${meter.percent}%`}</span>
-    </span>
-  );
-}
-
 function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: string }) {
   const meter = computeContextMeter(usage, model);
   if (!meter) return null;
@@ -1853,7 +1824,6 @@ function MetaLine({
               )}
             </Fragment>
           ))}
-          {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
           {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
         </span>
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
@@ -8402,7 +8372,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           pass). A brand-new chat (no session yet) renders no band at all. */}
       {sessionId !== null || turns.length > 0 ? (
       <ChatSessionContextRow
-        model={contextRowModel}
         turns={turns}
         usage={lastSettledAssistantTurn?.usage}
         costUsd={lastSettledAssistantTurn?.costUsd}
