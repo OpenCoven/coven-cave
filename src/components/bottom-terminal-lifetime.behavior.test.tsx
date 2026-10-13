@@ -49,7 +49,7 @@ beforeEach(() => {
   fixture.invoke.mockReset();
   fixture.start = new Promise<void>((resolve) => { resolveStart = resolve; });
   fixture.invoke.mockImplementation((command) => {
-    if (command === "pty_diagnose") return Promise.resolve({ exit: 0, bytes: 1, output: "coven-cave-pty-ok" });
+    if (command === "pty_diagnose") return Promise.reject(new Error("diagnostic echo missing"));
     if (command === "pty_list") return Promise.resolve([]);
     if (command === "pty_start") return fixture.start;
     if (command === "pty_stop") fixture.stop();
@@ -60,6 +60,16 @@ beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+});
+
+test("desktop starts the real shell without requiring a diagnostic echo", async () => {
+  fixture.platform = "desktop";
+  await act(async () => {
+    renderer = create(<BottomTerminal threadId="cave.rail.diagnostic" />, { createNodeMock: () => ({}) });
+  });
+  await vi.waitFor(() => expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === "pty_start")).toBe(true));
+  expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === "pty_diagnose")).toBe(false);
+  await act(async () => { resolveStart(); await fixture.start; });
 });
 afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
