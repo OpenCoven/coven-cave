@@ -127,6 +127,40 @@ assert.equal(authRecoveryHarness("untrusted", "codex", "claude"), "codex", "unkn
   assert.equal(parseHarnessAuthFailure("invalid x-api-key", "claude")?.kind, "configuration");
   assert.equal(parseHarnessAuthFailure("credentials expired", "claude")?.kind, "login", "expired CLI credentials still need sign-in");
 
+  // Claude Code OAuth / credential 401s (#5969). A fresh Windows install hit
+  // the first shape on its first Chat message and fell through to the generic
+  // run-error banner instead of the sign-in repair.
+  for (const text of [
+    "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
+    "API Error: 401 OAuth token has expired",
+    "Failed to authenticate: OAuth token revoked",
+    "OAuth token revoked",
+    "API Error: 401 Invalid authentication credentials",
+    "Failed to authenticate. API Error: 401 Invalid bearer token",
+    "Your account does not have access to Claude. Please login again or contact your administrator.",
+  ]) {
+    const oauth = parseHarnessAuthFailure(text, "claude");
+    assert.ok(oauth, `claude OAuth 401 detected: ${text}`);
+    assert.equal(oauth.kind, "login", `OAuth 401 is a sign-in problem: ${text}`);
+    assert.equal(oauth.harness, "claude");
+    assert.equal(oauth.loginCommand, "claude", `claude opens its interactive sign-in: ${text}`);
+  }
+  // The same OAuth wording with an API-key verdict still routes to the Vault.
+  assert.equal(
+    parseHarnessAuthFailure("Failed to authenticate. API Error: 401 Invalid API key", "claude")?.kind,
+    "configuration",
+    "configuration patterns are checked before the OAuth login patterns",
+  );
+  // The Coven daemon says "failed to authenticate" about its own socket and
+  // health handshakes; a Claude sign-in cannot repair those, so the phrase only
+  // counts when it carries Claude Code's "API Error: 401" shape.
+  for (const text of [
+    "failed to authenticate the default Coven daemon socket",
+    "failed to authenticate BASE Coven daemon health before the lifecycle deadline",
+  ]) {
+    assert.equal(parseHarnessAuthFailure(text, "claude"), null, `daemon socket auth is not a runtime sign-in failure: ${text}`);
+  }
+
   const copilot = parseHarnessAuthFailure("Not logged in. Use /login to continue.", "copilot");
   assert.ok(copilot);
   assert.equal(copilot.loginCommand, "copilot", "copilot opens its interactive sign-in");
