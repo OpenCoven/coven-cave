@@ -1,3 +1,4 @@
+import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
 import { ReasoningBlockTracker } from "@/lib/server/chat-reasoning-projection";
@@ -67,6 +68,7 @@ import {
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
   copilotStreamSpec,
+  copilotSupportsReasoningEffort,
   CopilotMessageTranscript,
   CopilotTextAssembler,
   isSafeCopilotResumeSessionId,
@@ -107,6 +109,7 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
   evaluateCovenBackedRuntimeAvailability,
@@ -324,6 +327,7 @@ import {
   covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  covenRunSupportsSpeed,
   openCodeRunCapabilities,
 } from "./chat-send-capabilities";
 import {
@@ -343,7 +347,11 @@ import {
 import { claudeOpus5Routability } from "@/lib/server/claude-models";
 import {
   appliedModelControls,
+  CODEX_REASONING_CONTROL_PARAMETER,
+  COPILOT_REASONING_CONTROL_PARAMETER,
+  COVEN_SPEED_CONTROL_PARAMETER,
   modelControlCapabilities,
+  withForwardableRuntimeCliControls,
   modelControlInputWithLegacy,
   promptOnlyModelControls,
   validateModelControlValues,
@@ -2095,6 +2103,12 @@ async function postAdmittedChat(
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // A persisted conversation owns its provenance. Never let a request relabel
+  // an existing user chat as a hidden generator to bypass project checks.
+  const generationOrigin = existingConversation?.origin ?? body.origin;
+  // Classify before capability checks so unsupported runtimes fail closed.
+  const metaRun = isMetaRunOrigin(generationOrigin);
+  if (metaRun) body.permissionMode = "read";
   const flowDiscussionStartsFresh = isUnstartedFlowDiscussion(existingConversation);
   if (body.sessionId && (
     existingConversation?.origin === "flow" ||
@@ -2563,9 +2577,6 @@ async function postAdmittedChat(
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
-  // A persisted conversation owns its provenance. Never let a request relabel
-  // an existing user chat as a hidden generator to bypass project checks.
-  const generationOrigin = existingConversation?.origin ?? body.origin;
   // A hidden generation is exempt from the launch gate only for the familiar's
   // OWN workspace. A resume root — the conversation's persisted runtime, or a
   // daemon session's project_root (cave-yjnr) — names a real project and is
@@ -2888,6 +2899,29 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
+  // The Speed control rides `coven run --speed`, which the daemon maps onto
+  // Claude's `--effort`. Gate it on the installed CLI advertising the flag,
+  // exactly like --permission and --add-dir; the SSH builder cannot forward
+  // it, and no other harness launches through this argv with a verified
+  // mapping. The model-state route offers the control on the same probe.
+  const speedForwardingEnabled =
+    !sshRuntime &&
+    binding.harness === "claude" &&
+    ((await probeCovenCapability(covenRunSupportsSpeed)) ?? false);
+  // The Thinking control for Codex and Copilot rides their direct transports
+  // (`codex exec -c model_reasoning_effort=…`, `copilot --reasoning-effort`),
+  // so it is forwardable exactly when that transport was selected above with
+  // the flag in its probed contract (#5905). The model-state route asks the
+  // same routing helpers, so the chips it offers match what lands here.
+  const codexReasoningForwardingEnabled =
+    codexDirect && codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
+  const copilotReasoningForwardingEnabled =
+    Boolean(copilotStream) && copilotSupportsReasoningEffort(copilotCapability?.version ?? null);
+  const forwardableControlParameters = new Set<string>([
+    ...(speedForwardingEnabled ? [COVEN_SPEED_CONTROL_PARAMETER] : []),
+    ...(codexReasoningForwardingEnabled ? [CODEX_REASONING_CONTROL_PARAMETER] : []),
+    ...(copilotReasoningForwardingEnabled ? [COPILOT_REASONING_CONTROL_PARAMETER] : []),
+  ]);
   const { desiredModel, modelState, invalidSavedModel, suppressedSavedModel } = resolveSendModelMetadata({
     body,
     config,
@@ -3014,8 +3048,11 @@ async function postAdmittedChat(
   // argv is built. A native Hermes control is available only for its verified
   // Responses API transport; the CLI path must fail closed rather than quietly
   // turning a provider setting into prompt prose.
-  const controlCapabilities = modelControlCapabilities(binding.harness, desiredModel)
-    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  const controlCapabilities = withForwardableRuntimeCliControls(
+    modelControlCapabilities(binding.harness, desiredModel)
+      .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
+    forwardableControlParameters,
+  );
   const controlValidation = validateModelControlValues(
     controlCapabilities,
     modelControlInputWithLegacy(
@@ -3036,6 +3073,11 @@ async function postAdmittedChat(
     }, { status: 400 });
   }
   body.modelControls = controlValidation.values;
+  const forwardSpeed = speedForwardingEnabled ? controlValidation.values.performance ?? null : null;
+  const forwardReasoning =
+    codexReasoningForwardingEnabled || copilotReasoningForwardingEnabled
+      ? controlValidation.values.reasoning ?? null
+      : null;
   const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
   const appliedModelControlValues = appliedModelControls(controlCapabilities, controlValidation.values);
   const hermesReasoningEffort = controlCapabilities.some(
@@ -3165,9 +3207,11 @@ async function postAdmittedChat(
         resolvedFamiliarWorkspace,
       )
     : [];
-  const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
-    resolvedFamiliarWorkspace,
-  );
+  const dailyMemoryContext = metaRun
+    ? null
+    : await readFamiliarDailyMemoryStartupContext(
+        resolvedFamiliarWorkspace,
+      );
   // Operator profile — who the human is. New sessions only: resumed sessions
   // already carry the block in their transcript.
   const operatorProfileContext = body.sessionId
@@ -3424,6 +3468,8 @@ async function postAdmittedChat(
         // session/sandbox flags above.
         addDirs: grantDirs,
         pluginDirs: copilotPluginDirs,
+        // Thinking pick (#5905), gated on the probed CLI version above.
+        reasoningEffort: forwardReasoning,
       });
     }
     if (hermesDirect) {
@@ -3507,6 +3553,9 @@ async function postAdmittedChat(
         model: codexDirectLaunchModel,
         readOnly: body.permissionMode === "read",
         addDirs: grantDirs,
+        // Thinking pick (#5905): `-c model_reasoning_effort=…`, gated on the
+        // probed `--config` capability for this launch shape.
+        reasoningEffort: forwardReasoning,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -3516,6 +3565,10 @@ async function postAdmittedChat(
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
     if (forwardPermission) a.push("--permission", forwardPermission);
+    // The Speed control: `coven run --speed fast|balanced|thorough`, mapped by
+    // the daemon onto Claude's `--effort`. Only an explicit, validated pick is
+    // forwarded; an unset control leaves the runtime's own default in place.
+    if (forwardSpeed) a.push("--speed", forwardSpeed);
     // Trust each granted root at the harness level; repeatable flag.
     for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
@@ -4994,10 +5047,15 @@ async function postAdmittedChat(
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
             ) {
+              // Coven sends each Codex agent_message as its own envelope with
+              // no trailing newline. Keep the boundary, as the direct
+              // `codex exec --json` path does, or consecutive messages run
+              // together ("differences.I've loaded", #5945).
               for (const block of ev.message.content) {
                 if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
-                assistantText += block.text;
-                push({ kind: "assistant_chunk", text: block.text });
+                const text = assistantText && !/\s$/.test(assistantText) ? `\n${block.text}` : block.text;
+                assistantText += text;
+                push({ kind: "assistant_chunk", text });
               }
             } else if (
               binding.harness === "claude" &&

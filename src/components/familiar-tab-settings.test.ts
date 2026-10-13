@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 
 const surface = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./familiar-tab-settings.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/familiar-tab.css", import.meta.url), "utf8");
+const identity = readFileSync(new URL("./familiar-studio-identity-tab.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../styles/familiar-settings-navigation.css", import.meta.url), "utf8");
 
 assert.match(surface, /import \{ FamiliarSettingsSection \} from "@\/components\/familiar-tab-settings"/);
 assert.match(surface, /type FamiliarSectionId = "identity" \| "skills" \| "mcp" \| "analytics" \| "memory" \| "settings"/);
@@ -31,24 +32,30 @@ assert.doesNotMatch(
   "Familiar settings should not pull the all-surfaces lazy registry into Chat's client graph",
 );
 assert.match(settings, /import type \{ FamiliarSettingsTab \} from "@\/lib\/chat-tab-events"/);
-assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
-assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
+assert.match(settings, /\{ id: "chat", label: "Chat",/);
+assert.match(settings, /item.id === "chat" \? <ChatSettingsView \/>/);
 assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
 assert.match(settings, /familiar\.id/);
 assert.match(settings, /allFamiliars/);
 assert.match(settings, /<Tabs<FamiliarSettingsTab>/);
 assert.match(settings, /initialTab\?: FamiliarSettingsTab/);
-assert.match(settings, /const displayedTab = tab === "contract" \? "identity" : tab;/);
-assert.match(
-  settings,
-  /tab !== "contract"[\s\S]*?familiar-studio-grimoire[\s\S]*?grimoire\?\.focus\(\{ preventScroll: true \}\)/,
-  "the contract handoff focuses the existing Grimoire section for keyboard users",
-);
-assert.match(settings, /tab === "identity" \|\| tab === "contract"/);
-assert.match(
-  settings,
-  /useState<FamiliarSettingsTab>\(\s*initialTab && initialTab !== "projects" \? initialTab : "identity",?\s*\)/,
-);
+assert.match(settings, /const displayedTab: VisibleTab = tab === "contract" \|\| tab === "projects" \? "identity" : tab;/);
+assert.match(settings, /focusContract=\{tab === "contract"\}/);
+assert.match(identity, /if \(!focusContract\) return;[\s\S]*?grimoire\?\.focus\(\{ preventScroll: true \}\)/,
+  "the loaded Identity editor owns contract focus, after its lazy chunk mounts");
+assert.match(settings, /useSurfaceHistory<FamiliarSettingsTab>/);
+assert.match(settings, /initial: initialTab && initialTab !== "projects" \? initialTab : "identity"/);
+assert.match(settings, /identityVisited \|\| displayedTab === "identity"/,
+  "explicit-save identity drafts survive section navigation");
+assert.doesNotMatch(settings, /<Activity/,
+  "hiding Identity must not run undoable lifecycle transaction cleanup");
+assert.match(settings, /orientation="vertical"/);
+assert.match(settings, /Settings section/);
+for (const editor of ["FamiliarStudioIdentityTab", "FamiliarStudioBrainTab", "FamiliarStudioMemoryTab", "VaultPanel", "ChatSettingsView"]) {
+  assert.match(settings, new RegExp(`const ${editor} = dynamic\\(`), `${editor} loads on demand`);
+}
+assert.match(surface, /!settingsOpen \? <FamiliarBindingControls/,
+  "Settings does not mount a duplicate runtime/model/voice editor and inventory poll");
 assert.match(
   styles,
   /\.familiar-tab__settings\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1;/,

@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.5.10",
+  "version": "0.5.13",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -101,7 +101,7 @@
     "test:e2e:mobile": "pnpm e2e:install && playwright test --project=pixel-5 --project=iphone-13",
     "test:e2e": "pnpm e2e:install && playwright test",
     "start": "node server.mjs",
-    "build:server": "esbuild server.ts --bundle --packages=external --alias:yaml=./node_modules/yaml/dist/index.js --banner:js=\"import { createRequire as __covenCreateRequire } from 'node:module'; const require = __covenCreateRequire(import.meta.url);\" --platform=node --target=node24 --outfile=server.mjs --format=esm",
+    "build:server": "node scripts/build-server.mjs",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs && node scripts/copy-pdf-worker.mjs",
     "test:supply-chain": "node scripts/dependency-policy.test.mjs"
   },
@@ -144,7 +144,7 @@
     "@xterm/xterm": "6.0.0",
     "canonicalize": "3.0.0",
     "mermaid": "11.16.1",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "node-pty": "1.1.0",
     "pdfjs-dist": "6.2.108",
     "punycode": "2.3.1",

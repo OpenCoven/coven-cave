@@ -8,6 +8,7 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { DocGraph } from "@/lib/grimoire-graph";
 
 vi.mock("@/components/ui/popover", () => ({
+  usePopoverInitialFocus: () => {},
   Popover: ({ open, children }: { open: boolean; children: ReactNode }) => open ? children : null,
   PopoverBody: ({ children }: { children: ReactNode }) => children,
   PopoverItem: ({ onSelect, children }: { onSelect: () => void; children: ReactNode }) => <button type="button" onClick={onSelect}>{children}</button>,
@@ -66,7 +67,7 @@ function textContent(node: unknown): string {
 }
 function button(text: string) { return root!.root.findAllByType("button").find((node: unknown) => textContent(node).trim() === text)!; }
 function chooseOption(label: string, option: string) {
-  act(() => root!.root.findByProps({ "aria-label": label }).props.onClick());
+  act(() => root!.root.findByProps({ "aria-label": label }).props.onClick({ detail: 1 }));
   act(() => button(option).props.onClick());
 }
 function pointer(type: string, pointerId: number, x: number, y: number) { return { type, pointerId, clientX: x, clientY: y, button: 0, shiftKey: false }; }

@@ -1,6 +1,7 @@
 "use client";
 
 import "@xterm/xterm/css/xterm.css";
+import "@/styles/bottom-terminal-find.css";
 
 import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import type React from "react";
@@ -47,12 +48,6 @@ const DESKTOP_COMMAND_TIMEOUT_MS = 8_000;
 const DESKTOP_HEALTH_INTERVAL_MS = 5_000;
 
 export type TerminalHealth = "starting" | "healthy" | "recovering" | "failed";
-
-type PtyDiagnoseReport = {
-  exit: number | null;
-  bytes: number;
-  output: string;
-};
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -607,20 +602,6 @@ export function BottomTerminal({
       }
       log("mount: tauri bridge ready");
 
-      const diagnostic = await withTimeout(
-        bridge.invoke<PtyDiagnoseReport>("pty_diagnose"),
-        DESKTOP_COMMAND_TIMEOUT_MS,
-        "PTY diagnostic",
-      );
-      if (
-        diagnostic.exit !== 0 ||
-        diagnostic.bytes === 0 ||
-        !diagnostic.output.includes("coven-cave-pty-ok")
-      ) {
-        throw new Error("PTY diagnostic did not return the expected shell output");
-      }
-      log("pty_diagnose: ok", { bytes: diagnostic.bytes });
-
       // Lazy-load + build xterm (only on the client + inside Tauri so SSR and
       // the in-browser dev path don't pull it in). Shared with the WS path.
       const { term, fit, search } = await createXterm(wrap, {
@@ -1144,7 +1125,7 @@ export function BottomTerminal({
             placeholder="Find in terminal…"
             aria-label="Find in terminal"
             aria-describedby={findCountId}
-            className="focus-ring-inset w-44 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="bottom-terminal-find__input focus-ring-inset bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
           {/* Match counter is deliberately NOT a live region: the SR mirror
               region below is already aria-live=polite, and a second polite

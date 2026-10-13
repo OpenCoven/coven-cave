@@ -68,7 +68,9 @@ until intentionally migrated by the active program.
   web terminal surfaces are unaffected.
 - Chats and Settings retain one editorial title language while keeping
   the controls and navigation behavior specific to each destination.
-- Chats continues to protect conversation context at accessibility sizes and
+- Chats continues to protect conversation context at accessibility sizes
+  (its header title moves below the controls instead of wrapping mid-word
+  when a narrow column leaves no room) and
   uses a floating Search/New Chat dock that compacts in landscape and caps its
   width on iPad; the active program changes the row organization, not those
   quality requirements.

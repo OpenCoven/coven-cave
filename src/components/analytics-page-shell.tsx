@@ -100,7 +100,7 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
         </Link>
       </div>
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        <SidebarSection id="navigation" label="Navigation">
+        <SidebarSection id="navigation" label="Navigation" labelHidden>
           {primaryRows.map(renderRow)}
         </SidebarSection>
         <SidebarSection

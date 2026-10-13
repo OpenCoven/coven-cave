@@ -1433,3 +1433,12 @@
   .wv-select { font-size: var(--text-xs); }
   .wv-note { font-size: var(--text-sm); }
 }
+
+/* Search stays readable and keyboard-visible in narrow panes and on touch. */
+.wv-search { min-width:0; max-width:100%; min-height:var(--space-8); border-color:var(--border-strong); }
+.wv-search:focus-within { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+.wv-search input { min-width:0; width:100%; }
+@media (max-width:767px), (pointer:coarse) {
+  .wv-search { height:auto; min-height:var(--touch-target); }
+  .wv-search input { min-height:var(--touch-target); font-size:var(--text-lg); }
+}

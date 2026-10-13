@@ -39,7 +39,8 @@
 //      child Chat modal visible/interactive" (finding #2).
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { copyText } from "@/lib/clipboard";
 import {
   FocusTrapOwnerHiddenContext,
   PortalLayerDepthContext,
@@ -98,15 +99,17 @@ function makeContainer(elements: FakeElement[], activeHolder: { current: FakeEle
  *  file-level constraint note in mobile-drawer-inert-focus-order.test.tsx). */
 function makeWindowStub() {
   const listeners: Array<(e: unknown) => void> = [];
+  const focusListeners: Array<() => void> = [];
   return {
     listeners,
     addEventListener: (type: string, fn: (e: unknown) => void) => {
       if (type === "keydown") listeners.push(fn);
+      if (type === "focusin") focusListeners.push(fn);
     },
     removeEventListener: (type: string, fn: (e: unknown) => void) => {
-      if (type !== "keydown") return;
-      const idx = listeners.indexOf(fn);
-      if (idx !== -1) listeners.splice(idx, 1);
+      const target = type === "keydown" ? listeners : focusListeners;
+      const idx = target.indexOf(fn);
+      if (idx !== -1) target.splice(idx, 1);
     },
     /** Dispatches to every currently-registered listener, in registration
      *  order — exactly how a real `window` fires multiple keydown listeners.
@@ -115,10 +118,11 @@ function makeWindowStub() {
      *  not perturb the iteration. */
     dispatchKeydown(partial: { key: string; shiftKey?: boolean }) {
       let immediateStopped = false;
+      let defaultPrevented = false;
       const event = {
         key: partial.key,
         shiftKey: partial.shiftKey ?? false,
-        preventDefault: () => {},
+        preventDefault: () => { defaultPrevented = true; },
         stopImmediatePropagation: () => {
           immediateStopped = true;
         },
@@ -127,6 +131,10 @@ function makeWindowStub() {
         fn(event);
         if (immediateStopped) break;
       }
+      return { defaultPrevented };
+    },
+    dispatchFocusin() {
+      for (const fn of [...focusListeners]) fn();
     },
   };
 }
@@ -153,14 +161,18 @@ function TrapProbe({
   active,
   onEscape,
   restoreFocus,
+  containTabFocus,
+  portalLayers,
 }: {
   probeId: string;
   active: boolean;
   onEscape: () => void;
   restoreFocus?: () => boolean;
+  containTabFocus?: boolean;
+  portalLayers?: import("@/lib/use-focus-trap").FocusTrapPortalLayers;
 }) {
   const containerRef = useRef<unknown>(null);
-  useFocusTrap(active, containerRef as never, { onEscape, restoreFocus });
+  useFocusTrap(active, containerRef as never, { onEscape, restoreFocus, containTabFocus, portalLayers });
   return <div data-probe-id={probeId} ref={containerRef as never} />;
 }
 
@@ -176,12 +188,169 @@ afterEach(() => {
   }
   restoreGlobals?.();
   restoreGlobals = null;
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
   // Belt-and-suspenders: a test that throws before unmounting must not leak
   // a stray registration into a later test in this same file/process.
   resetFocusTrapStackForTest();
 });
 
 describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)", () => {
+  test.each(["missing", "denied"])("Tab containment preserves real clipboard fallback when permission is %s", async (permission) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", permission === "missing" ? {} : {
+      clipboard: { writeText: async () => { throw new Error("denied"); } },
+    });
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+    const controls = ["first", "copy", "last"].map((name) => makeElement(name, activeHolder));
+    const container = makeContainer(controls, activeHolder);
+    const textarea = Object.assign(makeElement("clipboard-textarea", activeHolder), {
+      style: {}, value: "", setAttribute: () => {}, setSelectionRange: () => {},
+      select: () => { textarea.focus(); win.dispatchFocusin(); },
+    });
+    Object.assign(document, {
+      getSelection: () => null,
+      createElement: () => textarea,
+      body: { appendChild: () => {}, removeChild: () => {} },
+      execCommand: () => activeHolder.current === textarea && textarea.value === "Copied draft",
+    });
+    act(() => {
+      renderer = create(<TrapProbe probeId="viewer" active containTabFocus onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+    controls[1].focus();
+    win.dispatchKeydown({ key: "Tab" });
+    vi.runAllTimers();
+    expect(await copyText("Copied draft")).toBe(true);
+    expect(activeHolder.current).toBe(controls[1]);
+  });
+
+  test("focus containment recaptures native button skipping in either Tab direction", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+    const first = makeElement("download", activeHolder);
+    const middle = makeElement("exit-focus", activeHolder);
+    const last = makeElement("close", activeHolder);
+    const background = makeElement("background-separator", activeHolder);
+    const hidden = Object.assign(makeElement("hidden-action", activeHolder), {
+      getClientRects: () => [],
+    });
+    const container = makeContainer([hidden, first, middle, last, hidden], activeHolder);
+    act(() => {
+      renderer = create(<TrapProbe probeId="reader" active containTabFocus onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+
+    // WebKit's form-only navigation can skip every remaining button and move
+    // directly to a background tabindex=0 control, causing a focusin event.
+    const pressTab = (shiftKey = false) => {
+      act(() => {
+        const event = win.dispatchKeydown({ key: "Tab", shiftKey });
+        if (!event.defaultPrevented) {
+          background.focus();
+          win.dispatchFocusin();
+        }
+      });
+    };
+    middle.focus();
+    pressTab();
+    expect(activeHolder.current).toBe(first);
+    middle.focus();
+    pressTab(true);
+    expect(activeHolder.current).toBe(last);
+  });
+
+  test("focus containment preserves native movement within the dialog and cleans up on close", () => {
+    vi.useFakeTimers();
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+    const first = makeElement("first", activeHolder);
+    const middle = makeElement("middle", activeHolder);
+    const last = makeElement("last", activeHolder);
+    const nativeControl = Object.assign(makeElement("native-media-control", activeHolder), {
+      tabIndex: 0, compareDocumentPosition: () => 4,
+    });
+    const background = makeElement("background", activeHolder);
+    const container = makeContainer([first, middle, last], activeHolder);
+    const contains = container.contains;
+    container.contains = (node) => node === nativeControl || contains(node);
+    act(() => {
+      renderer = create(<TrapProbe probeId="viewer" active containTabFocus onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+    middle.focus();
+    expect(win.dispatchKeydown({ key: "Tab" }).defaultPrevented).toBe(false);
+    nativeControl.focus();
+    win.dispatchFocusin();
+    expect(activeHolder.current).toBe(nativeControl);
+    background.focus();
+    win.dispatchFocusin();
+    expect(activeHolder.current, "an interior focus event consumes the Tab guard").toBe(background);
+    nativeControl.focus();
+    expect(win.dispatchKeydown({ key: "Tab" }).defaultPrevented).toBe(false);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      renderer!.update(<TrapProbe probeId="viewer" active={false} containTabFocus onEscape={() => {}} />);
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    background.focus();
+    win.dispatchFocusin();
+    expect(activeHolder.current).toBe(background);
+  });
+
+  test("existing callers retain native Tab movement between interior controls", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+    const controls = ["first", "middle", "last"].map((name) => makeElement(name, activeHolder));
+    const container = makeContainer(controls, activeHolder);
+    act(() => {
+      renderer = create(<TrapProbe probeId="dialog" active onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+    controls[1].focus();
+    expect(win.dispatchKeydown({ key: "Tab" }).defaultPrevented).toBe(false);
+    expect(win.dispatchKeydown({ key: "Tab", shiftKey: true }).defaultPrevented).toBe(false);
+  });
+
+  test("focus containment permits registered portal controls and excludes them after removal", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+    const trigger = makeElement("voice-trigger", activeHolder);
+    const option = makeElement("portaled-voice-option", activeHolder);
+    const container = makeContainer([trigger], activeHolder);
+    let registered = true;
+    const portalLayers = {
+      register: () => () => {},
+      contains: (node) => registered && node === option,
+      elements: () => registered ? [makeContainer([option], activeHolder)] : [],
+    };
+    act(() => {
+      renderer = create(<TrapProbe probeId="config" active containTabFocus portalLayers={portalLayers} onEscape={() => {}} />, {
+        createNodeMock: () => container,
+      });
+    });
+    win.dispatchKeydown({ key: "Tab" });
+    option.focus();
+    win.dispatchFocusin();
+    expect(activeHolder.current).toBe(option);
+    registered = false;
+    trigger.focus();
+    win.dispatchKeydown({ key: "Tab" });
+    option.focus();
+    win.dispatchFocusin();
+    expect(activeHolder.current).toBe(trigger);
+  });
+
   test("a late-bound gate suppresses focus restoration during a direct layer transition", () => {
     const activeHolder: { current: FakeElement | null } = { current: null };
     const win = makeWindowStub();
@@ -486,8 +655,8 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     function Scene() {
       return (
         <>
-          <TrapProbe probeId="parent" active onEscape={() => {}} />
-          <TrapProbe probeId="child" active onEscape={() => {}} />
+          <TrapProbe probeId="parent" active containTabFocus onEscape={() => {}} />
+          <TrapProbe probeId="child" active containTabFocus onEscape={() => {}} />
         </>
       );
     }
@@ -512,6 +681,10 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
       win.dispatchKeydown({ key: "Tab" });
     });
 
+    expect(activeHolder.current).toBe(childOnlyFocusable);
+    expect(parentContainer.querySelectorAllCalls).toBe(parentQueriesBeforeTab);
+    makeElement("background", activeHolder).focus();
+    win.dispatchFocusin();
     expect(activeHolder.current).toBe(childOnlyFocusable);
     expect(parentContainer.querySelectorAllCalls).toBe(parentQueriesBeforeTab);
   });

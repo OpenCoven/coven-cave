@@ -47,7 +47,7 @@ assert.doesNotMatch(
 // the router-owned copy never did (cave-fh9so).
 assert.match(
   chatSurface,
-  /<aside className="chat-inner-rail"[\s\S]*<SidebarChatsSection/,
+  /<ChatThreadRail availableWidth=\{surfaceWidth\}>[\s\S]*<SidebarChatsSection/,
   "the surface docks a threads rail beside the conversation",
 )
 

@@ -431,7 +431,7 @@ test("angle chips derive from real mission/link titles — never canned topics",
 
 test("prompt tab styles are token-driven and container-responsive", () => {
   assert.match(css, /\.research-intake \{/);
-  assert.match(css, /\.research-intake__card \{[^}]*var\(--research-accent\)/);
+  assert.match(css, /\.research-intake__card \{[^}]*var\(--bg-raised\)[^}]*var\(--border\)/);
   assert.match(css, /\.research-intake button:focus-visible/);
   assert.match(css, /@container research-desk \(max-width: 900px\) \{\s*\.research-mode-picker/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{\s*\.research-intake/);

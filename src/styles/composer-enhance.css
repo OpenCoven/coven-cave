@@ -1,0 +1,89 @@
+/* Shared by Main Chat, Home and Quick Chat. Details never compete with the
+   status/actions for inline space, even inside a narrow split pane. */
+.composer-enhance-strip {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+
+.composer-enhance-strip__row,
+.composer-enhance-strip--error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.composer-enhance-strip__message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer-enhance-strip__action {
+  flex-shrink: 0;
+  min-height: var(--space-6);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.composer-enhance-strip__action:hover {
+  background: var(--bg-hover);
+}
+
+.composer-enhance-strip__preview {
+  max-height: 10lh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  scrollbar-width: thin;
+  border-radius: var(--radius-control);
+}
+
+.composer-enhance-strip__details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer-enhance-strip__details summary {
+  width: fit-content;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.composer-enhance-strip__details p {
+  margin: var(--space-2) 0 0;
+}
+
+.composer-enhance-strip__evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+@media (pointer: coarse) {
+  .composer-enhance-strip__action,
+  .composer-enhance-strip__details summary {
+    min-height: var(--touch-target);
+    align-content: center;
+  }
+}

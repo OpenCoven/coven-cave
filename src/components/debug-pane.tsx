@@ -798,7 +798,7 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
                 onChange={(e) => setEventQuery(e.target.value)}
                 placeholder="Filter events (kind or payload)"
                 aria-label="Filter events by kind or payload text"
-                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                className="ui-search-field focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               />
               {eventQuery.trim() ? (
                 <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">

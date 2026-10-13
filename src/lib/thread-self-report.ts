@@ -584,7 +584,9 @@ export type ThreadSignalScoreTile = {
   formula?: string;
 };
 
-const SCORE_FORMULA = "conf x .35 + tools x .25 + memory x .20 + files x .20";
+// Read as English, not code: "x .20" on the rationale chip read like an
+// expression (#5898).
+const SCORE_FORMULA = "Confidence 35% + Tools 25% + Memory 20% + Files 20%";
 
 function toolRationale(report: ThreadSelfReport): string {
   const tools = report.toolReliability;
@@ -632,7 +634,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.overallConfidence)),
       tone: metricTone(report.overallConfidence),
       percent: report.overallConfidence,
-      weight: "x .35",
+      weight: "35% of score",
       rationale: report.overallConfidenceReason?.trim() || "No confidence reason reported.",
     },
     {
@@ -641,7 +643,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.toolReliability.score)),
       tone: metricTone(report.toolReliability.score),
       percent: report.toolReliability.score,
-      weight: "x .25",
+      weight: "25% of score",
       rationale: toolRationale(report),
     },
     {
@@ -650,7 +652,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.memoryRecallScore)),
       tone: metricTone(report.memoryRecallScore),
       percent: report.memoryRecallScore,
-      weight: "x .20",
+      weight: "20% of score",
       rationale: report.memoryRecallNotes?.trim() || "No memory-recall notes reported.",
     },
     {
@@ -659,7 +661,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.fileLocatabilityScore)),
       tone: metricTone(report.fileLocatabilityScore),
       percent: report.fileLocatabilityScore,
-      weight: "x .20",
+      weight: "20% of score",
       rationale: report.fileLocatabilityNotes?.trim() || "No file-locatability notes reported.",
     },
     {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
   catalogForRuntime,
@@ -29,6 +30,7 @@ type RuntimeInventoryState = {
 export type RuntimeModelInventoryResult = RuntimeModelInventory & {
   loading: boolean;
   key: string;
+  refresh: () => void;
 };
 
 const DYNAMIC_INVENTORY_RUNTIMES = new Set([
@@ -106,6 +108,7 @@ function fallbackInventory(
     availability: runtimeModelInventoryAvailability(provenance),
     defaultOwner: catalog?.defaultOwner ?? "runtime",
     allowCustom: catalog?.allowCustom ?? false,
+    discoveryIssue: DYNAMIC_INVENTORY_RUNTIMES.has(runtime) ? "discovery-failed" : "runtime-managed",
     scope: runtimeModelInventoryScope(runtime, familiarId),
   };
 }
@@ -128,6 +131,7 @@ function isInventoryResponse(
       typeof option.id === "string" &&
       typeof option.label === "string"
     ) &&
+    (value.discoveryIssue === undefined || ["discovery-failed", "runtime-managed", "remote-runtime", "local-only", "profile-managed"].includes(value.discoveryIssue)) &&
     typeof value.provenance === "string" &&
     PROVENANCE.has(value.provenance as RuntimeModelInventoryProvenance) &&
     typeof value.freshness === "string" &&
@@ -152,13 +156,20 @@ function isInventoryResponse(
 export function useRuntimeModelInventory(
   runtime: string,
   familiarId?: string | null,
+  executionRuntime?: string | null,
+  pendingHost?: string | null,
 ): RuntimeModelInventoryResult {
   // Configs created by older/package-based setup flows can retain an alias
   // such as `opencode-ai`. Keep the local inventory on the same canonical
   // runtime that the send route uses.
   const canonicalRuntime = canonicalHarnessId(runtime);
   const inventoryFamiliarId = familiarId ?? null;
-  const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
+  // The explicit Host pick controls the next send before model-state catches
+  // up. The server still enforces the familiar's own SSH binding separately.
+  const remoteExecution = pendingHost
+    ? pendingHost !== LOCAL_HOST_ID
+    : executionRuntime?.startsWith("ssh:") ?? false;
+  const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}${remoteExecution ? "\u0000remote" : ""}`;
   const staticModels = useMemo(
     () => catalogForRuntime(canonicalRuntime)?.models ?? [],
     [canonicalRuntime],
@@ -176,18 +187,16 @@ export function useRuntimeModelInventory(
   const inventoryRequestGenerationRef = useRef(0);
   const dynamicInventory = DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime);
 
-  usePausablePoll(
-    () => {
-      // Mark a retained same-scope result as loading in the poll callback
-      // itself, before the effect that starts the replacement request runs.
-      setRuntimeInventory((current) => current.key === inventoryKey
-        ? { ...current, loading: true }
-        : current);
-      setRefreshRevision((revision) => revision + 1);
-    },
-    INVENTORY_REFRESH_MS,
-    { enabled: dynamicInventory },
-  );
+  const refresh = useCallback(() => {
+    if (!dynamicInventory) return;
+    inventoryRequestGenerationRef.current += 1;
+    setRuntimeInventory((current) => current.key === inventoryKey
+      ? { ...current, loading: true }
+      : current);
+    setRefreshRevision((revision) => revision + 1);
+  }, [dynamicInventory, inventoryKey]);
+
+  usePausablePoll(refresh, INVENTORY_REFRESH_MS, { enabled: dynamicInventory });
 
   // Runtime/profile edits are persisted before this event is dispatched.
   // Re-read the same key immediately so an optimistic Hermes request that
@@ -213,6 +222,9 @@ export function useRuntimeModelInventory(
   useEffect(() => {
     if (!dynamicInventory) return;
     let cancelled = false;
+    const controller = new AbortController();
+    // Discovery has bounded server probes; also bound a stalled connection.
+    const timeout = setTimeout(() => controller.abort(), 15_000);
     const requestGeneration = ++inventoryRequestGenerationRef.current;
     // A scope change fails closed synchronously. A background refresh for the
     // same scope may keep its already-validated inventory mounted.
@@ -221,9 +233,10 @@ export function useRuntimeModelInventory(
       : { key: inventoryKey, inventory: null, loading: true });
     const params = new URLSearchParams();
     if (inventoryFamiliarId) params.set("familiarId", inventoryFamiliarId);
+    if (remoteExecution) params.set("remote", "true");
     const base = `/api/runtime-models/${encodeURIComponent(canonicalRuntime)}`;
     const url = params.size ? `${base}?${params.toString()}` : base;
-    void fetch(url, { cache: "no-store" })
+    void fetch(url, { cache: "no-store", signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: ModelResponse | null) => {
         if (cancelled || requestGeneration !== inventoryRequestGenerationRef.current) return;
@@ -237,8 +250,13 @@ export function useRuntimeModelInventory(
         if (!cancelled && requestGeneration === inventoryRequestGenerationRef.current) {
           setRuntimeInventory({ key: inventoryKey, inventory: fallback, loading: false });
         }
-      });
-    return () => { cancelled = true; };
+      })
+      .finally(() => clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, [
     canonicalRuntime,
     dynamicInventory,
@@ -246,10 +264,11 @@ export function useRuntimeModelInventory(
     inventoryFamiliarId,
     inventoryKey,
     refreshRevision,
+    remoteExecution,
   ]);
 
   if (!dynamicInventory) {
-    return { ...fallback, loading: false, key: inventoryKey };
+    return { ...fallback, loading: false, key: inventoryKey, refresh };
   }
   if (
     runtimeInventory.key === inventoryKey &&
@@ -259,6 +278,7 @@ export function useRuntimeModelInventory(
       ...runtimeInventory.inventory,
       loading: runtimeInventory.loading,
       key: inventoryKey,
+      refresh,
     };
   }
   return {
@@ -270,6 +290,7 @@ export function useRuntimeModelInventory(
     availability: "unavailable",
     loading: true,
     key: inventoryKey,
+    refresh,
   };
 }
 

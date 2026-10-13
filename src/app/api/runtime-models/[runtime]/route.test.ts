@@ -12,7 +12,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const localInventoryRequest = rejectNonLocalRequest\(req\) === null[\s\S]*?runtime === "hermes" && localInventoryRequest && familiarId[\s\S]*?bindingFor\(await loadConfig\(\), familiarId\)[\s\S]*?!binding\.hermesProfile[\s\S]*?!binding\.hasInvalidHermesProfileBinding[\s\S]*?!isSshRuntime\(binding\.runtime\)[\s\S]*?allowHermesInventory,/,
+  /const localInventoryRequest = rejectNonLocalRequest\(req\) === null[\s\S]*?bindingFor\(await loadConfig\(\), familiarId\)[\s\S]*?runtime === "hermes" && localInventoryRequest && binding[\s\S]*?!binding\.hermesProfile[\s\S]*?!binding\.hasInvalidHermesProfileBinding[\s\S]*?!isSshRuntime\(binding\.runtime\)[\s\S]*?allowHermesInventory,/,
   "Hermes provider discovery is enabled only for a local request with a validated bare-local familiar binding",
 );
 assert.match(source, /\.\.\.inventory/, "the endpoint returns provenance and default ownership");

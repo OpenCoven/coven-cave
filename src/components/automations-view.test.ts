@@ -354,11 +354,11 @@ assert.match(source, /fetch\(`\/api\/codex-automation-last-runs\?\$\{query\}`\)/
 assert.doesNotMatch(source, /codexAutos\.map\(\(a\) =>\s*\n?\s*fetch\(/, "last-run badges no longer fan out one request per automation");
 
 // ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
-// Overview search must never dead-end: the input renders whenever search is
-// open (items.length gating made both the input AND the toggle icon vanish
-// when the list was empty), and the Log pane shows activity time (firedAt ??
-// updatedAt), not a future fireAt, so its timestamps read monotonically.
-assert.match(source, /activeTab === "overview" && searchOpen && initialLoadDone \? \(/, "overview search input is not gated on items.length");
+// Search stays visible even before loading or when no items match; clearing
+// the filter never hides it. Log timestamps use activity time, not a future fireAt.
+assert.doesNotMatch(automationsView, /searchOpen|rituals-crons-search-toggle/, "search does not collapse behind a magnifier");
+assert.match(automationsView, /activeTab === "overview" \? \([\s\S]*?<SearchInput/, "overview search is visible without an item or loading gate");
+assert.match(automationsView, /activeTab === "crons" \? \([\s\S]*?<SearchInput/, "cron search is visible without an item or loading gate");
 assert.match(source, /timeMode="log"/, "the Log pane renders rows in log time mode");
 assert.match(source, /timeMode = "agenda"/, "RitualItemRow defaults to agenda time");
 assert.match(source, /item\.firedAt \?\? item\.updatedAt \?\? item\.createdAt\s*:/, "log mode shows last-activity time (same key ritualLogItems sorts by)");

@@ -1,1160 +1,512 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-
 import {
-  CONTRACT_PARTIAL,
-  NOT_DISPATCHABLE,
-  RECOVERY_COOLDOWN_MS,
   RECOVERY_GRACE_MS,
+  RECOVERY_COOLDOWN_MS,
   runCiRecovery,
 } from "./ci-recovery.mjs";
 
-const NOW = Date.parse("2026-08-08T18:00:00Z");
-const REPOSITORY = "OpenCoven/coven-cave";
-
-function jsonResponse(value, status = 200) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-function pull({
-  number = 42,
-  createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
-  updatedAt = createdAt,
-  sha = "a".repeat(40),
-  branch = "fix/cave-unit",
-  repository = REPOSITORY,
-  draft = false,
-  state = "open",
-} = {}) {
+const NOW = Date.parse("2026-10-12T02:00:00Z");
+const REPO = "OpenCoven/coven-cave";
+const SHA = "a".repeat(40),
+  BASE = "b".repeat(40),
+  MERGE = "c".repeat(40);
+const OLD = new Date(NOW - RECOVERY_COOLDOWN_MS - 1).toISOString();
+const workflow = readFileSync(
+  new URL("../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
+const json = (value, status = 200, headers = {}) =>
+  new Response(JSON.stringify(value), { status, headers });
+function pull(number = 42, overrides = {}) {
   return {
     number,
-    draft,
-    state,
-    created_at: createdAt,
-    updated_at: updatedAt,
-    html_url: `https://github.com/${REPOSITORY}/pull/${number}`,
-    head: {
-      ref: branch,
-      sha,
-      repo: { full_name: repository },
-    },
-  };
-}
-
-function workflowRun({
-  id = 9001,
-  status = "completed",
-  conclusion = status === "completed" ? "success" : null,
-  event = "pull_request",
-  createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
-  headSha = "a".repeat(40),
-  displayTitle = `CI ${event} ${headSha}`,
-} = {}) {
-  return {
-    id,
-    status,
-    conclusion,
-    event,
-    created_at: createdAt,
-    head_sha: headSha,
-    display_title: displayTitle,
-    html_url: `https://github.com/${REPOSITORY}/actions/runs/${id}`,
-  };
-}
-
-const GUARDED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
-const GUARDED_CONCURRENCY =
-  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
-const PREVIOUS_GUARDED_CONCURRENCY =
-  "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
-const GUARDED_JOB_IF =
-  "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_SUBORDINATE_JOB_IFS = {
-  paths: GUARDED_JOB_IF,
-  ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
-};
-const SHA_MISMATCH_STEP = [
-  "    steps:",
-  "      - name: Refuse recovery SHA mismatch",
-  "        env:",
-  "          EXPECTED_SHA: ${{ inputs.expected_sha }}",
-  "          ACTUAL_SHA: ${{ github.sha }}",
-  "        run: |",
-  "          set -euo pipefail",
-  '          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then',
-  '            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."',
-  "            exit 1",
-  "          fi",
-];
-const GUARDED_CI_WORKFLOW = [
-  "name: CI",
-  `run-name: ${GUARDED_RUN_NAME}`,
-  "on:",
-  "  workflow_dispatch:",
-  "    inputs:",
-  "      expected_sha:",
-  "        required: true",
-  "        type: string",
-  "      expected_pr_number:",
-  "        required: true",
-  "        type: string",
-  "concurrency:",
-  `  group: ${GUARDED_CONCURRENCY}`,
-  "jobs:",
-  "  pr-checks:",
-  ...SHA_MISMATCH_STEP,
-  ...Object.entries(GUARDED_SUBORDINATE_JOB_IFS).flatMap(([name, condition]) => [
-    `  ${name}:`,
-    `    if: ${condition}`,
-  ]),
-  "  build:",
-  "    if: always()",
-  ...SHA_MISMATCH_STEP,
-  "",
-].join("\n");
-const PREVIOUS_GUARDED_CI_WORKFLOW = [
-  "name: CI",
-  `run-name: ${GUARDED_RUN_NAME}`,
-  "on:",
-  "  workflow_dispatch:",
-  "    inputs:",
-  "      expected_sha:",
-  "        required: true",
-  "        type: string",
-  "concurrency:",
-  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
-  "jobs:",
-  "  build:",
-  `    if: ${GUARDED_JOB_IF}`,
-  "",
-].join("\n");
-const MIGRATION_GUARDED_CI_WORKFLOW = [
-  "name: CI",
-  `run-name: ${GUARDED_RUN_NAME}`,
-  "on:",
-  "  workflow_dispatch:",
-  "    inputs:",
-  "      expected_sha:",
-  "        required: true",
-  "        type: string",
-  "concurrency:",
-  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
-  "jobs:",
-  "  paths:",
-  `    if: ${GUARDED_JOB_IF}`,
-  "  ios:",
-  `    if: needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
-  "  build:",
-  `    if: always() && (${GUARDED_JOB_IF})`,
-  "",
-].join("\n");
-const REQUIRED_EXPECTED_PR_NUMBER_INPUT = [
-  "      expected_pr_number:",
-  "        required: true",
-  "        type: string",
-].join("\n");
-
-function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
-  const requests = [];
-  const fetchImpl = async (url, init = {}) => {
-    const parsed = new URL(url);
-    const request = {
-      method: init.method ?? "GET",
-      path: `${parsed.pathname}${parsed.search}`,
-      body: init.body ? JSON.parse(init.body) : null,
-    };
-    requests.push(request);
-
-    if (parsed.pathname.endsWith("/pulls")) return jsonResponse(pulls);
-    const pullDetail = parsed.pathname.match(/\/pulls\/(\d+)$/);
-    if (pullDetail) {
-      return jsonResponse(pulls.find((candidate) => candidate.number === Number(pullDetail[1])));
-    }
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
-      const sha = parsed.searchParams.get("head_sha");
-      return jsonResponse({ workflow_runs: runsBySha[sha] ?? [] });
-    }
-    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
-      const sha = parsed.searchParams.get("ref");
-      const source = workflowsBySha[sha] ?? GUARDED_CI_WORKFLOW;
-      return jsonResponse({ encoding: "base64", content: Buffer.from(source).toString("base64") });
-    }
-    const jobs = parsed.pathname.match(/\/actions\/runs\/(\d+)\/jobs$/);
-    if (jobs) {
-      return jsonResponse({
-        total_count: jobsByRun[Number(jobs[1])] ?? 0,
-        jobs: [],
-      });
-    }
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`unexpected request: ${request.method} ${request.path}`);
-  };
-  return { fetchImpl, requests };
-}
-
-function options(fetchImpl, apply = false, overrides = {}) {
-  return {
-    apply,
-    env: {
-      GITHUB_API_URL: "https://api.github.test",
-      GITHUB_REPOSITORY: REPOSITORY,
-      GITHUB_TOKEN: "test-token",
-    },
-    fetchImpl,
-    now: NOW,
-    log: () => {},
+    state: "open",
+    draft: false,
+    created_at: OLD,
+    updated_at: OLD,
+    html_url: `https://github.com/${REPO}/pull/${number}`,
+    head: { ref: `fix/unit-${number}`, sha: SHA, repo: { full_name: REPO } },
+    base: { ref: "main", sha: BASE, repo: { full_name: REPO } },
+    mergeable: true,
+    merge_commit_sha: MERGE,
     ...overrides,
   };
 }
-
-test("report-only mode identifies an aged PR with no CI run without dispatching", async () => {
-  const pr = pull();
-  const fixture = githubFixture({ pulls: [pr] });
-  const messages = [];
-
-  const result = await runCiRecovery(
-    options(fixture.fetchImpl, false, { log: (message) => messages.push(message) }),
-  );
-
-  assert.equal(result.mode, "report-only");
-  assert.deepEqual(result.recoveries, [
-    {
-      number: pr.number,
-      reason: "missing_ci_run",
-      ref: pr.head.ref,
-      sha: pr.head.sha,
-      url: pr.html_url,
-      dispatched: false,
-    },
-  ]);
-  assert.equal(
-    fixture.requests.some((request) => request.method === "POST"),
-    false,
-    "the default diagnostic path must be read-only",
-  );
-  assert.match(messages.join("\n"), /#42 missing_ci_run .*fix\/cave-unit/);
-});
-
-test("apply dispatches one fresh CI run for a qualifying same-repository head", async () => {
-  const pr = pull();
-  const fixture = githubFixture({ pulls: [pr] });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].dispatched, true);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: {
-          ref: pr.head.ref,
-          inputs: { expected_sha: pr.head.sha, expected_pr_number: String(pr.number) },
-        },
-      },
+function run(overrides = {}) {
+  return {
+    id: 9001,
+    status: "completed",
+    conclusion: "cancelled",
+    event: "pull_request",
+    created_at: OLD,
+    updated_at: OLD,
+    head_sha: SHA,
+    run_attempt: 1,
+    path: ".github/workflows/ci.yml",
+    display_title: `CI pull_request ${SHA}`,
+    pull_requests: [
+      { number: 42, head: { sha: SHA }, base: { ref: "main", sha: BASE } },
     ],
-  );
-});
-
-test("apply preserves expected_sha for the previous complete guarded workflow", async () => {
-  const pr = pull();
-  const fixture = githubFixture({
-    pulls: [pr],
-    workflowsBySha: {
-      [pr.head.sha]: PREVIOUS_GUARDED_CI_WORKFLOW,
-    },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].dispatched, true);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
-      },
-    ],
-  );
-});
-
-for (const [name, workflow] of [
-  ["previous", PREVIOUS_GUARDED_CI_WORKFLOW],
-  ["migration", MIGRATION_GUARDED_CI_WORKFLOW],
-]) {
-  test(
-    `a ${name} guarded workflow with a required expected_pr_number is partial and never dispatched`,
-    async () => {
-      const pr = pull();
-      const fixture = githubFixture({
-        pulls: [pr],
-        workflowsBySha: {
-          [pr.head.sha]: workflow.replace(
-            "concurrency:",
-            `${REQUIRED_EXPECTED_PR_NUMBER_INPUT}\nconcurrency:`,
-          ),
-        },
-      });
-
-      const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-      assert.deepEqual(result.recoveries, []);
-      assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-      // A partial guard contract is a stale BRANCH, not a broken repository:
-      // the skip is correct, nothing here needs repairing, and failing the run
-      // for it reds a check on `main`. Reported as attention instead.
-      assert.equal(result.degraded, false);
-      assert.deepEqual(result.attention, [pr.number]);
-      assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-    },
-  );
+    ...overrides,
+  };
 }
-
-test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
-  const pr = pull();
-  const fixture = githubFixture({
-    pulls: [pr],
-    workflowsBySha: {
-      [pr.head.sha]: "name: CI\non:\n  workflow_dispatch:\n",
-    },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].dispatched, true);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref },
-      },
-    ],
-  );
-  assert.equal(
-    fixture.requests.some(
-      (request) =>
-        request.method === "GET" &&
-        request.path.endsWith(`/contents/.github/workflows/ci.yml?ref=${pr.head.sha}`),
-    ),
-    true,
-  );
-});
-
-test("a partial guard contract is skipped without blocking the other candidates", async () => {
-  // The safety property is unchanged: a partial contract is ambiguous rather
-  // than un-dispatchable, so the exact-SHA guard may not be honoured and THIS
-  // head is never dispatched. What changed is blast radius — it used to abort
-  // the whole apply, so one un-rebased branch disabled recovery for every other
-  // open PR (runs 31393882802 and 31618670601 died exactly here).
-  const partial = pull({ number: 1, sha: "e".repeat(40), branch: "fix/partial" });
-  const healthy = pull({ number: 2, sha: "f".repeat(40), branch: "fix/healthy" });
-  const fixture = githubFixture({
-    pulls: [partial, healthy],
-    workflowsBySha: {
-      [partial.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
-      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
-    },
-  });
-  const messages = [];
-
-  const result = await runCiRecovery(
-    options(fixture.fetchImpl, true, { log: (message) => messages.push(message) }),
-  );
-
-  assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [healthy.number],
-  );
-  assert.deepEqual(result.skipped, [{ number: partial.number, reason: CONTRACT_PARTIAL }]);
-  // The ambiguous head is never dispatched — only the healthy one is.
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: {
-          ref: healthy.head.ref,
-          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
-        },
-      },
-    ],
-  );
-  // A partial contract still has to reach a human — but as a WARNING, not as a
-  // failed run. It is a stale branch, not a broken repository: skipping it is
-  // the correct outcome, and failing for it put a red check on `main` that
-  // nobody connected to anything (twelve consecutive failures, 2026-09-13 to
-  // 09-15, cleared only when the two PRs happened to close).
-  assert.equal(result.degraded, false, "a stale branch does not fail the run");
-  assert.deepEqual(result.attention, [partial.number]);
-  // The candidate is NAMED. The old summary said "needs attention" without
-  // saying which PR or why, so the one line a reader sees carried nothing
-  // actionable.
-  const summary = messages.find((message) => message.startsWith("CI recovery:"));
-  assert.ok(summary, "a summary line is emitted");
-  assert.match(summary, /awaiting a workflow-contract fix \(#1\)/);
-  assert.doesNotMatch(summary, /needs attention/, "no fault occurred, so none is claimed");
-  assert.equal(
-    messages.some((message) => message.startsWith("::warning::") && message.includes("#1")),
-    true,
-    "surfaced as a GitHub Actions warning annotation rather than a red check",
-  );
-});
-
-test("a REST fault still fails the run, and says which PR caused it", async () => {
-  // The other half of the split. A partial contract is a stale branch and only
-  // warns; something BREAKING is a repository or API problem that will not fix
-  // itself, so it keeps the non-zero exit — and now names the candidate, which
-  // is what the old bare "needs attention" never did.
-  const broken = pull({ number: 7, sha: "a".repeat(40), branch: "fix/broken" });
-  const fixture = githubFixture({ pulls: [broken] });
-  const failing = async (url, init) => {
-    // The run listing is /actions/workflows/<file>/runs, not /actions/runs.
-    if (/\/actions\/workflows\/[^/]+\/runs/.test(String(url))) {
-      throw new Error("boom: upstream read failed");
-    }
-    return fixture.fetchImpl(url, init);
-  };
-  const messages = [];
-
-  const result = await runCiRecovery(
-    options(failing, false, { log: (message) => messages.push(message) }),
-  );
-
-  assert.equal(result.degraded, true, "a broken read is a fault, not routine");
-  assert.deepEqual(result.faults, [broken.number]);
-  assert.deepEqual(result.attention, []);
-  const summary = messages.find((message) => message.startsWith("CI recovery:"));
-  assert.match(summary, /needs attention \(#7\)/, "the failing candidate is named");
-});
-
-test("an expected_pr_number-only contract is skipped and never dispatched", async () => {
-  const pr = pull();
-  const expectedPrNumberOnlyWorkflow = [
-    "name: CI",
-    "on:",
-    "  workflow_dispatch:",
-    "    inputs:",
-    "      expected_pr_number:",
-    "        required: true",
-    "        type: string",
-    "jobs:",
-    "  build:",
-    "    if: ${{ inputs.expected_pr_number }}",
-    "",
-  ].join("\n");
-  const fixture = githubFixture({
-    pulls: [pr],
-    workflowsBySha: { [pr.head.sha]: expectedPrNumberOnlyWorkflow },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-  // A partial guard contract is a stale BRANCH, not a broken repository:
-  // the skip is correct, nothing here needs repairing, and failing the run
-  // for it reds a check on `main`. Reported as attention instead.
-  assert.equal(result.degraded, false);
-  assert.deepEqual(result.attention, [pr.number]);
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("a required job missing the expected SHA failure is skipped, never dispatched", async () => {
-  const pr = pull();
-  const fixture = githubFixture({
-    pulls: [pr],
-    workflowsBySha: {
-      [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        "      - name: Refuse recovery SHA mismatch",
-        "      - name: Start validation",
-      ),
-    },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-  // A partial guard contract is a stale BRANCH, not a broken repository:
-  // the skip is correct, nothing here needs repairing, and failing the run
-  // for it reds a check on `main`. Reported as attention instead.
-  assert.equal(result.degraded, false);
-  assert.deepEqual(result.attention, [pr.number]);
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("an un-dispatchable head is skipped without raising the attention flag", async () => {
-  // A branch whose ci.yml predates dispatch support is normal, not a
-  // misconfiguration: it must not turn the scheduled run red every ten minutes.
-  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });
-  const fixture = githubFixture({
-    pulls: [stale],
-    workflowsBySha: { [stale.head.sha]: "name: CI\non:\n  pull_request:\n" },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.skipped, [{ number: stale.number, reason: NOT_DISPATCHABLE }]);
-  assert.equal(result.degraded, false);
-});
-
-test("an un-dispatchable head is skipped without blocking the other candidates", async () => {
-  // The head listed FIRST is the un-dispatchable one, because that is the case
-  // that used to abort everything: its ci.yml predates workflow_dispatch, so it
-  // can never be dispatched by anyone, and throwing for it stranded every other
-  // eligible PR in the repository (cave-qibp6).
-  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });  const healthy = pull({ number: 4643, sha: "d".repeat(40), branch: "codex/current-workflow" });
-  const fixture = githubFixture({
-    pulls: [stale, healthy],
-    workflowsBySha: {
-      [stale.head.sha]: "name: CI\non:\n  pull_request:\n",
-      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
-    },
-  });
-  const messages = [];
-
-  const result = await runCiRecovery(
-    options(fixture.fetchImpl, true, { log: (message) => messages.push(message) }),
-  );
-
-  assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [healthy.number],
-  );
-  assert.deepEqual(result.skipped, [
-    { number: stale.number, reason: "workflow_not_dispatchable" },
-  ]);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: {
-          ref: healthy.head.ref,
-          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
-        },
-      },
-    ],
-  );
-  // A dropped candidate has to be visible; a silent skip reads as full coverage.
-  assert.equal(
-    messages.some((message) => message.includes("#4646 skipped workflow_not_dispatchable")),
-    true,
-  );
-  assert.equal(messages.some((message) => message.includes("1 skipped")), true);
-});
-
-
-
-test("one unreadable pull request does not strand the rest of the scan", async () => {
-  // A 404 on a deleted/garbage-collected head, or one flaky 5xx, used to
-  // propagate out of the scan loop and end the run. Every other open PR with
-  // missing CI then stayed missing — the same "recovery never fired" report,
-  // from a different cause.
-  const broken = pull({ number: 11, sha: "1".repeat(40), branch: "fix/broken" });
-  const healthy = pull({ number: 12, sha: "2".repeat(40), branch: "fix/healthy" });
-  const fixture = githubFixture({ pulls: [broken, healthy] });
-  const failing = async (url, init) => {
-    const parsed = new URL(url);
-    if (
-      parsed.pathname.endsWith("/actions/workflows/ci.yml/runs") &&
-      parsed.searchParams.get("head_sha") === broken.head.sha
-    ) {
-      return new Response("", { status: 502 });
-    }
-    return fixture.fetchImpl(url, init);
-  };
-
-  const result = await runCiRecovery(options(failing, true));
-
-  assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [healthy.number],
-  );
-  assert.deepEqual(result.skipped, [
-    {
-      number: broken.number,
-      reason: "error: failed to list CI runs for a pull request head (HTTP 502)",
-    },
-  ]);
-  assert.equal(result.degraded, true);
-});
-
-test("one refused dispatch does not abandon the dispatches queued behind it", async () => {
-  const refused = pull({ number: 21, sha: "3".repeat(40), branch: "fix/refused" });
-  const healthy = pull({ number: 22, sha: "4".repeat(40), branch: "fix/healthy" });
-  const fixture = githubFixture({ pulls: [refused, healthy] });
-  const failing = async (url, init) => {
-    const body = init?.body ? JSON.parse(init.body) : null;
-    if (body?.ref === refused.head.ref) return new Response("", { status: 403 });
-    return fixture.fetchImpl(url, init);
-  };
-
-  const result = await runCiRecovery(options(failing, true));
-
-  assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [healthy.number],
-  );
-  assert.deepEqual(result.skipped, [
-    { number: refused.number, reason: "error: failed to dispatch CI recovery (HTTP 403)" },
-  ]);
-  assert.equal(result.degraded, true);
-});
-
-test("a legacy dispatchable head is still dispatched without inputs", async () => {
-  const legacy = pull({ number: 7, sha: "b".repeat(40) });
-  const fixture = githubFixture({
-    pulls: [legacy],
-    workflowsBySha: { [legacy.head.sha]: "name: CI\non:\n  workflow_dispatch:\n" },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].dispatched, true);
-  assert.deepEqual(result.skipped, []);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST")[0].body,
-    { ref: legacy.head.ref },
-  );
-});
-
-test("existing CI, young PRs, drafts, and fork heads are never dispatched", async () => {
-  const healthy = pull({ number: 1, sha: "1".repeat(40) });
-  const young = pull({
-    number: 2,
-    sha: "2".repeat(40),
-    createdAt: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString(),
-  });
-  const draft = pull({ number: 3, sha: "3".repeat(40), draft: true });
-  const fork = pull({ number: 4, sha: "4".repeat(40), repository: "contributor/fork" });
-  const fixture = githubFixture({
-    pulls: [healthy, young, draft, fork],
-    runsBySha: {
-      [healthy.head.sha]: [workflowRun()],
-    },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.deepEqual(
-    result.skipped.map(({ number, reason }) => ({ number, reason })),
-    [
-      { number: 1, reason: "ci_present" },
-      { number: 2, reason: "grace_period" },
-      { number: 3, reason: "draft" },
-      { number: 4, reason: "fork_head" },
-    ],
-  );
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("an old PR with a freshly updated head remains inside the grace period", async () => {
-  const freshHead = pull({
-    createdAt: new Date(NOW - RECOVERY_GRACE_MS * 10).toISOString(),
-    updatedAt: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString(),
-  });
-  const fixture = githubFixture({ pulls: [freshHead] });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.deepEqual(result.skipped, [{ number: freshHead.number, reason: "grace_period" }]);
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("an aged queued run with zero jobs is recovered once", async () => {
-  const pr = pull();
-  const stalled = workflowRun({ id: 77, status: "queued" });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [stalled] },
-    jobsByRun: { 77: 0 },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].reason, "stalled_empty_run");
-  assert.equal(result.recoveries[0].dispatched, true);
-});
-
-test("an aged pending run with zero jobs is recovered as a stalled run", async () => {
-  // A run parked behind ci.yml's concurrency group reports status `pending`
-  // with ZERO jobs until the group key frees — not `queued`, which is the only
-  // waiting status the stalled-empty-run path used to recognise. The key only
-  // frees when the holder's `if: always()` required job drains, which under
-  // runner queueing takes 10-15 minutes, so a pending run can sit empty well
-  // past the grace window (observed on #4925: run 32632713873 pending with 0
-  // jobs behind run 32631588451). Recovery used to read `pending` as
-  // `ci_present` and decline forever, leaving the PR with no checks while
-  // nothing was actually running (cave-q7spw).
-  const pr = pull();
-  const pending = workflowRun({ id: 78, status: "pending" });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [pending] },
-    jobsByRun: { 78: 0 },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.equal(result.recoveries[0].reason, "stalled_empty_run");
-  assert.equal(result.recoveries[0].dispatched, true);
-});
-
-test("a young pending run is still given the grace window", async () => {
-  // The concurrency group can free within minutes of the run appearing, so a
-  // freshly created pending run is not stalled yet — same grace window as a
-  // queued run, same `ci_queued` wait.
-  const pr = pull();
-  const pending = workflowRun({
-    id: 79,
-    status: "pending",
-    createdAt: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString(),
-  });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [pending] },
-    jobsByRun: { 79: 0 },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.equal(result.skipped[0].reason, "ci_queued");
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("a pending run that actually has jobs is CI present, not a stalled run", async () => {
-  // Pending with jobs means the group freed and the run is really coming;
-  // dispatching recovery on top of it would be redundant.
-  const pr = pull();
-  const pending = workflowRun({ id: 80, status: "pending" });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [pending] },
-    jobsByRun: { 80: 3 },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.equal(result.skipped[0].reason, "ci_present");
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("a recent recovery dispatch enforces the cooldown even when it has no jobs", async () => {
-  const pr = pull();
-  const recovery = workflowRun({
-    id: 88,
-    status: "queued",
-    event: "workflow_dispatch",
-    createdAt: new Date(NOW - RECOVERY_COOLDOWN_MS + 1).toISOString(),
-  });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [recovery] },
-    jobsByRun: { 88: 0 },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.equal(result.skipped[0].reason, "recovery_cooldown");
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
-});
-
-test("GitHub REST failures fail closed and never dispatch", async () => {
+function fixture({
+  pulls = [pull()],
+  runs = [run()],
+  source = workflow,
+  override,
+} = {}) {
   const requests = [];
   const fetchImpl = async (url, init = {}) => {
-    requests.push({ url, method: init.method ?? "GET" });
-    return jsonResponse({ message: "service unavailable" }, 503);
-  };
-
-  await assert.rejects(
-    runCiRecovery(options(fetchImpl, true)),
-    /failed to list open pull requests \(HTTP 503\)/,
-  );
-  assert.equal(requests.some((request) => request.method === "POST"), false);
-});
-
-test("apply completes every candidate read before dispatching any recovery", async () => {
-  const first = pull({ number: 1, sha: "1".repeat(40), branch: "fix/first" });
-  const second = pull({ number: 2, sha: "2".repeat(40), branch: "fix/second" });
-  const requests = [];
-  const fetchImpl = async (url, init = {}) => {
-    const parsed = new URL(url);
-    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
-    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([first, second]);
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
-      if (parsed.searchParams.get("head_sha") === first.head.sha) {
-        return jsonResponse({ workflow_runs: [] });
-      }
-      return jsonResponse({ message: "service unavailable" }, 503);
-    }
-    if (parsed.pathname.endsWith(`/pulls/${first.number}`)) return jsonResponse(first);
-    if (parsed.pathname.endsWith(`/pulls/${second.number}`)) return jsonResponse(second);
-    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
-      return jsonResponse({
-        encoding: "base64",
-        content: Buffer.from(GUARDED_CI_WORKFLOW).toString("base64"),
+    const u = new URL(url);
+    const req = {
+      path: u.pathname + u.search,
+      method: init.method ?? "GET",
+      body: init.body && JSON.parse(init.body),
+    };
+    requests.push(req);
+    const intercepted = await override?.(req, requests);
+    if (intercepted) return intercepted;
+    if (u.pathname.endsWith("/pulls")) return json(pulls);
+    if (/\/pulls\/\d+$/.test(u.pathname))
+      return json(
+        pulls.find((p) => String(p.number) === u.pathname.split("/").at(-1)),
+      );
+    if (u.pathname.endsWith("/actions/workflows/ci.yml/runs"))
+      return json({ total_count: runs.length, workflow_runs: runs });
+    if (/\/actions\/runs\/\d+$/.test(u.pathname))
+      return json(
+        runs.find((r) => String(r.id) === u.pathname.split("/").at(-1)),
+      );
+    if (u.pathname.endsWith("/git/ref/heads/main"))
+      return json({
+        ref: "refs/heads/main",
+        object: { type: "commit", sha: BASE },
       });
-    }
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`unexpected request: ${parsed.pathname}`);
+    if (u.pathname.endsWith("/git/ref/pull/42/merge"))
+      return json({
+        ref: "refs/pull/42/merge",
+        object: { type: "commit", sha: MERGE },
+      });
+    if (u.pathname.endsWith(`/git/commits/${MERGE}`))
+      return json({ sha: MERGE, parents: [{ sha: BASE }, { sha: SHA }] });
+    if (u.pathname.endsWith("/contents/.github/workflows/ci.yml"))
+      return json({
+        encoding: "base64",
+        content: Buffer.from(source).toString("base64"),
+      });
+    if (/\/actions\/runs\/\d+\/rerun$/.test(u.pathname))
+      return new Response(null, { status: 201 });
+    throw new Error(`unexpected request ${req.method} ${req.path}`);
   };
+  return { requests, fetchImpl };
+}
+function options(f, apply = false) {
+  return {
+    apply,
+    now: NOW,
+    env: {
+      GITHUB_REPOSITORY: REPO,
+      GITHUB_TOKEN: "synthetic",
+      GITHUB_API_URL: "https://api.github.test",
+    },
+    fetchImpl: f.fetchImpl,
+    log() {},
+  };
+}
+const mutations = (f) => f.requests.filter((r) => r.method !== "GET");
 
-  const result = await runCiRecovery(options(fetchImpl, true));
-
-  // The ordering invariant is unchanged: no mutation is issued until every
-  // candidate read has finished. What changed is that a failed read now costs
-  // that ONE candidate instead of the whole scan.
-  const firstPost = requests.findIndex((request) => request.method === "POST");
-  const lastRead = requests.findLastIndex((request) => request.method === "GET");
-  assert.notEqual(firstPost, -1);
-  assert.equal(firstPost > lastRead, true);
+for (const event of [
+  "workflow_dispatch",
+  "repository_dispatch",
+  "schedule",
+  "push",
+]) {
+  test(`${event} success is not this PR's eligible run`, async () => {
+    const f = fixture({ runs: [run({ event, conclusion: "success" })] });
+    const result = await runCiRecovery(options(f, true));
+    assert.equal(result.skipped[0].reason, "missing_eligible_pr_run");
+    assert.deepEqual(result.attention, [42]);
+    assert.deepEqual(mutations(f), []);
+  });
+}
+test("report mode proposes a whole eligible run without mutating", async () => {
+  const f = fixture();
+  const result = await runCiRecovery(options(f));
+  assert.equal(result.recoveries[0].runId, 9001);
+  assert.equal(result.recoveries[0].rerunRequested, false);
+  assert.deepEqual(mutations(f), []);
+});
+test("apply reruns the entire PR run and never dispatches, approves, or edits the PR", async () => {
+  const f = fixture();
+  const result = await runCiRecovery(options(f, true));
+  assert.equal(result.recoveries[0].rerunRequested, true);
+  assert.equal(result.recoveries[0].sha, SHA);
   assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [first.number],
+    mutations(f).map(({ path, method }) => ({ path, method })),
+    [{ path: `/repos/${REPO}/actions/runs/9001/rerun`, method: "POST" }],
   );
-  assert.deepEqual(result.skipped, [
-    {
-      number: second.number,
-      reason: "error: failed to list CI runs for a pull request head (HTTP 503)",
-    },
-  ]);
 });
-
-test("apply inspects every exact-head workflow contract before dispatching any recovery", async () => {
-  const first = pull({ number: 1, sha: "1".repeat(40), branch: "fix/first" });
-  const second = pull({ number: 2, sha: "2".repeat(40), branch: "fix/second" });
-  const requests = [];
-  const fetchImpl = async (url, init = {}) => {
-    const parsed = new URL(url);
-    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
-    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([first, second]);
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
-      return jsonResponse({ workflow_runs: [] });
-    }
-    if (parsed.pathname.endsWith(`/pulls/${first.number}`)) return jsonResponse(first);
-    if (parsed.pathname.endsWith(`/pulls/${second.number}`)) return jsonResponse(second);
-    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
-      if (parsed.searchParams.get("ref") === first.head.sha) {
-        return jsonResponse({
-          encoding: "base64",
-          content: Buffer.from(GUARDED_CI_WORKFLOW).toString("base64"),
-        });
-      }
-      return jsonResponse({ message: "service unavailable" }, 503);
-    }
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`unexpected request: ${parsed.pathname}`);
-  };
-
-  const result = await runCiRecovery(options(fetchImpl, true));
-
-  const firstPost = requests.findIndex((request) => request.method === "POST");
-  const lastRead = requests.findLastIndex((request) => request.method === "GET");
-  assert.notEqual(firstPost, -1);
-  assert.equal(firstPost > lastRead, true);
-  assert.deepEqual(
-    result.recoveries.map((recovery) => recovery.number),
-    [first.number],
-  );
-  assert.deepEqual(result.skipped, [
-    {
-      number: second.number,
-      reason: "error: failed to inspect the CI workflow contract (HTTP 503)",
-    },
-  ]);
-});
-
-test("apply skips a recovery when the pull request head moves before dispatch", async () => {
-  const original = pull();
-  const moved = pull({
-    updatedAt: new Date(NOW - 1).toISOString(),
-    sha: "b".repeat(40),
-  });
-  const requests = [];
-  const fetchImpl = async (url, init = {}) => {
-    const parsed = new URL(url);
-    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
-    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([original]);
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
-      return jsonResponse({ workflow_runs: [] });
-    }
-    if (parsed.pathname.endsWith(`/pulls/${original.number}`)) return jsonResponse(moved);
-    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`unexpected request: ${parsed.pathname}`);
-  };
-
-  const result = await runCiRecovery(options(fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.deepEqual(result.skipped, [{ number: original.number, reason: "head_changed" }]);
-  assert.equal(requests.some((request) => request.method === "POST"), false);
-});
-
-test("a completed dispatch for a different expected SHA does not cover the current head", async () => {
-  const current = pull({ sha: "b".repeat(40) });
-  const mismatched = workflowRun({
-    event: "workflow_dispatch",
-    headSha: current.head.sha,
-    displayTitle: `CI workflow_dispatch ${"a".repeat(40)}`,
-  });
-  const fixture = githubFixture({
-    pulls: [current],
-    runsBySha: { [current.head.sha]: [mismatched] },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, true));
-
-  assert.deepEqual(result.recoveries, [
-    {
-      number: current.number,
-      reason: "missing_ci_run",
-      ref: current.head.ref,
-      sha: current.head.sha,
-      url: current.html_url,
-      dispatched: true,
-    },
-  ]);
-  assert.deepEqual(
-    fixture.requests.filter((request) => request.method === "POST"),
-    [
-      {
-        method: "POST",
-        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: {
-          ref: current.head.ref,
-          inputs: { expected_sha: current.head.sha, expected_pr_number: String(current.number) },
-        },
-      },
+test("an ineligible newer run cannot hide a cancelled eligible PR run", async () => {
+  const f = fixture({
+    runs: [
+      run({
+        id: 9002,
+        event: "workflow_dispatch",
+        conclusion: "success",
+        created_at: new Date(NOW - 1000).toISOString(),
+      }),
+      run(),
     ],
+  });
+  const result = await runCiRecovery(options(f));
+  assert.equal(result.recoveries[0].runId, 9001);
+});
+for (const [name, changes, reason] of [
+  ["already rerun", { run_attempt: 2 }, "recovery_already_attempted"],
+  [
+    "recent cancellation",
+    { updated_at: new Date(NOW - 1000).toISOString() },
+    "recovery_cooldown",
+  ],
+  ["approval", { conclusion: "action_required" }, "approval_required"],
+  ["startup", { conclusion: "startup_failure" }, "startup_failure"],
+  ["unknown verdict", { conclusion: null }, "unknown_run_conclusion"],
+  ["running", { status: "in_progress", conclusion: null }, "ci_in_progress"],
+  ["queued", { status: "queued", conclusion: null }, "ci_waiting"],
+  ["pending", { status: "pending", conclusion: null }, "ci_waiting"],
+  ["success", { conclusion: "success" }, "ci_present"],
+  ["test failure", { conclusion: "failure" }, "ci_present"],
+])
+  test(`${name} is not blindly retried`, async () => {
+    const f = fixture({ runs: [run(changes)] });
+    const result = await runCiRecovery(options(f, true));
+    assert.equal(result.skipped[0].reason, reason);
+    assert.deepEqual(mutations(f), []);
+  });
+test("an old queued run names the stalled-run action", async () => {
+  const f = fixture({ runs: [run({ status: "queued", conclusion: null })] });
+  const result = await runCiRecovery(options(f));
+  assert.deepEqual(result.attention, [42]);
+  assert.match(result.skipped[0].nextStep, /queue|runner|concurrency/i);
+});
+for (const [label, change] of [
+  ["draft", { draft: true }],
+  ["closed", { state: "closed" }],
+  [
+    "young",
+    { updated_at: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString() },
+  ],
+  [
+    "fork",
+    { head: { ref: "feature", sha: SHA, repo: { full_name: "other/fork" } } },
+  ],
+])
+  test(`${label} PR is untouched`, async () => {
+    const f = fixture({ pulls: [pull(42, change)] });
+    const r = await runCiRecovery(options(f, true));
+    assert.equal(r.recoveries.length, 0);
+    assert.deepEqual(mutations(f), []);
+  });
+for (const [label, changes] of [
+  ["another head", { head_sha: "d".repeat(40) }],
+  [
+    "another PR",
+    {
+      pull_requests: [
+        { number: 43, head: { sha: SHA }, base: { ref: "main", sha: BASE } },
+      ],
+    },
+  ],
+  ["unbound", { pull_requests: [] }],
+])
+  test(`${label} run cannot cover or recover this PR`, async () => {
+    const f = fixture({ runs: [run(changes)] });
+    const r = await runCiRecovery(options(f, true));
+    assert.equal(r.skipped[0].reason, "missing_eligible_pr_run");
+    assert.deepEqual(mutations(f), []);
+  });
+test("a newer successful eligible run supersedes the cancellation", async () => {
+  const f = fixture({
+    runs: [
+      run(),
+      run({
+        id: 9002,
+        created_at: new Date(NOW - 1000).toISOString(),
+        conclusion: "success",
+      }),
+    ],
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "ci_present");
+  assert.deepEqual(mutations(f), []);
+});
+for (const [label, override, reason] of [
+  [
+    "head changes",
+    (q) =>
+      /\/pulls\/42$/.test(q.path)
+        ? json(
+            pull(42, {
+              head: {
+                ref: "fix/unit-42",
+                sha: "d".repeat(40),
+                repo: { full_name: REPO },
+              },
+            }),
+          )
+        : null,
+    "head_changed",
+  ],
+  [
+    "draft changes",
+    (q) =>
+      /\/pulls\/42$/.test(q.path) ? json(pull(42, { draft: true })) : null,
+    "draft",
+  ],
+  [
+    "base moves",
+    (q) =>
+      q.path.endsWith("/git/ref/heads/main")
+        ? json({
+            ref: "refs/heads/main",
+            object: { type: "commit", sha: "d".repeat(40) },
+          })
+        : null,
+    "base_changed",
+  ],
+  [
+    "stale merge parents",
+    (q) =>
+      q.path.endsWith(`/git/commits/${MERGE}`)
+        ? json({ sha: MERGE, parents: [{ sha: "d".repeat(40) }, { sha: SHA }] })
+        : null,
+    "merge_snapshot_stale",
+  ],
+  [
+    "merge ref drifts",
+    (q) =>
+      q.path.endsWith("/git/ref/pull/42/merge")
+        ? json({
+            ref: "refs/pull/42/merge",
+            object: { type: "commit", sha: "d".repeat(40) },
+          })
+        : null,
+    "merge_snapshot_stale",
+  ],
+  [
+    "run is already rerunning",
+    (q) =>
+      q.path.endsWith("/actions/runs/9001")
+        ? json(run({ status: "queued", run_attempt: 2 }))
+        : null,
+    "run_changed",
+  ],
+])
+  test(`${label} stops the rerun`, async () => {
+    const f = fixture({ override });
+    const r = await runCiRecovery(options(f, true));
+    assert.equal(r.skipped[0].reason, reason);
+    assert.deepEqual(mutations(f), []);
+  });
+test("a fresh base after a stale pull base field is checked against the live ref", async () => {
+  const f = fixture({
+    pulls: [
+      pull(42, {
+        base: { ref: "main", sha: "d".repeat(40), repo: { full_name: REPO } },
+      }),
+    ],
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.recoveries[0].rerunRequested, true);
+});
+for (const source of [
+  "name: CI\non: workflow_dispatch\n",
+  workflow.replaceAll(
+    "node scripts/check-merge-tree-freshness.mjs",
+    "echo ignored",
+  ),
+  workflow.replaceAll(
+    "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    "HEAD_SHA: stale",
+  ),
+]) {
+  test("missing PR trigger or freshness guard refuses automation", async () => {
+    const f = fixture({ source });
+    const r = await runCiRecovery(options(f, true));
+    assert.equal(r.skipped[0].reason, "workflow_contract_partial");
+    assert.deepEqual(mutations(f), []);
+  });
+}
+test("head is revalidated after slow workflow and merge reads", async () => {
+  let reads = 0;
+  const f = fixture({
+    override: (q) =>
+      /\/pulls\/42$/.test(q.path) && ++reads > 1
+        ? json(pull(42, { state: "closed" }))
+        : null,
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "pull_closed");
+  assert.deepEqual(mutations(f), []);
+});
+test("another eligible run arriving during preflight prevents a rerun", async () => {
+  let lists = 0;
+  const f = fixture({
+    override: (q) =>
+      q.path.includes("/actions/workflows/ci.yml/runs") && ++lists > 1
+        ? json({
+            total_count: 2,
+            workflow_runs: [
+              run(),
+              run({
+                id: 9002,
+                created_at: new Date(NOW - 1000).toISOString(),
+                status: "in_progress",
+                conclusion: null,
+              }),
+            ],
+          })
+        : null,
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "run_changed");
+  assert.deepEqual(mutations(f), []);
+});
+test("API refusal fails closed and identifies the affected PR", async () => {
+  const f = fixture({
+    override: (q) =>
+      q.path.endsWith("/rerun") ? json({ message: "denied" }, 403) : null,
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.degraded, true);
+  assert.deepEqual(r.faults, [42]);
+  assert.equal(r.recoveries.length, 0);
+});
+test("one unreadable candidate does not abandon disjoint candidates", async () => {
+  const other = run({
+    id: 9000,
+    pull_requests: [
+      { number: 41, head: { sha: SHA }, base: { ref: "main", sha: BASE } },
+    ],
+  });
+  const f = fixture({
+    pulls: [pull(41), pull()],
+    runs: [other, run()],
+    override: (q) => (q.path.endsWith("/pulls/41") ? json({}, 503) : null),
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.deepEqual(r.faults, [41]);
+  assert.ok(r.recoveries.some((x) => x.number === 42));
+});
+
+test("a swallowed freshness failure cannot authorize recovery", async () => {
+  const source = workflow.replaceAll(
+    'node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"',
+    'node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA" || true',
   );
+  const f = fixture({ source });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "workflow_contract_partial");
+  assert.deepEqual(mutations(f), []);
 });
-
-test("a dispatch with a malformed stamped expected SHA does not cover the current head", async () => {
-  const current = pull({ sha: "b".repeat(40) });
-  const malformed = workflowRun({
-    event: "workflow_dispatch",
-    headSha: current.head.sha,
-    displayTitle: "CI workflow_dispatch deadbeef",
+test("missing attempt freshness enforcement cannot authorize recovery", async () => {
+  const f = fixture({
+    source: workflow.replaceAll(
+      '--run-attempt "$RUN_ATTEMPT"',
+      '--run-attempt "1"',
+    ),
   });
-  const fixture = githubFixture({
-    pulls: [current],
-    runsBySha: { [current.head.sha]: [malformed] },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.equal(result.recoveries[0].reason, "missing_ci_run");
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "workflow_contract_partial");
+  assert.deepEqual(mutations(f), []);
 });
-
-test("an unstamped legacy dispatch remains valid CI coverage", async () => {
-  const current = pull();
-  const legacy = workflowRun({
-    event: "workflow_dispatch",
-    headSha: current.head.sha,
-    displayTitle: "Legacy recovery run",
+test("base drift at the final read prevents mutation", async () => {
+  let reads = 0;
+  const f = fixture({
+    override: (q) =>
+      q.path.endsWith("/git/ref/heads/main") && ++reads > 1
+        ? json({
+            ref: "refs/heads/main",
+            object: { type: "commit", sha: "d".repeat(40) },
+          })
+        : null,
   });
-  const fixture = githubFixture({
-    pulls: [current],
-    runsBySha: { [current.head.sha]: [legacy] },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.deepEqual(result.recoveries, []);
-  assert.equal(result.skipped[0].reason, "recovery_cooldown");
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "base_changed");
+  assert.deepEqual(mutations(f), []);
 });
-
-test("pull pagination never forwards the token to a cross-origin Link URL", async () => {
-  const requests = [];
-  const fetchImpl = async (url) => {
-    requests.push(url);
-    return new Response("[]", {
-      status: 200,
-      headers: {
-        "content-type": "application/json",
-        link: '<https://attacker.example/pulls?page=2>; rel="next"',
-      },
-    });
-  };
-
-  await assert.rejects(
-    runCiRecovery(options(fetchImpl, true)),
-    /pull request pagination URL escaped the GitHub API repository endpoint/,
-  );
-  assert.deepEqual(requests, [
-    `https://api.github.test/repos/${REPOSITORY}/pulls?state=open&per_page=100`,
-  ]);
+test("a newer eligible run on a later page supersedes cancellation", async () => {
+  const f = fixture({
+    override: (q) =>
+      q.path.includes("/runs?")
+        ? q.path.includes("page=2")
+          ? json({
+              total_count: 2,
+              workflow_runs: [
+                run({
+                  id: 9002,
+                  conclusion: "success",
+                  created_at: new Date(NOW - 1000).toISOString(),
+                }),
+              ],
+            })
+          : json({ total_count: 2, workflow_runs: [run()] }, 200, {
+              link: `<https://api.github.test/repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100&page=2>; rel="next"`,
+            })
+        : null,
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.skipped[0].reason, "ci_present");
+  assert.deepEqual(mutations(f), []);
 });
-
-test("an approval-gated run is not CI coverage and is recovered", async () => {
-  // GitHub parks a first-time-contributor run behind manual approval: the run
-  // reports status=completed with conclusion=action_required and ZERO jobs, so
-  // the PR shows no checks at all. Reading only `status` mistook that for
-  // finished CI and wedged Copilot-authored PRs indefinitely (cave-qshvl).
-  const pr = pull();
-  const gated = workflowRun({
-    id: 9100,
-    status: "completed",
-    conclusion: "action_required",
-    headSha: pr.head.sha,
+test("PR pagination cannot forward credentials to another host", async () => {
+  const f = fixture({
+    override: (q) =>
+      q.path.includes("/pulls?")
+        ? json([], 200, {
+            link: '<https://evil.test/repos/OpenCoven/coven-cave/pulls?page=2>; rel="next"',
+          })
+        : null,
   });
-  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated] } });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.equal(result.recoveries.length, 1, "an approval-gated head must be recoverable");
-  assert.equal(result.recoveries[0].reason, "approval_gated_run");
+  await assert.rejects(runCiRecovery(options(f, true)), /pagination/);
+  assert.equal(f.requests.length, 1);
 });
-
-test("a completed run that actually ran is still coverage, including a failure", async () => {
-  // The fix must not turn every completed run into a recovery candidate. A
-  // FAILED run reported a verdict, so CI covered this head and re-dispatching
-  // would just re-run a known failure.
-  //
-  // `cancelled` is deliberately NOT in this list — see the two tests below. It
-  // was here originally (cave-qshvl) on the reasoning that a newer push
-  // supersedes it, which is true only when a newer run actually exists.
-  for (const conclusion of ["success", "failure", "timed_out"]) {
-    const pr = pull();
-    const ran = workflowRun({ id: 9200, status: "completed", conclusion, headSha: pr.head.sha });
-    const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [ran] } });
-
-    const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-    assert.deepEqual(
-      result.recoveries,
-      [],
-      `conclusion=${conclusion} is coverage and must not be recovered`,
-    );
-  }
+test("run pagination cannot forward credentials outside the workflow endpoint", async () => {
+  const f = fixture({
+    override: (q) =>
+      q.path.includes("/runs?")
+        ? json({ total_count: 101, workflow_runs: [run()] }, 200, {
+            link: '<https://evil.test/runs?page=2>; rel="next"',
+          })
+        : null,
+  });
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.degraded, true);
+  assert.deepEqual(mutations(f), []);
 });
-
-test("a cancelled run that is the NEWEST for a static head is recovered", async () => {
-  // The wedge cave-geaji fixes. Nothing is coming to replace this run: the head
-  // has not moved, so the required context reports `cancelled` rather than
-  // `success` forever and the PR has no path to green.
-  //
-  // Live case: #4514 head 02f74118ff carried exactly one run, cancelled, and
-  // `pnpm ci:recovery` reported "0 eligible" while the PR sat blocked.
-  const pr = pull();
-  const cancelled = workflowRun({
-    id: 9300,
-    status: "completed",
-    conclusion: "cancelled",
-    headSha: pr.head.sha,
+test("truncated run inventory never implies no other run exists", async () => {
+  const f = fixture({
+    override: (q) =>
+      q.path.includes("/runs?")
+        ? json({ total_count: 101, workflow_runs: [run()] })
+        : null,
   });
-  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [cancelled] } });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.equal(result.recoveries.length, 1, "a cancelled newest run must be recoverable");
-  assert.equal(result.recoveries[0].reason, "cancelled_latest_run");
+  const r = await runCiRecovery(options(f, true));
+  assert.equal(r.degraded, true);
+  assert.deepEqual(mutations(f), []);
 });
-
-test("a head still cancelled after a recovery dispatch is not recovered again", async () => {
-  // The loop cave-f22tp fixes. Recovery already ran on this head and the head
-  // is STILL sitting on a cancellation, so dispatching repeats whatever did not
-  // work. The cooldown does not save us: it bounds the rate, not the repetition,
-  // so a head that keeps ending up cancelled draws one dispatch per cooldown
-  // forever.
-  //
-  // Live case: #4618 head 11aceeb89 collected three cancelled runs and no
-  // verdict — each dispatch cancelled the run it was rescuing (shared
-  // concurrency group), and each cancellation then read as the wedge above.
-  const pr = pull();
-  const dispatched = workflowRun({
-    id: 9401,
-    status: "completed",
-    conclusion: "cancelled",
-    headSha: pr.head.sha,
-    event: "workflow_dispatch",
-    createdAt: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(),
+for (const invalid of [
+  { run_attempt: undefined },
+  { updated_at: "invalid" },
+  { pull_requests: null },
+  { head_sha: "invalid" },
+])
+  test("malformed run evidence fails closed", async () => {
+    const f = fixture({ runs: [run(invalid)] });
+    const r = await runCiRecovery(options(f, true));
+    assert.equal(r.degraded, true);
+    assert.deepEqual(mutations(f), []);
   });
-  const cancelled = workflowRun({
-    id: 9402,
-    status: "completed",
-    conclusion: "cancelled",
-    headSha: pr.head.sha,
-  });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [cancelled, dispatched] },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.equal(result.recoveries.length, 0, "a second recovery on the same head must not fire");
-  assert.equal(result.skipped[0].reason, "recovery_already_attempted");
-});
-
-test("a cancelled run underneath a NEWER run is left alone", async () => {
-  // The case the original reasoning describes and gets right: something newer
-  // is already running for this head, so the cancellation was a supersession
-  // and dispatching again would fight it.
-  const pr = pull();
-  const cancelled = workflowRun({
-    id: 9400,
-    status: "completed",
-    conclusion: "cancelled",
-    headSha: pr.head.sha,
-    // Both NOW-relative and outside the grace window, so this exercises the
-    // supersession rule rather than incidentally landing in `ci_queued`.
-    createdAt: new Date(NOW - RECOVERY_GRACE_MS - 2_000).toISOString(),
-  });
-  const newer = workflowRun({
-    id: 9401,
-    status: "in_progress",
-    conclusion: null,
-    headSha: pr.head.sha,
-    createdAt: new Date(NOW - RECOVERY_GRACE_MS - 1_000).toISOString(),
-  });
-  const fixture = githubFixture({
-    pulls: [pr],
-    runsBySha: { [pr.head.sha]: [cancelled, newer] },
-  });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.deepEqual(
-    result.recoveries,
-    [],
-    "a superseded cancellation must not trigger a redundant dispatch",
-  );
-});
-
-test("one real run alongside an approval-gated one still counts as coverage", async () => {
-  // Only when EVERY run is gated is the head genuinely uncovered. A gated run
-  // sitting beside a real one must not trigger a redundant dispatch.
-  const pr = pull();
-  const gated = workflowRun({ id: 9300, status: "completed", conclusion: "action_required", headSha: pr.head.sha });
-  const real = workflowRun({ id: 9301, status: "completed", conclusion: "success", headSha: pr.head.sha });
-  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated, real] } });
-
-  const result = await runCiRecovery(options(fixture.fetchImpl, false));
-
-  assert.deepEqual(result.recoveries, []);
-});

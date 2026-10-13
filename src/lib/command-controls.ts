@@ -1,4 +1,5 @@
 import type { RuntimeModelOption } from "@/lib/runtime-models";
+import type { ModelControlValues } from "@/lib/model-control-capabilities";
 
 export type CommandThinkingEffort = "low" | "medium" | "high";
 export type CommandResponseSpeed = "fast" | "balanced" | "careful";
@@ -17,6 +18,10 @@ export type InitialCommandControls = Partial<CommandControls> & {
   /** A model intent staged before a new ChatView owns a server session. */
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session" | "runtime-default";
+  /** Typed selected-model controls picked on Home (Thinking · Speed chips,
+   *  #5902). They ride the opened chat's first send and seed its chips; the
+   *  send route validates them against the resolved model's capabilities. */
+  modelControls?: ModelControlValues;
 };
 
 export const COMMAND_CONTROL_DEFAULTS: CommandControls = {

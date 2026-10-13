@@ -546,10 +546,11 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  height: var(--space-6);
+  min-width: 0;
+  min-height: calc(var(--space-8) + var(--space-1));
   padding: 0 var(--space-2);
   margin-bottom: var(--space-1);
-  border: 1px solid var(--border-hairline);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
@@ -561,7 +562,7 @@
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: var(--text-sm);
 }
 /* The desk's focus ring on the field's box (#5795): the input has no outline
    of its own, so the caret was the only sign of focus. */
@@ -581,6 +582,17 @@
   background: transparent;
 }
 .code-picker__search-clear:hover { background: var(--bg-hover); color: var(--text-primary); }
+@media (max-width: 767px), (pointer: coarse) {
+  .code-picker__search,
+  .code-picker__search-input {
+    min-height: var(--touch-target);
+  }
+  .code-picker__search-input { font-size: var(--text-lg); }
+  .code-picker__search-clear {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}
 .code-picker__chips {
   display: flex;
   flex: none;

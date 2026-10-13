@@ -252,7 +252,7 @@ export function FamiliarSwitcher({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter familiars…"
               aria-label="Filter familiars"
-              className="familiar-switcher__search focus-ring-inset"
+              className="ui-search-field familiar-switcher__search focus-ring-inset"
             />
           ) : null}
 

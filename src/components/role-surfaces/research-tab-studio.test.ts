@@ -152,8 +152,8 @@ test("create failures surface the server's message inline (409 no-artifact inclu
 
 test("generation directions show a bounded, quiet character count", () => {
   assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
-  assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
-  assert.match(modals, /aria-describedby="research-studio-directions-count"/);
+  assert.match(modals, /directionsLength\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.match(modals, /aria-describedby=\{overDirectionsCap \? "research-studio-directions-count research-studio-directions-error" : "research-studio-directions-count"\}/);
   assert.match(modals, /id="research-studio-directions-count"/);
   assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
   assert.match(css, /\.research-studio-config__count--near/);
@@ -163,7 +163,7 @@ test("markdown editor never fakes persistence", () => {
   // The backend exposes list/create/remove only — no update fetcher — so the
   // primary action is clipboard, plainly labeled, with the gap stated.
   assert.match(modals, /Copy updated draft/);
-  assert.match(modals, /drafts save back when\s+generation editing lands/);
+  assert.match(modals, /Edits stay in this window\. Copy or download before closing\./);
   assert.doesNotMatch(source, /✓ Saved/);
   assert.doesNotMatch(source, /Save draft/);
   assert.doesNotMatch(source, /method:\s*"(PATCH|PUT)"/);
@@ -207,7 +207,7 @@ test("copy goes through lib/clipboard's copyText — works in the Tauri webview"
 });
 
 test("modals trap focus, restore on close, Esc + backdrop close, announce open", () => {
-  assert.match(modals, /useFocusTrap\(active, dialogRef, \{ onEscape: onClose \}\)/);
+  assert.match(modals, /useFocusTrap\(true, dialogRef, \{ onEscape: onClose, containTabFocus: true, portalLayers, portalRootId \}\)/);
   assert.match(modals, /role="dialog"/);
   assert.match(modals, /aria-modal="true"/);
   assert.match(modals, /tabIndex=\{-1\}/);
@@ -221,13 +221,12 @@ test("modals trap focus, restore on close, Esc + backdrop close, announce open",
   }
 });
 
-test("stacked viewer+editor keep exactly one live focus trap (active gating)", () => {
-  // StudioModal exposes `active` (default true) and feeds it to useFocusTrap
-  // as the enable flag — an inactive dialog has no Tab cycle and no Escape
-  // handler, so Escape closes only the top (editor) dialog, not both.
+test("stacked viewer+editor retain return targets while only the top dialog handles keys", () => {
+  // Keep both mounted traps registered: the shared stack chooses the top,
+  // and closing the editor returns to its opener without reactivating a trap.
   assert.match(modals, /active\?: boolean/);
   assert.match(modals, /active = true/);
-  assert.match(modals, /useFocusTrap\(active, dialogRef/);
+  assert.match(modals, /useFocusTrap\(true, dialogRef/);
   // The parked dialog is also hidden from AT and input — no second
   // aria-modal sibling in the accessibility tree while stacked.
   assert.match(modals, /aria-hidden=\{active \? undefined : true\}/);
@@ -240,7 +239,7 @@ test("stacked viewer+editor keep exactly one live focus trap (active gating)", (
 
 test("filter chips cover only kinds that can exist, with real counts", () => {
   // Chips map from the creatable union; counts come from the loaded list.
-  assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS\.map\(\(kind\) => \(\s*<button/);
+  assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS\.filter\([\s\S]*?\.map\(\(kind\) => \(\s*<button/);
   assert.match(tab, /generations\.filter\(\(generation\) => generation\.kind === kind\)\.length/);
   // Media filters exist once records can exist.
   assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS/);
@@ -311,8 +310,8 @@ test("familiar switches can't leak another familiar's generations (loadSeq guard
   // On a familiar switch the previous rows drop immediately (loading/empty,
   // never another familiar's generations) and the kind filter resets to All
   // so a kind the new familiar lacks can't strand an empty view.
-  assert.match(tab, /loadedFamiliarRef\.current !== familiarId/);
-  assert.match(tab, /setGenerations\(\[\]\);\s*setFilter\("all"\);/);
+  assert.match(tab, /ResearchStudioBody key=\{props\.context\.activeFamiliar\.id\}/);
+
 });
 
 test("remove treats the DELETE 404 as success — no phantom rows", () => {
@@ -320,4 +319,10 @@ test("remove treats the DELETE 404 as success — no phantom rows", () => {
   // completed removal: the row leaves the list instead of re-erroring.
   assert.match(tab, /!result\.ok && result\.error === "generation not found"/);
   assert.match(tab, /if \(!result\.ok && !alreadyGone\)/);
+});
+
+// The same generation can have both layers mounted at once.
+test("viewer and editor retain distinct identities while stacked", () => {
+  assert.match(tab, /key=\{`viewer:\$\{viewerGeneration\.id\}`\}/);
+  assert.match(tab, /key=\{`editor:\$\{editorGeneration\.id\}`\}/);
 });

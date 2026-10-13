@@ -358,3 +358,37 @@ test("the Latest pill stays clear of the composer however tall the draft grows",
     }).toPass({ timeout: 5_000 });
   }
 });
+
+test("phone composer options expand and return focus without losing the draft", async ({ page }) => {
+  await page.route("**/api/chat/model-state**", (route) => route.fulfill({ json: {
+    ok: true,
+    state: {
+      familiarId: "nova", runtime: null, harness: "claude", effectiveModel: "test",
+      source: "familiar-default", applicationState: "saved", reason: "e2e",
+    },
+    controls: [{
+      family: "reasoning", label: "Reasoning guidance", delivery: "prompt-only",
+      values: [{ value: "low", label: "Low" }, { value: "high", label: "High" }],
+      validation: {},
+    }],
+  } }));
+  await openThread(page);
+  const main = page.getByTestId("chat-main");
+  const draft = main.getByRole("textbox", { name: "Message", exact: true });
+  await draft.fill("Keep this draft while tuning options");
+  const options = main.getByRole("button", { name: "More composer options", exact: true });
+  await options.click();
+  const thinking = main.getByRole("button", { name: /change thinking/ });
+  await expect(thinking).toBeInViewport();
+  await thinking.click();
+  const menu = page.getByRole("menu", { name: "Thinking", exact: true });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(thinking).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(thinking).toBeHidden();
+  await expect(options).toBeFocused();
+  await expect(options).toBeInViewport();
+  await expect(draft).toHaveValue("Keep this draft while tuning options");
+});

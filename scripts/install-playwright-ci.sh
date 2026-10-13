@@ -10,12 +10,12 @@
 # from the workflow's cache when it has them.
 #
 # Usage: install-playwright-ci.sh <browser>...
-# Env:   PLAYWRIGHT_DEPS_ATTEMPTS (default 3), PLAYWRIGHT_DEPS_TIMEOUT (default 6m)
+# Env:   PLAYWRIGHT_DEPS_ATTEMPTS (default 2), PLAYWRIGHT_DEPS_TIMEOUT (default 15m)
 set -euo pipefail
 
 [ "$#" -gt 0 ] || { echo "usage: $0 <browser>..." >&2; exit 2; }
-attempts="${PLAYWRIGHT_DEPS_ATTEMPTS:-3}"
-limit="${PLAYWRIGHT_DEPS_TIMEOUT:-6m}"
+attempts="${PLAYWRIGHT_DEPS_ATTEMPTS:-2}"
+limit="${PLAYWRIGHT_DEPS_TIMEOUT:-15m}"
 
 attempt=1
 while true; do

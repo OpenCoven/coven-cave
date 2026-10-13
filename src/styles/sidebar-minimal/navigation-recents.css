@@ -102,7 +102,6 @@
    "open, not focused" instead of stealing the active highlight. */
 .sidebar-folder-row--split {
   background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent);
 }
 
 .sidebar-folder-icon {

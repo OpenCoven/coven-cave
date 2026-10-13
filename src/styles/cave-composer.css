@@ -97,6 +97,17 @@
   transform: translateY(-50%);
 }
 
+/* Desktop has nothing floating on the edge unless a task is linked (#5954). */
+.cave-composer-edge-actions:empty {
+  display: none;
+}
+
+/* Desktop's Tools sits in the action cluster, not floating on the edge. */
+.cave-composer-control-row > .cave-composer-tools-tab {
+  justify-self: start;
+  box-shadow: none;
+}
+
 .cave-composer-tools-tab,
 .cave-composer-task-tab {
   display: inline-flex;
@@ -151,7 +162,7 @@
 .cave-composer-context-meter {
   display: inline-flex;
   align-items: center;
-  justify-self: center;
+  justify-self: start;
   gap: var(--space-1);
   min-width: 0;
   color: var(--text-muted);
@@ -735,8 +746,8 @@
 
 .cave-composer-shell {
   position: relative;
-  /* Full-width chat (2026-06-12): the composer shares the thread's
-     full-pane measure so the input lines up with the conversation. */
+  /* Fills its dock. Chat caps it at the reading column
+     (cave-chat/transcript.css, #5950). */
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
@@ -1521,6 +1532,15 @@
 
   .cave-composer-context-meter {
     display: none;
+  }
+
+  /* Routine usage stays quiet on phones; a nearly full window must remain
+     visible while composing. Give the warning its own line after the chips
+     so it cannot squeeze the draft, Send, or the Enhance controls. */
+  .cave-composer-context-meter[data-level="high"] {
+    display: inline-flex;
+    order: 6;
+    flex: 1 0 100%;
   }
 
   .cave-context-chip {

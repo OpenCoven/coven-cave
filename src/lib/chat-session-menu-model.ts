@@ -1,13 +1,15 @@
 // Pure model for the chat session header's action cluster (cave-zolo).
 //
 // The header splits session actions into two tiers:
-//  - DIRECT actions — high-frequency / lifecycle verbs (voice call, archive,
-//    delete) rendered as icon buttons in the header cluster, so they are no
-//    longer buried behind the ⋮ kebab.
-//  - OVERFLOW items — the kebab menu, now slimmed to genuinely secondary
-//    tools (continue on phone, project, thinking, reflect, debug). Items that
-//    gained a direct affordance (archive, delete, call) and duplicates of
-//    inline affordances (rename — the title carries a pencil) are gone.
+//  - DIRECT actions — high-frequency verbs (voice call, archive) rendered as
+//    icon buttons in the header cluster, so they are not buried behind the ⋮
+//    kebab.
+//  - OVERFLOW items — the kebab menu: genuinely secondary tools (continue on
+//    phone, project, thinking, reflect, debug) and, in its own last section,
+//    Delete (#5953). Delete was a direct trash icon (cave-zolo); it moved back
+//    here because an irreversible verb does not need a permanent seat on the
+//    title row, and it keeps its confirm step. Duplicates of inline
+//    affordances (rename — the title carries a pencil) stay out.
 //
 // Framework-free so the item lists are testable under
 // `node --experimental-strip-types` without rendering React.
@@ -23,7 +25,8 @@ export type SessionMenuItemId =
   // visibility item here would give a person a way to turn it back off — which
   // is the state the removal exists to make unreachable.
   | "reflect"
-  | "debug";
+  | "debug"
+  | "delete";
 
 export type SessionMenuItem = {
   id: SessionMenuItemId;
@@ -34,6 +37,8 @@ export type SessionMenuItem = {
   disabled?: boolean;
   /** Hover tooltip when the label alone is terse. */
   title?: string;
+  /** Destructive styling (Delete). */
+  danger?: boolean;
 };
 
 export type SessionMenuSection = SessionMenuItem[];
@@ -51,6 +56,9 @@ export function sessionMenuSections(ctx: {
   /** Reflect-on-thread is wired (familiar has an id). */
   reflectAvailable: boolean;
   reflecting: boolean;
+  /** The chat can be deleted (it has a session and Cave is online). */
+  deleteAvailable: boolean;
+  deleting: boolean;
 }): SessionMenuSection[] {
   const primary: SessionMenuItem[] = [];
   if (ctx.sessionId) {
@@ -89,7 +97,19 @@ export function sessionMenuSections(ctx: {
   }
   tools.push({ id: "debug", label: "Debug session", icon: "ph:bug-bold" });
 
-  return [primary, tools].filter((section) => section.length > 0);
+  const danger: SessionMenuItem[] = [];
+  if (ctx.deleteAvailable) {
+    danger.push({
+      id: "delete",
+      label: "Delete chat…",
+      icon: "ph:trash",
+      danger: true,
+      disabled: ctx.deleting,
+      title: "Delete this chat permanently",
+    });
+  }
+
+  return [primary, tools, danger].filter((section) => section.length > 0);
 }
 
 /** Direct archive button — flips verb on archived sessions instead of hiding,

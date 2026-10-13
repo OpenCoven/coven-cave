@@ -188,6 +188,15 @@
   word-break: break-word;
 }
 
+/* Hyphenation is for words. Code inherits the reading setting from .cave-md,
+   so with it on, "noWindowsAvailable" broke as "noWindows-Available" (#5944).
+   Inline code and wrapped code blocks keep their exact spelling. */
+.cave-md code,
+.cave-md pre {
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    BLOCKQUOTE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */

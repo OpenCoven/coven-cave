@@ -32,6 +32,6 @@ assert.match(
 );
 
 assert.match(source, /Past entries/, "lists past entries for the familiar");
-assert.match(source, /disabled=\{date >= today\}/, "cannot navigate into the future");
+assert.match(source, /disabled=\{generating \|\| saving \|\| date >= today\}/, "cannot navigate into the future");
 
 console.log("familiar-daily-notes: all assertions passed");

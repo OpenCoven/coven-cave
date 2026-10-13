@@ -294,7 +294,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       />
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-          <SidebarSection id="navigation" label="Navigation">
+          <SidebarSection id="navigation" label="Navigation" labelHidden>
             {primaryDestinations.map((destination) => renderDestination(destination))}
           </SidebarSection>
 
@@ -319,7 +319,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           <SidebarSection
             id="rooms"
             label="Rooms"
-            count={rooms.length}
             hideWhenEmpty
             isEmpty={rooms.length === 0}
           >

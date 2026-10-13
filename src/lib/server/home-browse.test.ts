@@ -100,6 +100,21 @@ test("resolveWithinRoot only descends into directories that actually exist", () 
   });
 });
 
+test("redirected directory links can be browsed and dangling links stay hidden", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, "source-folder", "project"), { recursive: true });
+    fs.symlinkSync(path.join(base, "source-folder"), path.join(base, "Documents"), process.platform === "win32" ? "junction" : "dir");
+    fs.symlinkSync(path.join(base, "gone"), path.join(base, "Old Documents"), process.platform === "win32" ? "junction" : "dir");
+
+    assert.equal(resolveWithinRoot(base, "Documents/project"), path.join(base, "Documents", "project"));
+    assert.equal(resolveWithinRoot(base, "Old Documents"), null);
+    assert.deepEqual(
+      listSubdirs(base).entries.map((entry) => entry.name),
+      ["Documents", "source-folder"],
+    );
+  });
+});
+
 test("createSubdirWithinRoot creates one trimmed child directory beneath an existing parent", () => {
   withScratchDir((base) => {
     fs.mkdirSync(path.join(base, "projects"));

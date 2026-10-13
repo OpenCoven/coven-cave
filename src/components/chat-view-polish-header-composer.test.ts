@@ -47,8 +47,24 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
-  "User turns should render a Discord-like avatar/name/badge/recency header",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-recency/,
+  "User turns should render an avatar/name/recency header",
+);
+// #5954: Main Chat is one-to-one, so an "OP" badge on every user turn named
+// nobody new. Group chat runs on its own surface.
+assert.doesNotMatch(turnRow, /cave-linear-turn-badge--op/, "no OP badge in a one-to-one chat");
+assert.doesNotMatch(styles, /cave-linear-turn-badge--op/, "its styling goes with it");
+// The assistant's author line is the response's status row (#5954): name,
+// "Completed in 3:01", time and the hover extras on one line, Copy on hover.
+assert.match(
+  turnRow,
+  /<StreamingTurnResponse[\s\S]*?author=\{\{ name: authorName, meta: authorMeta \}\}[\s\S]*?copyReveal="hover"/,
+  "Main Chat hands the author line to the response row",
+);
+assert.match(
+  turnRow,
+  /\{showEmptySuccessfulFallback \? \(\s*<div className=\{`cave-linear-turn-meta/,
+  "the separate author row remains only for the empty-success fallback, which has no response row",
 );
 assert.match(
   styles,
@@ -58,8 +74,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size=\{expanded \? "xl" : "md"\} \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
-  "Assistant turns render a compact circular avatar (chat-revamp 1b; grows when the inline card opens) + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*const authorName = <span className="cave-linear-turn-name">\{familiar\.display_name\}<\/span>[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size=\{expanded \? "xl" : "md"\} \/>[\s\S]*author=\{\{ name: authorName, meta: authorMeta \}\}/,
+  "Assistant turns render a compact circular avatar (chat-revamp 1b; grows when the inline card opens) + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2), all on the response's one author line (#5954)",
 );
 // Lean meta (cave-xsq.2): the static extras collapse into a reveal-on-hover
 // cluster so the default row is just name + time; the turn content is the
@@ -144,7 +160,7 @@ assert.match(
 // access control moves into Response options.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-edge-actions">[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
   "composer exposes grouped Tools at its edge and keeps only context plus direct send actions in the command rail",
 );
 assert.doesNotMatch(source, /className="cave-composer-mode-switch"/, "access mode is demoted into Response options");
@@ -347,13 +363,49 @@ assert.match(
   /<div className="cave-chat-session-actions">[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
   "Open chat header actions keep the find trigger ahead of the overflow menu",
 );
-// cave-zolo: the header cluster carries direct Voice/Archive/Delete buttons;
-// the kebab holds only secondary tools (phone handoff, project, thinking,
-// reflect, debug), sourced from the pure menu model.
+// cave-zolo: the header cluster carries direct Voice/Archive buttons; the
+// kebab holds secondary tools (phone handoff, project, thinking, reflect,
+// debug) and, since #5953, Delete in its own danger section — all sourced from
+// the pure menu model.
 assert.match(
   source,
-  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
-  "Direct session actions (voice, archive, delete) render beside the find trigger and the kebab",
+  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
+  "Direct session actions (voice, archive) render beside the find trigger and the kebab",
+);
+// #5953: one title row. The run stats and the Last run summary ride between
+// the identity and the actions instead of stacking as two bands under it.
+assert.match(
+  source,
+  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?\/>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<div className="cave-chat-session-actions">/,
+  "the title row reads identity · run status · actions",
+);
+assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats render once, on the title row");
+assert.match(
+  styles,
+  /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
+  "the title row wraps its status cluster onto its own line when the header is narrow",
+);
+assert.match(
+  styles,
+  /@container chat-header \(max-width: 40rem\) \{\s*\.cave-chat-header-row > \.cave-chat-meta-line \{\s*flex-basis: 100%;/,
+  "in a split pane the identity keeps a full line, so the title stays legible (chat-split-panes.spec)",
+);
+// The runtime's unreported identity reads as ONE muted marker, not two
+// "not reported" phrases; the gaps are named on hover (#5953).
+const metaLine = source.slice(source.indexOf("function MetaLine("), source.indexOf("\n}\n", source.indexOf("function MetaLine(")));
+assert.doesNotMatch(metaLine, /not reported/, "the header identity no longer spells out each gap");
+// #5954: the branch has one home, the status bar; the header identity no
+// longer repeats it.
+assert.doesNotMatch(metaLine, /cave-chat-meta-line__branch|useChangesSummary/, "the header identity carries no branch");
+assert.match(
+  metaLine,
+  /className="cave-chat-meta-line__unverified" title=\{identityGaps\.join\(" · "\)\}>unverified</,
+  "missing identity collapses into one unverified marker with the gaps on hover",
+);
+assert.doesNotMatch(
+  source.slice(source.indexOf("function metaLineSegments("), source.indexOf("\n}\n", source.indexOf("function metaLineSegments("))),
+  /not reported/,
+  "the streaming meta segments use the same marker",
 );
 assert.match(
   sessionHeader,
@@ -363,8 +415,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-linear-header\s*\{[\s\S]*min-height:\s*52px;[\s\S]*padding:\s*var\(--space-1\) var\(--space-4\);/,
-  "Open chat header is the 52px identity band (chat-revamp 1b)",
+  /\.cave-chat-linear-header\s*\{[\s\S]*min-height:\s*52px;[\s\S]*padding-block:\s*var\(--space-1\);[\s\S]*padding-inline:\s*max\(var\(--space-4\), calc\(\(100% - var\(--cave-chat-measure\)\) \/ 2\)\);/,
+  "Open chat header is the 52px identity band (chat-revamp 1b), inset to the reading column with a 16px floor (#5950)",
 );
 // Chat-revamp 1b: the header closes with a fade-ended divider (transparent →
 // hairline 48px from each end), not a full-width hard border.
@@ -394,10 +446,10 @@ assert.match(
   /className="focus-ring cave-chat-actions-kebab"/,
   "The overflow kebab stays visible",
 );
-assert.match(
+assert.doesNotMatch(
   sessionHeader,
-  /className="focus-ring cave-chat-delete-btn"/,
-  "The direct delete button stays visible without hover",
+  /cave-chat-delete-btn/,
+  "Delete moved into the overflow menu; no direct trash button remains (#5953)",
 );
 assert.match(
   sessionHeader,
@@ -782,7 +834,7 @@ assert.doesNotMatch(
 {
   const overflowMenu = sessionHeader.slice(
     sessionHeader.indexOf("function SessionOverflowMenu"),
-    sessionHeader.indexOf("function DeleteChatButton"),
+    sessionHeader.indexOf("\n}\n", sessionHeader.indexOf("function SessionOverflowMenu")),
   );
   assert.ok(
     !overflowMenu.includes("Rename chat"),

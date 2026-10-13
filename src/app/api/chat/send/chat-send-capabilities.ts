@@ -13,6 +13,7 @@ import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
   covenRunSupportsPermissionFlag,
+  covenRunSupportsSpeedFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import {
@@ -27,6 +28,7 @@ import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
+let speedFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
@@ -719,6 +721,24 @@ export function covenRunSupportsAddDir(): Promise<boolean> {
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsAddDirFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
+  ));
+}
+
+/** `coven run --speed`: the Speed control's wire flag. Probed the same way as
+ * --permission so the model-state and send routes agree on what is offered. */
+export function covenRunSupportsSpeed(): Promise<boolean> {
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { command, fixedArgs } = launch;
+  return (speedFlagProbe ??= probeHelp(
+    command,
+    [...fixedArgs, "run", "--help"],
+    covenRunSupportsSpeedFlag,
     covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }

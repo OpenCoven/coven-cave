@@ -24,6 +24,7 @@
 // This mirrors the Rust-side assertion in `src-tauri/release-runtime.test.mjs`,
 // which pins `creation_flags(0x08000000)` on the sidecar launcher itself.
 
+import { buildServer } from "../../scripts/build-server.mjs";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -443,6 +444,8 @@ function childProcessCalls(raw: string, fileName = "fixture.ts"): ChildProcessCa
   return calls;
 }
 
+const packagedServerSource = (await buildServer({ write: false })).outputFiles[0].text;
+
 const productionFiles = [
   ...sourceFiles(SRC_ROOT).map((file) => ({
     file,
@@ -455,7 +458,7 @@ const offenders: string[] = [];
 const unusedWaivers = new Set(FORWARDS_CALLER_OPTIONS.keys());
 
 for (const { file, relative } of productionFiles) {
-  const raw = readFileSync(file, "utf8");
+  const raw = relative === "server.mjs" ? packagedServerSource : readFileSync(file, "utf8");
   // Only files that actually import child_process launch anything. Without
   // this, unrelated local helpers named `spawn` (the canvas particle emitter in
   // `scry-glitch.tsx`, for one) would be flagged forever.
@@ -721,13 +724,12 @@ assert.equal(
 );
 
 const packagedServerPath = path.join(REPO_ROOT, "server.mjs");
-const packagedServerSource = readFileSync(packagedServerPath, "utf8");
 const currentPackagedTailnetCall = childProcessCalls(packagedServerSource, packagedServerPath)
   .find((call) => call.text.includes('"status", "--json"'));
 assert.equal(
   currentPackagedTailnetCall?.hasWindowsHide,
   true,
-  "the tracked packaged server artifact is semantically audited for the hidden Tailscale subprocess option",
+  "the freshly generated server artifact is semantically audited for the hidden Tailscale subprocess option",
 );
 const unsafePackagedCall = currentPackagedTailnetCall.text.replace(/\bwindowsHide: true,?\s*/, "");
 assert.notEqual(unsafePackagedCall, currentPackagedTailnetCall.text);

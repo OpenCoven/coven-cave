@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-multi', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -103,6 +103,17 @@ const shim = [
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
   "    process.exit(cleanupExit ? 1 : 0);",
+  "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope-multi') {",
+  "    const events = [",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-multi-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: 'I saved the exact differences.' }] }, session_id: 'coven-envelope-multi-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: 'I loaded the local skill.' }] }, session_id: 'coven-envelope-multi-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: 'The comparison is blocked.' }] }, session_id: 'coven-envelope-multi-session' },",
+  "      { type: 'result', subtype: 'success', is_error: false, session_id: 'coven-envelope-multi-session' },",
+  "    ];",
+  "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
+  "    process.exit(0);",
   "  }",
   "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope-reasoning') {",
   "    const events = [",
@@ -269,6 +280,32 @@ try {
   const cleanupExitConversation = await loadConversation("coven-envelope-cleanup-session");
   assert.equal(cleanupExitConversation?.turns.at(-1)?.text, "Coven envelope survives cleanup exit");
   assert.equal(cleanupExitConversation?.turns.at(-1)?.isError, false, "the persisted turn remains successful");
+
+  // Coven emits each Codex agent_message as its own assistant envelope, with
+  // no trailing newline. Joining them bare ran sentences together on screen
+  // and in the saved turn ("differences.I loaded", #5945). The direct
+  // `codex exec --json` path already ends each message with a newline.
+  process.env.COVEN_TEST_MODE = "assistant-envelope-multi";
+  {
+    const { events } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: "keep message boundaries", projectRoot: familiarWorkspace }),
+    })));
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, false);
+    const streamed = events.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
+    assert.equal(
+      streamed,
+      "I saved the exact differences.\nI loaded the local skill.\nThe comparison is blocked.",
+      "consecutive Coven assistant envelopes stream with a newline between them",
+    );
+    const multiConversation = await loadConversation("coven-envelope-multi-session");
+    assert.equal(
+      multiConversation?.turns.at(-1)?.text,
+      "I saved the exact differences.\nI loaded the local skill.\nThe comparison is blocked.",
+      "the saved turn keeps the boundary between Codex messages",
+    );
+  }
 
   // A process can start successfully and still exit before Coven emits any
   // JSONL. That is neither an adapter-discovery failure nor evidence that
