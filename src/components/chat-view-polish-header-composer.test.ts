@@ -160,7 +160,7 @@ assert.match(
 // access control moves into Response options.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-edge-actions">[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
   "composer exposes grouped Tools at its edge and keeps only context plus direct send actions in the command rail",
 );
 assert.doesNotMatch(source, /className="cave-composer-mode-switch"/, "access mode is demoted into Response options");
