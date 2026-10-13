@@ -783,6 +783,29 @@ function SummoningRite({
 
 // ─── Stage panels ─────────────────────────────────────────────────────────────
 
+function SelectedChoice({ label, title, hint, icon, onChange, changeRef }: {
+  label: string;
+  title: string;
+  hint?: string;
+  icon: IconName;
+  onChange: () => void;
+  changeRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <div className="summoning-selected-choice">
+      <Icon name={icon} width={18} aria-hidden />
+      <div className="summoning-selected-choice__copy">
+        <span className="summoning-selected-choice__label">{label}</span>
+        <strong>{title}</strong>
+        {hint ? <span className="summoning-selected-choice__hint">{hint}</span> : null}
+      </div>
+      <button ref={changeRef} type="button" onClick={onChange} className="focus-ring summoning-selected-choice__change">
+        Change <span className="sr-only">{label.toLowerCase()}</span>
+      </button>
+    </div>
+  );
+}
+
 function StageVessel({
   vessel,
   localHost,
@@ -836,7 +859,26 @@ function StageVessel({
   sshCheck: SshCheckState;
   onTestSsh: () => void;
 }) {
-  const hermesProfileRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const choicesRef = useRef<HTMLDivElement | null>(null);
+  const vesselChangeRef = useRef<HTMLButtonElement | null>(null);
+  const runtimeChangeRef = useRef<HTMLButtonElement | null>(null);
+  const agentChangeRef = useRef<HTMLButtonElement | null>(null);
+  const profileChangeRef = useRef<HTMLButtonElement | null>(null);
+  const [editingVessel, setEditingVessel] = useState(!vessel);
+  const [editingRuntime, setEditingRuntime] = useState(!harness);
+  const [editingAgent, setEditingAgent] = useState(!agentId);
+  const [editingProfile, setEditingProfile] = useState(!hermesProfileId);
+  const focusAfterChoice = (ref: RefObject<HTMLButtonElement | null>) => {
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+  const openChoices = (label: string, open: () => void) => {
+    open();
+    requestAnimationFrame(() => {
+      const group = Array.from(choicesRef.current?.querySelectorAll<HTMLElement>('[role="radiogroup"]') ?? [])
+        .find((element) => element.getAttribute("aria-label") === label);
+      (group?.querySelector<HTMLElement>('[aria-checked="true"]') ?? group?.querySelector<HTMLElement>("button"))?.focus();
+    });
+  };
   const vessels: { kind: VesselKind; icon: IconName; title: string; hint: string }[] = [
     {
       kind: "local",
@@ -870,6 +912,10 @@ function StageVessel({
   const unavailableRuntimeMessage = unavailableAvailability && unavailableAvailability.state !== "ready"
     ? unavailableAvailability.message
     : "No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.";
+  const selectedVessel = vessels.find((candidate) => candidate.kind === vessel);
+  const selectedRuntime = installedHarnesses.find((candidate) => candidate.id === harness);
+  const selectedAgent = (agents ?? []).find((candidate) => candidate.id === agentId);
+  const selectedProfile = (hermesProfiles ?? []).find((candidate) => candidate.id === hermesProfileId);
 
   const handleHermesProfileKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!hermesProfiles || hermesProfiles.length === 0) return;
@@ -896,12 +942,16 @@ function StageVessel({
 
     event.preventDefault();
     onPickHermesProfile(hermesProfiles[nextIndex]);
-    hermesProfileRefs.current[nextIndex]?.focus();
+    setEditingProfile(false);
+    focusAfterChoice(profileChangeRef);
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
+    <div ref={choicesRef} className="flex flex-col gap-3">
+      {selectedVessel && !editingVessel ? (
+        <SelectedChoice label="Vessel" title={selectedVessel.title} hint={selectedVessel.hint} icon={selectedVessel.icon}
+          changeRef={vesselChangeRef} onChange={() => openChoices("Vessel", () => setEditingVessel(true))} />
+      ) : <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
         {vessels.map((v) => {
           const active = vessel === v.kind;
           return (
@@ -912,12 +962,14 @@ function StageVessel({
               aria-checked={active}
               onClick={() => {
                 setVessel(v.kind);
+                setEditingVessel(false);
+                focusAfterChoice(vesselChangeRef);
                 // A previously selected local Grok runtime must not survive a
                 // switch to SSH: native Grok sessions are deliberately local-only.
                 if (v.kind === "ssh" && harness === "grok") setHarness(null);
                 if (v.kind === "hermes") setHarness("hermes");
               }}
-              className={`focus-ring summoning-vessel${active ? " summoning-vessel--active" : ""}${active && v.kind === "local" ? " summoning-vessel--expanded" : ""}`}
+              className={`focus-ring summoning-vessel${active ? " summoning-vessel--active" : ""}`}
             >
               <Icon name={v.icon} width={18} className="summoning-vessel__icon" />
               <span className="summoning-vessel__title">{v.title}</span>
@@ -928,18 +980,18 @@ function StageVessel({
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {vessel === "local" || vessel === "ssh" ? (
-        <div className="summoning-runtime-panel">
-          <div className="summoning-runtime-panel__heading">
+        <div className={`summoning-runtime-panel${selectedRuntime && !editingRuntime ? " summoning-runtime-panel--selected" : ""}`}>
+          {(!selectedRuntime || editingRuntime) && <div className="summoning-runtime-panel__heading">
             <span className={labelClass}>Available runtimes</span>
             <p className="summoning-runtime-panel__hint">
               {vessel === "local"
                 ? `Choose what powers this familiar on ${localHost ?? "this Cave host"}.`
                 : "Choose the installed runtime to launch over SSH."}
             </p>
-          </div>
+          </div>}
           {harnesses === null ? (
             <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Looking for installed runtimes…</p>
           ) : installedHarnesses.length === 0 ? (
@@ -958,6 +1010,9 @@ function StageVessel({
                 Run setup
               </button>
             </div>
+          ) : selectedRuntime && !editingRuntime ? (
+            <SelectedChoice label="Runtime" title={selectedRuntime.label} icon="ph:terminal-window"
+              changeRef={runtimeChangeRef} onChange={() => openChoices("Runtime", () => setEditingRuntime(true))} />
           ) : (
             <div role="radiogroup" aria-label="Runtime" className="summoning-runtime-grid">
               {installedHarnesses.map((h) => (
@@ -966,7 +1021,11 @@ function StageVessel({
                   type="button"
                   role="radio"
                   aria-checked={harness === h.id}
-                  onClick={() => setHarness(h.id)}
+                  onClick={() => {
+                    setHarness(h.id);
+                    setEditingRuntime(false);
+                    focusAfterChoice(runtimeChangeRef);
+                  }}
                   className={`focus-ring summoning-runtime-option${harness === h.id ? " summoning-runtime-option--active" : ""}`}
                 >
                   <span className="summoning-runtime-option__identity">
@@ -1044,7 +1103,7 @@ function StageVessel({
       ) : null}
 
       {vessel === "openclaw" ? (
-        <div className="summoning-subcard">
+        <div className={`summoning-subcard${selectedAgent && !editingAgent ? " summoning-subcard--selected" : ""}`}>
           {agents === null ? (
             <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">Looking for OpenClaw agents…</p>
           ) : agents.length === 0 ? (
@@ -1056,6 +1115,9 @@ function StageVessel({
                 Look again
               </Button>
             </div>
+          ) : selectedAgent && !editingAgent ? (
+            <SelectedChoice label="OpenClaw agent" title={selectedAgent.displayName} hint={selectedAgent.role || selectedAgent.id}
+              icon="ph:robot" changeRef={agentChangeRef} onChange={() => openChoices("OpenClaw agent", () => setEditingAgent(true))} />
           ) : (
             <div role="radiogroup" aria-label="OpenClaw agent" className="flex flex-col gap-1.5">
               {agents.map((agent) => (
@@ -1064,7 +1126,11 @@ function StageVessel({
                   type="button"
                   role="radio"
                   aria-checked={agentId === agent.id}
-                  onClick={() => onPickAgent(agent)}
+                  onClick={() => {
+                    onPickAgent(agent);
+                    setEditingAgent(false);
+                    focusAfterChoice(agentChangeRef);
+                  }}
                   className={`focus-ring summoning-agent${agentId === agent.id ? " summoning-agent--active" : ""}`}
                 >
                   <Icon name="ph:robot" width={14} />
@@ -1082,7 +1148,7 @@ function StageVessel({
       ) : null}
 
       {vessel === "hermes" ? (
-        <div className="summoning-subcard">
+        <div className={`summoning-subcard${selectedProfile && !editingProfile ? " summoning-subcard--selected" : ""}`}>
           {hermesProfiles === null ? (
             <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">Looking for Hermes profiles…</p>
           ) : hermesProfiles.length === 0 ? (
@@ -1094,19 +1160,23 @@ function StageVessel({
                 Look again
               </Button>
             </div>
+          ) : selectedProfile && !editingProfile ? (
+            <SelectedChoice label="Hermes profile" title={selectedProfile.displayName} hint={selectedProfile.role}
+              icon="ph:brain-bold" changeRef={profileChangeRef} onChange={() => openChoices("Hermes profile", () => setEditingProfile(true))} />
           ) : (
             <div role="radiogroup" aria-label="Hermes profile" className="flex flex-col gap-1.5">
               {hermesProfiles.map((profile, index) => (
                 <button
                   key={profile.id}
-                  ref={(element) => {
-                    hermesProfileRefs.current[index] = element;
-                  }}
                   type="button"
                   role="radio"
                   aria-checked={hermesProfileId === profile.id}
                   tabIndex={hermesProfileId === profile.id || (!hermesProfileId && index === 0) ? 0 : -1}
-                  onClick={() => onPickHermesProfile(profile)}
+                  onClick={() => {
+                    onPickHermesProfile(profile);
+                    setEditingProfile(false);
+                    focusAfterChoice(profileChangeRef);
+                  }}
                   onKeyDown={(event) => handleHermesProfileKeyDown(event, index)}
                   className={`focus-ring summoning-agent${hermesProfileId === profile.id ? " summoning-agent--active" : ""}`}
                 >
