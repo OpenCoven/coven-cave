@@ -15,10 +15,15 @@ assert.match(
   /onHealthChange\?: \(health: TerminalHealth\) => void/,
   "terminal hosts can observe shell health",
 );
-assert.match(
+assert.doesNotMatch(
   terminal,
   /bridge\.invoke<[^>]+>\("pty_diagnose"\)/,
-  "desktop startup proves native PTY plumbing before reporting healthy",
+  "a one-shot diagnostic must not block the actual desktop shell from starting",
+);
+assert.match(
+  terminal,
+  /await withTimeout\([\s\S]*?bridge\.invoke\("pty_start"[\s\S]*?DESKTOP_COMMAND_TIMEOUT_MS/,
+  "the real shell start remains bounded and authoritative",
 );
 assert.match(
   terminal,

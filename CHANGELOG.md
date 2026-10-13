@@ -7,20 +7,40 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-### Changed
-- **Thinking chip for Codex and Copilot** (#5905). Both runtimes now report a
-  native reasoning level, forwarded on the direct transports Cave spawns
-  itself: `codex exec -c model_reasoning_effort=<level>` (also on resume) and
-  `copilot --reasoning-effort <level>` (CLI 1.0.94 and later). The control is
-  offered only when the send route would take that transport with the flag
-  available, so a chip never promises a setting the launch cannot deliver.
+## [0.5.13] - 2026-10-13
+
+> Windows MSI builds return, and the chat layout is easier to read and control.
+
+Patch release on top of v0.5.12. The Windows MSI publishing path again builds,
+checks its component and size budget, uploads, and signs the updater artifact.
+**The MSI is not Authenticode-signed in this cut.** Its checksum and updater
+signature are separate from Windows code signing.
+
+### Added
+- **Thinking and Speed controls** (#5902, #5905). Home and Chat expose the
+  controls supported by the selected runtime; Codex and Copilot forward the
+  chosen reasoning effort on their direct transports.
+- **iOS model choice.** Claude and Codex model lists are available on iOS, and
+  the Chats title stays on one line at accessibility text sizes.
+- **Activity-backed daily notes.** Daily notes derive from recorded activity.
 
 ### Changed
-- **Home composer: Thinking and Speed chips** (#5902). The Home composer shows
-  the same Thinking and Speed chips as Chat, resolved from the selected
-  familiar's model-state report and refreshed after a model pick. A pick rides
-  the new-chat handoff, so the opened chat's first send and its chips start
-  from the same selection.
+- **Chat reading layout.** The desktop chat uses one frosted surface, a compact
+  composer and title row, clearer author boundaries, and more consistent
+  context and activity summaries.
+- **Research Desk and Studio.** Navigation and workflows have been polished;
+  Familiar Settings and the reading pane also receive layout refinements.
+
+### Fixed
+- **Windows releases** (#5964, #5967, #5971). Partial release pages list only
+  assets actually uploaded. A new complete release can use v0.5.7 as its
+  rollback target without replaying intervening tags. MSI builds no longer
+  depend on the unconfigured eSigner credentials.
+- **Chat and integration recovery.** Codex chats keep their own model choice;
+  reflection and journal generation are isolated; X publishing failures retain
+  drafts; OAuth callbacks identify only listeners on the callback port.
+- **Release and dependency maintenance.** CI recovery retries eligible PR
+  runs, protocol assets are smaller, and Next.js moves from 16.3.6 to 16.3.8.
 
 ## [0.5.12] - 2026-10-09
 
