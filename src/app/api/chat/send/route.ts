@@ -5047,10 +5047,15 @@ async function postAdmittedChat(
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
             ) {
+              // Coven sends each Codex agent_message as its own envelope with
+              // no trailing newline. Keep the boundary, as the direct
+              // `codex exec --json` path does, or consecutive messages run
+              // together ("differences.I've loaded", #5945).
               for (const block of ev.message.content) {
                 if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
-                assistantText += block.text;
-                push({ kind: "assistant_chunk", text: block.text });
+                const text = assistantText && !/\s$/.test(assistantText) ? `\n${block.text}` : block.text;
+                assistantText += text;
+                push({ kind: "assistant_chunk", text });
               }
             } else if (
               binding.harness === "claude" &&
