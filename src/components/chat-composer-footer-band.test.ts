@@ -41,10 +41,18 @@ assert.ok(controlRowMatch, "expected the composer control row in ChatView");
 
 const controlRow = controlRowMatch[0];
 
+// #5954 E-b2: one Tools menu, placed by width. Desktop (≥1024px) puts it in
+// the action cluster where the context meter sat; narrower layouts keep the
+// floating tab and its phone rest-state geometry unchanged.
+const actionsMenuMatch = source.match(/const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*?\n  \);/);
+assert.ok(actionsMenuMatch, "the Tools menu is built once");
+const actionsMenu = actionsMenuMatch[0];
+assert.match(actionsMenu, /triggerVariant="tools"/, "the grouped actions cascade is the Tools control");
+assert.match(edgeActions, /\{isMobile \? composerActionsMenu : null\}/, "narrow layouts keep the floating Tools tab");
 assert.match(
-  edgeActions,
-  /<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
-  "the composer edge should mount the grouped actions cascade as the Tools control",
+  controlRow,
+  /<div className="cave-composer-control-row">\s*\{isMobile \? \(\s*<ComposerContextMeter[\s\S]*?\/>\s*\) : composerActionsMenu\}/,
+  "desktop puts Tools in the action cluster, where the meter was",
 );
 assert.match(
   controlRow,
@@ -53,7 +61,7 @@ assert.match(
 );
 assert.doesNotMatch(controlRow, /cave-composer-mode-switch/, "access mode belongs in the grouped Response options menu");
 assert.match(
-  edgeActions,
+  actionsMenu,
   /<ComposerActionsMenu\s*\n\s*attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
   "attachment moved into the Tools menu ('Add files or photos') — no standalone attach button",
 );
@@ -66,6 +74,20 @@ assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions shoul
 assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips are placed adaptively (footer band for inlineComposer, session header for !inlineComposer) — never in the control row");
 assert.doesNotMatch(controlRow, /<ComposerOptionsMenu/, "the composer actions should no longer expose the legacy options menu");
 assert.doesNotMatch(source, /<ComposerLinkedWorkActions\b/, "ChatView should not mount the menu-row linked-work actions directly — the band uses the chip strip");
+
+// Desktop's context meter rides the chips row (#5954 E-b2), so the empty
+// composer loses the floating tab's reserved line.
+assert.match(
+  source,
+  /className="cave-composer-footer-band__cluster">\s*\{chatContextControls\}\s*\{!isMobile \? \(\s*<ComposerContextMeter/,
+  "desktop's context meter sits in the chips row",
+);
+assert.match(css, /\.cave-composer-edge-actions:empty \{\s*display: none;/, "an empty edge row takes no space");
+assert.match(
+  css,
+  /@media \(min-width: 1024px\) \{\s*\.cave-chat-linear \.cave-composer-dock:not\(:has\(\.cave-composer-edge-actions:not\(:empty\)\)\) \{\s*padding-top: var\(--space-3\);/,
+  "with nothing overhanging the panel, the dock drops the tab's headroom",
+);
 
 // ── The footer band is the panel's last section, after the control row ──────
 assert.match(

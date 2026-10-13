@@ -7512,6 +7512,98 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
     />
   );
+  // One Tools menu, placed by width (#5954): desktop puts it in the action
+  // cluster beside Send, where the context meter sat; narrower layouts keep
+  // the floating tab and the phone's rest-state geometry unchanged.
+  const composerActionsMenu = (
+    <ComposerActionsMenu
+      attach={{
+        onSelect: () => fileInputRef.current?.click(),
+        disabled: attachments.length >= MAX_CHAT_ATTACHMENTS,
+        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+      }}
+      skills={{
+        onPickSkill: (skill) => {
+          // Keep whatever is already typed — it becomes the skill's
+          // arguments on send instead of being overwritten.
+          const ins = skillComposerInsertion(input, skill);
+          setInput(ins.text);
+          inputRef.current?.focus();
+          requestAnimationFrame(() =>
+            inputRef.current?.setSelectionRange(ins.caret, ins.caret),
+          );
+        },
+      }}
+      context={{
+        projects,
+        projectValue: resolvedProjectId,
+        onProjectChange: setProjectIdDraft,
+        familiarId: familiar.id ?? null,
+        createProject,
+        createProjectOrThrow,
+        runtime: modelHarness,
+        modelValue: composerModelValue,
+        modelOptions: composerModelOptions,
+        modelInventory: composerModelInventory,
+        onPickRuntime: handleSelectRuntime,
+        onPickModel: handleSelectModel,
+        modelDisabled: busy,
+        projectRoot: activeProjectRoot,
+        onOpenUrl,
+        popoverPlacement: composerPopoverPlacement,
+      }}
+      linkedWork={{
+        linkedContext,
+        onOpenTask,
+        sessionId,
+        onLinkedContextChange: setLinkedContext,
+        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+      }}
+      improve={{
+        dictation: dictation.available
+          ? {
+              listening: dictation.listening,
+              toggle: dictation.toggle,
+              disabled: busy && !dictation.listening,
+            }
+          : undefined,
+        promptSnippets: {
+          onSelect: () => setPromptSnippetsOpen(true),
+        },
+        enhance: {
+          onEnhance: promptEnhance.enhance,
+          disabled: busy || !input.trim(),
+          loading: promptEnhance.state.phase === "loading",
+        },
+      }}
+      response={{
+        hostValue: composerHostValue,
+        onHostPick: setRuntimeHost,
+        sections: composerResponseSections,
+        onSaveAsTemplate: () => setSaveTemplateSeed(input),
+        saveAsTemplateDisabled: !input.trim(),
+        indicator:
+          composerHostValue !== LOCAL_HOST_ID ||
+          permissionMode !== DEFAULT_PERMISSION_MODE ||
+          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+      }}
+      triggerVariant="tools"
+      phoneActions={isMobile ? {
+        auto: {
+          selected: autoModeSelected,
+          running: autoMissionActive,
+          disabled: busy && !autoMissionActive,
+          onSelect: toggleMobileAutoMode,
+        },
+        retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
+        summarize: { disabled: busy, onSelect: summarizeSession },
+        call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
+      } : undefined}
+    />
+  );
+
   const composerNode = (
     <footer
       className="cave-composer-dock"
@@ -7814,92 +7906,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }}
             >
               <div className="cave-composer-edge-actions">
-                <ComposerActionsMenu
-                  attach={{
-                    onSelect: () => fileInputRef.current?.click(),
-                    disabled: attachments.length >= MAX_CHAT_ATTACHMENTS,
-                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                  }}
-                  skills={{
-                    onPickSkill: (skill) => {
-                      // Keep whatever is already typed — it becomes the skill's
-                      // arguments on send instead of being overwritten.
-                      const ins = skillComposerInsertion(input, skill);
-                      setInput(ins.text);
-                      inputRef.current?.focus();
-                      requestAnimationFrame(() =>
-                        inputRef.current?.setSelectionRange(ins.caret, ins.caret),
-                      );
-                    },
-                  }}
-                  context={{
-                    projects,
-                    projectValue: resolvedProjectId,
-                    onProjectChange: setProjectIdDraft,
-                    familiarId: familiar.id ?? null,
-                    createProject,
-                    createProjectOrThrow,
-                    runtime: modelHarness,
-                    modelValue: composerModelValue,
-                    modelOptions: composerModelOptions,
-                    modelInventory: composerModelInventory,
-                    onPickRuntime: handleSelectRuntime,
-                    onPickModel: handleSelectModel,
-                    modelDisabled: busy,
-                    projectRoot: activeProjectRoot,
-                    onOpenUrl,
-                    popoverPlacement: composerPopoverPlacement,
-                  }}
-                  linkedWork={{
-                    linkedContext,
-                    onOpenTask,
-                    sessionId,
-                    onLinkedContextChange: setLinkedContext,
-                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                  }}
-                  improve={{
-                    dictation: dictation.available
-                      ? {
-                          listening: dictation.listening,
-                          toggle: dictation.toggle,
-                          disabled: busy && !dictation.listening,
-                        }
-                      : undefined,
-                    promptSnippets: {
-                      onSelect: () => setPromptSnippetsOpen(true),
-                    },
-                    enhance: {
-                      onEnhance: promptEnhance.enhance,
-                      disabled: busy || !input.trim(),
-                      loading: promptEnhance.state.phase === "loading",
-                    },
-                  }}
-                  response={{
-                    hostValue: composerHostValue,
-                    onHostPick: setRuntimeHost,
-                    sections: composerResponseSections,
-                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                    saveAsTemplateDisabled: !input.trim(),
-                    indicator:
-                      composerHostValue !== LOCAL_HOST_ID ||
-                      permissionMode !== DEFAULT_PERMISSION_MODE ||
-                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                  }}
-                  triggerVariant="tools"
-                  phoneActions={isMobile ? {
-                    auto: {
-                      selected: autoModeSelected,
-                      running: autoMissionActive,
-                      disabled: busy && !autoMissionActive,
-                      onSelect: toggleMobileAutoMode,
-                    },
-                    retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
-                    summarize: { disabled: busy, onSelect: summarizeSession },
-                    call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
-                  } : undefined}
-                />
+                {isMobile ? composerActionsMenu : null}
                 {linkedContext?.task && onOpenTask ? (
                   <button
                     type="button"
@@ -8092,7 +8099,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  {isMobile ? (
+                    <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  ) : composerActionsMenu}
                   <div className="cave-composer-submit-row">
                     {busy && (input.trim() || attachments.length > 0) ? (
                       <button
@@ -8165,6 +8174,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {!offlineReadOnly ? (
                   <div className="cave-composer-footer-band__cluster">
                     {chatContextControls}
+                    {!isMobile ? (
+                      <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                    ) : null}
                   </div>
                 ) : null}
                 {linkedContextRow}

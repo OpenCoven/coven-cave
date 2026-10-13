@@ -173,6 +173,22 @@ test("every rendered body ends with the checksum block and the compare link", ()
   }
 });
 
+test("partial releases only link uploaded installers and checksums", () => {
+  const assets = path.join(REPO_DIR, "partial-assets.txt");
+  writeFileSync(assets, [
+    "CovenCave-v7.0.55-aarch64.dmg",
+    "CovenCave_7.0.55_amd64.AppImage",
+  ].join("\n") + "\n");
+  const body = render("v7.0.55", undefined, { COVEN_RELEASE_ASSETS_FILE: assets });
+  assert.match(body, /CovenCave-v7\.0\.55-aarch64\.dmg/);
+  assert.match(body, /CovenCave_7\.0\.55_amd64\.AppImage/);
+  assert.doesNotMatch(body, /CovenCave-v7\.0\.55-x86_64\.dmg/);
+  assert.doesNotMatch(body, /CovenCave_7\.0\.55_x64_en-US\.msi/);
+  assert.match(body, /no MSI was published/);
+  assert.match(body, /No `SHA256SUMS` was published/);
+  assert.doesNotMatch(body, /shasum -a 256 -c SHA256SUMS/);
+});
+
 // ── Build provenance when the registry guards were skipped (cave-yp21x) ─────
 // v0.2.0 shipped through the emergency manual hatch with BOTH signed-registry
 // gates skipped, and the only evidence was a `skipped` step in the Actions
