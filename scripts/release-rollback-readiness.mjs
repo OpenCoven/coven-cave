@@ -11,8 +11,9 @@
 // stable artifacts and rollback metadata are verified before rollout".
 //
 // So this resolves the newest published, non-draft, non-prerelease release
-// strictly below the release being shipped and refuses unless that baseline is
-// a complete rollback target:
+// strictly below the release being shipped that has the required assets. An
+// incomplete cut cannot block all future releases when an older rollback
+// target still works. The selected baseline must then pass metadata checks:
 //   1. installers for every supported OS (.dmg, .msi, .AppImage)
 //   2. SHA256SUMS, so a rollback artifact can be checked before it is run
 //   3. latest.json whose version matches the baseline, whose platforms{} is
@@ -356,8 +357,9 @@ export async function verifyRollbackReadiness(options = {}) {
     fetchImpl,
   };
 
-  const baseline = selectRollbackBaseline(await listReleases(context), target.tag);
-  if (!baseline) {
+  const releases = await listReleases(context);
+  const newest = selectRollbackBaseline(releases, target.tag);
+  if (!newest) {
     if (!options.allowMissingBaseline) {
       throw new RollbackReadinessError(
         `no published stable release below ${target.tag} to roll back to; pass --allow-missing-baseline only for a repository's first release`,
@@ -378,10 +380,20 @@ export async function verifyRollbackReadiness(options = {}) {
     };
   }
 
-  const problems = collectBaselineArtifactProblems(baseline.release);
-  if (problems.length > 0) {
+  // Missing installers/checksums/manifest make a release ineligible as a
+  // rollback target. Keep looking back instead of requiring old partial tags
+  // to be rebuilt before a new complete release can ship. Once selected, the
+  // manifest is verified below; a broken manifest is never silently skipped.
+  const baseline = selectRollbackBaseline(
+    releases.filter(
+      (release) => release && typeof release === "object" && collectBaselineArtifactProblems(release).length === 0,
+    ),
+    target.tag,
+  );
+  if (!baseline) {
+    const problems = collectBaselineArtifactProblems(newest.release);
     throw new RollbackReadinessError(
-      `${baseline.tag} is not a usable rollback target: ${problems.join("; ")}`,
+      `no complete rollback target below ${target.tag}; newest ${newest.tag} is not usable: ${problems.join("; ")}`,
     );
   }
 
