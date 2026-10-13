@@ -260,10 +260,41 @@ assert.match(
   "chat thread should cap itself with the shared measure token",
 );
 assert.doesNotMatch(transcriptCss, /\.cave-chat-followups/, "removed recommendation styles do not reserve footer height");
+// ── One column frame (#5950) ─────────────────────────────────────────────
+// The composer narrows to the reading column (decided in #5941, reversing the
+// full-pane composer), and the chrome around the transcript lines up with the
+// same column instead of the pane edges. Below the measure every band keeps
+// today's padding, so narrow panes are unchanged.
+const columnInset = "calc((100% - var(--cave-chat-measure)) / 2)";
+const ruleBody = (sheet: string, selector: string) =>
+  sheet.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+const sessionChromeCss = read("../styles/cave-chat/session-chrome.css");
 assert.match(
-  transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,
-  "composer shell should span the full dock width",
+  ruleBody(transcriptCss, ".cave-chat-linear .cave-composer-shell"),
+  /max-width:\s*var\(--cave-chat-measure\);/,
+  "the composer caps at the reading column",
+);
+assert.doesNotMatch(activityCss, /composer[^.]*spans the pane/i, "no comment still claims a full-pane composer");
+assert.ok(
+  ruleBody(activityCss, ".cave-chat-linear-header").includes(`padding-inline: max(var(--space-4), ${columnInset});`),
+  "the header's title and actions line up with the column",
+);
+assert.ok(
+  ruleBody(sessionChromeCss, ".cave-chat-context-row").includes(`padding-inline: max(var(--space-4), ${columnInset});`),
+  "the stats strip lines up with the column",
+);
+assert.ok(
+  ruleBody(transcriptCss, ".cave-chat-linear .cave-run-activity").includes(`padding-inline: max(var(--space-3), ${columnInset});`),
+  "the Last run strip and its notices line up with the column",
+);
+assert.ok(
+  ruleBody(transcriptCss, ".cave-chat-linear .cave-new-response-content").includes(`margin-right: max(0px, ${columnInset});`),
+  "Latest sits at the column's right edge",
+);
+assert.match(
+  ruleBody(transcriptCss, ".cave-chat-linear .cave-chat-thread .cave-md > :is(p, ul, ol, blockquote)"),
+  /max-width:\s*72ch;/,
+  "prose paragraphs and lists keep a readable line length; code and tables keep the column",
 );
 assert.match(
   transcriptCss,

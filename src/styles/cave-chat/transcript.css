@@ -540,9 +540,26 @@
 }
 
 
+/* The composer caps at the reading column and centers under it, so the input
+   lines up with the conversation instead of spanning an ultrawide pane
+   (#5950, reversing the full-pane composer). Below the measure it is the
+   full dock width, as before. */
 .cave-chat-linear .cave-composer-shell {
   width: 100%;
-  max-width: 100%;
+  max-width: var(--cave-chat-measure);
+}
+
+/* The bands above the transcript align to the same column. RunActivityStrip
+   keeps its utility padding as the narrow-pane floor. */
+.cave-chat-linear .cave-run-activity {
+  padding-inline: max(var(--space-3), calc((100% - var(--cave-chat-measure)) / 2));
+}
+
+/* Prose keeps a readable line length inside the wide column; code blocks,
+   tables and other wide blocks still use the full measure. The narrower
+   reading-width settings cap the whole .cave-md and still win. */
+.cave-chat-linear .cave-chat-thread .cave-md > :is(p, ul, ol, blockquote) {
+  max-width: 72ch;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -653,6 +670,11 @@
     border-color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+/* Latest sits at the reading column's right edge, not the pane's. */
+.cave-chat-linear .cave-new-response-content {
+  margin-right: max(0px, calc((100% - var(--cave-chat-measure)) / 2));
 }
 
 .cave-new-response-content:hover {

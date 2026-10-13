@@ -42,11 +42,16 @@
   --cave-spine-stamp-lane: calc(var(--cave-spine-stamp-chars) * 0.62 * var(--text-2xs));
   --cave-spine-stamp-gap: var(--space-1);
   --cave-spine-node-inset: calc(var(--cave-spine-stamp-lane) + var(--cave-spine-stamp-gap));
+  /* The ring column plus its hover slack, pushed right by the stamp lane. */
+  --cave-spine-width: calc(var(--cave-spine-node-inset) + var(--space-6) + var(--space-6));
   position: absolute;
   top: 0;
-  left: 0;
-  /* The ring column plus its hover slack, pushed right by the stamp lane. */
-  width: calc(var(--cave-spine-node-inset) + var(--space-6) + var(--space-6));
+  /* Just left of the reading column, not at the pane's edge (#5950). The
+     scroller is the containing block and the column is centered in it, so the
+     column starts at (100% - measure) / 2. The component's width gate keeps
+     the spine off panes too narrow for that gutter. */
+  left: max(0px, calc((100% - var(--cave-chat-measure)) / 2 - var(--cave-spine-width) - var(--space-3)));
+  width: var(--cave-spine-width);
   z-index: 10;
   opacity: 0.45;
   transition: opacity 180ms ease;

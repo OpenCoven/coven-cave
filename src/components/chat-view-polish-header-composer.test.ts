@@ -363,8 +363,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-linear-header\s*\{[\s\S]*min-height:\s*52px;[\s\S]*padding:\s*var\(--space-1\) var\(--space-4\);/,
-  "Open chat header is the 52px identity band (chat-revamp 1b)",
+  /\.cave-chat-linear-header\s*\{[\s\S]*min-height:\s*52px;[\s\S]*padding-block:\s*var\(--space-1\);[\s\S]*padding-inline:\s*max\(var\(--space-4\), calc\(\(100% - var\(--cave-chat-measure\)\) \/ 2\)\);/,
+  "Open chat header is the 52px identity band (chat-revamp 1b), inset to the reading column with a 16px floor (#5950)",
 );
 // Chat-revamp 1b: the header closes with a fade-ended divider (transparent →
 // hairline 48px from each end), not a full-width hard border.

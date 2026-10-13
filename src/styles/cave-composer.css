@@ -735,8 +735,8 @@
 
 .cave-composer-shell {
   position: relative;
-  /* Full-width chat (2026-06-12): the composer shares the thread's
-     full-pane measure so the input lines up with the conversation. */
+  /* Fills its dock. Chat caps it at the reading column
+     (cave-chat/transcript.css, #5950). */
   width: 100%;
   max-width: 100%;
   margin: 0 auto;

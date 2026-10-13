@@ -685,8 +685,8 @@ details[open] > .cave-tool-summary::before {
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
-  /* The transcript keeps a wide reading measure for code and long responses.
-     The composer is a separate docked action surface and spans the pane. */
+  /* The reading column: wide enough for code and tables, and the one frame
+     the composer, header, strips and spine align to (#5950). */
   --cave-chat-measure: 64rem;
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
@@ -706,7 +706,10 @@ details[open] > .cave-tool-summary::before {
      actions — over the pane background (no raised fill), closed by the
      fade-ended divider below instead of a full-width hard border. */
   min-height: 52px;
-  padding: var(--space-1) var(--space-4);
+  padding-block: var(--space-1);
+  /* Title and actions line up with the reading column; below the measure
+     this is today's 16px inset (#5950). */
+  padding-inline: max(var(--space-4), calc((100% - var(--cave-chat-measure)) / 2));
 }
 
 /* Fade-ended bottom divider (chat-revamp 1b): the hairline dissolves to
@@ -1380,8 +1383,8 @@ details[open] > .cave-tool-summary::before {
   gap: 26px;
   /* Centered reading column (cave-xsq.1): cap the transcript to a comfortable
      measure and center it, so long responses read like ChatGPT instead of
-     running edge-to-edge on a wide pane. The composer shares the same measure
-     (below) so the input lines up under the conversation. */
+     running edge-to-edge on a wide pane. The composer caps at the same
+     measure (transcript.css) so the input lines up under the conversation. */
   width: 100%;
   max-width: var(--cave-chat-measure);
   margin-block: 0;
