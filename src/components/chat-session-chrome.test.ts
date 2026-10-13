@@ -107,7 +107,11 @@ test("2a ③ — the instrument strip keeps every metric reachable at narrow wid
   assert.doesNotMatch(contextRow, /stat\.id === "context"/, "the strip carries no context card");
   assert.doesNotMatch(styles, /\.cave-chat-context-breakdown__bar/, "the context card's segmented bar is gone with it");
   assert.doesNotMatch(chatView, /<ContextMeterChip\b/, "the title line's hover cluster carries no context meter");
-  assert.equal(chatView.match(/<ComposerContextMeter\b/g)?.length, 1, "the composer renders the one context meter");
+  // The composer renders the one context meter: in the control row on narrow
+  // layouts, in the chips row on desktop (#5954 E-b2) — never both.
+  assert.equal(chatView.match(/<ComposerContextMeter\b/g)?.length, 2, "one meter site per width branch");
+  assert.match(chatView, /\{isMobile \? \(\s*<ComposerContextMeter/, "the narrow branch renders it in the control row");
+  assert.match(chatView, /\{!isMobile \? \(\s*<ComposerContextMeter/, "the desktop branch renders it in the chips row");
   // The rule BODY is [^}]* rather than [\s\S]*?: `styles` is the whole expanded
   // facade, so a body that may cross `}` matches an @media here, this selector
   // there, and a `display: none` from an unrelated rule in a different imported

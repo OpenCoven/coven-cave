@@ -356,6 +356,15 @@
   padding: var(--space-5) clamp(16px, 3vw, 34px) var(--space-4);
 }
 
+/* The top padding is headroom for the floating Tools tab. On desktop Tools
+   lives in the action cluster (#5954), so with nothing overhanging the panel
+   the dock keeps only a small gap above it. */
+@media (min-width: 1024px) {
+  .cave-chat-linear .cave-composer-dock:not(:has(.cave-composer-edge-actions:not(:empty))) {
+    padding-top: var(--space-3);
+  }
+}
+
 /* Typed assistant suggestions keep their effect legible before activation.
    The card owns presentation only; ChatView owns routing and side effects. */
 .cave-followup-cards {

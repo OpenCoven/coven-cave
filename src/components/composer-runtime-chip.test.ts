@@ -210,8 +210,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-edge-actions">[\s\S]{0,4000}?<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
-  "the chat options trigger sits at the composer edge — always visible, session or not",
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*?triggerVariant="tools"[\s\S]*?className="cave-composer-edge-actions">\s*\{isMobile \? composerActionsMenu : null\}[\s\S]*?\) : composerActionsMenu\}/,
+  "the chat options trigger is always visible, session or not — on the edge for narrow layouts, in the action cluster on desktop (#5954)",
 );
 assert.match(
   chatView,
