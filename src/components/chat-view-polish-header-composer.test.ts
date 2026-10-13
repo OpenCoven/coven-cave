@@ -394,6 +394,9 @@ assert.match(
 // "not reported" phrases; the gaps are named on hover (#5953).
 const metaLine = source.slice(source.indexOf("function MetaLine("), source.indexOf("\n}\n", source.indexOf("function MetaLine(")));
 assert.doesNotMatch(metaLine, /not reported/, "the header identity no longer spells out each gap");
+// #5954: the branch has one home, the status bar; the header identity no
+// longer repeats it.
+assert.doesNotMatch(metaLine, /cave-chat-meta-line__branch|useChangesSummary/, "the header identity carries no branch");
 assert.match(
   metaLine,
   /className="cave-chat-meta-line__unverified" title=\{identityGaps\.join\(" · "\)\}>unverified</,

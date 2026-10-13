@@ -258,7 +258,7 @@ async function openChat(page: Page, engageComposer = false) {
   await expect(chat.getByRole("button", { name: /^Project: E2E Project · Full/ })).toBeVisible({
     timeout: 45_000,
   });
-  await expect(chat.getByRole("button", { name: `Model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
+  await expect(chat.getByRole("button", { name: `Selected model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
     timeout: 45_000,
   });
   await expect(chat.locator(".cave-composer-task-tab")).toHaveAccessibleName("Open linked task: Fix the login regression");
