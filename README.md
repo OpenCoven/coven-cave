@@ -111,10 +111,15 @@ Choose the asset that matches your platform:
 | Platform | Published architectures | Package |
 | --- | --- | --- |
 | macOS | Apple Silicon (`aarch64`) and Intel (`x86_64`) | `.dmg` |
-| Windows | x64 only | `.msi` |
+| Windows | x64 only | `.msi` when present on that release |
 | Linux | amd64/x86_64 only | `.AppImage` |
 
-The release also includes `SHA256SUMS`, updater signatures, and update metadata.
+Check the selected release's asset list before downloading: partial releases may
+not include every platform or `SHA256SUMS`. As of 2026-10-13, the latest
+published Windows installer is the
+[v0.5.7 x64 MSI](https://github.com/OpenCoven/coven-cave/releases/download/v0.5.7/CovenCave_0.5.7_x64_en-US.msi);
+the release currently marked latest (v0.5.8) has no MSI. Verify the Windows
+download with [v0.5.7 `SHA256SUMS`](https://github.com/OpenCoven/coven-cave/releases/download/v0.5.7/SHA256SUMS).
 Windows on ARM and Linux on ARM do not currently have published desktop
 artifacts.
 

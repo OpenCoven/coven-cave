@@ -1,4 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { createServer, request as proxyRequest, type Server } from "node:http";
+import { readFile } from "node:fs/promises";
+import type { Socket } from "node:net";
 import { DEFAULT_ELEVENLABS_VOICE_ID } from "../src/lib/voice/elevenlabs-shared";
 
 const FAMILIAR_ID = "rida";
@@ -33,6 +36,128 @@ const BLACK_MP4 = Buffer.from(
   "base64",
 );
 const SILENT_WAV = createSilentWav();
+
+// Browser download managers bypass page.route. Serve real fixture bytes over
+// loopback so playback and completed downloads exercise actual browser I/O.
+let mediaServer: Server;
+let mediaOrigin: string;
+const mediaSockets = new Set<Socket>();
+test.beforeAll(async ({}, testInfo) => {
+  const upstreamOrigin = new URL(String(testInfo.project.use.baseURL));
+  mediaServer = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname !== "/api/research/generations/media") {
+      // Request targets supply only a path; the connection authority always
+      // comes from trusted Playwright configuration, even for absolute URLs.
+      const upstream = proxyRequest({
+        protocol: upstreamOrigin.protocol,
+        hostname: upstreamOrigin.hostname,
+        port: upstreamOrigin.port,
+        path: `${url.pathname}${url.search}`,
+        method: request.method,
+        headers: { ...request.headers, host: upstreamOrigin.host },
+      }, upstreamResponse => {
+        response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        upstreamResponse.pipe(response);
+      });
+      upstream.on("error", () => {
+        if (!response.headersSent) response.writeHead(502);
+        response.end();
+      });
+      response.once("close", () => upstream.destroy());
+      request.pipe(upstream);
+      return;
+    }
+    const podcast = url.searchParams.get("kind") === "podcast";
+    const body = podcast ? SILENT_WAV : BLACK_MP4;
+    response.writeHead(200, {
+      "content-type": podcast ? "audio/wav" : "video/mp4",
+      "content-length": String(body.length),
+      ...(url.searchParams.get("download") === "1"
+        ? { "content-disposition": `attachment; filename="${podcast ? "podcast.wav" : "video.mp4"}"` }
+        : {}),
+    });
+    response.end(body);
+  });
+  mediaServer.on("connection", socket => {
+    mediaSockets.add(socket);
+    socket.once("close", () => mediaSockets.delete(socket));
+  });
+  // Next's development RSC debug channel uses HMR. Forward its upgrade too:
+  // serving the document and assets alone leaves hydration waiting forever.
+  mediaServer.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const upstream = proxyRequest({
+      protocol: upstreamOrigin.protocol,
+      hostname: upstreamOrigin.hostname,
+      port: upstreamOrigin.port,
+      path: `${url.pathname}${url.search}`,
+      method: request.method,
+      headers: { ...request.headers, host: upstreamOrigin.host },
+    });
+    upstream.once("upgrade", (response, upstreamSocket, upstreamHead) => {
+      socket.write(`HTTP/${response.httpVersion} ${response.statusCode} ${response.statusMessage}\r\n`);
+      for (let index = 0; index < response.rawHeaders.length; index += 2) {
+        socket.write(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}\r\n`);
+      }
+      socket.write("\r\n");
+      if (upstreamHead.length) socket.write(upstreamHead);
+      if (head.length) upstreamSocket.write(head);
+      upstreamSocket.on("error", () => socket.destroy());
+      upstreamSocket.once("close", () => socket.destroy());
+      socket.once("close", () => upstreamSocket.destroy());
+      upstreamSocket.pipe(socket).pipe(upstreamSocket);
+    });
+    upstream.once("response", response => {
+      response.resume();
+      socket.destroy();
+    });
+    upstream.once("error", () => socket.destroy());
+    socket.on("error", () => upstream.destroy());
+    socket.once("close", () => upstream.destroy());
+    upstream.end();
+  });
+  await new Promise<void>(resolve => mediaServer.listen(0, "127.0.0.1", resolve));
+  const address = mediaServer.address();
+  if (!address || typeof address === "string") throw new Error("Media fixture did not bind");
+  mediaOrigin = `http://127.0.0.1:${address.port}`;
+});
+test.afterAll(async () => {
+  if (!mediaServer) return;
+  for (const socket of mediaSockets) socket.destroy();
+  mediaServer.closeAllConnections();
+  await new Promise<void>((resolve, reject) => mediaServer.close(error => error ? reject(error) : resolve()));
+});
+
+test("media fixture keeps absolute and network-path targets on its configured upstream", async () => {
+  const unexpectedRequests: string[] = [];
+  const otherServer = createServer((request, response) => {
+    unexpectedRequests.push(request.url ?? "");
+    response.end("Unexpected upstream");
+  });
+  await new Promise<void>(resolve => otherServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = otherServer.address();
+    if (!address || typeof address === "string") throw new Error("Origin probe did not bind");
+    const authority = `127.0.0.1:${address.port}`;
+    for (const target of [`http://${authority}/proxy-origin-probe`, `//${authority}/proxy-origin-probe`, `/\\${authority}/proxy-origin-probe`]) {
+      await new Promise<void>((resolve, reject) => {
+        const request = proxyRequest(mediaOrigin, { path: target }, response => {
+          response.resume();
+          response.once("end", resolve);
+          response.once("error", reject);
+        });
+        request.once("error", reject);
+        request.end();
+      });
+    }
+    expect(unexpectedRequests).toEqual([]);
+  } finally {
+    otherServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => otherServer.close(error => error ? reject(error) : resolve()));
+  }
+});
+
 
 const MISSION = {
   version: 1,
@@ -192,7 +317,7 @@ type StoredMediaGeneration = Omit<MediaGeneration, "renderConfig"> & {
 };
 
 async function openResearchStudio(page: Page) {
-  await page.goto("/");
+  await page.goto(mediaOrigin);
   await page.locator("#shell-main-content").waitFor({ timeout: 60_000 });
   await expect(async () => {
     await page.evaluate(() =>
@@ -285,6 +410,8 @@ async function boot(
     async (route) => {
       const url = new URL(route.request().url());
       const method = route.request().method();
+      // Both native playback and downloads use the same real fixture bytes.
+      if (url.pathname.endsWith("/media")) return route.continue();
       if (url.pathname.endsWith("/readiness")) {
         await route.fulfill({
           json: {
@@ -344,25 +471,13 @@ async function boot(
           familiarId: FAMILIAR_ID,
           id,
           mediaTicket: "e2e-ticket",
+          kind: target.kind,
         });
         await route.fulfill({
           json: {
             ok: true,
             mediaUrl: `/api/research/generations/media?${params}`,
           },
-        });
-        return;
-      }
-      if (url.pathname.endsWith("/media")) {
-        const target = records.get(url.searchParams.get("id") ?? "");
-        await route.fulfill({
-          status: 200,
-          headers: {
-            "content-type":
-              target?.kind === "podcast" ? "audio/wav" : "video/mp4",
-            "accept-ranges": "bytes",
-          },
-          body: target?.kind === "podcast" ? SILENT_WAV : BLACK_MP4,
         });
         return;
       }
@@ -457,6 +572,36 @@ async function boot(
   };
 }
 
+async function verifyPlaybackAndDownload(page: Page, viewer: Locator) {
+  const player = viewer.locator("audio, video").first();
+  // The viewer deliberately preloads metadata; WebKit waits for play before
+  // fetching playable data. Check both stages in their actual order.
+  await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).readyState)).toBeGreaterThanOrEqual(1);
+  const tabKey = page.context().browser()?.browserType().name() === "webkit" ? "Alt+Tab" : "Tab";
+  await viewer.getByRole("button", { name: "Close viewer", exact: true }).focus();
+  for (let index = 0; index < 16 && !await player.evaluate((node) => node === document.activeElement); index += 1) {
+    await page.keyboard.press(tabKey);
+  }
+  await expect(player).toBeFocused();
+  await player.evaluate(async node => {
+    const media = node as HTMLMediaElement;
+    media.muted = true;
+    await media.play();
+  });
+  await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).readyState)).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).currentTime)).toBeGreaterThan(0);
+  const download = page.waitForEvent("download");
+  await viewer.getByRole("link", { name: /Download media/ }).click();
+  const completedDownload = await download;
+  expect(await completedDownload.failure()).toBeNull();
+  const downloadedPath = await completedDownload.path();
+  expect(downloadedPath).not.toBeNull();
+  const audio = await player.evaluate(node => node.tagName === "AUDIO");
+  expect(await readFile(downloadedPath!)).toEqual(audio ? SILENT_WAV : BLACK_MP4);
+}
+
+test.use({ serviceWorkers: "block" });
+
 test.describe("Research Studio media honesty and playback", () => {
   test.describe.configure({ timeout: 180_000 });
 
@@ -475,7 +620,12 @@ test.describe("Research Studio media honesty and playback", () => {
     controls.setReady();
     await page.reload();
     await openResearchStudio(page);
-    await podcastCard.click();
+    // Reload mounts Studio before its asynchronous provider check completes.
+    // Disabled buttons cannot receive keyboard focus or activate on Enter.
+    await expect(podcastCard).toBeEnabled();
+    await podcastCard.focus();
+    await expect(podcastCard).toBeFocused();
+    await page.keyboard.press("Enter");
     const config = page.getByRole("dialog", { name: "Generate Podcast" });
     const provider = config.getByLabel("Voice provider");
     await expect(provider.locator("option")).toHaveText([
@@ -485,6 +635,19 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(config.getByLabel("Local voice")).toHaveValue("piper-amy");
     await provider.selectOption("elevenlabs");
     await expect(config.getByLabel("Host voice")).toContainText("Rachel");
+    const hostVoice = config.getByRole("button", { name: "Host voice", exact: true });
+    await hostVoice.focus();
+    await page.keyboard.press("Enter");
+    const voiceMenu = page.getByRole("menu", { name: "Host voice options" });
+    await expect(voiceMenu).toBeVisible();
+    await expect(voiceMenu.getByRole("menuitemradio").first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(voiceMenu.getByRole("menuitemradio").nth(1)).toBeFocused();
+    await expect.poll(() => voiceMenu.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(voiceMenu).toHaveCount(0);
+    await expect(config).toBeVisible();
+    await expect(hostVoice).toBeFocused();
     await expect(config.getByLabel("Length").locator("option")).toHaveCount(3);
     await expect(config.getByLabel("Style").locator("option")).toHaveText([
       "Breakdown",
@@ -500,7 +663,8 @@ test.describe("Research Studio media honesty and playback", () => {
     await page.keyboard.press("Escape");
     await expect(podcastCard).toBeFocused();
 
-    await podcastCard.click();
+    await podcastCard.focus();
+    await page.keyboard.press("Enter");
     await config.getByLabel("Style").selectOption("debate");
     await config.getByLabel("Guest voice (optional)").click();
     await page
@@ -545,10 +709,12 @@ test.describe("Research Studio media honesty and playback", () => {
       "href",
       /download=1/,
     );
+    await verifyPlaybackAndDownload(page, viewer);
   });
 
   test("creates, reviews, renders, plays, and downloads a short video", async ({
     page,
+    browserName,
   }) => {
     const controls = await boot(page, { ready: true });
     const studio = page.locator(".research-studio");
@@ -556,7 +722,7 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(shortVideoCard).toBeEnabled();
     await expect(shortVideoCard).toHaveCSS("cursor", "pointer");
     await studio.locator('button[data-kind="podcast"]').focus();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     await expect(shortVideoCard).toBeFocused();
     await expect(shortVideoCard).toHaveCSS("outline-style", "solid");
     await shortVideoCard.click();
@@ -566,7 +732,7 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(config.getByLabel("Host voice")).toContainText("Rachel");
     await expect(config.getByLabel("Length")).toHaveValue("standard");
     await config.getByLabel("Research run").focus();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     await expect(config.getByLabel("Directions (optional)")).toBeFocused();
     await expect(config.getByLabel("Directions (optional)")).toHaveCSS(
       "outline-style",
@@ -608,6 +774,72 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(
       viewer.getByRole("link", { name: /Download media/ }),
     ).toHaveAttribute("href", /download=1/);
+    await verifyPlaybackAndDownload(page, viewer);
+  });
+
+  test("creates, reviews, renders, plays, and downloads a long video", async ({
+    page,
+    browserName,
+  }) => {
+    const controls = await boot(page, { ready: true });
+    const studio = page.locator(".research-studio");
+    const longVideoCard = studio.locator('button[data-kind="long-video"]');
+    await expect(longVideoCard).toBeEnabled();
+    await expect(longVideoCard).toHaveCSS("cursor", "pointer");
+    await studio.locator('button[data-kind="short-video"]').focus();
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+    await expect(longVideoCard).toBeFocused();
+    await expect(longVideoCard).toHaveCSS("outline-style", "solid");
+    await longVideoCard.click();
+
+    const config = page.getByRole("dialog", { name: "Generate Long video" });
+    await expect(config.getByLabel("Voice provider")).toHaveValue("local");
+    await expect(config.getByLabel("Local voice")).toBeVisible();
+    await expect(config.getByLabel("Length")).toHaveValue("standard");
+    await config.getByLabel("Research run").focus();
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+    await expect(config.getByLabel("Directions (optional)")).toBeFocused();
+    await expect(config.getByLabel("Directions (optional)")).toHaveCSS(
+      "outline-style",
+      "solid",
+    );
+
+    await config
+      .getByRole("button", { name: /Draft for review Long video/ })
+      .click();
+    expect(controls.createBodies.at(-1)).toEqual({
+      familiarId: FAMILIAR_ID,
+      kind: "long-video",
+      sourceMissionId: MISSION_ID,
+      renderConfig: {
+        provider: "local",
+        voice: "piper-amy",
+        length: "standard",
+      },
+    });
+
+    const review = page.getByRole("dialog", {
+      name: "Review before rendering",
+    });
+    await expect(review).toContainText("An extracted finding for the video.");
+    await review.getByRole("button", { name: "Render media" }).click();
+
+    const row = studio.locator('[data-generation-id="gen-long-video-1"]');
+    await expect(row).toContainText("Waiting to render");
+    await expect
+      .poll(() => row.innerText(), { timeout: 20_000 })
+      .toContain("Synthesizing");
+    await expect
+      .poll(() => row.innerText(), { timeout: 20_000 })
+      .toContain("ready");
+    await row.getByRole("button", { name: "↗ Open" }).click();
+
+    const viewer = page.getByRole("dialog", { name: /Long video —/ });
+    await expect(viewer.locator("video[controls]")).toBeVisible();
+    await expect(
+      viewer.getByRole("link", { name: /Download media/ }),
+    ).toHaveAttribute("href", /download=1/);
+    await verifyPlaybackAndDownload(page, viewer);
   });
 
   test("resumes drafts, retries failures, cancels progress, and opens both video players", async ({
@@ -720,7 +952,8 @@ test("blog directions fit a narrow viewport", async ({ page }, testInfo) => {
   await boot(page);
   await page.locator('.research-studio button[data-kind="blog"]').click();
   const config = page.getByRole("dialog", { name: "Generate Blog / article" });
-  await config.getByRole("button", { name: "Audience", exact: true }).click();
+  await config.getByRole("button", { name: "Audience", exact: true }).focus();
+  await page.keyboard.press("Enter");
   const picker = page.getByRole("dialog", { name: "Audience", exact: true });
   await picker.getByRole("checkbox", { name: "Researchers", exact: true }).check();
   const bounds = await picker.boundingBox();

@@ -382,8 +382,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
         disabled={props.disabled || context.config.modelDisabled}
         aria-haspopup="menu"
         aria-expanded={menu === "model"}
-        aria-label={`Model: ${modelLabel} — change model`}
-        title={`Model: ${modelLabel}`}
+        aria-label={`Selected model: ${modelLabel} — change model`}
+        title={`Selected for the next message: ${modelLabel}`}
         onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "model" ? null : "model")); }}
       >
         <span className="cave-context-chip__lead" aria-hidden>

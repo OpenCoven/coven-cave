@@ -14,10 +14,11 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 const ENABLED_MENU_ITEM_SELECTOR =
   '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemcheckbox"]:not(:disabled):not([aria-disabled="true"])';
 
-/** Slim overflow kebab (cave-zolo): only genuinely secondary tools live here.
- *  Lifecycle verbs (archive, delete) and the voice call are direct header
+/** Slim overflow kebab (cave-zolo): secondary tools, plus Delete in its own
+ *  danger section (#5953). Archive and the voice call are direct header
  *  buttons beside this menu, and rename rides the title's pencil — none of
- *  them are duplicated in the menu. Item lists come from the pure
+ *  them are duplicated here. Delete keeps its confirm step: choosing it arms a
+ *  small popover on the kebab. Item lists come from the pure
  *  chat-session-menu-model so the contents are testable without React. */
 export function SessionOverflowMenu({
   projects,
@@ -33,6 +34,8 @@ export function SessionOverflowMenu({
   onPromoteToCoven,
   reflecting,
   onReflect,
+  deleting = false,
+  onDelete,
 }: {
   projects: CaveProject[];
   projectId: string | null;
@@ -53,9 +56,13 @@ export function SessionOverflowMenu({
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
+  /** Delete this chat (absent when it can't be deleted, e.g. offline). */
+  deleting?: boolean;
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -72,6 +79,8 @@ export function SessionOverflowMenu({
     showThinking,
     reflectAvailable: Boolean(onReflect),
     reflecting,
+    deleteAvailable: Boolean(onDelete),
+    deleting,
   });
 
   const close = () => setOpen(false);
@@ -164,6 +173,12 @@ export function SessionOverflowMenu({
       onOpenDebug();
       close();
     },
+    // Chained like the project picker: the menu closes on this click and the
+    // confirm popover opens on the same kebab anchor.
+    delete: () => {
+      close();
+      setConfirmingDelete(true);
+    },
   };
 
   return (
@@ -208,6 +223,7 @@ export function SessionOverflowMenu({
                     // independent on/off toggle, not one of a set.
                     checkedRole="checkbox"
                     disabled={item.disabled}
+                    danger={item.danger}
                     title={item.title}
                     onSelect={handlers[item.id]}
                   >
@@ -238,6 +254,24 @@ export function SessionOverflowMenu({
           </PopoverBody>
         </div>
       </Popover>
+      <Popover
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={216}
+        ariaLabel="Confirm delete chat"
+      >
+        <PopoverBody>
+          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
+          <PopoverItem icon="ph:x" onSelect={() => setConfirmingDelete(false)}>
+            Cancel
+          </PopoverItem>
+          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete?.()}>
+            {deleting ? "Deleting…" : "Delete chat"}
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
       <ProjectPickerPopover
         open={projectPickerOpen}
         onOpenChange={setProjectPickerOpen}
@@ -255,53 +289,6 @@ export function SessionOverflowMenu({
   );
 }
 
-/** Direct danger action (cave-zolo): the trash icon in the header cluster.
- *  Delete is irreversible, so it keeps its confirm step — a small popover on
- *  the button itself instead of a view swap inside the kebab. */
-export function DeleteChatButton({
-  deleting,
-  onDelete,
-}: {
-  deleting: boolean;
-  onDelete: () => void;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="focus-ring cave-chat-delete-btn"
-        aria-label="Delete this chat"
-        aria-haspopup="dialog"
-        aria-expanded={confirming}
-        title="Delete this chat permanently"
-        onClick={() => setConfirming(!confirming)}
-      >
-        <Icon name="ph:trash" width={14} aria-hidden />
-      </button>
-      <Popover
-        open={confirming}
-        onOpenChange={setConfirming}
-        anchorRef={triggerRef}
-        placement="bottom-end"
-        minWidth={216}
-        ariaLabel="Confirm delete chat"
-      >
-        <PopoverBody>
-          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
-          <PopoverItem icon="ph:x" onSelect={() => setConfirming(false)}>
-            Cancel
-          </PopoverItem>
-          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
-            {deleting ? "Deleting…" : "Delete chat"}
-          </PopoverItem>
-        </PopoverBody>
-      </Popover>
-    </>
-  );
-}
 
 /** Direct session-lifecycle action (cave-zolo): archive on live sessions,
  *  unarchive on archived ones — the same reversible verb pair the kebab used

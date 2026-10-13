@@ -1596,11 +1596,12 @@ export function ResearchMissionDetail({
               <button
                 type="button"
                 className="research-desk-rail__collapse focus-ring"
-                aria-label="Collapse the evidence inspector"
-                title="Collapse the evidence inspector"
+                aria-label="Back to run — collapse evidence inspector"
+                title="Back to run — collapse evidence inspector"
                 onClick={onCollapseEvidence}
               >
                 <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+              <span className="research-desk-rail__back-label">Back to run</span>
               </button>
             ) : null}
             <Tabs<ResearchOutputTab>

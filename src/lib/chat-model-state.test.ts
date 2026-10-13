@@ -13,7 +13,9 @@ const base = {
   familiarId: "salem",
   harness: "claude",
   runtime: "local:/tmp/coven-cave",
-  globalDefaultModel: "openai/gpt-5.5",
+  // Same provider as the harness: a Claude familiar's fallback must be a model
+  // Claude Code can run (#5954 — cross-provider defaults now fall through).
+  globalDefaultModel: "anthropic/claude-opus-5",
   familiarModel: "anthropic/claude-sonnet-4-6",
 };
 
@@ -70,7 +72,7 @@ assert.equal(
   resolveChatModelState({
     ...base,
     sessionModel: "anthropic/claude-opus-4-7",
-    nextMessageModel: "openai/gpt-5.5",
+    nextMessageModel: "anthropic/claude-haiku-4-5",
   }).source,
   "next-message",
 );
@@ -341,6 +343,40 @@ assert.deepEqual(
     ),
     { state: "applied", reason: "Runtime confirmed the selected model." },
     "a verbatim namespaced echo round-trips to applied",
+  );
+}
+
+// #5954: a familiar rebound to another runtime (cody: codex → claude) keeps
+// its chats saved on the old runtime. A model from another provider never
+// reaches a single-provider runtime — send rejects it as
+// model_runtime_mismatch — so it falls through to the next source instead of
+// leaking into the composer ("Codex · anthropic/claude-opus-5-5") and failing
+// the next send.
+{
+  const codexChat = {
+    familiarId: "cody",
+    harness: "codex",
+    runtime: "local:/tmp/river-oaks",
+    familiarModel: "anthropic/claude-opus-5-5",
+  };
+  const leaked = resolveChatModelState({ ...codexChat, globalDefaultModel: "openai/gpt-6-astra" });
+  assert.equal(leaked.effectiveModel, "openai/gpt-6-astra", "the Claude default skips to a Codex-compatible fallback");
+  assert.equal(leaked.source, "global-default");
+  assert.equal(leaked.familiarDefaultModel, null, "a cross-provider familiar default is not offered as this runtime's default");
+
+  const noCompatible = resolveChatModelState({ ...codexChat, globalDefaultModel: "anthropic/claude-opus-5" });
+  assert.equal(noCompatible.effectiveModel, "", "with no compatible fallback, the runtime's own default applies");
+  assert.equal(noCompatible.source, "runtime-default");
+
+  assert.equal(
+    resolveChatModelState({ ...codexChat, globalDefaultModel: "openai/gpt-6-astra", sessionModel: "anthropic/claude-opus-5-5" }).source,
+    "global-default",
+    "a cross-provider session intent is skipped the same way",
+  );
+  assert.equal(
+    resolveChatModelState({ ...codexChat, familiarModel: "gpt-6-astra" }).effectiveModel,
+    "gpt-6-astra",
+    "a bare id carries no provider claim and still applies",
   );
 }
 

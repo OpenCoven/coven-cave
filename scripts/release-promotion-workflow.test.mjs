@@ -759,8 +759,23 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
       .filter((candidate) => invokesRenderer.test(candidate.run ?? ""))
       .map((step) => ({ jobName, job, step })),
   );
-  assert.equal(renderers.length, 1, "exactly one step renders and publishes the release body");
-  const [{ jobName, job, step }] = renderers;
+  assert.deepEqual(
+    renderers.map(({ jobName }) => jobName).sort(),
+    ["checksums", "partial-release-notes"],
+    "full and partial releases each have one release-body publisher",
+  );
+  const { jobName, job, step } = renderers.find(({ jobName }) => jobName === "checksums");
+  const partial = renderers.find(({ jobName }) => jobName === "partial-release-notes");
+  assert.match(partial.step.run, /gh api .*\.assets\[\]\.name/, "partial notes read live asset names");
+  assert.match(partial.step.run, /COVEN_RELEASE_ASSETS_FILE/, "partial notes pass the asset list to the renderer");
+  assert.match(partial.step.run, /gh release edit .*--notes-file/, "partial notes publish the rendered body");
+  for (const name of [
+    "COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED",
+    "COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED",
+    "COVEN_RELEASE_X_GUARD_SKIPPED",
+  ]) {
+    assert.equal(partial.step.env?.[name], step.env?.[name], `${name} disclosure matches the full release`);
+  }
 
   // Rendering is only half the job, and the half that leaves no trace if it is
   // dropped. A step that writes the body to a temp file and never sends it

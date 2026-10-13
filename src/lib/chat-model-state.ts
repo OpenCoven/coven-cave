@@ -1,4 +1,4 @@
-import { isSafeRuntimeModelId, runtimeOwnsModelDefault } from "./runtime-models.ts";
+import { isSafeRuntimeModelId, runtimeModelProviderMismatch, runtimeOwnsModelDefault } from "./runtime-models.ts";
 
 export type ModelScope =
   | "runtime-default"
@@ -95,6 +95,12 @@ function cleanEffectiveModelId(model: unknown, harness: unknown): string | null 
 
 function effectiveModelForHarness(model: unknown, harness: string): string | null {
   const cleanModel = cleanEffectiveModelId(model, harness);
+  // A familiar rebound to another runtime keeps its chats on the old one (cody
+  // moved codex → claude; older chats still run codex). A model from another
+  // provider never reaches a single-provider runtime — send rejects it as
+  // model_runtime_mismatch — so it falls through to the next source instead of
+  // showing in the composer and failing the next send (#5954).
+  if (cleanModel && runtimeModelProviderMismatch(harness, cleanModel)) return null;
   // A familiar can retain its old model after its runtime is switched in
   // Studio. Do not pass Cave's provider-qualified Codex/Claude/Copilot ids
   // to Grok Build, but preserve unqualified custom Grok model ids: Grok's

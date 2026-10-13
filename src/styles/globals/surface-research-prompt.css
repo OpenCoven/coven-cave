@@ -24,7 +24,7 @@
 }
 /* One measured column so the intake never stretches to a 2000px-wide card. */
 .research-intake__column {
-  max-width: 1180px;
+  max-width: 960px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -65,10 +65,8 @@
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
   background: var(--bg-raised);
-  border: 1px solid color-mix(in oklch, var(--research-accent) 32%, var(--border));
-  box-shadow:
-    0 0 28px color-mix(in oklch, var(--research-accent) 9%, transparent),
-    var(--shadow-md, 0 6px 18px oklch(0 0 0 / 0.25));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .research-intake__prompt {

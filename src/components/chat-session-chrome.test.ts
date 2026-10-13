@@ -28,20 +28,18 @@ const styles = ["cave-chat", "chat-list"]
   .join("\n");
 const shellNav = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
-test("2a ③ — the context row renders under the header, from the same facts as the header", () => {
-  // The find band (cave-7gr08) slides in between when open, so the window is
-  // sized for it — the invariant is ordering: header, then band, then context
-  // row, with nothing else in between.
+test("2a ③ — the context stats ride the title row, from the same facts as the header", () => {
+  // #5953: the stats were a band under the header; they sit in the title row's
+  // status cluster now, between the identity and the actions.
   assert.match(
     chatView,
-    /<\/header>[\s\S]{0,1800}<ChatSessionContextRow/,
-    "the context row sits directly under the session header",
+    /<div className="cave-chat-header-status">\s*\{sessionId !== null \|\| turns\.length > 0 \? \(\s*<ChatSessionContextRow/,
+    "the stats open the title row's status cluster",
   );
-  assert.match(
-    chatView,
-    /<\/header>[\s\S]{0,600}<ChatFindBand[\s\S]{0,1300}<ChatSessionContextRow/,
-    "and the find band is the only thing between them",
-  );
+  const headerStart = chatView.indexOf('<header className="cave-chat-linear-header');
+  const headerEnd = chatView.indexOf("</header>", headerStart);
+  const statsAt = chatView.indexOf("<ChatSessionContextRow");
+  assert.ok(headerStart < statsAt && statsAt < headerEnd, "inside the header, not a band under it");
   // One derivation for the model: the header meta line and the context row
   // must never disagree about which model answered.
   assert.match(
@@ -104,7 +102,16 @@ test("2a ③ — the instrument strip keeps every metric reachable at narrow wid
   );
   assert.match(styles, /\.cave-chat-context-stat--action/, "detail metrics have trigger styling");
   assert.match(styles, /\.cave-chat-context-popover/, "breakdown cards have a scoped surface");
-  assert.match(styles, /\.cave-chat-context-breakdown__bar/, "context detail includes a segmented bar");
+  // Context fill has one home, the composer meter (#5944). The strip and the
+  // title line used to repeat it, and on a run total each read a different red.
+  assert.doesNotMatch(contextRow, /stat\.id === "context"/, "the strip carries no context card");
+  assert.doesNotMatch(styles, /\.cave-chat-context-breakdown__bar/, "the context card's segmented bar is gone with it");
+  assert.doesNotMatch(chatView, /<ContextMeterChip\b/, "the title line's hover cluster carries no context meter");
+  // The composer renders the one context meter: in the control row on narrow
+  // layouts, in the chips row on desktop (#5954 E-b2) — never both.
+  assert.equal(chatView.match(/<ComposerContextMeter\b/g)?.length, 2, "one meter site per width branch");
+  assert.match(chatView, /\{isMobile \? \(\s*<ComposerContextMeter/, "the narrow branch renders it in the control row");
+  assert.match(chatView, /\{!isMobile \? \(\s*<ComposerContextMeter/, "the desktop branch renders it in the chips row");
   // The rule BODY is [^}]* rather than [\s\S]*?: `styles` is the whole expanded
   // facade, so a body that may cross `}` matches an @media here, this selector
   // there, and a `display: none` from an unrelated rule in a different imported
@@ -156,6 +163,10 @@ test("2a ④ — the user turn is a card in the reading column, not a right-alig
   assert.match(bubble, /border-radius: var\(--radius-card\)/, "uniform 12px corners");
   assert.match(bubble, /background: color-mix\(in oklch, var\(--bg-raised\)/, "neutral raised fill");
   assert.doesNotMatch(bubble, /14px 14px 4px 14px/, "the old tail-cornered bubble is gone");
+  // #5954: sized to its content, up to ~80% of the column, instead of a
+  // full-width card for a one-line message.
+  assert.match(bubble, /width: fit-content;/, "a short message gets a short card");
+  assert.match(bubble, /max-width: min\(80%, 800px\);/, "a long one stops at about 80% of the column");
 });
 
 test("2b — the new session leads with a mono eyebrow and one serif line", () => {

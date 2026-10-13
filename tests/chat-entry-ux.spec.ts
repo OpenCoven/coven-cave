@@ -267,7 +267,7 @@ test("chat rail resizes with pointer and keyboard, persists, and keeps composer 
   const more = context.getByRole("button", { name: "More composer options", exact: true });
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await expect(context.getByRole("button", { name: /^Runtime:/ })).toBeVisible();
-  await expect(context.getByRole("button", { name: /^Model:/ })).toBeVisible();
+  await expect(context.getByRole("button", { name: /^Selected model:/ })).toBeVisible();
   await expect(context.getByRole("button", { name: /^Branch:/ })).toBeHidden();
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");

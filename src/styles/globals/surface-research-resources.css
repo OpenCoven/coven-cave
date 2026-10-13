@@ -12,7 +12,8 @@
   min-height: 0;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-5) 26px 28px;
+  padding: var(--space-5) var(--space-6) var(--space-8);
+  min-width: 0;
   overflow-y: auto;
 }
 
@@ -1395,7 +1396,7 @@
 
 /* ── Responsive: follow the desk's container breakpoints. ── */
 @container research-desk (max-width: 760px) {
-  .research-res { padding: 16px 18px 24px; }
+  .research-res { padding: var(--space-4) var(--space-5) var(--space-6); }
   .research-x__forms {
     grid-template-columns: 1fr;
   }
@@ -1408,7 +1409,7 @@
 }
 
 @container research-desk (max-width: 560px) {
-  .research-res { padding: 14px 12px 20px; }
+  .research-res { padding: var(--space-4) var(--space-3) var(--space-5); }
   .research-x__field-row,
   .research-x-post__footer,
   .research-x-source__actions {

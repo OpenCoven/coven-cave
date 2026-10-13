@@ -163,8 +163,11 @@ async function openReader(
     await expect(page.locator(".research-desk")).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 90_000 });
 
-  // The single completed mission is selected by default → its Artifacts rail
-  // carries the Findings "View" button that opens the reader (lazy chunk).
+  // The selected run starts with evidence collapsed. Follow its disclosure
+  // before opening the Findings artifact in the lazy reader.
+  await page.getByRole("button", { name: /^Open the evidence inspector/ }).click();
+  await page.getByRole("tablist", { name: "Rail contents" })
+    .getByRole("tab", { name: /^Artifacts/ }).click();
   await page.getByRole("button", { name: "View Findings" }).click();
   await expect(page.locator(".research-reader")).toBeVisible({ timeout: 60_000 });
 }
@@ -203,6 +206,17 @@ test.describe("research reader", () => {
     await expect(
       table.locator(".rr-inline-ref", { hasText: "S14" }).first(),
     ).toBeHidden();
+    // Measure the painted badge before rail resizing switches to inline refs.
+    const paintedAnchor = marginReference.locator(
+      ".research-provenance-edge__anchor",
+    );
+    await expect(paintedAnchor).toBeVisible();
+    const hitBox = await marginReference.boundingBox();
+    const anchorBox = await paintedAnchor.boundingBox();
+    expect(hitBox).not.toBeNull();
+    expect(anchorBox).not.toBeNull();
+    expect(hitBox!.width).toBeGreaterThan(anchorBox!.width);
+    expect(hitBox!.height).toBeGreaterThan(anchorBox!.height);
     const measuredClaim = reader.locator(".rr-block-row", {
       hasText: "Identity has three components",
     });
@@ -281,6 +295,8 @@ test.describe("research reader", () => {
       minimumHandleBox!.y + minimumHandleBox!.height / 2,
     );
     await page.mouse.up();
+    await expect(marginReference).toBeHidden();
+    await expect(table.locator(".rr-inline-ref", { hasText: "S14" }).first()).toBeVisible();
     await expect.poll(
       () => measuredClaim
         .locator(":scope > :first-child")
@@ -292,15 +308,6 @@ test.describe("research reader", () => {
     await expect(s14card).toHaveAttribute("data-selected", "true");
     await expect(s14card).toHaveAttribute("data-open", "true");
     await expect(s14card.locator(".rr-sd-quote")).toContainText("rise monotonically");
-    const paintedAnchor = marginReference.locator(
-      ".research-provenance-edge__anchor",
-    );
-    const hitBox = await marginReference.boundingBox();
-    const anchorBox = await paintedAnchor.boundingBox();
-    expect(hitBox).not.toBeNull();
-    expect(anchorBox).not.toBeNull();
-    expect(hitBox!.width).toBeGreaterThan(anchorBox!.width);
-    expect(hitBox!.height).toBeGreaterThan(anchorBox!.height);
 
     const support = s14card.locator(".rr-sd-supportlink").first();
     await support.click();
@@ -1025,7 +1032,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(reader.locator(".research-provenance-edge__item").first()).toBeHidden();
     await expect(reader.locator(".rr-doc")).toHaveCSS(
       "--research-evidence-edge-reserve",
-      "0",
+      "0px",
     );
 
     await evidenceToggle.click();

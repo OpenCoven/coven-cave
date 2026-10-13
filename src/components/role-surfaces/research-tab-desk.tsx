@@ -105,7 +105,9 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   const queue = useResearchPane(QUEUE_PANE);
   // The evidence rail collapses independently of focus mode: focus hides both
   // rails for reading, this keeps the queue while widening the run.
-  const [evidenceOpen, setEvidenceOpen] = useState(true);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [compactPane, setCompactPane] = useState<"queue" | "run">("run");
+  const detailRef = useRef<HTMLElement>(null);
   const rail = useResearchPane(RAIL_PANE);
   const canonicalRun = useResearchRunGateway(
     research.selected?.id ?? null,
@@ -171,6 +173,8 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
     setQuery("");
     setScope("all");
     setFocusMode(readFocusMode(familiarId));
+    setCompactPane("run");
+    setEvidenceOpen(false);
   }, [familiarId]);
 
   useEffect(() => {
@@ -219,6 +223,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   const toggleFocusMode = () => {
     const next = !focusMode;
     setFocusMode(next);
+    if (next) setCompactPane("run");
     try {
       window.localStorage.setItem(
         `${FOCUS_STORAGE_PREFIX}${familiarId}`,
@@ -237,7 +242,14 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           <SearchInput
             ref={queryInputRef}
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(value) => {
+              setQuery(value);
+              if (!value.startsWith("/") || value.startsWith("/find ")) {
+                setCompactPane("queue");
+                queue.setCollapsed(false);
+                if (focusMode) toggleFocusMode();
+              }
+            }}
             onClear={() => setQuery("")}
             onKeyDown={onQueryKeyDown}
             placeholder="Filter runs…"
@@ -316,7 +328,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
               aria-pressed={scope === item.id}
               aria-label={`${item.label}, ${scopeCounts[item.id]} ${scopeCounts[item.id] === 1 ? "run" : "runs"}`}
               data-zero={scopeCounts[item.id] === 0}
-              onClick={() => setScope(item.id)}
+              onClick={() => { setScope(item.id); setCompactPane("queue"); queue.setCollapsed(false); if (focusMode) toggleFocusMode(); }}
             >
               {item.tone ? (
                 <i className="research-desk-scope__dot" data-tone={item.tone} aria-hidden />
@@ -331,8 +343,17 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
       {discussion.error ? (
         <ErrorState compact live={false} headline="Couldn’t open discussion" subtitle={discussion.error} />
       ) : null}
+      <div className="research-desk__compact-nav" role="group" aria-label="Desk panes">
+        <Button size="sm" variant="ghost" aria-pressed={compactPane === "queue"}
+          onClick={() => { setCompactPane("queue"); if (focusMode) toggleFocusMode(); queue.setCollapsed(false); }}>
+          Runs · {research.missions.length}
+        </Button>
+        <Button size="sm" variant="ghost" aria-pressed={compactPane === "run"}
+          onClick={() => setCompactPane("run")}>Selected run</Button>
+      </div>
       <div
         className="research-desk__workspace"
+        data-compact-pane={compactPane}
         data-focus-mode={focusMode}
         data-queue-collapsed={queue.collapsed}
         style={{ "--research-queue-width": `${queue.width}px` } as CSSProperties}
@@ -355,7 +376,11 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
               missions={research.missions}
               selectedId={research.selectedId}
               loading={research.loading}
-              onSelect={research.select}
+              onSelect={(id) => {
+                research.select(id);
+                setCompactPane("run");
+                requestAnimationFrame(() => detailRef.current?.focus({ preventScroll: true }));
+              }}
               filter={listFilter}
               scope={scope}
               onCollapse={() => queue.setCollapsed(true)}
@@ -374,6 +399,9 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
         )}
         <main
           className="research-desk__main"
+          ref={detailRef}
+          tabIndex={-1}
+          aria-label="Selected research run"
           data-research-run-gateway-status={canonicalRun.status}
           data-research-run-sequence={canonicalRun.eventState?.lastEventSequence ?? 0}
         >
@@ -396,8 +424,14 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             missionDetailAvailable={canonicalRun.missionDetailAvailable}
             missionActionsAvailable={canonicalRun.missionActionsAvailable}
             showEvidence={!focusMode && evidenceOpen}
-            onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
-            onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}
+            onCollapseEvidence={focusMode ? undefined : () => {
+              setEvidenceOpen(false);
+              requestAnimationFrame(() => detailRef.current?.querySelector<HTMLButtonElement>(".research-desk-spine--rail")?.focus());
+            }}
+            onOpenEvidence={focusMode ? undefined : () => {
+              setEvidenceOpen(true);
+              requestAnimationFrame(() => detailRef.current?.querySelector<HTMLButtonElement>(".research-desk-rail__collapse")?.focus());
+            }}
             railWidth={rail.width}
             railSeparatorProps={focusMode ? undefined : rail.separatorProps}
             onOpenSession={(sessionId, ownerId) => {

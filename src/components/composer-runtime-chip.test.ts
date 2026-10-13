@@ -45,8 +45,41 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  /aria-label=\{`Selected model: \$\{modelLabel\} — change model`\}/,
   "the model chip is a separately labelled control",
+);
+// #5954: the composer shows the model SELECTED for the next message, which can
+// differ from the model the last run reported (header identity, Last run).
+assert.match(
+  contextPill,
+  /title=\{`Selected for the next message: \$\{modelLabel\}`\}/,
+  "the model chip says it is the selection for the next message",
+);
+// Before model-state answers, a chat on its own saved runtime must not borrow
+// the familiar's current one (cody rebound to Claude, chat still on Codex).
+assert.match(
+  chatView,
+  /const modelHarness = canonicalHarnessId\(modelState\?\.harness \?\? session\?\.harness \?\? familiar\.harness \?\? "claude"\);/,
+  "the composer runtime falls back to the session's harness before the familiar's",
+);
+// The phone header subtitle states the same runtime and model as the composer,
+// not the familiar's config.
+assert.match(
+  chatView,
+  /cave-mobile-header-familiar[\s\S]{0,900}?runtimeDisplayName\(modelHarness\)[\s\S]{0,200}?composerModelValue/,
+  "the phone header reuses the composer's resolved runtime and model",
+);
+// One home per scope item: in Chat the composer owns project and model, so the
+// status bar no longer repeats them.
+assert.match(
+  workspace,
+  /const statusModel =\s*mode === "home"\s*\? statusSession\?\.model \?\? active\?\.model \?\? null\s*: null;/,
+  "the status bar shows no model in Chat",
+);
+assert.match(
+  workspace,
+  /projectName=\{mode === "chat" \? null : statusProject\?\.name \?\? selectedWorkspaceProject\?\.name \?\? null\}/,
+  "the status bar shows no project in Chat",
 );
 assert.match(
   contextPill,
@@ -177,8 +210,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-edge-actions">[\s\S]{0,4000}?<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
-  "the chat options trigger sits at the composer edge — always visible, session or not",
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*?triggerVariant="tools"[\s\S]*?className="cave-composer-edge-actions">\s*\{isMobile \? composerActionsMenu : null\}[\s\S]*?\) : composerActionsMenu\}/,
+  "the chat options trigger is always visible, session or not — on the edge for narrow layouts, in the action cluster on desktop (#5954)",
 );
 assert.match(
   chatView,
