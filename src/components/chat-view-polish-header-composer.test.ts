@@ -347,13 +347,46 @@ assert.match(
   /<div className="cave-chat-session-actions">[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
   "Open chat header actions keep the find trigger ahead of the overflow menu",
 );
-// cave-zolo: the header cluster carries direct Voice/Archive/Delete buttons;
-// the kebab holds only secondary tools (phone handoff, project, thinking,
-// reflect, debug), sourced from the pure menu model.
+// cave-zolo: the header cluster carries direct Voice/Archive buttons; the
+// kebab holds secondary tools (phone handoff, project, thinking, reflect,
+// debug) and, since #5953, Delete in its own danger section — all sourced from
+// the pure menu model.
 assert.match(
   source,
-  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
-  "Direct session actions (voice, archive, delete) render beside the find trigger and the kebab",
+  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
+  "Direct session actions (voice, archive) render beside the find trigger and the kebab",
+);
+// #5953: one title row. The run stats and the Last run summary ride between
+// the identity and the actions instead of stacking as two bands under it.
+assert.match(
+  source,
+  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?\/>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<div className="cave-chat-session-actions">/,
+  "the title row reads identity · run status · actions",
+);
+assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats render once, on the title row");
+assert.match(
+  styles,
+  /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
+  "the title row wraps its status cluster onto its own line when the header is narrow",
+);
+assert.match(
+  styles,
+  /@container chat-header \(max-width: 40rem\) \{\s*\.cave-chat-header-row > \.cave-chat-meta-line \{\s*flex-basis: 100%;/,
+  "in a split pane the identity keeps a full line, so the title stays legible (chat-split-panes.spec)",
+);
+// The runtime's unreported identity reads as ONE muted marker, not two
+// "not reported" phrases; the gaps are named on hover (#5953).
+const metaLine = source.slice(source.indexOf("function MetaLine("), source.indexOf("\n}\n", source.indexOf("function MetaLine(")));
+assert.doesNotMatch(metaLine, /not reported/, "the header identity no longer spells out each gap");
+assert.match(
+  metaLine,
+  /className="cave-chat-meta-line__unverified" title=\{identityGaps\.join\(" · "\)\}>unverified</,
+  "missing identity collapses into one unverified marker with the gaps on hover",
+);
+assert.doesNotMatch(
+  source.slice(source.indexOf("function metaLineSegments("), source.indexOf("\n}\n", source.indexOf("function metaLineSegments("))),
+  /not reported/,
+  "the streaming meta segments use the same marker",
 );
 assert.match(
   sessionHeader,
@@ -394,10 +427,10 @@ assert.match(
   /className="focus-ring cave-chat-actions-kebab"/,
   "The overflow kebab stays visible",
 );
-assert.match(
+assert.doesNotMatch(
   sessionHeader,
-  /className="focus-ring cave-chat-delete-btn"/,
-  "The direct delete button stays visible without hover",
+  /cave-chat-delete-btn/,
+  "Delete moved into the overflow menu; no direct trash button remains (#5953)",
 );
 assert.match(
   sessionHeader,
@@ -782,7 +815,7 @@ assert.doesNotMatch(
 {
   const overflowMenu = sessionHeader.slice(
     sessionHeader.indexOf("function SessionOverflowMenu"),
-    sessionHeader.indexOf("function DeleteChatButton"),
+    sessionHeader.indexOf("\n}\n", sessionHeader.indexOf("function SessionOverflowMenu")),
   );
   assert.ok(
     !overflowMenu.includes("Rename chat"),

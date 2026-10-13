@@ -284,10 +284,6 @@ assert.ok(
   "the stats strip lines up with the column",
 );
 assert.ok(
-  ruleBody(transcriptCss, ".cave-chat-linear .cave-run-activity").includes(`padding-inline: max(var(--space-3), ${columnInset});`),
-  "the Last run strip and its notices line up with the column",
-);
-assert.ok(
   ruleBody(transcriptCss, ".cave-chat-linear .cave-new-response-content").includes(`margin-right: max(0px, ${columnInset});`),
   "Latest sits at the column's right edge",
 );
@@ -382,8 +378,8 @@ assert.match(
 // header's MobileHeaderTask chip carries the affiliation there.
 assert.match(
   css,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-meta-line,\s*\.cave-chat-linked-context \{\s*display: none;/,
-  "mobile hides the band's linked-context cluster in favor of MobileHeaderTask",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-meta-line,\s*\.cave-chat-linked-context,\s*\.cave-chat-header-row > \.cave-chat-meta-line,\s*\.cave-chat-header-row > \.cave-chat-session-actions \{\s*display: none;/,
+  "mobile hides the band's linked-context cluster in favor of MobileHeaderTask, and the title row's desktop identity and actions with it",
 );
 assert.match(
   css,

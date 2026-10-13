@@ -157,7 +157,8 @@ import { ChatFindBand } from "@/components/chat-find-band";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
-import { ArchiveChatButton, ChatTitleEditable, DeleteChatButton, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
+import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
+import { Popover, PopoverBody } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
@@ -247,6 +248,7 @@ import {
   formatRuntime,
   responseMetadataModel,
   responseMetadataIdentity,
+  runtimeIdentityGaps,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
@@ -1485,13 +1487,15 @@ function metaLineState(args: {
 
 /** A directory segment renders with a folder icon (the runtime IS the working
  *  directory — see formatRuntime); plain strings render as text. */
-type MetaSegment = string | { dir: { label: string; title: string } };
+type MetaSegment = string | { dir: { label: string; title: string } } | { unverified: string };
 
 function metaLineSegments(args: {
   state: MetaLineState;
   lifecycle: ChatTurnLifecycle | null;
   harness?: string;
   model?: string;
+  /** What the runtime did not report; one "unverified" segment stands for all of it (#5953). */
+  identityGaps?: string[];
   runtime?: string | null;
   projectRoot?: string | null;
   durationMs?: number;
@@ -1500,7 +1504,8 @@ function metaLineSegments(args: {
 }): MetaSegment[] {
   const segs: MetaSegment[] = [
     ...(args.harness ? [args.harness] : []),
-    args.model ? responseModelLabel(args.model) : "Model not reported",
+    ...(args.model ? [responseModelLabel(args.model)] : []),
+    ...(args.identityGaps?.length ? [{ unverified: args.identityGaps.join(" · ") }] : []),
   ];
   // The runtime is the cwd; fall back to the project root so a directory shows
   // even before the first turn records runtime metadata. No dishonest "model:"
@@ -1707,9 +1712,11 @@ function MetaLine({
   // context meter (the meter needs the model to size the window).
   const identity = responseMetadataIdentity(responseMetadata);
   const metaModel = identity?.model ?? undefined;
-  const metaHarness = identity
-    ? `${identity.harness}${identity.version ? ` ${identity.version}` : " · Version not reported"}`
-    : "Runtime not recorded";
+  const metaHarness = identity ? `${identity.harness}${identity.version ? ` ${identity.version}` : ""}` : undefined;
+  // The runtime's unreported identity reads as one muted "unverified" marker,
+  // with the gaps named on hover (#5953). The facts stay honest; two spelled-out
+  // gap phrases were the loudest part of a settled header.
+  const identityGaps = runtimeIdentityGaps(identity);
   // Historical diagnostics describe a response, never the selection for an
   // unsent message. Keep first-run settings in the composer until a run exists.
   const segments = hasResponse ? metaLineSegments({
@@ -1717,6 +1724,7 @@ function MetaLine({
     lifecycle,
     harness: metaHarness,
     model: metaModel,
+    identityGaps,
     runtime: responseMetadata?.runtime ?? session?.runtime,
     projectRoot: session?.project_root ?? projectRoot,
     durationMs,
@@ -1725,9 +1733,10 @@ function MetaLine({
   }) : [];
   // Settled headers keep runtime and model visible in the identity line;
   // the hover cluster carries directory, duration, and usage only.
+  const identitySegmentCount = (metaHarness ? 1 : 0) + (metaModel ? 1 : 0) + (identityGaps.length ? 1 : 0);
   const provenanceSegments =
     state === "complete"
-      ? segments.slice(metaHarness ? 2 : 1)
+      ? segments.slice(identitySegmentCount)
       : segments;
   const task = linkedContext?.task ?? null;
   // Chat-revamp 1b: the header meta carries the session's live git branch
@@ -1789,8 +1798,14 @@ function MetaLine({
         {state === "complete" ? (
           <span className="cave-chat-meta-line__identity">
             {familiar.display_name}
-            {hasResponse ? ` · ${metaHarness}` : ""}
-            {hasResponse ? (metaModel ? ` · ${responseModelLabel(metaModel)}` : " · Model not reported") : null}
+            {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
+            {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
+            {hasResponse && identityGaps.length ? (
+              <>
+                {" · "}
+                <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
+              </>
+            ) : null}
             {gitBranch ? (
               <>
                 {" · "}
@@ -1816,6 +1831,8 @@ function MetaLine({
               {i > 0 || state === "complete" ? " · " : null}
               {typeof seg === "string" ? (
                 seg
+              ) : "unverified" in seg ? (
+                <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
               ) : (
                 <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
                   <Icon name="ph:folder" width={11} aria-hidden />
@@ -8241,32 +8258,53 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {linkedContext?.task ? (
           <MobileHeaderTask task={linkedContext.task} onOpenTask={onOpenTask} />
         ) : null}
-        <MetaLine
-          session={session ?? launchStubSession}
-          hasResponse={Boolean(activePendingTurn || lastSettledAssistantTurn)}
-          linkedContext={linkedContext}
-          busy={busy}
-          lifecycle={activeLifecycle}
-          pendingSince={activePendingTurn?.createdAt ?? null}
-          error={!!error}
-          daemonRunning={daemonRunning}
-          durationMs={lastSettledAssistantTurn?.durationMs}
-          usage={lastSettledAssistantTurn?.usage}
-          costUsd={lastSettledAssistantTurn?.costUsd}
-          usagePlan={usagePlan}
-          responseMetadata={displayResponseMetadata}
-          familiar={familiar}
-          projectRoot={projectRoot}
-          onSessionsChanged={onSessionsChanged}
-          generateTitle={generateTitleFromTranscript}
-          readOnly={offlineReadOnly}
-        >
+        <div className="cave-chat-header-row">
+          <MetaLine
+            session={session ?? launchStubSession}
+            hasResponse={Boolean(activePendingTurn || lastSettledAssistantTurn)}
+            linkedContext={linkedContext}
+            busy={busy}
+            lifecycle={activeLifecycle}
+            pendingSince={activePendingTurn?.createdAt ?? null}
+            error={!!error}
+            daemonRunning={daemonRunning}
+            durationMs={lastSettledAssistantTurn?.durationMs}
+            usage={lastSettledAssistantTurn?.usage}
+            costUsd={lastSettledAssistantTurn?.costUsd}
+            usagePlan={usagePlan}
+            responseMetadata={displayResponseMetadata}
+            familiar={familiar}
+            projectRoot={projectRoot}
+            onSessionsChanged={onSessionsChanged}
+            generateTitle={generateTitleFromTranscript}
+            readOnly={offlineReadOnly}
+          />
+          {/* #5953: the run's stats and its Last run summary ride the title row
+              between the identity and the actions, instead of stacking as two
+              bands under it. On a narrow header the cluster wraps to its own
+              line; on phones it is the one band under the mobile header. */}
+          <div className="cave-chat-header-status">
+            {sessionId !== null || turns.length > 0 ? (
+              <ChatSessionContextRow
+                turns={turns}
+                usage={lastSettledAssistantTurn?.usage}
+                costUsd={lastSettledAssistantTurn?.costUsd}
+                durationMs={lastSettledAssistantTurn?.durationMs}
+              />
+            ) : null}
+            <RunActivityStrip
+              activeTurn={activePendingTurn}
+              lastTurn={lastSettledAssistantTurn}
+              identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
+            />
+          </div>
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,
                 chat-revamp 1b) and flips to Unarchive on archived sessions so
-                restore is one click too. Delete keeps its confirm popover. */}
+                restore is one click too. Delete lives in the kebab with its
+                confirm step (#5953). */}
             {sessionId && session && !offlineReadOnly ? (
               <VoiceCallButton
                 familiar={familiar}
@@ -8294,9 +8332,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <Icon name="ph:magnifying-glass" width={12} aria-hidden />
               </button>
             ) : null}
-            {sessionId && !offlineReadOnly ? (
-              <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
-            ) : null}
             {sessionId && !offlineReadOnly && (
               <SessionOverflowMenu
                 key={sessionId}
@@ -8311,6 +8346,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id && reflectTranscript ? () => void reflectOnThread() : undefined}
+                deleting={deleting}
+                onDelete={() => void deleteChat()}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
                 onRegisterCurrentRoot={
                   setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
@@ -8336,7 +8373,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }}
             />
           </div>
-        </MetaLine>
+        </div>
         {/* No mobile header strip either. It existed as the counterpart to the
             inline desktop copy, because `.cave-chat-meta-line` is display:none
             below the breakpoint — with both retired the composer carries the
@@ -8364,21 +8401,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
-      {/* Chat.dc.html 2a ③: the slim mono context band under the title — what
-          the last run cost, on the right. The band used to also carry
-          project/branch/model/cwd chips (with a project selector), but the
-          header's identity line one row up already states familiar · model ·
-          branch, so those were dropped as redundant chrome (cave ultraminimalist
-          pass). A brand-new chat (no session yet) renders no band at all. */}
-      {sessionId !== null || turns.length > 0 ? (
-      <ChatSessionContextRow
-        turns={turns}
-        usage={lastSettledAssistantTurn?.usage}
-        costUsd={lastSettledAssistantTurn?.costUsd}
-        durationMs={lastSettledAssistantTurn?.durationMs}
-      />
-      ) : null}
-      <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
@@ -10757,23 +10779,29 @@ const TurnRow = memo(TurnRowImpl, areTurnRowPropsEqual);
 
 
 /**
- * Persistent run-activity strip (pinned above the transcript). Surfaces what the
- * agent is doing *now* — the running tool (with its arg summary) or current
+ * Run-activity summary on the chat title row (#5953). Surfaces what the agent
+ * is doing *now* — the running tool (with its arg summary) or current
  * plan/todo step, plus running/done/issue counts — and, unlike the inline
  * per-turn ProgressGroup (hidden after settle, CHAT-D13-01), keeps a compact,
- * dismissible "last run" summary after the turn settles. Click to expand the
- * full ProgressGroup + tool list. Reads live turn data directly, so it works for
- * both segmented and legacy turns.
+ * dismissible "last run" summary after the turn settles. It used to be its own
+ * band above the transcript; it is now a chip whose details (the full running
+ * tool, any unverified runtime identity, the ProgressGroup and tool list) open
+ * in an anchored popover. Reads live turn data directly, so it works for both
+ * segmented and legacy turns.
  */
 function RunActivityStrip({
   activeTurn,
   lastTurn,
+  identityGaps = [],
 }: {
   activeTurn: Turn | undefined;
   lastTurn: Turn | undefined;
+  /** What the last run's runtime did not report about itself (#5953). */
+  identityGaps?: string[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelId = useId();
   const live = !!activeTurn;
   const turn = activeTurn ?? lastTurn;
@@ -10811,56 +10839,74 @@ function RunActivityStrip({
     headline = issues ? "Last run needs attention" : "Last run";
   }
 
+  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected ? "is-notice" : "is-ok";
   return (
-    <div className="cave-run-activity shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[length:var(--text-xs)]">
-      <div className="flex items-center gap-2">
+    <div className={`cave-run-activity ${tint}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="cave-run-activity__trigger focus-ring"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        aria-haspopup="dialog"
+        aria-label={live ? "Agent activity (running)" : "Last run summary"}
+        title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
+      >
+        <Icon
+          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
+          width={13}
+          className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
+          aria-hidden
+        />
+        {/* A clean settled run is just its icon and counts on the title row;
+            the trigger's name and tooltip still say "Last run". */}
+        {live || issues ? <span className="cave-run-activity__headline">{headline}</span> : null}
+        <span className="cave-run-activity__counts">
+          {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
+          {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
+          {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
+          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
+          {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
+          {done ? <span className="cave-tool-count">{done} done</span> : null}
+        </span>
+        <Icon name={expanded ? "ph:caret-up" : "ph:caret-down"} width={11} className="cave-run-activity__caret" aria-hidden />
+      </button>
+      {!live ? (
         <button
           type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          aria-label={live ? "Agent activity (running)" : "Last run summary"}
+          onClick={() => setDismissedId(turn.id)}
+          className="cave-run-activity__dismiss focus-ring"
+          aria-label="Dismiss last run summary"
         >
-          <Icon
-            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
-            width={13}
-            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : notices || unknown || rejected ? "text-[var(--text-secondary)]" : "text-[var(--color-success)]"}`}
-            aria-hidden
-          />
-          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
-          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
-            {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
-            {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
-            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-            {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
-            {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
-            {done ? <span className="cave-tool-count">{done} done</span> : null}
-          </span>
-          <Icon name={expanded ? "ph:caret-up" : "ph:caret-down"} width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <Icon name="ph:x" width={11} aria-hidden />
         </button>
-        {!live ? (
-          <button
-            type="button"
-            onClick={() => setDismissedId(turn.id)}
-            className="shrink-0 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
-            aria-label="Dismiss last run summary"
-          >
-            <Icon name="ph:x" width={11} aria-hidden />
-          </button>
-        ) : null}
-      </div>
-      {expanded ? (
-        <div id={panelId} className="mt-1.5">
-          {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
-          {tools.length ? <ToolGroup tools={tools} /> : null}
-        </div>
-      ) : live && runningTool && runningToolDetail ? (
-        <div className="cave-run-activity-context" title={`${runningTool.name}(${runningToolDetail})`}>
-          <span className="cave-run-activity-context__tool">{runningTool.name}</span>({runningToolDetail})
-        </div>
       ) : null}
+      <Popover
+        open={expanded}
+        onOpenChange={setExpanded}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={360}
+        className="cave-run-activity-popover"
+        ariaLabel={live ? "Agent activity" : "Last run details"}
+      >
+        <PopoverBody>
+          <div id={panelId} className="cave-run-activity-panel">
+            {live && runningTool && runningToolDetail ? (
+              <div className="cave-run-activity-context" title={`${runningTool.name}(${runningToolDetail})`}>
+                <span className="cave-run-activity-context__tool">{runningTool.name}</span>({runningToolDetail})
+              </div>
+            ) : null}
+            {!live && identityGaps.length ? (
+              <div className="cave-run-activity-identity">Runtime unverified: {identityGaps.join(" · ")}</div>
+            ) : null}
+            {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
+            {tools.length ? <ToolGroup tools={tools} /> : null}
+          </div>
+        </PopoverBody>
+      </Popover>
     </div>
   );
 }

@@ -28,20 +28,18 @@ const styles = ["cave-chat", "chat-list"]
   .join("\n");
 const shellNav = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
-test("2a ③ — the context row renders under the header, from the same facts as the header", () => {
-  // The find band (cave-7gr08) slides in between when open, so the window is
-  // sized for it — the invariant is ordering: header, then band, then context
-  // row, with nothing else in between.
+test("2a ③ — the context stats ride the title row, from the same facts as the header", () => {
+  // #5953: the stats were a band under the header; they sit in the title row's
+  // status cluster now, between the identity and the actions.
   assert.match(
     chatView,
-    /<\/header>[\s\S]{0,1800}<ChatSessionContextRow/,
-    "the context row sits directly under the session header",
+    /<div className="cave-chat-header-status">\s*\{sessionId !== null \|\| turns\.length > 0 \? \(\s*<ChatSessionContextRow/,
+    "the stats open the title row's status cluster",
   );
-  assert.match(
-    chatView,
-    /<\/header>[\s\S]{0,600}<ChatFindBand[\s\S]{0,1300}<ChatSessionContextRow/,
-    "and the find band is the only thing between them",
-  );
+  const headerStart = chatView.indexOf('<header className="cave-chat-linear-header');
+  const headerEnd = chatView.indexOf("</header>", headerStart);
+  const statsAt = chatView.indexOf("<ChatSessionContextRow");
+  assert.ok(headerStart < statsAt && statsAt < headerEnd, "inside the header, not a band under it");
   // One derivation for the model: the header meta line and the context row
   // must never disagree about which model answered.
   assert.match(

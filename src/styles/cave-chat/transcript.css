@@ -549,12 +549,6 @@
   max-width: var(--cave-chat-measure);
 }
 
-/* The bands above the transcript align to the same column. RunActivityStrip
-   keeps its utility padding as the narrow-pane floor. */
-.cave-chat-linear .cave-run-activity {
-  padding-inline: max(var(--space-3), calc((100% - var(--cave-chat-measure)) / 2));
-}
-
 /* Prose keeps a readable line length inside the wide column; code blocks,
    tables and other wide blocks still use the full measure. The narrower
    reading-width settings cap the whole .cave-md and still win. */
@@ -761,7 +755,9 @@
      yields to the header's MobileHeaderTask chip (the band keeps project ·
      runtime · git, which have no mobile twin). */
   .cave-chat-meta-line,
-  .cave-chat-linked-context {
+  .cave-chat-linked-context,
+  .cave-chat-header-row > .cave-chat-meta-line,
+  .cave-chat-header-row > .cave-chat-session-actions {
     display: none;
   }
 
