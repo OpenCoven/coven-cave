@@ -2115,6 +2115,40 @@ jobs:
           echo "--- end body ---"
           gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
 
+  # A failed Windows signing leg leaves a published release with macOS/Linux
+  # assets, but skips checksums. Give that partial release truthful install
+  # instructions rather than an empty body or a link to a nonexistent MSI.
+  partial-release-notes:
+    name: Describe partial desktop release
+    needs: [build, source-version, checksums]
+    if: ${{ always() && needs.source-version.result == 'success' && needs.checksums.result != 'success' && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Render notes from uploaded assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          COVEN_RELEASE_ASSETS_FILE: ${{ runner.temp }}/release-assets.txt
+          COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+          COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && !inputs.allow_unconfigured_registries && inputs.allow_unconfigured_openclaw_registry }}
+          COVEN_RELEASE_X_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' > "$COVEN_RELEASE_ASSETS_FILE"
+          test -s "$COVEN_RELEASE_ASSETS_FILE"
+          node --test scripts/release-notes.test.mjs
+          bash scripts/release-notes.sh "$RELEASE_TAG" > "$RUNNER_TEMP/release-body.md"
+          gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-body.md"
+
   # Compose the Tauri auto-update manifest (latest.json) from the signed
   # updater artifacts each platform uploaded, then attach it to the release.
   # The desktop app's updater endpoint points at

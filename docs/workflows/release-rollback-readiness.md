@@ -31,9 +31,9 @@ population, but not the only one:
 
 | Still happens when the gate fails | Blocked when the gate fails |
 | --- | --- |
-| `build` creates the GitHub Release and uploads every installer | `updater-manifest` publishes `latest.json` |
-| `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
-| `homebrew` bumps the tap, so `brew install --cask` serves the new version | |
+| Successful `build` legs create the GitHub Release and upload their installers | `updater-manifest` publishes `latest.json` |
+| `checksums` publishes `SHA256SUMS` when every required desktop build succeeds | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
+| `homebrew` bumps the tap after `checksums` succeeds | |
 | `release-ios-build` archives and uploads to App Store Connect, so the build reaches TestFlight | |
 
 That is deliberate: the shortfall a red gate reports is in the **previous**
@@ -66,6 +66,32 @@ reuses the existing release and re-uploads with `--clobber`. Or, if the new
 release should not ship at all, demote it with the step-1 command under
 [Rolling back](#rolling-back), which restores the alias to the baseline's
 manifest and ends the outage in one call.
+
+### When the Windows MSI build fails
+
+An MSI signing failure is different from a red rollback gate: `build` is
+partial, so `checksums` and the Homebrew bump do not run. The GitHub Release
+can still contain macOS and Linux installers, but has no MSI or `SHA256SUMS`.
+The `partial-release-notes` job writes install links from the assets actually
+attached to that tag. It must say that Windows is unavailable on that release;
+never link to a guessed MSI name. The release marked latest and the README
+install table must also point Windows users to a verified earlier MSI. For the
+current incident, that is [v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
+
+Before promoting a repaired release, check its public page in the same shape
+as v0.5.7: direct links for each published DMG, AppImage, and signed MSI;
+`SHA256SUMS` with a verification command; and the compare link. Compare those
+links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
+'.assets[].name'`. An asset listed in prose but absent from the API is a
+release-page defect, even if the build job was green.
+
+For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), configure
+the SSL.com eSigner secrets and `WINDOWS_SIGNING_CERT_THUMBPRINT` first. Repair
+v0.5.8 through v0.5.12 in version order with `workflow_dispatch` and the exact
+existing tag. After each run, verify the Authenticode-checked MSI, its checksum
+entry, `latest.json` and updater signatures before moving to the next tag.
+Only make the newest fully verified release `latest` after the chain is repaired;
+the current `latest` alias intentionally points to v0.5.8 meanwhile.
 
 ## What it checks
 
