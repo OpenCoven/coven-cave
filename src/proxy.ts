@@ -314,7 +314,7 @@ function nextWithInternalAuthMarkers(
   const contentLength = req.headers.get("content-length");
   if (contentLength && /^\d+$/.test(contentLength)
     && BigInt(contentLength) > BigInt(MAX_PROXY_BODY_BYTES)) {
-    return jsonError(413, "Request too large (80 MiB limit). Send fewer attachments at a time.");
+    return jsonError(413, `Request too large (${MAX_PROXY_BODY_BYTES / 1024 / 1024} MiB limit). Send fewer attachments at a time.`);
   }
   const requestHeaders = new Headers(req.headers);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);

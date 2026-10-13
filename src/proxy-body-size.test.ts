@@ -6,7 +6,11 @@ import { NextRequest } from "next/server";
 import { getCloneableBody } from "next/dist/server/body-streams.js";
 import nextConfig from "../next.config.ts";
 import { proxy } from "./proxy.ts";
-import { MAX_ATTACHMENT_IMAGE_BYTES, MAX_ATTACHMENT_MEDIA_BYTES } from "./lib/chat-attachments.ts";
+import {
+  MAX_ATTACHMENT_IMAGE_BYTES, MAX_ATTACHMENT_MEDIA_BYTES,
+  MAX_CHAT_ATTACHMENTS, MAX_CHAT_NON_IMAGE_ATTACHMENTS,
+} from "./lib/chat-attachments.ts";
+import { MAX_PROXY_BODY_BYTES } from "./lib/request-body-limit.ts";
 
 // Exercise Next's real clone/finalize path: this is where an otherwise valid
 // attachment request used to lose its JSON tail before reaching the route.
@@ -47,8 +51,20 @@ test("ten maximum-size images survive base64 expansion", async () => {
   await roundTrip(Array(10).fill(MAX_ATTACHMENT_IMAGE_BYTES));
 });
 
+test("fifty images survive the proxy before JSON parsing", async () => {
+  await roundTrip(Array(MAX_CHAT_ATTACHMENTS).fill(1024 * 1024));
+});
+
 test("one maximum-size media attachment survives base64 expansion", async () => {
   await roundTrip([MAX_ATTACHMENT_MEDIA_BYTES], "video/mp4");
+});
+
+test("the proxy budget fits the largest allowed mix", () => {
+  const encodedMediaBytes = Math.ceil(MAX_ATTACHMENT_MEDIA_BYTES / 3) * 4;
+  const encodedImageBytes = Math.ceil(MAX_ATTACHMENT_IMAGE_BYTES / 3) * 4;
+  const maxEncodedAttachments = MAX_CHAT_NON_IMAGE_ATTACHMENTS * encodedMediaBytes
+    + (MAX_CHAT_ATTACHMENTS - MAX_CHAT_NON_IMAGE_ATTACHMENTS) * encodedImageBytes;
+  assert.ok(maxEncodedAttachments + 64 * 1024 * 1024 < MAX_PROXY_BODY_BYTES);
 });
 
 test("an oversized declared chat body gets an actionable 413", async () => {
@@ -60,7 +76,7 @@ test("an oversized declared chat body gets an actionable 413", async () => {
       headers: {
         host: "localhost", origin: "http://localhost", "content-type": "application/json",
         "x-coven-cave-token": "body-size-test-token",
-        "content-length": String(80 * 1024 * 1024 + 1),
+        "content-length": String(MAX_PROXY_BODY_BYTES + 1),
       },
     }));
     assert.equal(response.status, 413);
@@ -78,8 +94,8 @@ test("body-size refusal preserves authentication and the inclusive boundary", as
   process.env.COVEN_CAVE_LOCAL_PEER_SECRET = "body-size-local-peer";
   try {
     for (const [length, token, expected] of [
-      [80 * 1024 * 1024, "body-size-test-token", 200],
-      [80 * 1024 * 1024 + 1, "wrong-token", 401],
+      [MAX_PROXY_BODY_BYTES, "body-size-test-token", 200],
+      [MAX_PROXY_BODY_BYTES + 1, "wrong-token", 401],
     ] as const) {
       const response = await proxy(new NextRequest("http://localhost/api/chat/send", {
         method: "POST",

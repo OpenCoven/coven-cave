@@ -6,7 +6,9 @@ export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 export const MAX_ATTACHMENT_IMAGE_BYTES = 5 * 1024 * 1024;
 /** Hard cap for documents, source files, and archives handed to a local
  * file-reading harness. */
-export const MAX_ATTACHMENT_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024;
+export const MAX_CHAT_ATTACHMENTS = 50;
+export const MAX_CHAT_NON_IMAGE_ATTACHMENTS = 10;
 /** Hard cap on a decoded audio/video payload. Larger than the image cap
  * because even a short mp4 clears 5 MB; enforced on capture, on normalize,
  * and again by the attachment store on both save and read. */
@@ -297,8 +299,9 @@ export function attachmentMediaKind(attachment: ChatAttachment): "audio" | "vide
 
 export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
   if (!Array.isArray(input)) return [];
+  let nonImageCount = 0;
   return input
-    .slice(0, 10)
+    .slice(0, MAX_CHAT_ATTACHMENTS)
     .map((item) => {
       const raw = (item && typeof item === "object") ? item as Record<string, unknown> : {};
       const rawText = typeof raw.text === "string" ? raw.text.replace(/\r\n/g, "\n") : undefined;
@@ -323,6 +326,11 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
         ...(file ? { mimeType: file.mimeType, dataUrl: file.dataUrl } : {}),
         ...(storedId ? { storedId } : {}),
       };
+    })
+    .filter((attachment) => {
+      if (isImageAttachment(attachment)) return true;
+      nonImageCount += 1;
+      return nonImageCount <= MAX_CHAT_NON_IMAGE_ATTACHMENTS;
     });
 }
 
