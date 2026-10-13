@@ -229,6 +229,57 @@
   color: var(--text-muted);
 }
 
+/* Chosen values stay visible without keeping their option lists open. */
+.summoning-selected-choice {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+.summoning-selected-choice__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.summoning-selected-choice__label {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.summoning-selected-choice__copy strong {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.summoning-selected-choice__hint {
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+}
+
+.summoning-selected-choice__change {
+  flex: none;
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.summoning-selected-choice__change:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* Vessel cards — dashed hairline: the invitation idiom. */
 .summoning-vessels {
   display: grid;
@@ -266,24 +317,6 @@
   border-style: solid;
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-}
-
-.summoning-vessel--expanded {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-3);
-}
-
-.summoning-vessel--expanded .summoning-vessel__icon {
-  grid-row: 1 / 3;
-}
-
-.summoning-vessel--expanded .summoning-vessel__action {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  align-self: center;
 }
 
 .summoning-vessel__icon {
@@ -340,6 +373,13 @@
   border: 1px solid color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+}
+
+.summoning-runtime-panel--selected,
+.summoning-subcard--selected {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .summoning-runtime-panel__heading {
@@ -874,10 +914,6 @@
 
   .summoning-vessels {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .summoning-vessel--expanded {
-    grid-column: auto;
   }
 
   .summoning-runtime-grid {
