@@ -9549,9 +9549,6 @@ function TurnRowImpl({
           <div className="cave-linear-turn-right">
             <div className="cave-linear-turn-meta cave-linear-turn-meta--identity">
               <span className="cave-linear-turn-name">{turn.role === "user" ? operatorDisplayName : "System"}</span>
-              {turn.role === "user" ? (
-                <span className="cave-linear-turn-badge cave-linear-turn-badge--op">OP</span>
-              ) : null}
               {recency ? (
                 <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
                   {recency}
@@ -9928,6 +9925,40 @@ function TurnRowImpl({
     </div>
   );
 
+  // One author line per turn (#5954): the name, the time and the hover extras
+  // ride the response's status row ("Cody · Completed in 3:01 · 09:30"), so
+  // the bubble no longer repeats the author under a second header.
+  const authorName = <span className="cave-linear-turn-name">{familiar.display_name}</span>;
+  const authorMeta = (
+    <>
+      {recency ? (
+        <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
+          {recency}
+        </time>
+      ) : null}
+      <span className="cave-linear-turn-meta-extra reveal-on-hover">
+        <span className="cave-linear-turn-crest" aria-hidden="true">
+          <Icon name="ph:sparkle" width={13} height={13} />
+        </span>
+        {familiar.role ? (
+          <span className="cave-linear-turn-badge">{familiar.role}</span>
+        ) : null}
+        <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+        {metaPeek ? (
+          <span
+            className="cave-turn-peek focus-ring"
+            title={metaPeek}
+            tabIndex={0}
+            role="note"
+            aria-label={`Turn details — ${metaPeek}`}
+          >
+            <Icon name="ph:info" width={11} aria-hidden />
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+
   return (
     <div
       data-turn-id={turn.id}
@@ -9961,56 +9992,37 @@ function TurnRowImpl({
               crest, role, token usage, and the details peek — collapse into a
               trailing cluster that reveals on turn hover / keyboard focus
               (reveal-scope on the turn content above). Nothing is removed; the
-              default view just reads "Name · 2h ago" like ChatGPT. */}
-          <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
-            <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
-              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
-                {lifecycleLabel(turnStatus)}
-              </span>
-            )}
-            {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
-                bubble action row is hover-revealed (and absent entirely when
-                the turn died with no text), and the lastFailedSend banner only
-                covers transport errors. Same gated callback as Regenerate. */}
-            {turn.error && onRegenerate ? (
-              <button
-                type="button"
-                aria-label="Retry failed turn"
-                title="Retry"
-                onClick={onRegenerate}
-                className="cave-turn-retry"
-              >
-                <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
-                Retry
-              </button>
-            ) : null}
-            {recency ? (
-              <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
-                {recency}
-              </time>
-            ) : null}
-            <span className="cave-linear-turn-meta-extra reveal-on-hover">
-              <span className="cave-linear-turn-crest" aria-hidden="true">
-                <Icon name="ph:sparkle" width={13} height={13} />
-              </span>
-              {familiar.role ? (
-                <span className="cave-linear-turn-badge">{familiar.role}</span>
-              ) : null}
-              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
-              {metaPeek ? (
-                <span
-                  className="cave-turn-peek focus-ring"
-                  title={metaPeek}
-                  tabIndex={0}
-                  role="note"
-                  aria-label={`Turn details — ${metaPeek}`}
-                >
-                  <Icon name="ph:info" width={11} aria-hidden />
+              default view just reads "Name · 2h ago" like ChatGPT. Since #5954
+              the response row carries this line (author · status · time), so
+              this separate row renders only for the empty-success fallback,
+              which has no response row. */}
+          {showEmptySuccessfulFallback ? (
+            <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
+              {authorName}
+              {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
+                <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+                  {lifecycleLabel(turnStatus)}
                 </span>
+              )}
+              {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
+                  bubble action row is hover-revealed (and absent entirely when
+                  the turn died with no text), and the lastFailedSend banner only
+                  covers transport errors. Same gated callback as Regenerate. */}
+              {turn.error && onRegenerate ? (
+                <button
+                  type="button"
+                  aria-label="Retry failed turn"
+                  title="Retry"
+                  onClick={onRegenerate}
+                  className="cave-turn-retry"
+                >
+                  <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+                  Retry
+                </button>
               ) : null}
-            </span>
-          </div>
+              {authorMeta}
+            </div>
+          ) : null}
 
           <div className="cave-linear-turn-body">
             {/* `cave-artifact-content` keeps artifact selection scoped to this
@@ -10042,6 +10054,8 @@ function TurnRowImpl({
                     <StreamingTurnResponse
                       turnId={turn.id}
                       familiarName={familiar.display_name}
+                      author={{ name: authorName, meta: authorMeta }}
+                      copyReveal="hover"
                       model={streamingModel}
                       density="full"
                       announceLifecycle={announceLifecycle}

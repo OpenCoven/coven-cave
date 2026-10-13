@@ -276,8 +276,10 @@
   /* The message column is items-end (its action row is right-aligned), so the
      card claims the left edge explicitly rather than floating right. */
   align-self: flex-start;
-  width: 100%;
-  max-width: min(100%, 800px);
+  /* Sized to the message, up to ~80% of the column (#5954): a one-line ask
+     reads as a short card, not a full-width bar. */
+  width: fit-content;
+  max-width: min(80%, 800px);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--bg-raised) 70%, transparent);

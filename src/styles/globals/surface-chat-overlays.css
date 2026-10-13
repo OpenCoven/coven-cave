@@ -1176,6 +1176,36 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* Main Chat (#5954): the status row is the turn's author line —
+   "Cody · Completed in 3:01 · 09:30" — with Copy kept off the resting line. */
+.streaming-turn-current__row--author .streaming-turn-current__phase {
+  flex: 0 1 auto;
+}
+
+.streaming-turn-current__author-meta {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.streaming-turn-response[data-copy-reveal="hover"] .streaming-turn-current__copy {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.cave-linear-turn:is(:hover, :focus-within) .streaming-turn-response[data-copy-reveal="hover"] .streaming-turn-current__copy,
+.streaming-turn-response[data-copy-reveal="hover"]:is(:hover, :focus-within) .streaming-turn-current__copy {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .streaming-turn-response[data-copy-reveal="hover"] .streaming-turn-current__copy {
+    opacity: 1;
+  }
+}
+
 .streaming-turn-current__time {
   color: var(--text-muted);
   font-family: var(--font-mono);
