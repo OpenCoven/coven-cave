@@ -21,11 +21,17 @@ assert.match(src, /toolArgSummary\(runningTool\.name, runningTool\.input\)/, "he
 assert.match(src, /const tools = turn\.tools \?\? \[\]/, "reads turn.tools directly");
 assert.match(src, /const progress = turn\.progress \?\? \[\]/, "reads turn.progress directly");
 
-// Mounted above the transcript, fed by the active + last-settled turns.
+// Mounted on the title row beside the run stats (#5953), fed by the active +
+// last-settled turns. It is no longer its own band above the transcript: the
+// trigger is a compact chip and the details open in a popover.
 assert.match(
   src,
-  /<RunActivityStrip activeTurn=\{activePendingTurn\} lastTurn=\{lastSettledAssistantTurn\} \/>/,
-  "RunActivityStrip is mounted above the transcript",
+  /<div className="cave-chat-header-status">[\s\S]*?<RunActivityStrip\s+activeTurn=\{activePendingTurn\}\s+lastTurn=\{lastSettledAssistantTurn\}/,
+  "RunActivityStrip sits in the title row's status cluster",
 );
+assert.equal(src.match(/<RunActivityStrip\b/g)?.length, 1, "one run summary, not a band and a chip");
+const strip = src.slice(src.indexOf("function RunActivityStrip("), src.indexOf("\n}\n", src.indexOf("function RunActivityStrip(")));
+assert.match(strip, /<Popover[\s\S]*?anchorRef=\{triggerRef\}[\s\S]*?<ProgressGroup[\s\S]*?<ToolGroup/, "the run details open in an anchored popover");
+assert.doesNotMatch(strip, /border-b border-\[var\(--border-hairline\)\]/, "the strip no longer draws its own band");
 
 console.log("run-activity-strip.test.ts: ok");

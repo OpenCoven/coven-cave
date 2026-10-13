@@ -172,11 +172,11 @@ assert.doesNotMatch(
   "Standalone lifecycle status bar CSS is removed (folded into meta line)",
 );
 
-// In-chat delete is a DIRECT header action (cave-zolo): a trash icon button in
-// the session-actions cluster whose confirm popover (Delete this chat
-// permanently? / Cancel / Delete chat) guards the irreversible commit. The
-// explicit Delete commits via deleteChat, and success reports the confirmed id
-// to Workspace and navigates back.
+// In-chat delete lives in the overflow menu (#5953, reversing cave-zolo's
+// direct trash icon): a confirm popover (Delete this chat permanently? /
+// Cancel / Delete chat) guards the irreversible commit. The explicit Delete
+// commits via deleteChat, and success reports the confirmed id to Workspace
+// and navigates back.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -188,31 +188,31 @@ assert.match(
   "Successful delete reaches the shared boundary, reports the narrow removal signal, and navigates back to the list",
 );
 
-// The delete is a two-step guard: the trash button arms a confirm popover
-// anchored to itself; only the popover's danger item commits.
+// Still a two-step guard: the menu's danger item only arms a confirm popover
+// anchored to the kebab; only that popover's danger item commits.
+const overflowMenuSection = sessionHeader.slice(
+  sessionHeader.indexOf("function SessionOverflowMenu"),
+  sessionHeader.indexOf("\n}\n", sessionHeader.indexOf("function SessionOverflowMenu")),
+);
 assert.match(
-  sessionHeader,
-  /function DeleteChatButton[\s\S]*?aria-expanded=\{confirming\}[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}/,
-  "DeleteChatButton guards delete behind an anchored confirm popover",
+  overflowMenuSection,
+  /delete: \(\) => \{\s*close\(\);\s*setConfirmingDelete\(true\);/,
+  "choosing Delete chat… closes the menu and arms the confirm step",
+);
+assert.match(
+  overflowMenuSection,
+  /open=\{confirmingDelete\}[\s\S]*?anchorRef=\{triggerRef\}[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\?\.\(\)\}/,
+  "the confirm popover is anchored to the kebab and only its danger item commits",
 );
 assert.match(
   source,
-  /<DeleteChatButton deleting=\{deleting\} onDelete=\{\(\) => void deleteChat\(\)\} \/>/,
-  "the header cluster renders the direct delete button",
+  /<SessionOverflowMenu[\s\S]*?deleting=\{deleting\}[\s\S]*?onDelete=\{\(\) => void deleteChat\(\)\}/,
+  "the overflow menu owns the delete action",
 );
-// The kebab no longer carries delete at all — the menu model owns its items
-// and none of them are the destructive verb. (Scoped to the menu function so
-// DeleteChatButton's own strings don't satisfy the check.)
-const overflowMenuSection = sessionHeader.slice(
-  sessionHeader.indexOf("function SessionOverflowMenu"),
-  sessionHeader.indexOf("function DeleteChatButton"),
-);
-assert.ok(
-  !overflowMenuSection.includes("Delete chat") && !overflowMenuSection.includes("ph:trash"),
-  "SessionOverflowMenu contains no delete item (direct button owns it)",
-);
+assert.doesNotMatch(source, /<DeleteChatButton\b/, "the header row carries no direct trash icon");
+assert.doesNotMatch(sessionHeader, /function DeleteChatButton/, "the retired direct delete button is gone");
 // The standalone header debug buttons stay gone — quick actions are Voice/
-// Archive/Find/Delete plus the kebab.
+// Archive/Find plus the kebab.
 assert.doesNotMatch(
   source,
   /function HeaderDebugButton|function HeaderDeleteButton|function HeaderThinkingToggle|function HeaderReflectButton/,
@@ -315,7 +315,7 @@ assert.match(
 assert.match(
   source,
   /cave-run-activity-context[\s\S]*?\{runningTool\.name\}\([\s\S]*?\{runningToolDetail\}[\s\S]*?\)/,
-  "RunActivityStrip renders full running-tool context where it can wrap instead of truncating",
+  "RunActivityStrip renders full running-tool context where it can wrap instead of truncating (in its details popover, #5953)",
 );
 assert.match(
   styles,

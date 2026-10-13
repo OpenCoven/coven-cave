@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { formatRuntime, responseMetadataModel } from "../lib/chat-response-metadata.ts";
+import { formatRuntime, responseMetadataModel, runtimeIdentityGaps } from "../lib/chat-response-metadata.ts";
 
 const legacyMetadata = { familiarId: "fixture", harness: "claude", model: "selected-old-model", confirmedModel: "legacy-inferred-model", runtime: "local:/fixture" };
 assert.equal(responseMetadataModel(legacyMetadata), null, "legacy model intent never confirms the model that answered");
@@ -11,6 +11,17 @@ assert.equal(responseMetadataModel(nativeMetadata), "claude-opus-5-5");
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, model: null } }), null);
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, schemaVersion: 99 } }), null);
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, harness: "copilot" } }), null);
+
+// The header compresses missing runtime identity into one "unverified" marker
+// and names what is missing on hover (#5953). The honest facts stay; only the
+// presentation is shorter.
+assert.deepEqual(runtimeIdentityGaps(undefined), ["Runtime not recorded"]);
+assert.deepEqual(
+  runtimeIdentityGaps({ schemaVersion: 1, harness: "codex", version: null, model: null }),
+  ["Runtime version not reported", "Model not reported"],
+);
+assert.deepEqual(runtimeIdentityGaps({ schemaVersion: 1, harness: "claude", version: "2.1.288", model: null }), ["Model not reported"]);
+assert.deepEqual(runtimeIdentityGaps({ schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5" }), []);
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
