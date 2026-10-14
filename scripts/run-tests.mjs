@@ -26,6 +26,10 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/app/api/chat/scheduled/route.test.ts",
+    "src/components/chat-send-later.test.ts",
+    "src/lib/server/scheduled-chat-store.test.ts",
+    "src/lib/server/scheduled-chat-dispatch.test.ts",
     "src/lib/chat-origins.test.ts",
     "src/lib/proposal-submission.test.ts",
     "src/lib/proposal-submission-controller.test.ts",
@@ -2250,6 +2254,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/chat/scheduled/route.test.ts",
   "src/app/api/chat/send/meta-run-hygiene.test.ts",
   // Daily-note generation imports application aliases and Next route modules.
   "src/lib/daily-note-generation.test.ts",

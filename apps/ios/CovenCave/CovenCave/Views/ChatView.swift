@@ -45,6 +45,18 @@ struct ChatView: View {
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
+    private struct ScheduledReplyLaunch: Identifiable {
+        let id = UUID()
+        let client: CaveClient
+        let sessionId: String
+        let message: CaveClient.SendBody?
+        let draft: String
+        let imageIds: [UUID]
+        let replyId: String?
+        let lease: AppModel.ConnectionDispatchLease
+    }
+    @State private var scheduledReplyLaunch: ScheduledReplyLaunch?
+
     @State private var showCommands = false
     @State private var showNewChat = false
     @State private var showFamiliarPicker = false
@@ -1455,6 +1467,16 @@ struct ChatView: View {
         }
         // The "+" menu's attach destinations. The pickers hang off the composer
         // (not the menu rows) so the menu can dismiss before they present.
+        .sheet(item: $scheduledReplyLaunch) { launch in
+            ScheduledChatSheet(client: launch.client, sessionId: launch.sessionId, message: launch.message,
+                canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
+                onScheduled: {
+                    if draft == launch.draft && pendingImages.map(\.id) == launch.imageIds && replyingTo?.id == launch.replyId {
+                        draft = ""; pendingImages = []; replyingTo = nil
+                    }
+                    app.showToast("Reply scheduled", systemImage: "clock")
+                })
+        }
         .photosPicker(isPresented: $showPhotosPicker,
                       selection: $photoItems,
                       maxSelectionCount: maxAttachments,
@@ -1482,6 +1504,7 @@ struct ChatView: View {
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
             FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
+            FloatingAction(id: "send-later", systemImage: "clock", label: "Send later") { openSendLater() },
         ]
     }
 
@@ -1514,6 +1537,33 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
         }
+    }
+
+    private func openSendLater() {
+        guard !thread.isGroup, !thread.isFlowRun, !isRecoveryOnlyThread,
+              let familiarId = thread.familiarIds.first,
+              let sessionId = thread.sessionIds[familiarId], !sessionId.isEmpty else {
+            app.showToast("Open an existing single-familiar chat to schedule a reply", systemImage: "clock", style: .warning)
+            return
+        }
+        guard let client = app.client, app.connectionState == .connected, requireChatAccess() else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.hasPrefix("/") else {
+            app.showToast("Send commands directly. Only replies can be scheduled.", systemImage: "clock", style: .warning)
+            return
+        }
+        let attachments = pendingImages.map { CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl) }
+        let binding = turnModelBinding
+        var message = thread.makeSendBody(familiarId: familiarId,
+            prompt: replyingTo.map { replyQuote($0) + text } ?? text,
+            attachments: attachments, runId: UUID().uuidString,
+            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope)
+        message?.runId = nil
+        scheduledReplyLaunch = ScheduledReplyLaunch(client: client, sessionId: sessionId,
+            message: text.isEmpty && attachments.isEmpty ? nil : message,
+            draft: draft, imageIds: pendingImages.map(\.id), replyId: replyingTo?.id,
+            lease: app.captureConnectionDispatchLease())
+        composerFocused = false
     }
 
     private func startDictation() {

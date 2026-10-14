@@ -160,6 +160,7 @@ import { ChatNewDashboard } from "@/components/chat-new-dashboard";
 import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
 import { runtimeDisplayName } from "@/components/runtime-logo";
 import { Popover, PopoverBody } from "@/components/ui/popover";
+import { ChatSendLater } from "@/components/chat-send-later";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
@@ -8103,6 +8104,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   ) : composerActionsMenu}
                   <div className="cave-composer-submit-row">
+                    {!isMobile && sessionId && !flowBackedSession ? <ChatSendLater key={sessionId} sessionId={sessionId}
+                      captureMessage={() => {
+                        if (historyState !== "loaded" || !projectLaunchReady || attachmentsReading) throw new Error("Load this chat and finish preparing attachments before scheduling.");
+                        if (isOmnigentHostOptionId(runtimeHost)) throw new Error("Choose a chat host before scheduling a reply.");
+                        if (!input.trim() && !attachments.length) return null;
+                        if (input.trim().startsWith("/")) throw new Error("Send commands directly. Only replies can be scheduled.");
+                        const parent = pendingBranchParent !== undefined ? pendingBranchParent : activeLeafId || null;
+                        return {
+                          familiarId: familiar.id, sessionId,
+                          prompt: buildQuotedPrompt(replyTarget, input.trim()),
+                          projectRoot: requestProjectRoot ?? undefined,
+                          attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(attachments.map(({ id: _id, ...attachment }) => attachment)),
+                          modelControls: { ...modelControls }, permissionMode,
+                          ...(runtimeHost ? { runtimeHost } : {}),
+                          ...(modelState?.source === "runtime-default"
+                            ? { modelOverride: "", modelOverrideScope: "next-message" as const }
+                            : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+                              ? { modelOverride: modelState.effectiveModel, modelOverrideScope: "next-message" as const } : {}),
+                          mentionedFiles: mentionedFiles.filter(p => input.includes(`@${p}`)).slice(0, MAX_FILE_MENTIONS),
+                          mentionedFilesRoot: mentionRoot ?? undefined,
+                          parentTurnId: parent === null ? null : turnsRef.current.find(turn => turn.id === parent)?.persistedTurnId ?? parent,
+                        };
+                      }}
+                      onScheduled={(scheduled) => {
+                        if (buildQuotedPrompt(replyTarget, input.trim()) !== scheduled.prompt ||
+                            JSON.stringify(stripPreviewOnlyAttachmentFieldsKeepingImages(attachments.map(({ id: _id, ...attachment }) => attachment))) !== JSON.stringify(scheduled.attachments)) return;
+                        setInput(""); clearDraft(); clearAttachments(); setMentionedFiles([]);
+                        setReplyTarget(null); setPendingBranchParent(undefined); promptEnhance.reset();
+                      }} /> : null}
+
                     {busy && (input.trim() || attachments.length > 0) ? (
                       <button
                         type="button"
