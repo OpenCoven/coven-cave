@@ -128,7 +128,7 @@ console.log("settings-search.test.ts OK");
 // a same-named group in some other section cannot rescue a broken destination.
 const sectionFiles = {
   profile: ["settings-profile.tsx"],
-  general: ["settings-shell.tsx"],
+  general: ["settings-shell.tsx", "settings-reviews.tsx"],
   voice: ["voice-provider-settings.tsx", "voice-engine-settings.tsx"],
   daemon: ["settings-daemon.tsx", "settings-shell.tsx"],
   mobile: ["settings-phone.tsx"],

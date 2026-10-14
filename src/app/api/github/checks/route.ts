@@ -11,11 +11,17 @@
  * unauthenticated public API (works for public repos within the 60/hr budget,
  * since this is fetched on-demand for the selected PR, not per list row).
  * The PAT is read-only from env, never echoed back.
+ *
+ * It also says whether the token's own login wrote the PR (`viewerIsAuthor`,
+ * #5930), from the PR object it already reads: the Code PR panel offers
+ * Comment only on your own PR, because GitHub rejects the author's approval.
  */
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
+import { githubViewerLogin } from "@/lib/server/github-viewer";
+import { isPullRequestAuthor } from "@/lib/own-pr-review";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { summarizeCheckSignals, summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
@@ -101,9 +107,11 @@ async function load(req: Request): Promise<Response> {
       );
     }
 
-    const [runsResp, statusResp] = await Promise.all([
+    const author = str((pr.data as { user?: { login?: unknown } } | null)?.user?.login);
+    const [runsResp, statusResp, viewer] = await Promise.all([
       ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token),
       ghFetch(`/repos/${repo}/commits/${sha}/status`, token),
+      githubViewerLogin(token).catch(() => null),
     ]);
 
     if (!runsResp.res.ok && !statusResp.res.ok) {
@@ -171,6 +179,8 @@ async function load(req: Request): Promise<Response> {
       rollup,
       runs,
       statuses,
+      // Your own PR (#5930): the panel offers Comment only. null = unknown.
+      viewerIsAuthor: isPullRequestAuthor(author, viewer),
     });
   } catch (e) {
     return NextResponse.json(

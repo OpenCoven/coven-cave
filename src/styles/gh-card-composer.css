@@ -1036,6 +1036,17 @@
   background: var(--bg-hover);
 }
 
+/* ── own PR (#5930): why only Comment is offered ─────────────────────────── */
+
+.ghc-own-note {
+  margin: 0;
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
 /* ── footer: mode · draft state · nudge · CTA ─────────────────────────────── */
 
 .ghc-foot {

@@ -18,6 +18,11 @@
  * without them and would otherwise pay triple the rate-limit cost per card.
  * Both extras are fault-isolated: a secondary failure degrades the `pull`
  * block, it never turns a working card into an error.
+ *
+ * The `pull` block also says whether the token's own login wrote the PR
+ * (`viewerIsAuthor`, #5930): GitHub rejects APPROVE and REQUEST_CHANGES from a
+ * PR's author, so the composer offers Comment only. The login comes from one
+ * cached REST `/user` read per token; `null` means unknown.
  */
 
 import { NextResponse } from "next/server";
@@ -27,6 +32,8 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
+import { githubViewerLogin } from "@/lib/server/github-viewer";
+import { isPullRequestAuthor } from "@/lib/own-pr-review";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,6 +62,8 @@ type PullSummary = {
   mergeable: boolean | null;
   mergeableState: string;
   reviews: ReviewTally;
+  /** The token's login wrote this PR (#5930); null when unknown. */
+  viewerIsAuthor: boolean | null;
 };
 
 type ItemDetail = {
@@ -159,10 +168,16 @@ async function fetchReviewTally(repo: string, number: number, token: string | nu
  * zeroed tally; a `/pulls/{number}` failure gives up on the whole block. Either
  * way the caller still gets the base item.
  */
-async function fetchPullSummary(repo: string, number: number, token: string | null): Promise<PullSummary | null> {
-  const [head, reviews] = await Promise.all([
+async function fetchPullSummary(
+  repo: string,
+  number: number,
+  token: string | null,
+  author: string | null,
+): Promise<PullSummary | null> {
+  const [head, reviews, viewer] = await Promise.all([
     ghFetch(`/repos/${repo}/pulls/${number}`, token).catch(() => null),
     fetchReviewTally(repo, number, token).catch(() => ({ ...EMPTY_TALLY })),
+    githubViewerLogin(token).catch(() => null),
   ]);
   if (!head || !head.res.ok || !head.data || typeof head.data !== "object") return null;
   const p = head.data as Record<string, unknown>;
@@ -180,6 +195,7 @@ async function fetchPullSummary(repo: string, number: number, token: string | nu
     mergeable: typeof p.mergeable === "boolean" ? p.mergeable : null,
     mergeableState: typeof p.mergeable_state === "string" ? p.mergeable_state : "unknown",
     reviews,
+    viewerIsAuthor: isPullRequestAuthor(author, viewer),
   };
 }
 
@@ -269,7 +285,9 @@ async function loadItem(
     // Absent `pull=1` the payload stays byte-identical to what every existing
     // caller already parses — the key is not even present.
     if (!wantPull) return jsonResult(detail);
-    const pullSummary = detail.isPull ? await fetchPullSummary(repo, number, token).catch(() => null) : null;
+    const pullSummary = detail.isPull
+      ? await fetchPullSummary(repo, number, token, detail.author?.login ?? null).catch(() => null)
+      : null;
     return jsonResult({ ...detail, pull: pullSummary });
   } catch (e) {
     return jsonResult(

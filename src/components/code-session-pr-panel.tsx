@@ -26,6 +26,7 @@ import { codeSessionBranch, codeSessionWorkRoot } from "@/lib/code-surface";
 import type { PullRequestSummary } from "@/lib/pr-management";
 import type { MergedPrRef, ReadyIssue } from "@/lib/work-queue";
 import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
+import { OWN_PR_REVIEW_NOTE } from "@/lib/own-pr-review";
 
 const STAGE_POLL_MS = 60_000;
 const CHECKS_POLL_MS = 30_000;
@@ -203,6 +204,9 @@ type ChecksState =
       /** Legacy commit statuses, listed and counted with the runs (#5795). */
       statuses: PrCommitStatus[];
       sha: string | null;
+      /** You wrote this PR (#5930): GitHub refuses the author's approval, so
+       *  the actions offer Comment only. null = unknown. */
+      viewerIsAuthor: boolean | null;
     }
   | { phase: "error" };
 
@@ -224,7 +228,14 @@ function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
           signal: AbortSignal.timeout(CHECKS_TIMEOUT_MS),
         });
         const data = (await res.json().catch(() => null)) as
-          | { ok: true; rollup: CheckSummary; runs: CheckRunDetail[]; statuses?: PrCommitStatus[]; sha?: string | null }
+          | {
+              ok: true;
+              rollup: CheckSummary;
+              runs: CheckRunDetail[];
+              statuses?: PrCommitStatus[];
+              sha?: string | null;
+              viewerIsAuthor?: boolean | null;
+            }
           | { ok: false }
           | null;
         if (cancelled) return;
@@ -239,6 +250,7 @@ function usePrChecks(repo: string, number: number): [ChecksState, () => void] {
           runs: data.runs ?? [],
           statuses: data.statuses ?? [],
           sha: data.sha ?? null,
+          viewerIsAuthor: typeof data.viewerIsAuthor === "boolean" ? data.viewerIsAuthor : null,
         });
       } catch {
         if (!cancelled) setState((prev) => (samePr(prev) ? prev : { phase: "error" }));
@@ -557,6 +569,9 @@ function ActionsSection({
   const [confirmMerge, setConfirmMerge] = useState(false);
   const mergeable = (prState ?? "open").toLowerCase() === "open";
   const headSha = checks.phase === "ready" ? checks.sha : null;
+  // Your own PR (#5930): GitHub rejects the author's approval, so Approve is
+  // not offered and one line says why. Unknown keeps it.
+  const ownPull = checks.phase === "ready" && checks.viewerIsAuthor === true;
   // Review and merge both act on the head the checks above ran on, so both
   // wait for it (#5751 review): an unpinned review lands on whatever commit
   // is current, not the one whose checks were shown.
@@ -648,7 +663,7 @@ function ActionsSection({
       </h3>
       <textarea
         className="focus-ring-inset min-h-16 w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        placeholder="Review comment (optional for approve)…"
+        placeholder={ownPull ? "Review comment…" : "Review comment (optional for approve)…"}
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         disabled={busy != null}
@@ -663,14 +678,16 @@ function ActionsSection({
         >
           {busy === "comment" ? "Posting…" : "Comment"}
         </Button>
-        <Button
-          size="sm"
-          disabled={busy != null || headBlocked != null}
-          aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
-          onClick={() => review("APPROVE")}
-        >
-          {busy === "approve" ? "Approving…" : "Approve"}
-        </Button>
+        {ownPull ? null : (
+          <Button
+            size="sm"
+            disabled={busy != null || headBlocked != null}
+            aria-describedby={headBlocked ? "code-pr-merge-blocked" : undefined}
+            onClick={() => review("APPROVE")}
+          >
+            {busy === "approve" ? "Approving…" : "Approve"}
+          </Button>
+        )}
         <span className="ml-auto" />
         {mergeable ? (
           <Button
@@ -688,6 +705,7 @@ function ActionsSection({
           </Button>
         ) : null}
       </div>
+      {ownPull ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{OWN_PR_REVIEW_NOTE}</p> : null}
       {(mergeable && mergeBlocked) || headBlocked ? (
         <p id="code-pr-merge-blocked" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {mergeBlocked}

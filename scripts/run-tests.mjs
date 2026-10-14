@@ -399,6 +399,10 @@ export const SUITES = {
     "src/lib/reader-provenance.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
+    "src/lib/own-pr-review.test.ts",
+    "src/lib/own-pr-auto-review.test.ts",
+    "src/components/own-pr-review-wiring.test.ts",
+    "src/components/settings-reviews.test.ts",
     "src/lib/chat-starter-suggestions.test.ts",
     "src/lib/chat-session-prefs.test.ts",
     "src/lib/reasoning-visibility.test.ts",
@@ -2003,6 +2007,9 @@ export const SUITES = {
     "src/app/api/github/pat/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
     "src/app/api/github/assigned/route-cache.test.ts",
+    "src/app/api/github/assigned/route-authored.test.ts",
+    "src/app/api/github/item/route-viewer.test.ts",
+    "src/lib/server/github-viewer.test.ts",
     "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
     "src/app/api/github/diff/route.test.ts",
@@ -2273,6 +2280,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/familiars/[id]/avatar/route-thumbnail-cache.test.ts",
   // imports the route (@/ aliases) with a stubbed GitHub fetch (#5641)
   "src/app/api/github/assigned/route-cache.test.ts",
+  // imports the route (@/ aliases) with a stubbed GitHub fetch (#5930)
+  "src/app/api/github/assigned/route-authored.test.ts",
+  // imports the item and checks routes (@/ aliases) with a stubbed fetch (#5930)
+  "src/app/api/github/item/route-viewer.test.ts",
   "src/app/api/wikis/route.test.ts",
   // x-comms-model.ts imports "@/lib/x-publish-composer" as a runtime value —
   // deliberately, so the two X rooms share one definition of the 280 limit.

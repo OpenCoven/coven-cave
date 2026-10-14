@@ -14,6 +14,8 @@
  * composer dispatches, so the palette and the keyboard path share one decoder.
  */
 
+import { OWN_PR_REVIEW_HINT, reviewEventsFor } from "./own-pr-review.ts";
+
 export type GhCommandSub = {
   name: string;
   desc: string;
@@ -40,6 +42,10 @@ export type GhCommandContext = {
   labelPalette: { name: string; applied: boolean }[];
   familiars: { id: string; name: string }[];
   commitCount: number | null;
+  /** You wrote this PR (#5930): GitHub refuses your approve and
+   *  request-changes, so the review group offers a comment only. Unknown
+   *  (absent) keeps every verb. */
+  viewerIsAuthor?: boolean | null;
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -51,14 +57,18 @@ export function buildCommandTree(ctx: GhCommandContext): GhCommandGroup[] {
   const mergeable = ctx.isPull && open;
 
   if (mergeable) {
+    const events = reviewEventsFor(ctx.viewerIsAuthor);
+    const own = !events.includes("APPROVE");
+    const reviewSubs: GhCommandSub[] = [
+      { name: "approve", desc: "approve with no changes requested" },
+      { name: "request-changes", desc: "blocks merge until resolved", hint: "body required" },
+      { name: "comment", desc: "review comment, no verdict" },
+    ];
     groups.push({
       name: "review",
-      desc: `submit a review on #${ctx.number}`,
-      subs: [
-        { name: "approve", desc: "approve with no changes requested" },
-        { name: "request-changes", desc: "blocks merge until resolved", hint: "body required" },
-        { name: "comment", desc: "review comment, no verdict" },
-      ],
+      desc: own ? `comment on your own #${ctx.number}: ${OWN_PR_REVIEW_HINT}` : `submit a review on #${ctx.number}`,
+      // Your own PR (#5930): a sub the tree omits can never be parsed or fired.
+      subs: own ? reviewSubs.filter((sub) => sub.name === "comment") : reviewSubs,
     });
     groups.push({
       name: "merge",

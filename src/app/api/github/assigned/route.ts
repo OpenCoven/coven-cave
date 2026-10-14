@@ -154,6 +154,9 @@ async function loadAssigned(token: string): Promise<Response> {
           state: item.state,
           updatedAt: item.updated_at,
           labels: item.labels?.map((l) => l.name) ?? [],
+          // The search API returns `draft` for PRs; a requested draft is
+          // still blocked, and the Reviews group says so (#5930).
+          draft: item.draft ?? false,
         }));
         return { items, meta: searchSource(items.length, body?.total_count) };
       },
@@ -172,6 +175,10 @@ async function loadAssigned(token: string): Promise<Response> {
           state: item.state,
           updatedAt: item.updated_at,
           labels: item.labels?.map((l) => l.name) ?? [],
+          // Your own PR (#5930): the Reviews group offers it when "Include my
+          // pull requests in Reviews" is on, and a draft reads differently.
+          authored: true,
+          draft: item.draft ?? false,
         }));
         return { items, meta: searchSource(items.length, body?.total_count) };
       },
@@ -203,13 +210,19 @@ async function loadAssigned(token: string): Promise<Response> {
     );
   }
 
-  // De-duplicate by url (keep first occurrence), then sort by updatedAt desc
-  const seen = new Set<string>();
+  // De-duplicate by url (keep first occurrence), then sort by updatedAt desc.
+  // The first copy wins, so an assigned PR you also wrote would lose the
+  // author:@me search's `authored` flag (#5930): merge it onto that copy.
+  const seen = new Map<string, GitHubItem>();
   const all: GitHubItem[] = [];
   for (const item of [...assigned.items, ...review.items, ...created.items]) {
-    if (!seen.has(item.url)) {
-      seen.add(item.url);
-      all.push(item);
+    const first = seen.get(item.url);
+    if (!first) {
+      const copy = { ...item };
+      seen.set(item.url, copy);
+      all.push(copy);
+    } else if (item.authored) {
+      first.authored = true;
     }
   }
   all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
