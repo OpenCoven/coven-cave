@@ -185,6 +185,7 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
+  MAX_CHAT_ATTACHMENTS,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -3302,7 +3303,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [announce, autoMissionActive, input, setInput]);
-  // Attachments staged in the composer (cap 10) with drag-and-drop
+  // Attachments staged in the composer (50 total, at most 10 non-images) with drag-and-drop
   // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
   // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
   // Announce staging changes without moving focus away from the draft.
@@ -7118,7 +7119,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
-      if (attachments.length < 10) fileInputRef.current?.click();
+      if (attachments.length < MAX_CHAT_ATTACHMENTS) fileInputRef.current?.click();
       return;
     }
     if (mentionOpen) {
@@ -7518,7 +7519,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <ComposerActionsMenu
       attach={{
         onSelect: () => fileInputRef.current?.click(),
-        disabled: attachments.length >= 10,
+        disabled: attachments.length >= MAX_CHAT_ATTACHMENTS,
         hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
       }}
       skills={{
@@ -7886,7 +7887,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               autoRunning={autoMissionActive}
               busy={busy}
               canRetry={Boolean(lastFailedSend)}
-              canAttach={attachments.length < 10}
+              canAttach={attachments.length < MAX_CHAT_ATTACHMENTS}
               hasSession={Boolean(sessionId)}
               onAuto={toggleMobileAutoMode}
               onRetry={retryLastSend}

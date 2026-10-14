@@ -315,7 +315,7 @@ export function QuickChatComposer({
 
   // Attachment staging (shared hook — same capture behavior as the home/chat
   // composers): drag-and-drop anywhere on the composer footer, paste-to-attach
-  // on the textarea, paperclip-free (drop/paste only) at 10 files max.
+  // on the textarea, paperclip-free (drop/paste only) at 50 total, 10 non-images.
   const {
     attachments,
     removeAttachment,

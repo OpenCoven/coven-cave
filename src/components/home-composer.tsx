@@ -68,6 +68,8 @@ import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
+  MAX_CHAT_ATTACHMENTS,
+  MAX_CHAT_NON_IMAGE_ATTACHMENTS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
@@ -219,7 +221,7 @@ export function HomeComposer({
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, []);
-  // Attachments staged in the composer (cap 10, mirroring the chat composer);
+  // Attachments staged in the composer (50 total, at most 10 non-images);
   // handed to the opened chat on submit. Shared hook — home adds the limit
   // toast + SR announce and defers refocus a tick.
   const {
@@ -234,7 +236,7 @@ export function HomeComposer({
     dismissNotice: dismissAttachmentNotice,
     isReading: attachmentsReading,
   } = useAttachmentStaging({
-    onLimit: () => onToast("Attachment limit reached (10)."),
+    onLimit: () => onToast(`Attachment limit reached (${MAX_CHAT_ATTACHMENTS} total, ${MAX_CHAT_NON_IMAGE_ATTACHMENTS} other files).`),
     onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
     focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
   });
@@ -855,7 +857,7 @@ export function HomeComposer({
       // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
-        if (!sending && attachments.length < 10) fileInputRef.current?.click();
+        if (!sending && attachments.length < MAX_CHAT_ATTACHMENTS) fileInputRef.current?.click();
         return;
       }
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
@@ -1031,7 +1033,7 @@ export function HomeComposer({
         {attachments.length > 0 && (
           <div className="hc-attachments-wrap">
             <div className="hc-attachments-head">
-              <span className="hc-attachments-count">{attachments.length}/10 attached</span>
+              <span className="hc-attachments-count">{attachments.length}/{MAX_CHAT_ATTACHMENTS} attached</span>
               <button
                 type="button"
                 className="hc-attachments-clear focus-ring"
@@ -1150,7 +1152,7 @@ export function HomeComposer({
                 triggerRef={plusAnchorRef}
                 attach={{
                   onSelect: () => fileInputRef.current?.click(),
-                  disabled: sending || attachments.length >= 10,
+                  disabled: sending || attachments.length >= MAX_CHAT_ATTACHMENTS,
                   hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
                 }}
                 skills={{

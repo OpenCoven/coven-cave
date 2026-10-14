@@ -2019,6 +2019,7 @@ export const SUITES = {
     "src/app/api/search/route.test.ts",
   // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
     "src/proxy-behavior.test.ts",
+    "src/proxy-body-size.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
     "src/lib/server/memory-file-write.test.ts",
@@ -2298,6 +2299,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/running-activity.test.ts",
   "src/app/api/running-activity/route.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
+  "src/proxy-body-size.test.ts",
   "src/lib/server/client-v1/auth.test.ts",
   // Resolves the process-local instance id through the "@/lib" Cave path.
   "src/lib/server/client-v1/authority-runtime.test.ts",
