@@ -229,6 +229,32 @@ All package-id → filesystem-path lookups go through the path-injection-safe `r
 
 Packs whose capability is `prompts` ship reusable composer templates. The detail pane previews each template (icon, description, body snippet, tags) via `GET /api/marketplace/pack-prompts?id=<pack>` — which works pre-install — and offers a **Try it** that hands the body to the Home composer. See [`prompt-packs.md`](prompt-packs.md) for the file format, the `{{placeholder|default}}` grammar and Tab flow, precedence rules, and how to author a pack.
 
+## Bundled MCP servers
+
+Most MCP packages launch a published server through `npx`, `uvx`, or
+`docker`. A package may instead ship its own server inside
+`marketplace/plugins/<name>/` and launch it as
+`node ${CLAUDE_PLUGIN_ROOT}/server/<file>.mjs`: `${CLAUDE_PLUGIN_ROOT}` is
+the variable Claude Code and Codex plugin loaders expand to the installed
+plugin directory. Cave's install is track-only and never spawns servers; its
+MCP doctor reports such an entry as `needs-config` naming
+`CLAUDE_PLUGIN_ROOT` until a harness supplies it. Mark the catalog `skill`
+`"managed": "manual"` so sync keeps the hand-authored `SKILL.md`, and keep the
+server zero-dependency so it runs from the checkout.
+
+The first bundled server is **Vane Search** (`marketplace/plugins/vane/`),
+a stdio bridge to a self-hosted Vane (formerly Perplexica) instance. Run Vane
+with
+
+```bash
+docker run -d -p 127.0.0.1:3030:3000 -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:latest
+```
+
+configure a provider in its UI at <http://127.0.0.1:3030>, then install the
+plugin. Its [README](../marketplace/plugins/vane/README.md) covers the tools,
+environment pins, and error surface; `scripts/vane-mcp-server.test.mjs`
+exercises the server against a fake Vane.
+
 ## Deferred / future work
 
 Captured for later (not yet built):

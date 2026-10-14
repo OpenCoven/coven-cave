@@ -1,0 +1,26 @@
+{
+  "name": "vane",
+  "version": "0.1.0",
+  "description": "Cited AI answers from a self-hosted Vane (formerly Perplexica) instance with bundled SearXNG.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Vane Search",
+    "shortDescription": "Cited AI answers from a self-hosted Vane (formerly Perplexica) instance with bundled SearXNG.",
+    "longDescription": "Use Vane for cited, synthesized web answers from a self-hosted instance; treat the answer as a lead and verify the returned source URLs.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "search",
+      "vane",
+      "perplexica",
+      "searxng",
+      "research",
+      "citations",
+      "web"
+    ],
+    "defaultPrompt": "Help me use Vane Search safely."
+  }
+}

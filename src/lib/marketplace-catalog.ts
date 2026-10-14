@@ -533,7 +533,7 @@ export const COLLECTIONS: readonly Collection[] = [
     title: "Web & browser",
     description: "Drive browsers and crawl the live web.",
     icon: "ph:globe-bold",
-    ids: ["playwright", "browserbase", "chrome-devtools", "firecrawl", "searxng"],
+    ids: ["playwright", "browserbase", "chrome-devtools", "firecrawl", "searxng", "vane"],
   },
   {
     id: "data",

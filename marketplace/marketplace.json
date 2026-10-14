@@ -382,6 +382,21 @@
       "roleAffinity": []
     },
     {
+      "name": "vane",
+      "displayName": "Vane Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/vane"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "local-tool",
+      "roleAffinity": []
+    },
+    {
       "name": "dbhub",
       "displayName": "DBHub",
       "category": "Databases",
