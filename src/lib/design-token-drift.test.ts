@@ -205,6 +205,11 @@ const BASELINES = {
 // Measured after #5464: 1522; previous ceiling 1616.
 // Research Desk (#5927), reconciled with Activity #5935: measured 1494 spacing and 217 radius sites.
 BASELINES.offScaleSpacingPx = 1494; // -1: banked — the Memories overhaul (#5721) put the journal day pane on the spacing scale; main measured 1512 at 170a52afb, so this is a reclaim, not headroom. -10: fullscreen voice call spacing uses the shared grid.
+// -1 (#5958): banked — the floating Environment HUD (chat-environment-panel.tsx)
+// is retired; its card now opens from the composer's branch chip on the shared
+// popover scaffold, and the new sheet is token-only. Measured 1493 on this
+// branch at origin/main cb1598389.
+BASELINES.offScaleSpacingPx = 1493;
 BASELINES.offScaleRadiusPx = 217;
 // +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
 // cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
@@ -263,6 +268,10 @@ BASELINES.inlineTsxStyles = 285; // -1: banked — the Relations graph's kind do
 // +1 (#5901): ChatThreadRail width is user-resized and clamped against its
 // measured container. This runtime geometry cannot be expressed by a static token.
 BASELINES.inlineTsxStyles = 287;
+// -3 (#5958): banked — the retired Environment HUD carried the only inline
+// styles of its sheet; the branch-chip popover that replaced it has none.
+// Measured 284 on this branch at origin/main cb1598389.
+BASELINES.inlineTsxStyles = 284;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

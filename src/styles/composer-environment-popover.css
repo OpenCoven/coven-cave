@@ -1,0 +1,94 @@
+/* Composer Environment popover (#5958) — the chat's environment card, anchored
+   to the composer's branch chip. Rides the shared .ui-popover-* scaffold; this
+   sheet only adds the row grammar (diffstat, mono branch, quiet static row).
+   Imported by composer-environment-popover.tsx, never by globals.css. */
+
+.composer-environment__body .ui-popover-item > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.composer-environment__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.composer-environment__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `+N −N` carries the sign in text, so color is never the only signal. */
+.composer-environment__diffstat {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.composer-environment__additions {
+  color: var(--color-success);
+}
+.composer-environment__deletions {
+  color: var(--color-danger);
+}
+
+.composer-environment__branch {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.composer-environment__worktree {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.composer-environment__caret {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* Non-interactive rows — the Local / ssh line and the loading / error /
+   not-a-repo notes — reuse .ui-popover-item's metrics so they line up with
+   the actionable rows, minus the affordances. */
+.composer-environment__static,
+.composer-environment__note {
+  cursor: default;
+  color: var(--text-secondary);
+}
+.composer-environment__static:hover,
+.composer-environment__note:hover {
+  background: transparent;
+}
+.composer-environment__static > svg {
+  flex: 0 0 auto;
+}
+.composer-environment__note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.composer-environment__note[role="alert"] {
+  color: var(--color-danger);
+}
+
+/* Phone: every row is a 44px touch target (composer-actions-menu parity). */
+@media (pointer: coarse) {
+  .composer-environment__body .ui-popover-item {
+    min-height: var(--touch-target);
+  }
+}

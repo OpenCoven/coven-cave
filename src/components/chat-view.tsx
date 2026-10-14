@@ -55,7 +55,6 @@ import {
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ComposerMarkdownLayer } from "@/components/composer-markdown-layer";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
-import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatActivityMap } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
@@ -7510,6 +7509,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       popoverPlacement={composerPopoverPlacement}
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+      executionRuntime={session?.runtime ?? null}
     />
   );
   // One Tools menu, placed by width (#5954): desktop puts it in the action
@@ -7902,7 +7902,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               data-access-mode={permissionMode}
               onBlur={(event) => {
                 const dock = event.currentTarget.closest(".cave-composer-dock") ?? event.currentTarget;
-                if (!dock.contains(event.relatedTarget as Node | null)) setComposerEngaged(false);
+                const next = event.relatedTarget as Node | null;
+                // A chip's menu portals to <body> (#5958): keyboard focus
+                // moving into its rows is still the composer being used, so
+                // the phone's rest state must not hide the chip it hangs from.
+                if (next instanceof Element && next.closest(".ui-popover-portal")) return;
+                if (!dock.contains(next)) setComposerEngaged(false);
               }}
             >
               <div className="cave-composer-edge-actions">
@@ -8426,14 +8431,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </span>
           </div>
         ) : null}
-        {/* Floating Environment HUD (cave-68vv): wide panes only; keys on the
-            SESSION-root derivation (cave-r0gt). */}
-        <ChatEnvironmentPanel
-          projectRoot={session?.project_root ?? projectRoot ?? null}
-          runtime={session?.runtime ?? null}
-          hasTurns={turns.length > 0}
-          onOpenUrl={onOpenUrl}
-        />
         {/* Left turn spine (Chat.dc.html 2a, cave-j86la). One node per turn in
             the transcript's left gutter, derived from the SAME activePath the
             transcript renders. An absolutely-positioned overlay inside the
