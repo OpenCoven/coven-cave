@@ -218,6 +218,7 @@ function normalizePayload(payload: Record<string, unknown>, meta: {
       name: text(item.name),
       importance: enumValue(item.importance, IMPORTANCE, "capabilitiesLacking.importance"),
       detail: text(item.detail),
+      blockerId: optionalText(item.blockerId),
     })).filter((item) => item.name && item.detail),
     capabilitiesVital: objectArray(payload.capabilitiesVital).map((item) => ({
       name: text(item.name),

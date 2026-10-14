@@ -146,6 +146,9 @@ import {
 } from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { authRecoveryHarness, parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { ComposerModelPopover, runtimeModelLabel } from "@/components/composer-runtime-chip";
+import type { ComposerModelInventory } from "@/components/model-inventory-feedback";
+import type { RuntimeModelOption } from "@/lib/runtime-models";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -860,6 +863,11 @@ function ChatErrorStrip({
   onPickProject,
   onRegisterProject,
   onStopEarlierRun,
+  usageLimitModel,
+  modelOptions,
+  modelInventory,
+  onRetryWithModel,
+  onManageUsage,
 }: {
   message: string;
   code?: string;
@@ -898,8 +906,18 @@ function ChatErrorStrip({
   /** When set, the send was refused with 409 chat_run_active: render an
    *  action that stops the earlier run this view no longer tracks. */
   onStopEarlierRun?: () => void;
+  /** Usage-limit recovery (#5938): the Cave model id the failed send asked
+   *  for (null = runtime default), the runtime's inventory to pick another
+   *  from, and the one-turn retry. The strip never re-sends the same model. */
+  usageLimitModel?: string | null;
+  modelOptions?: RuntimeModelOption[];
+  modelInventory?: ComposerModelInventory;
+  onRetryWithModel?: (modelId: string) => void;
+  /** Opens the runtime vendor's usage page through the host's URL path. */
+  onManageUsage?: () => void;
 }) {
   const { copied, copy } = useCopy();
+  const usageLimit = code === "harness_usage_limit";
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
   const erroredSteps = (failingTurn?.progress ?? []).filter((p) => p.status === "error");
   const hasDetail = Boolean(code) || erroredTools.length > 0 || erroredSteps.length > 0;
@@ -942,19 +960,19 @@ function ChatErrorStrip({
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
   const harnessFailure = useMemo(
-    () => code === "harness_auth_required" ? null : parseHarnessFailure(recoveryText),
-    [code, recoveryText],
+    () => code === "harness_auth_required" || usageLimit ? null : parseHarnessFailure(recoveryText),
+    [code, recoveryText, usageLimit],
   );
   // Sign-in failures land here at the FIRST message (the wizard greens on
   // install, never auth) — surface the runtime's login command instead of
   // ending at raw stderr (cave-f6ol).
   const authFailure = useMemo(
-    () => parseHarnessAuthFailure(
+    () => usageLimit ? null : parseHarnessAuthFailure(
       code === "harness_auth_required" ? "authentication required"
         : code === "harness_auth_configuration_required" ? "api key missing" : recoveryText,
       harnessId,
     ),
-    [code, recoveryText, harnessId],
+    [code, recoveryText, harnessId, usageLimit],
   );
   // A preflight-confirmed missing runtime (or the legacy Coven ENOENT path)
   // gets a soft Setup recovery instead of a bare error + generic Retry. The
@@ -970,6 +988,9 @@ function ChatErrorStrip({
 
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
+  // The one primary action a fix row may carry (same accent as "Add project").
+  const primaryBtn =
+    "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40";
   const pre =
     "max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-r border-l-2 border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[var(--bg-base)]/45 px-2.5 py-1.5 font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]";
   // Small mono kicker naming which tool/step produced the quoted reason below.
@@ -985,7 +1006,7 @@ function ChatErrorStrip({
       <div className="flex items-center gap-2 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
         <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
-        {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" ? (
+        {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
@@ -1032,7 +1053,7 @@ function ChatErrorStrip({
               Stop earlier turn
             </button>
           ) : null}
-          {canRetry ? (
+          {canRetry && !usageLimit ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
               Retry
@@ -1043,6 +1064,19 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {usageLimit && onRetryWithModel ? (
+        <UsageLimitFixRow
+          model={usageLimitModel ?? null}
+          harnessId={harnessId ?? null}
+          modelOptions={modelOptions ?? []}
+          modelInventory={modelInventory}
+          busy={busy}
+          onPickModel={onRetryWithModel}
+          onManageUsage={onManageUsage}
+          buttonClassName={btn}
+          primaryClassName={primaryBtn}
+        />
+      ) : null}
       {harnessFailure ? (
         <HarnessFixActions
           failure={harnessFailure}
@@ -1142,6 +1176,95 @@ function ChatErrorStrip({
         </div>
       ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Fixed vendor page for Claude's plan usage. Never taken from provider text:
+ *  the runtime's own notice can carry a tracking URL (#5938). */
+const CLAUDE_USAGE_SETTINGS_URL = "https://claude.ai/settings/usage";
+
+/** Usage-limit fix row (#5938): the plan allowance for the selected model is
+ *  spent, so a plain Retry would re-send the exhausted model. Offer a one-turn
+ *  switch to another model from the runtime's inventory (the exhausted id is
+ *  left out) or to the runtime default. Renders only Cave's own copy and
+ *  model ids; the provider's notice never reaches this row. */
+function UsageLimitFixRow({
+  model,
+  harnessId,
+  modelOptions,
+  modelInventory,
+  busy,
+  onPickModel,
+  onManageUsage,
+  buttonClassName,
+  primaryClassName,
+}: {
+  model: string | null;
+  harnessId: string | null;
+  modelOptions: RuntimeModelOption[];
+  modelInventory?: ComposerModelInventory;
+  busy: boolean;
+  /** Retries the failed send with this model for the next message only;
+   *  an empty id means the runtime default. */
+  onPickModel: (modelId: string) => void;
+  onManageUsage?: () => void;
+  buttonClassName: string;
+  primaryClassName: string;
+}) {
+  const { announce } = useAnnouncer();
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const exhaustedModel = model ? runtimeModelLabel(model, modelOptions) ?? model : "the runtime default model";
+  const otherModels = useMemo(
+    () => modelOptions.filter((option) => option.id !== model),
+    [modelOptions, model],
+  );
+  const pick = (next: string | null) => {
+    const id = next ?? "";
+    const label = id ? runtimeModelLabel(id, modelOptions) ?? id : "the runtime default model";
+    announce(`Retrying with ${label} for this message.`);
+    onPickModel(id);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
+      <span className="min-w-0">
+        You&apos;ve used up the quota for {exhaustedModel}. Pick another model for this message, or try
+        again after the limit resets.
+      </span>
+      <button
+        ref={anchorRef}
+        type="button"
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={primaryClassName}
+      >
+        <Icon name="ph:arrows-left-right" width={11} aria-hidden />
+        Use another model…
+      </button>
+      <ComposerModelPopover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        placement="top-start"
+        runtime={harnessId ?? ""}
+        modelValue=""
+        modelOptions={otherModels}
+        modelInventory={modelInventory}
+        onPickModel={(id) => { if (id) pick(id); }}
+      />
+      <button type="button" disabled={busy} onClick={() => pick(null)} className={buttonClassName}>
+        <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+        Use runtime default
+      </button>
+      {harnessId === "claude" && onManageUsage ? (
+        <button type="button" onClick={onManageUsage} className={buttonClassName}>
+          <Icon name="ph:arrow-square-out" width={11} aria-hidden />
+          Manage usage
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -2511,9 +2634,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
   // re-expands its detail every time a *new* error fires (not just the first).
-  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string } | null>(null);
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null } | null>(null);
   const debugErrorSeqRef = useRef(0);
-  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string }) => {
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null }) => {
     debugErrorSeqRef.current += 1;
     const seq = debugErrorSeqRef.current;
     setDebugError((previous) => ({
@@ -7054,7 +7177,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: ev.code, harness: ev.harness });
+        raiseDebugError({ turnId: assistantId, code: ev.code, harness: ev.harness, model: ev.model });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
       }
@@ -8710,6 +8833,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenSetup={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
           authFamiliarId={familiar.id}
           harnessId={authRecoveryHarness(debugError?.harness, session?.harness, familiar.harness)}
+          usageLimitModel={debugError?.model ?? null}
+          modelOptions={composerModelOptions}
+          modelInventory={composerModelInventory}
+          onRetryWithModel={
+            lastFailedSend
+              ? (modelId) => retryFailedSend({ modelOverride: modelId, modelOverrideScope: "next-message" })
+              : undefined
+          }
+          onManageUsage={() => {
+            if (onOpenUrl) onOpenUrl(CLAUDE_USAGE_SETTINGS_URL);
+            else window.open(CLAUDE_USAGE_SETTINGS_URL, "_blank", "noopener,noreferrer");
+          }}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }

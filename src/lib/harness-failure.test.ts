@@ -6,6 +6,7 @@ import {
   harnessSwitchTargets,
   parseHarnessAuthFailure,
   parseHarnessFailure,
+  parseHarnessUsageLimit,
 } from "./harness-failure.ts";
 
 assert.equal(authRecoveryHarness("codex", "copilot", "claude"), "codex", "the failed run wins over a changed familiar default");
@@ -157,6 +158,54 @@ assert.equal(authRecoveryHarness("untrusted", "codex", "claude"), "codex", "unkn
     null,
     "a missing binary is a harness failure, not an auth failure",
   );
+}
+
+// ── Runtime usage limits (#5938) ──────────────────────────────────────────────
+{
+  const CLAUDE_NOTICE =
+    "You've reached your Fable limit. Switch to another model, or manage usage credits at " +
+    "claude.ai/settings/usage?from=cc_cli_limit_message, to continue.";
+  const claude = parseHarnessUsageLimit(CLAUDE_NOTICE, "claude");
+  assert.ok(claude, "the Claude Code quota notice is detected");
+  assert.equal(claude.kind, "quota");
+  assert.equal(claude.harness, "claude");
+  assert.equal(claude.harnessLabel, "Claude Code");
+  assert.doesNotMatch(JSON.stringify(claude), /settings\/usage|cc_cli|Switch to another model/, "the verdict carries no provider text");
+
+  const codex = parseHarnessUsageLimit("You've hit your usage limit. Upgrade to Pro or try again in 2 hours", "codex");
+  assert.equal(codex?.kind, "quota", "the Codex quota notice is a quota");
+  assert.equal(codex?.harnessLabel, "Codex");
+  assert.equal(parseHarnessUsageLimit('{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}', "codex")?.kind, "quota", "OpenAI insufficient_quota is a quota");
+  assert.equal(parseHarnessUsageLimit("Error: usage limit reached for this plan", "claude")?.kind, "quota");
+  assert.equal(parseHarnessUsageLimit("usage_limit_reached", "codex")?.kind, "quota");
+  assert.equal(parseHarnessUsageLimit("You’ve reached your 5-hour usage limit.", "claude")?.kind, "quota", "a typographic apostrophe and a qualifier still match");
+
+  assert.equal(parseHarnessUsageLimit("429 Too Many Requests", "claude")?.kind, "rate", "a 429 with its reason phrase is transient throttling");
+  assert.equal(parseHarnessUsageLimit("rate_limit_exceeded", "codex")?.kind, "rate");
+  assert.equal(parseHarnessUsageLimit("Rate limited by the provider. Retry shortly.", "codex")?.kind, "rate");
+  assert.equal(
+    parseHarnessUsageLimit("429 rate limit: you've reached your usage limit for today", "codex")?.kind,
+    "quota",
+    "quota wins when both shapes match",
+  );
+
+  const unknownRuntime = parseHarnessUsageLimit("usage limit reached", "mystery-harness");
+  assert.equal(unknownRuntime?.harness, null, "unknown runtime ids don't map");
+  assert.equal(unknownRuntime?.harnessLabel, "The runtime", "a neutral label stands in for an unknown runtime");
+
+  for (const negative of [
+    "Attachment limit reached",
+    "Terminal limit reached",
+    "The context window limit was exceeded; compacting.",
+    "I kept the change list short to limit the diff.",
+    "There is a limit to how far this refactor should go.",
+    "429",
+    "",
+  ]) {
+    assert.equal(parseHarnessUsageLimit(negative, "claude"), null, `not a usage limit: ${JSON.stringify(negative)}`);
+  }
+  assert.equal(parseHarnessUsageLimit(undefined, "claude"), null);
+  assert.equal(parseHarnessUsageLimit(42, "claude"), null);
 }
 
 console.log("harness-failure.test.ts: ok");

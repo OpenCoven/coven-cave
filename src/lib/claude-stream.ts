@@ -3,7 +3,11 @@ import { cleanModelId } from "./chat-model-state.ts";
 
 export type ClaudeMessageEvent =
   | { kind: "reasoning"; id: string; phase: "complete" | "unavailable"; text?: string; unavailableReason?: "provider-withheld" }
-  | { kind: "model"; model: string | null }
+  /** `synthetic`: the envelope's model is Claude Code's `<synthetic>` marker,
+   *  which it uses for CLI-authored text such as a usage-limit notice rather
+   *  than a model reply (#5938). The route classifies that text; it is never
+   *  a model report. */
+  | { kind: "model"; model: string | null; synthetic?: boolean }
   | { kind: "text"; text: string }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; toolUseId: string; content: unknown; isError: boolean };
@@ -16,6 +20,22 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** Claude Code stamps CLI-authored assistant text (usage-limit notices and
+ * similar) with this model marker instead of a served model id. */
+export const CLAUDE_SYNTHETIC_MODEL = "<synthetic>";
+
+export function isSyntheticClaudeModel(model: unknown): boolean {
+  return typeof model === "string" && model.trim() === CLAUDE_SYNTHETIC_MODEL;
+}
+
+/** True when an assistant envelope is CLI-authored rather than a model
+ * reply. Works on the raw frame so the text-only fallback path can use it. */
+export function isSyntheticClaudeEnvelope(value: unknown): boolean {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  return envelope?.type === "assistant" && isSyntheticClaudeModel(message?.model);
 }
 
 /** True for every syntactically valid JSON value, including primitive roots.
@@ -69,7 +89,11 @@ export function parseClaudeMessageEnvelope(
     // Missing reports preserve the prior observation; explicit invalid reports
     // must reach the identity reducer so they cannot retain stale confirmation.
     if (message?.model !== undefined) {
-      events.push({ kind: "model", model: cleanModelId(message.model) });
+      events.push({
+        kind: "model",
+        model: cleanModelId(message.model),
+        ...(isSyntheticClaudeModel(message.model) ? { synthetic: true } : {}),
+      });
     }
     for (const [index, value] of content.entries()) {
       const block = record(value);
