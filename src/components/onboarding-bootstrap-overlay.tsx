@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OnboardingSetupDiagnosticsModal } from "@/components/onboarding-setup-diagnostics";
+import { OnboardingRuntimeStep } from "@/components/onboarding-runtime-step";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -78,6 +79,7 @@ export function OnboardingOverlay({
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [runtimeReady, setRuntimeReady] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const diagnosticsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreDiagnosticsFocusRef = useRef(false);
@@ -256,7 +258,7 @@ export function OnboardingOverlay({
   }, [announce, open, state]);
 
   useEffect(() => {
-    if (!open || !autoFinishWhenComplete || !state.complete) {
+    if (!open || !autoFinishWhenComplete || !state.complete || !runtimeReady) {
       autoFinishFiredRef.current = false;
       return;
     }
@@ -264,7 +266,7 @@ export function OnboardingOverlay({
     autoFinishFiredRef.current = true;
     const timer = setTimeout(finish, 700);
     return () => clearTimeout(timer);
-  }, [autoFinishWhenComplete, finish, open, state.complete]);
+  }, [autoFinishWhenComplete, finish, open, runtimeReady, state.complete]);
 
   if (!open) return null;
 
@@ -330,6 +332,10 @@ export function OnboardingOverlay({
               </li>
             ))}
           </ol>
+
+          {state.complete ? (
+            <OnboardingRuntimeStep open={open} onReadyChange={setRuntimeReady} />
+          ) : null}
 
           {running ? (
             <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
@@ -416,7 +422,9 @@ export function OnboardingOverlay({
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] p-5">
           <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {state.complete
-              ? "Cave is ready."
+              ? runtimeReady
+                ? "Cave is ready."
+                : "Local setup is complete. Install a chat runtime to start a chat."
               : running
                 ? "Setup continues if you close this dialog."
                 : started
@@ -438,9 +446,15 @@ export function OnboardingOverlay({
                 </Button>
               </>
             ) : state.complete ? (
-              <Button variant="primary" onClick={finish}>
-                Open Cave
-              </Button>
+              runtimeReady ? (
+                <Button variant="primary" onClick={finish}>
+                  Open Cave
+                </Button>
+              ) : (
+                <Button variant="ghost" onClick={finish}>
+                  Not now
+                </Button>
+              )
             ) : running ? (
               <Button variant="secondary" onClick={runInBackground}>
                 Run in background

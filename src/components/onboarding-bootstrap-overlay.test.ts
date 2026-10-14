@@ -9,6 +9,10 @@ const source = [
   ),
   await readFile(new URL("../lib/onboarding-bootstrap.ts", import.meta.url), "utf8"),
 ].join("\n");
+const runtimeStep = await readFile(
+  new URL("./onboarding-runtime-step.tsx", import.meta.url),
+  "utf8",
+);
 const lazy = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 const diagnostics = await readFile(
   new URL("./onboarding-setup-diagnostics.tsx", import.meta.url),
@@ -151,11 +155,14 @@ assert.match(
   /Git is optional/,
   "Git remains visibly optional",
 );
-assert.doesNotMatch(
-  source,
-  /Codex|Claude|Copilot|OpenClaw/i,
-  "first-run setup stays independent of provider runtimes",
-);
+assert.match(source, /<OnboardingRuntimeStep open=\{open\} onReadyChange=\{setRuntimeReady\} \/>/,
+  "the mounted setup dialog offers a runtime after local setup completes");
+assert.match(source, /!state\.complete \|\| !runtimeReady/,
+  "first run cannot auto-finish before a chat runtime is ready");
+assert.match(runtimeStep, /confirmInstall: true/,
+  "a runtime install uses the existing confirmed allowlisted API");
+assert.match(runtimeStep, /"\/api\/harnesses"/,
+  "setup checks existing chat runtimes before offering an install");
 assert.match(
   source,
   /private Node\.js and npm runtime, then verify the Coven CLI/,

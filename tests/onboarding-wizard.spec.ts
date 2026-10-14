@@ -201,6 +201,40 @@ async function gotoApp(
 const setup = (page: Page) => page.getByRole("dialog", { name: "Set up Cave" });
 
 test.describe("onboarding bootstrap", () => {
+  test("completed local setup installs a chat runtime before offering Open Cave", async ({ page }) => {
+    const complete = state({ confirmed: true, complete: true, needsSetup: false, status: "complete" });
+    let installPosts = 0;
+    let jobReads = 0;
+    await page.route("**/api/harnesses**", (route) =>
+      route.fulfill({ json: { ok: true, harnesses: [] } }),
+    );
+    await page.route("**/api/onboarding/install**", (route) => {
+      const target = new URL(route.request().url()).searchParams.get("target");
+      if (route.request().method() === "POST") {
+        installPosts += 1;
+        expect(route.request().postDataJSON()).toEqual({ target: "codex", confirmInstall: true });
+        return route.fulfill({ status: 202, json: { status: "started", started: true, target: "codex" } });
+      }
+      if (!target) return route.fulfill({ json: { status: "idle", npmBusy: false } });
+      if (target === "codex" && installPosts > 0) {
+        jobReads += 1;
+        return route.fulfill({ json: jobReads > 1
+          ? { status: "done", ok: true, elapsedMs: 100, tail: "" }
+          : { status: "running", elapsedMs: 50, tail: "" } });
+      }
+      return route.fulfill({ json: { status: "idle" } });
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(complete) }));
+
+    const dialog = setup(page);
+    await expect(dialog.getByRole("region", { name: "Chat runtime" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Open Cave" })).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Install Codex" }).click();
+    await expect.poll(() => installPosts).toBe(1);
+    await expect(dialog.getByText("Chat runtime ready. You can open Cave.")).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByRole("button", { name: "Open Cave" })).toBeVisible();
+  });
+
   test("auto-opens on first run and traps keyboard focus", async ({ page }) => {
     await gotoApp(page, (route) => route.fulfill({ json: payload(state()) }));
     await expect(setup(page)).toBeVisible({ timeout: 30_000 });
