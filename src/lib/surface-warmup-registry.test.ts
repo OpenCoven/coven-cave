@@ -8,8 +8,9 @@ async function source(name: string): Promise<string> {
   return readFile(new URL(name, here), "utf8");
 }
 
-test("warmup registry covers canonical sidebar landings with bounded serial resources", async () => {
+test("warmup registry covers canonical workspace landings with bounded serial resources", async () => {
   const registry = await source("surface-warmup-registry.ts");
+  assert.match(registry, /chat: \[\]/m, "chat has a chunk-only warmup entry");
   for (const surface of ["marketplace", "board", "schedules", "grimoire", "agents"]) {
     assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
   }
@@ -37,6 +38,15 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
     registry,
     /agents:coven-memory/,
     "canonical local memory is gated by accepted local-daemon readiness instead",
+  );
+});
+
+test("chat is the first speculative surface so Home-to-Chat avoids a cold chunk compile", async () => {
+  const coordinator = await readFile(new URL("../lib/use-surface-warmup.ts", import.meta.url), "utf8");
+  assert.match(
+    coordinator,
+    /const ORDER:[^=]*= \["chat", "board"/,
+    "chat should warm before lower-intent surfaces",
   );
 });
 

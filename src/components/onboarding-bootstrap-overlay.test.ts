@@ -192,4 +192,40 @@ assert.doesNotMatch(
   "diagnostics do not widen native path-opening permissions",
 );
 
+// Background re-entry (#5982): leaving a running dialog arms the retained
+// latch the shell banner trigger reads, and the dialog feeds the shared
+// status store so the banner and Settings render the same state.
+assert.match(
+  source,
+  /const runInBackground = useCallback\(\(\) => \{\s*markSetupBackgrounded\(\);\s*onDismiss\(\);\s*\}, \[onDismiss\]\);/,
+  "Run in background arms the latch before dismissing",
+);
+assert.match(
+  source,
+  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*if \(!state\.confirmed\) persistDismissal\(\);/,
+  "the close control and Escape background a running setup instead of abandoning it",
+);
+assert.match(source, /onClick=\{runInBackground\}>\s*Run in background/, "the footer button uses the same path");
+assert.match(source, /publishOnboardingBootstrapState\(json\);/, "every server state reaches the shared store");
+assert.match(
+  source,
+  /if \(initialState\) publishOnboardingBootstrapState\(initialState\);/,
+  "the hydrated startup state is published without a request",
+);
+assert.doesNotMatch(
+  source,
+  /publishOnboardingBootstrapState\(state\)/,
+  "the local placeholder state is never published as a reading",
+);
+assert.match(
+  source,
+  /setOnboardingDialogOpen\(open\);\s*return \(\) => setOnboardingDialogOpen\(false\);/,
+  "the store knows when the dialog is showing progress",
+);
+assert.match(
+  source,
+  /if \(open && state\.complete\) clearSetupBackgrounded\(\);/,
+  "completion observed in the dialog clears the latch so no duplicate notice follows",
+);
+
 console.log("onboarding-bootstrap-overlay.test.ts: ok");

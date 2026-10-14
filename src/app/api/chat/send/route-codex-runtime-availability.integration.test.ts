@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-multi', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'result-usage-limit', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-multi', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -70,6 +70,7 @@ const shim = [
   "    'result-error-exit-0': 'Codex failed reading /private/fixture/secret with ' + ['ghp', '1234567890abcdefghijklmnopqrstuv'].join('_'),",
   "    'result-bare-exit': 'Codex exited with 1',",
   "    'result-model-rejected': \"Codex exited with 1: The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.\",",
+  "    'result-usage-limit': \"Codex exited with 1: You've hit your usage limit. Upgrade to Pro or try again in 2 hours. /private/fixture/secret\",",
   "  };",
   "  if (Object.hasOwn(resultErrors, process.env.COVEN_TEST_MODE)) {",
   "    const session = `${process.env.COVEN_TEST_MODE}-session`;",
@@ -512,6 +513,23 @@ try {
     assert.equal(events.find((event) => event.kind === "error")?.code, "runtime_process_failed");
     assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "failed");
     assert.doesNotMatch(body, /ChatGPT account/, "the provider payload is not copied into chat");
+  }
+  {
+    // #5938: a spent plan allowance is a model-switch recovery, not a process
+    // failure and not a model rejection. The error names the model the send
+    // asked for so Chat can exclude it; the provider's notice stays out.
+    const { body, events } = await postResultFailure("result-usage-limit", "relayed usage limit");
+    const errors = events.filter((event) => event.kind === "error");
+    assert.equal(errors[0]?.code, "harness_usage_limit");
+    assert.equal(errors[0]?.harness, "codex");
+    assert.equal(errors[0]?.model, "openai/gpt-5.6-sol");
+    assert.match(errors[0]?.message ?? "", /^Codex usage limit reached for openai\/gpt-5\.6-sol\.$/);
+    assert.equal(errors.some((event) => event.code === "runtime_process_failed"), false, "the process-failure block does not also fire");
+    assert.doesNotMatch(body, /Upgrade to Pro|2 hours|\/private\/fixture/, "the provider notice is not copied into chat");
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true);
+    assert.equal(done?.responseMetadata?.modelApplicationState, "pending", "a quota is not a model rejection");
+    assert.equal(done?.responseMetadata?.modelApplicationReason, "Usage limit reached for the selected model.");
   }
   for (const [mode, code] of [
     ["result-auth-login", "harness_auth_required"],

@@ -34,7 +34,7 @@ assert.doesNotMatch(
 // Refresh button tooltip names the new shortcut.
 assert.match(
   source,
-  /title="Refresh \(⌘R\)"/,
+  /title=\{platformizeHint\("Refresh \(⌘R\)", keys\)\}/,
   "refresh button tooltip includes ⌘R",
 );
 

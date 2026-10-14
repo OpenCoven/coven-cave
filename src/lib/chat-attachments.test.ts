@@ -6,6 +6,9 @@ import {
   cleanFileDataUrl,
   cleanImageDataUrl,
   fileToAttachment,
+  MAX_ATTACHMENT_FILE_BYTES,
+  MAX_CHAT_ATTACHMENTS,
+  MAX_CHAT_NON_IMAGE_ATTACHMENTS,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -35,6 +38,22 @@ assert.deepEqual(
   attachments.map((attachment) => attachment.name),
   ["notes.md", "diagram.png", "secret.txt"],
 );
+
+const manyImages = Array.from({ length: MAX_CHAT_ATTACHMENTS + 1 }, (_, index) => ({
+  name: `image-${index}.png`, type: "image/png", size: 1,
+  dataUrl: "data:image/png;base64,YQ==",
+}));
+assert.equal(normalizeChatAttachments(manyImages).length, 50);
+assert.equal(normalizeChatAttachments(manyImages).at(-1)?.name, "image-49.png");
+const mixedAttachments = [
+  ...Array.from({ length: MAX_CHAT_NON_IMAGE_ATTACHMENTS + 1 }, (_, index) => ({
+    name: `file-${index}.zip`, type: "application/zip", size: 1,
+  })),
+  ...manyImages.slice(0, MAX_CHAT_ATTACHMENTS - MAX_CHAT_NON_IMAGE_ATTACHMENTS - 1),
+];
+const normalizedMix = normalizeChatAttachments(mixedAttachments);
+assert.equal(normalizedMix.filter((attachment) => attachment.type === "application/zip").length, 10);
+assert.equal(normalizedMix.length, 49);
 
 const prompt = buildPromptWithAttachments("Please review these.", attachments);
 
@@ -227,6 +246,15 @@ assert.equal(truncated.truncated, true);
       assert.ok(attachment.dataUrl, `${file.name} keeps bytes for runtime materialization`);
       assert.equal(attachment.size, file.size);
     }
+
+    const largeZip = new File([Buffer.alloc(21 * 1024 * 1024, 1)], "large-kit.zip", {
+      type: "application/zip",
+    });
+    const largeAttachment = await fileToAttachment(largeZip);
+    assert.equal(MAX_ATTACHMENT_FILE_BYTES, 50 * 1024 * 1024);
+    assert.ok(largeAttachment.dataUrl, "a ZIP above the former 20 MiB cap keeps its bytes");
+    assert.equal(largeAttachment.truncated, undefined);
+    assert.ok(normalizeChatAttachments([largeAttachment])[0].dataUrl);
 
     // Browsers report .ts source files as MPEG-2 transport stream video. Left
     // uncanonicalized they take the media path and lose their bytes.

@@ -255,4 +255,68 @@ assert.match(
   /const actionFamiliar = await resolveActionFamiliar\(actionLabel, !isOmnigentRun\);[\s\S]*switch \(destination\)[\s\S]*onValidateActingFamiliar\(actionFamiliarId, authorityId\)/,
 );
 
+// Zero familiars (#5982): Home offers the Summoning Circle and every launch
+// path asks for a familiar before it asks for a project. "Choose a project…"
+// now also acts through the shell.
+assert.match(source, /rosterReady\?: boolean;/, "Home learns when an empty roster is final");
+assert.match(source, /onRequestProject\?: \(\) => void;/, "Home can ask the shell for a project");
+assert.match(
+  source,
+  /const noFamiliars = rosterReady && familiars\.length === 0;/,
+  "an empty roster counts only once the fetch settled",
+);
+assert.match(
+  source,
+  /if \(!noFamiliars\) return true;\s*onToast\("Summon a familiar before starting a chat\."\);\s*summonCtaRef\.current\?\.focus\(\);/,
+  "the zero-familiar check toasts and moves focus to the CTA",
+);
+assert.match(
+  source,
+  /No familiars yet\. Summon one to start a chat\./,
+  "the guidance line explains the empty roster",
+);
+assert.match(
+  source,
+  /home-composer-summon[\s\S]{0,200}?leadingIcon="ph:magic-wand-fill"[\s\S]{0,120}?onClick=\{\(\) => requestSummonFamiliar\(\)\}[\s\S]{0,60}?Summon a familiar/,
+  "the hero CTA routes to the Summoning Circle through summon-events",
+);
+assert.doesNotMatch(source, /cave:onboarding-open/, "Home never opens the setup wizard to create a familiar");
+assert.match(
+  source,
+  /if \(!requireFamiliar\(\)\) return;\s*if \(!isOmnigentRun && !project\) \{/,
+  "the zero-familiar check precedes the project check on the main path",
+);
+assert.match(
+  source,
+  /if \(command === "\/new"\) \{\s*if \(!requireFamiliar\(\)\) return;\s*if \(!project\) \{/,
+  "the zero-familiar check precedes the project check for /new",
+);
+assert.match(
+  source,
+  /if \(!requireFamiliar\(\)\) return false;\s*if \(!project\) \{\s*onToast\("Choose a project before running a skill\."\);\s*onRequestProject\?\.\(\);/,
+  "skills ask for a familiar, then a project",
+);
+assert.match(
+  source,
+  /: "Choose a project before starting a chat\.",\s*\);\s*onRequestProject\?\.\(\);\s*return;/,
+  "the no-project path keeps its toast and asks the shell for a project",
+);
+assert.match(
+  source,
+  /onToast\("Choose a project before starting a voice call\."\);\s*onRequestProject\?\.\(\);/,
+  "voice calls ask the shell for a project too",
+);
+assert.match(
+  workspaceSource,
+  /<HomeComposer\s+familiars=\{resolvedFamiliars\}\s+rosterReady=\{familiarsLoaded && familiarRosterLoadedSuccessfully\}\s+project=\{selectedWorkspaceProject\}\s+onRequestProject=\{requestProjectForHome\}/,
+  "Workspace tells Home when the roster is final and answers its project requests",
+);
+assert.match(
+  workspaceSource,
+  /if \(!projectRequestPending\) return;\s*if \(!familiarsLoaded \|\| accessibleGateProjectsLoading\) return;[\s\S]*?const candidate = preferredFirstProjectGateFamiliarId\(activeId, visibleFamiliars\);[\s\S]*?if \(candidate && accessKnownEmpty\) \{\s*setRequestedGateFamiliarId\(candidate\);\s*return;\s*\}\s*setProjectPickerOpenRequest\(\(count\) => count \+ 1\);/,
+  "a project request waits for the roster and access read, then a familiar without projects gets the gate; otherwise the titlebar picker opens",
+);
+assert.match(workspaceSource, /requestedFamiliarId: requestedGateFamiliarId,/, "the explicit request feeds the gate policy");
+assert.match(workspaceSource, /projectOpenRequest=\{projectPickerOpenRequest\}/, "the picker request reaches the titlebar switcher");
+
 console.log("home-composer.test.ts: ok");

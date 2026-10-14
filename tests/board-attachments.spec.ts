@@ -40,13 +40,13 @@ test("home composer files stage and display as chips with remove controls", asyn
   // Both chips appear
   await expect(page.locator(".hc-attachment-name")).toHaveText(["spec.md", "shot.png"]);
 
-  // Count header reads "2/10 attached"
-  await expect(page.locator(".hc-attachments-count")).toHaveText("2/10 attached");
+  // Count header reads "2/50 attached"
+  await expect(page.locator(".hc-attachments-count")).toHaveText("2/50 attached");
 
   // ── Per-chip remove ──────────────────────────────────────────────────────────
   await page.getByRole("button", { name: "Remove spec.md" }).click();
   await expect(page.locator(".hc-attachment-name")).toHaveText(["shot.png"]);
-  await expect(page.locator(".hc-attachments-count")).toHaveText("1/10 attached");
+  await expect(page.locator(".hc-attachments-count")).toHaveText("1/50 attached");
 
   // ── Clear all ────────────────────────────────────────────────────────────────
   await page.locator(".hc-attachments-clear").click();

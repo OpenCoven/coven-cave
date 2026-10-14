@@ -694,6 +694,9 @@ pub fn run() {
                 MenuItem::with_id(app, "new_reminder", "New Reminder…", true, None::<&str>)?;
             let quick_chat =
                 MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
+            // The notch is a macOS menu-bar concept: on Windows the item parked a
+            // pill over other apps' title bars and hid the tray icon (#5970).
+            #[cfg(target_os = "macos")]
             let notch_mode = MenuItem::with_id(
                 app,
                 "notch_mode",
@@ -705,6 +708,7 @@ pub fn run() {
                 MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit CovenCave", true, None::<&str>)?;
+            #[cfg(target_os = "macos")]
             let tray_menu = Menu::with_items(
                 app,
                 &[
@@ -712,6 +716,19 @@ pub fn run() {
                     &new_reminder,
                     &quick_chat,
                     &notch_mode,
+                    &separator,
+                    &show_app,
+                    &separator,
+                    &quit,
+                ],
+            )?;
+            #[cfg(not(target_os = "macos"))]
+            let tray_menu = Menu::with_items(
+                app,
+                &[
+                    &open_inbox,
+                    &new_reminder,
+                    &quick_chat,
                     &separator,
                     &show_app,
                     &separator,
@@ -745,6 +762,7 @@ pub fn run() {
                     // notch window appears top-center, the tray icon hides,
                     // and the choice persists across restarts. The notch's
                     // own dock button (notch:dock-to-tray) is the way back.
+                    #[cfg(target_os = "macos")]
                     "notch_mode" => {
                         let Some(url) = preferred_main_window(app)
                             .and_then(|window| window.url().ok())

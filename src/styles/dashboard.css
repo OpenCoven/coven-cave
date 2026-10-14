@@ -341,6 +341,61 @@
   gap: var(--space-6);
 }
 
+/* Setup row (issue 5982): the About daemon-row status idiom on the General
+   sheet. A small dot colored by the semantic token, always paired with words:
+   color is never the only channel. */
+.settings-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.settings-setup__summary {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.settings-setup-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.settings-setup-status--info {
+  color: var(--accent-presence);
+}
+
+.settings-setup-status--success {
+  color: var(--color-success);
+}
+
+.settings-setup-status--warning {
+  color: var(--color-warning);
+}
+
+.settings-setup-status__dot {
+  width: var(--space-1);
+  height: var(--space-1);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.settings-setup__detail {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
 .settings-stop-phrases {
   display: flex;
   align-items: center;
@@ -793,6 +848,11 @@
   .settings-row--sheet {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
+  }
+
+  .settings-setup {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .settings-stop-phrases {

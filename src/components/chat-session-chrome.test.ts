@@ -255,7 +255,7 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
   );
   // The hint moved with the New-chat button: the chat sidebar's rail header is
   // gone and SidebarMinimal's is the one that is always mounted (cave-fh9so).
-  assert.match(sidebarMinimal, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  assert.match(sidebarMinimal, /<kbd className="rail-header__new-kbd">\{platformizeHint\("⌘N", keys\)\}<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {

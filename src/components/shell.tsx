@@ -16,6 +16,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { SetupProgressBannerTrigger } from "@/components/onboarding-setup-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
@@ -52,6 +53,7 @@ import {
   SHELL_DETAIL_MIN_PX,
   shouldAutoCollapseNavForRightChat,
 } from "@/lib/shell-right-chat";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -338,6 +340,7 @@ function ShellInner({
     goForward: () => void;
   };
 }, ref: ForwardedRef<ShellHandle>) {
+  const keys = useKeySymbols();
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
@@ -447,8 +450,8 @@ function ShellInner({
     () => getPanelShortcutBindings(panelShortcutOverrides),
     [panelShortcutOverrides],
   );
-  const leftPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleLeftPanel);
-  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+  const leftPanelShortcutLabel = platformizeHint(labelPanelShortcut(panelShortcuts.toggleLeftPanel), keys);
+  const rightPanelShortcutLabel = platformizeHint(labelPanelShortcut(panelShortcuts.toggleRightPanel), keys);
 
   const writeRightChatOpenPref = (open: boolean) => {
     try {
@@ -1318,6 +1321,7 @@ function ShellInner({
           <UpdateBannerTrigger />
           <OpenCovenToolsBannerTrigger />
           <CaveHomeMigrationBannerTrigger />
+          <SetupProgressBannerTrigger />
           <ShellBannerStrip />
           <DetailSplitHost
             primary={detail}

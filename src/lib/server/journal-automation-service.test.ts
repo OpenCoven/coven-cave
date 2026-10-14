@@ -63,7 +63,7 @@ test("GET reports no routine yet as available + null", async () => {
   const daemon = fakeDaemon();
   const result = await service.readJournalAutomation("astra", { transport: daemon.transport });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { ok: true, available: true, routine: null, lastRun: null, lastRunEntry: null });
+  assert.deepEqual(result.body, { ok: true, available: true, routine: null, lastRun: null, lastRunEntry: null, lastRunFailure: null });
 });
 
 test("GET returns the routine with its parsed time and the newest run", async () => {
@@ -135,7 +135,8 @@ test("PUT enable creates an ACTIVE coven-code routine in the familiar's journal 
   assert.equal(created.cwd, journalDir, "the routine's cwd is the familiar's journal dir");
   assert.equal(created.timezone, "local");
   assert.ok((await stat(journalDir)).isDirectory(), "the cwd exists before the routine is created");
-  assert.ok(created.prompt.includes(`${journalDir}/DATE.md`), "the prompt names the one file it writes");
+  assert.ok(created.prompt.includes(`${journalDir}/<day>.md`), "the prompt names the entry files it writes");
+  assert.match(created.prompt, /board\.json'/, "the prompt reads the Cave board by default");
   assert.ok(created.prompt.includes("/ws/astra"), "the prompt names the familiar's workspace");
   assert.equal(result.body.routine.hour, 21);
 });
@@ -221,6 +222,76 @@ test("a succeeded run that wrote nothing is reported as not written", async () =
   assert.equal(running.body.lastRunEntry, null);
 });
 
+test("current routines are checked for the day before the run, and a skipped day counts", async () => {
+  // v3+ routines reflect on yesterday and leave an existing entry alone, so
+  // the entry for the previous local day is what the run is answerable for.
+  const { buildJournalRoutinePrompt } = await import("../journal-automation.ts");
+  const prompt = buildJournalRoutinePrompt({ familiarId: "astra", journalDir: "/j/astra" });
+  const startedAt = "2026-10-07T13:00:00.000Z";
+  const routines = [{ id: astraId, status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=8", tags: [], prompt }];
+  const runs = { [astraId]: [{ id: "r1", automationId: astraId, runtime: "coven-code", status: "succeeded", startedAt, sessionId: "s-1" }] };
+  const previousDay = (() => {
+    const d = new Date(startedAt);
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
+  const written = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async (date) => {
+      assert.equal(date, previousDay, "the reflected day, not the run's own day");
+      return { exists: true, source: "familiar", modified: "2026-10-06T23:00:00.000Z" };
+    },
+  });
+  assert.deepEqual(written.body.lastRunEntry, { date: previousDay, written: true }, "an entry the run left as written still counts");
+
+  const missing = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async () => ({ exists: false, source: null, modified: null }),
+  });
+  assert.deepEqual(missing.body.lastRunEntry, { date: previousDay, written: false });
+
+  const legacy = await service.readJournalAutomation("astra", {
+    transport: fakeDaemon({ routines, runs }).transport,
+    readEntry: async () => ({ exists: true, source: "legacy", modified: "2026-10-07T13:01:00.000Z" }),
+  });
+  assert.equal(legacy.body.lastRunEntry.written, false, "a legacy file is never the routine's");
+});
+
+test("PUT with boardPath null leaves the board step out of the prompt", async () => {
+  const daemon = fakeDaemon();
+  await service.saveJournalAutomation(
+    { familiar: "astra", enabled: true, hour: 8, minute: 0, familiarName: "Astra" },
+    { transport: daemon.transport, boardPath: null },
+  );
+  const created = daemon.calls.find((c) => c.action === "coven.automations.create").definition;
+  assert.match(created.prompt, /echo 'no board'/);
+});
+
+test("PUT with hour null keeps a schedule set elsewhere", async () => {
+  const daemon = fakeDaemon({
+    routines: [{ id: astraId, status: "ACTIVE", rrule: "FREQ=WEEKLY;BYHOUR=9;BYDAY=MO", tags: [], runtime: "copilot" }],
+  });
+  const result = await service.saveJournalAutomation(
+    { familiar: "astra", enabled: false, hour: null, minute: 0, familiarName: null, runtime: null },
+    { transport: daemon.transport },
+  );
+  assert.equal(result.status, 200);
+  const updated = daemon.store.get(astraId);
+  assert.equal(updated.rrule, "FREQ=WEEKLY;BYHOUR=9;BYDAY=MO", "the custom rule is untouched");
+  assert.equal(updated.runtime, "copilot", "and so is the harness");
+  assert.equal(updated.status, "PAUSED");
+  assert.equal(result.body.routine.hour, null, "the pane is told it is not a single daily hour");
+
+  const fresh = await service.saveJournalAutomation(
+    { familiar: "nova", enabled: true, hour: null, minute: 0, familiarName: null, runtime: null },
+    { transport: fakeDaemon().transport },
+  );
+  assert.equal(fresh.status, 400, "a new routine needs an hour");
+  assert.equal(service.parseJournalAutomationPut({ familiar: "astra", enabled: true, hour: null }).hour, null);
+  assert.equal(typeof service.parseJournalAutomationPut({ familiar: "astra", enabled: true }), "string", "a missing hour is still refused");
+});
+
 test("PUT disable with no routine is a no-op", async () => {
   const daemon = fakeDaemon();
   const result = await service.saveJournalAutomation(
@@ -284,4 +355,68 @@ test("POST run reports a failed run with the daemon's error", async () => {
   assert.equal(result.status, 502);
   assert.equal(result.body.ok, false);
   assert.match(result.body.error, /not installed/);
+});
+
+test("GET explains a failed last run from its session log", async () => {
+  const daemon = fakeDaemon({
+    routines: [{ id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] }],
+    runs: {
+      [astraId]: [
+        { id: "r9", automationId: astraId, runtime: "claude", status: "failed", sessionId: "session-q", startedAt: "2026-10-06T02:00:29Z" },
+      ],
+    },
+  });
+  const asked = [];
+  const result = await service.readJournalAutomation("astra", {
+    transport: daemon.transport,
+    readSessionLog: async (id) => {
+      asked.push(id);
+      return [{ message: "You've hit your weekly limit · resets 1am (America/Chicago)\n" }, { message: 'exit: {"exitCode":1}' }];
+    },
+  });
+  assert.deepEqual(asked, ["session-q"]);
+  assert.equal(result.body.lastRunFailure.kind, "quota");
+  assert.match(result.body.lastRunFailure.message, /weekly limit/);
+});
+
+test("GET leaves lastRunFailure null for a succeeded run or an unreadable log", async () => {
+  const routines = [{ id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] }];
+  const ok = fakeDaemon({ routines, runs: { [astraId]: [{ id: "r1", automationId: astraId, runtime: "claude", status: "succeeded", sessionId: "s", startedAt: "2026-10-06T02:00:29Z" }] } });
+  let reads = 0;
+  const okResult = await service.readJournalAutomation("astra", {
+    transport: ok.transport,
+    readSessionLog: async () => { reads += 1; return []; },
+    readEntry: async () => ({ exists: true, source: "file", modified: "2026-10-06T02:01:00Z" }),
+  });
+  assert.equal(okResult.body.lastRunFailure, null);
+  assert.equal(reads, 0, "a succeeded run's log is never read");
+  const failed = fakeDaemon({ routines, runs: { [astraId]: [{ id: "r2", automationId: astraId, runtime: "claude", status: "failed", sessionId: "s", startedAt: "2026-10-06T02:00:29Z" }] } });
+  const failedResult = await service.readJournalAutomation("astra", {
+    transport: failed.transport,
+    readSessionLog: async () => { throw new Error("daemon down"); },
+  });
+  assert.equal(failedResult.status, 200, "a log read failure never hides the routine");
+  assert.equal(failedResult.body.lastRunFailure, null);
+});
+
+test("GET flags a routine saved with older reflection instructions", async () => {
+  const { JOURNAL_ROUTINE_PROMPT_MARKER } = await import("../journal-automation.ts");
+  const base = { id: astraId, name: "x", status: "ACTIVE", rrule: "FREQ=DAILY;BYHOUR=21", tags: ["journal"] };
+  const stale = await service.readJournalAutomation("astra", { transport: fakeDaemon({ routines: [{ ...base, prompt: "You are Astra, writing today's entry." }] }).transport });
+  assert.equal(stale.body.promptOutdated, true);
+  const fresh = await service.readJournalAutomation("astra", { transport: fakeDaemon({ routines: [{ ...base, prompt: `...\n${JOURNAL_ROUTINE_PROMPT_MARKER}` }] }).transport });
+  assert.equal(fresh.body.promptOutdated, false);
+  const none = await service.readJournalAutomation("astra", { transport: fakeDaemon().transport });
+  assert.equal(none.body.promptOutdated, undefined, "no routine, nothing to update");
+});
+
+test("a saved routine's prompt carries the current instructions marker", async () => {
+  const { JOURNAL_ROUTINE_PROMPT_MARKER } = await import("../journal-automation.ts");
+  const daemon = fakeDaemon();
+  const result = await service.saveJournalAutomation(
+    { familiar: "astra", enabled: true, hour: 4, minute: 0, familiarName: "Astra" },
+    { transport: daemon.transport },
+  );
+  assert.ok(result.body.routine.prompt.includes(JOURNAL_ROUTINE_PROMPT_MARKER));
+  assert.equal(result.body.promptOutdated, false);
 });

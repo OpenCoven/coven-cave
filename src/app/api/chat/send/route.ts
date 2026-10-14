@@ -56,7 +56,7 @@ import {
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { parseHarnessAuthFailure } from "@/lib/harness-failure";
+import { parseHarnessAuthFailure, parseHarnessUsageLimit } from "@/lib/harness-failure";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -140,6 +140,7 @@ import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
   isClaudeStreamJsonFrame,
+  isSyntheticClaudeEnvelope,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
 } from "@/lib/claude-stream";
@@ -264,6 +265,7 @@ import {
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
+  USAGE_LIMIT_APPLICATION_REASON,
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
@@ -3281,6 +3283,7 @@ async function postAdmittedChat(
                       attachmentFilePaths,
                     }),
                     { modelControls: promptModelControls },
+                    { origin: generationOrigin },
                   ),
                   mentionedFiles,
                 ),
@@ -4081,6 +4084,18 @@ async function postAdmittedChat(
       const recordRuntimeAuthKind = (kind: "login" | "configuration" | null | undefined) => {
         if (kind === "configuration" || (kind === "login" && !runtimeAuthKind)) runtimeAuthKind = kind;
       };
+      // A spent plan allowance or a throttled request (#5938). Only the
+      // verdict is kept, and it only upgrades (null → rate → quota): a quota
+      // notice followed by a 429 line is still a quota, which needs a model
+      // switch rather than a retry. Recorded BEFORE every disclosure filter so
+      // the classifier sees text the diagnostics deliberately withhold.
+      let runtimeUsageLimit: "quota" | "rate" | null = null;
+      const recordUsageLimitKind = (kind: "quota" | "rate" | null | undefined) => {
+        if (kind === "quota" || (kind === "rate" && !runtimeUsageLimit)) runtimeUsageLimit = kind;
+      };
+      const recordUsageLimit = (text: unknown) => {
+        recordUsageLimitKind(parseHarnessUsageLimit(text, binding.harness)?.kind);
+      };
       // Some harnesses (notably codex) route their error output through
       // stdout, where the AssistantFilter discards it. Capture any stdout
       // lines that look like errors as a fallback for the diagnostic.
@@ -4094,6 +4109,7 @@ async function postAdmittedChat(
           if (["codex", "claude", "copilot"].includes(binding.harness)) {
             recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
           }
+          recordUsageLimit(trimmed);
           if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
@@ -4114,6 +4130,7 @@ async function postAdmittedChat(
           if (["codex", "claude", "copilot"].includes(binding.harness)) {
             recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
           }
+          recordUsageLimit(trimmed);
           relayedErrTail.push(trimmed);
           if (relayedErrTail.length > STDOUT_ERR_KEEP) relayedErrTail.shift();
         }
@@ -4748,7 +4765,13 @@ async function postAdmittedChat(
             // paths, command output, or credentials. Retain only the model
             // rejection classification needed for response metadata; never
             // copy their message into a persisted/user-visible diagnostic.
-            openCodeModelRejected ||= modelRejectionInError(ev.message);
+            // A usage limit is not a model rejection even when its prose says
+            // "model unavailable": the id was accepted, the plan is spent.
+            const openCodeUsageLimit = parseHarnessUsageLimit(ev.message, binding.harness);
+            recordUsageLimitKind(openCodeUsageLimit?.kind);
+            if (!openCodeUsageLimit) {
+              openCodeModelRejected ||= modelRejectionInError(ev.message);
+            }
             resumeFailed ||= RESUME_ERR_RE.test(ev.message);
             recordStdoutErrorTail("OpenCode reported an error event", true);
             result = { ...result, is_error: true };
@@ -4870,6 +4893,7 @@ async function postAdmittedChat(
             // stripped every payload from this event.
             result = { ...result, is_error: true };
             recordRuntimeAuthKind(event.authKind);
+            recordUsageLimitKind(event.usageLimit);
             recordStdoutErrorTail("Codex reported a failure event", true);
             return;
           }
@@ -4962,8 +4986,13 @@ async function postAdmittedChat(
               usage?: unknown;
               /** Coven's relayed harness failure reason on `result` frames. */
               error?: unknown;
+              /** Claude Code's own result text; on an is_error result it is
+               *  the CLI's failure notice (e.g. a usage limit, #5938). It
+               *  feeds the classifiers only and is never rendered. */
+              result?: unknown;
               text?: string;
               message?: {
+                model?: unknown;
                 content?: Array<{
                   type?: string;
                   text?: string;
@@ -5011,6 +5040,12 @@ async function postAdmittedChat(
                 const cleaned = resolveBackspaces(stripAnsi(relayedError));
                 captureCodexAdapterFailure(cleaned);
                 recordRelayedError(cleaned);
+              }
+              // Claude Code repeats its failure notice in the result's own
+              // `result` text. Classify the usage-limit verdict from it and
+              // discard the text, matching the Claude stderr rule above.
+              if (ev.is_error === true && binding.harness === "claude" && typeof ev.result === "string") {
+                recordUsageLimit(resolveBackspaces(stripAnsi(ev.result)));
               }
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
@@ -5077,7 +5112,18 @@ async function postAdmittedChat(
                 }
                 return;
               }
+              // Claude Code stamps CLI-authored text (a usage-limit notice)
+              // with model `<synthetic>`. Classify only that text; a model
+              // reply that merely quotes the word "limit" is never a verdict.
+              let syntheticEnvelope = false;
               for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
+                if (claudeEvent.kind === "model" && claudeEvent.synthetic) {
+                  syntheticEnvelope = true;
+                  continue;
+                }
+                if (claudeEvent.kind === "text" && syntheticEnvelope) {
+                  recordUsageLimit(claudeEvent.text);
+                }
                 if (claudeEvent.kind === "model") {
                   responseMetadata.runtimeIdentity = withReportedRuntimeModel(
                     responseMetadata.runtimeIdentity ?? runtimeIdentityForLaunch(binding.harness), claudeEvent.model,
@@ -5126,7 +5172,9 @@ async function postAdmittedChat(
                   fingerprint: redactedEventFingerprint(ev),
                 });
               }
+              const synthetic = isSyntheticClaudeEnvelope(ev);
               for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                if (synthetic) recordUsageLimit(text);
                 assistantText += text;
                 push({ kind: "assistant_chunk", text });
               }
@@ -5787,6 +5835,9 @@ async function postAdmittedChat(
               if (["codex", "claude", "copilot"].includes(binding.harness)) {
                 recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
               }
+              // Classified before the Claude disclosure rule below: a quota
+              // notice on stderr still needs the model-switch recovery.
+              recordUsageLimit(trimmed);
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered
               // to the chat transcript.
@@ -6085,6 +6136,7 @@ async function postAdmittedChat(
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
         runtimeAuthKind = null;
+        runtimeUsageLimit = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -6147,6 +6199,7 @@ async function postAdmittedChat(
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
         runtimeAuthKind = null;
+        runtimeUsageLimit = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -6220,7 +6273,25 @@ async function postAdmittedChat(
         push({ kind: "error", code, message, harness: binding.harness });
       }
 
-      if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {
+      // A spent plan allowance or throttled request (#5938). Unlike the auth
+      // block this does NOT require empty assistant text: Claude Code delivers
+      // its quota notice AS assistant text (a `<synthetic>` envelope), so the
+      // transcript is never empty. Chat gets a one-turn model switch for a
+      // quota and keeps the plain Retry for throttling. The error event
+      // carries the Cave model id the send asked for, never provider text.
+      if (!launchFailure && !sshRuntime && !runHandle.stopRequested && result.is_error && runtimeUsageLimit) {
+        const quota = runtimeUsageLimit === "quota";
+        const code = quota ? "harness_usage_limit" : "harness_rate_limited";
+        const label = parseHarnessUsageLimit("usage limit reached", binding.harness)?.harnessLabel ?? "The runtime";
+        const message = quota
+          ? `${label} usage limit reached for ${selectedModel ?? "the runtime's default model"}.`
+          : `${label} is rate-limiting requests. Wait a moment, then retry.`;
+        launchFailure = { code, message };
+        pushProgress("harness-usage-limit", quota ? "Runtime usage limit reached" : "Runtime rate-limited", "error", message);
+        push({ kind: "error", code, message, harness: binding.harness, model: selectedModel ?? null });
+      }
+
+      if (!launchFailure && !runtimeUsageLimit && covenBackedProcessFailed && !assistantText.trim()) {
         const failedRunner = binding.harness === "codex"
           ? "codex"
           : binding.harness === "claude"
@@ -6431,7 +6502,10 @@ async function postAdmittedChat(
           ? { failed: true } : { supported: true });
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = openCodeModelRejected
-          ? application.reason : "OpenCode received the selected model; the resolved model was not reported.";
+          ? application.reason
+          : runtimeUsageLimit === "quota"
+            ? USAGE_LIMIT_APPLICATION_REASON
+            : "OpenCode received the selected model; the resolved model was not reported.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
@@ -6441,7 +6515,9 @@ async function postAdmittedChat(
       // itself safely identifies a rejected model. The validated native
       // assistant model report, when available, establishes downstream identity.
       else if (localRuntimePlan?.runner === "coven" && forwardModel) {
-        const rejected = result.is_error === true && modelRejectionInError(
+        // A usage limit is checked first: its prose can read "model
+        // unavailable", but the id was accepted, so the model stays pending.
+        const rejected = result.is_error === true && !runtimeUsageLimit && modelRejectionInError(
           [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
         );
         const confirmed = !result.is_error && confirmedModel != null && responseMetadata.runtimeIdentity?.model != null;
@@ -6458,7 +6534,9 @@ async function postAdmittedChat(
           ? application.reason
           : confirmed
             ? application.reason
-            : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+            : runtimeUsageLimit === "quota"
+              ? USAGE_LIMIT_APPLICATION_REASON
+              : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
@@ -6466,18 +6544,23 @@ async function postAdmittedChat(
       // successful run confirms it; a model rejection becomes failed rather
       // than incorrectly reporting the selected model as applied.
       else if (confirmedModel) {
-        const application = modelApplicationForHarness(
-          modelApplicationFromRun({
-            confirmedModel,
-            isError: result.is_error === true,
-            errorText: [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
-          }),
-        );
+        const run = modelApplicationFromRun({
+          confirmedModel,
+          isError: result.is_error === true,
+          errorText: [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
+        });
+        const application = modelApplicationForHarness(run);
+        // The recorded verdict covers text the tails withhold (Claude's
+        // synthetic notice never enters a tail), so it also sets the reason.
+        const reason = run?.reason
+          ?? (result.is_error && runtimeUsageLimit === "quota" && application.state === "pending"
+            ? USAGE_LIMIT_APPLICATION_REASON
+            : application.reason);
         if (!result.is_error) responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
-        responseMetadata.modelApplicationReason = application.reason;
+        responseMetadata.modelApplicationReason = reason;
         modelState.applicationState = application.state;
-        modelState.reason = application.reason;
+        modelState.reason = reason;
       }
       if (!result.is_error && Object.keys(appliedModelControlValues).length > 0) {
         responseMetadata.appliedControls = appliedModelControlValues;

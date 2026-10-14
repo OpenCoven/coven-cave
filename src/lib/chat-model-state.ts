@@ -1,4 +1,5 @@
 import { isSafeRuntimeModelId, runtimeModelProviderMismatch, runtimeOwnsModelDefault } from "./runtime-models.ts";
+import { parseHarnessUsageLimit, type HarnessUsageLimit } from "./harness-failure.ts";
 
 export type ModelScope =
   | "runtime-default"
@@ -157,17 +158,40 @@ export function modelRejectionInError(errorText: unknown): boolean {
   return typeof errorText === "string" && MODEL_REJECTION_RE.test(errorText);
 }
 
+/** A spent plan allowance is not a model rejection: the id was accepted and
+ * the provider refused to serve it right now. Checked BEFORE
+ * modelRejectionInError because quota prose can also say "model unavailable"
+ * (#5938). Verdict only; the error text never leaves this function. */
+export function usageLimitInError(errorText: unknown): HarnessUsageLimit | null {
+  return parseHarnessUsageLimit(errorText);
+}
+
+export const USAGE_LIMIT_APPLICATION_REASON = "Usage limit reached for the selected model.";
+
+export type ModelApplicationRunResult = ModelApplicationInput & {
+  /** Set when the run's error explains the state better than the generic
+   *  application copy (a usage limit keeps the model pending, not failed). */
+  reason?: string;
+};
+
 // Decide application state after a validated native model report. Callers must
 // not pass an argv selection or a relay's system.init echo as confirmedModel.
-// A model-specific rejection is failed; another run error leaves it pending.
+// A usage limit keeps the model pending with its own reason; a model-specific
+// rejection is failed; another run error leaves it pending.
 // Missing native evidence leaves the caller's pre-run state untouched.
 export function modelApplicationFromRun(input: {
   confirmedModel: string | null;
   isError: boolean;
   errorText: string;
-}): ModelApplicationInput | null {
+}): ModelApplicationRunResult | null {
   if (!input.confirmedModel) return null;
   if (!input.isError) return { supported: true, confirmed: true };
+  const limit = usageLimitInError(input.errorText);
+  if (limit) {
+    return limit.kind === "quota"
+      ? { supported: true, reason: USAGE_LIMIT_APPLICATION_REASON }
+      : { supported: true };
+  }
   if (modelRejectionInError(input.errorText)) return { failed: true };
   return { supported: true };
 }

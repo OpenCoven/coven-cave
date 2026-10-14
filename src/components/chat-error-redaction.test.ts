@@ -12,7 +12,7 @@ assert.match(source, /const detailText = useMemo[\s\S]{0,700}Chat request did no
 assert.match(source, /onClick=\{\(\) => copy\(detailText\)\}/, "copy only receives the safe detail summary");
 assert.match(source, /parseHarnessFailure\(recoveryText\)/, "recovery can classify raw failures without rendering them");
 assert.match(source, /harnessId=\{authRecoveryHarness\(debugError\?\.harness, session\?\.harness, familiar\.harness\)\}/, "a failed send uses the server-selected harness before the familiar default");
-assert.match(source, /raiseDebugError\(\{ turnId: assistantId, code: ev\.code, harness: ev\.harness \}\)/, "auth error keeps the selected harness with its failure");
+assert.match(source, /raiseDebugError\(\{ turnId: assistantId, code: ev\.code, harness: ev\.harness, model: ev\.model \}\)/, "auth and usage-limit errors keep the selected harness and model with their failure");
 assert.match(source, /authFamiliarId=\{familiar\.id\}/, "key recovery targets the failing familiar");
 assert.match(source, /<HarnessAuthVaultButton familiarId=\{authFamiliarId\}/, "key recovery keeps the mounted Chat retry request");
 assert.doesNotMatch(source, /openFamiliarStudioSettingsTab/, "auth recovery must not hard-navigate away from Chat");

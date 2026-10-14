@@ -12,6 +12,7 @@ import {
   compositeTone,
   contextPressureLabel,
   deriveThreadScore,
+  isThreadSelfReport,
   metricTone,
   selfReportRequiresHumanAction,
   selfReportSourceSessionId,
@@ -608,6 +609,131 @@ describe("aggregateThreadSignals stale signal clearing", () => {
       .filter((item) => item.kind === "low-score");
     assert.equal(lowScores.length, 4);
     assert.ok(lowScores.every((item) => item.severity === "critical"));
+  });
+});
+
+describe("linked capability folding (#5938)", () => {
+  // Both examples from the issue: one reflection listed the same root cause
+  // twice — as a blocker AND as the capability whose absence caused it.
+  const usageBlocker = {
+    id: "model-usage-limit-final-turn",
+    title: "Model usage limit hit on the final turn",
+    category: "infra" as const,
+    impact: "high" as const,
+    detail: "The final turn could not run.",
+    suggestedResolution: "Switch model or wait for the reset.",
+  };
+  const usageCapability = {
+    name: "Model usage headroom",
+    importance: "blocking" as const,
+    detail: "No headroom was left to finish the turn.",
+    blockerId: "model-usage-limit-final-turn",
+  };
+  const socialBlocker = {
+    id: "no-social-publishing-path",
+    title: "No social publishing path",
+    category: "tooling" as const,
+    impact: "medium" as const,
+    detail: "Posts could not be scheduled.",
+  };
+  const socialCapability = {
+    name: "Instagram/TikTok publishing or scheduling integration",
+    importance: "important" as const,
+    detail: "No publishing integration is connected.",
+    blockerId: "no-social-publishing-path",
+  };
+  function quietReport(id: string, reportedAt: string, overrides: Partial<ThreadSelfReport>): ThreadSelfReport {
+    return {
+      ...fullReport(),
+      id,
+      sessionId: id,
+      reportedAt,
+      skillsNeedingAccess: [],
+      skillsNeedingClarity: [],
+      contextPressure: "adequate",
+      memoryRecallScore: 90,
+      persistentBlockers: [],
+      capabilitiesLacking: [],
+      ...overrides,
+    };
+  }
+  const uniqueKeys = (items: { kind: string; sourceId: string }[]) => {
+    const keys = items.map((item) => `${item.kind}:${item.sourceId}`);
+    assert.equal(new Set(keys).size, keys.length, `duplicate keys in ${keys.join(" | ")}`);
+  };
+
+  it("folds a linked capability into its blocker in the review queue", () => {
+    // Two reports so blocker frequency is 1/2: not frequency-critical on its
+    // own, which lets the fold's severity raise show.
+    const older = quietReport("session-old", "2026-10-10T08:00:00.000Z", {});
+    const newer = quietReport("session-new", "2026-10-11T08:00:00.000Z", {
+      persistentBlockers: [usageBlocker, socialBlocker],
+      capabilitiesLacking: [usageCapability, socialCapability],
+    });
+    const queue = buildThreadSignalReviewQueue(aggregateThreadSignals([older, newer]));
+    uniqueKeys(queue);
+    assert.deepEqual(queue.filter((item) => item.kind === "capability"), [], "neither capability is listed on its own");
+    const usage = queue.find((item) => item.sourceId === "model-usage-limit-final-turn");
+    assert.ok(usage);
+    assert.match(usage.detail, /Also reported as a capability gap: Model usage headroom/);
+    assert.equal(usage.severity, "critical", "a blocking capability raises its blocker to critical");
+    const social = queue.find((item) => item.sourceId === "no-social-publishing-path");
+    assert.ok(social);
+    assert.match(social.detail, /Also reported as a capability gap: Instagram\/TikTok publishing or scheduling integration/);
+    assert.equal(social.severity, "warning", "an important (not blocking) capability leaves the blocker's severity alone");
+  });
+
+  it("keeps a capability visible when its blocker is not in the list", () => {
+    const unlinked = quietReport("session-unlinked", "2026-10-11T08:00:00.000Z", {
+      capabilitiesLacking: [
+        usageCapability,
+        { ...socialCapability, importance: "blocking", blockerId: "a-blocker-that-was-never-filed" },
+      ],
+    });
+    const queue = buildThreadSignalReviewQueue(aggregateThreadSignals([unlinked]));
+    uniqueKeys(queue);
+    // Equal severity and rank, so the queue orders the two by title.
+    assert.deepEqual(
+      queue.filter((item) => item.kind === "capability").map((item) => item.sourceId),
+      ["Instagram/TikTok publishing or scheduling integration", "Model usage headroom"],
+      "a blockerId with no listed blocker folds nothing",
+    );
+  });
+
+  it("folds the same way in the card rows", () => {
+    const report = quietReport("session-rows", "2026-10-11T08:00:00.000Z", {
+      persistentBlockers: [{ ...usageBlocker, impact: "medium" }, socialBlocker],
+      capabilitiesLacking: [usageCapability, socialCapability],
+    });
+    const rows = buildThreadSignalRows(report);
+    uniqueKeys(rows);
+    assert.deepEqual(rows.filter((row) => row.kind === "capability"), []);
+    const usage = rows.find((row) => row.sourceId === "model-usage-limit-final-turn");
+    assert.ok(usage);
+    assert.equal(usage.detail, "The final turn could not run. Also reported as a capability gap: Model usage headroom.");
+    assert.equal(usage.severity, "critical", "a blocking capability raises a medium blocker to critical");
+    assert.equal(usage.resolution, "Switch model or wait for the reset.");
+    const social = rows.find((row) => row.sourceId === "no-social-publishing-path");
+    assert.equal(social?.severity, "warning");
+    assert.match(social?.detail ?? "", /Also reported as a capability gap: Instagram\/TikTok/);
+
+    const unlinkedRows = buildThreadSignalRows(quietReport("session-rows-2", "2026-10-11T08:00:00.000Z", {
+      capabilitiesLacking: [usageCapability],
+    }));
+    assert.deepEqual(unlinkedRows.map((row) => `${row.kind}:${row.sourceId}`), ["capability:Model usage headroom"]);
+  });
+
+  it("validates blockerId as optional text", () => {
+    assert.equal(isThreadSelfReport({ ...fullReport(), capabilitiesLacking: [usageCapability] }), true);
+    assert.equal(isThreadSelfReport({ ...fullReport(), capabilitiesLacking: [{ ...usageCapability, blockerId: undefined }] }), true);
+    assert.equal(isThreadSelfReport({ ...fullReport(), capabilitiesLacking: [{ ...usageCapability, blockerId: 42 }] }), false);
+    assert.equal(isThreadSelfReport({ ...fullReport(), capabilitiesLacking: [{ ...usageCapability, blockerId: null }] }), false);
+  });
+
+  it("asks the reflection to report each root cause once", () => {
+    const prompt = buildThreadReflectPrompt({ sessionId: "sess-fold", transcript: "user: hi" });
+    assert.match(prompt, /"blockerId": "<optional: id of the persistentBlockers entry this gap causes>"/);
+    assert.match(prompt, /Report each root cause once\. If a missing capability is the reason for a\s+"persistentBlockers" entry, set that capability's "blockerId" to the blocker's\s+id; list a capability on its own only when no blocker covers it\./);
   });
 });
 

@@ -26,6 +26,10 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/app/api/chat/scheduled/route.test.ts",
+    "src/components/chat-send-later.test.ts",
+    "src/lib/server/scheduled-chat-store.test.ts",
+    "src/lib/server/scheduled-chat-dispatch.test.ts",
     "src/lib/chat-origins.test.ts",
     "src/lib/proposal-submission.test.ts",
     "src/lib/proposal-submission-controller.test.ts",
@@ -430,6 +434,8 @@ export const SUITES = {
     "src/lib/project-registry-events.test.ts",
     "src/lib/first-project-gate-retry.test.ts",
     "src/lib/first-project-gate-policy.test.ts",
+    "src/lib/setup-events.test.ts",
+    "src/lib/onboarding-bootstrap-status.test.ts",
     "src/lib/session-project-scope.test.ts",
     "scripts/sync-marketplace.test.mjs",
     "scripts/crafts-audited-content.test.mjs",
@@ -607,6 +613,7 @@ export const SUITES = {
     "src/components/settings-github.test.ts",
     "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",
+    "src/components/settings-setup.test.ts",
     "src/components/settings-daemon-multihost.test.ts",
     "src/lib/server/daemon-probe.test.ts",
     "src/lib/server/tailscale-devices.test.ts",
@@ -796,6 +803,7 @@ export const SUITES = {
     "src/components/dnd-context-stable-ids.test.ts",
     "src/components/onboarding-guided-steps.test.ts",
     "src/components/onboarding-bootstrap-overlay.test.ts",
+    "src/components/onboarding-setup-banner.test.ts",
     "src/components/familiar-studio-look-tab.test.ts",
     "src/components/familiars-view.test.ts",
     "src/components/familiar-summoning-circle.test.ts",
@@ -1023,6 +1031,8 @@ export const SUITES = {
     "src/components/code-reading-wiring.test.ts",
     "src/components/chat-prompt-enhance.test.ts",
     "src/components/settings-shortcut.test.ts",
+    "src/lib/platform-keys.test.ts",
+    "src/components/windows-shortcut-hints.test.ts",
     "src/components/bottom-terminal-sr-mirror.test.ts",
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",
@@ -1390,7 +1400,7 @@ export const SUITES = {
     "src/lib/use-changes-summary.test.ts",
     "src/lib/changes-summary-fetch.test.ts",
     "src/lib/chat-environment-panel-model.test.ts",
-    "src/components/chat-environment-panel.test.ts",
+    "src/components/composer-environment-popover.test.ts",
     "src/lib/use-familiar-contracts.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
@@ -1822,6 +1832,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-claude-availability.integration.test.ts",
     "src/app/api/chat/send/route-copilot-auth.integration.test.ts",
     "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+    "src/app/api/chat/send/route-claude-usage-limit.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-negotiation.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts",
@@ -2019,6 +2030,7 @@ export const SUITES = {
     "src/app/api/search/route.test.ts",
   // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
     "src/proxy-behavior.test.ts",
+    "src/proxy-body-size.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
     "src/lib/server/memory-file-write.test.ts",
@@ -2247,6 +2259,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/chat/scheduled/route.test.ts",
   "src/app/api/chat/send/meta-run-hygiene.test.ts",
   // Daily-note generation imports application aliases and Next route modules.
   "src/lib/daily-note-generation.test.ts",
@@ -2298,6 +2311,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/running-activity.test.ts",
   "src/app/api/running-activity/route.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
+  "src/proxy-body-size.test.ts",
   "src/lib/server/client-v1/auth.test.ts",
   // Resolves the process-local instance id through the "@/lib" Cave path.
   "src/lib/server/client-v1/authority-runtime.test.ts",
@@ -2448,6 +2462,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-claude-availability.integration.test.ts",
   "src/app/api/chat/send/route-copilot-auth.integration.test.ts",
   "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+  "src/app/api/chat/send/route-claude-usage-limit.integration.test.ts",
   "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
   // These route tests import the send route, whose runtime graph resolves
   // Cave modules through the `@/lib` alias.

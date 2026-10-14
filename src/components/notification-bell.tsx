@@ -11,6 +11,7 @@ import { collapseInboxSeries, isInboxItemPastDue, isInboxItemUnread, unreadInbox
 import { normalizeInboxTitle } from "@/lib/inbox-title";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 type Props = {
@@ -64,6 +65,13 @@ export function NotificationBell({
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // "Glass", "Pop" and "Funk" are macOS system sounds. Only the macOS shell
+  // can play them, so Windows, Linux and browser tabs get Default and Silent
+  // (#5970). Resolved after mount so server and first client markup agree.
+  const [namedSoundsAvailable, setNamedSoundsAvailable] = useState(false);
+  useEffect(() => {
+    setNamedSoundsAvailable(isMacDesktopShell());
+  }, []);
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -406,9 +414,13 @@ export function NotificationBell({
                   [
                     { mode: "default" as SoundMode, label: "Default" },
                     { mode: "silent" as SoundMode, label: "Silent" },
-                    { mode: "named" as SoundMode, label: "Glass", name: "Glass" },
-                    { mode: "named" as SoundMode, label: "Pop", name: "Pop" },
-                    { mode: "named" as SoundMode, label: "Funk", name: "Funk" },
+                    ...(namedSoundsAvailable
+                      ? ([
+                          { mode: "named" as SoundMode, label: "Glass", name: "Glass" },
+                          { mode: "named" as SoundMode, label: "Pop", name: "Pop" },
+                          { mode: "named" as SoundMode, label: "Funk", name: "Funk" },
+                        ] as const)
+                      : []),
                   ] as const
                 ).map((opt) => {
                   const active =

@@ -364,7 +364,7 @@ function DesktopReachabilityCard() {
       {!status ? (
         <ErrorState
           compact
-          headline="Couldn’t load Mac reachability settings"
+          headline="Couldn’t load reachability settings"
           subtitle={error}
           actions={
             <Button size="xs" onClick={() => setReloadKey((key) => key + 1)}>
@@ -1266,7 +1266,7 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                     </p>
                   )}
                   <p>
-                    Sign your iPhone and this Mac into the same Tailscale network, then enter the desktop address on the app’s connect screen.
+                    Sign your iPhone and this computer into the same Tailscale network, then enter the desktop address on the app’s connect screen.
                   </p>
                   {handoff?.nativeHost ? (
                     <Button
