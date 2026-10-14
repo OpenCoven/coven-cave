@@ -1,6 +1,11 @@
 import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 
+
+// PROBE (local only, never commit): mirror realtime events to a loopback listener.
+function __probe(line: string) {
+  try { void fetch("http://127.0.0.1:3999/", { method: "POST", mode: "no-cors", body: line, keepalive: true }); } catch { /* ignore */ }
+}
 const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 
@@ -79,7 +84,13 @@ const clientAdapter: VoiceClientAdapter = {
 
     const events = pc.createDataChannel("oai-events");
     const stream = createRealtimeEventStream(callbacks);
-    events.onmessage = (ev) => { if (!closed) stream.handle(ev.data); };
+    events.onmessage = (ev) => {
+      try { const e = JSON.parse(ev.data); __probe(`rt ${e.type} ${e.type === "error" ? JSON.stringify(e.error) : e.type === "response.done" ? `${e.response?.status} ${JSON.stringify(e.response?.status_details ?? "")}` : String(e.transcript ?? e.delta ?? "").slice(0, 160)}`); } catch { __probe("rt raw"); }
+      if (!closed) stream.handle(ev.data);
+    };
+    pc.addEventListener("connectionstatechange", () => __probe(`pc ${pc.connectionState}`));
+    events.addEventListener("open", () => __probe("dc open"));
+    events.addEventListener("close", () => __probe("dc close"));
     pc.onconnectionstatechange = () => {
       if (!closed && connected && pc.connectionState === "failed") {
         connected = false;
@@ -147,6 +158,7 @@ const clientAdapter: VoiceClientAdapter = {
     const send = (payload: unknown) => {
       if (closed || events.readyState !== "open") return false;
       try {
+        __probe(`client-> ${(payload as { type?: string })?.type}`);
         events.send(JSON.stringify(payload));
         return true;
       } catch {

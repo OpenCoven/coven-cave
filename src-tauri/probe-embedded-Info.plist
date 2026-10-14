@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- PROBE (local only, never commit): embedded into the unbundled debug binary so TCC can prompt. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>ai.opencoven.cave.voiceprobe</string>
+	<key>CFBundleName</key>
+	<string>CovenCave Voice Probe</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Coven Cave Voice Probe records a test voice call.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Coven Cave Voice Probe transcribes a test voice call.</string>
+</dict>
+</plist>

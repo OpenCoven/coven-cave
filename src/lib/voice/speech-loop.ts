@@ -1,3 +1,4 @@
+import { probeLog } from "./probe-log.ts";
 // Shared client speech loop — the ears and mouth of a decomposed voice call.
 //
 // The local provider (local-loop.ts) established the shape: a voice call is
@@ -304,6 +305,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
       if (!closed) callbacks.onPartialTranscript("user", text, userItemKey);
     },
     onFinal: (text) => {
+      probeLog(`loop ears final ${JSON.stringify(text.slice(0, 80))} closed=${closed}`);
       if (closed || !text.trim()) return;
       const trimmed = text.trim();
       callbacks.onUserTranscriptFinal(trimmed, userItemKey);
@@ -311,11 +313,13 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
       void askBrain(trimmed);
     },
     onError: (code, hint) => {
+      probeLog(`loop ears error ${code} ${hint ?? ""}`);
       if (!closed) callbacks.onError(new VoiceConnectError(code, hint));
     },
   }, mic);
 
   const listen = () => {
+    probeLog(`loop listen closed=${closed} muted=${muted} speaking=${speaking}`);
     if (closed || muted || speaking) return;
     ears.listen();
   };
@@ -342,6 +346,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     }
     const { text, prepared } = utterance;
     const epoch = speechEpoch;
+    probeLog(`loop mouth speak ${JSON.stringify(text.slice(0, 60))} prepared=${!!prepared}`);
     speaking = true;
     hush();
     // The transcript highlight rides the queue, not the brain: this is the
@@ -351,6 +356,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     const playback = prepared ? prepared.speak() : mouth.speak(text);
     prepareNext();
     playback
+      .then(() => probeLog("loop mouth done"), (err) => { probeLog(`loop mouth FAILED ${err instanceof Error ? err.name + ": " + err.message : String(err)}`); throw err; })
       .catch((err) => {
         // A mouth failure (e.g. the TTS proxy erroring) surfaces like a brain
         // failure but keeps draining — one bad utterance must not end the call.
@@ -409,15 +415,18 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     brainBusy = true;
     const epoch = speechEpoch;
     const itemKey = nextItemKey();
+    probeLog(`loop brain start ${JSON.stringify(userText.slice(0, 80))}`);
     try {
       const finalText = await opts.brain(userText, (chunk) => {
         if (epoch !== speechEpoch) return;
         enqueueSpeech(chunk);
       }, itemKey);
+      probeLog(`loop brain done ${JSON.stringify(String(finalText).slice(0, 80))} closed=${closed}`);
       if (closed) return;
       callbacks.onAssistantTranscriptFinal(finalText, itemKey);
       await queueDrained();
     } catch (err) {
+      probeLog(`loop brain FAILED ${err instanceof Error ? err.name + ": " + err.message + " " + ((err as { hint?: string }).hint ?? "") : String(err)}`);
       // A typed barge-in supersedes the old runtime turn as well as its audio.
       // Its eventual rejection must not fail the replacement call/turn.
       if (!closed && epoch === speechEpoch) {

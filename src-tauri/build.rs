@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
+  // PROBE (local only, never commit): embed usage descriptions into the unbundled binary.
+  println!("cargo:rerun-if-changed=/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/probe-voice-events/src-tauri/probe-embedded-Info.plist");
+  println!("cargo:rustc-link-arg-bins=-Wl,-sectcreate,__TEXT,__info_plist,/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/probe-voice-events/src-tauri/probe-embedded-Info.plist");
   emit_sidecar_file_count_budget();
   emit_discord_application_id();
   tauri_build::build()

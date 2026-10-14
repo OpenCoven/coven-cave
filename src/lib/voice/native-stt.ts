@@ -1,3 +1,4 @@
+import { probeLog } from "./probe-log.ts";
 // Native macOS speech-to-text ears for the local voice loop (cave-0ogg).
 //
 // WKWebView ships no SpeechRecognition, so in the packaged desktop app the
@@ -125,11 +126,13 @@ export function createNativeSttEars(
 
     const finishUtterance = (session: number) => {
       clearTimers();
+      probeLog(`stt finishUtterance session=${session} current=${current}`);
       if (session !== current) return;
-      void bridge.invoke("speech_stt_finish", { session }).catch(() => { /* torn down */ });
+      void bridge.invoke("speech_stt_finish", { session }).then(() => probeLog(`stt finish invoked ok ${session}`)).catch((e) => probeLog(`stt finish invoke FAILED ${session} ${String(e)}`));
     };
 
     const onEvent = (payload: SttEventPayload) => {
+      probeLog(`stt event kind=${payload.kind} session=${payload.session} current=${current} closed=${closed} text=${JSON.stringify((payload.text ?? "").slice(0, 80))} code=${payload.code ?? ""} msg=${payload.message ?? ""}`);
       if (closed || payload.session !== current) return;
       if (payload.kind === "partial") {
         const text = payload.text ?? "";
@@ -183,6 +186,7 @@ export function createNativeSttEars(
       if (closed || !wanted || current !== 0) return;
       const session = ++counter;
       current = session;
+      probeLog(`stt start session=${session}`);
       void subscribed.then(() => {
         if (closed || !wanted || current !== session) return;
         bridge
