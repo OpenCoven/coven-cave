@@ -83,8 +83,9 @@ const loadSettingsShell = () =>
 const loadRailTerminalPanel = () =>
   import("@/components/rail-terminal-panel").then((m) => m.RailTerminalPanel);
 
-/** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
+/** Canonical workspace surfaces whose chunks can be warmed before navigation. */
 export type WarmableSidebarSurface =
+  | "chat"
   | "marketplace"
   | "board"
   | "schedules"
@@ -182,6 +183,8 @@ export const RailTerminalPanel = dynamic(
  */
 export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
   switch (surface) {
+    case "chat":
+      return loadChatSurface().then(() => undefined);
     case "marketplace":
       return loadMarketplaceView().then(() => undefined);
     case "board":

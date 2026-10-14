@@ -35,6 +35,9 @@ export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
 }
 
 export const surfaceWarmupResources = {
+  // Chat is chunk-only here. Its session list is already owned by Workspace,
+  // so warming that request speculatively would duplicate the boot load.
+  chat: [],
   marketplace: ["marketplace:catalog", "marketplace:skills"],
   board: ["board:cards"],
   schedules: ["schedules:inbox", "schedules:automations"],
