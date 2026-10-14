@@ -3283,6 +3283,7 @@ async function postAdmittedChat(
                       attachmentFilePaths,
                     }),
                     { modelControls: promptModelControls },
+                    { origin: generationOrigin },
                   ),
                   mentionedFiles,
                 ),
