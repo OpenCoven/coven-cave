@@ -2408,7 +2408,7 @@ final class AppModel {
         self.coreResourceClientFactory = coreResourceClientFactory
         #if DEBUG
         self.clientSession = clientSession ?? NativeActivityRecoveryPreview.sessionIfRequested()
-            ?? ToolOutputPreview.sessionIfRequested()
+            ?? ToolOutputPreview.sessionIfRequested() ?? ChatSendPreview.sessionIfRequested()
         #else
         self.clientSession = clientSession
         #endif
@@ -2585,7 +2585,10 @@ final class AppModel {
     }
 
     private func configureEmptyChatPreview() {
-        connection = nil
+        connection = ChatSendPreview.isRequested ? CaveConnection(host: ChatSendPreview.origin) : nil
+        // The send fixture owns a scratch thread store that is never read
+        // back, so its delivery checkpoint may persist without hydration.
+        if ChatSendPreview.isRequested { threadsHydrated = true }
         familiars = [
             Familiar(
                 id: "nyx",

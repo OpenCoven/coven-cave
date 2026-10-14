@@ -43,6 +43,14 @@ enum TranscriptRow: Identifiable, Equatable {
     }
 }
 
+extension TranscriptRow {
+    static let maximumCurrentTurnRows = 8
+
+    static func currentTurnStart(in rows: [TranscriptRow]) -> Int {
+        max(rows.count - 1, 0)
+    }
+}
+
 /// O(1) message-id → array-position lookup for the stream's hot mutation
 /// path. Rebuilt after structural changes; text-only mutations reuse the
 /// same index.

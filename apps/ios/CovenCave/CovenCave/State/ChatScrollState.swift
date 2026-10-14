@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Layout changes are not a request to stop following the conversation.
 struct ChatScrollState {
@@ -27,6 +28,31 @@ struct ChatScrollState {
     mutating func followLatest() {
         isFollowingLatest = true
         isUserScrolling = false
+    }
+}
+
+/// The transcript's tail, keyed by thread: opening another thread is neither
+/// an append nor a removal.
+struct ChatTranscriptTail: Equatable {
+    let threadId: String
+    let count: Int
+    let lastMessageId: String?
+}
+
+enum ChatOwnSend {
+    static func isOwnSend(from old: ChatTranscriptTail, to new: ChatTranscriptTail,
+                          messages: [DisplayMessage]) -> Bool {
+        messages.last?.role == .user
+    }
+}
+
+enum ChatDayChipPolicy {
+    static func revealsChip(on phase: ScrollPhase) -> Bool {
+        phase != .idle
+    }
+
+    static func showsChip(active: Bool, followingLatest: Bool) -> Bool {
+        active
     }
 }
 
@@ -106,6 +132,8 @@ struct ChatViewportRecovery {
         rowsRemoved = true
         evaluate(consumesEvidence: false)
     }
+
+    mutating func noteFollowingLatest(_ following: Bool) {}
 
     mutating func update(_ geometry: ChatViewportGeometry) {
         guard geometry.isValid else { return }

@@ -24,8 +24,9 @@ struct CovenCaveApp: App {
         #if DEBUG
         let recovery = NativeActivityRecoveryPreview.configuration
         let recoveryDefaults = recovery.map { NativeActivityRecoveryPreview.makeDefaults($0) }
-        let recoveryStoreURL = recovery?.threadStoreURL
+        let recoveryStoreURL = recovery?.threadStoreURL ?? ChatSendPreview.threadStoreURL
         let recoverySession = NativeActivityRecoveryPreview.sessionIfRequested()
+            ?? ChatSendPreview.sessionIfRequested()
         #else
         let recoveryDefaults: UserDefaults? = nil
         let recoveryStoreURL: URL? = nil

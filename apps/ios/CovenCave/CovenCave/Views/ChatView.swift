@@ -2,13 +2,6 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-/// Message count keyed by thread, so shrink recovery can tell a removed
-/// message from switching to a shorter thread.
-private struct TranscriptCount: Equatable {
-    let threadId: String
-    let count: Int
-}
-
 /// An image chosen in the composer, pending send.
 struct PendingImage: Identifiable {
     let id = UUID()
@@ -310,6 +303,15 @@ struct ChatView: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) { proxy.scrollTo(target, anchor: .bottom) }
         }
+    }
+
+    private var transcriptTail: ChatTranscriptTail {
+        ChatTranscriptTail(threadId: thread.id, count: thread.messages.count,
+                           lastMessageId: thread.messages.last?.id)
+    }
+
+    private var showsDayChip: Bool {
+        ChatDayChipPolicy.showsChip(active: dayChipActive, followingLatest: scrollState.isFollowingLatest)
     }
 
     private func requestFollowLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
@@ -990,20 +992,30 @@ struct ChatView: View {
     private var messageScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let rows = thread.transcriptRows
+                let turnStart = TranscriptRow.currentTurnStart(in: rows)
                 VStack(spacing: 10) {
-                    // Keep history lazy, but never virtualize the latest row.
-                    // Its large WebView must be mounted on cold/repeated opens
-                    // and must survive a sharp shrink while reading above it
-                    // (#5613). This retains at most one extra message renderer.
+                    // Keep history lazy, but never virtualize the current turn.
+                    // The latest row's large WebView must be mounted on
+                    // cold/repeated opens and must survive a sharp shrink while
+                    // reading above it (#5613). The message just sent, its day
+                    // divider and the pending replies stay mounted beside it,
+                    // so a send never inserts them into the lazy stack (#5933).
                     LazyVStack(spacing: 10) {
-                        ForEach(thread.transcriptRows.dropLast()) { row in
+                        ForEach(rows[..<turnStart]) { row in
                             VStack(spacing: 10) {
                                 transcriptRow(row, proxy: proxy)
                             }
                             .id(row.id)
                         }
                     }
-                    if let row = thread.transcriptRows.last {
+                    ForEach(rows[turnStart..<max(turnStart, rows.count - 1)]) { row in
+                        VStack(spacing: 10) {
+                            transcriptRow(row, proxy: proxy)
+                        }
+                        .id(row.id)
+                    }
+                    if let row = rows.last {
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
@@ -1104,13 +1116,13 @@ struct ChatView: View {
             // day the reader is inside — the newest day whose separator has
             // passed the top edge. Fades out shortly after scrolling settles.
             .overlay(alignment: .top) {
-                if dayChipActive, let day = daysAboveTop.max() {
+                if showsDayChip, let day = daysAboveTop.max() {
                     DayChip(date: day)
                         .padding(.top, 8)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: dayChipActive)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsDayChip)
             .onScrollPhaseChange { _, newPhase in
                 switch newPhase {
                 case .tracking, .interacting, .decelerating:
@@ -1122,15 +1134,22 @@ struct ChatView: View {
                 default: break
                 }
                 dayChipIdleTask?.cancel()
-                if newPhase == .idle {
+                if ChatDayChipPolicy.revealsChip(on: newPhase) {
+                    if !dayChipActive { dayChipActive = true }
+                } else if dayChipActive {
                     dayChipIdleTask = Task {
                         try? await Task.sleep(nanoseconds: 900_000_000)
                         guard !Task.isCancelled else { return }
                         dayChipActive = false
                     }
-                } else if !dayChipActive {
-                    dayChipActive = true
                 }
+            }
+            // Following latest wants the end of the transcript, so an offset
+            // beyond that end is never a place the reader chose (#5933).
+            .onChange(of: scrollState.isFollowingLatest && !scrollState.isUserScrolling,
+                      initial: true) { _, following in
+                viewportRecovery.noteFollowingLatest(following)
+                recoverTranscriptViewportIfNeeded(proxy)
             }
             // Follow the stream only while the reader is parked at the bottom.
             // Scrolling up to reread must never be yanked back down by each
@@ -1148,13 +1167,13 @@ struct ChatView: View {
             // A removed message shortens the transcript under a new last-row
             // id, which the latest row's same-id height check cannot see.
             // Keyed by thread so switching to a shorter thread is not removal.
-            .onChange(of: TranscriptCount(threadId: thread.id, count: thread.messages.count)) { old, new in
-                guard old.threadId == new.threadId, new.count < old.count else { return }
-                viewportRecovery.noteRowsRemoved()
-                recoverTranscriptViewportIfNeeded(proxy)
-            }
-            .onChange(of: thread.messages.count) { _, _ in
-                let ownSend = thread.messages.last?.role == .user
+            .onChange(of: transcriptTail) { old, new in
+                if old.threadId == new.threadId, new.count < old.count {
+                    viewportRecovery.noteRowsRemoved()
+                    recoverTranscriptViewportIfNeeded(proxy)
+                }
+                guard old.count != new.count else { return }
+                let ownSend = ChatOwnSend.isOwnSend(from: old, to: new, messages: thread.messages)
                 guard scrollState.isFollowingLatest || ownSend else { return }
                 requestFollowLatest(proxy, animation: .snappy(duration: 0.25))
             }

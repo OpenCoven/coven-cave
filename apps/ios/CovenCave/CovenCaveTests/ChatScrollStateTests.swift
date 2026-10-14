@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import CovenCave
 
@@ -213,7 +214,166 @@ final class ChatViewportRecoveryTests: XCTestCase {
         XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
     }
 
+    // #5933: a reader following latest who is left beyond the end (for
+    // example by an own send while scrolled past the last row) is clamped back
+    // even though nothing shrank. Case 109's not-following reader is not.
+    func testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteLatestRow(id: "latest", height: 200)
+        recovery.update(geometry(height: 2_000, offset: 1_400))
+        recovery.noteFollowingLatest(true)
+        XCTAssertFalse(recovery.hasPendingRecovery, "an in-range follower needs no correction")
+        recovery.update(geometry(height: 2_000, offset: 1_900))
+        XCTAssertTrue(recovery.hasPendingRecovery)
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false), "one correction per excursion")
+    }
+
+    func testResumingFollowWhileAlreadyBeyondTheEndRecovers() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteLatestRow(id: "latest", height: 200)
+        recovery.update(geometry(height: 900, offset: 700))
+        XCTAssertFalse(recovery.hasPendingRecovery, "not following: never moved without shrink evidence")
+        recovery.noteFollowingLatest(true)
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing() {
+        // A short transcript cannot scroll: any offset past the top inset is
+        // empty space below the conversation.
+        var recovery = ChatViewportRecovery()
+        recovery.noteFollowingLatest(true)
+        recovery.noteLatestRow(id: "placeholder", height: 60)
+        recovery.update(geometry(height: 300, offset: 400))
+        XCTAssertTrue(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testFollowingNeverInterruptsAGesture() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteFollowingLatest(true)
+        recovery.noteLatestRow(id: "latest", height: 200)
+        recovery.update(geometry(height: 2_000, offset: 1_900))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: true))
+    }
+
+    func testStoppingFollowDropsAFollowOnlyCorrection() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteFollowingLatest(true)
+        recovery.noteLatestRow(id: "latest", height: 200)
+        recovery.update(geometry(height: 2_000, offset: 1_900))
+        XCTAssertTrue(recovery.hasPendingRecovery)
+        recovery.noteFollowingLatest(false)
+        XCTAssertFalse(recovery.hasPendingRecovery, "a reader who scrolled away keeps their place")
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
+    func testLazyHistoryReestimationStillNeverPullsANonFollowingReader() {
+        var recovery = ChatViewportRecovery()
+        recovery.noteFollowingLatest(false)
+        recovery.noteLatestRow(id: "latest", height: 1_200)
+        recovery.update(geometry(height: 4_554, offset: 3_800))
+        recovery.update(geometry(height: 4_323, offset: 3_800))
+        XCTAssertFalse(recovery.takeRecovery(isUserScrolling: false))
+    }
+
     func testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame() {
         XCTAssertEqual(geometry(height: 10_000, offset: 100), geometry(height: 10_000, offset: 3_000))
+    }
+}
+
+/// #5933: the own-send decision. A live send appends the user message and its
+/// reply placeholders in one synchronous call, so the transcript's last
+/// message is a placeholder by the time the view sees the change.
+final class ChatOwnSendTests: XCTestCase {
+    private func tail(_ messages: [DisplayMessage], thread: String = "t1") -> ChatTranscriptTail {
+        ChatTranscriptTail(threadId: thread, count: messages.count, lastMessageId: messages.last?.id)
+    }
+
+    private let history = [
+        DisplayMessage(id: "u0", role: .user, familiarId: nil, text: "earlier"),
+        DisplayMessage(id: "a0", role: .assistant, familiarId: "nyx", text: "reply"),
+    ]
+
+    private var sentUser: DisplayMessage {
+        DisplayMessage(id: "u1", role: .user, familiarId: nil, text: "new", queued: true,
+                       queuedDispatchInFlight: true)
+    }
+
+    private var placeholder: DisplayMessage {
+        DisplayMessage(id: "p1", role: .assistant, familiarId: "nyx", text: "", streaming: true)
+    }
+
+    func testLiveSendWithPlaceholderIsAnOwnSend() {
+        let after = history + [sentUser, placeholder]
+        XCTAssertTrue(ChatOwnSend.isOwnSend(from: tail(history), to: tail(after), messages: after))
+    }
+
+    func testGroupSendWithSeveralPlaceholdersIsAnOwnSend() {
+        let second = DisplayMessage(id: "p2", role: .assistant, familiarId: "lyra", text: "", streaming: true)
+        let after = history + [sentUser, placeholder, second]
+        XCTAssertTrue(ChatOwnSend.isOwnSend(from: tail(history), to: tail(after), messages: after))
+    }
+
+    func testFirstSendInAnEmptyChatIsAnOwnSend() {
+        let after = [sentUser, placeholder]
+        XCTAssertTrue(ChatOwnSend.isOwnSend(from: tail([]), to: tail(after), messages: after))
+    }
+
+    func testOfflineQueuedSendIsAnOwnSend() {
+        var queued = sentUser
+        queued.queuedDispatchInFlight = nil
+        let after = history + [queued]
+        XCTAssertTrue(ChatOwnSend.isOwnSend(from: tail(history), to: tail(after), messages: after))
+    }
+
+    func testArrivingReplyIsNotAnOwnSend() {
+        let before = history + [sentUser]
+        let after = before + [DisplayMessage(id: "a1", role: .assistant, familiarId: "nyx", text: "hi")]
+        XCTAssertFalse(ChatOwnSend.isOwnSend(from: tail(before), to: tail(after), messages: after))
+    }
+
+    func testSwitchingToALongerThreadIsNotAnOwnSend() {
+        let other = history + [sentUser, placeholder]
+        XCTAssertFalse(ChatOwnSend.isOwnSend(from: tail([], thread: "t1"),
+                                             to: tail(other, thread: "t2"), messages: other))
+    }
+
+    func testRemovalIsNotAnOwnSend() {
+        let before = history + [sentUser]
+        XCTAssertFalse(ChatOwnSend.isOwnSend(from: tail(before), to: tail(history), messages: history))
+    }
+
+    func testReplayPlaceholderInsertedBeforeTheTailIsNotAnOwnSend() {
+        // Reconnect replay inserts a reply after an older queued message; the
+        // newest message is unchanged, so nothing was sent from the composer.
+        let before = history + [sentUser, DisplayMessage(id: "u2", role: .user, familiarId: nil, text: "later")]
+        var after = before
+        after.insert(placeholder, at: 3)
+        XCTAssertFalse(ChatOwnSend.isOwnSend(from: tail(before), to: tail(after), messages: after))
+    }
+
+    func testHistoryFromAnotherDeviceIsNotAnOwnSend() {
+        // Pull to refresh can bring in turns sent elsewhere; their user
+        // messages were never queued on this phone.
+        let after = history + [DisplayMessage(id: "u9", role: .user, familiarId: nil, text: "from desk"),
+                               DisplayMessage(id: "a9", role: .assistant, familiarId: "nyx", text: "ok")]
+        XCTAssertFalse(ChatOwnSend.isOwnSend(from: tail(history), to: tail(after), messages: after))
+    }
+}
+
+/// #5933: the floating day chip belongs to the reader's own scroll.
+final class ChatDayChipPolicyTests: XCTestCase {
+    func testOnlyAReadersScrollRevealsTheChip() {
+        XCTAssertTrue(ChatDayChipPolicy.revealsChip(on: .tracking))
+        XCTAssertTrue(ChatDayChipPolicy.revealsChip(on: .interacting))
+        XCTAssertTrue(ChatDayChipPolicy.revealsChip(on: .decelerating))
+        XCTAssertFalse(ChatDayChipPolicy.revealsChip(on: .animating), "a programmatic send-time scroll is not reading")
+        XCTAssertFalse(ChatDayChipPolicy.revealsChip(on: .idle))
+    }
+
+    func testChipStaysHiddenWhileFollowingLatest() {
+        XCTAssertTrue(ChatDayChipPolicy.showsChip(active: true, followingLatest: false))
+        XCTAssertFalse(ChatDayChipPolicy.showsChip(active: true, followingLatest: true))
+        XCTAssertFalse(ChatDayChipPolicy.showsChip(active: false, followingLatest: false))
     }
 }
