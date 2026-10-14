@@ -11,6 +11,11 @@ import {
   type OnboardingBootstrapState,
   type OnboardingBootstrapStageStatus,
 } from "@/lib/onboarding-bootstrap";
+import {
+  publishOnboardingBootstrapState,
+  setOnboardingDialogOpen,
+} from "@/lib/onboarding-bootstrap-status";
+import { clearSetupBackgrounded, markSetupBackgrounded } from "@/lib/setup-events";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -93,10 +98,22 @@ export function OnboardingOverlay({
     }
   }, []);
 
+  // Backgrounding keeps the server-owned run going and arms the shell banner
+  // trigger (#5982). The latch is retained on `window` because the startup
+  // gate mounts the Workspace only after this dialog is dismissed.
+  const runInBackground = useCallback(() => {
+    markSetupBackgrounded();
+    onDismiss();
+  }, [onDismiss]);
+
   const dismiss = useCallback(() => {
+    if (state.status === "running") {
+      runInBackground();
+      return;
+    }
     if (!state.confirmed) persistDismissal();
     onDismiss();
-  }, [onDismiss, persistDismissal, state.confirmed]);
+  }, [onDismiss, persistDismissal, runInBackground, state.confirmed, state.status]);
 
   const finish = useCallback(() => {
     persistDismissal();
@@ -142,6 +159,7 @@ export function OnboardingOverlay({
             : "setup request failed");
         }
         setState(json);
+        publishOnboardingBootstrapState(json);
         setRequestError(null);
         return json;
       } catch (error) {
@@ -177,6 +195,23 @@ export function OnboardingOverlay({
     if (!open || initialState) return;
     void request("GET");
   }, [initialState, open, request]);
+
+  // Only server-resolved states reach the shared status store: the local
+  // default is a placeholder, not a reading, and would mask a live run.
+  useEffect(() => {
+    if (initialState) publishOnboardingBootstrapState(initialState);
+  }, [initialState]);
+
+  useEffect(() => {
+    setOnboardingDialogOpen(open);
+    return () => setOnboardingDialogOpen(false);
+  }, [open]);
+
+  // The open dialog already shows completion, so a backgrounded run that
+  // finishes in view must not also raise the "Cave is set up." banner.
+  useEffect(() => {
+    if (open && state.complete) clearSetupBackgrounded();
+  }, [open, state.complete]);
 
   useEffect(() => {
     if (!open || !state.failure?.diagnostics) setDiagnosticsOpen(false);
@@ -407,7 +442,7 @@ export function OnboardingOverlay({
                 Open Cave
               </Button>
             ) : running ? (
-              <Button variant="secondary" onClick={onDismiss}>
+              <Button variant="secondary" onClick={runInBackground}>
                 Run in background
               </Button>
             ) : null}

@@ -32,6 +32,8 @@ export type WorkspaceContextSwitcherProps = {
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
   contextNotice?: string | null;
+  /** Forwarded to ProjectPicker: each increment opens the picker (#5982). */
+  projectOpenRequest?: number;
   variant?: "rail" | "titlebar";
 };
 
@@ -63,6 +65,7 @@ export function WorkspaceContextSwitcher({
   sessions,
   responseNeeded,
   contextNotice,
+  projectOpenRequest,
   variant = "rail",
 }: WorkspaceContextSwitcherProps) {
   return (
@@ -93,6 +96,7 @@ export function WorkspaceContextSwitcher({
           createProjectOrThrow={createProjectOrThrow}
           ariaLabel="Switch project"
           disabled={projectLoading || Boolean(projectError)}
+          openRequest={projectOpenRequest}
         />
       </div>
       <div className="workspace-context-switcher__crew">

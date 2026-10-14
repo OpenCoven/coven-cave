@@ -53,6 +53,8 @@ import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
+import { Button } from "@/components/ui/button";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
@@ -89,7 +91,13 @@ export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
   familiars: ResolvedFamiliar[];
+  /** True once the shell's roster fetch has settled successfully, so an
+   *  empty `familiars` means "none exist" rather than "still loading". */
+  rosterReady?: boolean;
   project: CaveProject | null;
+  /** The shell's answer to "Choose a project…" (#5982): opens the project
+   *  picker, or the first-project gate when the familiar has none. */
+  onRequestProject?: () => void;
   taskOrigin?: HomeTaskOrigin | null;
   actingFamiliarId: string | null;
   /** The shell's active familiar — drives the shared selector row's highlight.
@@ -146,7 +154,9 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 
 export function HomeComposer({
   familiars,
+  rosterReady = false,
   project,
+  onRequestProject,
   taskOrigin = null,
   actingFamiliarId,
   activeFamiliarId,
@@ -246,6 +256,17 @@ export function HomeComposer({
     [actingFamiliarId, familiars],
   );
   const selectedFamiliarId = selectedFamiliar?.id ?? "";
+  // Zero familiars (#5982): nothing can run a chat, so every launch path asks
+  // for a familiar first — before any project check — and the hero offers the
+  // Summoning Circle. Creation never routes through the onboarding wizard.
+  const noFamiliars = rosterReady && familiars.length === 0;
+  const summonCtaRef = useRef<HTMLButtonElement>(null);
+  const requireFamiliar = useCallback((): boolean => {
+    if (!noFamiliars) return true;
+    onToast("Summon a familiar before starting a chat.");
+    summonCtaRef.current?.focus();
+    return false;
+  }, [noFamiliars, onToast]);
   const actionAuthoritySequenceRef = useRef(0);
   const resolveActionFamiliar = useCallback(async (
     actionLabel: string,
@@ -425,8 +446,10 @@ export function HomeComposer({
         textareaRef.current?.focus();
         return false;
       }
+      if (!requireFamiliar()) return false;
       if (!project) {
         onToast("Choose a project before running a skill.");
+        onRequestProject?.();
         return false;
       }
       const actionFamiliar = await resolveActionFamiliar("Run skill");
@@ -452,6 +475,8 @@ export function HomeComposer({
       initialChatControls,
       onStartChat,
       onToast,
+      onRequestProject,
+      requireFamiliar,
       text,
     ],
   );
@@ -659,8 +684,10 @@ export function HomeComposer({
         return;
       }
       if (command === "/new") {
+        if (!requireFamiliar()) return;
         if (!project) {
           onToast("Choose a project before starting a chat.");
+          onRequestProject?.();
           return;
         }
         const actionFamiliar = await resolveActionFamiliar("Start new chat");
@@ -682,8 +709,10 @@ export function HomeComposer({
         setText("");
         return;
       }
+      if (!requireFamiliar()) return;
       if (!project) {
         onToast("Choose a project before running this command.");
+        onRequestProject?.();
         return;
       }
       const actionFamiliar = await resolveActionFamiliar("Run command");
@@ -710,12 +739,14 @@ export function HomeComposer({
     }
     const actionLabel = homeSubmitLabel(destination, runtimeHost, prompt);
     const isOmnigentRun = actionLabel === "Start Omnigent run";
+    if (!requireFamiliar()) return;
     if (!isOmnigentRun && !project) {
       onToast(
         destination === "board"
           ? "Choose a project before creating a task."
           : "Choose a project before starting a chat.",
       );
+      onRequestProject?.();
       return;
     }
     const actionFamiliar = await resolveActionFamiliar(actionLabel, !isOmnigentRun);
@@ -845,6 +876,8 @@ export function HomeComposer({
     onStartChat,
     onNavigateToBoard,
     onToast,
+    onRequestProject,
+    requireFamiliar,
     skills,
     invokeSkill,
     prompts,
@@ -899,10 +932,24 @@ export function HomeComposer({
         <h1 className="home-composer-headline">What are we casting today?</h1>
         {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
         <p className="home-composer-guidance" id={guidanceId}>
-          {destination === "board"
-            ? "Describe a task to add to Tasks. Your familiar can pick it up there."
-            : "Choose a familiar and describe what you want to work on."}
+          {noFamiliars
+            ? "No familiars yet. Summon one to start a chat."
+            : destination === "board"
+              ? "Describe a task to add to Tasks. Your familiar can pick it up there."
+              : "Choose a familiar and describe what you want to work on."}
         </p>
+        {noFamiliars ? (
+          <div className="home-composer-summon">
+            <Button
+              ref={summonCtaRef}
+              variant="primary"
+              leadingIcon="ph:magic-wand-fill"
+              onClick={() => requestSummonFamiliar()}
+            >
+              Summon a familiar
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -1182,8 +1229,10 @@ export function HomeComposer({
                     ? {
                         onSelect: async () => {
                           if (voiceCallPending) return;
+                          if (!requireFamiliar()) return;
                           if (!project) {
                             onToast("Choose a project before starting a voice call.");
+                            onRequestProject?.();
                             return;
                           }
                           const actionFamiliar = await resolveActionFamiliar("Start voice call");
