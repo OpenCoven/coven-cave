@@ -24,6 +24,7 @@ import {
   runtimeModelLabel,
 } from "@/components/composer-runtime-chip";
 import { GitBranchMenuPopover, useBranchPr } from "@/components/composer-git-chip";
+import { ComposerEnvironmentPopover } from "@/components/composer-environment-popover";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import { useChangesSummary } from "@/lib/use-changes-summary";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
@@ -46,6 +47,9 @@ export type ComposerContextView =
   | "model"
   | "branch"
   | "worktree"
+  // The branch chip's Environment popover chains into the branch list on the
+  // same anchor (#5958) — a sibling view, never a nested popover.
+  | "branch-list"
   | `control:${ModelControlFamily}`;
 
 import type { RuntimeModelInventoryResult } from "@/lib/use-runtime-model-options";
@@ -95,6 +99,10 @@ export type ComposerContextProps = {
   projectRoot?: string;
   /** Opens the branch PR in the app's browser pane; falls back to window.open. */
   onOpenUrl?: (url: string) => void;
+  /** The conversation's recorded EXECUTION runtime ("local:<cwd>" |
+   *  "ssh:<host>:<cwd>") for the Environment popover's Local/ssh row (#5958).
+   *  Distinct from `runtime`, which is the model harness. */
+  executionRuntime?: string | null;
   /** Ad-hoc root the chat runs in — enables the picker's in-place
    *  "Register this folder" row (spec 2026-07-24). */
   registerCurrentRoot?: string;
@@ -143,7 +151,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   );
 
   const root = config.projectRoot?.trim() ? config.projectRoot : undefined;
-  const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(
+  const { loaded, notARepo, branch, count, totals, worktree, reload } = useChangesSummary(
     root,
     Boolean(root),
   );
@@ -173,6 +181,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
     notARepo,
     branch,
     count,
+    totals,
     worktree,
     reload,
     pr,
@@ -287,6 +296,9 @@ export function ComposerContextChips(props: ComposerContextProps) {
     }
   }, [optionsOpen]);
   const [menu, setMenu] = useState<ComposerContextView>(null);
+  // Keyboard activation of the branch chip (Enter / Space → click.detail 0)
+  // moves focus into the Environment popover; a pointer leaves it on the chip.
+  const [branchOpenedWithKeyboard, setBranchOpenedWithKeyboard] = useState(false);
   const showProject = props.showProject ?? true;
   const projectRef = useRef<HTMLButtonElement | null>(null);
   const worktreeRef = useRef<HTMLButtonElement | null>(null);
@@ -382,8 +394,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
         disabled={props.disabled || context.config.modelDisabled}
         aria-haspopup="menu"
         aria-expanded={menu === "model"}
-        aria-label={`Model: ${modelLabel} — change model`}
-        title={`Model: ${modelLabel}`}
+        aria-label={`Selected model: ${modelLabel} — change model`}
+        title={`Selected for the next message: ${modelLabel}`}
         onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "model" ? null : "model")); }}
       >
         <span className="cave-context-chip__lead" aria-hidden>
@@ -432,11 +444,15 @@ export function ComposerContextChips(props: ComposerContextProps) {
           type="button"
           className="cave-context-chip focus-ring"
           disabled={props.disabled}
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
           aria-expanded={menu === "branch"}
-          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
+          aria-label={`Branch: ${context.branch} — open environment`}
           title={`Branch: ${context.branch} · ${context.dirtyLabel}`}
-          onClick={(event) => { event.currentTarget.focus(); setMenu((c) => (c === "branch" ? null : "branch")); }}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setBranchOpenedWithKeyboard(event.detail === 0);
+            setMenu((c) => (c === "branch" ? null : "branch"));
+          }}
         >
           <span className="cave-context-chip__lead" aria-hidden>
             <Icon name="ph:git-branch" width={13} aria-hidden />
@@ -552,9 +568,33 @@ export function ComposerContextChips(props: ComposerContextProps) {
         />
       ) : null}
       {context.hasGit ? (
-        <GitBranchMenuPopover
+        <ComposerEnvironmentPopover
           open={menu === "branch"}
           onOpenChange={(open) => setMenu(open ? "branch" : null)}
+          anchorRef={branchRef}
+          placement={context.config.popoverPlacement}
+          openedWithKeyboard={branchOpenedWithKeyboard}
+          executionRuntime={context.config.executionRuntime}
+          summary={{
+            totals: context.totals,
+            count: context.count,
+            branch: context.branch,
+            worktree: context.worktree,
+            loaded: context.loaded,
+            notARepo: context.notARepo,
+          }}
+          onReload={context.reload}
+          // The Branch row chains into the branch list on the SAME anchor
+          // (runtime → model parity): the row closes this popover, then the
+          // list's open state wins the batch.
+          onOpenBranchMenu={() => setMenu("branch-list")}
+          {...branchPopoverExtras(context)}
+        />
+      ) : null}
+      {context.hasGit ? (
+        <GitBranchMenuPopover
+          open={menu === "branch-list"}
+          onOpenChange={(open) => setMenu(open ? "branch-list" : null)}
           anchorRef={branchRef}
           placement={context.config.popoverPlacement}
           projectRoot={context.root}

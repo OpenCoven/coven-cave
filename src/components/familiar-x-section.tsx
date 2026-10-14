@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { Familiar } from "@/lib/types";
 import type { XScope } from "@/lib/x-api";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import {
@@ -222,7 +222,7 @@ function grantLabel(grant: XGrant): string {
   return grant === "xResearchEnabled" ? "X research" : "X publishing";
 }
 
-export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
+export function FamiliarXSection({ familiar }: { familiar: Pick<Familiar, "id" | "display_name" | "xResearchEnabled" | "xPublishEnabled"> }) {
   const platform = useTauriPlatform();
   const { announce } = useAnnouncer();
   const disconnectConfirm = useArmedConfirm();
@@ -849,7 +849,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
             className="focus-ring"
             loading={startingOAuth}
             disabled={platform === "unknown" || busy}
-            onClick={() => void startOAuth("research", null)}
+            onClick={() => void startOAuth(publishEnabled ? "publish" : "research", null)}
           >
             Connect X
           </Button>
@@ -872,7 +872,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
                 className="focus-ring"
                 disabled={connectionControlsBusy}
                 onClick={() => void startOAuth(
-                  connection.scopes.includes("tweet.write") ? "publish" : "research",
+                  publishEnabled || connection.scopes.includes("tweet.write") ? "publish" : "research",
                   null,
                 )}
               >

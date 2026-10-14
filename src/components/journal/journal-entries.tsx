@@ -938,11 +938,15 @@ export function JournalEntries({
             key={selected.familiar}
             familiarId={selected.familiar}
             familiarName={selectedName ?? selected.familiar}
-            onRunFinished={() => {
+            onRunFinished={(entry) => {
               if (!mountedRef.current) return;
               void loadDays();
+              // Open the day the run wrote (routines reflect on the previous
+              // day); otherwise refresh whichever entry is open, since a run
+              // may also have backfilled it.
               const current = selectedRef.current;
-              if (current.date === today) void loadDay(current);
+              if (entry?.written && entry.date !== current.date) selectDay(entry.date, current.familiar);
+              else void loadDay(current);
             }}
           />
         ) : null}

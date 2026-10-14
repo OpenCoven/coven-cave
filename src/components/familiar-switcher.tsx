@@ -20,6 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type Presence = { label: string; dot: string };
 
@@ -75,6 +76,7 @@ export function FamiliarSwitcher({
   aggregateDescription,
   disabled = false,
 }: Props) {
+  const keys = useKeySymbols();
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -306,7 +308,7 @@ export function FamiliarSwitcher({
                       title={
                         singleRequired
                           ? `${f.display_name} · ${presence.label}`
-                          : `${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects, drag into a chat to start a coven`
+                          : `${f.display_name} · ${presence.label} · click switches, checkbox or ${keys.mod}-click multi-selects, drag into a chat to start a coven`
                       }
                       // Drag a familiar into a chat thread to add them to it
                       // (cave-76yfq). Only this plain-listbox branch is

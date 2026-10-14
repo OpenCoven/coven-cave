@@ -14,6 +14,7 @@ import {
   QuickChatThread,
   useSuggestionPicker,
 } from "@/components/quick-chat-controls";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 /**
  * The standalone quick-chat tray window (frameless, always-on-top; created by
@@ -76,6 +77,7 @@ async function hideTrayWindow(): Promise<void> {
 }
 
 export function TrayQuickChat() {
+  const keys = useKeySymbols();
   // Glass handshake — only the Rust shell that actually made the window
   // transparent (macOS vibrancy) sends ?glass=1; a plain browser never gets
   // a translucent background it can't back with a blur.
@@ -193,7 +195,7 @@ export function TrayQuickChat() {
                     icon="ph:x"
                     size="xs"
                     aria-label={`Close chat with ${label}`}
-                    title="Close chat (⌘W)"
+                    title={platformizeHint("Close chat (⌘W)", keys)}
                     className="quick-tab__close"
                     onClick={() => closeTab(tab.id)}
                   />
@@ -204,7 +206,7 @@ export function TrayQuickChat() {
               icon="ph:plus"
               size="sm"
               aria-label="New chat"
-              title="New chat (⌘N)"
+              title={platformizeHint("New chat (⌘N)", keys)}
               onClick={addTab}
             />
           </div>
@@ -286,6 +288,7 @@ export function QuickChatTabPane({
   } = useQuickChat({ preferredFamiliarId: initialFamiliarId });
 
   const sending = sendState === "sending";
+  const keys = useKeySymbols();
   const { composerRef, pickSuggestion } = useSuggestionPicker(setDraft);
 
   // The agent picker exists to choose a familiar — once the user picks one,
@@ -420,7 +423,7 @@ export function QuickChatTabPane({
               </span>
             ) : (
               <p className="min-w-0 truncate text-xs text-[var(--fg-muted)]">
-                @id switches familiars · ⌘N new chat
+                @id switches familiars · {platformizeHint("⌘N new chat", keys)}
               </p>
             )}
           </div>

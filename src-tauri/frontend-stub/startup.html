@@ -3,13 +3,57 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
     <title>Starting CovenCave</title>
     <style>
+      /*
+       * The Windows first-launch page. It paints before the Next app exists, so
+       * it carries its own small palette instead of the design-system tokens.
+       * It follows the system color scheme because the native title bar above
+       * it does (#5970), and it keeps motion out of the way when asked to.
+       */
       :root {
-        color-scheme: dark;
-        background: #090909;
-        color: #f7f7f2;
+        color-scheme: dark light;
+        --bg: #090909;
+        --bg-gradient-start: #111;
+        --bg-gradient-mid: #080808;
+        --bg-gradient-end: #18120d;
+        --glow: rgba(255, 255, 255, 0.1);
+        --fg: #f7f7f2;
+        --fg-muted: rgba(247, 247, 242, 0.7);
+        --fg-status: rgba(247, 247, 242, 0.86);
+        --fg-diagnostic: rgba(247, 247, 242, 0.72);
+        --track: rgba(255, 255, 255, 0.12);
+        --ring: rgba(255, 255, 255, 0.16);
+        --border: rgba(255, 255, 255, 0.2);
+        --button-bg: #f7f7f2;
+        --button-fg: #090909;
+        --failure: #ffb4a8;
+        --shadow: rgba(0, 0, 0, 0.35);
+        background: var(--bg);
+        color: var(--fg);
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f4ef;
+          --bg-gradient-start: #fbfaf7;
+          --bg-gradient-mid: #f3f0ea;
+          --bg-gradient-end: #ece4d8;
+          --glow: rgba(0, 0, 0, 0.05);
+          --fg: #151310;
+          --fg-muted: rgba(21, 19, 16, 0.68);
+          --fg-status: rgba(21, 19, 16, 0.86);
+          --fg-diagnostic: rgba(21, 19, 16, 0.72);
+          --track: rgba(0, 0, 0, 0.1);
+          --ring: rgba(0, 0, 0, 0.12);
+          --border: rgba(0, 0, 0, 0.22);
+          --button-bg: #151310;
+          --button-fg: #f6f4ef;
+          --failure: #9a2a1a;
+          --shadow: rgba(0, 0, 0, 0.12);
+        }
       }
 
       * {
@@ -23,8 +67,8 @@
         place-items: center;
         padding: 32px;
         background:
-          radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.1), transparent 34%),
-          linear-gradient(155deg, #111 0%, #080808 58%, #18120d 100%);
+          radial-gradient(circle at 22% 12%, var(--glow), transparent 34%),
+          linear-gradient(155deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 58%, var(--bg-gradient-end) 100%);
       }
 
       main {
@@ -39,8 +83,8 @@
         display: block;
         border-radius: 14px;
         box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.16),
-          0 18px 42px rgba(0, 0, 0, 0.35);
+          0 0 0 1px var(--ring),
+          0 18px 42px var(--shadow);
       }
 
       h1 {
@@ -51,7 +95,7 @@
 
       p {
         margin: 0;
-        color: rgba(247, 247, 242, 0.7);
+        color: var(--fg-muted);
         font-size: 14px;
         line-height: 1.5;
       }
@@ -60,35 +104,55 @@
         height: 8px;
         overflow: hidden;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
+        background: var(--track);
       }
 
       .progress-value {
         width: 0;
         height: 100%;
         border-radius: inherit;
-        background: #f7f7f2;
+        background: var(--fg);
         transition: width 180ms ease;
       }
 
+      @media (prefers-reduced-motion: reduce) {
+        .progress-value {
+          transition: none;
+        }
+      }
+
+      /* One status line, never a transcript: the raw output lives in the
+         diagnostics block below so Retry stays in reach and a screen reader
+         hears a sentence, not a log. */
       .phase {
         min-height: 22px;
-        color: rgba(247, 247, 242, 0.86);
+        color: var(--fg-status);
         font-size: 14px;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+      }
+
+      .phase[data-phase="failed"] {
+        color: var(--failure);
       }
 
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 10px;
       }
 
       button {
         min-height: 40px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid var(--border);
         border-radius: 8px;
         padding: 0 14px;
-        background: #f7f7f2;
-        color: #090909;
+        background: var(--button-bg);
+        color: var(--button-fg);
         font: inherit;
         font-size: 13px;
         font-weight: 700;
@@ -96,7 +160,7 @@
 
       button.secondary {
         background: transparent;
-        color: #f7f7f2;
+        color: var(--fg);
       }
 
       button[hidden] {
@@ -107,18 +171,37 @@
         opacity: 0.55;
       }
 
+      button:focus-visible {
+        outline: 2px solid var(--fg);
+        outline-offset: 2px;
+      }
+
+      .hint[hidden] {
+        display: none;
+      }
+
       details {
-        color: #ffb4a8;
+        color: var(--fg-muted);
         font-size: 12px;
         line-height: 1.45;
       }
 
+      summary {
+        cursor: default;
+      }
+
       pre {
         max-height: 180px;
+        margin: 8px 0;
         overflow: auto;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        color: rgba(247, 247, 242, 0.72);
+        color: var(--fg-diagnostic);
+      }
+
+      .copy {
+        min-height: 32px;
+        font-weight: 600;
       }
     </style>
   </head>
@@ -141,40 +224,58 @@
       >
         <div class="progress-value" id="progress-value"></div>
       </div>
-      <div class="phase" id="phase" role="status" aria-live="polite">Preparing startup…</div>
+      <div class="phase" id="phase" role="status" aria-live="polite">Preparing CovenCave…</div>
       <div class="actions">
         <button id="retry" type="button" hidden>Retry</button>
         <button class="secondary" id="cancel" type="button" hidden>Cancel startup</button>
       </div>
+      <p class="hint" id="hint" hidden>
+        Retry starts the local services again. Closing this window quits CovenCave.
+      </p>
       <details id="diagnostics" hidden>
         <summary>Startup diagnostics</summary>
         <pre id="diagnostic-message"></pre>
+        <button class="secondary copy" id="copy" type="button">Copy details</button>
       </details>
     </main>
 
     <script>
       (() => {
         const eventName = "sidecar-startup-progress";
+        const fallbackMessage = "Preparing CovenCave…";
         const progress = document.getElementById("progress");
         const progressValue = document.getElementById("progress-value");
         const phase = document.getElementById("phase");
         const retry = document.getElementById("retry");
         const cancel = document.getElementById("cancel");
+        const hint = document.getElementById("hint");
         const diagnostics = document.getElementById("diagnostics");
         const diagnosticMessage = document.getElementById("diagnostic-message");
+        const copy = document.getElementById("copy");
+
+        // A failure message is "<what went wrong>\n\n<bounded process output>".
+        // The status line gets the first paragraph; the rest is diagnostics.
+        function summarize(message) {
+          const text = String(message || "").trim();
+          const first = text.split(/\n\s*\n/, 1)[0].trim();
+          return first || fallbackMessage;
+        }
 
         function render(status) {
           const value = Math.max(0, Math.min(100, Number(status?.progress) || 0));
           progress.setAttribute("aria-valuenow", String(value));
           progressValue.style.width = `${value}%`;
-          phase.textContent = status?.message || "Preparing CovenCave";
+          const failed = status?.phase === "failed";
+          const message = status?.message || fallbackMessage;
+          phase.textContent = failed ? summarize(message) : message;
+          phase.dataset.phase = status?.phase || "";
           retry.hidden = !status?.canRetry;
           retry.disabled = false;
           cancel.hidden = !status?.canCancel;
           cancel.disabled = false;
-          const failed = status?.phase === "failed";
+          hint.hidden = !failed;
           diagnostics.hidden = !failed;
-          diagnosticMessage.textContent = failed ? status.message : "";
+          diagnosticMessage.textContent = failed ? message : "";
         }
 
         async function invoke(command) {
@@ -186,6 +287,7 @@
         retry.addEventListener("click", async () => {
           retry.disabled = true;
           diagnostics.hidden = true;
+          hint.hidden = true;
           try {
             await invoke("retry_sidecar_startup");
           } catch (error) {
@@ -207,6 +309,34 @@
             phase.textContent = error instanceof Error ? error.message : String(error);
             cancel.disabled = false;
           }
+        });
+
+        // The page is served from a plain-http app origin on Windows, so the
+        // async clipboard API may be absent; fall back to a selection copy.
+        copy.addEventListener("click", async () => {
+          const text = diagnosticMessage.textContent || "";
+          let copied = false;
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(text);
+              copied = true;
+            }
+          } catch {}
+          if (!copied) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(diagnosticMessage);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+              copied = document.execCommand("copy");
+            } catch {}
+            selection.removeAllRanges();
+          }
+          copy.textContent = copied ? "Copied" : "Select the text above to copy it";
+          setTimeout(() => {
+            copy.textContent = "Copy details";
+          }, 2000);
         });
 
         async function initialize() {

@@ -441,6 +441,7 @@ export function ProjectPicker({
   allProjectsLabel,
   onSelectAllProjects,
   familiarLabel,
+  openRequest,
 }: {
   projects: CaveProject[];
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
@@ -470,6 +471,9 @@ export function ProjectPicker({
   onSelectAllProjects?: () => void;
   /** Scoped familiar's display name — enables the familiar-scoped section. */
   familiarLabel?: string | null;
+  /** Monotonic counter: each increment opens the picker (#5982). A surface
+   *  that cannot reach the trigger (Home's "Choose a project…") bumps it. */
+  openRequest?: number;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -482,6 +486,11 @@ export function ProjectPicker({
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
+
+  useEffect(() => {
+    if (!openRequest || disabled) return;
+    setOpen(true);
+  }, [disabled, openRequest]);
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
   const { selected, emptyLabel } = resolveProjectPickerSelection({
       sorted: sortedProjects, value, noProjectId: NO_PROJECT_ID,

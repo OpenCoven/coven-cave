@@ -267,14 +267,23 @@ test("chat rail resizes with pointer and keyboard, persists, and keeps composer 
   const more = context.getByRole("button", { name: "More composer options", exact: true });
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await expect(context.getByRole("button", { name: /^Runtime:/ })).toBeVisible();
-  await expect(context.getByRole("button", { name: /^Model:/ })).toBeVisible();
+  await expect(context.getByRole("button", { name: /^Selected model:/ })).toBeVisible();
   await expect(context.getByRole("button", { name: /^Branch:/ })).toBeHidden();
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await expect(context.getByRole("button", { name: /^Branch:/ })).toBeVisible();
+  // #5958: the branch chip opens the Environment popover; its Branch row
+  // chains into the branch list on the same anchor. Escape returns focus to
+  // the chip, and a second Escape folds the disclosure.
   await context.getByRole("button", { name: /^Branch:/ }).click();
+  const environment = page.getByRole("dialog", { name: "Environment", exact: true });
+  await expect(environment).toBeVisible();
+  await expect(page.locator("[data-chat-env-panel]")).toHaveCount(0);
+  await environment.getByRole("button", { name: "main", exact: true }).click();
+  await expect(environment).toBeHidden();
   await expect(page.getByRole("menu", { name: "Branches", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Branches", exact: true })).toBeHidden();
   await expect(context.getByRole("button", { name: /^Branch:/ })).toBeFocused();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");

@@ -703,8 +703,9 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
-  const publishStart = workflow.indexOf("- name: Publish verified signed Windows MSI");
+  const publishStart = workflow.indexOf("- name: Publish validated Windows MSI");
   const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
+  assert.ok(publishStart >= 0 && signStart > publishStart);
   const publishBlock = workflow.slice(publishStart, signStart);
   assert.match(
     publishBlock,
@@ -729,7 +730,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(updaterManifestHeader, /!inputs\.windows_diagnostics_only/);
   assert.match(
     workflow,
-    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish verified signed Windows MSI/,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
     "the MSI must pass its budget before it becomes a release asset",
   );
   const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
@@ -1032,6 +1033,64 @@ test("Windows first launch paints progress and supports recovery while the sidec
     startupPage,
     /Startup diagnostics[\s\S]*retry_sidecar_startup/,
     "startup failures must surface diagnostics and an in-window retry",
+  );
+});
+
+test("Windows startup page keeps the status line short and follows the system theme (#5970)", async () => {
+  const startupPage = await readFile(
+    new URL("./frontend-stub/startup.html", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    startupPage,
+    /color-scheme: dark light/,
+    "the page must follow the system color scheme like the native title bar above it",
+  );
+  assert.match(
+    startupPage,
+    /@media \(prefers-color-scheme: light\)/,
+    "the page needs a light palette, not a forced dark one",
+  );
+  assert.match(
+    startupPage,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition: none/,
+    "progress motion must honour reduced-motion",
+  );
+  assert.match(
+    startupPage,
+    /function summarize\(message\)[\s\S]*split\(\/\\n\\s\*\\n\/, 1\)/,
+    "a failure's first paragraph is the status line; the bounded output tail belongs in diagnostics",
+  );
+  assert.match(
+    startupPage,
+    /phase\.textContent = failed \? summarize\(message\) : message/,
+    "the live status line must never carry the raw sidecar output",
+  );
+  assert.match(
+    startupPage,
+    /-webkit-line-clamp: 3/,
+    "the status line is clamped so Retry stays in reach",
+  );
+  assert.match(
+    startupPage,
+    /id="copy"[^>]*>Copy details<\/button>/,
+    "failure diagnostics offer a copy action for bug reports",
+  );
+  assert.match(
+    startupPage,
+    /Closing this window quits CovenCave/,
+    "the failure state must say that closing the window quits, since Windows has no close-to-tray",
+  );
+  assert.equal(
+    (startupPage.match(/Preparing CovenCave…/g) ?? []).length,
+    2,
+    "the initial and fallback status strings are one string, in markup and script",
+  );
+  assert.doesNotMatch(
+    startupPage,
+    /Preparing startup…|>Preparing CovenCave</,
+    "no second spelling of the first phase remains",
   );
 });
 

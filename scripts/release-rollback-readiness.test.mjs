@@ -518,7 +518,7 @@ test("an incomplete baseline fails the rollout closed", async () => {
 
   await assert.rejects(
     verify({ fetchImpl: stubFetch({ releases: [stripped], manifest: manifest("0.3.7") }).fetchImpl }),
-    /v0\.3\.7 is not a usable rollback target: no SHA256SUMS/,
+    /no complete rollback target below v0\.3\.8; newest v0\.3\.7 is not usable: no SHA256SUMS/,
   );
 
   await assert.rejects(
@@ -558,6 +558,34 @@ test("an incomplete baseline fails the rollout closed", async () => {
     (error) =>
       error instanceof RollbackReadinessError &&
       error.message === "v0.3.7 publishes latest.json without a download url",
+  );
+});
+
+test("a new cut can use the newest complete baseline past partial releases", async () => {
+  const partial = ["0.3.9", "0.3.8"].map((version) => {
+    const item = release(version);
+    item.assets = item.assets.filter((asset) => !/\.msi$/.test(asset.name));
+    return item;
+  });
+  const stub = stubFetch({
+    releases: [...partial, release("0.3.7")],
+    manifest: manifest("0.3.7"),
+  });
+  const result = await verify({ tag: "v0.3.10", fetchImpl: stub.fetchImpl });
+  assert.equal(result.baseline.tag, "v0.3.7");
+  assert.ok(stub.calls.includes(MANIFEST_URL));
+
+  // A complete asset list alone is not proof. Never skip an invalid manifest
+  // to fall back to another release without reporting the metadata failure.
+  await assert.rejects(
+    verify({
+      tag: "v0.3.10",
+      fetchImpl: stubFetch({
+        releases: [...partial, release("0.3.7"), release("0.3.6")],
+        manifest: manifest("0.3.7", { platforms: {} }),
+      }).fetchImpl,
+    }),
+    /v0\.3\.7 rollback metadata is incomplete: latest\.json lists no platforms/,
   );
 });
 

@@ -618,6 +618,142 @@ test.describe("onboarding bootstrap", () => {
     await expect(setup(page)).toHaveCount(0);
   });
 
+  test("Run in background keeps progress in the shell banner until setup completes", async ({
+    page,
+  }) => {
+    const running = state({
+      confirmed: true,
+      status: "running",
+      activeStage: "core-tools",
+      stages: [
+        {
+          ...state().stages[0],
+          status: "running",
+          detail: "Preparing Cave’s private Node.js and npm runtime…",
+        },
+        ...state().stages.slice(1),
+      ],
+    });
+    const complete = state({
+      confirmed: true,
+      complete: true,
+      needsSetup: false,
+      status: "complete",
+      stages: state().stages.map((stage) => ({
+        ...stage,
+        status: "complete",
+        detail: "Ready.",
+      })),
+    });
+    let current = state();
+    await gotoApp(page, async (route) => {
+      if (route.request().method() === "POST") current = running;
+      await route.fulfill({ json: payload(current) });
+    });
+
+    const dialog = setup(page);
+    await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
+    await dialog.getByRole("button", { name: "Run in background" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const progress = page.locator(".shell-banner--info", {
+      hasText: "Setting up Cave — Prepare local components…",
+    });
+    await expect(progress).toBeVisible({ timeout: 15_000 });
+    await expect(progress.getByRole("button", { name: "View setup" })).toBeVisible();
+
+    current = complete;
+    const done = page.locator(".shell-banner--info", { hasText: "Cave is set up." });
+    await expect(done).toBeVisible({ timeout: 15_000 });
+    await expect(done.getByRole("button", { name: "View setup" })).toHaveCount(0);
+    await expect(done.getByRole("button", { name: "Dismiss" })).toBeVisible();
+    await expect(setup(page)).toHaveCount(0);
+  });
+
+  test("a failed background run warns in the banner and Retry setup reopens the dialog", async ({
+    page,
+  }) => {
+    const running = state({
+      confirmed: true,
+      status: "running",
+      activeStage: "workspace",
+      stages: state().stages.map((stage) =>
+        stage.id === "core-tools"
+          ? { ...stage, status: "complete", detail: "Local components are ready." }
+          : stage.id === "workspace"
+            ? { ...stage, status: "running", detail: "Creating user-scoped folders…" }
+            : stage,
+      ),
+    });
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "workspace",
+      stages: running.stages.map((stage) =>
+        stage.id === "workspace"
+          ? { ...stage, status: "failed", detail: "Setup stopped at Create Cave defaults." }
+          : stage,
+      ),
+      failure: {
+        stage: "workspace",
+        stageLabel: "Create Cave defaults",
+        message:
+          "Setup stopped at Create Cave defaults. Check that ~/.coven is writable, then retry setup.",
+        recoveryLabel: "Retry setup",
+      },
+    });
+    let current = running;
+    await gotoApp(
+      page,
+      (route) => route.fulfill({ json: payload(current) }),
+      { dismissed: true },
+    );
+
+    const dialog = setup(page);
+    await dialog.getByRole("button", { name: "Run in background" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.locator(".shell-banner--info", { hasText: "Setting up Cave — Create Cave defaults…" }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    current = failed;
+    const warning = page.locator(".shell-banner--warning", {
+      hasText: "Setup stopped at Create Cave defaults.",
+    });
+    await expect(warning).toBeVisible({ timeout: 15_000 });
+    await warning.getByRole("button", { name: "Retry setup" }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("alert")).toContainText("Create Cave defaults is blocked");
+    await expect(dialog.getByRole("alert").getByRole("button", { name: "Retry setup" })).toHaveCount(1);
+    await expect(warning).toHaveCount(0);
+  });
+
+  test("Settings › General › Setup opens the dialog on the standalone route", async ({
+    page,
+  }) => {
+    await baseRoutes(page);
+    await page.route("**/api/onboarding/bootstrap**", (route) =>
+      route.fulfill({ json: payload(state()) }),
+    );
+    await page.goto("/settings#general");
+
+    const group = page.getByRole("group", { name: "Setup" });
+    await expect(group).toBeVisible({ timeout: 30_000 });
+    await expect(group).toContainText("Not run yet");
+    await group.getByRole("button", { name: "Open setup" }).click();
+
+    const dialog = setup(page);
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(
+      dialog.getByRole("button", { name: "Set up Cave", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await group.getByRole("button", { name: "Open setup" }).click();
+    await expect(setup(page)).toBeVisible();
+  });
+
   test("confirmed interrupted setup resumes even after an earlier dismissal", async ({
     page,
   }) => {

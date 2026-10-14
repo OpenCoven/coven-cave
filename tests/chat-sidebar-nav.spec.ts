@@ -150,7 +150,7 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
     const nav = page.locator('aside[aria-label="Sidebar"]');
     const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
-      const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ });
+      const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl\+)B\)$/ });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
     await chatDestination.click();
@@ -783,7 +783,7 @@ test.describe("chat threads on mobile", () => {
   test("the nav drawer still opens the app destinations, with no list drawer", async ({ page }) => {
     await gotoChat(page, { expectRail: false });
     const shell = page.locator(".shell-root");
-    const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ });
+    const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl\+)B\)$/ });
 
     await expect(openNav).toBeVisible();
     await expect(openNav).toHaveAttribute("aria-expanded", "false");
@@ -803,7 +803,7 @@ test.describe("chat threads on mobile", () => {
     await expect(backdrop).toBeVisible();
     await backdrop.click({ position: { x: 380, y: 420 } });
     await expect(shell).not.toHaveAttribute("data-mobile-drawer");
-    await expect(page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl\+)B\)$/ })).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator(".mobile-drawer-backdrop")).toHaveCount(0);
   });
 });

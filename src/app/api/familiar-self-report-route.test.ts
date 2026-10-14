@@ -163,6 +163,179 @@ describe("self-report route JSON parsing", () => {
     assert.equal(stripSelfReportJsonFence("```\n{\"ok\":true}\n```"), "{\"ok\":true}");
     assert.equal(stripSelfReportJsonFence("{\"ok\":true}\t\t"), "{\"ok\":true}");
   });
+
+  const nextPaths = "\n<coven:next-paths>\n- [reply] Inspect the synthetic report\n</coven:next-paths>";
+
+  it("parses raw JSON followed by next-path suggestions", () => {
+    assert.deepEqual(parseSelfReportJsonObject('{"overallConfidence":80}' + nextPaths), {
+      overallConfidence: 80,
+    });
+  });
+
+  it("parses fenced JSON followed by next-path suggestions", () => {
+    assert.deepEqual(parseSelfReportJsonObject('```json\n{"overallConfidence":80}\n```' + nextPaths), {
+      overallConfidence: 80,
+    });
+  });
+
+  it("preserves literal next-path markers in JSON strings with or without a real trailer", () => {
+    for (const summary of [
+      "Literal <coven:next-paths>example</coven:next-paths> text",
+      "Literal <coven:next-paths> opener",
+    ]) {
+      const report = { summary };
+      for (const suffix of ["", nextPaths]) {
+        assert.deepEqual(parseSelfReportJsonObject(JSON.stringify(report) + suffix), report);
+        assert.deepEqual(parseSelfReportJsonObject('```json\n' + JSON.stringify(report) + '\n```' + suffix), report);
+      }
+    }
+  });
+
+  it("extracts an object surrounded by prose while respecting strings and escapes", () => {
+    const report = {
+      summary: 'Literal } and { braces, "quoted } text", and a trailing slash \\',
+      nested: { values: ["{", "}", { ok: true }] },
+    };
+    assert.deepEqual(
+      parseSelfReportJsonObject(`Synthetic report follows.\n${JSON.stringify(report)}\nEnd of report.`),
+      report,
+    );
+  });
+
+  it("uses the first object rather than joining separate objects", () => {
+    assert.deepEqual(parseSelfReportJsonObject('Report: {"ok":true}\nExtra: {"ok":false}'), { ok: true });
+  });
+
+  it("allows balanced bracketed prose before the report object", () => {
+    assert.deepEqual(parseSelfReportJsonObject('Report [summary]: {"ok":true}'), { ok: true });
+    assert.deepEqual(parseSelfReportJsonObject('Report [summary [synthetic]]: {"ok":true}'), { ok: true });
+  });
+
+  it("rejects responses with no JSON object, including suggestion-only objects", () => {
+    assert.throws(() => parseSelfReportJsonObject("No report was produced."));
+    assert.throws(() => parseSelfReportJsonObject('<coven:next-paths>\n{"ok":true}\n</coven:next-paths>'));
+  });
+
+  it("rejects valid top-level arrays and other non-record JSON values", () => {
+    for (const raw of ['[{"ok":true}]', "[]", "null", "true", "80", '"{\\"ok\\":true}"']) {
+      assert.throws(() => parseSelfReportJsonObject(raw), /response was not an object/);
+    }
+  });
+
+  it("does not promote objects inside top-level JSON strings when a trailer is present", () => {
+    for (const value of ["{}", '{"ok":true}', 'Escaped "quotes", \\ and {} braces']) {
+      const raw = JSON.stringify(value);
+      assert.throws(() => parseSelfReportJsonObject(raw + nextPaths));
+      assert.throws(() => parseSelfReportJsonObject('```json\n' + raw + '\n```' + nextPaths));
+    }
+  });
+
+  it("does not salvage objects from malformed or prose-wrapped arrays", () => {
+    for (const raw of [
+      '[{"ok":true}',
+      'Report: [{"ok":true}]\nDone.',
+      'Report [summary]: [[], {"ok":true}]',
+      'Report [summary]: [[], {"ok":true}',
+      'Report: ["]", {"ok":true}]',
+      '```json\n[{"ok":true}]\n```' + nextPaths,
+    ]) {
+      assert.throws(() => parseSelfReportJsonObject(raw));
+    }
+  });
+
+  it("recovers a missing comma only between a complete string value and an object property", () => {
+    assert.deepEqual(
+      parseSelfReportJsonObject(String.raw`Report: {"summary":"Complete \"quoted\" value" "overallConfidence":80}`),
+      { summary: 'Complete "quoted" value', overallConfidence: 80 },
+    );
+  });
+
+  it("removes a trailing object comma without changing string contents", () => {
+    assert.deepEqual(
+      parseSelfReportJsonObject('{"summary":"Literal ,} text","nested":{"ok":true,},}'),
+      { summary: "Literal ,} text", nested: { ok: true } },
+    );
+  });
+
+  it("escapes literal JSON string control characters without changing their values", () => {
+    const controls = Array.from({ length: 32 }, (_, index) => String.fromCharCode(index)).join("");
+    assert.deepEqual(
+      parseSelfReportJsonObject('{"summary":"before' + controls + 'after"}'),
+      { summary: "before" + controls + "after" },
+    );
+  });
+
+  it("preserves valid JSON string escapes and values through syntax recovery", () => {
+    const report = { summary: 'Quotes " and slash \\ and literal \\n; {} ,}', nested: [null, false, -2.5e3, "\n\t\u0000"] };
+    const raw = JSON.stringify(report);
+    assert.deepEqual(parseSelfReportJsonObject(raw), report);
+    assert.deepEqual(parseSelfReportJsonObject(raw.slice(0, -1) + ",}"), report);
+  });
+
+  it("refuses syntax repair that would invent keys, delimiters, or values", () => {
+    for (const raw of [
+      '{"summary":"unfinished}',
+      '{summary:"value"}',
+      '{"summary" "value"}',
+      '{"summary":}',
+      '{"summary":,}',
+      '{,}',
+      '{"summary":"value",,}',
+      '{"summary":"value" "extra"}',
+      '{"summary":"value" "extra":}',
+      '{"summary":80 "extra":true}',
+      '{"summary":["one" "two"]}',
+      '{"summary":["one",]}',
+      '{"summary":"bad\\q",}',
+      '{"summary":"bad\\\n",}',
+      '[{"summary":"value",}]',
+    ]) {
+      assert.throws(() => parseSelfReportJsonObject(raw), raw);
+    }
+  });
+
+  const completeReport = {
+    overallConfidence: 80,
+    toolReliability: { score: 90 },
+    contextPressure: "adequate",
+    memoryRecallScore: 70,
+    fileLocatabilityScore: 85,
+  };
+
+  it("does not promote complete reports after unclosed drafts, nested payloads, or suggestions", () => {
+    const draft = '{"summary":"Abandoned draft\nStarting the complete report again.\n';
+    const report = JSON.stringify(completeReport);
+    for (const raw of [
+      draft + report,
+      draft + report.slice(0, -1),
+      draft + report.slice(0, -1) + ",}",
+      draft + report + "\nTrailing explanation.",
+      draft + "{}",
+      draft + "  " + report,
+      '{"summary":}\nStarting the complete report again.\n' + report,
+      '[\nStarting the complete report again.\n' + report,
+      '{"nested":\n' + report,
+      '{"nested":[\n' + report,
+      '{"nested":\n  ' + report,
+      '{"nested":\nA report example follows.\n' + report,
+      '{"summary":"Abandoned\n<coven:next-paths>\nA report example follows.\n' + report,
+      '<coven:next-paths>\nA report example follows.\n' + report,
+      draft + '{}\nAnother attempt.\n' + report,
+    ]) {
+      assert.throws(() => parseSelfReportJsonObject(raw), raw);
+    }
+  });
+
+  it("does not skip malformed or incomplete first objects to salvage nested or later objects", () => {
+    for (const raw of [
+      'Report: {"broken":, "nested":{"ok":true}}',
+      'Report: {"nested":{"ok":true}',
+      'Report: {"broken":} then {"ok":true}',
+      'Report: {"summary":"unterminated }',
+    ]) {
+      assert.throws(() => parseSelfReportJsonObject(raw));
+    }
+  });
 });
 
 describe("reflection auto-archive CTA gate and review-run archive", () => {
@@ -236,4 +409,14 @@ describe("self-report routes keep the source thread id", () => {
       assert.match(source, /redactSelfReport/);
     });
   }
+});
+
+describe("self-report normalization keeps the capability blocker link (#5938)", () => {
+  it("copies capabilitiesLacking[].blockerId through normalizePayload as optional text", () => {
+    assert.match(
+      routeSource,
+      /capabilitiesLacking: objectArray\(payload\.capabilitiesLacking\)\.map\(\(item\) => \(\{[\s\S]{0,400}?blockerId: optionalText\(item\.blockerId\),/,
+      "a capability's blockerId survives normalization so review surfaces can fold it into its blocker",
+    );
+  });
 });

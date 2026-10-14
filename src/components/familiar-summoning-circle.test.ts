@@ -72,9 +72,10 @@ assert.match(
 );
 assert.match(
   source,
-  /active && v\.kind === "local" \? " summoning-vessel--expanded" : ""/,
-  "selecting the first local vessel expands it across the available panel width",
+  /selectedVessel && !editingVessel \? \([\s\S]*?<SelectedChoice label="Vessel"/,
+  "a selected vessel replaces the other options with a compact summary",
 );
+assert.match(source, /changeRef=\{vesselChangeRef\} onChange=\{\(\) => openChoices\("Vessel"/, "the vessel summary can reopen the options");
 assert.match(
   source,
   /<span className="summoning-vessel__action" aria-hidden>[\s\S]*?\{active \? "Selected" : "Choose"\}/,
@@ -82,9 +83,11 @@ assert.match(
 );
 assert.match(
   source,
-  /<span className=\{labelClass\}>Available runtimes<\/span>[\s\S]*?className="summoning-runtime-grid"/,
-  "local and SSH vessel selections reveal a clearly labelled full-width runtime panel",
+  /<span className=\{labelClass\}>Available runtimes<\/span>[\s\S]*?selectedRuntime && !editingRuntime \? \([\s\S]*?<SelectedChoice label="Runtime"[\s\S]*?className="summoning-runtime-grid"/,
+  "local and SSH runtime lists collapse to the chosen value and reopen for changes",
 );
+assert.match(source, /selectedAgent && !editingAgent \? \([\s\S]*?<SelectedChoice label="OpenClaw agent"/, "OpenClaw agent options collapse after selection");
+assert.match(source, /selectedProfile && !editingProfile \? \([\s\S]*?<SelectedChoice label="Hermes profile"/, "Hermes profile options collapse after selection");
 assert.match(
   source,
   /summoning-runtime-option--active[\s\S]*?ph:check-circle-fill/,
@@ -97,8 +100,8 @@ assert.match(
 );
 assert.match(
   css,
-  /\.summoning-runtime-panel \{[\s\S]*?width: 100%;[\s\S]*?\.summoning-runtime-grid \{[\s\S]*?width: 100%;/,
-  "the available-runtime panel and option grid consume the full working width",
+  /\.summoning-selected-choice \{[\s\S]*?\.summoning-runtime-grid \{[\s\S]*?width: 100%;/,
+  "selected summaries and editable runtime options use the working width",
 );
 assert.match(
   source,

@@ -5369,7 +5369,7 @@ final class AppModel {
         guard !connectionMonitorStarted else { return }
         connectionMonitorStarted = true
         connectionMonitor.pathUpdateHandler = { [weak self] path in
-            let pathAvailable = path.status == .satisfied
+            let pathAvailable = ConnectionPathPolicy.allowsAttempt(path.status)
             Task { @MainActor [weak self] in
                 await self?.updateConnectionPath(available: pathAvailable)
             }
@@ -5441,7 +5441,8 @@ final class AppModel {
         }
     }
 
-    private func updateConnectionPath(available: Bool) async {
+    /// Internal, not private, so tests can drive a path edge without a monitor.
+    func updateConnectionPath(available: Bool) async {
         connectionPathAvailable = available
         guard connection != nil else { connectionState = .unconfigured; return }
         if available {
@@ -5805,6 +5806,7 @@ final class AppModel {
         guard !isPerformanceFixture else { return }
         guard let connection else { connectionState = .unconfigured; return }
         let configurationGeneration = connectionConfigurationGeneration
+        let pathUnavailableAtLaunch = !connectionPathAvailable
         if !quiet { connectionState = .checking }
 
         // Single-flight the transport decision: concurrent callers join the
@@ -5841,10 +5843,23 @@ final class AppModel {
         ) else { return }
         // A probe can finish after NWPathMonitor has already declared the
         // route unavailable. Never let that stale outcome overwrite the
-        // immediate honest offline state; the satisfied edge launches fresh.
-        guard connectionPathAvailable else {
-            connectionState = .unreachable(.diagnosis(for: .offline))
-            return
+        // immediate honest offline state; the next attemptable edge launches
+        // fresh. A refresh STARTED while the flag already read unavailable is
+        // different: only a user action (the pill's Retry, Settings →
+        // Reconnect) launches one then, and a desktop that answered it is
+        // stronger evidence than a monitor that may have missed its edge.
+        // Vetoing that answer left Retry unable to ever reconnect, so accept
+        // it and re-arm the supervisor the unavailable edge stopped.
+        let pathRecoveredByProbe: Bool
+        if connectionPathAvailable {
+            pathRecoveredByProbe = false
+        } else {
+            guard pathUnavailableAtLaunch, case .found = refresh.result else {
+                connectionState = .unreachable(.diagnosis(for: .offline))
+                return
+            }
+            connectionPathAvailable = true
+            pathRecoveredByProbe = true
         }
         // The user may have disconnected while the probe ran; its outcome no
         // longer describes anything configured.
@@ -5922,6 +5937,9 @@ final class AppModel {
                 configurationGeneration: configurationGeneration
             ) else { return }
             connectionState = .connected
+            if pathRecoveredByProbe {
+                requestConnectionRecovery(.networkAvailable)
+            }
             await refreshAccessTokenIfNeeded {
                 self.refreshLeaseIsCurrent(
                     supervisorGeneration,

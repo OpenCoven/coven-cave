@@ -107,6 +107,17 @@ export function sanitizeRelSegments(
   return segments;
 }
 
+/** Windows known folders can be junctions; Dirent reports those as links. */
+function isBrowsableDirectoryEntry(parent: string, entry: fs.Dirent): boolean {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    return fs.statSync(path.join(parent, entry.name)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolve a requested directory to a real path guaranteed to sit within `root`.
  *
@@ -135,7 +146,10 @@ export function resolveWithinRoot(
     } catch {
       return null;
     }
-    const match = dirents.find((d) => d.isDirectory() && d.name === wanted);
+    const match = dirents.find((d) =>
+      isBrowsableDirectoryEntry(current, d) &&
+      (process.platform === "win32" ? d.name.toLowerCase() === wanted.toLowerCase() : d.name === wanted),
+    );
     if (!match) return null;
     // `match.name` comes from the filesystem, not the request.
     current = path.join(current, match.name);
@@ -334,9 +348,12 @@ export function listKnownFolders(): Place[] {
     const candidate = registry.get(folder.registryValue)
       ?? path.join(/* turbopackIgnore: true */ homeRoot(), folder.dirName);
     const resolved = path.resolve(/* turbopackIgnore: true */ candidate);
-    if (seen.has(resolved) || !isDirectory(resolved)) continue;
-    seen.add(resolved);
-    places.push({ id: folder.id, name: folder.name, path: resolved, kind: "known" });
+    // Only advertise paths that the same trusted walk used on click accepts.
+    // statSync alone includes redirected folders that the picker cannot enter.
+    const browsable = isDirectory(resolved) ? resolveBrowsableDir(resolved) : null;
+    if (!browsable || seen.has(browsable)) continue;
+    seen.add(browsable);
+    places.push({ id: folder.id, name: folder.name, path: browsable, kind: "known" });
   }
   return places;
 }
@@ -477,7 +494,7 @@ export function listSubdirs(
     return { entries: [], hiddenCount: 0 };
   }
   const all = dirents
-    .filter((d) => d.isDirectory() && !SKIP.has(d.name))
+    .filter((d) => isBrowsableDirectoryEntry(dir, d) && !SKIP.has(d.name))
     .map((d) => ({
       name: d.name,
       path: path.join(dir, d.name),

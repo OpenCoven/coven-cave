@@ -5,7 +5,7 @@ import { markEnd, markStart } from "@/lib/perf/marks";
 import { abortWarm, invalidateIfDefined } from "@/lib/surface-warm-cache";
 import type { SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
 
-const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "marketplace", "grimoire", "agents"];
+const ORDER: readonly SurfaceWarmupSurface[] = ["chat", "board", "schedules", "marketplace", "grimoire", "agents"];
 
 type WarmupConnection = EventTarget & { saveData?: boolean; effectiveType?: string };
 
