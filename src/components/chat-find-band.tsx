@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import type { TranscriptHit } from "@/lib/transcript-find";
 import type { Familiar } from "@/lib/types";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 /**
  * Find in chat (Chat.dc.html 2a).
@@ -71,6 +72,7 @@ export function ChatFindBand({
   onPrev: () => void;
   onClose: () => void;
 }) {
+  const keys = useKeySymbols();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   // Keep global result indexes/counts, but mount only a window around the
@@ -311,12 +313,12 @@ export function ChatFindBand({
                       Whole word
                     </button>
                   ) : null}
-                  , or search every session with <kbd className="cave-find-band__kbd">⌘K</kbd>.
+                  , or search every session with <kbd className="cave-find-band__kbd">{platformizeHint("⌘K", keys)}</kbd>.
                 </>
               ) : (
                 <>
                   Search every session instead with{" "}
-                  <kbd className="cave-find-band__kbd">⌘K</kbd>.
+                  <kbd className="cave-find-band__kbd">{platformizeHint("⌘K", keys)}</kbd>.
                 </>
               )}
             </span>

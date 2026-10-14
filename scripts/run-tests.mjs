@@ -1023,6 +1023,8 @@ export const SUITES = {
     "src/components/code-reading-wiring.test.ts",
     "src/components/chat-prompt-enhance.test.ts",
     "src/components/settings-shortcut.test.ts",
+    "src/lib/platform-keys.test.ts",
+    "src/components/windows-shortcut-hints.test.ts",
     "src/components/bottom-terminal-sr-mirror.test.ts",
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",

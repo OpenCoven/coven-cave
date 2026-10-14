@@ -93,6 +93,7 @@ import {
   orgOf, useCards, useFamiliars,
   type ActivityResult, type Filter, type PatStatus,
 } from "./github-view-data";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
@@ -1323,6 +1324,7 @@ function GitHubComments({
   item: GitHubItem;
   detail: ItemDetail | null;
 }) {
+  const keys = useKeySymbols();
   const [state, setState] = useState<CommentsState>({ status: "idle" });
   const [tick, setTick] = useState(0);
   const [draft, setDraft] = useState("");
@@ -1582,7 +1584,7 @@ function GitHubComments({
                 className="gh-composer-input"
                 aria-label="Reply to this thread"
                 aria-keyshortcuts="Meta+Enter Control+Enter"
-                placeholder="Reply… (⌘↵ to send)"
+                placeholder={platformizeHint("Reply… (⌘↵ to send)", keys)}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -2831,6 +2833,7 @@ export function GitHubView({
   onInitialTargetHandled,
   initialFilter,
 }: Props = {}) {
+  const keys = useKeySymbols();
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
@@ -3451,7 +3454,7 @@ export function GitHubView({
               refreshActivity();
               refreshLinkedWork();
             }}
-            title="Refresh (⌘R)"
+            title={platformizeHint("Refresh (⌘R)", keys)}
             aria-label="Refresh GitHub activity"
           />
           <IconButton

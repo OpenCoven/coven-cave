@@ -145,8 +145,8 @@ source of truth shared by `scripts/sidecar-bundle.sh` (via
 Notes:
 - `sharp` must remain a **runtime** dependency (not dev) so the production
   sidecar install includes it — the familiar avatar route transcodes raster
-  avatars at request time. Root cause: #2010. The `Sidecar runtime (<os>)`
-  matrix now proves this end-to-end by booting the packaged sidecar and fetching
+  avatars at request time. Root cause: #2010. The `Validate candidate runtime (<os>)`
+  matrix in `full-validation.yml` now proves this end-to-end by booting the packaged sidecar and fetching
   a seeded JPEG avatar as PNG on every target OS.
 - `fsevents` is kept only on darwin.
 - The release DMG/installer must be built **on the matching host arch** — the

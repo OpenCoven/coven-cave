@@ -98,7 +98,7 @@ Release v0.2.5 publishes the following user installers:
 | --- | --- | --- | --- |
 | macOS Apple Silicon | `CovenCave-v0.2.5-aarch64.dmg` | Signed and notarized | Wrong Intel asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
 | macOS Intel | `CovenCave-v0.2.5-x86_64.dmg` | Signed and notarized | Wrong Apple Silicon asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
-| Windows x64 | `CovenCave_0.2.5_x64_en-US.msi` | Not code-signed | SmartScreen/Smart App Control, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
+| Windows x64 | `CovenCave_0.2.5_x64_en-US.msi` | Authenticode-signed MSI (#5758); inner executables unsigned | SmartScreen publisher reputation, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
 | Linux x64 | `CovenCave_0.2.5_amd64.AppImage` | Detached signature published | Executable bit, FUSE availability, desktop integration, picker/PTY differences. |
 | Windows ARM64 | Not published | Unsupported | Architecture must be identified before download. |
 | Linux ARM64 | Not published | Unsupported | Architecture must be identified before download. |

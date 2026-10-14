@@ -252,7 +252,7 @@ export function CanvasGitHubImportModal({
       value: CREATE_CANVAS_IMPORT_PROJECT,
       label: "Register local checkout",
       detail: parsed
-        ? `Add ${parsed.owner}/${parsed.repo} from a folder on this Mac.`
+        ? `Add ${parsed.owner}/${parsed.repo} from a folder on this computer.`
         : "Register an existing local checkout.",
       icon: "ph:folder-plus" as const,
     },

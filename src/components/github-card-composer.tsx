@@ -42,6 +42,7 @@ import { copyText } from "@/lib/clipboard";
 import { clearDraft, readDraft, writeDraft } from "@/lib/gh-card-draft";
 import { generateReviewDraft, type GhDraftScopes } from "@/lib/gh-review-draft";
 import "@/styles/gh-card-composer.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 export type GhComposerItem = {
   repo: string;
@@ -162,6 +163,7 @@ export function GitHubCardComposer({
   onRefreshThreads?: () => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const keys = useKeySymbols();
   const { announce } = useAnnouncer();
   const { repo, number } = item;
 
@@ -1074,7 +1076,7 @@ export function GitHubCardComposer({
                     <span className="ghc-pal__ghost">{slash.ghost}</span>
                   </span>
                   <span className="ghc-pal__hint">
-                    <span className="ghc-pal__foot-key">↵</span> run ·{" "}
+                    <span className="ghc-pal__foot-key">{keys.enter}</span> run ·{" "}
                     <span className="ghc-pal__foot-key">esc</span> prose
                   </span>
                 </div>
@@ -1240,7 +1242,7 @@ export function GitHubCardComposer({
           >
             {isMergeVerb ? `${method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge"} and merge` : VERB[mode]}
             <span aria-hidden className="ghc-cta__hint">
-              {isMergeVerb && !armed ? "— type to arm" : "⌘↵"}
+              {isMergeVerb && !armed ? "— type to arm" : platformizeHint("⌘↵", keys)}
             </span>
           </button>
         </div>

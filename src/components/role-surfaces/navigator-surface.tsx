@@ -85,6 +85,7 @@ import {
   type ChartStep,
 } from "./chart-room-model";
 import "@/styles/globals/surface-chart-room.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 const COLUMN_GAP = 24;
 const NODE_HEIGHT = 100;
@@ -199,6 +200,7 @@ type AuditEntry = { id: string; iconName: IconName; text: string };
 
 export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
+  const keys = useKeySymbols();
   const [state, patch] = useRoleSurfaceState<NavigatorState>(
     familiarId,
     NAVIGATOR_SURFACE_ID,
@@ -1638,7 +1640,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                         </span>
                         <span className="cr-help__text">
                           <span className="cr-help__title">{title}</span>
-                          <span className="cr-help__body">{body}</span>
+                          <span className="cr-help__body">{platformizeHint(body, keys)}</span>
                         </span>
                       </span>
                     ))}
@@ -1859,7 +1861,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 disabled={history.length === 0}
                 title={
                   history.length > 0
-                    ? `Undo the last chart edit (${history.length} in this session) — ⌘Z`
+                    ? platformizeHint(`Undo the last chart edit (${history.length} in this session) — ⌘Z`, keys)
                     : "Nothing to undo yet"
                 }
                 onClick={undo}

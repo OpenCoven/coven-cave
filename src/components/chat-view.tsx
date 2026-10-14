@@ -150,7 +150,7 @@ import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useKeySymbols } from "@/lib/platform-keys";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useVisualViewport } from "@/lib/use-viewport";
 import { ChatPhoneCodeRailToggle, ChatPhoneThreadsToggle } from "@/components/chat-phone-header-controls";
 import { ChatFindBand } from "@/components/chat-find-band";
@@ -8325,7 +8325,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <button
                 type="button"
                 className="focus-ring"
-                title="Find in conversation (⌘F)"
+                title={platformizeHint("Find in conversation (⌘F)", keys)}
                 aria-label="Find in conversation"
                 onClick={openFind}
               >

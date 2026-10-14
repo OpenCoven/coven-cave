@@ -32,8 +32,8 @@ const rustBrowser = (
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
 assert.match(
   pane,
-  /⌘K tabs · ⌘\[ back · ⌘\] forward · ⌘R reload · \[ pin rail/,
-  "Footer hint string must list the keyboard shortcuts",
+  /platformizeHint\("⌘L address · ⌘K tabs · ⌘\[ back · ⌘\] forward · ⌘R reload", keys\)\} · \[ pin rail/,
+  "Footer hint string must list the keyboard shortcuts, platformized for Windows and Linux (#5970)",
 );
 assert.match(
   pane,

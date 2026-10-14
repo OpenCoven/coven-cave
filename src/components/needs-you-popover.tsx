@@ -36,6 +36,7 @@ import { markNeedsYouSeen, readNeedsYouSeen } from "@/lib/needs-you-seen";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { Familiar, SessionRow } from "@/lib/types";
 import "@/styles/needs-you-trigger.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 /**
  * The panel loads on first open, never on first paint.
@@ -76,6 +77,7 @@ export function NeedsYouPopover({
   onOpenSession,
   onOpenSessions,
 }: Props) {
+  const keys = useKeySymbols();
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => readNeedsYouSeen());
   const anchorRef = useRef<HTMLButtonElement | null>(null);
@@ -175,7 +177,7 @@ export function NeedsYouPopover({
             ? `Needs you, ${count} ${count === 1 ? "item" : "items"}`
             : `Needs you, nothing waiting. ${runningCount} running.`
         }
-        title={count > 0 ? `Needs you, ${count} · ⇧⌘A` : "Needs you · ⇧⌘A"}
+        title={platformizeHint(count > 0 ? `Needs you, ${count} · ⇧⌘A` : "Needs you · ⇧⌘A", keys)}
       >
         <Icon name="ph:bell" width={22} height={22} aria-hidden />
         {count > 0 ? (
