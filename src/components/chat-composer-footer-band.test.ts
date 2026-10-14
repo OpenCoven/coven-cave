@@ -189,8 +189,8 @@ assert.doesNotMatch(
 );
 assert.match(
   pill,
-  /open=\{menu === "worktree"\}[\s\S]*?anchorRef=\{worktreeRef\}[\s\S]*?open=\{menu === "branch"\}[\s\S]*?anchorRef=\{branchRef\}/,
-  "worktree and branch each have a separate GitBranchMenuPopover with its own open state and anchor",
+  /<GitBranchMenuPopover\s*\n\s*open=\{menu === "worktree"\}[\s\S]*?anchorRef=\{worktreeRef\}[\s\S]*?<ComposerEnvironmentPopover\s*\n\s*open=\{menu === "branch"\}[\s\S]*?anchorRef=\{branchRef\}[\s\S]*?<GitBranchMenuPopover\s*\n\s*open=\{menu === "branch-list"\}[\s\S]*?anchorRef=\{branchRef\}/,
+  "the worktree chip keeps its own GitBranchMenuPopover; the branch chip opens the Environment popover (#5958) whose Branch row chains into the branch list on the same anchor",
 );
 assert.match(
   pill,

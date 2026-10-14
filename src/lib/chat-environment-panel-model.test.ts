@@ -1,53 +1,13 @@
 import assert from "node:assert/strict";
 import {
-  ENV_PANEL_MIN_WIDTH,
   environmentLabel,
   prRowAction,
-  resolveEnvPanelVisible,
   sumFileTotals,
-  type EnvPanelSignals,
 } from "./chat-environment-panel-model.ts";
 
-// ── resolveEnvPanelVisible ────────────────────────────────────────────────────
-// The floating Environment HUD only earns its overlay footprint on genuinely
-// wide panes with a real repo behind the chat and no code rail already open.
-
-const base: EnvPanelSignals = {
-  paneWidth: ENV_PANEL_MIN_WIDTH,
-  hasRepo: true,
-  loaded: true,
-  notARepo: false,
-  railOpen: false,
-  hasTurns: true,
-};
-
-assert.equal(resolveEnvPanelVisible(base), true, "wide + repo + turns + loaded shows the panel");
-assert.equal(
-  resolveEnvPanelVisible({ ...base, paneWidth: ENV_PANEL_MIN_WIDTH - 1 }),
-  false,
-  "below the width threshold the panel never overlays the conversation",
-);
-// No-overlap guarantee: the 1024px reading column centers, so each side
-// margin is (paneWidth − 1024) / 2. The gate must leave the 240px card fully
-// in the margin — never on top of chips/content at the column edge (2xl).
-assert.ok(
-  (ENV_PANEL_MIN_WIDTH - 1024) / 2 >= 240 + 16,
-  "width gate keeps the 240px card entirely inside the spare margin",
-);
-assert.equal(
-  resolveEnvPanelVisible({ ...base, paneWidth: null }),
-  false,
-  "unmeasured panes stay hidden — no flash before the first ResizeObserver tick",
-);
-assert.equal(resolveEnvPanelVisible({ ...base, hasRepo: false }), false, "no project root → nothing to show");
-assert.equal(resolveEnvPanelVisible({ ...base, loaded: false }), false, "waits for the first /api/changes settle");
-assert.equal(resolveEnvPanelVisible({ ...base, notARepo: true }), false, "non-repo roots have no git context");
-assert.equal(
-  resolveEnvPanelVisible({ ...base, railOpen: true }),
-  false,
-  "the inline code rail is the full surface this HUD abbreviates — never both",
-);
-assert.equal(resolveEnvPanelVisible({ ...base, hasTurns: false }), false, "the empty-state hero stays clean");
+// The Environment popover's pure model (cave-68vv, #5958). The width gate that
+// used to live here went with the floating HUD: the card now opens from the
+// composer's branch chip at every width.
 
 // ── environmentLabel ──────────────────────────────────────────────────────────
 // Local/unknown runtimes read "Local"; ssh runtimes surface the host.

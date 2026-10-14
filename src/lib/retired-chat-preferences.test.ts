@@ -14,6 +14,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const KEY = "cave:chat:thread-instruments";
+// The floating Environment HUD's collapse preference (#5958): the card now
+// opens from the composer's branch chip and has no collapsed state to keep.
+const ENV_PANEL_KEY = "cave:chat-env-panel:collapsed:v1";
 
 function withStorage(storage: unknown) {
   globalThis.window = { localStorage: storage } as never;
@@ -52,6 +55,20 @@ function makeStore(initial: Record<string, string> = {}) {
   withStorage(api);
   assert.deepEqual(purgeRetiredChatPreferences(), [KEY]);
   assert.equal(map.has(KEY), false);
+}
+
+// ── the retired Environment HUD's collapse flag goes the same way ──────────
+// "true" is what the HUD's × wrote; with the HUD gone nothing reads it, and a
+// future surface reaching for that key must not inherit a stale "collapsed".
+{
+  const { map, api } = makeStore({ [ENV_PANEL_KEY]: "true", [KEY]: "0" });
+  withStorage(api);
+  assert.deepEqual(
+    purgeRetiredChatPreferences().sort(),
+    [ENV_PANEL_KEY, KEY].sort(),
+    "both retired keys are reported as removed",
+  );
+  assert.equal(map.has(ENV_PANEL_KEY), false, "the env-panel collapse flag is gone from storage");
 }
 
 // ── idempotent: it runs on every chat mount ────────────────────────────────
