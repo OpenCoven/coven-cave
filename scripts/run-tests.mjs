@@ -604,6 +604,7 @@ export const SUITES = {
     "src/components/settings-familiars-control-sheet.test.ts",
     "src/components/familiar-studio-projects-tab.test.ts",
     "src/components/access-groups-section.test.ts",
+    "src/components/access-ledger.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
     "src/components/marketplace/crafts-marketplace.test.ts",

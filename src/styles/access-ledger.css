@@ -1,0 +1,325 @@
+/* ── The access ledger (#5897) ───────────────────────────────────────────
+   One row grammar for every surface that decides who may reach the Cave:
+   paired client apps, remote devices, familiar access groups. Records are
+   divided rows in one panel; the panel's border is the only box. Every
+   color, size and radius is a token, so the ledger survives all 24
+   palette × mode combinations. */
+
+.access-ledger {
+  container-name: access-ledger;
+  container-type: inline-size;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.access-ledger__row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.access-ledger__row + .access-ledger__row {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.access-ledger__row:hover {
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+/* The seal: the app's 6px status dot with a soft halo. It breathes only
+   while a request waits on the human — the one live state on these
+   surfaces — and holds still under reduced motion. The status word beside
+   it carries the meaning; the color never has to. */
+.access-seal {
+  --seal: var(--text-muted);
+  display: block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--seal);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--seal) 18%, transparent);
+}
+
+.access-seal[data-tone="pending"] {
+  --seal: var(--color-warning);
+}
+
+.access-seal[data-tone="good"] {
+  --seal: var(--color-success);
+}
+
+.access-seal[data-tone="bad"] {
+  --seal: var(--color-danger);
+}
+
+.access-seal[data-live="true"] {
+  animation: access-seal-breathe 2.4s var(--ease-standard) infinite;
+}
+
+@keyframes access-seal-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--seal) 18%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in oklch, var(--seal) 7%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .access-seal[data-live="true"] {
+    animation: none;
+  }
+}
+
+.access-ledger__body {
+  min-width: 0;
+}
+
+.access-ledger__headline {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.access-ledger__title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+/* A decided record reads quieter than one still open. */
+.access-ledger__row--settled .access-ledger__title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.access-ledger__lead {
+  margin-top: var(--space-2);
+}
+
+.access-ledger__identity {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.access-ledger__identity code {
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.access-ledger__meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin: var(--space-1) 0 0;
+  column-gap: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.access-ledger__meta time,
+.access-ledger__meta .access-ledger__reason {
+  color: var(--text-secondary);
+}
+
+.access-ledger__fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.access-ledger__sep {
+  color: var(--text-muted);
+}
+
+.access-ledger__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access-ledger__tags li {
+  display: inline-flex;
+  align-items: center;
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
+
+.access-ledger__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: start;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* A revoke that is mid-flight stays visible even when the pointer leaves. */
+.access-ledger__actions .reveal-on-hover[aria-busy="true"] {
+  opacity: 1;
+}
+
+/* The status word: the tint recipe from one solid state token. */
+.access-status {
+  --tone: var(--text-muted);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--tone) 38%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--tone) 12%, transparent);
+  color: var(--tone);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.access-status[data-tone="pending"] {
+  --tone: var(--color-warning);
+}
+
+.access-status[data-tone="good"] {
+  --tone: var(--color-success);
+}
+
+.access-status[data-tone="bad"] {
+  --tone: var(--color-danger);
+}
+
+/* A code the person compares with another screen before deciding: set
+   large enough to read across a desk, spaced so neighbours don't fuse. */
+.access-code {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+
+.access-code__label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.access-code__value {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+}
+
+/* Facts about the surface itself (desktop host, tailnet): eyebrow + value. */
+.access-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.access-facts > div {
+  min-width: 0;
+}
+
+.access-facts dt {
+  margin-bottom: var(--space-1);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.access-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+/* Loading rows match the ledger's rhythm so the panel doesn't jump. */
+.access-ledger__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.access-ledger__skeleton > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+@container access-ledger (max-width: 36rem) {
+  .access-ledger__row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .access-ledger__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .access-ledger__actions .ui-btn {
+    flex: 1 1 8rem;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .access-ledger__actions .ui-btn {
+    min-height: var(--touch-target);
+  }
+}

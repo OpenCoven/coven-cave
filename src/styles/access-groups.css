@@ -1,0 +1,303 @@
+/* ── Access groups (Chat → Projects → Groups) ─────────────────────────────
+   A group row expands into a recessed well with its members and base
+   projects. Chips use the tint recipe; nothing fills with the brand accent. */
+
+.access-groups {
+  container-name: access-groups;
+  container-type: inline-size;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.access-groups__head {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.access-groups__toggle {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.access-groups__toggle:hover {
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.access-groups__mark {
+  display: inline-flex;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.access-groups__text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.access-groups__name {
+  display: block;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-groups__summary {
+  display: block;
+  overflow: hidden;
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-groups__caret {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.access-groups__toggle[aria-expanded="true"] .access-groups__caret {
+  transform: rotate(180deg);
+}
+
+.access-groups__menu {
+  padding-right: var(--space-2);
+}
+
+.access-groups__well {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-sunken);
+}
+
+.access-groups__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.access-groups__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.access-groups__note + .access-groups__note {
+  margin-top: var(--space-1);
+}
+
+.access-groups__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.access-groups__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.access-groups__chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.access-groups__chip[aria-checked="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.access-groups__chip:disabled,
+.access-groups__level:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.access-groups__grants {
+  display: flex;
+  flex-direction: column;
+}
+
+.access-groups__grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.access-groups__grant + .access-groups__grant {
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.access-groups__project {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.access-groups__project-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+
+.access-groups__project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Off → Read → Write, one click per step. Read and Write tint with the
+   accent at two strengths so the eye reads depth of access, not just on/off. */
+.access-groups__level {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.access-groups__level:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.access-groups__level[data-level="read"],
+.access-groups__level[data-level="write"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.access-groups__level[data-level="write"] {
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+}
+
+.access-groups__create {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.access-groups__create-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.access-groups__input {
+  width: 100%;
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.access-groups__input::placeholder {
+  color: var(--text-muted);
+}
+
+.access-groups__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+@container access-groups (max-width: 28rem) {
+  .access-groups__create {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .access-groups__create-label {
+    grid-column: 1 / -1;
+  }
+}
