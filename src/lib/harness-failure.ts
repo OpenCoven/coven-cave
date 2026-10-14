@@ -170,6 +170,16 @@ const LOGIN_FAILURE_PATTERNS: RegExp[] = [
   /\bauthentication (?:error|failed|required)\b/i,
   /\bauthentication[_-]error\b/i,
   /\bcredentials? (?:missing|not found|expired|invalid|required)\b/i,
+  // Claude Code OAuth 401s (#5969): "Failed to authenticate. API Error: 401
+  // OAuth access token is invalid." / "OAuth token has expired" / "OAuth token
+  // revoked" / "Invalid authentication credentials". The 401 itself is never
+  // matched on its own — Cave's access gate emits bare 401s too — and
+  // "failed to authenticate" only counts in Claude Code's "API Error: 401"
+  // shape: the Coven daemon uses the bare phrase for its own socket and
+  // health handshakes, which no runtime sign-in can repair.
+  /\bfailed to authenticate[.:]?\s+api error:?\s*401\b/i,
+  /\boauth (?:access )?token (?:is |has |was )?(?:invalid|expired|revoked|missing)\b/i,
+  /\binvalid authentication (?:credentials?|token)\b/i,
 ];
 const CONFIGURATION_FAILURE_PATTERNS: RegExp[] = [
   /\binvalid (?:x[-_])?api[-_ ]key\b/i,
