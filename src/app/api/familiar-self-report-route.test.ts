@@ -237,3 +237,13 @@ describe("self-report routes keep the source thread id", () => {
     });
   }
 });
+
+describe("self-report normalization keeps the capability blocker link (#5938)", () => {
+  it("copies capabilitiesLacking[].blockerId through normalizePayload as optional text", () => {
+    assert.match(
+      routeSource,
+      /capabilitiesLacking: objectArray\(payload\.capabilitiesLacking\)\.map\(\(item\) => \(\{[\s\S]{0,400}?blockerId: optionalText\(item\.blockerId\),/,
+      "a capability's blockerId survives normalization so review surfaces can fold it into its blocker",
+    );
+  });
+});

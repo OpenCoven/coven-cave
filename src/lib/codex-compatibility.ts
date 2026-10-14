@@ -14,7 +14,7 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { parseHarnessAuthFailure } from "./harness-failure.ts";
+import { parseHarnessAuthFailure, parseHarnessUsageLimit } from "./harness-failure.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCHEMA_DOCUMENT_BYTES = 1_048_576;
@@ -1081,8 +1081,9 @@ export type CodexStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean; outcome?: "rejected" }
-  /** Terminal Codex failure with only a classified auth verdict. */
-  | { kind: "failure"; authKind?: "login" | "configuration" }
+  /** Terminal Codex failure with only classified verdicts: a sign-in gap
+   *  and/or a usage limit (#5938). The provider text is discarded. */
+  | { kind: "failure"; authKind?: "login" | "configuration"; usageLimit?: "quota" | "rate" }
   /** `turn.completed` token usage. The raw `usage` object is passed through
    *  untouched; the chat route validates it with parseStreamJsonUsage. */
   | { kind: "usage"; usage: unknown }
@@ -1145,7 +1146,13 @@ function codexFailureEvent(value: Record<string, unknown>): CodexStreamEvent {
   const verdicts = messages.map((message) => parseHarnessAuthFailure(message, "codex")?.kind);
   const authKind = verdicts.includes("configuration") ? "configuration"
     : verdicts.includes("login") ? "login" : null;
-  return authKind ? { kind: "failure", authKind } : { kind: "failure" };
+  const limits = messages.map((message) => parseHarnessUsageLimit(message, "codex")?.kind);
+  const usageLimit = limits.includes("quota") ? "quota" : limits.includes("rate") ? "rate" : null;
+  return {
+    kind: "failure",
+    ...(authKind ? { authKind } : {}),
+    ...(usageLimit ? { usageLimit } : {}),
+  };
 }
 
 export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema): CodexStreamEvent | null {

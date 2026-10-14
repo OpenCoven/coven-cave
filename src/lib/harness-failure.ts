@@ -210,6 +210,65 @@ export function parseHarnessAuthFailure(
   };
 }
 
+// ── Runtime usage limits (#5938) ──────────────────────────────────────────────
+// A harness that runs out of plan quota reports it as ordinary assistant text
+// (Claude Code: an `assistant` envelope with model `<synthetic>`, then a
+// `result` with is_error) or as a relayed failure reason. Neither reaches the
+// auth classifier, so Chat offered a plain Retry that re-sent the exhausted
+// model. Recognize the quota and rate-limit shapes so the strip can offer a
+// one-turn model switch instead. Verdict only: the provider text never leaves
+// this function.
+
+export type HarnessUsageLimit = {
+  /** Canonical id of the limited runtime, when the caller knows it. */
+  harness: string | null;
+  /** Display label for the runtime, or a neutral fallback. */
+  harnessLabel: string;
+  /** `quota`: the plan allowance is spent until it resets. `rate`: transient
+   *  request throttling, where a plain retry is still the right action. */
+  kind: "quota" | "rate";
+};
+
+// Each pattern is bounded to one line (no `.*`, no `[\s\S]`) so a long
+// transcript cannot make a match span unrelated sentences.
+const USAGE_QUOTA_PATTERNS: RegExp[] = [
+  // "You've reached your Fable limit." / "You've hit your usage limit."
+  /\byou(?:'|’)?ve (?:reached|hit) your(?: [\w-]+){0,3} limit\b/i,
+  /\busage limit (?:reached|exceeded)\b/i,
+  /\busage_limit_reached\b/i,
+  /\binsufficient_quota\b/i,
+  /\bexceeded your current quota\b/i,
+];
+const USAGE_RATE_PATTERNS: RegExp[] = [
+  /\b429\b[^\n]{0,80}\b(?:too many requests|rate[ _-]?limit)/i,
+  /\b(?:too many requests|rate[ _-]?limit)[^\n]{0,80}\b429\b/i,
+  /\brate_limit_exceeded\b/i,
+  /\brate[- ]limit(?:ed|s)?\b/i,
+];
+
+/**
+ * Detect a runtime usage limit in error or assistant text. `harnessId` is the
+ * runtime the failing send used; pass it so the fix can name the runtime.
+ * Quota wins over rate when both match. Returns null for every other kind of
+ * limit ("Attachment limit reached", "context window limit", ordinary prose).
+ */
+export function parseHarnessUsageLimit(
+  text: unknown,
+  harnessId?: string | null,
+): HarnessUsageLimit | null {
+  if (!text || typeof text !== "string") return null;
+  const kind = USAGE_QUOTA_PATTERNS.some((re) => re.test(text))
+    ? "quota"
+    : USAGE_RATE_PATTERNS.some((re) => re.test(text)) ? "rate" : null;
+  if (!kind) return null;
+  const harness = knownAdapterId(harnessId);
+  return {
+    harness,
+    harnessLabel: harness ? adapterLabel(harness) : "The runtime",
+    kind,
+  };
+}
+
 /**
  * The harnesses a fix UI should offer to switch to: the configured list when
  * the error names one, otherwise every other chat-supported adapter. Capped so
