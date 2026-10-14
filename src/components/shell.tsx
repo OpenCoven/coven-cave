@@ -16,6 +16,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { SetupProgressBannerTrigger } from "@/components/onboarding-setup-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
@@ -1320,6 +1321,7 @@ function ShellInner({
           <UpdateBannerTrigger />
           <OpenCovenToolsBannerTrigger />
           <CaveHomeMigrationBannerTrigger />
+          <SetupProgressBannerTrigger />
           <ShellBannerStrip />
           <DetailSplitHost
             primary={detail}
