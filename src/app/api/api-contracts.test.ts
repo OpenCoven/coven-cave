@@ -250,6 +250,7 @@ const contracts: RouteContract[] = [
   { route: "/knowledge/packs", methods: ["GET"], kind: "json" },
   { route: "/knowledge/packs/seed", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
@@ -512,6 +513,10 @@ function effectiveRouteSource(file: string, source: string): string {
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
+  }
+  // Core and Research link endpoints delegate to the same guarded handler.
+  if (source.includes('from "@/lib/server/saved-links-route"')) {
+    parts.push(readFileSync(path.join(root, "src", "lib", "server", "saved-links-route.ts"), "utf8"));
   }
   return parts.join("\n");
 }
