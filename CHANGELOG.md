@@ -7,6 +7,66 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-10-15
+
+> Discord presence recovers on its own, and Chat fits narrow windows.
+
+Patch release on top of v0.5.13. Headline: the Discord Rich Presence card no
+longer disappears for good after one slow call to Discord (#6021). As in
+v0.5.13, **the Windows MSI is not Authenticode-signed in this cut**. Its
+checksum and updater signature are separate from Windows code signing.
+
+### Added
+- **Send later** (#5948). Single-familiar chats on desktop and iOS can schedule
+  a reply for a later date and time, then view or cancel it before delivery.
+  Scheduled replies survive closing the chat and restarting Cave.
+- **Chat runtimes from setup** (#5987, #5985). After local setup, Cave offers
+  the Codex, Claude Code and Copilot CLI installers. Settings → General → Setup
+  shows setup status, and Home starts cleanly with no familiars.
+- **Usage-limit switch** (#5984). A harness quota notice is treated as an
+  error, and Chat offers a one-turn switch to another model instead of retrying
+  the exhausted one.
+- **Per-chat connectors on the server** (#5989). GitHub and Asana connectors
+  are scoped per chat, with connector status for the phone.
+
+### Changed
+- **Chat on narrow windows** (#5995, #6012, #6013, #6015, #6017, #6019). The
+  open nav gives way to the Chat list when both don't fit. The transcript,
+  title, runtime status chips, composer footer and reply author line stay
+  inside a narrowed pane.
+- **Sidebar sized to its content** (#6010): 188px by default, 220px at most.
+- **Image generation defaults to GPT Image 2.5** (#6020).
+- **Leaner startup** (#5996). Cave no longer warms every surface or preloads
+  every route at launch; surfaces load when used.
+- **Journal reflections** (#5853) run in the morning about yesterday, from
+  fixed read-only commands, and the automation card is fixed.
+- **Environment panel** (#5983) opens from the composer's branch chip.
+- **Summoning circle** (#5976) collapses each choice to a summary once chosen.
+- **Access panels** (#5990) share one ledger layout across client access,
+  device access and access groups.
+
+### Fixed
+- **Discord Rich Presence** (#6022). A slow or unanswered Discord IPC call,
+  such as after Discord restarts, stopped presence until Cave restarted, and
+  Discord showed its own "CovenCave ?" entry instead. Cave now backs off and
+  reconnects with a fresh connection.
+- **Large attachments** (#5962). Chats accept up to 50 attachments, and six
+  ordinary images no longer fail with "invalid json body".
+- **iOS** (#5940, #5991). The phone reconnects when its network path needs a
+  connection instead of reporting offline, and a sent message stays visible
+  while its reply is pending.
+- **Windows** (#5978, #5974). Windows wording and behaviour from first launch
+  to first chat, and the project picker opens redirected Desktop and Documents
+  folders.
+- **Claude sign-in** (#5972). A rejected Claude Code OAuth token offers the
+  sign-in repair instead of a generic run error.
+- **Terminal** (#5975) starts without a separate echo diagnostic gate.
+- **Home send** (#5994) waits for the familiar's project read before asking
+  for a project.
+- **Maintenance.** Research host contracts are separated from the mission
+  engine ahead of its extraction (#5998, #6003, #6004, #6006), and the iOS CI
+  job has more headroom (#6002).
+
 ## [0.5.13] - 2026-10-13
 
 > Windows MSI builds return, and the chat layout is easier to read and control.
