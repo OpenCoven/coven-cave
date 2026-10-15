@@ -45,12 +45,12 @@ assert.doesNotMatch(
 );
 assert.match(
   instrumentation,
-  /void mediaJobs\.startResearchMediaJobs\(\)\.catch/,
-  "persisted research-media recovery begins in the background",
+  /void research\.startOptionalResearch\(\)\.catch/,
+  "optional Research recovery begins through the capability gate in the background",
 );
 assert.doesNotMatch(
   instrumentation,
-  /await mediaJobs\.startResearchMediaJobs\(\)/,
+  /await (?:mediaJobs\.startResearchMediaJobs|research\.startOptionalResearch)\(\)/,
   "Next route registration never waits for media renders",
 );
 // cave-1tu16: the X post cache is bounded by a 24h expiry, but expiry was

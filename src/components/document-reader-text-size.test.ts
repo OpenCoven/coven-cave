@@ -237,7 +237,6 @@ test("only reading content is scaled — chrome keeps its own size", () => {
 
 test("the shared reader uses character-based prose and a separate wide track", () => {
   const sharedCss = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
-  const researchCss = readFileSync(new URL("../styles/research-reader.css", import.meta.url), "utf8");
 
   assert.match(
     sharedCss,
@@ -259,11 +258,6 @@ test("the shared reader uses character-based prose and a separate wide track", (
   assert.match(
     sharedCss,
     /\.document-reader__wide-block\s*\{[\s\S]*?width:\s*var\(--document-reader-wide-measure\)/,
-  );
-  assert.doesNotMatch(
-    researchCss,
-    /--document-reader-column-width:\s*\d+(?:px|rem)/,
-    "Research must not restore fixed reader widths",
   );
 });
 

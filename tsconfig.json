@@ -31,6 +31,12 @@
       ],
       "@opencoven/research-host/*": [
         "./src/lib/research-host/*"
+      ],
+      "@opencoven/research-runtime": [
+        "./src/lib/server/research-package-absent.ts"
+      ],
+      "@opencoven/research-client": [
+        "./src/components/role-surfaces/research-package-absent.tsx"
       ]
     }
   },

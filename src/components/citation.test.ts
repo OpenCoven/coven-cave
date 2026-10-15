@@ -5,7 +5,6 @@ import test from "node:test";
 const citation = readFileSync(new URL("./ui/citation.tsx", import.meta.url), "utf8");
 const bubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
-const research = readFileSync(new URL("./role-surfaces/research-mission-detail.tsx", import.meta.url), "utf8");
 const markdownInteractions = readFileSync(new URL("../styles/cave-md/interactions.css", import.meta.url), "utf8");
 
 test("the Citation UI exposes inline provider previews through the shared Popover", () => {
@@ -138,16 +137,6 @@ test("chat renders inline source previews without a numbered Sources footer", ()
     "the rendered markdown container is enhanced with inline previews",
   );
   assert.doesNotMatch(bubble, /<CitationSources citations=\{cited\.citations\}/, "chat no longer renders a Sources footer");
-});
-
-test("research cites the mission's used sources under the synthesis", () => {
-  assert.match(research, /import \{ CitationSources \} from "@\/components\/ui\/citation"/, "reuses the shared component");
-  assert.match(research, /import \{ sourcesToCitations \} from "@\/lib\/citations"/, "adapts research source rows to citations");
-  assert.match(
-    research,
-    /sourcesToCitations\(mission\.sources\.filter\(\(source\) => source\.status === "used"\)\)/,
-    "only the sources the mission actually used are cited",
-  );
 });
 
 test("a worktree citation renders the repo source card, not a web card (SourceCard.dc.html)", () => {

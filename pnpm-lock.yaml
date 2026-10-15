@@ -239,6 +239,10 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+    optionalDependencies:
+      '@opencoven/research':
+        specifier: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz
+        version: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
 
 packages:
 
@@ -1194,6 +1198,15 @@ packages:
     resolution: {integrity: sha512-FY1Xbpc2eMmlPHUumn4/jPQ7wqMrMPoJetdAf7wO11G8nrtIa45yuDeYE8XniLJVfbqIt5nA3CDRmIN6qi5p8Q==, tarball: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz}
     version: 0.0.1
     engines: {node: '>=24.18.0 <25'}
+
+  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz':
+    resolution: {integrity: sha512-3FkNXEyn7BDNdhAAeKOaELqB5RsncuKUJkBVzaOJMshM4iqjRvxydDu8E6uUrQ3T3n36gcQIPmGxpKiJGgKhIQ==, tarball: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz}
+    version: 0.1.0
+    engines: {node: '>=24.18.0 <25'}
+    peerDependencies:
+      next: 16.3.8
+      react: 19.2.8
+      react-dom: 19.2.8
 
   '@opencoven/sdk-core@file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz':
     resolution: {integrity: sha512-+t7NvFh7ZkkEhOtCu53wEufN+1RBn6NcGQdEx/OzAX8nPlrqmR3OCNTO8sGhGfb3yXnJJoobRPRZcYIfqbEYdg==, tarball: file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz}
@@ -4834,6 +4847,17 @@ snapshots:
   '@opencoven/coven-client@file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz':
     dependencies:
       '@opencoven/sdk-core': file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
+
+  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      next: 16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      pdfjs-dist: 6.2.108
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+      sharp: 0.35.5(@types/node@24.13.2)
+    transitivePeerDependencies:
+      - '@types/node'
+    optional: true
 
   '@opencoven/sdk-core@file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz': {}
 

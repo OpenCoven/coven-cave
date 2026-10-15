@@ -16,7 +16,8 @@ import { rename as renameFile } from "node:fs/promises";
 import path from "node:path";
 
 import { caveHome } from "../coven-paths.ts";
-import { RESEARCH_VECTOR_ENCODING_VERSION } from "./research-resource-embedding-provider.ts";
+// Persisted index format; offline recovery must not import an embedding HTTP client.
+const RESEARCH_VECTOR_ENCODING_VERSION = "float32le-v1";
 import type { ResearchLexicalAuthority, ResearchLexicalChunk } from "./research-resource-lexical-index.ts";
 import { RESEARCH_LEXICAL_CHUNKER_VERSION } from "./research-resource-lexical-index.ts";
 

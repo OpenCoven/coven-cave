@@ -321,6 +321,7 @@ const contracts: RouteContract[] = [
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/runtime-models/[runtime]", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/capability", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/context-packs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -1000,6 +1001,17 @@ for (const contract of contracts) {
   const effectiveSource = effectiveRouteSource(file, source);
 
   assert.deepEqual(exportedMethods(source), contract.methods, `${contract.route} HTTP method exports changed`);
+  if (source.includes('from "@/lib/server/research-package"')) {
+    // Handler-level contracts moved with their implementations to Research's
+    // scripts/http-route-contracts.test.ts. Core owns exact dispatch and gating.
+    for (const method of contract.methods) {
+      assert.ok(source.includes(`dispatchResearchRequest(${JSON.stringify(contract.route.slice(1))}, ${JSON.stringify(method)}, request`), `${contract.route} must dispatch its exact route and method`);
+    }
+    const bridge = readFileSync(path.join(root, 'src/lib/server/research-package.ts'), 'utf8');
+    assert.match(bridge, /if \(!capability\.enabled\) return researchUnavailable\(capability\)/);
+    assert.ok(bridge.indexOf('if (forbidden) return forbidden') < bridge.indexOf('const runtime = await load()'));
+    continue;
+  }
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);
 
   const readsJson = contract.optionalJsonBody
@@ -1062,23 +1074,6 @@ for (const contract of contracts) {
       assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
   }
-}
-
-{
-  const generationsSource = readFileSync(
-    path.join(apiRoot, "research", "generations", "route.ts"),
-    "utf8",
-  );
-  assert.match(
-    generationsSource,
-    /validateCreateResearchGenerationInput/,
-    "research generations must keep input validation at the API boundary",
-  );
-  assert.match(
-    generationsSource,
-    /"media-not-ready" \? 409/,
-    "research generations must expose media readiness as a conflict, never a fake queued record",
-  );
 }
 
 {

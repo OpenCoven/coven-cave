@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { researchPackageConfig } from "./scripts/research-package-config.mjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { MAX_PROXY_BODY_BYTES } from "./src/lib/request-body-limit.ts";
 
@@ -18,8 +19,12 @@ const daemonlessE2E = process.env.COVEN_CAVE_E2E === "1";
 // Every other build keeps it.
 const skipBuildTypecheck = process.env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";
 
+const researchPackage = researchPackageConfig();
+
 const nextConfig: NextConfig = {
+  transpilePackages: researchPackage.available ? ["@opencoven/research"] : [],
   env: {
+    COVEN_RESEARCH_PACKAGE_AVAILABLE: researchPackage.available ? "1" : "0",
     COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
       process.env.COVEN_CAVE_X_PRODUCTION_CLIENT_ID?.trim() ?? "",
     COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED:
@@ -38,6 +43,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
   turbopack: {
     root: process.cwd(),
+    resolveAlias: researchPackage.aliases,
   },
   // Standalone output produces a self-contained Node server at
   // .next/standalone/ that we can bundle as a Tauri sidecar.

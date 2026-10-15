@@ -8,11 +8,15 @@ import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer | null = null;
 
-beforeEach(() => { vi.resetModules(); });
+beforeEach(() => {
+  vi.resetModules();
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, available: true, enabled: true, reason: "available" })));
+});
 afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = null;
-  vi.doUnmock("./researcher-surface");
+  vi.unstubAllGlobals();
+  vi.doUnmock("@opencoven/research-client");
 });
 
 function deferred() {
@@ -35,7 +39,7 @@ async function fixture() {
       },
     };
   });
-  vi.doMock("./researcher-surface", imported);
+  vi.doMock("@opencoven/research-client", imported);
   const { ResearcherSurfaceLoader } = await import("./researcher-surface-loader");
   const view = (id: string) => createElement(ResearcherSurfaceLoader, {
     context: context(id), fallback: createElement("span", null, "Loading"),
@@ -88,3 +92,13 @@ test("server rendering keeps the fallback and does not import the browser room",
   expect(renderToString(view("server"))).toBe("<span>Loading</span>");
   expect(imported).not.toHaveBeenCalled();
 });
+
+for (const available of [false, true]) {
+  test(`${available ? "disabled" : "absent"} Research does not import the room`, async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, available, enabled: false, reason: available ? "disabled" : "not-installed" })));
+    const { imported, view } = await fixture();
+    await act(async () => { renderer = create(view("sage")); });
+    expect(JSON.stringify(renderer!.toJSON())).toContain(available ? "Research is disabled" : "Research is not installed");
+    expect(imported).not.toHaveBeenCalled();
+  });
+}
