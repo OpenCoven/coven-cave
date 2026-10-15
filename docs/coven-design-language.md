@@ -204,7 +204,7 @@ The witchiness operates on **two levels, deliberately dosed**:
 | **coven** | a multi-familiar group session; also the org/instance |
 | **cave** | this app — the local control room (`~/.coven/cave`, `state.json`) |
 | **sacrifice** | soft-delete a session (reversible; `sacrificedAt`) |
-| **summon** | restore/unarchive a session |
+| **summon** | API and types: unarchive a session (`summonSessionLocal`, `SUMMON_GRACE_DAYS`). UI copy: create a familiar ("Summon a familiar", the Summoning Circle); session restore reads "Unarchive" in UI |
 | **ward** | a familiar's guardrail file |
 | **grimoire** | the external docs portal (mind.opencoven.ai) |
 
