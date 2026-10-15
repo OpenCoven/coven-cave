@@ -380,10 +380,33 @@ assert.match(
   "the title row reads identity · run status · actions",
 );
 assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats render once, on the title row");
+// #6008: above the 52rem query the row stays one line and gives space up in
+// order: a long title truncates to a protected floor, then the run status
+// stacks inside its own box. The icon actions never shrink.
 assert.match(
   styles,
-  /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
-  "the title row wraps its status cluster onto its own line when the header is narrow",
+  /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;/,
+  "the title row stays one line above the 52rem query",
+);
+assert.match(
+  styles,
+  /@container chat-header \(max-width: 52rem\) \{\s*\.cave-chat-header-row \{\s*flex-wrap: wrap;\s*\}\s*\.cave-chat-header-status \{\s*order: 1;\s*flex: 1 0 100%;/,
+  "on a narrow header the status cluster wraps onto its own line",
+);
+assert.match(
+  styles,
+  /\.cave-chat-header-row > \.cave-chat-meta-line \{[^}]*flex: 1 100 auto;[^}]*min-width: min\(100%, 24rem\);/,
+  "the identity gives up space first, but never below the title's protected floor",
+);
+assert.match(
+  styles,
+  /\.cave-chat-header-status \{[^}]*flex: 0 1 auto;[^}]*flex-wrap: wrap;[^}]*justify-content: flex-end;/,
+  "squeezed beside a protected title, the stats and Last run stack inside the status",
+);
+assert.match(
+  styles,
+  /\.cave-chat-header-row > \.cave-chat-session-actions \{\s*flex: none;\s*\}/,
+  "the icon actions keep their width",
 );
 assert.match(
   styles,

@@ -938,13 +938,15 @@ details[open] > .cave-tool-summary::before {
 
 /* ── One title row (#5953) ─────────────────────────────────────────────────
    identity · run status · actions. The stats strip and the Last run strip
-   used to stack as two bands under the title; they ride the row now. The
-   identity takes the leftover width (basis 0) so the row never wraps just
-   because a title is long; on a narrow header the status cluster moves to
-   its own line instead of squeezing the title to nothing. */
+   used to stack as two bands under the title; they ride the row now.
+   Above 52rem the row stays one line and space is given up in order (#6008):
+   a long title truncates first, down to a protected floor; then the run
+   status wraps its stats and Last run onto two lines inside its own box. A
+   long "Last run needs attention" status used to keep its full width while
+   the title fell to "Capabil…". Below 52rem the status takes its own line. */
 .cave-chat-header-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   column-gap: var(--space-3);
   row-gap: var(--space-1);
@@ -952,7 +954,13 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-header-row > .cave-chat-meta-line {
-  flex: 1 1 0;
+  /* Start from the identity's own width and give up space first (the high
+     shrink factor), but never below the floor: 24rem keeps a typical title
+     (about 30 characters) whole beside the avatar and status pill. The
+     identity line under the title is usually wider than that anyway, so a
+     short title rarely reserves space it doesn't use. */
+  flex: 1 100 auto;
+  min-width: min(100%, 24rem);
   width: auto;
   /* Title and pill on the first line, the identity under them: the exact
      runtime/model ID keeps wrapping (never an ellipsis) without taking the
@@ -961,6 +969,11 @@ details[open] > .cave-tool-summary::before {
   grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
   align-items: center;
   row-gap: 0;
+}
+
+/* Icon buttons never give up width; the identity and the status do. */
+.cave-chat-header-row > .cave-chat-session-actions {
+  flex: none;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line > .cave-chat-header-avatar {
@@ -976,9 +989,13 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-header-status {
   display: flex;
   flex: 0 1 auto;
+  /* Squeezed beside a protected title, the stats and the Last run strip
+     stack, right-aligned, instead of pushing the title out (#6008). */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   min-width: 0;
   align-items: center;
-  gap: var(--space-2);
+  gap: 0 var(--space-2);
 }
 
 .cave-chat-header-status:empty {
@@ -994,6 +1011,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 @container chat-header (max-width: 52rem) {
+  .cave-chat-header-row {
+    flex-wrap: wrap;
+  }
   .cave-chat-header-status {
     order: 1;
     flex: 1 0 100%;
