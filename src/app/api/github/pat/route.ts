@@ -18,16 +18,14 @@ import { dirname } from "path";
 import {
   commitLocalEncryptedSecretBatch,
   getLocalEncryptedSecret,
-  hasLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
-import { resolveGitHubToken } from "@/lib/github-token";
 import {
   loadVaultMapForMutation,
-  resolveSecret,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
+import { readGitHubPatStatus } from "@/lib/server/pat-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -109,33 +107,7 @@ async function usernameExists(username: string): Promise<boolean> {
 
 // GET — just reports presence, never exposes the value
 export async function GET() {
-  // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
-  const localEnvPat = readEnvLocalValue(PAT_KEY);
-  const hasEncryptedPat = hasLocalEncryptedSecret(PAT_KEY);
-  const patFromVault = resolveSecret("GITHUB_PAT");
-  const loginFromVault = resolveSecret("GITHUB_USERNAME");
-
-  // The activity and action routes also accept credentials supplied by the
-  // launcher (for example GH_TOKEN from a CLI/harness environment). Reflect
-  // that here so an already-authenticated installation is not prompted to add
-  // a duplicate Cave PAT.
-  const hasPat = !!resolveGitHubToken();
-  // Only storage Cave can actually delete is removable from this UI. A
-  // launcher GITHUB_PAT or a vault reference can resolve through
-  // resolveSecret(), but deleting it here would only disable it until restart.
-  const canRemoveStoredPat = hasEncryptedPat || !!localEnvPat;
-  const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
-  const source: "encrypted" | "vault" | "env" | "none" = hasEncryptedPat
-    ? "encrypted"
-    : localEnvPat
-      ? "env"
-      : patFromVault
-      ? "vault"
-      : hasPat
-        ? "env"
-        : "none";
-
-  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat });
+  return NextResponse.json(readGitHubPatStatus());
 }
 
 // POST — validate + save

@@ -1,14 +1,14 @@
 /**
  * GET /api/connectors — desktop connection status for the connectors a phone
- * can turn on per chat. Reuses the GitHub and Asana PAT status routes so
- * "connected" has one definition, and never returns a credential. Whether a
+ * can turn on per chat. Reads the same PAT status as /api/github/pat and
+ * /api/asana/pat (src/lib/server/pat-status.ts) so "connected" has one
+ * definition, and never returns a credential. Whether a
  * specific familiar received the credential is reported at send time, in
  * that turn's <connectors> block (src/lib/connectors.ts).
  */
 import { NextResponse } from "next/server";
 import { CONNECTOR_NAMES, type ConnectorId } from "@/lib/connectors";
-import { GET as githubPatStatus } from "../github/pat/route";
-import { GET as asanaPatStatus } from "../asana/pat/route";
+import { readAsanaPatStatus, readGitHubPatStatus } from "@/lib/server/pat-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,9 +20,9 @@ const SETUP_HINTS: Record<ConnectorId, string> = {
   asana: "Connect Asana on your desktop: open the Queue or a Board task in Coven Cave and choose Connect Asana.",
 };
 
-async function readStatus(handler: () => Promise<Response>): Promise<PatStatus> {
+function readStatus(read: () => PatStatus): PatStatus {
   try {
-    return (await (await handler()).json()) as PatStatus;
+    return read();
   } catch {
     return {};
   }
@@ -40,10 +40,8 @@ function connectorEntry(id: ConnectorId, status: PatStatus) {
 }
 
 export async function GET() {
-  const [github, asana] = await Promise.all([
-    readStatus(githubPatStatus),
-    readStatus(asanaPatStatus),
-  ]);
+  const github = readStatus(readGitHubPatStatus);
+  const asana = readStatus(readAsanaPatStatus);
   return NextResponse.json({
     ok: true,
     connectors: [connectorEntry("github", github), connectorEntry("asana", asana)],

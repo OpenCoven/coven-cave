@@ -16,17 +16,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import {
-  commitLocalEncryptedSecretBatch,
-  hasLocalEncryptedSecret,
-} from "@/lib/local-encrypted-vault";
+import { commitLocalEncryptedSecretBatch } from "@/lib/local-encrypted-vault";
 import {
   loadVaultMapForMutation,
-  resolveSecret,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
+import { readAsanaPatStatus } from "@/lib/server/pat-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,20 +65,7 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
 }
 
 export async function GET() {
-  const patFromVault = resolveSecret(PAT_KEY);
-  const userFromVault = resolveSecret(USER_KEY);
-
-  const hasPat = !!(patFromVault ?? process.env.ASANA_PAT?.trim() ?? process.env.ASANA_ACCESS_TOKEN?.trim());
-  const login = userFromVault ?? process.env.ASANA_USER?.trim() ?? null;
-  const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
-    ? "encrypted"
-    : patFromVault
-      ? "vault"
-      : hasPat
-        ? "env"
-        : "none";
-
-  return NextResponse.json({ hasPat, login, source });
+  return NextResponse.json(readAsanaPatStatus());
 }
 
 export async function POST(req: NextRequest) {
