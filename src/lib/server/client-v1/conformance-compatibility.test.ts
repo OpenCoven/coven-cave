@@ -104,6 +104,15 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
     /name === "NODE_OPTIONS"/,
     "the isolated environment must not inherit a non-macOS heap override",
   );
+  const fixtureBuilds = compatibilityHarness.match(/await runBuild\([^)]*\)\)/g) ?? [];
+  assert.equal(fixtureBuilds.length, 2, "the harness builds the normal and conformance fixtures");
+  for (const build of fixtureBuilds) {
+    assert.match(build, /buildEnvironment\(root\)/,
+      "each launch fixture build skips Next's duplicate TypeScript pass (#6036)");
+  }
+  assert.match(compatibilityHarness, /COVEN_CAVE_SKIP_BUILD_TYPECHECK: "1"/);
+  assert.doesNotMatch(script, /COVEN_CAVE_SKIP_BUILD_TYPECHECK/,
+    "build:conformance itself keeps the TypeScript pass; only the test's fixture builds skip it");
   assert.match(
     compatibilityHarness,
     /process\.platform\s*===\s*["']win32["']\s*\?\s*90_000\s*:\s*45_000/,
