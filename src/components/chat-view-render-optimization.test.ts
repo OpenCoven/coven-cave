@@ -142,6 +142,17 @@ assert.match(
   "the turn row sets content-visibility:auto with a contain-intrinsic-size estimate",
 );
 
+// #6009: content-visibility:auto turns remember their last rendered width
+// (browsers apply contain-intrinsic-size: auto to them), which becomes the
+// transcript's min-content. The overlay host is a flex item in the
+// transcript/inspector row, so it needs min-w-0 or it holds the transcript at
+// its old width when the pane narrows and the conversation is clipped.
+assert.match(
+  chatViewSource,
+  /<div className="cave-chat-overlay-host relative min-h-0 min-w-0 flex-1">/,
+  "the transcript's flex host can shrink below its turns' remembered width",
+);
+
 // ── 2026-07-03 chat perf/a11y batch ──────────────────────────────────────────
 assert.match(chatViewSource, /const siblingIndex = useMemo\(\(\) => buildSiblingIndex\(turns\), \[turns\]\)/, "branch-nav siblings are precomputed once per turns change, not scanned per row");
 assert.doesNotMatch(chatViewSource, /siblingsOf\(turns/, "no per-row siblingsOf(turns) scans remain in render");

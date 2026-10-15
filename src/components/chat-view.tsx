@@ -8566,9 +8566,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
           rather than covering it. With no inspector open the row collapses to
           the transcript alone and the layout is unchanged. The Thread Signal
-          host stays inside the transcript column but outside its scroll flow. */}
+          host stays inside the transcript column but outside its scroll flow.
+          min-w-0: off-screen turns (content-visibility: auto) remember their
+          last rendered width, so without it this flex item kept the
+          transcript at its old width when the pane narrowed — opening the
+          nav or docking the inspector clipped the conversation (#6009). */}
       <div className="flex min-h-0 flex-1">
-      <div className="cave-chat-overlay-host relative min-h-0 flex-1">
+      <div className="cave-chat-overlay-host relative min-h-0 min-w-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
