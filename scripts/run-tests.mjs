@@ -1772,6 +1772,7 @@ export const SUITES = {
     "src/lib/chat-model-state.test.ts",
     "src/lib/chat-runtime-identity.test.ts",
     "src/lib/chat-runtime-activity.test.ts",
+    "src/lib/chat-run-details.test.ts",
     "src/lib/chat-activity-corpus.test.ts",
     "src/lib/chat-runtime-handoff.test.ts",
     "src/lib/claude-models.test.ts",

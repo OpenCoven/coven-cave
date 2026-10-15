@@ -1,7 +1,7 @@
 "use client";
 
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
-import { runtimeActivityStatusLines } from "@/lib/chat-runtime-activity";
+import { responseRunDetails } from "@/lib/chat-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
 import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
 import "@/styles/cave-chat.css";
@@ -1513,85 +1513,51 @@ function responseModelLabel(model: string): string {
   return model;
 }
 
-function responseModelStatusLines(metadata?: ChatResponseMetadata): string[] {
-  if (!metadata) return [];
-  const requested = metadata.requestedModel;
-  const desired = metadata.desiredModel ?? metadata.model;
-  const forwarded = metadata.forwardedModel;
-  const confirmed = metadata.confirmedModel;
-  const identity = responseMetadataIdentity(metadata);
-  const lines: string[] = [
-    identity ? `Runtime: ${identity.harness}${identity.version ? ` ${identity.version}` : " · Version not reported"}`
-      : "Runtime identity: not recorded in this response",
-    identity?.model ? `Runtime-reported model: ${identity.model}` : "Runtime-reported model: unavailable",
-  ];
-  if (requested !== undefined) {
-    lines.push(`Requested model: ${requested ? responseModelLabel(requested) : "Runtime default"}`);
-  }
-  if (desired) lines.push(`Selected model: ${responseModelLabel(desired)}`);
-  if (forwarded && forwarded !== desired) lines.push(`Forwarded model: ${responseModelLabel(forwarded)}`);
-  if (confirmed && !identity) lines.push(`Recorded model: ${responseModelLabel(confirmed)}`);
-  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
-  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
-  if (metadata.modelApplicationReason && !confirmed) lines.push(metadata.modelApplicationReason);
-  lines.push(...runtimeActivityStatusLines(identity?.activity));
-  return lines;
-}
-
-/** The model application trail is separate from controls: a runtime echo can
- * prove forwarding without proving provider application, and a runtime-owned
- * default may intentionally have no model id at all. */
-function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const lines = responseModelStatusLines(metadata);
-  if (lines.length === 0) return null;
+/** Run details (#6026, a slice of #5765): the model application trail, the
+ *  per-turn control outcome and the activity support that used to render as
+ *  up to nine hairline pills under every reply. Static provenance is muted
+ *  text, not a pill (design language §8), so the whole trail sits behind one
+ *  native disclosure. Its closed line names the runtime, the model state when
+ *  it is not applied, and how many facts the runtime did not report or
+ *  confirm, so a gap stays visible without opening it. Inside, every line the
+ *  pills carried, grouped and aligned as label/value rows. */
+function ResponseRunDetails({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const details = responseRunDetails(metadata);
+  if (!details) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
-      {lines.map((line) => (
-        <span key={line} className="ui-pill cave-response-status-chip border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
-          {line}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function responseControlStatusLines(metadata?: ChatResponseMetadata): string[] {
-  const requested = Object.entries(metadata?.requestedControls ?? {});
-  const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
-  const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
-  const forwarded = new Set(Object.keys(metadata?.forwardedControls ?? {}));
-  const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
-  if (!requested.length && !rejected.size) return [];
-  return [
-    ...requested.map(([family, value]) => {
-      const prefix = rejected.has(family)
-        ? "Rejected"
-        : promptOnly.has(family)
-          ? "Prompt guidance"
-          : applied.has(family)
-            ? "Applied"
-            : forwarded.has(family)
-              ? "Forwarded — not confirmed"
-            : "Requested — not confirmed";
-      return `${prefix}: ${family} ${value}`;
-    }),
-    ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
-      .map((family) => `Rejected: ${family}`),
-  ];
-}
-
-/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
-function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const lines = responseControlStatusLines(metadata);
-  if (lines.length === 0) return null;
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
-      {lines.map((line) => (
-        <span key={line} className="ui-pill cave-response-status-chip border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
-          {line}
-        </span>
-      ))}
-    </div>
+    <details
+      className="cave-run-details"
+      data-turn-run-details={true}
+      onKeyDown={(keyEvent) => {
+        if (keyEvent.key !== "Escape" || !keyEvent.currentTarget.open) return;
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        keyEvent.currentTarget.open = false;
+        keyEvent.currentTarget.querySelector("summary")?.focus();
+      }}
+    >
+      <summary className="focus-ring">
+        <Icon name="ph:caret-right" width={12} className="cave-run-details__caret" aria-hidden />
+        <span className="cave-run-details__title">Run details</span>
+        {/* Real " · " separators, not CSS content: the summary's text is its
+            accessible name and what a copy or a test reads. */}
+        {details.facts.map((fact) => (
+          <span key={fact}>{" · "}{fact}</span>
+        ))}
+      </summary>
+      <dl className="cave-run-details__list">
+        {details.groups.map((group) => (
+          <div key={group.id} className="cave-run-details__group" data-run-details-group={group.id} aria-label={group.label}>
+            {group.lines.map((line) => (
+              <div key={`${line.label ?? ""}:${line.value}`} className="cave-run-details__row" data-gap={line.gap || undefined}>
+                {line.label ? <dt>{line.label}</dt> : null}
+                <dd className={line.label ? undefined : "cave-run-details__note"}>{line.value}</dd>
+              </div>
+            ))}
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -10016,8 +9982,7 @@ function TurnRowImpl({
 
   const supplementaryContent = (
     <div data-main-chat-supplementary-content={true}>
-      <ResponseModelStatus metadata={turn.responseMetadata} />
-      <ResponseControlStatus metadata={turn.responseMetadata} />
+      <ResponseRunDetails metadata={turn.responseMetadata} />
       {/* Agent-produced inline attachments: images render full-bleed
           (e.g. /image generations), audio/video mount as players, and
           everything else stays a file chip that opens the lightbox. */}
