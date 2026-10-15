@@ -136,7 +136,7 @@ const GENERATORS: Record<
  * Body: { name: string; root: string; variant?: number; model?: string }
  * The image provider follows the connected model of the selected runtime:
  * `model` in the body (a chat's effective model) wins, else the configured
- * default model. OpenAI-namespaced models render through gpt-image-1,
+ * default model. OpenAI-namespaced models render through GPT Image 2.5 Flare,
  * Gemini-namespaced models through Imagen; providers without an image API
  * fall back to whichever image-capable vault key resolves.
  * Returns { ok: true, dataUrl, mime, provider } on success; the client

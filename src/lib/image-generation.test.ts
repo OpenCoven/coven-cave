@@ -24,6 +24,41 @@ test("catalog: every provider default is a listed model of that provider", () =>
   }
 });
 
+test("catalog: OpenAI defaults to GPT Image 2.5 Sunburst and keeps the older models pickable", () => {
+  assert.equal(DEFAULT_IMAGE_GEN_MODELS.openai, "gpt-image-2.5-sunburst");
+  const openaiIds = imageGenModelsForProvider("openai").map((m) => m.id);
+  for (const id of ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-1", "dall-e-3"]) {
+    assert.ok(openaiIds.includes(id), `${id} stays in the OpenAI picker`);
+  }
+  // There is no bare `gpt-image-2.5` API id; a familiar typing it gets the
+  // custom-id path, not a catalog entry that would 404 upstream.
+  assert.equal(imageGenModelById("gpt-image-2.5"), null);
+});
+
+test("resolve: GPT Image 2.5 accepts its new quality tiers, and the default stays medium", () => {
+  const openaiOnly = keys({ OPENAI_API_KEY: "sk-openai" });
+  const max = resolveImageGeneration({ imageQuality: "max" }, "openai/gpt-5.5", openaiOnly);
+  assert.ok(max.ok);
+  assert.equal(max.model, "gpt-image-2.5-sunburst");
+  assert.equal(max.quality, "max");
+  assert.equal(max.size, "1024x1024");
+
+  const inherited = resolveImageGeneration({}, "openai/gpt-5.5", openaiOnly);
+  assert.ok(inherited.ok);
+  assert.equal(inherited.quality, "medium");
+
+  // A familiar pinned to GPT Image 1 keeps it, and an `xhigh` it never offered
+  // falls back to that model's own default.
+  const pinned = resolveImageGeneration(
+    { imageModel: "gpt-image-1", imageQuality: "xhigh" },
+    "openai/gpt-5.5",
+    openaiOnly,
+  );
+  assert.ok(pinned.ok);
+  assert.equal(pinned.model, "gpt-image-1");
+  assert.equal(pinned.quality, "medium");
+});
+
 test("catalog: model ids are unique and provider filters work", () => {
   const ids = IMAGE_GEN_MODEL_OPTIONS.map((m) => m.id);
   assert.equal(new Set(ids).size, ids.length, "no duplicate model ids");
@@ -46,7 +81,7 @@ test("resolve: inherit mode follows the chat model and falls back across provide
   const crossed = resolveImageGeneration({}, "google/gemini-3.1-pro", openaiOnly);
   assert.ok(crossed.ok);
   assert.equal(crossed.provider, "openai");
-  assert.equal(crossed.model, "gpt-image-1");
+  assert.equal(crossed.model, "gpt-image-2.5-sunburst");
   assert.equal(crossed.apiKey, "sk-openai");
 
   const geminiFirst = resolveImageGeneration(
@@ -151,7 +186,7 @@ test("resolve: no keys at all reports the preferred provider's key", () => {
 test("size/quality helpers fall back to the provider default for unknown models", () => {
   assert.deepEqual(
     [...imageGenSizesForModel("some-custom-model", "openai")],
-    [...(imageGenModelById("gpt-image-1")?.sizes ?? [])],
+    [...(imageGenModelById("gpt-image-2.5-sunburst")?.sizes ?? [])],
   );
   assert.deepEqual(
     [...imageGenQualitiesForModel("another-custom", "gemini")],

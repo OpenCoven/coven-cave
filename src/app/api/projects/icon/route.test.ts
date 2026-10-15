@@ -228,7 +228,7 @@ test("generates an icon whose prompt hue is the hue projectTint paints", async (
     assert.equal(net.calls.length, 1);
     assert.equal(net.calls[0].url, "https://api.openai.com/v1/images/generations");
     assert.equal(net.calls[0].headers.get("authorization"), `Bearer ${OPENAI_KEY}`);
-    assert.equal(net.calls[0].body.model, "gpt-image-1");
+    assert.equal(net.calls[0].body.model, "gpt-image-2.5-flare");
     assert.equal(net.calls[0].body.output_format, "webp");
     assert.equal(net.calls[0].body.quality, "low");
 
