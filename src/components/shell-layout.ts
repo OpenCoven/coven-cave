@@ -1,7 +1,9 @@
 export type ShellPanelLayout = Record<string, number>;
 
 export const SHELL_NAV_MIN_PX = 220;
-export const SHELL_NAV_MAX_PX = 420;
+// Wide enough for the sidebar's rows (icons, labels, familiar and project
+// names) and no wider: at 420px a widened rail left ~30% empty (2026-10-15).
+export const SHELL_NAV_MAX_PX = 300;
 export const SHELL_NAV_DEFAULT_PX = 240;
 
 type ResolveShellDestinationLayoutOptions = {

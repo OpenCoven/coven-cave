@@ -28,7 +28,8 @@ const resolveShellNavSwipe =
 shellLayout.resolveShellNavSwipe ?? (() => null);
 
 assert.equal(resolveShellNavWidth("300"), 300, "a valid persisted nav width is retained");
-assert.equal(resolveShellNavWidth("999"), 420, "nav width is clamped to the desktop maximum");
+assert.equal(resolveShellNavWidth("999"), 300, "nav width is clamped to the desktop maximum");
+assert.equal(resolveShellNavWidth("420"), 300, "a width saved under the old 420px maximum clamps to the new one");
 assert.equal(resolveShellNavWidth("not-a-width"), 240, "invalid nav widths use the desktop default");
 assert.equal(resolveShellNavWidth(null), 240, "missing nav widths use the desktop default");
 assert.equal(resolveShellNavWidth("Infinity"), 240, "infinite nav widths use the desktop default");

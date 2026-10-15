@@ -19,15 +19,15 @@ assert.match(
 assert.match(
   shell,
   /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{`\$\{SHELL_NAV_MIN_PX\}px`\}[\s\S]{0,60}?maxSize=\{`\$\{SHELL_NAV_MAX_PX\}px`\}/,
-  "Home and Chat share the 220–420px nav width band",
+  "Home and Chat share the 220–300px nav width band",
 );
 assert.match(
   shell,
   /SHELL_NAV_DEFAULT_PX,[\s\S]*?SHELL_NAV_MAX_PX,[\s\S]*?SHELL_NAV_MIN_PX,/,
-  "the shell imports the shared 240px default and 220–420px bounds",
+  "the shell imports the shared 240px default and 220–300px bounds",
 );
 assert.match(shellLayout, /export const SHELL_NAV_MIN_PX = 220;/, "shared nav minimum stays 220px");
-assert.match(shellLayout, /export const SHELL_NAV_MAX_PX = 420;/, "shared nav maximum stays 420px");
+assert.match(shellLayout, /export const SHELL_NAV_MAX_PX = 300;/, "shared nav maximum stays 300px: tight to the sidebar's content");
 assert.match(shellLayout, /export const SHELL_NAV_DEFAULT_PX = 240;/, "shared nav default stays 240px");
 assert.match(
   shell,
