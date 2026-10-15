@@ -346,6 +346,22 @@ export function Workspace() {
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
   useSurfaceCacheInvalidation();
+  useEffect(() => {
+    // Shell readiness belongs to hydration, independently of optional surface
+    // loading. Preserve two paint opportunities before publishing the marker.
+    let secondFrame: number | undefined;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (performance.getEntriesByName("cave:first-interactive").length === 0) {
+          performance.mark("cave:first-interactive");
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
+    };
+  }, []);
   const { announce } = useAnnouncer();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
