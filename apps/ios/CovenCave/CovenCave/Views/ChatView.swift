@@ -335,6 +335,9 @@ struct ChatView: View {
         streamScroll.cancel()
         scrollState = ChatScrollState()
         viewportRecovery = ChatViewportRecovery()
+        // A fresh scroll state follows latest, and the follow observer only
+        // fires on a change, so the fresh recovery is told directly.
+        viewportRecovery.noteFollowingLatest(scrollState.isFollowingLatest && !scrollState.isUserScrolling)
         unreadDividerId = nil
         unreadComputed = false
         daysAboveTop.removeAll()
