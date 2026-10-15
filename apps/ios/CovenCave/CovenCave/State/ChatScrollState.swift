@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Layout changes are not a request to stop following the conversation.
 struct ChatScrollState {
@@ -27,6 +28,56 @@ struct ChatScrollState {
     mutating func followLatest() {
         isFollowingLatest = true
         isUserScrolling = false
+    }
+}
+
+/// The transcript's tail, keyed by thread: opening another thread is neither
+/// an append nor a removal.
+struct ChatTranscriptTail: Equatable {
+    let threadId: String
+    let count: Int
+    let lastMessageId: String?
+}
+
+/// Whether a transcript change is the reader's own send (#5933). A send from
+/// this phone appends a queued user message (online sends stay queued until
+/// every fan-out leg settles; offline compose parks one) and then, in the same
+/// synchronous call, any reply placeholders. So the newest message is a
+/// placeholder by the time the view sees the change, and the decision reads
+/// every message appended after the previous tail instead.
+enum ChatOwnSend {
+    static func isOwnSend(from old: ChatTranscriptTail, to new: ChatTranscriptTail,
+                          messages: [DisplayMessage]) -> Bool {
+        // Another thread, a removal, or an insert behind an unchanged tail
+        // (reconnect replay) was not sent from the composer.
+        guard old.threadId == new.threadId, new.count > old.count,
+              new.lastMessageId != old.lastMessageId else { return false }
+        let appended: ArraySlice<DisplayMessage>
+        if let previous = old.lastMessageId,
+           let index = messages.lastIndex(where: { $0.id == previous }) {
+            appended = messages[(index + 1)...]
+        } else {
+            appended = messages.suffix(new.count - old.count)
+        }
+        // History pulled from another device carries user turns that were
+        // never queued on this phone.
+        return appended.contains { $0.role == .user && $0.isQueued }
+    }
+}
+
+/// The floating day chip names the day a reader is scrolling through. A
+/// programmatic scroll (the send-time reveal, a jump to latest) is not
+/// reading, and a reader following latest is already at the newest day.
+enum ChatDayChipPolicy {
+    static func revealsChip(on phase: ScrollPhase) -> Bool {
+        switch phase {
+        case .tracking, .interacting, .decelerating: return true
+        default: return false
+        }
+    }
+
+    static func showsChip(active: Bool, followingLatest: Bool) -> Bool {
+        active && !followingLatest
     }
 }
 
@@ -70,6 +121,10 @@ struct ChatViewportGeometry: Equatable {
 /// arms recovery and never pulls a reader of older content back to latest.
 /// Normal streaming growth, a valid history position, and an active gesture
 /// are likewise never treated as a request to follow the latest message.
+///
+/// A reader following latest is the exception (#5933): following wants the
+/// end of the transcript, so an offset beyond that end is never a place the
+/// reader chose, and it is clamped once per excursion without shrink evidence.
 struct ChatViewportRecovery {
     private var geometry: ChatViewportGeometry?
     private var latestRowId: String?
@@ -77,6 +132,10 @@ struct ChatViewportRecovery {
     private var latestRowShrank = false
     private var rowsRemoved = false
     private var pending = false
+    private var followingLatest = false
+    /// A follow-only correction was taken and the offset has not been seen
+    /// back in range since: one correction per excursion beyond the end.
+    private var followCorrectionTaken = false
 
     /// The latest row's own measured height. A different row id is a fresh
     /// baseline: an appended message is growth, and any evidence gathered for
@@ -91,6 +150,7 @@ struct ChatViewportRecovery {
         } else if latestRowId != nil, !rowsRemoved {
             latestRowShrank = false
             pending = false
+            followCorrectionTaken = false
         }
         latestRowId = id
         latestRowHeight = height
@@ -105,6 +165,21 @@ struct ChatViewportRecovery {
     mutating func noteRowsRemoved() {
         rowsRemoved = true
         evaluate(consumesEvidence: false)
+    }
+
+    /// Whether the reader is following latest outside a gesture. Resuming
+    /// follow while already beyond the end arms a correction; leaving follow
+    /// drops one that only following asked for, so a reader who scrolled
+    /// away keeps their place. Shrink or removal evidence is kept either way.
+    mutating func noteFollowingLatest(_ following: Bool) {
+        guard following != followingLatest else { return }
+        followingLatest = following
+        if following {
+            followCorrectionTaken = false
+            evaluate(consumesEvidence: false)
+        } else if !latestRowShrank, !rowsRemoved {
+            pending = false
+        }
     }
 
     mutating func update(_ geometry: ChatViewportGeometry) {
@@ -122,19 +197,23 @@ struct ChatViewportRecovery {
         pending = false
         latestRowShrank = false
         rowsRemoved = false
+        followCorrectionTaken = true
         return true
     }
 
     private mutating func evaluate(consumesEvidence: Bool) {
         guard let geometry else { return }
         if geometry.isBeyondEnd {
-            if latestRowShrank || rowsRemoved { pending = true }
+            if latestRowShrank || rowsRemoved || (followingLatest && !followCorrectionTaken) {
+                pending = true
+            }
         } else if consumesEvidence {
             // A valid offset consumes any shrink evidence: UIKit (or the
             // reader) already landed somewhere legitimate.
             pending = false
             latestRowShrank = false
             rowsRemoved = false
+            followCorrectionTaken = false
         }
     }
 }
